@@ -22,7 +22,7 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/search-api", () => ({
+vi.mock("~/lib/ugoite-client", () => ({
   searchApi: {
     query: vi.fn().mockResolvedValue([
       {

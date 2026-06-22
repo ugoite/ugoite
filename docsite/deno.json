@@ -33,6 +33,7 @@
     "shiki": "npm:shiki@^4.2.0",
     "std-env": "npm:std-env@^4.1.0",
     "svgo": "npm:svgo@^4.0.1",
+    "typescript": "npm:typescript@^5.9.3",
     "unstorage": "npm:unstorage@^1.17.5",
     "unifont": "npm:unifont@^0.7.4",
     "vite": "npm:vite@8.0.16",

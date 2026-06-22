@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::integrity::RealIntegrityProvider;
 use crate::{
-    asset, entry, form, preferences, search, space, sql_session, storage::operator_from_uri,
+    asset, entry, form, index, preferences, saved_sql, search, space, sql_session,
+    storage::operator_from_uri,
 };
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
@@ -67,6 +68,21 @@ impl UgoiteService {
         validate_member_user_id(actor_user_id)?;
         self.create_space(space_id).await?;
         self.bootstrap_admin_member(space_id, actor_user_id).await
+    }
+
+    pub async fn ensure_bootstrap_space_for(
+        &self,
+        space_id: &str,
+        actor_user_id: &str,
+    ) -> Result<()> {
+        validate_member_user_id(actor_user_id)?;
+        match self.create_space(space_id).await {
+            Ok(()) => self.bootstrap_admin_member(space_id, actor_user_id).await,
+            Err(error) if error.to_string().to_lowercase().contains("already exists") => {
+                self.bootstrap_admin_member(space_id, actor_user_id).await
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
@@ -164,12 +180,114 @@ impl UgoiteService {
         entry::get_entry(&self.operator, &self.workspace_path(space_id), entry_id).await
     }
 
+    pub async fn update_entry(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        parent_revision_id: Option<&str>,
+        author: &str,
+        assets: Option<Vec<Value>>,
+    ) -> Result<Value> {
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        entry::update_entry(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            markdown,
+            parent_revision_id,
+            author,
+            assets,
+            &integrity,
+        )
+        .await
+    }
+
+    pub async fn delete_entry(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        hard_delete: bool,
+    ) -> Result<()> {
+        entry::delete_entry(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            hard_delete,
+        )
+        .await
+    }
+
+    pub async fn entry_history(&self, space_id: &str, entry_id: &str) -> Result<Value> {
+        entry::get_entry_history(&self.operator, &self.workspace_path(space_id), entry_id).await
+    }
+
+    pub async fn entry_revision(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+    ) -> Result<Value> {
+        entry::get_entry_revision(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            revision_id,
+        )
+        .await
+    }
+
+    pub async fn restore_entry(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        author: &str,
+    ) -> Result<Value> {
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        entry::restore_entry(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            revision_id,
+            author,
+            &integrity,
+        )
+        .await
+    }
+
+    pub async fn list_entry_options(
+        &self,
+        space_id: &str,
+        form: Option<&str>,
+        query: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<entry::EntrySummary>> {
+        entry::list_entry_summaries(
+            &self.operator,
+            &self.workspace_path(space_id),
+            form,
+            query,
+            limit,
+        )
+        .await
+    }
+
     pub async fn search_entries(
         &self,
         space_id: &str,
         query: &str,
     ) -> Result<Vec<search::SearchResult>> {
         search::search_entries(&self.operator, &self.workspace_path(space_id), query).await
+    }
+
+    pub async fn query_entries(&self, space_id: &str, filter: &Value) -> Result<Vec<Value>> {
+        index::query_index(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &filter.to_string(),
+        )
+        .await
     }
 
     pub async fn list_assets(&self, space_id: &str) -> Result<Vec<asset::AssetInfo>> {
@@ -249,6 +367,58 @@ impl UgoiteService {
         .await
     }
 
+    pub async fn list_saved_sql(&self, space_id: &str) -> Result<Vec<Value>> {
+        saved_sql::list_sql(&self.operator, &self.workspace_path(space_id)).await
+    }
+
+    pub async fn create_saved_sql(
+        &self,
+        space_id: &str,
+        sql_id: &str,
+        payload: &saved_sql::SqlPayload,
+        author: &str,
+    ) -> Result<Value> {
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        saved_sql::create_sql(
+            &self.operator,
+            &self.workspace_path(space_id),
+            sql_id,
+            payload,
+            author,
+            &integrity,
+        )
+        .await
+    }
+
+    pub async fn get_saved_sql(&self, space_id: &str, sql_id: &str) -> Result<Value> {
+        saved_sql::get_sql(&self.operator, &self.workspace_path(space_id), sql_id).await
+    }
+
+    pub async fn update_saved_sql(
+        &self,
+        space_id: &str,
+        sql_id: &str,
+        payload: &saved_sql::SqlPayload,
+        parent_revision_id: Option<&str>,
+        author: &str,
+    ) -> Result<Value> {
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        saved_sql::update_sql(
+            &self.operator,
+            &self.workspace_path(space_id),
+            sql_id,
+            payload,
+            parent_revision_id,
+            author,
+            &integrity,
+        )
+        .await
+    }
+
+    pub async fn delete_saved_sql(&self, space_id: &str, sql_id: &str) -> Result<()> {
+        saved_sql::delete_sql(&self.operator, &self.workspace_path(space_id), sql_id).await
+    }
+
     pub async fn list_members(&self, space_id: &str) -> Result<Vec<Value>> {
         let settings = self.read_space_settings(space_id).await?;
         let mut members: Vec<Value> = settings
@@ -280,9 +450,22 @@ impl UgoiteService {
     ) -> Result<Value> {
         validate_member_user_id(user_id)?;
         validate_assignable_role(role)?;
+        let expires_in_seconds = validate_invitation_expiry(expires_in_seconds)?;
         let mut settings = self.read_space_settings(space_id).await?;
+        if let Some(existing) = settings
+            .get("members")
+            .and_then(Value::as_object)
+            .and_then(|members| members.get(user_id))
+        {
+            match existing.get("state").and_then(Value::as_str) {
+                Some("active") | Some("invited") => {
+                    return Err(anyhow!("Member is already active or invited"));
+                }
+                _ => {}
+            }
+        }
         let now = now_iso();
-        let expires_at = (Utc::now() + Duration::seconds(expires_in_seconds.unwrap_or(604_800)))
+        let expires_at = (Utc::now() + Duration::seconds(expires_in_seconds))
             .to_rfc3339_opts(SecondsFormat::Millis, true);
         let token = Uuid::new_v4().to_string();
         let invitation = json!({
@@ -332,10 +515,26 @@ impl UgoiteService {
         }
         let mut settings = self.read_space_settings(space_id).await?;
         let invitation = settings
-            .pointer_mut(&format!("/member_invitations/{token}"))
+            .get_mut("member_invitations")
+            .and_then(Value::as_object_mut)
+            .and_then(|invitations| invitations.get_mut(token))
             .ok_or_else(|| anyhow!("Invitation not found"))?;
         if invitation.get("state").and_then(Value::as_str) != Some("pending") {
             return Err(anyhow!("Invitation is not pending"));
+        }
+        let now = Utc::now();
+        let expires_at = invitation
+            .get("expires_at")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("Invitation expires_at is missing"))?;
+        let expires_at = chrono::DateTime::parse_from_rfc3339(expires_at)
+            .map_err(|_| anyhow!("Invitation expires_at is invalid"))?
+            .with_timezone(&Utc);
+        if expires_at <= now {
+            invitation["state"] = Value::String("expired".to_string());
+            bump_membership_version(&mut settings);
+            self.write_space_settings(space_id, &settings).await?;
+            return Err(anyhow!("Invitation has expired"));
         }
         let user_id = invitation
             .get("user_id")
@@ -387,8 +586,13 @@ impl UgoiteService {
         validate_member_user_id(member_user_id)?;
         validate_assignable_role(role)?;
         let mut settings = self.read_space_settings(space_id).await?;
+        if role != "admin" && is_last_active_admin(&settings, member_user_id) {
+            return Err(anyhow!("Cannot demote the last active admin"));
+        }
         let member = settings
-            .pointer_mut(&format!("/members/{member_user_id}"))
+            .get_mut("members")
+            .and_then(Value::as_object_mut)
+            .and_then(|members| members.get_mut(member_user_id))
             .ok_or_else(|| anyhow!("Member not found"))?;
         member["role"] = Value::String(role.to_string());
         member["updated_at"] = Value::String(now_iso());
@@ -401,8 +605,13 @@ impl UgoiteService {
     pub async fn revoke_member(&self, space_id: &str, member_user_id: &str) -> Result<Value> {
         validate_member_user_id(member_user_id)?;
         let mut settings = self.read_space_settings(space_id).await?;
+        if is_last_active_admin(&settings, member_user_id) {
+            return Err(anyhow!("Cannot revoke the last active admin"));
+        }
         let member = settings
-            .pointer_mut(&format!("/members/{member_user_id}"))
+            .get_mut("members")
+            .and_then(Value::as_object_mut)
+            .and_then(|members| members.get_mut(member_user_id))
             .ok_or_else(|| anyhow!("Member not found"))?;
         let now = now_iso();
         member["state"] = Value::String("revoked".to_string());
@@ -444,6 +653,10 @@ impl UgoiteService {
         );
         bump_membership_version(&mut settings);
         self.write_space_settings(space_id, &settings).await
+    }
+
+    pub async fn test_storage_connection(&self, uri: &str) -> Result<Value> {
+        space::test_storage_connection(uri).await
     }
 
     async fn has_permission(
@@ -547,6 +760,39 @@ fn bump_membership_version(settings: &mut Value) {
         .unwrap_or_default()
         + 1;
     settings["membership_version"] = json!(next);
+}
+
+fn validate_invitation_expiry(expires_in_seconds: Option<i64>) -> Result<i64> {
+    let seconds = expires_in_seconds.unwrap_or(604_800);
+    if !(60..=2_592_000).contains(&seconds) {
+        return Err(anyhow!(
+            "expires_in_seconds must be between 60 and 2592000 seconds"
+        ));
+    }
+    Ok(seconds)
+}
+
+fn is_last_active_admin(settings: &Value, member_user_id: &str) -> bool {
+    let Some(members) = settings.get("members").and_then(Value::as_object) else {
+        return false;
+    };
+    let Some(target) = members.get(member_user_id) else {
+        return false;
+    };
+    if target.get("state").and_then(Value::as_str) != Some("active")
+        || target.get("role").and_then(Value::as_str) != Some("admin")
+    {
+        return false;
+    }
+    members
+        .iter()
+        .filter(|(user_id, member)| {
+            user_id.as_str() != member_user_id
+                && member.get("state").and_then(Value::as_str) == Some("active")
+                && member.get("role").and_then(Value::as_str) == Some("admin")
+        })
+        .count()
+        == 0
 }
 
 fn validate_member_user_id(user_id: &str) -> Result<()> {

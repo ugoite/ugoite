@@ -1,6 +1,6 @@
 import { A, useParams } from "@solidjs/router";
 import { createResource, Show } from "solid-js";
-import { entryApi } from "~/lib/entry-api";
+import { entryApi } from "~/lib/ugoite-client";
 
 export default function SpaceEntryRevisionRoute() {
   const params = useParams<

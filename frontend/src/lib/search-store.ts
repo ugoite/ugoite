@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { EntryRecord, SearchResult } from "./types";
-import { searchApi } from "./search-api";
+import { searchApi } from "./ugoite-client";
 
 export function createSearchStore(spaceId: () => string) {
   const [results, setResults] = createSignal<SearchResult[]>([]);

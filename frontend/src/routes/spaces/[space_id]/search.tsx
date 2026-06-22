@@ -2,10 +2,10 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
-import { formApi } from "~/lib/form-api";
-import { searchApi } from "~/lib/search-api";
-import { sqlSessionApi } from "~/lib/sql-session-api";
-import { sqlApi } from "~/lib/sql-api";
+import { formApi } from "~/lib/ugoite-client";
+import { searchApi } from "~/lib/ugoite-client";
+import { sqlSessionApi } from "~/lib/ugoite-client";
+import { sqlApi } from "~/lib/ugoite-client";
 import type { EntryRecord, SearchResult, SqlEntry } from "~/lib/types";
 
 type SearchMode = "keyword" | "advanced";

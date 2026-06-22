@@ -125,6 +125,26 @@ async fn test_space_req_ops_017_create_space_for_does_not_repair_existing_space(
 
 #[tokio::test]
 /// REQ-OPS-017
+async fn test_space_req_ops_017_bootstrap_repair_is_idempotent() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-bootstrap-repair")?;
+    service
+        .ensure_bootstrap_space_for("default", "owner-a")
+        .await?;
+    service
+        .ensure_bootstrap_space_for("default", "owner-a")
+        .await?;
+
+    let members = service.list_members("default").await?;
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0]["user_id"], "owner-a");
+    assert_eq!(members[0]["role"], "admin");
+    assert_eq!(members[0]["state"], "active");
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
 async fn test_space_req_ops_017_patch_rejects_membership_managed_settings() -> anyhow::Result<()> {
     let service = UgoiteService::new("memory://space-patch-guard")?;
     service.create_space_for("team-space", "owner-a").await?;
@@ -143,6 +163,94 @@ async fn test_space_req_ops_017_patch_rejects_membership_managed_settings() -> a
 
     let space = service.get_space("team-space").await?;
     assert!(space.get("settings").is_some());
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_membership_invariants() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-membership-invariants")?;
+    service.create_space_for("team-space", "owner-a").await?;
+
+    let reinvite_owner = service
+        .invite_member("team-space", "owner-a", "viewer", "owner-a", None)
+        .await;
+    assert!(
+        reinvite_owner.is_err(),
+        "active members cannot be reinvited"
+    );
+
+    let demote_last_admin = service
+        .update_member_role("team-space", "owner-a", "viewer")
+        .await;
+    assert!(
+        demote_last_admin.is_err(),
+        "last active admin cannot be demoted"
+    );
+
+    let revoke_last_admin = service.revoke_member("team-space", "owner-a").await;
+    assert!(
+        revoke_last_admin.is_err(),
+        "last active admin cannot be revoked"
+    );
+
+    let invite = service
+        .invite_member("team-space", "bob", "editor", "owner-a", Some(300))
+        .await?;
+    let token = invite["invitation"]["token"].as_str().unwrap();
+    service
+        .accept_invitation("team-space", token, "bob")
+        .await?;
+    service.revoke_member("team-space", "bob").await?;
+    let reinvite = service
+        .invite_member("team-space", "bob", "viewer", "owner-a", Some(300))
+        .await?;
+    assert_eq!(reinvite["invitation"]["state"], "pending");
+    assert_eq!(service.list_members("team-space").await?.len(), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_invitation_expiry_and_reuse() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-invitation-expiry")?;
+    service.create_space_for("team-space", "owner-a").await?;
+
+    let negative_expiry = service
+        .invite_member("team-space", "bob", "viewer", "owner-a", Some(-1))
+        .await;
+    assert!(negative_expiry.is_err());
+
+    let invite = service
+        .invite_member("team-space", "bob", "viewer", "owner-a", Some(300))
+        .await?;
+    let token = invite["invitation"]["token"].as_str().unwrap().to_string();
+    service
+        .accept_invitation("team-space", &token, "bob")
+        .await?;
+    let reuse = service.accept_invitation("team-space", &token, "bob").await;
+    assert!(reuse.is_err(), "accepted invitations cannot be reused");
+
+    let expired = service
+        .invite_member("team-space", "alice", "viewer", "owner-a", Some(300))
+        .await?;
+    let expired_token = expired["invitation"]["token"].as_str().unwrap();
+    let settings_path = "spaces/team-space/settings.json";
+    let mut settings: Value =
+        serde_json::from_slice(&service.operator().read(settings_path).await?.to_vec())?;
+    settings["member_invitations"][expired_token]["expires_at"] =
+        Value::String("2000-01-01T00:00:00.000Z".to_string());
+    service
+        .operator()
+        .write(settings_path, serde_json::to_vec_pretty(&settings)?)
+        .await?;
+
+    let expired_accept = service
+        .accept_invitation("team-space", expired_token, "alice")
+        .await;
+    assert!(expired_accept.is_err(), "expired invitations are rejected");
 
     Ok(())
 }

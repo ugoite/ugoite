@@ -5,7 +5,7 @@ import {
   CreateEntryDialog,
   CreateFormDialog,
 } from "~/components/create-dialogs";
-import { assetApi } from "~/lib/asset-api";
+import { assetApi } from "~/lib/ugoite-client";
 import { SpaceShell } from "~/components/SpaceShell";
 import { createEntryStore } from "~/lib/entry-store";
 import {
@@ -14,8 +14,8 @@ import {
 } from "~/lib/entry-input";
 import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { formApi } from "~/lib/form-api";
-import { spaceApi } from "~/lib/space-api";
+import { formApi } from "~/lib/ugoite-client";
+import { spaceApi } from "~/lib/ugoite-client";
 import { summarizeSpaceStorage } from "~/lib/storage-topology";
 import type { FormCreatePayload } from "~/lib/types";
 import type { Asset } from "~/lib/types";

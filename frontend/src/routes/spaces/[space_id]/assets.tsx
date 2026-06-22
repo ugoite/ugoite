@@ -1,7 +1,7 @@
 import { A, useParams } from "@solidjs/router";
 import { createResource, createSignal, Show } from "solid-js";
 import { AssetUploader } from "~/components/AssetUploader";
-import { assetApi } from "~/lib/asset-api";
+import { assetApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import type { Asset } from "~/lib/types";
 

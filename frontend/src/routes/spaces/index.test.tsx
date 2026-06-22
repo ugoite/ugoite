@@ -8,7 +8,7 @@ import {
   within,
 } from "@solidjs/testing-library";
 import SpacesIndexRoute from "./index";
-import { spaceApi } from "~/lib/space-api";
+import { spaceApi } from "~/lib/ugoite-client";
 
 const localDevAuthGuideUrl =
   "https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
@@ -24,7 +24,7 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/space-api", () => ({
+vi.mock("~/lib/ugoite-client", () => ({
   spaceApi: {
     list: vi.fn(),
     create: vi.fn(),

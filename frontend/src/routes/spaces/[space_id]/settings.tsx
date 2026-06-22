@@ -3,7 +3,7 @@ import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { getDocsiteHref } from "~/lib/docsite-links";
-import { spaceApi } from "~/lib/space-api";
+import { spaceApi } from "~/lib/ugoite-client";
 import type {
   SpaceMember,
   SpacePatchPayload,

@@ -1,7 +1,7 @@
 // REQ-FE-051: SQL session management
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { sqlSessionApi } from "./sql-session-api";
+import { sqlSessionApi } from "./ugoite-client";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";

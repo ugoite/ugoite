@@ -3,8 +3,8 @@ import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { EntryDetailPane } from "./EntryDetailPane";
-import { entryApi, RevisionConflictError } from "~/lib/entry-api";
-import { assetApi } from "~/lib/asset-api";
+import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
+import { assetApi } from "~/lib/ugoite-client";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
@@ -16,9 +16,13 @@ vi.mock("@solidjs/router", () => ({
   ),
 }));
 
-vi.mock("~/lib/entry-api", () => {
+vi.mock("~/lib/ugoite-client", () => {
   class RevisionConflictError extends Error {}
   return {
+    assetApi: {
+      list: vi.fn(),
+      upload: vi.fn(),
+    },
     entryApi: {
       get: vi.fn(),
       update: vi.fn(),
@@ -27,13 +31,6 @@ vi.mock("~/lib/entry-api", () => {
     RevisionConflictError,
   };
 });
-
-vi.mock("~/lib/asset-api", () => ({
-  assetApi: {
-    list: vi.fn(),
-    upload: vi.fn(),
-  },
-}));
 
 describe("EntryDetailPane", () => {
   beforeEach(() => {

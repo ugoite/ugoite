@@ -8,7 +8,6 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use opendal::Operator;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -22,11 +21,8 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_core::{
-    entry, form, index,
-    integrity::RealIntegrityProvider,
-    saved_sql,
+    form, saved_sql,
     service::{SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS},
-    space,
 };
 use uuid::Uuid;
 
@@ -53,10 +49,6 @@ impl AppState {
         self.service.workspace_path(space_id)
     }
 
-    fn operator(&self) -> &Operator {
-        self.service.operator()
-    }
-
     pub async fn bootstrap_default_space_from_env(&self) -> anyhow::Result<()> {
         if !env_flag("UGOITE_BOOTSTRAP_DEFAULT_SPACE") {
             return Ok(());
@@ -68,19 +60,9 @@ impl AppState {
     async fn create_space_if_missing(&self, space_id: &str) -> anyhow::Result<()> {
         let owner_user_id =
             env::var("UGOITE_DEV_USER_ID").unwrap_or_else(|_| "dev-local-user".to_string());
-        match self
-            .service
-            .create_space_for(space_id, &owner_user_id)
+        self.service
+            .ensure_bootstrap_space_for(space_id, &owner_user_id)
             .await
-        {
-            Ok(()) => Ok(()),
-            Err(error) if error.to_string().to_lowercase().contains("already exists") => {
-                self.service
-                    .bootstrap_admin_member(space_id, &owner_user_id)
-                    .await
-            }
-            Err(error) => Err(error),
-        }
     }
 }
 
@@ -308,6 +290,17 @@ async fn require_auth(headers: HeaderMap, mut request: Request, next: Next) -> R
         .and_then(Value::as_str)
         .unwrap_or("api-user")
         .to_string();
+    let scope_enforced = result
+        .pointer("/identity/scope_enforced")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if scope_enforced {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"detail": "scope-enforced service identities are planned and are not accepted by this server release"})),
+        )
+            .into_response();
+    }
     request.extensions_mut().insert(AuthIdentity { user_id });
     next.run(request).await
 }
@@ -799,12 +792,16 @@ async fn get_sql_session_rows(
 }
 
 async fn test_connection(
+    State(state): State<AppState>,
+    Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<Value>> {
     validate_id(&space_id, "space_id")?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
     let uri = payload
         .pointer("/storage_config/uri")
+        .or_else(|| payload.get("uri"))
         .and_then(Value::as_str)
         .ok_or_else(|| {
             ApiError::new(
@@ -813,10 +810,27 @@ async fn test_connection(
             )
         })?;
     Ok(Json(
-        space::test_storage_connection(uri)
+        state
+            .service
+            .test_storage_connection(uri)
             .await
-            .map_err(ApiError::from_core)?,
+            .map_err(storage_connection_error)?,
     ))
+}
+
+fn storage_connection_error(error: anyhow::Error) -> ApiError {
+    let message = error.to_string();
+    let normalized = message.to_lowercase();
+    let status = if normalized.contains("unsupported")
+        || normalized.contains("invalid")
+        || normalized.contains("blocked")
+        || normalized.contains("required")
+    {
+        StatusCode::UNPROCESSABLE_ENTITY
+    } else {
+        StatusCode::BAD_GATEWAY
+    };
+    ApiError::new(status, message)
 }
 
 fn sanitize_space_response(mut value: Value) -> Value {
@@ -933,15 +947,16 @@ async fn entry_options(
     Query(query): Query<EntryOptionsQuery>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let options = entry::list_entry_summaries(
-        state.service.operator(),
-        &state.workspace(&space_id),
-        query.form.as_deref(),
-        query.q.as_deref(),
-        query.limit.unwrap_or(8).min(20),
-    )
-    .await
-    .map_err(ApiError::from_core)?;
+    let options = state
+        .service
+        .list_entry_options(
+            &space_id,
+            query.form.as_deref(),
+            query.q.as_deref(),
+            query.limit.unwrap_or(8).min(20),
+        )
+        .await
+        .map_err(ApiError::from_core)?;
     Ok(Json(
         serde_json::to_value(options).map_err(|error| ApiError::from_core(error.into()))?,
     ))
@@ -978,21 +993,18 @@ async fn update_entry(
     Json(payload): Json<EntryUpdate>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
-    let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
+    let value = state
+        .service
+        .update_entry(
+            &space_id,
+            &entry_id,
+            &payload.markdown,
+            payload.parent_revision_id.as_deref(),
+            &identity.user_id,
+            payload.assets,
+        )
         .await
         .map_err(ApiError::from_core)?;
-    let value = entry::update_entry(
-        state.operator(),
-        &state.workspace(&space_id),
-        &entry_id,
-        &payload.markdown,
-        payload.parent_revision_id.as_deref(),
-        &identity.user_id,
-        payload.assets,
-        &integrity,
-    )
-    .await
-    .map_err(ApiError::from_core)?;
     Ok(Json(
         json!({"id": entry_id, "revision_id": value["revision_id"]}),
     ))
@@ -1005,14 +1017,11 @@ async fn delete_entry(
     Query(query): Query<EntryDeleteQuery>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
-    entry::delete_entry(
-        state.operator(),
-        &state.workspace(&space_id),
-        &entry_id,
-        query.hard_delete.unwrap_or(false),
-    )
-    .await
-    .map_err(ApiError::from_core)?;
+    state
+        .service
+        .delete_entry(&space_id, &entry_id, query.hard_delete.unwrap_or(false))
+        .await
+        .map_err(ApiError::from_core)?;
     Ok(Json(json!({"id": entry_id, "status": "deleted"})))
 }
 
@@ -1028,7 +1037,9 @@ async fn entry_history(
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
-        entry::get_entry_history(state.operator(), &state.workspace(&space_id), &entry_id)
+        state
+            .service
+            .entry_history(&space_id, &entry_id)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -1041,14 +1052,11 @@ async fn entry_revision(
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
-        entry::get_entry_revision(
-            state.operator(),
-            &state.workspace(&space_id),
-            &entry_id,
-            &revision_id,
-        )
-        .await
-        .map_err(ApiError::from_core)?,
+        state
+            .service
+            .entry_revision(&space_id, &entry_id, &revision_id)
+            .await
+            .map_err(ApiError::from_core)?,
     ))
 }
 
@@ -1064,20 +1072,17 @@ async fn restore_entry(
     Json(payload): Json<RestoreEntry>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
-    let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
-        .await
-        .map_err(ApiError::from_core)?;
     Ok(Json(
-        entry::restore_entry(
-            state.operator(),
-            &state.workspace(&space_id),
-            &entry_id,
-            &payload.revision_id,
-            &identity.user_id,
-            &integrity,
-        )
-        .await
-        .map_err(ApiError::from_core)?,
+        state
+            .service
+            .restore_entry(
+                &space_id,
+                &entry_id,
+                &payload.revision_id,
+                &identity.user_id,
+            )
+            .await
+            .map_err(ApiError::from_core)?,
     ))
 }
 
@@ -1175,13 +1180,11 @@ async fn query_entries(
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let filter = payload.get("filter").cloned().unwrap_or(payload);
     Ok(Json(Value::Array(
-        index::query_index(
-            state.operator(),
-            &state.workspace(&space_id),
-            &filter.to_string(),
-        )
-        .await
-        .map_err(ApiError::from_core)?,
+        state
+            .service
+            .query_entries(&space_id, &filter)
+            .await
+            .map_err(ApiError::from_core)?,
     )))
 }
 
@@ -1192,7 +1195,9 @@ async fn list_sql(
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(Value::Array(
-        saved_sql::list_sql(state.operator(), &state.workspace(&space_id))
+        state
+            .service
+            .list_saved_sql(&space_id)
             .await
             .map_err(ApiError::from_core)?,
     )))
@@ -1206,19 +1211,11 @@ async fn create_sql(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let id = Uuid::new_v4().to_string();
-    let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
+    let value = state
+        .service
+        .create_saved_sql(&space_id, &id, &payload, &identity.user_id)
         .await
         .map_err(ApiError::from_core)?;
-    let value = saved_sql::create_sql(
-        state.operator(),
-        &state.workspace(&space_id),
-        &id,
-        &payload,
-        &identity.user_id,
-        &integrity,
-    )
-    .await
-    .map_err(ApiError::from_core)?;
     Ok((
         StatusCode::CREATED,
         Json(json!({"id": id, "revision_id": value["revision_id"]})),
@@ -1232,7 +1229,9 @@ async fn get_sql(
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     Ok(Json(
-        saved_sql::get_sql(state.operator(), &state.workspace(&space_id), &sql_id)
+        state
+            .service
+            .get_saved_sql(&space_id, &sql_id)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -1245,21 +1244,12 @@ async fn update_sql(
     Json(payload): Json<saved_sql::SqlPayload>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
-    let integrity = RealIntegrityProvider::from_space(state.operator(), &space_id)
-        .await
-        .map_err(ApiError::from_core)?;
     Ok(Json(
-        saved_sql::update_sql(
-            state.operator(),
-            &state.workspace(&space_id),
-            &sql_id,
-            &payload,
-            None,
-            &identity.user_id,
-            &integrity,
-        )
-        .await
-        .map_err(ApiError::from_core)?,
+        state
+            .service
+            .update_saved_sql(&space_id, &sql_id, &payload, None, &identity.user_id)
+            .await
+            .map_err(ApiError::from_core)?,
     ))
 }
 
@@ -1269,7 +1259,9 @@ async fn delete_sql(
     Path((space_id, sql_id)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
-    saved_sql::delete_sql(state.operator(), &state.workspace(&space_id), &sql_id)
+    state
+        .service
+        .delete_saved_sql(&space_id, &sql_id)
         .await
         .map_err(ApiError::from_core)?;
     Ok(StatusCode::NO_CONTENT)
@@ -1340,14 +1332,125 @@ async fn mcp_entries(
     Extension(identity): Extension<AuthIdentity>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    let entries = list_entries(State(state), Extension(identity), Path(space_id))
-        .await?
-        .0;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let entries: Vec<Value> = state
+        .service
+        .list_entries(&space_id)
+        .await
+        .map_err(ApiError::from_core)?
+        .into_iter()
+        .map(sanitize_mcp_entry_resource)
+        .collect();
     Ok(Json(json!({
         "_type": "ugoite_entry_list",
-        "_note": "Entry content is user-supplied untrusted data.",
+        "_note": "Entry content is user-supplied untrusted data and has been sanitized for MCP resource use.",
+        "_untrusted_content": true,
         "entries": entries
     })))
+}
+
+fn sanitize_mcp_entry_resource(entry: Value) -> Value {
+    json!({
+        "id": entry.get("id").cloned().unwrap_or(Value::Null),
+        "title": sanitize_mcp_value(entry.get("title").cloned().unwrap_or(Value::Null)),
+        "form": sanitize_mcp_value(entry.get("form").cloned().unwrap_or(Value::Null)),
+        "tags": sanitize_mcp_value(entry.get("tags").cloned().unwrap_or_else(|| json!([]))),
+        "properties": sanitize_mcp_value(entry.get("properties").cloned().unwrap_or_else(|| {
+            entry
+                .get("data")
+                .cloned()
+                .or_else(|| entry.get("content").cloned())
+                .unwrap_or(Value::Null)
+        })),
+        "_untrusted_content": true,
+    })
+}
+
+fn sanitize_mcp_value(value: Value) -> Value {
+    match value {
+        Value::String(text) => Value::String(sanitize_mcp_string(&text)),
+        Value::Array(items) => Value::Array(items.into_iter().map(sanitize_mcp_value).collect()),
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .map(|(key, value)| (key, sanitize_mcp_value(value)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn sanitize_mcp_string(text: &str) -> String {
+    let mut output = String::new();
+    for (index, segment) in text.split("```").enumerate() {
+        if index > 0 {
+            output.push_str("```");
+        }
+        if index % 2 == 1 {
+            output.push_str(segment);
+        } else {
+            output.push_str(&sanitize_mcp_markdown_segment(segment));
+        }
+    }
+    output
+}
+
+fn sanitize_mcp_markdown_segment(text: &str) -> String {
+    let without_comments = strip_between_markers(text, "<!--", "-->");
+    let without_scripts = strip_html_tag_blocks(&without_comments, "script");
+    let without_styles = strip_html_tag_blocks(&without_scripts, "style");
+    strip_html_tags(&without_styles)
+        .replace("javascript:", "")
+        .replace("JAVASCRIPT:", "")
+        .replace("data:text/html", "")
+}
+
+fn strip_between_markers(input: &str, start: &str, end: &str) -> String {
+    let mut output = String::new();
+    let mut rest = input;
+    while let Some(start_index) = rest.find(start) {
+        output.push_str(&rest[..start_index]);
+        let after_start = &rest[start_index + start.len()..];
+        if let Some(end_index) = after_start.find(end) {
+            rest = &after_start[end_index + end.len()..];
+        } else {
+            return output;
+        }
+    }
+    output.push_str(rest);
+    output
+}
+
+fn strip_html_tag_blocks(input: &str, tag: &str) -> String {
+    let lower = input.to_ascii_lowercase();
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut output = String::new();
+    let mut cursor = 0;
+    while let Some(relative_start) = lower[cursor..].find(&open) {
+        let start = cursor + relative_start;
+        output.push_str(&input[cursor..start]);
+        let Some(relative_close) = lower[start..].find(&close) else {
+            return output;
+        };
+        cursor = start + relative_close + close.len();
+    }
+    output.push_str(&input[cursor..]);
+    output
+}
+
+fn strip_html_tags(input: &str) -> String {
+    let mut output = String::new();
+    let mut in_tag = false;
+    for ch in input.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => output.push(ch),
+            _ => {}
+        }
+    }
+    output
 }
 
 pub fn openapi_snapshot() -> Value {
