@@ -22,7 +22,8 @@ enforcement is implemented.
 
 ### Auth & User Management (Milestone 4 Phase 0 Baseline)
 
-Planned endpoint surface (exact payloads may evolve during implementation):
+Planned endpoint surface (exact payloads may evolve during implementation; the
+current backend already serves the member invitation routes below):
 
 - `POST /spaces/{space_id}/auth/webauthn/register/options`
 - `POST /spaces/{space_id}/auth/webauthn/register/verify`
@@ -30,7 +31,8 @@ Planned endpoint surface (exact payloads may evolve during implementation):
 - `POST /spaces/{space_id}/auth/webauthn/authenticate/verify`
 - `POST /spaces/{space_id}/auth/oauth2/link/{provider}`
 - `POST /spaces/{space_id}/auth/oauth2/callback/{provider}`
-- `POST /spaces/{space_id}/admin/invitations` (one-time invite token)
+- `POST /spaces/{space_id}/members/invitations` (one-time invite token)
+- `POST /spaces/{space_id}/members/accept`
 - `POST /spaces/{space_id}/admin/recovery/force-reset`
 - `POST /spaces/{space_id}/admin/recovery/backup-codes`
 - `GET /spaces/{space_id}/service-accounts`
