@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/ugoite-domain",
+    "crates/ugoite-api-client",
     "crates/ugoite-storage",
     "crates/ugoite-core",
     "crates/ugoite-server",

@@ -151,6 +151,7 @@ fn architecture_check() -> Result<()> {
         if path_text.contains("/lib/ugoite-client/")
             || path_text.ends_with(".test.ts")
             || path_text.ends_with(".test.tsx")
+            || path_text.ends_with(".wasm")
         {
             continue;
         }
@@ -199,6 +200,78 @@ fn architecture_check() -> Result<()> {
                     "{path_text} calls {raw_call} directly; use UgoiteService for stateful CLI operations"
                 ));
             }
+        }
+    }
+
+    let api_client_manifest = fs::read_to_string("crates/ugoite-api-client/Cargo.toml")
+        .context("read ugoite-api-client Cargo.toml")?;
+    for forbidden in [
+        "reqwest",
+        "tokio",
+        "wasm-bindgen",
+        "web-sys",
+        "axum",
+        "ugoite-core",
+        "ugoite-domain",
+        "ugoite-storage",
+        "opendal",
+    ] {
+        if api_client_manifest
+            .lines()
+            .any(|line| line.trim_start().starts_with(forbidden))
+        {
+            violations.push(format!(
+                "ugoite-api-client must stay transport-neutral and must not depend on {forbidden}"
+            ));
+        }
+    }
+
+    for path in collect_files(Path::new("crates/ugoite-cli/src/commands"))? {
+        let path_text = path.to_string_lossy();
+        let content = fs::read_to_string(&path).with_context(|| format!("read {path_text}"))?;
+        for forbidden in [
+            "http::http_get",
+            "http::http_post",
+            "http::http_put",
+            "http::http_patch",
+            "http::http_delete",
+            "format!(\"{base}/",
+        ] {
+            if content.contains(forbidden) {
+                violations.push(format!(
+                    "{path_text} constructs remote HTTP directly via {forbidden}; use http::execute with a portable operation name"
+                ));
+            }
+        }
+    }
+
+    let wasm_manifest = fs::read_to_string("crates/ugoite-wasm/Cargo.toml")
+        .context("read ugoite-wasm Cargo.toml")?;
+    for forbidden in [
+        "ugoite-core",
+        "ugoite-storage",
+        "opendal",
+        "tokio",
+        "reqwest",
+    ] {
+        if wasm_manifest
+            .lines()
+            .any(|line| line.trim_start().starts_with(forbidden))
+        {
+            violations.push(format!("ugoite-wasm must not depend on {forbidden}"));
+        }
+    }
+
+    for path in collect_files(Path::new("frontend/src/lib"))? {
+        let path_text = path.to_string_lossy();
+        if !path_text.ends_with("-api.ts") {
+            continue;
+        }
+        let content = fs::read_to_string(&path).with_context(|| format!("read {path_text}"))?;
+        if content.contains("apiFetch") {
+            violations.push(format!(
+                "{path_text} uses apiFetch directly; use ugoite-client/protocol so endpoint semantics stay in Rust/WASM"
+            ));
         }
     }
 

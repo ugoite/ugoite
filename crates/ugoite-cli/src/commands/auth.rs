@@ -153,21 +153,25 @@ async fn login_request(
     mock_oauth: bool,
 ) -> Result<serde_json::Value> {
     if mock_oauth {
-        return http::http_post_with_dev_auth_proxy(
-            &format!("{base}/auth/mock-oauth"),
-            &serde_json::json!({}),
+        return http::execute(
+            base,
+            "auth.mock_oauth",
+            serde_json::json!({}),
+            Some(serde_json::json!({})),
         )
         .await;
     }
 
     let resolved_username = prompt_non_empty_value("Username", username)?;
     let resolved_totp_code = prompt_totp_code(totp_code)?;
-    http::http_post_with_dev_auth_proxy(
-        &format!("{base}/auth/login"),
-        &serde_json::json!({
+    http::execute(
+        base,
+        "auth.login",
+        serde_json::json!({}),
+        Some(serde_json::json!({
             "username": resolved_username,
             "totp_code": resolved_totp_code,
-        }),
+        })),
     )
     .await
     .map_err(add_passkey_context_recovery_hint)
