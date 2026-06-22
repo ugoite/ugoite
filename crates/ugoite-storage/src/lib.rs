@@ -3,7 +3,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::TryStreamExt;
-use opendal::services::{Fs, Memory};
+use opendal::services::{Fs, Memory, S3};
 use opendal::{EntryMode, Operator};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -27,6 +27,10 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
 }
 
 pub fn operator_from_uri(uri: &str) -> Result<Operator> {
+    operator_from_uri_with_endpoint(uri, None)
+}
+
+pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Result<Operator> {
     if uri.starts_with("memory://") {
         let mut cache = memory_cache()
             .lock()
@@ -45,6 +49,19 @@ pub fn operator_from_uri(uri: &str) -> Result<Operator> {
         || uri.starts_with('.')
     {
         return local_operator_from_uri(uri);
+    }
+
+    if uri.starts_with("s3://") {
+        let parsed = url::Url::parse(uri)?;
+        let bucket = parsed
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("s3 storage URI must include a bucket"))?;
+        let root = parsed.path().trim_start_matches('/');
+        let mut builder = S3::default().bucket(bucket).root(root).region("us-east-1");
+        if let Some(endpoint) = endpoint {
+            builder = builder.endpoint(endpoint);
+        }
+        return Ok(Operator::new(builder)?.finish());
     }
 
     Ok(Operator::from_uri(uri)?)
@@ -100,7 +117,9 @@ impl StorageBackend for OpendalStorage {
 
 #[cfg(test)]
 mod tests {
-    use super::{operator_from_uri, OpendalStorage, StorageBackend};
+    use super::{
+        operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage, StorageBackend,
+    };
     use anyhow::Result;
 
     #[tokio::test]
@@ -139,6 +158,19 @@ mod tests {
         assert!(entries
             .iter()
             .any(|entry| entry.name.ends_with("readme.md") && !entry.is_dir));
+
+        Ok(())
+    }
+
+    #[test]
+    fn operator_from_uri_with_endpoint_builds_s3_with_custom_endpoint() -> Result<()> {
+        let op = operator_from_uri_with_endpoint(
+            "s3://bucket-name/prefix",
+            Some("https://s3.example.test"),
+        )?;
+
+        assert_eq!(op.info().scheme(), "s3");
+        assert_eq!(op.info().root(), "/prefix/");
 
         Ok(())
     }

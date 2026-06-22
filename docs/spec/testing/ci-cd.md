@@ -328,7 +328,7 @@ starts `docker-compose.release.yaml`, waits for `/health` and `/login`, runs the
 published browser stories with
 `smoke.test.ts` and `search-ui.test.ts`, then installs the released CLI and
 verifies `auth login --mock-oauth`, `space list`, and `space create` against
-the running release backend. The CLI job separately runs
+the running release app through `api` mode at `/api`. The CLI job separately runs
 `scripts/verify-release-cli-quickstart.sh` so the generic installer path and
 local `space list` / `space create` quick start remain validated for the same
 exact release version.

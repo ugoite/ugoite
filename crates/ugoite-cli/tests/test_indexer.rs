@@ -54,7 +54,7 @@ fn setup_space_with_entries(dir: &tempfile::TempDir) -> (String, String, std::pa
     (root, space_path, config_path)
 }
 
-/// REQ-IDX-001: Indexer run once indexes all entries.
+/// REQ-IDX-001: Indexer run does not report false success in this release.
 #[test]
 fn test_indexer_run_once() {
     let dir = tempfile::tempdir().unwrap();
@@ -66,10 +66,11 @@ fn test_indexer_run_once() {
         .output()
         .expect("failed to execute");
 
+    assert!(!output.status.success(), "index run should be de-scoped");
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        stderr.contains("reindex is not implemented in this release"),
+        "{stderr}"
     );
 }
 
@@ -367,7 +368,7 @@ fn test_validate_properties_valid() {
     );
 }
 
-/// REQ-IDX-004: Indexer generates inverted index for keyword search.
+/// REQ-IDX-004: Indexer does not claim to generate inverted index files in this release.
 #[test]
 fn test_indexer_generates_inverted_index() {
     let dir = tempfile::tempdir().unwrap();
@@ -379,14 +380,15 @@ fn test_indexer_generates_inverted_index() {
         .output()
         .expect("failed to execute");
 
+    assert!(!output.status.success(), "index run should be de-scoped");
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        stderr.contains("reindex is not implemented in this release"),
+        "{stderr}"
     );
 }
 
-/// REQ-IDX-005: Indexer computes word count per entry.
+/// REQ-IDX-005: Indexer word-count rebuild is not advertised as implemented in this release.
 #[test]
 fn test_indexer_computes_word_count() {
     let dir = tempfile::tempdir().unwrap();
@@ -398,7 +400,12 @@ fn test_indexer_computes_word_count() {
         .output()
         .expect("failed to execute");
 
-    assert!(output.status.success());
+    assert!(!output.status.success(), "index run should be de-scoped");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("reindex is not implemented in this release"),
+        "{stderr}"
+    );
 }
 
 /// REQ-IDX-006: Indexer watch loop triggers re-indexing on file changes.

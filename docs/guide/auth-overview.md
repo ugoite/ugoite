@@ -89,11 +89,16 @@ the exact newcomer path from login to the first useful space content.
 
 ## CLI login in plain language
 
-The CLI only uses the backend login flow when it is pointed at a server:
+The CLI only uses the backend login flow when it is pointed at a server. Use
+`backend` mode for a raw source-development Rust server and `api` mode for the
+published single-image app:
 
 ```bash
 ugoite config set --mode backend --backend-url http://localhost:8000
 ugoite auth login
+
+ugoite config set --mode api --api-url http://localhost:8000/api
+ugoite auth login --mock-oauth
 ```
 
 You can also provide the values directly:

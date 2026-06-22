@@ -10,6 +10,7 @@ pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
 
 use crate::entry;
+use crate::error::{AppError, ErrorCode};
 use crate::sql;
 
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
@@ -129,7 +130,11 @@ fn matches_filters(entry: &Value, filters: &Map<String, Value>) -> Result<bool> 
 pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
     let _ = op;
     let _ = ws_path;
-    Ok(())
+    Err(AppError::unimplemented(
+        ErrorCode::ReindexNotImplemented,
+        "reindex is not implemented in this release",
+    )
+    .into())
 }
 
 pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
@@ -142,7 +147,11 @@ pub async fn update_entry_index(op: &Operator, ws_path: &str, entry_id: &str) ->
     let _ = op;
     let _ = ws_path;
     let _ = entry_id;
-    Ok(())
+    Err(AppError::unimplemented(
+        ErrorCode::ReindexNotImplemented,
+        "entry index update is not implemented in this release",
+    )
+    .into())
 }
 
 pub fn extract_properties(markdown: &str) -> Value {

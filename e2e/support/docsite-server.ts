@@ -28,10 +28,15 @@ export async function startDocsiteServer(options?: {
 	if (!configuredDocsiteUrl || options?.basePath) {
 		resolvedDocsiteUrl = undefined;
 		docsiteProcess = spawn(
-			"bun",
+			"deno",
 			[
 				"run",
+				"-A",
+				"npm:astro",
 				"dev",
+				"--host",
+				"127.0.0.1",
+				"--strictPort",
 				"--port",
 				"0",
 			],

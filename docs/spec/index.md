@@ -103,7 +103,7 @@ when to choose MCP, CLI, or REST.
 | Module | Responsibility | Language |
 |--------|----------------|----------|
 | `ugoite-domain` | Portable domain models, integrity primitives, storage traits | Rust |
-| `ugoite-core` | OpenDAL/Iceberg adapter layer, persistence, Python bindings | Rust |
+| `ugoite-core` | OpenDAL/Iceberg adapter layer, persistence, and application service facade | Rust |
 | `ugoite-cli` | Command-line interface for direct user interaction | Rust |
 | `ugoite-server` | REST API, MCP server, and static browser asset serving (delegates to ugoite-core) | Rust (Axum) |
 | `frontend` | UI rendering, client-side state, optimistic updates (no business or persistence logic) | TypeScript (SolidStart via Deno) |

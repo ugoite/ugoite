@@ -218,6 +218,7 @@ async fn public_space_create_requires_admin_space_admin_and_rejects_reserved_id(
     assert_eq!(created.status(), StatusCode::CREATED);
 
     let reserved = router
+        .clone()
         .oneshot(authenticated(
             Request::post("/spaces")
                 .header("content-type", "application/json")
@@ -231,6 +232,54 @@ async fn public_space_create_requires_admin_space_admin_and_rejects_reserved_id(
         .as_str()
         .unwrap()
         .contains("admin-space"));
+
+    let invalid = router
+        .oneshot(authenticated(
+            Request::post("/spaces")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":".."}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+    let invalid_body = response_json(invalid).await;
+    assert_eq!(invalid_body["code"], "INVALID_IDENTIFIER");
+    assert!(invalid_body["message"]
+        .as_str()
+        .unwrap()
+        .contains("dot segments"));
+
+    std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
+    std::env::remove_var("UGOITE_DEV_USER_ID");
+}
+
+#[tokio::test]
+async fn path_identifiers_reject_dot_segments_before_storage_paths() {
+    let _guard = env_lock().lock().expect("env lock");
+    std::env::set_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE", "true");
+    std::env::set_var("UGOITE_DEV_USER_ID", "test-user");
+    set_auth_fixture();
+    let state = AppState::new("memory://server-invalid-identifiers").unwrap();
+    state.bootstrap_default_space_from_env().await.unwrap();
+    let router = app(state);
+
+    for path in [
+        "/spaces/../entries",
+        "/spaces/default/entries/..",
+        "/spaces/default/forms/%2e%2e",
+        "/spaces/default/sql-sessions/%2e%2e",
+    ] {
+        let response = router
+            .clone()
+            .oneshot(authenticated(
+                Request::get(path).body(Body::empty()).unwrap(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+        assert_eq!(response_json(response).await["code"], "INVALID_IDENTIFIER");
+    }
 
     std::env::remove_var("UGOITE_BOOTSTRAP_DEFAULT_SPACE");
     std::env::remove_var("UGOITE_DEV_USER_ID");
@@ -646,6 +695,22 @@ async fn members_lifecycle_contract() {
     assert_eq!(invited_body["invitation"]["invited_by"], "test-user");
     let token = invited_body["invitation"]["token"].as_str().unwrap();
 
+    let duplicate = router
+        .clone()
+        .oneshot(authenticated(
+            Request::post("/spaces/team/members/invitations")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"user_id":"bob","role":"editor"}"#))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(duplicate.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response_json(duplicate).await["code"],
+        "MEMBER_ALREADY_ACTIVE"
+    );
+
     let listed = router
         .clone()
         .oneshot(authenticated(
@@ -953,6 +1018,20 @@ async fn test_connection_requires_manage_space_and_probes_uri() {
         .await
         .unwrap();
     assert_eq!(unsupported.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let blocked_endpoint = router
+        .clone()
+        .oneshot(authenticated(
+            Request::post("/spaces/team/test-connection")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"storage_config":{"uri":"s3://bucket-name/prefix","endpoint":"http://127.0.0.1:9000"}}"#,
+                ))
+                .unwrap(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(blocked_endpoint.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let ok = router
         .oneshot(authenticated(

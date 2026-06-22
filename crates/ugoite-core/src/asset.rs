@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::Utc;
 use futures::TryStreamExt;
 use opendal::{EntryMode, Operator};
@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::entry;
+use crate::error::{AppError, ErrorCode};
 use crate::form;
 use crate::integrity::RealIntegrityProvider;
 
@@ -199,12 +200,20 @@ async fn is_asset_referenced(op: &Operator, ws_path: &str, asset_id: &str) -> Re
 
 pub async fn delete_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<()> {
     if is_asset_referenced(op, ws_path, asset_id).await? {
-        return Err(anyhow!("Asset {} is referenced by a entry", asset_id));
+        return Err(AppError::conflict(
+            ErrorCode::AssetReferenced,
+            format!("Asset {asset_id} is referenced by an entry"),
+        )
+        .into());
     }
 
     let assets_path = format!("{}/assets/", ws_path);
     if !op.exists(&assets_path).await? {
-        return Err(anyhow!("Asset {} not found", asset_id));
+        return Err(AppError::not_found(
+            ErrorCode::AssetNotFound,
+            format!("Asset {asset_id} not found"),
+        )
+        .into());
     }
 
     let mut deleted = false;
@@ -223,7 +232,11 @@ pub async fn delete_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Resul
     }
 
     if !deleted {
-        return Err(anyhow!("Asset {} not found", asset_id));
+        return Err(AppError::not_found(
+            ErrorCode::AssetNotFound,
+            format!("Asset {asset_id} not found"),
+        )
+        .into());
     }
 
     if let Err(error) = entry::delete_entry(op, ws_path, asset_id, false).await {
