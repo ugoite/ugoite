@@ -19,8 +19,6 @@ requirements:
     '
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    rust:
-    - file: ugoite-core/tests/test_entry.rs
-      tests:
-      - test_entry_req_lnk_004_normalize_ugoite_link_uris
+  - file: crates/ugoite-core/tests/test_entry.rs

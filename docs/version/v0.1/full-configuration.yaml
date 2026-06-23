@@ -1,39 +1,34 @@
 id: full-configuration
-version: "0.1"
+version: '0.1'
 status: completed
-title: "Full Configuration"
-goal: >
-  Codebase unification, architecture refinement, and documentation automation.
-  Transform the MVP codebase into a well-structured, maintainable system.
+title: Full Configuration
+goal: Consolidate behavior into reusable Rust crates, portable API protocol logic, generated contracts, and one
+  root development workflow.
 phases:
-  - id: design
-    status: completed
-    tasks:
-      - description: "Plan terminology unification from schema/datamodel to form"
-        done: true
-      - description: "Design Rust core library (ugoite-core) architecture"
-        done: true
-      - description: "Design YAML-based requirements with automated test verification"
-        done: true
-  - id: implementation
-    status: completed
-    tasks:
-      - description: "Unify terminology to Form across all modules (docs, CLI, API, frontend)"
-        done: true
-      - description: "Extract ugoite-core Rust crate with opendal for storage"
-        done: true
-      - description: "Add Python bindings via pyo3 for ugoite-cli"
-        done: true
-      - description: "Standardize feature paths and directory structure across modules"
-        done: true
-      - description: "Implement YAML-based requirements in docs/spec/requirements/"
-        done: true
-  - id: testing
-    status: completed
-    tasks:
-      - description: "All tests pass with new Form terminology"
-        done: true
-      - description: "Document consistency tests verify specification integrity"
-        done: true
-      - description: "Requirements traceability: all tests linked to requirements"
-        done: true
+- id: design
+  status: completed
+  tasks:
+  - description: Unify Form, Space, Entry, and Asset terminology.
+    done: true
+  - description: Define domain, storage, core, portable API client, and adapter responsibilities.
+    done: true
+  - description: Define machine-readable requirements and feature registries.
+    done: true
+- id: implementation
+  status: completed
+  tasks:
+  - description: Implement ugoite-domain, ugoite-storage, ugoite-core, and ugoite-api-client boundaries.
+    done: true
+  - description: Implement native CLI/server and JSON/C-ABI WASM adapters.
+    done: true
+  - description: Consolidate JavaScript/TypeScript tooling under Deno and root mise tasks.
+    done: true
+  - description: Build one runtime image containing server, CLI, and browser files.
+    done: true
+- id: testing
+  status: completed
+  tasks:
+  - description: Enforce architecture and OpenAPI drift checks.
+    done: true
+  - description: Run Rust and Deno test suites from root gates.
+    done: true

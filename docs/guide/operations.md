@@ -1,35 +1,22 @@
-# Operations and Troubleshooting
+# Operations
 
-Use this guide as the hub for the operational docs that keep an existing Ugoite
-stack healthy, diagnosable, and safe to evolve.
+```bash
+docker compose up -d
+docker compose ps
+docker compose logs -f ugoite
+```
 
-## Run and verify the stack
+Resolve the source Compose port with `docker compose port ugoite 8000`; release Compose uses `${UGOITE_PORT:-8000}`.
 
-- [Backend Healthcheck](backend-healthcheck.md) for the quickest readiness check
-  when the browser or CLI looks stuck.
-- [Environment Variable Matrix](env-matrix.md) when you need to confirm which
-  env vars exist, where they apply, and which values are safe defaults.
+## Backup
 
-## Deploy and harden
+The directory mounted at `/data` is authoritative. Quiesce writes or take a storage-consistent snapshot, copy the complete tree, and test that it opens with a compatible Ugoite version. Entries, forms, history, assets, saved SQL, and membership data must be preserved; indexes can be rebuilt.
 
-- [Helm Chart Guide](helm-chart.md) for Kubernetes-oriented deployment and
-  release topology.
-- [Log Redaction](log-redaction.md) when you need to confirm sensitive values do
-  not leak into logs or diagnostics.
+## Upgrade
 
-## Maintain storage safely
+1. Back up `/data`.
+2. pull/build the new single image;
+3. start it against the same mount;
+4. verify `/health`, login, Space listing, and a representative read/write/restore path.
 
-- [Space Settings & Storage](space-settings-storage.md) for a beginner-friendly
-  explanation of the storage summary, connector metadata, and when to leave the defaults alone.
-- [Storage Cleanup](storage-cleanup.md) for reclaiming generated state without
-  guessing which paths are safe to remove.
-- [Storage Migration](storage-migration.md) when you need to move or reshape a
-  space without treating storage as disposable.
-
-## Troubleshoot access issues
-
-- [Troubleshooting Unauthorized Spaces](troubleshooting-unauthorized-spaces.md)
-  when auth succeeds but a space still looks inaccessible or empty.
-
-If you are still choosing an entry path instead of operating an existing stack,
-return to the README Start Here section or the docsite Getting Started page.
+The repository does not require a separate worker, queue, or database service.

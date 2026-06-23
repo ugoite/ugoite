@@ -1,20 +1,18 @@
-# Backend Healthcheck
+# Server health check
 
-Use the backend health endpoint for quick readiness checks.
-
-## Endpoint
-
-- `GET /health`
-- Success response: `200` with JSON body `{ "status": "ok" }`
-
-## Local verification
+The unauthenticated health endpoint is:
 
 ```bash
-curl -sS http://localhost:8000/health
+curl --fail http://127.0.0.1:8000/health
 ```
 
-Expected output:
+HTTP `200` confirms that the process is accepting requests. It does not validate every Space, credential, or storage backend.
 
-```json
-{"status":"ok"}
+For the source Compose file, resolve the random loopback port first:
+
+```bash
+docker compose port ugoite 8000
+docker compose logs ugoite
 ```
+
+The release Compose file binds `${UGOITE_PORT:-8000}` on loopback.

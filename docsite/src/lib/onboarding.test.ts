@@ -11,7 +11,7 @@ import {
 
 test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the first entry choices", () => {
 	expect(primaryStartCards.map((card) => card.title)).toEqual([
-		"Try the published release",
+		"Use a tagged image when available",
 		"Run from source",
 		"Use the CLI",
 	]);
@@ -21,7 +21,7 @@ test("REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the fi
 		"/docs/guide/cli",
 	]);
 	expect(primaryStartCards.map((card) => card.badge)).toEqual([
-		"Fastest browser path",
+		"Tagged image path",
 		"Highest setup cost",
 		"Lowest setup cost",
 	]);
@@ -64,7 +64,7 @@ test("REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-
 		"frontend + backend stack",
 	);
 	expect(primaryStartCards[0]?.description).toContain("Docker");
-	expect(primaryStartCards[0]?.description).toContain("published image pulls");
+	expect(primaryStartCards[0]?.description).toContain("hosted publishing workflow");
 	expect(primaryStartCards[1]?.description).toContain("mise run dev");
 	expect(primaryStartCards[1]?.description).toContain("/login");
 	expect(primaryStartCards[2]?.description).toContain(
@@ -114,7 +114,7 @@ test("REQ-E2E-008: onboarding content keeps core concepts ready for the follow-u
 	);
 	expect(coreConceptSummaries[2]?.description).toContain("schema and template");
 	expect(coreConceptSummaries[3]?.description).toContain(
-		"search/indexes are derived",
+		"persistent indexing is planned",
 	);
 	expect(coreConceptSummaries[4]?.description).toContain(
 		"thinnest local-first automation path",

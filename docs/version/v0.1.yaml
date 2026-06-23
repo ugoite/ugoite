@@ -1,61 +1,62 @@
-version: "0.1"
+version: '0.1'
 status: in_progress
-summary: >
-  Foundational releases through user-management and release preparation,
-  aligned with local-first and thin-adapter architecture constraints.
+summary: 'Foundational releases through user-management and release preparation, aligned with local-first and thin-adapter
+  architecture constraints.
+
+  '
 milestones:
-  - id: mvp
+- id: mvp
+  status: completed
+  source:
+  - docs/version/v0.1/mvp.yaml
+  phases:
+  - id: design
     status: completed
-    source:
-      - docs/version/v0.1/mvp.yaml
-    phases:
-      - id: design
-        status: completed
-      - id: implementation
-        status: completed
-      - id: testing
-        status: completed
-  - id: full-configuration
+  - id: implementation
     status: completed
-    source:
-      - docs/version/v0.1/full-configuration.yaml
-    phases:
-      - id: design
-        status: completed
-      - id: implementation
-        status: completed
-      - id: testing
-        status: completed
-  - id: markdown-as-table
+  - id: testing
     status: completed
-    source:
-      - docs/version/v0.1/markdown-as-table.yaml
-    phases:
-      - id: design
-        status: completed
-      - id: implementation
-        status: completed
-      - id: testing
-        status: completed
-  - id: user-management
+- id: full-configuration
+  status: completed
+  source:
+  - docs/version/v0.1/full-configuration.yaml
+  phases:
+  - id: design
+    status: completed
+  - id: implementation
+    status: completed
+  - id: testing
+    status: completed
+- id: markdown-as-table
+  status: completed
+  source:
+  - docs/version/v0.1/markdown-as-table.yaml
+  phases:
+  - id: design
+    status: completed
+  - id: implementation
+    status: completed
+  - id: testing
+    status: completed
+- id: user-management
+  status: in_progress
+  source:
+  - docs/version/v0.1/user-management.yaml
+  phases:
+  - id: design
+    status: completed
+  - id: implementation
     status: in_progress
-    source:
-      - docs/version/v0.1/user-management.yaml
-    phases:
-      - id: design
-        status: completed
-      - id: implementation
-        status: in_progress
-      - id: testing
-        status: in_progress
-  - id: release-preparation
+  - id: testing
+    status: in_progress
+- id: release-preparation
+  status: in_progress
+  source:
+  - docs/version/v0.1/release-preparation.yaml
+  phases:
+  - id: container-and-cli-artifacts
+    status: in_progress
+  - id: operator-documentation
+    status: in_progress
+  - id: release-communication
     status: planned
-    source:
-      - docs/version/v0.1/release-preparation.yaml
-    phases:
-      - id: container-image-deployment
-        status: planned
-      - id: quickstart-documentation-finalization
-        status: planned
-      - id: release-notes-drafting
-        status: planned

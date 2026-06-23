@@ -1,31 +1,5 @@
-# Alpha Channel Changelog
+# Alpha changelog
 
-Alpha releases are the earliest validated preview track for Ugoite changes that
-are not ready for stable support. When `Release Publish` runs with
-`channel=alpha`, it prepends repository-rendered notes from
-`../../version/changelog/alpha.yaml` before the GitHub-generated commit summary.
+No alpha artifact publication is established by this repository snapshot. Alpha notes may describe validated preview behavior, but must keep unpublished artifacts and planned browser-local/auth/service-account/audit features clearly labeled.
 
-## Current Focus
-
-### Added
-
-- Early prerelease snapshots of release-preparation and future-stream work
-- Fast feedback on install paths, release docs, and experimental operator flows
-- A dedicated alpha narrative that can move quickly without polluting stable
-  release communication
-
-### Changed
-
-- Alpha notes are now maintained separately from beta and stable release notes
-- Experimental guidance stays explicit so readers can evaluate risk before
-  adopting preview builds
-
-### Planned
-
-- Alpha previews for future v0.1 and v0.2 work before broader beta validation
-- Continued refinement of experimental guidance as release-preparation matures
-
-## Source Files
-
-- [Machine-readable alpha changelog](../../version/changelog/alpha.yaml)
-- [Versions overview](index.md)
+Machine-readable source: [`../../version/changelog/alpha.yaml`](../../version/changelog/alpha.yaml).

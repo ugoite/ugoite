@@ -1,78 +1,76 @@
-# Form APIs
-
-version: "0.1"
-updated: "2026-01"
+version: '0.2'
+updated: '2026-06-23'
 kind: forms
-
 apis:
-  - id: form.list
-    method: GET
-    backend:
-      path: /spaces/{space_id}/forms
-      file: backend/src/app/api/endpoints/forms.py
-      function: list_forms_endpoint
-    frontend:
-      path: /spaces/{space_id}/forms
-      file: frontend/src/routes/spaces/[space_id]/forms.tsx
-      function: SpaceFormsRoute
-    ugoite_core:
-      file: ugoite-core/src/form.rs
-      function: list_forms
-    ugoite_cli:
-      command: ugoite form list
-      file: ugoite-cli/src/commands/form.rs
-      function: run
-
-  - id: form.types
-    method: GET
-    backend:
-      path: /spaces/{space_id}/forms/types
-      file: backend/src/app/api/endpoints/forms.py
-      function: list_form_types_endpoint
-    frontend:
-      path: /spaces/{space_id}/forms/types
-      file: frontend/src/routes/spaces/[space_id]/forms/types.tsx
-      function: SpaceFormTypesRoute
-    ugoite_core:
-      file: ugoite-core/src/form.rs
-      function: list_column_types
-    ugoite_cli:
-      command: ugoite form list-types
-      file: ugoite-cli/src/commands/form.rs
-      function: run
-
-  - id: form.get
-    method: GET
-    backend:
-      path: /spaces/{space_id}/forms/{form_name}
-      file: backend/src/app/api/endpoints/forms.py
-      function: get_form_endpoint
-    frontend:
-      path: /spaces/{space_id}/forms/{form_name}
-      file: frontend/src/routes/spaces/[space_id]/forms/[form_name].tsx
-      function: SpaceFormDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/form.rs
-      function: get_form
-    ugoite_cli:
-      command: ugoite form get
-      file: ugoite-cli/src/commands/form.rs
-      function: run
-
-  - id: form.upsert
-    method: POST
-    backend:
-      path: /spaces/{space_id}/forms
-      file: backend/src/app/api/endpoints/forms.py
-      function: create_form_endpoint
-    frontend:
-      path: /spaces/{space_id}/forms/{form_name}
-      file: frontend/src/routes/spaces/[space_id]/forms/[form_name].tsx
-      function: SpaceFormDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/form.rs
-      function: upsert_form
-    ugoite_cli:
-      command: ugoite form update
-      file: ugoite-cli/src/commands/form.rs
-      function: run
+- id: form.list
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/forms
+    file: crates/ugoite-server/src/lib.rs
+    function: list_forms
+  frontend:
+    path: /spaces/{space_id}/forms
+    file: frontend/src/lib/form-api.ts
+    function: formApi.list
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: list_forms
+  ugoite_cli:
+    command: ugoite form list
+    file: crates/ugoite-cli/src/commands/form.rs
+    function: run
+- id: form.upsert
+  method: POST
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/forms
+    file: crates/ugoite-server/src/lib.rs
+    function: upsert_form
+  frontend:
+    path: /spaces/{space_id}/forms/{form_name}
+    file: frontend/src/lib/form-api.ts
+    function: formApi.create
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: upsert_form
+  ugoite_cli:
+    command: ugoite form create
+    file: crates/ugoite-cli/src/commands/form.rs
+    function: run
+- id: form.types
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/forms/types
+    file: crates/ugoite-server/src/lib.rs
+    function: form_types
+  frontend:
+    path: /spaces/{space_id}/forms/types
+    file: frontend/src/lib/form-api.ts
+    function: formApi.listTypes
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: list_forms
+  ugoite_cli:
+    command: ugoite form list-types
+    file: crates/ugoite-cli/src/commands/form.rs
+    function: run
+- id: form.get
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/forms/{form_name}
+    file: crates/ugoite-server/src/lib.rs
+    function: get_form
+  frontend:
+    path: /spaces/{space_id}/forms/{form_name}
+    file: frontend/src/lib/form-api.ts
+    function: formApi.get
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: get_form
+  ugoite_cli:
+    command: ugoite form get
+    file: crates/ugoite-cli/src/commands/form.rs
+    function: run
