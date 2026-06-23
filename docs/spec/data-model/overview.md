@@ -1,250 +1,76 @@
-# Data Model Overview
+# Data model overview
 
-This document describes the high-level data model of Ugoite, including its storage principles and directory structure.
+Ugoite treats operator-controlled files as the persistence boundary. A **Space** is a self-contained directory below the configured storage root, while Apache Iceberg owns the physical table layout used for Forms, Entries, and revisions.
 
-## Terminology Distinction
+## Authority layers
 
-To ensure clarity, Ugoite distinguishes between the **System Data Model** and user-defined **Forms**:
+- **Authoring:** people and agents edit Markdown.
+- **Domain contract:** a Form defines the typed H2 fields accepted for an Entry.
+- **Persistence:** Iceberg tables and the JSON metadata files listed below are authoritative on disk.
 
-- **System Data Model**: The underlying architecture of how data is handled, stored, and retrieved (e.g., "Filesystem = Database", directory structure, row-level integrity).
-- **Entry Forms**: User-defined table schemas stored in Iceberg; templates are fixed globally. Formerly known as "Schemas".
+The browser is currently server-backed. It does not own an independent local Space database; the Rust server and core write to the configured OpenDAL operator.
 
-Markdown remains the primary authoring surface, but Forms are the canonical
-contract that turns that Markdown into typed, queryable fields.
+## Current storage roots
 
-## Principles
+```text
+spaces/{space_id}/
+  meta.json
+  settings.json
+  forms/                  # Iceberg-owned subtree
+  assets/
+  materialized_views/
+  sql_sessions/
 
-Ugoite's data model is built on these principles:
-
-| Principle | Description |
-|-----------|-------------|
-| **Filesystem = Database** | Spaces are directory trees; Iceberg tables are file-backed |
-| **Form-on-Read** | Entries are reconstructed from Form-defined fields in Iceberg |
-| **Append-Only Integrity** | Revisions are appended in Iceberg; history is immutable |
-| **Table-Backed Storage** | Entries live in Apache Iceberg tables via OpenDAL |
-
-## Authority Layers
-
-Ugoite uses three related "source of truth" layers, each for a different job:
-
-- **User-facing authoring surface**: Markdown is the primary editing surface for
-  humans and agents.
-- **Logical/domain contract**: Entries plus their Form definitions are the
-  canonical meaning of the data model, including which typed fields exist and
-  how they should be interpreted.
-- **Physical persistence layer**: Iceberg-managed tables and metadata are the
-  authoritative on-disk representation that persists those entries and Forms.
-
-These layers should agree with each other, but they are not interchangeable:
-Markdown is for authoring, Forms define the logical contract, and Iceberg owns
-the storage layout.
-
-## Directory Structure
-
-See [directory-structure.md](directory-structure.md) for the full space layout.
-The machine-readable companion file is
-[`directory-layout.yaml`](directory-layout.yaml).
-
-```
-spaces/
-  {space_id}/
-    meta.json                  # Space metadata
-    settings.json              # Space settings
-    forms/                     # Iceberg-managed Form tables (layout not specified)
-    assets/                    # Binary files
-    materialized_views/        # SQL materialized view metadata (no rows)
-    sql_sessions/              # SQL query sessions (metadata only)
+users/{sha256(user_id)}/
+  preferences.json
 ```
 
-## Key Concepts
+See [directory-structure.md](directory-structure.md) and [directory-layout.yaml](directory-layout.yaml) for the exact repository-owned paths. Iceberg-internal filenames are deliberately not specified.
 
-### Forms
+## Spaces
 
-Forms define entry types with:
-- **Template**: Fixed global template `# {form_name} + H2 columns`
-- **Fields**: Content columns derived from the Iceberg table schema
-- **Types**: Iceberg column types mapped to entry fields
-- **Extra Attributes Policy**: `allow_extra_attributes` controls non-registered H2 sections
+`meta.json` stores the Space identity, storage descriptor, and integrity key material. `settings.json` is created with `default_form: Entry`; membership and invitation objects are added lazily by the collaboration service. Public Space patching cannot modify membership-managed keys.
 
-Forms are optional when you are still writing an unstructured note. Once you
-want stable field extraction, validation, or queryable columns, define the Form
-first because it becomes the field contract for that entry type.
+Creating a Space also creates an `Entry` Form with a Markdown `Body` field. On local Unix filesystems, the Space directories are set to owner-only mode and metadata files to owner read/write mode.
 
-### Metadata vs Content Columns
+## Forms and Entries
 
-Ugoite separates columns into two ownership categories:
+A Form currently persists only:
 
-- **Metadata columns (system-owned)**: Reserved fields created and managed by Ugoite.
-  Users **cannot** define Form fields with these names.
-- **Content columns (user-owned)**: Form-defined fields stored in the Iceberg `fields` struct.
+- `name`;
+- `version`;
+- `fields`;
+- `allow_extra_attributes` (`deny`, `allow_json`, or `allow_columns`).
 
-Reserved metadata column names include (case-insensitive):
+Form-level ACL fields are not persisted or enforced in this release. Field names cannot collide with reserved metadata columns. A `row_reference` field must name an existing, non-reserved target Form.
 
-`id`, `entry_id`, `title`, `form`, `tags`, `links`, `assets`,
-`created_at`, `updated_at`, `revision_id`, `parent_revision_id`,
-`deleted`, `deleted_at`, `author`, `updated_by`, `integrity`,
-`space_id`, `word_count`.
+Each Form has logical `entries` and `revisions` Iceberg tables. Current Entry rows include identifiers, title, Form, tags, links, timestamps, typed fields, extra attributes, revision lineage, assets, integrity data, deletion state, and author. Each save appends a revision row; restore creates another revision rather than rewriting history.
 
-`author` and `updated_by` are system-managed attribution fields. At save time,
-both MUST resolve to the authenticated user identity, where `updated_by`
-represents the latest writer. Historical edits are reconstructed via Iceberg
-time-travel/snapshots.
+## Markdown mapping
 
-The metadata column list is treated as an internal system contract and may expand
-over time; Form creation MUST reject any field name that conflicts with a
-reserved metadata column name.
+The global template is:
 
-### Metadata Forms
+```markdown
+# {title}
 
-Ugoite also reserves **metadata Form names** for system-owned tables. Users cannot
-create or update Forms with these names. The reserved metadata Form list is
-case-insensitive and may expand over time.
+## {field_name}
+{value}
+```
 
-Reserved metadata Form names include:
+H2 sections are parsed according to the Form field type. Supported types are exposed by `GET /spaces/{space_id}/forms/types`; the Rust Form implementation is the source of truth. Unknown sections are rejected or retained according to `allow_extra_attributes`.
 
-`SQL`, `User`, `UserGroup`
+## Search, query, and derived data
 
-`User` and `UserGroup` metadata Forms are system-owned identity catalogs for
-space-scoped authentication and authorization.
+The current keyword search scans non-deleted Entry rows for a case-insensitive substring. It does **not** use a persistent inverted index or relevance ranking. Structured query and Ugoite SQL execute against current Entry data.
 
-### Planned Form-Level Access Control Metadata
+`ugoite index stats` is available in core/local mode. Reindex and per-entry index update return an explicit “not implemented in this release” error, so persistent live-index/watch-loop behavior remains planned.
 
-Form-level ACL is a planned extension and is not enforced by the current v0.1
-runtime. Current authorization is space-scoped: viewer, editor, and admin roles
-control read, content-write, space-management, and member-management behavior.
+## Saved SQL and SQL sessions
 
-Future Form definitions MAY define authorization metadata for read and write operations.
-Canonical field definitions live in `data-model/file-schemas.yaml`
-(`form_definition`).
+Saved SQL is represented through the reserved SQL metadata Form. A query session writes only `sql_sessions/{session_id}/meta.json`; row and count requests re-run the SQL against current readable data. Materialized-view records are metadata placeholders, not persisted result tables. See [sql-sessions.md](sql-sessions.md).
 
-Planned fields are:
+## Assets, links, and integrity
 
-- `read_principals`: allowed `User` / `UserGroup` principals
-- `write_principals`: allowed `User` / `UserGroup` principals
+Assets are stored as runtime-generated `{asset_id}_{safe_original_name}` files under the Space. Deletion is blocked while an Entry still references the Asset.
 
-When omitted, Form access will inherit the default space policy. Access control
-evaluation MUST run in `ugoite-core`; backend and other adapters are
-orchestration only.
-
-For future Markdown-driven writes, the frontmatter-derived `form` ID is the canonical
-selector for Form ACL enforcement. Create/import-style writes evaluate the
-submitted Markdown against that target Form, while update/restore flows also
-authorize the existing entry being mutated. If the Markdown or revision content
-does not resolve a Form, absence of a form falls back to the space-level
-`entry_write` policy.
-
-Future materialized views derived from one or more Forms inherit the effective access
-policy from those source Forms. If multiple source Forms are referenced, the
-effective policy MUST be the intersection (deny-by-default on ambiguity).
-
-### SQL Materialized Views
-
-Saved SQL (created via `create_sql`) has a corresponding **materialized view
-metadata** record under `spaces/{space_id}/materialized_views/`. The metadata is
-created, updated, and deleted **in lockstep** with the SQL record. The metadata
-record is the only persisted query artifact; SQL session results are not stored.
-
-Materialized views are currently metadata-only placeholders. The on-disk layout
-for future Iceberg-managed views beneath `materialized_views/` is intentionally
-unspecified.
-
-### SQL Sessions (Metadata Only)
-
-SQL sessions are short-lived (target: ~10 minutes) and store **metadata only**
-under `spaces/{space_id}/sql_sessions/{session_id}/meta.json`. They do **not**
-persist result rows. Session metadata includes a logical view snapshot ID and
-paging strategy so that each request can re-run the SQL query quickly against
-the current entries tables.
-
-This keeps the system stateless beyond OpenDAL storage (no RDB, no external job
-queue, no NFS), while still allowing multiple API servers to serve the same
-session.
-
-### Properties Extraction
-
-The write pipeline extracts properties from Markdown:
-
-1. **Frontmatter**: YAML block at top of Markdown
-2. **H2 Sections**: `## Field Name` headers (must be Form-defined)
-3. **Auto Properties**: Computed values (word_count, etc.)
-
-Precedence: Section > Frontmatter > Auto default
-
-Extra H2 sections are handled by the Form policy:
-- `deny`: reject entries with unknown H2 sections
-- `allow_json`: store unknown sections in `extra_attributes`
-- `allow_columns`: accept unknown sections and store in `extra_attributes`
-
-### Content Column Types & Markdown Parsing
-
-Content column types map to Iceberg primitives and are parsed from Markdown
-using Markdown-friendly rules:
-
-- **string**, **markdown** → stored as strings
-- **number**, **double** → parsed as $f64$
-- **float** → parsed as $f32$
-- **integer** → parsed as $i32$
-- **long** → parsed as $i64$
-- **boolean** → parsed from `true/false`, `yes/no`, `on/off`, `1/0`
-- **date** → parsed as `YYYY-MM-DD`
-- **time** → parsed as `HH:MM:SS` or `HH:MM:SS.ssssss`
-- **timestamp** → parsed as RFC3339 (`2025-01-01T12:34:56Z`)
-- **timestamp_tz** → parsed as RFC3339 and normalized to UTC
-- **timestamp_ns** → parsed as RFC3339 with nanosecond precision
-- **timestamp_tz_ns** → parsed as RFC3339 with nanosecond precision and normalized to UTC
-- **uuid** → parsed as a canonical UUID string
-- **row_reference** → stored as a string reference (e.g. entry ID or `ugoite://entry/{entry_id}`)
-  and MUST declare a `target_form` in the Form field definition. References resolve against
-  the target Form's `entry_id` metadata column, even when frontend create-entry
-  flows present a searchable picker with human-readable entry titles.
-- **binary** → parsed from `base64:` or `hex:` strings and stored as canonical `base64:`
-- **list** → parsed from Markdown bullet lists (e.g. `- item`)
-- **object_list** → parsed from a JSON array of objects (each object must include
-  `type`, `name`, and `description` as strings)
-
-If a list is provided as plain lines, each non-empty line becomes an item.
-Type casting errors are reported during validation.
-
-### Link URIs
-
-Entries can contain Ugoite-internal links using the `ugoite://` scheme. The URI
-kind determines the link target and is designed to be extensible:
-
-- `ugoite://entry/{entry_id}`
-- `ugoite://asset/{asset_id}`
-
-Ugoite normalizes equivalent forms (e.g. `ugoite://entries/{id}`,
-`ugoite://assets/{id}`, `ugoite://entry?id=...`) to canonical URIs on write.
-This keeps Markdown stable while allowing new link kinds in future milestones.
-
-### Versioning
-
-Every save creates a new revision row in the Iceberg `revisions` table:
-
-1. Client sends update with `parent_revision_id`
-2. Server validates parent matches current head
-3. New revision row is appended via Iceberg
-4. `entries` table updated to new head
-
-Conflicts return HTTP 409 with current revision.
-
-## Indices
-
-Materialized indexes (search, embeddings, stats) are derived from Iceberg tables
-and can be regenerated. They are never authoritative. The authoritative
-physical storage layer is the Iceberg-managed layout, while the logical/domain
-contract still comes from entries and their Form definitions.
-
-## Integrity
-
-All data is signed with HMAC:
-- Space integrity key stored in each `spaces/{space_id}/meta.json`
-- Space-local response-signing key stored in `spaces/{space_id}/hmac.json` and created lazily on first response-signing use
-- Signature stored alongside entry and revision rows
-- Checksum (SHA-256) for tamper detection
-
-## Extra Attributes Storage
-
-When allowed, unknown H2 sections are persisted in the `extra_attributes` column
-as a deterministic JSON object. On read, `fields` and `extra_attributes` are
-merged to reconstruct Markdown and properties.
+Internal links use canonical `ugoite://entry/{entry_id}` and `ugoite://asset/{asset_id}` URIs. Entry content and revisions carry checksums and HMAC signatures generated from Space-local integrity material. Response-signing material may also be written lazily to `hmac.json`.

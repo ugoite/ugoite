@@ -1,44 +1,46 @@
-{
-  "version": "m4-auth-rust-base-v1",
-  "enforcement": {
-    "mandatory_authentication": true,
-    "localhost_requires_authentication": true,
-    "remote_requires_authentication": true
-  },
-  "providers": {
-    "bearer": {
-      "supports_static_tokens": true,
-      "supports_signed_tokens": true,
-      "configured_static_token_count": 0,
-      "configured_signing_kid_count": 0,
-      "active_kids": [],
-      "active_kids_source": "UGOITE_AUTH_BEARER_ACTIVE_KIDS"
-    },
-    "api_key": {
-      "supports_static_api_keys": true,
-      "supports_space_service_account_keys": true,
-      "configured_static_api_key_count": 0,
-      "revoked_key_ids": [],
-      "revocation_source": "UGOITE_AUTH_REVOKED_KEY_IDS"
-    }
-  },
-  "identity_model": {
-    "principal_types": ["user", "service"],
-    "fields": [
-      "user_id",
-      "principal_type",
-      "display_name",
-      "auth_method",
-      "key_id",
-      "scopes",
-      "scope_enforced",
-      "service_account_id"
-    ]
-  },
-  "channels": [
-    "backend(rest)",
-    "backend(mcp)",
-    "cli(via backend)",
-    "frontend(via backend)"
-  ]
-}
+version: rust-auth-current-v1
+updated: 2026-06
+enforcement:
+  mandatory_authentication: true
+  localhost_requires_authentication: true
+  remote_requires_authentication: true
+routes:
+  GET /auth/config: implemented
+  POST /auth/login: contracted_unavailable
+  POST /auth/mock-oauth: development_only
+  GET /auth/session: implemented
+  DELETE /auth/session: implemented
+accepted_credentials:
+  bearer:
+    static_tokens: configured through UGOITE_AUTH_BEARER_TOKENS or UGOITE_BOOTSTRAP_TOKEN
+    signed_tokens: configured through signing-secret and active-kid environment variables
+  api_key:
+    static_keys: configured through UGOITE_AUTH_API_KEYS
+  session_cookie:
+    source: development mock-oauth response or another accepted bearer token flow
+identity_model:
+  principal_types:
+  - user
+  - service
+  parsed_fields:
+  - user_id
+  - principal_type
+  - display_name
+  - auth_method
+  - key_id
+  - scopes
+  - scope_enforced
+  - service_account_id
+  server_limit: requests with scope_enforced=true are rejected with HTTP 403 in this
+    release
+unavailable:
+- passkey/TOTP enrollment and verification
+- OAuth provider integration other than the local mock-oauth development route
+- managed service-account creation, rotation, listing, and revocation APIs
+- scope enforcement for service identities
+- audit-log persistence and listing APIs
+channels:
+- REST
+- the current MCP resource route
+- CLI remote mode
+- server-backed browser

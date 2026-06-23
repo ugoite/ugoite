@@ -1,155 +1,19 @@
-# Architecture Overview
+# Architecture overview
 
-## 1. High-Level Architecture
+Ugoite is a layered Rust application around portable Space directories.
 
-Ugoite follows a **Local-First, Server-Relay** architecture. The system is designed for:
-
-- **Portability**: Iceberg tables (Parquet) with Markdown reconstruction
-- **AI Integration**: First-class support for AI agents via MCP
-- **Multi-Platform**: Core logic in Rust enables native apps and WebAssembly
-
-```
-┌─────────────────────────────┐   ┌─────────────────────────────┐
-│            User             │   │           Browser            │
-└──────────────┬──────────────┘   └──────────────┬──────────────┘
-               │                                 │
-     ┌─────────┴─────────┐             ┌─────────┴─────────┐
-     │  Frontend App     │             │     Terminal      │
-     │  (Web/Desktop)    │             │     (Power User)  │
-     └─────────┬─────────┘             └─────────┬─────────┘
-               │                                 │
-               ▼                                 ▼
-┌─────────────────────────────┐   ┌─────────────────────────────┐
-│  ugoite-server (Rust/Axum)  │   │       ugoite-cli (Rust)      │
-│  - REST API & MCP Server    │   │  - Clap-based CLI           │
-│  - Auth & Orchestration     │   │  - Core/API data access     │
-└──────────────┬──────────────┘   └──────────────┬──────────────┘
-               │                                 │
-               └────────────────┬────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│               ugoite-core (Rust adapter crate)                  │
-│   - OpenDAL-backed storage adapter                              │
-│   - Iceberg/Parquet integrations + application service facade  │
-├─────────────────────────────────────────────────────────────────┤
-│               ugoite-domain (Rust portable crate)               │
-│   - Portable domain logic + storage abstraction traits          │
-│   - Foundation for native and future WebAssembly targets        │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              Storage Layer (OpenDAL-backed adapters)            │
-│   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐        │
-│   │  Local  │   │   S3    │   │  GCS    │   │ Memory  │        │
-│   │  Disk   │   │ / MinIO │   │         │   │ (test)  │        │
-│   └─────────┘   └─────────┘   └─────────┘   └─────────┘        │
-└─────────────────────────────────────────────────────────────────┘
+```text
+frontend / CLI / REST / MCP
+          ↓ adapters
+ugoite-api-client (remote protocol where applicable)
+          ↓
+ugoite-core (use cases and authorization-aware service)
+          ↓
+ugoite-storage + OpenDAL / Iceberg-backed tables
+          ↓
+operator-owned workspace
 ```
 
-## 2. Module Responsibilities
+`ugoite-domain` supplies portable types and validation. `ugoite-wasm` exposes the domain/API protocol to browser JavaScript without owning fetch or persistence.
 
-### ugoite-domain (Rust)
-
-The portable core library owns runtime-neutral abstractions and shared models:
-
-| Component | Responsibility |
-|-----------|----------------|
-| `storage.rs` | Runtime-neutral storage traits and JSON helpers |
-| `space.rs` | Portable space metadata and URI normalization |
-| `integrity.rs` | Integrity traits and cryptographic primitives |
-| `link.rs`, `search.rs`, `metadata.rs` | Shared domain models and metadata rules |
-
-### ugoite-core (Rust)
-
-The adapter crate depends on `ugoite-domain` and keeps the heavier integrations:
-
-| Component | Responsibility |
-|-----------|----------------|
-| `storage/` | OpenDAL adapter implementation for `ugoite-domain::storage` |
-| `space.rs` | Space CRUD, directory scaffolding |
-| `entry.rs` | Entry CRUD via Iceberg tables, revision history, conflict detection |
-| `form.rs` | Iceberg form schema management |
-| `index.rs` | Structured data extraction plus derived search/index artifacts |
-| `asset.rs` | Binary file storage, deduplication |
-| `link.rs` | Entry-to-entry relationships |
-| `integrity.rs` | HMAC signing, checksum verification |
-| `search.rs` | Full-text and structured queries |
-
-### ugoite-cli (Rust)
-
-Command-line interface for power users:
-
-| Component | Responsibility |
-|-----------|----------------|
-| `src/main.rs` | Clap command tree and runtime bootstrap |
-| `src/commands/*.rs` | Command implementations and backend/api routing |
-
-### ugoite-server (Rust/Axum)
-
-API layer providing access to frontend and AI agents:
-
-| Component | Responsibility |
-|-----------|----------------|
-| `crates/ugoite-server/src/lib.rs` | REST/MCP route handlers over `UgoiteService` |
-| `AppState` | Runtime configuration and service wiring |
-| `AuthIdentity` middleware | Authentication boundary for browser, CLI, REST, and MCP |
-| `openapi.json` | Runtime API snapshot served by the Rust server |
-
-### Frontend (TypeScript/SolidStart)
-
-UI/client layer with client-side state and cache responsibilities, but no
-business-rule or persistence logic:
-
-| Component | Responsibility |
-|-----------|----------------|
-| `lib/*-store.ts` | Client-side state, local cache, optimistic updates |
-| `lib/*-api.ts` | Feature API clients (REST calls only) |
-| `routes/` | Page components |
-| `components/` | Reusable UI components |
-
-## 3. The "Structure-from-Text" Engine
-
-Ugoite bridges the gap between Markdown freedom and database structure:
-
-1. **Parse**: Scan Markdown for H2 headers (`## Key`)
-2. **Extract**: Convert headers + content to structured properties
-3. **Validate**: Check against Form definition (if assigned)
-4. **Index**: Update derived search indexes and other query artifacts for fast reads
-
-This enables "Markdown sections as database fields" without complex forms.
-
-## 4. Data Flow Example
-
-**Creating an Entry:**
-
-```
-Frontend                 Backend              ugoite-core           Storage
-   │                        │                     │                   │
-   │ POST /spaces/:id/entries│                    │                   │
-   │───────────────────────>│                     │                   │
-   │                        │ create_entry()      │                   │
-   │                        │────────────────────>│                   │
-   │                        │                     │ write Iceberg rows│
-   │                        │                     │──────────────────>│
-   │                        │                     │ update indexes    │
-   │                        │                     │──────────────────>│
-   │                        │                     │<──────────────────│
-   │                        │<────────────────────│                   │
-   │ 201 Created            │                     │                   │
-   │<───────────────────────│                     │                   │
-   │                        │                     │                   │
-   │ (optimistic update     │                     │                   │
-   │  already rendered)     │                     │                   │
-```
-
-## 5. Design Principles
-
-| Principle | Implementation |
-|-----------|----------------|
-| **Local-First** | All data in user-controlled storage; no required cloud services |
-| **Portable** | Iceberg tables (Parquet) + Markdown reconstruction; easy export/import |
-| **Resource-First MCP** | `v0.1` ships one read-only MCP resource; broader MCP resources, prompts, and tools are planned for `v0.2` |
-| **Layered** | Clear separation: ugoite-domain → ugoite-core → {CLI, Backend} → Frontend |
-| **Testable** | Each layer independently testable; memory storage for fast tests |
+The current browser is server-backed. The target architecture adds a browser-local runtime and optional synchronization without making the server the mandatory owner of data.

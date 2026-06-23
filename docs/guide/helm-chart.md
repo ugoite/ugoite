@@ -1,13 +1,11 @@
-# Helm Chart Guide
+# Helm chart
 
-The in-repo Helm chart is currently **not a supported release artifact**.
+`charts/ugoite` deploys the same single image used by Docker Compose.
 
-The published Docker and Compose path has converged on a single Rust server
-image (`ghcr.io/ugoite/ugoite`) that serves both `/api/*` and the built browser
-assets. The existing chart under `charts/ugoite/` now mirrors that single-image
-shape, but it still needs a dedicated Kubernetes validation pass before it is
-promoted into the supported release surface.
+```bash
+helm upgrade --install ugoite charts/ugoite   --set auth.bootstrapToken="$(openssl rand -hex 32)"   --set auth.signingSecret="$(openssl rand -hex 32)"
+```
 
-For the supported browser path, use
-[Container Quick Start](container-quickstart.md). For source-based container
-development, use [Docker Compose Guide](docker-compose.md).
+Important values include `image.*`, `service.*`, `persistence.*`, `bootstrapDefaultSpace`, `auth.*`, and `extraEnv`. Templates require unique bootstrap and signing secrets.
+
+The pod runs as non-root UID/GID `10001`, drops Linux capabilities, and mounts `/data`. Change the development `mock-oauth` default before exposing a shared deployment.

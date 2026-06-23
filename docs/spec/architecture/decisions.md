@@ -1,218 +1,29 @@
-# Architecture Decision Records
+# Architecture decisions
 
-This document captures key architectural decisions made during Ugoite development.
+## ADR-001 — Rust is the canonical implementation
 
-## ADR-001: Rust Core with Python Bindings
+**Accepted.** Domain, storage, application behavior, REST, CLI, and WASM protocol logic live in one Rust workspace. Adapters must not reimplement use cases in another runtime.
 
-**Status**: Accepted (Milestone 2)
+## ADR-002 — Space files are authoritative
 
-**Context**: 
-- Core logic was initially implemented in Python using fsspec
-- Need to support native desktop apps (Tauri) and WebAssembly
-- fsspec is Python-only, not portable to other platforms
+**Accepted.** A Space directory is the portable source of truth. Indexes, projections, and SQL sessions are derived. Backups and migrations operate on the complete directory tree.
 
-**Decision**: 
-Extract core logic into a Rust crate (`ugoite-core`) with:
-- OpenDAL for storage abstraction (Rust-native fsspec equivalent)
-- pyo3 for Python bindings
-- wasm-bindgen for WebAssembly (future)
+## ADR-003 — Forms provide typed Markdown structure
 
-**Consequences**:
-- (+) Single source of truth for core logic
-- (+) Enables native desktop app without Python runtime
-- (+) Better performance for large spaces
-- (-) Additional build complexity
-- (-) Learning curve for Rust
+**Accepted.** Entries remain Markdown-oriented while Forms define fields and validation. Entry and revision records are stored through Form-specific structured tables.
 
----
+## ADR-004 — Remote operation semantics are portable
 
-## ADR-002: Form-based Entry Typing
+**Accepted.** `ugoite-api-client` owns operation names, method/path/body/auth intent, and decoding. It performs no I/O. Native and browser runtimes supply transport.
 
-**Status**: Accepted
+## ADR-005 — Current browser is server-backed
 
-**Context**: 
-- Users need structure without rigid database structures
-- Pure Markdown lacks metadata capabilities
-- Traditional forms are cumbersome for knowledge work
+**Accepted current state.** JavaScript/WASM calls the Rust server. Browser-local persistence and sync are a future runtime adapter, not an existing implementation.
 
-**Decision**: 
-Use "Forms" to define entry types:
-- Markdown remains the primary authoring surface
-- Forms define the logical contract for typed fields and validation
-- Form definitions are stored through the Iceberg-managed `forms/` area; the
-  logical contract matters, while the physical layout is intentionally not
-  specified
-- Entries reference a form via frontmatter: `form: Meeting`
-- H2 headers (`## Field`) become typed properties mapped into Iceberg-backed
-  rows and revisions
-- Live indexing/validation keeps Markdown authoring aligned with the Form
-  schema
+## ADR-006 — One release image
 
-**Consequences**:
-- (+) Structured: Form-defined fields stay queryable without abandoning
-  Markdown authoring
-- (+) Portable: the logical storage contract works across OpenDAL-backed
-  backends while Iceberg owns the physical table layout
-- (+) Consistent: a single Form contract drives validation, revisions, and
-  reconstructed Markdown
-- (-) Complexity: Markdown parsing and table updates must stay in sync
+**Accepted.** The runtime image contains server, CLI, and static browser files, runs as non-root, and mounts `/data`.
 
----
+## ADR-007 — MCP remains resource-first
 
-## ADR-003: MCP Resource-First Integration
-
-**Status**: Superseded (Milestone 2)
-
-**Context**:
-- The initial plan used a sandboxed code execution tool to reduce tool surface
-- Requirements shifted to remove the Wasm sandbox in Milestone 2
-
-**Decision**:
-Use MCP resources (and future explicit tools) without sandboxed execution. The
-`run_script` tool is deprecated and removed from the backend.
-
-**Consequences**:
-- (+) Simpler runtime and dependency footprint
-- (+) Clearer security posture without code execution
-- (-) Less flexibility until explicit MCP tools are added
-
----
-
-## ADR-004: Local-First Storage
-
-**Status**: Accepted
-
-**Context**: 
-- Users want control over their data
-- Cloud storage adds cost and complexity
-- Offline access is important for productivity
-
-**Decision**: 
-Use the shared Rust storage abstraction as the canonical runtime I/O boundary.
-In the current architecture this is implemented by `ugoite-minimum` plus the
-OpenDAL-backed adapter layer in `ugoite-core`.
-- Default: local filesystem
-- Optional: S3, GCS, Azure Blob
-- No required cloud services
-- Canonical storage: Iceberg-managed tables and metadata over OpenDAL-backed
-  storage adapters
-- Authoring surface: Markdown remains the user-facing representation, rebuilt
-  from the canonical table-backed data model when needed
-- Historical note: early Python prototypes used `fsspec`, but `fsspec` is no
-  longer part of the active runtime storage architecture
-
-**Consequences**:
-- (+) User owns their data completely
-- (+) Works offline
-- (+) Multiple storage backends supported
-- (+) Table-backed storage keeps structured queries and revision history
-  consistent across backends
-- (-) No built-in sync (user must configure)
-- (-) No built-in backup (user responsibility)
-
----
-
-## ADR-005: Optimistic Concurrency Control
-
-**Status**: Accepted
-
-**Context**: 
-- Multiple clients may edit the same entry
-- Traditional locking is too restrictive
-- Users expect responsive UI
-
-**Decision**: 
-Use revision-based optimistic concurrency:
-- Every entry has a `revision_id`
-- Updates include `parent_revision_id`
-- Server rejects if parent doesn't match current
-- Current frontend editor flow handles 409 Conflict with explicit refresh guidance
-  while keeping the local draft visible
-- Rich in-editor merge UI is deferred to a future milestone
-
-**Consequences**:
-- (+) Responsive UI with optimistic updates
-- (+) No silent data loss (conflicts are surfaced and the local draft remains visible)
-- (+) Simple implementation
-- (-) Users must refresh and reconcile conflicts manually
-- (-) There is no built-in merge UI yet
-
----
-
-## ADR-006: Backend as Pure API Layer
-
-**Status**: Accepted (Milestone 2)
-
-**Context**: 
-- Original backend contained business logic
-- Duplicated validation between backend and core logic
-- Hard to test backend in isolation
-
-**Decision**: 
-Backend should be a pure API layer:
-- All business logic in `ugoite-core`
-- Backend only routes requests and formats responses
-- No direct filesystem access in backend
-- Backend tests use memory filesystem via `ugoite-core`
-
-**Consequences**:
-- (+) Single source of truth for business logic
-- (+) Easier to maintain and test
-- (+) Backend becomes simpler
-- (-) More abstraction layers
-- (-) Slightly more latency
-
-**Info**: `ugoite-cli` is a separate tool for direct command-line interaction with `ugoite-core`.
-
----
-
-## ADR-007: YAML for Program-Readable Documentation
-
-**Status**: Accepted (Milestone 2)
-
-**Context**: 
-- Markdown documentation is hard to parse programmatically
-- Need to verify documentation matches code
-- Requirements tracking is manual and error-prone
-
-**Decision**: 
-Use YAML for machine-readable specifications:
-- `features.yaml`: Feature paths across modules
-- `requirements/*.yaml`: Requirements with test mapping
-- `stories/*.yaml`: User stories with acceptance criteria
-- Automated tests verify consistency
-
-**Consequences**:
-- (+) Documentation is verifiable
-- (+) Requirements traceability is automated
-- (+) Easier to generate reports
-- (-) More structured format to maintain
-- (-) YAML can be verbose
-
----
-
-## ADR-008: Split the Portable Minimum from the OpenDAL Adapter Layer
-
-**Status**: Accepted (Milestone 3)
-
-**Context**:
-- `ugoite-core` mixed portable domain logic with heavier OpenDAL, Iceberg,
-  Arrow, Parquet, and Python binding integrations.
-- Future browser/WebAssembly targets need a smaller runtime-facing core that
-  does not depend directly on those integrations.
-
-**Decision**:
-Introduce `ugoite-minimum` as the portable Rust crate that owns shared domain
-models, integrity primitives, and the storage abstraction. Refocus
-`ugoite-core` to depend on `ugoite-minimum` and provide the OpenDAL-backed
-adapter plus the current server-oriented integrations.
-
-**Consequences**:
-- (+) Clearer boundary between portable logic and runtime adapters
-- (+) Smaller foundation for future WebAssembly/browser targets
-- (+) Existing backend/CLI behavior can stay stable while migration proceeds
-- (+) Makes the storage transition status explicit: the runtime path is already
-  OpenDAL-backed, while the remaining migration work is about moving more logic
-  behind `ugoite-minimum`
-- (-) More crate and CI wiring to maintain
-- (-) Migration is incremental until more modules move behind the abstraction
+**Accepted.** The current MCP surface is one authenticated, read-only Entry-list resource. Tools and prompts remain future work.

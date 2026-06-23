@@ -17,11 +17,9 @@ requirements:
     '
   priority: high
   status: implemented
+  verification: traced
   tests:
-    rust:
-    - file: ugoite-core/tests/test_search.rs
-      tests:
-      - test_search_req_srch_001_keyword_search
+  - file: crates/ugoite-core/tests/test_search.rs
 - set_id: REQCAT-SEARCH
   source_file: requirements/search.yaml
   scope: Search behavior and discoverability requirements.
@@ -32,17 +30,15 @@ requirements:
   - SPEC-STORIES-ADVANCED
   - SPEC-API-REST
   id: REQ-SRCH-002
-  title: Index fallback search
-  description: 'Search must fall back to content scanning if index misses.
-
-    '
+  title: Content-scan search implementation
+  description: Keyword search scans current Entry rows directly. There is no index-first branch or index-miss fallback
+    in this release.
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    rust:
-    - file: ugoite-core/tests/test_search.rs
-      tests:
-      - test_search_req_srch_002_fallback_scan
+  - file: crates/ugoite-cli/tests/test_sql_rules.rs
+  - file: crates/ugoite-core/tests/test_search.rs
 - set_id: REQCAT-SEARCH
   source_file: requirements/search.yaml
   scope: Search behavior and discoverability requirements.
@@ -63,12 +59,7 @@ requirements:
   - features/sql.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: ugoite-cli/tests/test_sql_rules.rs
-      tests:
-      - test_cli_sql_lint_reports_errors
-      - test_cli_sql_complete_suggests_tables
+  verification: untraced
 - set_id: REQCAT-SEARCH
   source_file: requirements/search.yaml
   scope: Search behavior and discoverability requirements.
@@ -92,15 +83,10 @@ requirements:
   - features/search.yaml
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
-      tests:
-      - 'REQ-SRCH-004: runs a direct keyword search and renders matching entries'
-    e2e:
-    - file: e2e/search-ui.test.ts
-      tests:
-      - 'REQ-SRCH-004: search page starts with direct keyword search'
+  - file: e2e/search-ui.test.ts
+  - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
 - set_id: REQCAT-SEARCH
   source_file: requirements/search.yaml
   scope: Search behavior and discoverability requirements.
@@ -127,13 +113,7 @@ requirements:
   - features/sql.md
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
-      tests:
-      - 'REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session'
-      - 'REQ-SRCH-005: saved history entries rerun directly or open variable input when needed'
-    e2e:
-    - file: e2e/search-ui.test.ts
-      tests:
-      - 'REQ-SRCH-005: advanced search saves reusable history and opens shared query results'
+  - file: e2e/search-ui.test.ts
+  - file: frontend/src/routes/spaces/[space_id]/search.test.tsx

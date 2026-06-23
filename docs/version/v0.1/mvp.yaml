@@ -1,43 +1,34 @@
 id: mvp
-version: "0.1"
+version: '0.1'
 status: completed
-title: "Minimum Viable Product (MVP)"
-goal: >
-  A working local-first knowledge management app with core features operational.
-  Establish foundational architecture for the local-first knowledge-space
-  baseline, including the resource-first MCP surface that later versions expand
-  into broader AI-native workflows.
+title: Minimum Viable Product (MVP)
+goal: Establish the operator-owned Space model, Rust application core, local CLI path, server-backed browser, REST
+  baseline, and read-only MCP resource.
 phases:
-  - id: design
-    status: completed
-    tasks:
-      - description: "Define monorepo structure (backend, frontend, ugoite-cli)"
-        done: true
-      - description: "Design fsspec storage abstraction and space directory layout"
-        done: true
-      - description: "Design MCP server endpoints and Wasm sandbox integration"
-        done: true
-  - id: implementation
-    status: completed
-    tasks:
-      - description: "Setup monorepo with mise tasks, Docker Compose, Dev Container, CI/CD"
-        done: true
-      - description: "fsspec abstraction: space creation, entry CRUD, revision history, HMAC signing"
-        done: true
-      - description: "FastAPI REST endpoints for spaces, entries, forms, assets, search"
-        done: true
-      - description: "SolidStart frontend with space selector, entry list, Markdown editor"
-        done: true
-      - description: "Wasm sandbox (wasmtime + QuickJS) with host.call() and fuel limits"
-        done: true
-      - description: "MCP server resource-first baseline (`entries/list`; no tools or prompts yet)"
-        done: true
-  - id: testing
-    status: completed
-    tasks:
-      - description: "Comprehensive requirements mapping in docs/spec/requirements/*.yaml"
-        done: true
-      - description: "E2E tests covering all critical paths"
-        done: true
-      - description: "Specification documents finalized"
-        done: true
+- id: design
+  status: completed
+  tasks:
+  - description: Define the Rust workspace and thin-adapter architecture.
+    done: true
+  - description: Define OpenDAL-backed Space storage and portable directory layout.
+    done: true
+  - description: Define the resource-first MCP baseline and browser/server boundary.
+    done: true
+- id: implementation
+  status: completed
+  tasks:
+  - description: Implement the eight-crate Rust workspace and Deno workspace.
+    done: true
+  - description: Implement Space, Entry, Form, asset, revision, integrity, search, and SQL behavior in Rust.
+    done: true
+  - description: Implement the Axum REST server and server-backed SolidStart browser.
+    done: true
+  - description: Implement local/remote CLI modes and one read-only MCP Entry-list resource.
+    done: true
+- id: testing
+  status: completed
+  tasks:
+  - description: Cover core paths with Rust, Deno/Vitest, and Playwright tests.
+    done: true
+  - description: Check OpenAPI and architecture boundaries in repository gates.
+    done: true

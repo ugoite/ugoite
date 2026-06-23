@@ -1,25 +1,27 @@
 channel: alpha
 title: Alpha Channel Changelog
 doc_path: docs/spec/versions/changelog-alpha.md
-summary: >
-  Alpha releases communicate the earliest validated preview slice of Ugoite so
-  experimentation stays explicit and reviewable.
+summary: 'Alpha releases communicate the earliest validated preview slice of Ugoite so experimentation stays explicit
+  and reviewable.
+
+  '
 release_notes:
-  intro: >
-    Alpha releases use SemVer prerelease tags such as <version>-alpha.N and are
-    the fastest-moving channel for previewing validated changes before broader
-    beta review.
+  intro: 'Alpha releases use SemVer prerelease tags such as <version>-alpha.N and are the fastest-moving channel
+    for previewing validated changes before broader beta review.
+
+    '
   expectations:
-    - Use exact alpha versions or the alpha image alias only for preview and experimentation.
-    - Focus notes on explicit risk, experimental guidance, and what needs more validation.
-    - Keep stable promises out of the alpha narrative until behavior graduates through beta and stable review.
+  - Use exact alpha versions or the alpha image alias only for preview and experimentation.
+  - Focus notes on explicit risk, experimental guidance, and what needs more validation.
+  - Keep stable promises out of the alpha narrative until behavior graduates through beta and stable review.
   added:
-    - A dedicated alpha release-note source for early release-preparation and future-stream previews.
-    - Fast feedback loops for install paths, release docs, and experimental operator workflows.
-    - Channel-scoped alpha communication that does not pollute stable operator guidance.
+  - A Rust-centered eight-crate workspace and one Deno workspace.
+  - A single non-root runtime image layout with persistent /data storage.
+  - Local CLI core mode, server-backed browser behavior, and a resource-first MCP baseline.
   changed:
-    - Alpha notes are maintained separately from beta and stable notes inside the repository.
-    - Repository-rendered release-note context keeps preview guidance reviewable in code review and CI.
+  - Documentation now distinguishes shipped behavior from browser-local sync and other planned capability.
+  - Release notes no longer imply that unpublished artifacts or split frontend/backend images exist.
   planned:
-    - Additional alpha previews for future v0.1 and v0.2 work before broader beta validation.
-    - Continued refinement of experimental guidance as release-preparation matures.
+  - Published signed/checksummed container and CLI artifacts.
+  - Production passkey/TOTP login, managed service accounts, audit APIs, and browser-local optional sync.
+updated: '2026-06-23'

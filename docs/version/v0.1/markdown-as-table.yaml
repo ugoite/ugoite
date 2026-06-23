@@ -53,5 +53,5 @@ phases:
         done: true
       - description: "Frontend tests validate page links and component type registry"
         done: true
-      - description: "Full test suite passes (unit, integration, e2e)"
+      - description: "Repository contains unit, integration, and E2E coverage for the milestone"
         done: true
