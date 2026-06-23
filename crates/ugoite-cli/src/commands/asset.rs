@@ -57,7 +57,13 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
         AssetSubCmd::List { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset list")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/assets")).await?;
+                let result = http::execute(
+                    &base,
+                    "asset.list",
+                    serde_json::json!({"space_id": space_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -71,9 +77,6 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             filename,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset upload")?;
-            if validated_base_url(&config)?.is_some() {
-                anyhow::bail!("asset upload in remote mode not yet supported via CLI");
-            }
             let data = std::fs::read(&file_path)?;
             let name = filename.unwrap_or_else(|| {
                 std::path::Path::new(&file_path)
@@ -82,6 +85,9 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .unwrap_or("asset")
                     .to_string()
             });
+            if validated_base_url(&config)?.is_some() {
+                anyhow::bail!("asset upload in remote mode not yet supported via CLI");
+            }
             let service = UgoiteService::new(&root)?;
             let asset = service.save_asset(&space_id, &name, &data).await?;
             print_json(&asset);
@@ -92,9 +98,13 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset delete")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_delete(&format!("{base}/spaces/{space_id}/assets/{asset_id}"))
-                        .await?;
+                let result = http::execute(
+                    &base,
+                    "asset.delete",
+                    serde_json::json!({"space_id": space_id, "asset_id": asset_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }

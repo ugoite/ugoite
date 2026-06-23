@@ -36,8 +36,13 @@ pub async fn run(cmd: SearchCmd) -> Result<()> {
         SearchSubCmd::Keyword { space_path, query } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "search keyword")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_get(&format!("{base}/spaces/{space_id}/search?q={query}")).await?;
+                let result = http::execute(
+                    &base,
+                    "search.keyword",
+                    serde_json::json!({"space_id": space_id, "q": query}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }

@@ -1,36 +1,24 @@
 import type { Form, FormCreatePayload } from "./types";
-import { apiFetch } from "./api";
+import { protocolFetch } from "./ugoite-client/protocol";
 
-/**
- * Form API client
- */
+/** Form API client backed by the shared Rust/WASM protocol. */
 export const formApi = {
   async listTypes(spaceId: string): Promise<string[]> {
-    const res = await apiFetch(`/spaces/${spaceId}/forms/types`);
-    if (!res.ok) {
-      throw new Error(`Failed to list form types: ${res.statusText}`);
-    }
-    return (await res.json()) as string[];
+    return await protocolFetch<string[]>("form.list_types", { space_id: spaceId });
   },
 
   async list(spaceId: string): Promise<Form[]> {
-    const res = await apiFetch(`/spaces/${spaceId}/forms`);
-    if (!res.ok) throw new Error(`Failed to list forms: ${res.statusText}`);
-    return (await res.json()) as Form[];
+    return await protocolFetch<Form[]>("form.list", { space_id: spaceId });
   },
+
   async get(spaceId: string, formName: string): Promise<Form> {
-    const encodedName = encodeURIComponent(formName);
-    const res = await apiFetch(`/spaces/${spaceId}/forms/${encodedName}`);
-    if (!res.ok) throw new Error(`Failed to get form: ${res.statusText}`);
-    return (await res.json()) as Form;
-  },
-  async create(spaceId: string, payload: FormCreatePayload): Promise<Form> {
-    const res = await apiFetch(`/spaces/${spaceId}/forms`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    return await protocolFetch<Form>("form.get", {
+      space_id: spaceId,
+      form_name: formName,
     });
-    if (!res.ok) throw new Error(`Failed to create form: ${res.statusText}`);
-    return (await res.json()) as Form;
+  },
+
+  async create(spaceId: string, payload: FormCreatePayload): Promise<Form> {
+    return await protocolFetch<Form>("form.upsert", { space_id: spaceId }, payload);
   },
 };

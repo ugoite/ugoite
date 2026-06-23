@@ -1,8 +1,20 @@
 import "@testing-library/jest-dom/vitest";
+import { readFile } from "node:fs/promises";
+import { http, HttpResponse } from "msw";
 import { afterAll, afterEach, beforeAll } from "vitest";
 
 // Import MSW server - will be created when mocks are available
 let server: ReturnType<typeof import("msw/node").setupServer>;
+let wasmBytes: Uint8Array<ArrayBuffer>;
+
+const registerWasmHandler = () => {
+  server.use(
+    http.get(/.*ugoite_wasm\.wasm(?:\?.*)?$/, () =>
+      new HttpResponse(wasmBytes, {
+        headers: { "Content-Type": "application/wasm" },
+      })),
+  );
+};
 
 const createStorageMock = () => {
   const data = new Map<string, string>();
@@ -46,12 +58,15 @@ ensureStorage("sessionStorage");
 beforeAll(async () => {
   const { server: mswServer } = await import("./mocks/server");
   server = mswServer;
+  wasmBytes = await readFile("src/lib/generated/ugoite_wasm.wasm");
+  registerWasmHandler();
   server.listen({ onUnhandledRequest: "error" });
 });
 
 // Reset handlers after each test
 afterEach(() => {
   server?.resetHandlers();
+  registerWasmHandler();
 });
 
 // Close server after all tests

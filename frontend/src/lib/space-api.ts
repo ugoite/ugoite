@@ -8,200 +8,82 @@ import type {
   SpacePatchPayload,
   TestConnectionPayload,
 } from "./types";
-import { apiFetch } from "./api";
+import { protocolFetch } from "./ugoite-client/protocol";
 
-const parseErrorDetail = (detail: unknown): string => {
-  if (typeof detail === "string" && detail.trim()) return detail;
-  /* v8 ignore start */
-  if (Array.isArray(detail)) {
-    const messages = detail
-      .map((item) => {
-        if (typeof item === "string") return item;
-        if (item && typeof item === "object") {
-          const maybeMsg = (item as { msg?: string }).msg;
-          if (typeof maybeMsg === "string") return maybeMsg;
-          return JSON.stringify(item);
-        }
-        return "";
-      })
-      .filter(Boolean);
-    return messages.join("\n");
-  }
-  if (detail && typeof detail === "object") return JSON.stringify(detail);
-  return "";
-  /* v8 ignore stop */
-};
-
-const formatApiError = async (
-  res: Response,
-  fallback: string,
-): Promise<string> => {
-  try {
-    const payload = (await res.json()) as { detail?: unknown };
-    const message = parseErrorDetail(payload?.detail);
-    return message || fallback;
-  } catch {
-    /* v8 ignore start */
-    return fallback;
-    /* v8 ignore stop */
-  }
-};
-
-/**
- * Space API client
- */
+/** Space API client backed by the shared Rust/WASM protocol. */
 export const spaceApi = {
-  /** List all spaces */
   async list(): Promise<Space[]> {
-    const res = await apiFetch("/spaces");
-    if (!res.ok) {
-      throw new Error(`Failed to list spaces: ${res.statusText}`);
-    }
-    return (await res.json()) as Space[];
+    return await protocolFetch<Space[]>("space.list");
   },
 
-  /** Create a new space */
   async create(name: string): Promise<{ id: string; name: string }> {
-    const res = await apiFetch("/spaces", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!res.ok) {
-      throw new Error(
-        await formatApiError(res, `Failed to create space: ${res.statusText}`),
-      );
-    }
-    return (await res.json()) as { id: string; name: string };
+    return await protocolFetch<{ id: string; name: string }>("space.create", {}, { name });
   },
 
-  /** Get space by ID */
   async get(id: string): Promise<Space> {
-    const res = await apiFetch(`/spaces/${id}`);
-    if (!res.ok) {
-      throw new Error(`Failed to get space: ${res.statusText}`);
-    }
-    return (await res.json()) as Space;
+    return await protocolFetch<Space>("space.get", { space_id: id });
   },
 
-  /** Patch space metadata/settings */
   async patch(id: string, payload: SpacePatchPayload): Promise<Space> {
-    const res = await apiFetch(`/spaces/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      throw new Error(
-        await formatApiError(res, `Failed to patch space: ${res.statusText}`),
-      );
-    }
-    return (await res.json()) as Space;
+    return await protocolFetch<Space>("space.patch", { space_id: id }, payload);
   },
 
-  /** Test storage connection */
   async testConnection(
     id: string,
     payload: TestConnectionPayload,
   ): Promise<{ status: string }> {
-    const res = await apiFetch(`/spaces/${id}/test-connection`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      throw new Error(
-        await formatApiError(
-          res,
-          `Failed to test connection: ${res.statusText}`,
-        ),
-      );
-    }
-    return (await res.json()) as { status: string };
+    return await protocolFetch<{ status: string }>(
+      "space.test_connection",
+      { space_id: id },
+      payload,
+    );
   },
 
-  /** List members in a space */
   async listMembers(id: string): Promise<SpaceMember[]> {
-    const res = await apiFetch(`/spaces/${id}/members`);
-    if (!res.ok) {
-      throw new Error(
-        await formatApiError(res, `Failed to list members: ${res.statusText}`),
-      );
-    }
-    return (await res.json()) as SpaceMember[];
+    return await protocolFetch<SpaceMember[]>("space.members.list", { space_id: id });
   },
 
-  /** Invite a member to a space */
   async inviteMember(
     id: string,
     payload: SpaceMemberInvitePayload,
   ): Promise<SpaceMemberInviteResponse> {
-    const res = await apiFetch(`/spaces/${id}/members/invitations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      throw new Error(
-        await formatApiError(res, `Failed to invite member: ${res.statusText}`),
-      );
-    }
-    return (await res.json()) as SpaceMemberInviteResponse;
+    return await protocolFetch<SpaceMemberInviteResponse>(
+      "space.members.invite",
+      { space_id: id },
+      payload,
+    );
   },
 
-  /** Accept invitation token */
   async acceptInvitation(
     id: string,
     payload: SpaceMemberAcceptPayload,
   ): Promise<{ member: SpaceMember }> {
-    const res = await apiFetch(`/spaces/${id}/members/accept`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      throw new Error(
-        await formatApiError(
-          res,
-          `Failed to accept invitation: ${res.statusText}`,
-        ),
-      );
-    }
-    return (await res.json()) as { member: SpaceMember };
+    return await protocolFetch<{ member: SpaceMember }>(
+      "space.members.accept",
+      { space_id: id },
+      payload,
+    );
   },
 
-  /** Update role for a member */
   async updateMemberRole(
     id: string,
     memberUserId: string,
     payload: SpaceMemberRoleUpdatePayload,
   ): Promise<{ member: SpaceMember }> {
-    const res = await apiFetch(`/spaces/${id}/members/${memberUserId}/role`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      throw new Error(
-        await formatApiError(res, `Failed to update role: ${res.statusText}`),
-      );
-    }
-    return (await res.json()) as { member: SpaceMember };
+    return await protocolFetch<{ member: SpaceMember }>(
+      "space.members.update_role",
+      { space_id: id, member_user_id: memberUserId },
+      payload,
+    );
   },
 
-  /** Revoke a member */
   async revokeMember(
     id: string,
     memberUserId: string,
   ): Promise<{ member: SpaceMember }> {
-    const res = await apiFetch(`/spaces/${id}/members/${memberUserId}`, {
-      method: "DELETE",
+    return await protocolFetch<{ member: SpaceMember }>("space.members.revoke", {
+      space_id: id,
+      member_user_id: memberUserId,
     });
-    if (!res.ok) {
-      throw new Error(
-        await formatApiError(res, `Failed to revoke member: ${res.statusText}`),
-      );
-    }
-    return (await res.json()) as { member: SpaceMember };
   },
 };
