@@ -63,7 +63,7 @@ export const primaryStartCards = [
 	{
 		badge: "Tagged image path",
 		description:
-			"When a matching GHCR tag is available, launch the single frontend + backend image with Docker, then continue through the explicit browser login. This repository does not include a hosted publishing workflow.",
+			"When a matching GHCR tag is available, launch the frontend + backend stack with Docker, then continue through the explicit browser login. This repository does not include a hosted publishing workflow.",
 		href: "/docs/guide/container-quickstart",
 		icon: "🚀",
 		title: "Use a tagged image when available",
