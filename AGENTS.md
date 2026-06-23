@@ -1,75 +1,34 @@
-# Ugoite AI Agent Development Guide
+# Repository instructions
 
-## 🎯 Project Context
+## Product intent
 
-**Vision**: "Local-First, AI-Native Knowledge Space for the Post-SaaS Era"
+Ugoite keeps operator-owned Space directories as the source of truth. Preserve portability, append-only history, and the ability to use the CLI locally without a mandatory server. The current browser is server-backed; browser-local storage plus optional sync is planned, not shipped.
 
-**Core Principles**: Low Cost, Easy, Freedom
+## Architecture
 
-**Key Architecture**:
-- Storage: shared Rust/OpenDAL abstraction (not traditional DB)
-- AI Interface: MCP with resource-first integration
-- Stack: SolidStart frontend/docsite on Deno + Rust `ugoite-server` (Axum) + Rust crates (`ugoite-core`, `ugoite-cli`, `ugoite-storage`)
-- Data Model: Markdown sections as structured fields
+- `ugoite-domain`: pure domain types/validation.
+- `ugoite-api-client`: transport-neutral remote operation protocol; no fetch/reqwest/runtime dependencies.
+- `ugoite-storage`: storage abstraction and filesystem/object-store mechanics.
+- `ugoite-core`: application behavior.
+- `ugoite-server`, `ugoite-cli`, `ugoite-wasm`: thin adapters.
+- `frontend`: SolidStart UI using the portable protocol.
+- `docsite`: Astro docs.
 
-**Documentation** (ALWAYS consult for details):
-- [`README.md`](README.md) - Setup & quick start
-- [`docs/spec/`](docs/spec/) - Complete specifications
-- [`.github/workflows/`](.github/workflows/) - CI requirements
+Do not reintroduce a second application implementation in another language or duplicate REST semantics across adapters.
 
----
-
-## 🛠️ Development Commands
+## Commands
 
 ```bash
-# Setup & run
-mise run setup            # Install all dependencies and pre-commit hooks
-mise run dev              # Start frontend + Rust server + docsite
-mise run test             # Run all tests
-mise run e2e              # Run E2E tests
-
-# Quality checks (see .github/workflows/ for exact CI commands)
-cargo fmt --all --check                      # Format Rust (CI-aligned)
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo check --workspace --all-targets --all-features --locked
-deno fmt --check
-deno lint tools
-deno task check
-deno task test
-
+mise run setup
+mise run fmt
+mise run lint
+mise run check
+mise run test
+mise run e2e:smoke
 ```
 
----
+Only root tasks in `mise.toml` are valid. Use Deno tasks for frontend/docsite/e2e work.
 
-## 📋 Task Completion Checklist
+## Documentation contract
 
-Before marking any task as complete:
-
-- [ ] Read relevant docs in `docs/spec/` for context
-- [ ] Implement with tests (TDD preferred, >80% coverage)
-- [ ] All CI checks pass (see `.github/workflows/`)
-- [ ] Run `mise run test` successfully
-- [ ] Manual testing completed
-- [ ] Code aligns with "Local-First, AI-Native" philosophy
-
-**Critical**: Check `.github/workflows/` and run those exact commands locally. No exceptions.
-
----
-
-## 🤖 Codex Skills
-
-Repo-local Codex skills live under `.codex/skills/` and should be treated as the
-preferred task-specific playbooks for this repository. Use the orientation,
-implementation, validation, and release skills when they match the task, and
-keep them aligned with `README.md`, `docs/spec/`, and `.github/workflows/`.
-
-## 💡 Best Practices
-
-- **2025 Standards**: Research current best practices before implementing new features
-- **Type Safety**: Complete type hints (Python) and types (TypeScript)
-- **Security**: Validate all inputs; no sandboxed code execution in Milestone 2
-- **Data Privacy**: Never commit secrets; respect local-first principle
-
----
-
-**Remember**: Every decision should support user freedom, data ownership, and seamless AI interaction.
+Treat `crates/ugoite-server` as the REST implementation and `/openapi.json` as the API source of truth. Mark future architecture explicitly. Do not advertise service-account/audit CRUD, passkey/TOTP login, browser-local persistence, or remote CLI asset upload as implemented.

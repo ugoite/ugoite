@@ -1,38 +1,33 @@
-# Success Metrics
+# Success metrics
 
-These metrics help evaluate whether Ugoite is delivering on its principles
-(**Low Cost**, **Easy**, **Freedom**).
+Metrics must distinguish the current server-backed product from the browser-local North Star and must not treat planned features as shipped.
 
-## Product Metrics
+## Newcomer path
 
-- **Time-to-first-login (browser path)**: newcomer can start the published
-  browser stack and complete the explicit login flow without getting lost in
-  auth-mode or runtime setup details.
-- **Time-to-first-writable-space (browser path)**: newcomer can reach a space
-  where they are actually allowed to create content after startup and login.
-- **Time-to-first-entry**: newcomer can create a space + first entry quickly
-  once they are in a writable state. Report this separately for browser quick
-  start versus CLI/core workflows so setup/auth friction does not disappear
-  behind a single number.
-- **Time-to-first-structured-field**: user can define a Form and see extracted fields.
-- **Search usefulness**: keyword search returns expected results with low latency.
+- **Time to healthy runtime:** from starting the source or release Compose flow to a successful `/health`.
+- **Time to authenticated session:** includes selecting the supported auth mode and completing development mock OAuth or supplying an accepted credential. Passkey/TOTP is excluded until implemented.
+- **Time to first writable Space:** includes creating or joining a Space and obtaining an active role.
+- **Time to first Entry:** measured separately for browser/server-backed and CLI core/local workflows.
+- **Time to first structured field:** user creates or edits a Form, then saves a conforming Entry.
 
-Treat these three newcomer-path metrics together. For the browser route, image
-pulls, stack startup, explicit login, and arrival in the first writable space
-are all part of the Easy principle; `time-to-first-entry` alone is not an
-honest proxy for the full first-use experience.
+## Data safety and portability
 
-## Reliability Metrics
+- restore and history tests demonstrate append-only revision recovery;
+- checksums and HMAC verification detect changed content;
+- backup/restore drills preserve a complete operator-owned storage root;
+- no documentation path requires an unpublished artifact or hidden hosted service.
 
-- **Data safety**: revisions prevent data loss from conflicts.
-- **Integrity**: HMAC signatures detect corruption/tampering.
+## Current performance metrics
 
-## Performance Metrics
+- Entry list, structured query, SQL session row/count, and keyword-scan latency at documented dataset sizes;
+- memory use and startup time of the single runtime image;
+- browser route responsiveness while server requests are pending.
 
-- **List/query latency**: `GET /spaces/{id}/entries` and `POST /spaces/{id}/query` remain fast as entries scale.
-- **Indexer cost**: incremental updates complete quickly and do not block the UI.
+Persistent inverted-index rebuild cost and watch-loop lag are **future** metrics because those operations are not implemented. Keyword search currently performs a substring scan and has no relevance-ranking metric.
 
-## Developer Experience Metrics
+## Developer experience
 
-- **Requirement traceability**: every REQ-* maps to tests (and tests map back).
-- **Doc/code consistency**: feature registry entries point to real symbols.
+- every feature-registry file/function reference resolves;
+- every OpenAPI operation is intentionally represented or explicitly excluded from the feature registry;
+- requirement trace status distinguishes traced from untraced items;
+- Markdown links, documented `mise` tasks, YAML parsing, and current-stack terminology pass repository checks.

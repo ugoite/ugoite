@@ -1,42 +1,40 @@
-# Search & Query APIs
-
-version: "0.1"
-updated: "2026-01"
+version: '0.2'
+updated: '2026-06-23'
 kind: search
-
 apis:
-  - id: query.execute
-    method: POST
-    backend:
-      path: /spaces/{space_id}/query
-      file: backend/src/app/api/endpoints/search.py
-      function: query_endpoint
-    frontend:
-      path: /spaces/{space_id}/query
-      file: frontend/src/routes/spaces/[space_id]/query.tsx
-      function: SpaceQueryRoute
-    ugoite_core:
-      file: ugoite-core/src/index.rs
-      function: query_index
-    ugoite_cli:
-      command: ugoite query
-      file: ugoite-cli/src/commands/search.rs
-      function: run
-
-  - id: search.keyword
-    method: GET
-    backend:
-      path: /spaces/{space_id}/search
-      file: backend/src/app/api/endpoints/search.py
-      function: search_endpoint
-    frontend:
-      path: /spaces/{space_id}/search
-      file: frontend/src/routes/spaces/[space_id]/search.tsx
-      function: SpaceSearchRoute
-    ugoite_core:
-      file: ugoite-core/src/search.rs
-      function: search_entries
-    ugoite_cli:
-      command: ugoite search keyword
-      file: ugoite-cli/src/commands/search.rs
-      function: run
+- id: search.keyword
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/search
+    file: crates/ugoite-server/src/lib.rs
+    function: search_entries
+  frontend:
+    path: /spaces/{space_id}/search
+    file: frontend/src/lib/search-api.ts
+    function: searchApi.keyword
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: search_entries
+  ugoite_cli:
+    command: ugoite search keyword
+    file: crates/ugoite-cli/src/commands/search.rs
+    function: run
+- id: search.query
+  method: POST
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/query
+    file: crates/ugoite-server/src/lib.rs
+    function: query_entries
+  frontend:
+    path: /spaces/{space_id}/query
+    file: frontend/src/lib/search-api.ts
+    function: searchApi.query
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: query_entries
+  ugoite_cli:
+    command: ugoite query
+    file: crates/ugoite-cli/src/main.rs
+    function: run

@@ -4,1706 +4,618 @@ requirements:
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
+  linked_policies: &id001
   - POL-003
   - POL-005
   - POL-008
   - POL-009
   - POL-010
   - POL-013
-  linked_specifications:
+  linked_specifications: &id002
   - SPEC-TESTING-CICD
   - SPEC-TESTING-STRATEGY
   - SPEC-ARCH-STACK
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-001
   title: Developer Guides for Local Runs
-  description: 'Provide English documentation for Docker Compose, CLI usage, and
-    backend local-run prerequisites. Shell command snippets must remain syntactically
-    valid for bash. Backend runtime prerequisites in local-run documentation
-    must stay aligned with backend package metadata and stack documentation.
-
-    '
-  related_spec:
-  - ../guide/docker-compose.md
-  - ../guide/cli.md
-  - ../architecture/stack.md
-  priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_001_guides_exist
-      - test_docs_req_ops_001_shell_blocks_parse
-      - test_docs_req_ops_001_backend_targeted_pytest_path_is_documented
-      - test_docs_req_ops_001_backend_python_prereqs_match_metadata_and_stack
-      - test_docs_req_ops_001_source_compose_frontend_stays_loopback_only
-      - test_docs_req_ops_001_env_matrix_matches_runtime_usage
-      - test_docs_req_ops_001_mise_versions_match_ci_pins
-- set_id: REQCAT-OPS
-  source_file: requirements/ops.yaml
-  scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
-  id: REQ-OPS-002
-  title: Docker Build CI Validation
-  description: 'CI MUST validate Docker image builds for backend and frontend to ensure
-
-    containerized environments remain buildable, including the Rust workspace
-
-    contexts required by backend image builds.
-
-    '
+  description: Current English guides must cover root mise development, Docker Compose, CLI core/backend modes,
+    and runtime prerequisites.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_002_docker_build_ci_declared
-      - test_docs_req_ops_002_container_external_refs_are_pinned
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
+  id: REQ-OPS-002
+  title: Container Build Validation
+  description: The single runtime image must be built and smoke-tested by an automated release gate. The current
+    repository provides a local `ci:release` gate but does not run it in hosted CI.
+  related_spec:
+  - testing/ci-cd.md
+  - ../../guide/operations.md
+  priority: medium
+  status: planned
+  verification: untraced
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-003
   title: Governance Taxonomy Link Integrity
-  description: 'Governance taxonomy YAMLs (philosophy, policies, requirements with
-
-    embedded set metadata, and flat specifications catalog) MUST exist under
-
-    docs/spec and maintain bidirectional references across policy↔requirement,
-
-    policy↔specification, and requirement↔specification links with no dangling
-
-    items.
-
-    '
+  description: Governance and specification YAML must remain parseable and free of dangling identifiers.
   related_spec:
-  - philosophy/foundation.yaml
-  - policies/policies.yaml
-  - requirements/ops.yaml
-  - specifications.yaml
+  - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: docs/tests/test_spec_governance.py
-      tests:
-      - test_req_ops_003_governance_files_exist
-      - test_req_ops_003_ids_and_links_are_structurally_valid
-      - test_req_ops_003_bidirectional_links_hold
-    vitest:
-    - file: docsite/src/lib/spec-data.test.ts
-      tests:
-      - 'REQ-OPS-003: philosophy and policy helpers normalize governance YAML data'
-      - 'REQ-OPS-003: requirement and feature helpers sort governance sources predictably'
-      - 'REQ-OPS-003: ui page and relationship helpers expose only visible spec data'
+  - file: docsite/src/lib/spec-data.test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-004
   title: Version Milestone Definitions
-  description: 'Version planning MUST be expressed as YAML under docs/version with phase-level
-
-    milestone breakdowns, including release-preparation tasks and future milestones
-    for user-controlled views and AI-enabled workflows.
-
-    '
+  description: Version and milestone status must be represented under `docs/version` and distinguish implemented
+    from planned work.
   related_spec:
-  - ../version/unknown/roadmap.yaml
+  - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_versions.py
-      tests:
-      - test_docs_req_ops_004_version_files_exist
-      - test_docs_req_ops_004_milestones_are_unnumbered_and_phased
-      - test_docs_req_ops_004_release_preparation_is_explicit
-      - test_docs_req_ops_004_v02_contains_target_milestones
-      - test_docs_req_ops_004_milestone_yaml_files_exist
-      - test_docs_req_ops_004_issue_templates_support_phase
-      - test_docs_req_ops_004_readme_roadmap_points_to_canonical_version_docs
-      - test_docs_req_ops_004_readme_docs_tree_and_work_item_links_match_repo
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-005
-  title: YAML and Workflow Lint Gates
-  description: 'YAML specification/configuration files and GitHub Actions workflows
-
-    MUST be linted in both pre-commit and CI, and the same local/CI gate MUST
-
-    run repository artifact hygiene checks that fail tracked files still
-
-    matching ignore rules, block tracked dependency trees, and reject oversized
-
-    artifacts before merge.
-
-    '
+  title: Repository Lint and Hygiene Gates
+  description: Root checks must cover formatting, Rust/Deno linting, architecture/OpenAPI drift, and repository
+    artifact hygiene where configured.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_005_yaml_workflow_lint_gates_declared
-    - file: docs/tests/test_artifact_hygiene.py
-      tests:
-      - test_req_ops_005_root_artifact_hygiene_accepts_clean_repo
-      - test_req_ops_005_root_artifact_hygiene_rejects_tracked_ignored_paths
-      - test_req_ops_005_root_artifact_hygiene_rejects_generated_dirs
-      - test_req_ops_005_root_artifact_hygiene_rejects_oversized_tracked_files
-      - test_req_ops_005_root_gitignore_covers_validation_artifacts
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-006
-  title: Rust Pre-commit and CI Coverage Parity
-  description: 'Rust default hooks MUST enforce format and lint gates across
-
-    ugoite-minimum, ugoite-core, and ugoite-cli, while the heavier coverage gates
-
-    move to a pre-push/manual hook stage that still keeps 100% line-coverage parity
-
-    for both ugoite-minimum and ugoite-cli with Rust CI and the local
-
-    `mise run test` path.
-
-    '
+  title: Rust Quality Gate Parity
+  description: Root local and CI gates must run workspace formatting, Clippy, checks, and tests with the pinned
+    Rust toolchain.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_006_rust_precommit_parity
-    rust:
-    - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
-      tests:
-      - test_entry_create_req_ops_006_help_leads_with_plain_markdown_example
-      - test_entry_update_req_ops_006_help_describes_required_inputs
-      - test_form_and_search_req_ops_006_help_describes_required_inputs
-    - file: ugoite-cli/tests/test_cli_req_ops_006_coverage.rs
-      tests:
-      - test_cli_req_ops_006_query_help_rejects_removed_flags
-    - file: ugoite-cli/tests/test_cli_req_ops_006_http_helpers.rs
-      tests:
-      - test_cli_req_ops_006_http_helpers_return_json_on_success
-      - test_cli_req_ops_006_http_helpers_surface_error_bodies
-      - test_cli_req_ops_006_http_helpers_apply_auth_headers
-      - test_cli_req_ops_006_http_helpers_apply_dev_auth_proxy_header
-      - test_cli_req_ops_006_http_helpers_surface_dev_auth_proxy_error_bodies
+  - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_coverage.rs
+  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_http_helpers.rs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-007
-  title: Docsite Format/Lint/Test Parity
-  description: 'Docsite quality gates MUST define explicit format, lint,
-
-    typecheck, build validation, and behavior-test coverage validation across the
-
-    default pre-commit hooks, the heavier pre-push coverage hook, and Docsite CI.
-
-    '
+  title: Docsite Quality Gate Parity
+  description: Docsite type/build and behavior tests must run through Deno and the root check/test gates.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_007_docsite_quality_parity_declared
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-008
   title: PR Template Validation Gates
-  description: 'Pull request body validation MUST enforce required template sections
-
-    and accepted issue-closing link formats in CI so merge policy remains consistent.
-
-    '
+  description: Non-draft, non-Dependabot pull requests must contain Summary, Related Issue, and Testing sections
+    with a closing issue link.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_008_pr_template_validation_rules_declared
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-009
-  title: Release Automation Bootstrap and PR Permissions
-  description: 'Release automation MUST keep its bootstrap version metadata aligned at
-
-    `0.0.1` across `.github/.release-please-manifest.json` and the public
-
-    installer package metadata, bound pre-release-please history with
-
-    `bootstrap-sha`, use a
-
-    dedicated `RELEASE_PLEASE_TOKEN` auth path for release PR creation, and
-
-    no-op cleanly when that secret is unavailable instead of failing on
-
-    repository-level `GITHUB_TOKEN` PR permission limits.
-
-    '
+  title: Release Metadata Bootstrap
+  description: Release Please metadata and the public installer package must keep compatible bootstrap versions
+    and paths.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_009_release_ci_bootstrap_and_permissions_declared
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-010
   title: Frontend Local Dev Proxy Readiness
-  description: 'The frontend dev task MUST wait for the local backend health endpoint
-
-    before starting the UI dev server so
-
-    authenticated `/api` requests such as `/spaces` do not surface transient
-
-    local-startup 502 errors.
-
-    '
+  description: The integrated developer launcher must start the Rust server and make the browser `/api` route usable
+    before normal interaction.
   related_spec:
-  - ../guide/local-dev-auth-login.md
-  - architecture/frontend-backend-interface.md#error-handling-standards
+  - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_010_frontend_dev_proxy_readiness_declared
-    vitest:
-    - file: docsite/src/lib/app-api-storage-healthcheck.test.ts
-      tests:
-      - 'REQ-OPS-010: app API & Storage page verifies readiness with the health endpoint first'
+  - file: docsite/src/lib/app-api-storage-healthcheck.test.ts
+  - file: frontend/src/app.config.test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-011
   title: Rust Target Cache Discipline
-  description: 'Local Rust build and test tasks MUST share a bounded target root,
-
-    keep the default ugoite-core local build path incremental, reuse one
-
-    editable ugoite-core build inside root `mise run test` before backend and
-
-    ugoite-core test execution, keep the default ugoite-cli local test path
-
-    incremental, and expose explicit clean rebuild/test/cleanup commands when
-
-    stale artifacts need a
-
-    destructive reset. Rust CI MUST use
-
-    the same shared target root so repeated ugoite-core and ugoite-cli
-
-    development does not balloon target caches into tens of gigabytes.
-
-    '
+  description: Rust tasks must share the root `CARGO_TARGET_DIR` and use locked dependencies.
   related_spec:
-  - ../README.md
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_011_rust_target_cache_discipline_declared
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-012
-  title: Devcontainer Change-Detection Discipline
-  description: 'Devcontainer CI MUST use an explicit in-workflow change detector
-    for push and pull_request so the required summary check is always emitted,
-    the build-and-smoke workflow only runs for devcontainer, setup, and
-    guide-test inputs when appropriate, and the detector contract MUST keep
-    covering current and future mise.toml files.
-
-    '
+  title: Devcontainer Change Detection
+  description: A hosted workflow should build/smoke the devcontainer only when relevant paths change while always
+    emitting a required result. No such workflow is present.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_012_devcontainer_change_detection_covers_inputs
-      - test_docs_req_ops_012_devcontainer_refs_are_pinned_and_updatable
+  status: planned
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-013
   title: Native Required Status Check Contract
-  description: 'Default-branch pull request and merge queue protection MUST use
-    GitHub-native required status checks mapped directly to workflow summary jobs,
-    keep that contract versioned in-repo, require the CodeQL summary job as part
-    of the branch gate, and exclude release/publish automation workflows (at
-    minimum `Release CI` and `Release Publish`).
-
-    '
+  description: Required status names must be versioned and match the CI and CodeQL summary jobs.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_013_native_required_checks_contract
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-014
   title: CLI Language Classification Consistency
-  description: 'Top-level architecture and security documentation, plus supply-chain
-
-    automation metadata, MUST classify `ugoite-cli` consistently as a Rust
-
-    CLI instead of a Python project.
-
-    '
+  description: Documentation and automation must classify the CLI as Rust.
   related_spec:
-  - index.md
-  - architecture/stack.md
-  - security/overview.md
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_cli_language_docs.py
-      tests:
-      - test_docs_req_ops_014_cli_language_is_consistent
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-015
   title: Local Dev Auth Mode Selection
-  description: 'Local development tooling MUST expose explicit login flows instead
-
-    of starting the stack already authenticated. `passkey-totp` MUST prompt for
-
-    a local username plus current 2FA code during setup, store only the reusable
-
-    login context with owner-only permissions, require a passkey-bound local
-
-    context in addition to the 2FA code during explicit browser/CLI login, keep
-
-    `GET /auth/config` read-only so login discovery cannot recreate admin-space
-
-    or other storage state, apply temporary throttling after repeated failed
-
-    `passkey-totp` login attempts so the endpoint cannot be hammered
-
-    indefinitely, and
-
-    complete an explicit login step before a bearer token is issued. Browser
-
-    login MUST terminate through the frontend proxy, which stores the resulting
-
-    bearer token in an HttpOnly session cookie instead of exposing it to
-
-    frontend JavaScript. CLI logins MUST also persist the issued bearer token
-
-    in a CLI-owned session file with owner-only permissions so follow-up CLI
-
-    commands stay authenticated without shell eval, while still allowing shell
-
-    export output for scripting. `mock-oauth`
-
-    MAY remain as an explicit development-only OAuth-style login path, but no dev
-
-    mode may pre-inject a bearer token into the running stack. CLI auth login,
-    token-clear, and logout MUST print shell-aware environment commands so users
-    can apply or clear credentials in POSIX shells, fish, or PowerShell without
-    manual translation. The standard
-
-    devcontainer setup MUST include `oathtool` so passkey-totp flows remain
-
-    reproducible inside the canonical contributor environment. README, docsite
-
-    setup pages, and developer-facing auth guidance MUST point back to one
-
-    canonical auth-aware guide instead of duplicating mode-specific startup
-
-    instructions.
-
-    '
+  description: Development must require explicit login. Mock OAuth is operational; passkey/TOTP must be labeled
+    unavailable until the server implements it.
   related_spec:
-  - ../guide/local-dev-auth-login.md
-  - ../guide/env-matrix.md
-  - ../README.md
+  - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_015_local_dev_auth_docs_cover_manual_modes
-      - test_docs_req_ops_015_auth_profile_docs_describe_mode_and_next_step
-      - test_docs_req_ops_015_dev_auth_script_declares_manual_modes
-      - test_docs_req_ops_015_mock_oauth_startup_avoids_terminal_prompts
-    - file: backend/tests/test_dev_auth.py
-      tests:
-      - test_dev_auth_req_ops_015_config_exposes_passkey_totp_mode
-      - test_dev_auth_req_ops_015_auth_config_remains_read_only
-      - test_dev_auth_req_ops_015_passkey_totp_login_issues_signed_token
-      - test_dev_auth_req_ops_015_passkey_totp_login_rejects_replayed_code
-      - test_dev_auth_req_ops_015_passkey_login_throttles_repeated_failures
-      - test_dev_auth_req_ops_015_passkey_login_throttles_repeated_context_failures
-      - test_dev_auth_req_ops_015_passkey_login_recovers_after_throttle_window
-      - test_dev_auth_req_ops_015_mock_oauth_login_issues_signed_token
-      - test_dev_auth_req_ops_015_startup_bootstraps_admin_space
-      - test_dev_auth_req_ops_015_passkey_login_rejects_missing_passkey_context
-      - test_dev_auth_req_ops_015_passkey_login_rejects_invalid_passkey_context
-      - test_dev_auth_req_ops_015_passkey_login_rejects_blank_passkey_context
-      - test_dev_auth_req_ops_015_passkey_login_requires_configured_passkey_context
-      - test_dev_auth_req_ops_015_rejects_spoofed_loopback_forwarded_for
-      - test_dev_auth_req_ops_015_allows_trusted_proxy_token
-      - test_dev_auth_req_ops_015_rejects_invalid_trusted_proxy_token
-      - test_dev_auth_req_ops_015_rejects_missing_trusted_proxy_token
-      - test_dev_auth_req_ops_015_rejects_unknown_client_host
-    - file: ugoite-core/tests/test_auth.py
-      tests:
-      - test_validate_totp_code_req_ops_015_accepts_current_code
-      - test_validate_totp_code_req_ops_015_accepts_unpadded_secret
-      - test_validate_totp_code_req_ops_015_rejects_replayed_code
-      - test_validate_totp_code_req_ops_015_accepts_next_time_step_after_replay
-    vitest:
-    - file: docsite/src/lib/app-cli-backend-mode.test.ts
-      tests:
-      - 'REQ-OPS-015: CLI landing page shows backend-mode routing and auth before remote space commands'
-    - file: frontend/src/routes/login.test.tsx
-      tests:
-      - 'REQ-OPS-015: signs in with passkey-totp without exposing a readable auth cookie'
-      - 'REQ-OPS-015: uses explicit mock-oauth browser login without exposing a readable auth cookie'
-      - 'REQ-OPS-015: visiting login preserves an existing browser auth cookie until re-auth completes'
-      - 'REQ-OPS-015: keeps the /spaces shortcut out of signed-out login screens'
-      - 'REQ-OPS-015: shows first-run passkey guidance with the canonical local auth guide'
-      - 'REQ-OPS-015: keeps first-run passkey guidance out of mock-oauth login'
-      - 'REQ-OPS-015: keeps auth-config recovery guidance compatible with source and published browser flows'
-    - file: frontend/src/routes/api/[...path].test.ts
-      tests:
-      - 'REQ-OPS-015: proxy login stores browser auth in an HttpOnly cookie and redacts the bearer token'
-      - 'REQ-OPS-015: proxy login marks auth cookies Secure when HTTPS is forwarded'
-    - file: frontend/src/lib/api.test.ts
-      tests:
-      - 'REQ-OPS-015: forwards SSR auth headers to local auth requests'
-      - 'REQ-OPS-015: preserves explicit request auth headers during SSR'
-      - 'REQ-OPS-015: skips SSR auth forwarding without a request event'
-      - 'REQ-OPS-015: uses FRONTEND_TEST_ORIGIN for the frontend test API base'
-      - 'REQ-OPS-015: uses FRONTEND_URL for the SSR API origin when frontend origin env vars are unset'
-      - 'REQ-OPS-015: falls back to the default SSR origin when no frontend origin env is configured'
-      - 'REQ-OPS-015: does not derive the SSR API origin from the incoming request'
-    - file: frontend/src/lib/auth-cookie.test.ts
-      tests:
-      - 'REQ-OPS-015: reads auth cookies from browser request headers'
-      - 'REQ-OPS-015: treats missing, blank, and undecodable auth cookies safely'
-      - 'REQ-OPS-015: builds HttpOnly auth cookies with explicit expiry'
-      - 'REQ-OPS-015: omits auth cookie expiry when the browser session should stay transient'
-    - file: frontend/src/lib/frontend-origin.test.ts
-      tests:
-      - 'REQ-OPS-015: falls back to the default frontend test origin when process env is unavailable'
-      - 'REQ-OPS-015: trims and applies FRONTEND_TEST_ORIGIN overrides'
-      - 'REQ-OPS-015: prefers runtime frontend origin env vars in documented order'
-    - file: frontend/src/test/mocks/handlers.test.ts
-      tests:
-      - 'REQ-OPS-015: MSW handlers honor FRONTEND_TEST_ORIGIN'
-    - file: frontend/src/lib/auth-api.test.ts
-      tests:
-      - 'REQ-OPS-015: surfaces local auth config and login response errors clearly'
-    - file: frontend/src/routes/spaces/index.test.tsx
-      tests:
-      - 'REQ-OPS-015: redirects unauthenticated users to the explicit login route'
-    - file: frontend/src/routes/index.test.tsx
-      tests:
-      - 'REQ-OPS-015: public home page points first-time users to /login before /spaces'
-    rust:
-    - file: ugoite-cli/tests/test_auth.rs
-      tests:
-      - test_cli_auth_profile_req_ops_015_reports_core_mode_without_backend_credentials
-      - test_cli_auth_profile_req_ops_015_reports_backend_mode_without_credentials
-      - test_cli_auth_profile_req_ops_015_reports_masked_backend_credentials
-      - test_cli_auth_profile_req_ops_015_reports_api_mode_with_api_key
-      - test_cli_auth_login_req_ops_015_posts_dev_login_and_prints_export
-      - test_cli_auth_login_req_ops_015_reuses_cached_dev_auth_file_context
-      - test_cli_auth_login_req_ops_015_surfaces_passkey_context_recovery_guidance
-      - test_cli_auth_login_req_ops_015_shell_escapes_bearer_token_exports
-      - test_cli_auth_login_req_ops_015_supports_fish_env_output
-      - test_cli_auth_login_req_ops_015_supports_powershell_env_output
-      - test_cli_auth_login_req_ops_015_quotes_empty_bearer_token_exports
-      - test_cli_auth_token_clear_req_ops_015_prints_shell_specific_unsets
-      - test_cli_auth_login_req_ops_015_persists_cli_session_for_followup_commands
-      - test_cli_auth_token_clear_req_ops_015_clears_saved_cli_session
-      - test_cli_auth_login_req_ops_015_help_scopes_mock_oauth_proxy_token_requirement
-    - file: ugoite-cli/src/http.rs
-      tests:
-      - test_dev_local_auth_headers_req_ops_015_only_allow_loopback_hosts
-    - file: ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
-      tests:
-      - test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths
-    e2e:
-    - file: e2e/smoke.test.ts
-      tests:
-      - 'REQ-OPS-015: browser mock-oauth login reaches /spaces with an HttpOnly auth cookie and default ahead of reserved admin-space'
-      - 'REQ-OPS-015: visiting login does not clear an existing browser auth cookie'
-    - file: e2e/public-pages.test.ts
-      tests:
-      - 'REQ-OPS-015: home page Log in is the primary CTA and Open Spaces is secondary for unauthenticated visitors'
+  - file: crates/ugoite-cli/src/commands/auth.rs
+  - file: crates/ugoite-cli/tests/test_auth.rs
+  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
+  - file: docsite/src/lib/app-cli-backend-mode.test.ts
+  - file: e2e/public-pages.test.ts
+  - file: e2e/smoke.test.ts
+  - file: frontend/src/lib/api.test.ts
+  - file: frontend/src/lib/auth-api.test.ts
+  - file: frontend/src/lib/auth-cookie.test.ts
+  - file: frontend/src/lib/frontend-origin.test.ts
+  - file: frontend/src/routes/about.test.tsx
+  - file: frontend/src/routes/api/[...path].test.ts
+  - file: frontend/src/routes/index.test.tsx
+  - file: frontend/src/routes/login.test.tsx
+  - file: frontend/src/routes/spaces/index.test.tsx
+  - file: frontend/src/test/mocks/handlers.test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-016
   title: Local Dev Sample-Data Seeding Workflow
-  description: 'The repository MUST expose a root developer workflow for loading
-
-    local sample data without requiring contributors to memorize the lower-level
-
-    CLI invocation. The workflow MUST document safe defaults, reuse the same
-
-    `UGOITE_ROOT` storage root as the local dev backend when that root is
-
-    configured, expose override controls and the underlying scenario-listing
-
-    command, and runtime CI MUST prove the seeded space remains discoverable
-
-    through the local dev auth stack before merge.
-
-    '
+  description: A root developer task should expose sample-data seeding. A helper script exists, but no root mise
+    task is currently defined.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
+  status: planned
+  verification: traced
   tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_016_dev_seed_workflow_is_declared
-    - file: backend/tests/test_dev_auth.py
-      tests:
-      - test_dev_seed_req_ops_016_seeded_space_is_visible_to_local_dev_stack
-
+  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_coverage.rs
+  - file: crates/ugoite-core/tests/test_sample_data.rs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-017
   title: Release Container Publishing and Quick Start
-  description: 'Release Publish MUST push the official backend and frontend images
-
-    to GHCR with deterministic stable/alpha/beta tags aligned to the requested
-
-    SemVer, attach exact-version backend/frontend container image archives plus
-
-    `docker-compose.release.yaml` to the GitHub Release, and repository/docs
-
-    guidance MUST expose a quick-start path for
-
-    downloading, loading, and running those release images without rebuilding
-
-    from source. That quick-start guidance MUST lead with the pre-built release
-
-    flow and document the configurable release-compose environment variables in
-
-    a dedicated section.
-
-    '
+  description: Release automation should publish one deterministic runtime image and verify the documented Compose
+    quick start. No publishing workflow is present.
   related_spec:
   - testing/ci-cd.md
-  - ../guide/container-quickstart.md
-  - ../README.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
+  status: planned
+  verification: traced
   tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_017_release_publish_exports_container_assets
-    - file: docs/tests/test_release_compose_auth_secrets.py
-      tests:
-      - test_docs_req_ops_017_release_compose_requires_install_specific_auth_values
-    - file: docs/tests/test_release_compose_directory_permissions.py
-      tests:
-      - test_docs_req_ops_017_release_quickstart_avoids_world_writable_spaces
+  - file: crates/ugoite-core/tests/test_space.rs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-018
   title: CLI Release Binaries and Install Path
-  description: 'Release Publish MUST create predictable CLI archives for the supported
-
-    release platforms (at minimum Linux x86_64 + arm64, macOS x86_64, and
-
-    macOS arm64), attach them to the GitHub Release, generate matching
-
-    platform-specific one-liner installer assets, and keep a maintained
-
-    generic install path plus quick-start documentation so users can run
-
-    `ugoite --help` without cloning and building from source.
-
-    '
+  description: Release automation should publish checksum-verified CLI archives for supported platforms. Installer
+    scripts/package exist, but publication automation is absent.
   related_spec:
   - testing/ci-cd.md
-  - ../guide/cli.md
-  - ../README.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
+  status: planned
+  verification: traced
   tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_018_cli_release_binaries_and_install_script
-      - test_docs_req_ops_018_install_script_supports_prerelease_quick_start
-      - test_docs_req_ops_018_release_quick_start_smoke_script_validates_prerelease
-      - test_docs_req_ops_018_platform_installer_asset_validates_prerelease
-      - test_docs_req_ops_018_release_publish_draft_job_checks_out_requested_target
-      - test_docs_req_ops_018_release_publish_finalize_job_checks_out_target
-    - file: docs/tests/test_cli_verify_first_install.py
-      tests:
-      - test_docs_req_ops_018_cli_guide_leads_with_verify_first_release_install
-    vitest:
-    - file: docsite/src/lib/app-cli-published-install.test.ts
-      tests:
-      - 'REQ-OPS-018: app CLI landing page exposes the released install path before source builds'
-    rust:
-    - file: ugoite-cli/tests/integration_test.rs
-      tests:
-      - test_help_req_ops_018_shows_task_oriented_quick_start
+  - file: crates/ugoite-cli/tests/integration_test.rs
+  - file: docsite/src/lib/app-cli-published-install.test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-019
-  title: Explicit Mise Monorepo Config Roots
-  description: 'The root `mise.toml` MUST declare explicit `[monorepo].config_roots`
-
-    for the package-level mise configurations so top-level developer entrypoints
-
-    no longer rely on deprecated automatic monorepo discovery or emit recurring
-
-    warning noise during normal `mise run ...` usage.
-
-    '
+  title: Explicit Root Mise Task Surface
+  description: All supported developer entrypoints must be declared in the root `mise.toml`; package-scoped mise
+    tasks are not part of the current repository.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_019_mise_monorepo_config_roots_are_explicit
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-020
-  title: Portable Minimum Layer WASM Gates
-  description: '`ugoite-minimum` MUST have explicit WASM-oriented quality gates in
-
-    pre-commit and Rust CI, and the repository MUST document the responsibility
-
-    boundary between `ugoite-minimum` and `ugoite-core`, including which
-
-    portable helpers have already moved and why heavier logic still remains in
-
-     `ugoite-core`.
-
-     '
-  related_spec:
-  - architecture/future-proofing.md
-  priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_020_minimum_wasm_gates_and_boundaries_declared
-- set_id: REQCAT-OPS
-  source_file: requirements/ops.yaml
-  scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
-  id: REQ-OPS-021
-  title: Frontend Coverage Must Be a Hard Gate
-  description: 'Frontend CI and the root `mise run test` task MUST enforce 100%
-
-    coverage for frontend code, and the contract MUST remain documented so the
-
-    hard gate is explicit rather than only implied by frontend-local config.
-
-    The Vitest packages that implement the coverage gate MUST stay version-aligned
-
-    and update together so the enforced frontend run does not regress into mixed-version
-
-    coverage execution drift.
-
-    '
+  title: Portable Rust WASM Gates
+  description: '`ugoite-domain`, `ugoite-api-client`, and `ugoite-wasm` must compile for `wasm32-unknown-unknown`
+    through the root check/release gates.'
   related_spec:
   - testing/ci-cd.md
-  priority: high
+  - ../../guide/operations.md
+  priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_021_frontend_coverage_gate_is_explicit
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
+  id: REQ-OPS-021
+  title: Frontend Coverage Hard Gate
+  description: A numeric frontend coverage threshold should be enforced in CI. The current gate runs tests but no
+    hard coverage threshold.
+  related_spec:
+  - testing/ci-cd.md
+  - ../../guide/operations.md
+  priority: medium
+  status: planned
+  verification: untraced
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-022
   title: Path-Aware Pull Request E2E Tiering
-  description: 'E2E CI MUST deterministically select a lighter smoke tier for
-
-    pull requests that only change low-risk docs/docsite metadata paths, while
-
-    `merge_group` and pushes to `main` MUST continue to run the full E2E suite.
-
-    The tiering rule MUST be visible in `.github/workflows/e2e-ci.yml` and
-
-    documented in `docs/spec/testing/ci-cd.md` so reviewers can audit when full
-
-    integration coverage is still required.
-
-    '
+  description: Hosted CI may select E2E tiers by changed paths while merge/push retains smoke coverage. Current
+    CI uses fixed pull-request and merge gates.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_022_e2e_ci_is_tiered_for_prs_and_full_on_merge_queue
+  status: planned
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-023
-  title: Public Installer Package Must Stay Separate From Private Tooling
-  description: 'The repository MUST keep the public `ugoite` installer package
-
-    separate from the private root Node tooling package. The public package
-
-    metadata MUST stay non-private, packable, and expose `ugoite-install`
-
-    while the root `package.json` remains private repository tooling, and the
-
-    top-level install docs MUST make that split explicit so users can discover
-
-    the public package-managed install path without reverse-engineering release
-
-    automation files.
-
-    '
+  title: Public Installer Separation
+  description: The public `packages/ugoite` installer must remain separate from repository development tooling.
   related_spec:
   - testing/ci-cd.md
-  - ../README.md
-  - ../guide/cli.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_023_public_package_stays_separate_from_private_tooling
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-024
-  title: Docsite Coverage Must Be a Hard Gate
-  description: 'Docsite CI and the root `mise run test` task MUST enforce 100% coverage
-
-    for docsite behavior tests, and the contract MUST remain documented so the
-
-    hard gate is explicit rather than only implied by docsite-local config.
-
-    '
+  title: Docsite Coverage Hard Gate
+  description: A numeric docsite coverage threshold should be enforced in CI. The current gate runs tests but no
+    hard threshold.
   related_spec:
   - testing/ci-cd.md
-  priority: high
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_024_docsite_coverage_gate_is_explicit
+  - ../../guide/operations.md
+  priority: medium
+  status: planned
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-025
   title: Published Release Quick-Start Verification
-  description: 'Repository automation MUST provide a reusable/manual workflow and
-
-    supporting scripts that download exact release assets, start
-
-    `docker-compose.release.yaml`, verify representative browser stories with
-
-    Playwright, and confirm a released CLI install can authenticate to and
-
-    operate against the running release backend for an exact release version.
-
-    '
+  description: Automation should download published artifacts and verify browser and CLI quick starts. Supporting
+    scripts exist; no hosted workflow is present.
   related_spec:
   - testing/ci-cd.md
-  - ../guide/container-quickstart.md
-  - ../guide/cli.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_025_release_quickstart_verification_stays_wired
+  status: planned
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-026
-  title: Channel-Scoped Release Changelog Sources
-  description: 'The repository MUST keep separate stable, beta, and alpha changelog
-
-    sources under `docs/version`, expose discoverable human-readable changelog
-
-    entrypoints from `docs/spec/versions/changelog.md`, and have `Release
-
-    Publish` prepend the matching repository-rendered channel notes before
-
-    GitHub-generated release notes.
-
-    '
+  title: Channel-Scoped Changelog Sources
+  description: Stable, beta, and alpha changelog sources must remain separate and must not imply unpublished artifacts
+    exist.
   related_spec:
   - testing/ci-cd.md
-  - versions/index.md
-  - versions/changelog.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_versions.py
-      tests:
-      - test_docs_req_ops_026_release_channel_changelog_sources_exist
-      - test_docs_req_ops_026_release_preparation_tracks_channel_drafting
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_026_release_publish_uses_channel_changelog_sources
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-027
-  title: Strict Lockfile Install Discipline
-  description: 'Local tasks, CI workflows, and contributor-facing install examples
-
-    that rely on committed lockfiles MUST fail fast on dependency drift instead
-
-    of mutating dependency resolution in place. Root Node tooling MUST use
-
-    `npm ci`, Bun projects MUST use `bun install --frozen-lockfile`, and Python
-
-    `uv.lock` environments MUST use `uv sync --locked` or an equally strict
-
-    contract.
-
-    '
+  title: Strict Lockfile Discipline
+  description: Rust commands must use `--locked` and Deno workflows must use the committed lockfile without silently
+    changing dependency resolution.
   related_spec:
   - testing/ci-cd.md
-  priority: high
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_027_lockfile_installs_are_strict
-- set_id: REQCAT-OPS
-  source_file: requirements/ops.yaml
-  scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
-  id: REQ-OPS-028
-  title: Repository-Owned Helm Deployment Chart
-  description: 'The repository MUST ship an in-repo Helm chart under `charts/ugoite`
-
-    that mirrors the published release-compose deployment topology without
-
-    introducing extra always-on services. The chart MUST package the canonical
-
-    backend + frontend GHCR images, keep the backend storage contract at
-
-    `UGOITE_ROOT=/data`, preserve the frontend-to-backend service wiring through
-
-    the chart equivalent of `http://backend:8000`, expose values for image tags,
-
-    service ports, persistence claim settings, and auth-related environment
-
-    variables used by `docker-compose.release.yaml`, and document local chart
-
-    installation without adding chart publication or automated cluster
-
-    deployment.
-
-    '
-  related_spec:
-  - architecture/stack.md
-  - ../guide/container-quickstart.md
-  - ../guide/helm-chart.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_helm_chart.py
-      tests:
-      - test_docs_req_ops_028_helm_chart_assets_exist
-      - test_docs_req_ops_028_helm_chart_defaults_match_release_topology
-      - test_docs_req_ops_028_helm_chart_docs_stay_wired
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
+  id: REQ-OPS-028
+  title: Repository-Owned Helm Chart
+  description: The Helm chart must deploy the single image, persistent `/data`, non-root defaults, and explicit
+    auth secrets.
+  related_spec:
+  - testing/ci-cd.md
+  - ../../guide/operations.md
+  priority: medium
+  status: implemented
+  verification: untraced
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-030
   title: Pre-Merge Release Quick-Start Verification
-  description: 'Repository automation MUST provide a required pre-merge workflow
-
-    that builds current-branch release-like Docker and CLI assets, exercises the
-
-    documented release quick-start path before merge, verifies both browser and
-
-    CLI/auth flows against those assets, and keeps the post-publish
-
-    `Release Quickstart Verify` workflow as the exact published-release
-
-    validation path.
-
-    '
+  description: A required hosted pre-merge release-like artifact test is desired; current merge CI runs builds and
+    E2E smoke but not the full release quick start.
   related_spec:
   - testing/ci-cd.md
-  - ../guide/container-quickstart.md
-  - ../guide/cli.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_030_pre_merge_release_quickstart_ci_is_required
+  status: planned
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-031
   title: Immutable GitHub Action Pinning
-  description: 'External GitHub Actions referenced from `.github/workflows/*.yml`
-
-    MUST pin full commit SHAs instead of floating tags or branches. Local reusable
-
-    workflows MAY remain path-based, and root `.github/dependabot.yml` MUST keep
-
-    `package-ecosystem: "github-actions"` coverage so SHA-pinned actions stay
-
-    automatically updatable.
-
-    '
+  description: External GitHub Actions must be pinned to full commit SHAs.
   related_spec:
   - testing/ci-cd.md
-  priority: high
+  - ../../guide/operations.md
+  priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_031_github_actions_are_sha_pinned_and_updatable
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-032
-  title: Contributor Setup and Local Conventional Commit Hooks Stay Current
-  description: 'The canonical contributor bootstrap path MUST install repository
-
-    dependencies and enable the repo-local pre-commit hook chain by default.
-    Root `mise run setup` MUST clear any repo-local `core.hooksPath` override
-    before running `uvx pre-commit install`, and contributor-facing setup docs
-    MUST describe that `mise run setup` prepares the same pre-commit hook chain
-    by default. The repository MUST also keep local Conventional Commit
-    enforcement wired through the private root tooling package and a Husky
-    `commit-msg` hook that runs `commitlint --edit` without deprecated bootstrap
-    lines, so contributor commits stay warning-free on current Husky releases
-    instead of drifting toward known v10 breakage.
-
-    '
+  title: Contributor Setup and Hooks
+  description: Historical mandatory local hook installation is superseded by explicit root mise commands and hosted
+    required checks.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_032_setup_installs_pre_commit_hooks
-      - test_docs_req_ops_032_local_conventional_commit_hook_is_current
+  status: superseded
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-033
-  title: Local Python Test Strictness Matches CI
-  description: 'Local backend, ugoite-core, and docs pytest tasks MUST reject Python
-
-    warnings and skipped tests with the same effective gates CI uses. The root
-
-    `mise run test` path MUST inherit those strict local tasks so a local green
-
-    result does not hide warning-only or skipped-test regressions that backend,
-
-    docs, or ugoite-core CI would reject.
-
-    '
+  title: Local Alternate-Runtime Test Strictness
+  description: Historical alternate-runtime test strictness is superseded by the Rust/Deno workspace gates.
   related_spec:
   - testing/ci-cd.md
-  - testing/strategy.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_033_python_test_strictness_parity_declared
-    - file: docs/tests/test_pytest_skip_guard.py
-      tests:
-      - test_req_ops_033_skip_guard_accepts_clean_report
-      - test_req_ops_033_skip_guard_rejects_skipped_report
+  status: superseded
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-034
-  title: Local Direct-Process E2E Cleanup Is Explicit
-  description: 'The direct-process local E2E runner MUST only stop services it
-
-    started itself. If ports `3000` or `8000` are already occupied, `e2e/scripts/run-e2e.sh`
-
-    MUST fail fast and point contributors at an explicit cleanup command instead
-
-    of killing unrelated listeners. The destructive fallback MUST stay isolated
-
-    behind `mise run cleanup:ports`.
-
-    '
+  title: Direct-Process E2E Cleanup
+  description: Direct-process E2E scripts must only stop processes they started and fail clearly on occupied ports.
   related_spec:
   - testing/ci-cd.md
-  - testing/strategy.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_ops_034_local_e2e_runner_requires_explicit_port_cleanup
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-035
-  title: Container Runtime Hardening Defaults
-  description: 'Published backend container artifacts and repository-owned Kubernetes
-
-    deployment manifests MUST default to non-root execution. The backend image
-
-    MUST create and run as a dedicated non-root user, and the Helm backend/frontend
-
-    deployments MUST render baseline hardening defaults that disable privilege
-
-    escalation, drop unused Linux capabilities, and keep the backend `/data`
-
-    volume writable without falling back to root.
-
-    '
-  related_spec:
-  - architecture/stack.md
-  - ../guide/helm-chart.md
-  priority: high
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_helm_chart.py
-      tests:
-      - test_docs_req_ops_035_backend_image_runs_as_non_root
-      - test_docs_req_ops_035_helm_security_defaults_are_hardened
-      - test_docs_req_ops_035_hardening_docs_stay_visible
-- set_id: REQCAT-OPS
-  source_file: requirements/ops.yaml
-  scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
-  id: REQ-OPS-036
-  title: Contributor Workflow Guide Stays Spec-Driven
-  description: 'Contributor-facing workflow docs MUST surface one canonical guide
-
-    that explains when to update `docs/spec/features`, `docs/spec/requirements`,
-    user guides, and docsite surfaces; how REQ-* traceability maps tests back to
-    requirements; which local commands mirror CI; which docsite navigation files
-    must change when routes or guide entry points move; which supported
-    contributor setup paths exist, including when to choose the repo
-    devcontainer and which tools/bootstrap steps it provides; and when
-    contributors should choose the narrower `ugoite-minimum` path plus its
-    package-local quality gates instead of the full stack.
-
-    '
+  title: Container Runtime Hardening
+  description: Container and Helm defaults must run as non-root, drop capabilities, and protect persistent storage.
   related_spec:
   - testing/ci-cd.md
-  - ../README.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_contributing_guide.py
-      tests:
-      - test_docs_req_ops_036_contributor_workflow_guide_stays_traceable
-      - test_docs_req_ops_036_contributor_docs_surface_devcontainer_setup_path
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
+  id: REQ-OPS-036
+  title: Contributor Workflow Guide
+  description: Contributor docs must explain architecture boundaries, spec updates, requirement traceability, and
+    current root gates.
+  related_spec:
+  - testing/ci-cd.md
+  - ../../guide/operations.md
+  priority: medium
+  status: implemented
+  verification: untraced
+- set_id: REQCAT-OPS
+  source_file: requirements/ops.yaml
+  scope: Operational quality, workflow, and automation requirements.
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-037
-  title: Browser Walkthrough Keeps Form Terminology
-  description: 'The browser walkthrough guide MUST keep newcomer-facing Form terminology
-
-    in the starter-entry flow and MUST NOT reintroduce legacy schema wording in
-
-    that guide.
-
-    '
+  title: Browser Walkthrough Form Terminology
+  description: The browser walkthrough must use Form terminology.
   related_spec:
-  - ../guide/browser-first-entry.md
+  - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_browser_walkthrough_form_terminology.py
-      tests:
-      - test_docs_req_ops_037_browser_walkthrough_uses_form_terminology
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-040
-  title: Browser Walkthrough Explains Example Field Types
-  description: 'The browser walkthrough guide MUST explain why the example form field
-
-    types differ so newcomers understand the tradeoff between short structured
-
-    text and longer formatted notes.
-
-    '
+  title: Browser Walkthrough Field Types
+  description: The browser walkthrough must explain short structured fields versus longer Markdown fields.
   related_spec:
-  - ../guide/browser-first-entry.md
+  - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_browser_walkthrough_field_types.py
-      tests:
-      - test_docs_req_ops_040_browser_walkthrough_explains_example_field_types
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-041
-  title: Browser Walkthrough Maps Main Surfaces
-  description: 'The browser walkthrough guide MUST explain the main post-entry browser
-
-    surfaces so newcomers can tell what Dashboard, Entries, Forms, and Search
-
-    are for.
-
-    '
+  title: Browser Walkthrough Main Surfaces
+  description: The browser walkthrough must explain Dashboard, Entries, Forms, Search, SQL, Assets, and Settings
+    at a high level.
   related_spec:
-  - ../guide/browser-first-entry.md
+  - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_browser_walkthrough_surface_glossary.py
-      tests:
-      - test_docs_req_ops_041_browser_walkthrough_maps_core_surfaces
+  verification: untraced
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
-  linked_policies:
-  - POL-003
-  - POL-005
-  - POL-008
-  - POL-009
-  - POL-010
-  - POL-013
-  linked_specifications:
-  - SPEC-TESTING-CICD
-  - SPEC-TESTING-STRATEGY
-  - SPEC-ARCH-STACK
-  - SPEC-PRODUCT-METRICS
+  linked_policies: *id001
+  linked_specifications: *id002
   id: REQ-OPS-042
   title: Script-Driven Pull Request Creation
-  description: 'Codex-assisted and manual pull request creation workflows MUST validate
-
-    the body from a file before calling GitHub, MUST keep the required summary,
-    related issue, and testing sections intact, and MUST use body-file transport
-    so shell quoting cannot corrupt the text that reaches `gh pr create`.
-
-    '
+  description: A repository-owned script should validate a pull-request body before invoking GitHub tooling. No
+    such script is present.
   related_spec:
   - testing/ci-cd.md
+  - ../../guide/operations.md
   priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: docs/tests/test_pr_creation.py
-      tests:
-      - test_docs_req_ops_042_pr_helper_validates_template_compliant_body
-      - test_docs_req_ops_042_pr_helper_requires_file_transport
+  status: planned
+  verification: untraced

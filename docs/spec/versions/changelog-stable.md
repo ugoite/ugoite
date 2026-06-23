@@ -1,31 +1,7 @@
-# Stable Channel Changelog
+# Stable changelog
 
-Stable releases are the operator-facing source of truth for supported Ugoite
-behavior. When `Release Publish` runs with `channel=stable`, it prepends
-repository-rendered notes from `../../version/changelog/stable.yaml` before the
-GitHub-generated commit summary.
+No stable artifact publication is established by this repository snapshot. The current release candidate includes the Rust/Deno architecture, single-image deployment, local CLI core mode, server-backed browser, REST API, and read-only MCP resource.
 
-## Current Focus
+Before stable publication, complete signed/checksummed artifact publishing, production authentication decisions, published quick-start verification, and known-issue/upgrade guidance.
 
-### Added
-
-- Local-first MVP behavior across backend, frontend, CLI, and storage abstraction
-- Deployable backend/frontend release images plus exact-version quick-start assets
-- Predictable CLI archives and installer assets for supported release platforms
-
-### Changed
-
-- Release communication is tracked as repository-managed stable notes instead of
-  sharing one mixed changelog page with prerelease channels
-- Stable notes stay focused on supported workflows, upgrade impact, and
-  operator guidance
-
-### Planned
-
-- Final v0.1 release communication with known issues and next-step guidance
-- Stable summaries for future release streams after release-preparation closes
-
-## Source Files
-
-- [Machine-readable stable changelog](../../version/changelog/stable.yaml)
-- [Versions overview](index.md)
+Machine-readable source: [`../../version/changelog/stable.yaml`](../../version/changelog/stable.yaml).

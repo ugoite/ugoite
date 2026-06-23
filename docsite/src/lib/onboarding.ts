@@ -34,7 +34,7 @@ export const conceptPrimerCard = {
 export const coreConceptSummaries = [
 	{
 		description:
-			"A portable workspace that owns its entries, forms, assets, settings, and derived indexes for one project, team, or knowledge base.",
+			"A portable workspace that owns its entries, forms, assets, settings, and any derived metadata produced for one project, team, or knowledge base.",
 		title: "Space",
 	},
 	{
@@ -49,7 +49,7 @@ export const coreConceptSummaries = [
 	},
 	{
 		description:
-			"You write Markdown first, forms extract typed fields when you want structure, and search/indexes are derived from that source data.",
+			"You write Markdown first, forms extract typed fields when you want structure, and today’s keyword search scans that source data directly; persistent indexing is planned.",
 		title: "Markdown, extraction, and search",
 	},
 	{
@@ -61,12 +61,12 @@ export const coreConceptSummaries = [
 
 export const primaryStartCards = [
 	{
-		badge: "Fastest browser path",
+		badge: "Tagged image path",
 		description:
-			"Launch the released frontend + backend stack with Docker and published image pulls, then continue through the explicit browser login.",
+			"When a matching GHCR tag is available, launch the single frontend + backend image with Docker, then continue through the explicit browser login. This repository does not include a hosted publishing workflow.",
 		href: "/docs/guide/container-quickstart",
 		icon: "🚀",
-		title: "Try the published release",
+		title: "Use a tagged image when available",
 	},
 	{
 		badge: "Highest setup cost",
@@ -79,7 +79,7 @@ export const primaryStartCards = [
 	{
 		badge: "Lowest setup cost",
 		description:
-			"Install the released CLI or use it from source when the terminal is your main surface and you want to avoid container infrastructure.",
+			"Use the CLI from source, or install a matching published CLI asset when one is available, when the terminal is your main surface and you want to avoid container infrastructure.",
 		href: "/docs/guide/cli",
 		icon: "⌨️",
 		title: "Use the CLI",

@@ -1,25 +1,19 @@
-# Runtime Adapters
+# Runtime adapters
 
-The release runtime treats `ugoite-core` as the application service boundary.
-Adapters translate their local protocol into core calls and avoid owning
-business rules.
+Runtime-specific code surrounds the portable Rust model.
 
-```text
-frontend UI
-  -> frontend client boundary
-    -> Rust ugoite-server HTTP adapter
-      -> ugoite-core service boundary
-        -> storage adapters
+## Native server
 
-ugoite-cli
-  -> ugoite-core service boundary
-    -> storage adapters
-```
+Axum maps HTTP requests to authenticated identities, checks Space permissions, invokes `UgoiteService`, and converts domain/service errors into HTTP responses. Static browser files may be served from `UGOITE_STATIC_DIR`.
 
-`ugoite-server` is the current browser runtime, not the long-term source of
-truth. It should stay focused on request decoding, auth/session extraction, DTO
-conversion, core invocation, and HTTP error mapping.
+## Native CLI
 
-`ugoite-storage` stays focused on current persistence adapters. Browser-local
-storage, peer sync, signed operation logs, and relay behavior are future
-architecture topics, not release implementation scope.
+Core mode constructs `UgoiteService` against a local root. Backend/API mode uses `ugoite-api-client` request preparation and a native HTTP transport. Local-only index maintenance is intentionally unavailable in remote mode.
+
+## Browser
+
+JavaScript owns `fetch`, cookies, UI state, and route navigation. WASM owns portable request/response protocol logic. The current browser has no complete local Space storage adapter.
+
+## Storage
+
+`ugoite-storage` supplies the operator abstraction used by core. Storage configuration is an operator concern; adapters must not create another authoritative database.
