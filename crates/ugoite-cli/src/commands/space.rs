@@ -228,9 +228,11 @@ pub async fn create_space_cmd(
 ) -> Result<()> {
     let config = load_config();
     if let Some(base) = validated_base_url(&config)? {
-        let result = http::http_post(
-            &format!("{base}/spaces"),
-            &serde_json::json!({"name": space_id}),
+        let result = http::execute(
+            &base,
+            "space.create",
+            serde_json::json!({}),
+            Some(serde_json::json!({"name": space_id})),
         )
         .await?;
         print_json(&result);
@@ -250,9 +252,11 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         SpaceSubCmd::Create { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "space create")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_post(
-                    &format!("{base}/spaces"),
-                    &serde_json::json!({"name": space_id}),
+                let result = http::execute(
+                    &base,
+                    "space.create",
+                    serde_json::json!({}),
+                    Some(serde_json::json!({"name": space_id})),
                 )
                 .await?;
                 print_json(&result);
@@ -264,7 +268,8 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         }
         SpaceSubCmd::List { root_path } => {
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces")).await?;
+                let result =
+                    http::execute(&base, "space.list", serde_json::json!({}), None).await?;
                 if fmt != Format::Json {
                     if let Some(arr) = result.as_array() {
                         print_json_table(arr, &[("ID", "id"), ("NAME", "name")]);
@@ -286,7 +291,13 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         SpaceSubCmd::Get { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "space get")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}")).await?;
+                let result = http::execute(
+                    &base,
+                    "space.get",
+                    serde_json::json!({"space_id": space_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -315,9 +326,11 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 patch.insert("settings".to_string(), v);
             }
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_patch(
-                    &format!("{base}/spaces/{space_id}"),
-                    &serde_json::Value::Object(patch),
+                let result = http::execute(
+                    &base,
+                    "space.patch",
+                    serde_json::json!({"space_id": space_id}),
+                    Some(serde_json::Value::Object(patch)),
                 )
                 .await?;
                 print_json(&result);
@@ -429,7 +442,13 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
         SpaceSubCmd::Members { space_path } => {
             let (_, space_id) = parse_space_path(&space_path);
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/members")).await?;
+                let result = http::execute(
+                    &base,
+                    "space.members.list",
+                    serde_json::json!({"space_id": space_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }

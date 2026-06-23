@@ -81,8 +81,7 @@ pub fn spawn_recording_server_sequence(
                             }
                         }
 
-                        tx.send(String::from_utf8_lossy(&request).into_owned())
-                            .expect("send request text");
+                        let _ = tx.send(String::from_utf8_lossy(&request).into_owned());
                         let response = format!(
                         "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                         body.len(),

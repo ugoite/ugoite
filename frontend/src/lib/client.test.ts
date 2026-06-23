@@ -382,7 +382,7 @@ describe("entryApi", () => {
       await expect(
         searchApi.rowReferenceOptions("test-ws", "Project", "alpha", 8),
       ).rejects.toThrow(
-        "Failed to load row_reference options: Bad Gateway",
+        "Failed to load row_reference options: lookup failed",
       );
     });
 

@@ -69,18 +69,28 @@ pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
     let config = load_config();
     let (root, space_id) = resolve_space_reference(&config, space_path, "query")?;
     if let Some(base) = validated_base_url(&config)? {
-        let session = http::http_post(
-            &format!("{base}/spaces/{space_id}/sql-sessions"),
-            &serde_json::json!({ "sql": sql }),
+        let session = http::execute(
+            &base,
+            "sql_session.create",
+            serde_json::json!({"space_id": space_id}),
+            Some(serde_json::json!({"sql": sql})),
         )
         .await?;
         let session_id = session
             .get("id")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("SQL session response did not include an id"))?;
-        let rows = http::http_get(&format!(
-            "{base}/spaces/{space_id}/sql-sessions/{session_id}/rows?offset=0&limit=1000"
-        ))
+        let rows = http::execute(
+            &base,
+            "sql_session.rows",
+            serde_json::json!({
+                "space_id": space_id,
+                "session_id": session_id,
+                "offset": 0,
+                "limit": 1000,
+            }),
+            None,
+        )
         .await?;
         print_json(&rows);
         return Ok(());

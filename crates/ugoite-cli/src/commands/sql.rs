@@ -62,7 +62,13 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         SqlSubCmd::SavedList { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-list")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/sql")).await?;
+                let result = http::execute(
+                    &base,
+                    "sql.list",
+                    serde_json::json!({"space_id": space_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -73,8 +79,13 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         SqlSubCmd::SavedGet { space_path, sql_id } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-get")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_get(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
+                let result = http::execute(
+                    &base,
+                    "sql.get",
+                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -96,9 +107,11 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/sql"),
-                    &serde_json::json!({"id": sql_id, "name": name, "sql": sql, "variables": vars, "author": author}),
+                let result = http::execute(
+                    &base,
+                    "sql.create",
+                    serde_json::json!({"space_id": space_id}),
+                    Some(serde_json::json!({"id": sql_id, "name": name, "sql": sql, "variables": vars, "author": author})),
                 )
                 .await?;
                 print_json(&result);
@@ -130,9 +143,11 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_put(
-                    &format!("{base}/spaces/{space_id}/sql/{sql_id}"),
-                    &serde_json::json!({"name": name, "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author}),
+                let result = http::execute(
+                    &base,
+                    "sql.update",
+                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    Some(serde_json::json!({"name": name, "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author})),
                 )
                 .await?;
                 print_json(&result);
@@ -159,8 +174,13 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-delete")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_delete(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
+                let result = http::execute(
+                    &base,
+                    "sql.delete",
+                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }

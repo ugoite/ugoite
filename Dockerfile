@@ -2,13 +2,21 @@
 
 FROM denoland/deno:2.8.3 AS frontend-build
 WORKDIR /repo
+ENV CARGO_TARGET_DIR=target/rust
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends nodejs \
+  && apt-get install -y --no-install-recommends ca-certificates curl build-essential nodejs \
   && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.93.0
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup target add wasm32-unknown-unknown
 COPY deno.json deno.lock ./
+COPY Cargo.toml Cargo.lock ./
 COPY frontend ./frontend
 COPY docsite ./docsite
 COPY docs ./docs
+COPY scripts ./scripts
+COPY crates ./crates
+COPY vendor ./vendor
 COPY shared ./shared
 RUN cd frontend && deno install --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp
 RUN cd docsite && deno install --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp

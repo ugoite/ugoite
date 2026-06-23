@@ -47,6 +47,8 @@ run = [
 run = [
   "cargo check --workspace --all-targets --all-features --locked",
   "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
+  "cargo check -p ugoite-api-client --target wasm32-unknown-unknown --locked",
+  "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
   "deno task check",
   "cargo run -p xtask -- openapi-check",
   "cargo run -p xtask -- architecture-check",

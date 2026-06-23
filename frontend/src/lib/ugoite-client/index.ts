@@ -17,3 +17,13 @@ export { spaceApi } from "../space-api";
 export { sqlApi } from "../sql-api";
 export { sqlSessionApi } from "../sql-session-api";
 export { RevisionConflictError } from "../entry-api";
+export {
+  getWasmSupportedOperations,
+  prepareApiRequest,
+  protocolFetch,
+  UGOITE_API_OPERATIONS,
+  UGOITE_WASM_PROTOCOL_VERSION,
+  UgoiteApiError,
+  type ProtocolFetchOptions,
+  type UgoiteApiOperation,
+} from "./protocol";
