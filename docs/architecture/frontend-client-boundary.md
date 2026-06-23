@@ -1,28 +1,17 @@
-# Frontend Client Boundary
+# Frontend client boundary
 
-Frontend UI code depends on the Ugoite client boundary instead of raw HTTP
-details. The boundary is exported from `frontend/src/lib/ugoite-client/`.
-Components and stores must not import endpoint modules or `apiFetch` directly.
+The frontend owns interaction state, rendering, routing, and the runtime HTTP transport. It does not own endpoint semantics.
 
-The current runtime capabilities are fixed as:
+`frontend/src/lib/ugoite-client.ts` invokes the JSON protocol compiled from `ugoite-wasm`. The portable Rust client prepares operation method/path/query/body/auth metadata and decodes the response. JavaScript performs `fetch`, supplies browser credentials, and returns the raw response envelope for Rust decoding.
 
-```ts
-{
-  mode: "server-backed",
-  serverBacked: true,
-  browserLocal: false,
-  sync: "none",
-}
+`frontend/src/lib/*-api.ts` modules expose product-oriented methods to routes and components. They must not reconstruct REST paths with direct `apiFetch` calls.
+
+Current runtime capabilities in `frontend/src/lib/api.ts` are:
+
+```text
+mode = server-backed
+browserLocal = false
+sync = none
 ```
 
-This makes today's behavior explicit while leaving room for future adapters.
-
-Remote operations pass through `ugoite-client/protocol.ts`. The portable Rust
-crate `ugoite-api-client`, compiled through `ugoite-wasm`, owns HTTP methods,
-encoded paths and queries, JSON serialization, and response/error semantics.
-TypeScript retains only runtime-specific transport policy: browser/SSR fetch,
-cookie and Authorization forwarding, loading state, cancellation, and
-`FormData`.
-
-See [Portable API Client](portable-api-client.md) for the dependency boundary
-and extension rules.
+A future browser-local runtime belongs behind a runtime adapter with the same product-level interface. Documentation must not describe it as implemented before storage, conflict handling, migration, and tests exist.

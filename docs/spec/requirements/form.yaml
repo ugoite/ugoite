@@ -12,32 +12,19 @@ requirements:
   - SPEC-UI-PAGES
   id: REQ-FORM-001
   title: List Column Types
-  description: 'CLI and Backend MUST expose available column types for form creation.
+  description: 'CLI and Server MUST expose available column types for form creation.
 
     '
   related_spec:
-  - api/rest.md#forms
-  - data-model/overview.md#forms
+  - api/rest.md#endpoints
+  - data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: ugoite-cli/tests/test_forms.rs
-      tests:
-      - test_list_column_types
-    - file: ugoite-cli/tests/test_cli_form.rs
-      tests:
-      - test_cli_list_types
-    - file: backend/tests/test_api.py
-      tests:
-      - test_get_form_types
-    - file: docs/tests/test_api_docs.py
-      tests:
-      - test_docs_req_form_001_list_column_types_response_contract
-    rust:
-    - file: ugoite-core/tests/test_form.rs
-      tests:
-      - test_form_req_form_001_list_column_types
+  - file: crates/ugoite-cli/tests/test_cli_form.rs
+  - file: crates/ugoite-cli/tests/test_forms.rs
+  - file: crates/ugoite-core/tests/test_form.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -57,26 +44,15 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#forms
-  - data-model/overview.md#forms
+  - api/rest.md#endpoints
+  - data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: ugoite-cli/tests/test_forms.rs
-      tests:
-      - test_migrate_form_add_column_with_default
-      - test_migrate_form_remove_column
-    - file: ugoite-cli/tests/test_cli_form.rs
-      tests:
-      - test_cli_form_update
-    - file: backend/tests/test_api.py
-      tests:
-      - test_update_form_with_migration
-    rust:
-    - file: ugoite-core/tests/test_form.rs
-      tests:
-      - test_form_req_form_002_upsert_and_list_forms
+  - file: crates/ugoite-cli/tests/test_cli_form.rs
+  - file: crates/ugoite-cli/tests/test_forms.rs
+  - file: crates/ugoite-core/tests/test_form.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -88,28 +64,17 @@ requirements:
   - SPEC-UI-PAGES
   id: REQ-FORM-003
   title: Form CRUD via API
-  description: 'Backend MUST allow creating, listing, and retrieving form definitions,
+  description: 'Server MUST allow creating, listing, and retrieving form definitions,
 
     and validate entry updates against missing form definitions.
 
     '
   related_spec:
-  - api/rest.md#forms
-  - data-model/overview.md#forms
+  - api/rest.md#endpoints
+  - data-model/overview.md#forms-and-entries
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: backend/tests/test_forms.py
-      tests:
-      - test_create_and_get_form
-      - test_form_validation_in_entry
-      - test_update_entry_with_missing_form_rejected
-    e2e:
-    - file: e2e/forms.test.ts
-      tests:
-      - Create and List Forms
-      - Query Entries by Form
+  verification: untraced
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -129,16 +94,13 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms
+  - data-model/overview.md#forms-and-entries
   - data-model/file-schemas.yaml#form_definition
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    rust:
-    - file: ugoite-core/tests/test_entry.rs
-      tests:
-      - test_entry_req_form_004_deny_extra_attributes
-      - test_entry_req_form_004_allow_extra_attributes
+  - file: crates/ugoite-core/tests/test_entry.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -158,18 +120,14 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#metadata-vs-content-columns
+  - data-model/overview.md#forms-and-entries
   - data-model/file-schemas.yaml#form_definition
   priority: high
   status: implemented
+  verification: traced
   tests:
-    rust:
-    - file: ugoite-core/tests/test_form.rs
-      tests:
-      - test_form_req_form_005_reject_reserved_metadata_columns
-    - file: ugoite-minimum/tests/test_coverage.rs
-      tests:
-      - test_metadata_req_form_005_reserved_metadata_columns_are_case_insensitive_and_extendable
+  - file: crates/ugoite-core/tests/test_form.rs
+  - file: crates/ugoite-domain/tests/test_coverage.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -187,18 +145,14 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#metadata-forms
-  - features/sql.md#saved-sql-form
+  - data-model/overview.md#forms-and-entries
+  - features/sql.md#ugoite-sql
   priority: high
   status: implemented
+  verification: traced
   tests:
-    rust:
-    - file: ugoite-core/tests/test_form.rs
-      tests:
-      - test_form_req_form_006_reject_reserved_metadata_form
-    - file: ugoite-minimum/tests/test_coverage.rs
-      tests:
-      - test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensitive_and_extendable
+  - file: crates/ugoite-core/tests/test_form.rs
+  - file: crates/ugoite-domain/tests/test_coverage.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -216,20 +170,14 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#content-column-types--markdown-parsing
+  - data-model/overview.md#markdown-mapping
   - data-model/file-schemas.yaml#form_definition
-  - api/rest.md#forms
+  - api/rest.md#endpoints
   priority: high
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: backend/tests/test_forms.py
-      tests:
-      - test_form_req_form_007_row_reference_requires_target
-    rust:
-    - file: ugoite-core/tests/test_form.rs
-      tests:
-      - test_form_req_form_007_row_reference_requires_target
+  - file: crates/ugoite-core/tests/test_form.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -249,20 +197,12 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#metadata-forms
+  - data-model/overview.md#forms-and-entries
   priority: high
   status: planned
+  verification: traced
   tests:
-    pytest:
-    - file: backend/tests/test_forms_reserved_identity.py
-      tests:
-      - test_form_req_form_008_reject_user_form_name
-      - test_form_req_form_008_reject_usergroup_form_name
-    rust:
-    - file: ugoite-core/tests/test_form_reserved_identity.rs
-      tests:
-      - test_form_req_form_008_reject_user_form_name
-      - test_form_req_form_008_reject_usergroup_form_name
+  - file: crates/ugoite-core/tests/test_form_reserved_identity.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -282,18 +222,8 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#metadata-vs-content-columns
-  - data-model/directory-structure.md#revisions-table-logical-schema
+  - data-model/overview.md#forms-and-entries
+  - data-model/directory-structure.md#iceberg-managed-form-storage
   priority: high
   status: planned
-  tests:
-    pytest:
-    - file: backend/tests/test_entry_attribution.py
-      tests:
-      - test_system_sets_author_and_updated_by_from_identity
-      - test_client_cannot_override_author_or_updated_by
-    rust:
-    - file: ugoite-core/tests/test_entry_attribution.rs
-      tests:
-      - test_form_req_form_009_system_managed_author_and_updated_by
-      - test_form_req_form_009_reject_client_supplied_author_and_updated_by
+  verification: untraced

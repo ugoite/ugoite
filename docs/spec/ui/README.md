@@ -1,31 +1,14 @@
-# UI Specifications
+# UI specifications
 
-This directory defines UI specifications for the space-scoped UI redesign.
+Page YAML files describe the current Space-scoped browser routes. `page.implementation: implemented` means a matching SolidStart route exists under `frontend/src/routes`; it does not imply browser-local persistence.
 
-- Reusable UI elements (header/footer/shell/navigation primitives) are specified under `ui/components/`.
-- Page-level specifications are specified under `ui/pages/`.
+The current browser is server-backed and authenticated. Shared navigation is described in `components/space-shell.yaml`; page files live under `pages/`. Route behavior, API calls, and loading/error states remain authoritative in the corresponding TSX files and tests.
 
-The frontend implementation and this spec set are validated by tests to ensure route/page parity and link consistency.
+Implemented page routes include Space home/dashboard, Entries and history/restore, Forms and column types, keyword/advanced search, saved SQL and query sessions, Assets, settings/storage visibility, and connection testing.
 
-## Pages
+When changing a route:
 
-- space-dashboard
-- space-search
-- space-query-create
-- space-query-variables
-- space-entries-object
-- space-entry-detail
-- space-form-grid
-- space-settings
-- space-home
-- space-assets
-- space-asset-detail
-- space-query-legacy
-- space-sql
-- space-sql-detail
-- space-test-connection
-- space-form-types
-- space-form-detail
-- space-entry-history
-- space-entry-revision
-- space-entry-restore
+1. update the TSX route and its tests;
+2. update the matching page YAML route/status/components;
+3. keep links between page IDs valid;
+4. run the frontend/docsite checks through the root `mise` tasks.

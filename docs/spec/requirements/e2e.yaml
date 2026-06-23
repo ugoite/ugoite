@@ -22,15 +22,7 @@ requirements:
   - testing/strategy.md
   priority: high
   status: implemented
-  tests:
-    e2e:
-    - file: e2e/smoke.test.ts
-      tests:
-      - GET / returns HTML with DOCTYPE
-      - GET / has correct content-type
-      - GET /spaces returns HTML
-      - GET /spaces/default/entries/:id returns HTML
-      - GET /about returns HTML
+  verification: untraced
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -45,25 +37,14 @@ requirements:
   - SPEC-UI-OVERVIEW
   id: REQ-E2E-002
   title: API-Frontend Integration
-  description: 'Backend API and frontend work together correctly.
+  description: 'Server API and frontend work together correctly.
 
     '
   related_spec:
   - testing/strategy.md
   priority: high
   status: implemented
-  tests:
-    e2e:
-    - file: e2e/smoke.test.ts
-      tests:
-      - GET /spaces returns list
-      - GET /spaces includes default space
-      - GET /spaces/default/entries returns list
-    - file: e2e/entries.test.ts
-      tests:
-      - POST /spaces/default/entries creates a new entry
-      - PUT /spaces/default/entries/:id updates entry
-      - DELETE /spaces/default/entries/:id removes entry
+  verification: untraced
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -88,13 +69,9 @@ requirements:
   - tasks/tasks.md#phase-7-5-uiの洗練化-追加
   priority: high
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/ui-themes.test.ts
-      tests:
-      - 'REQ-E2E-003: UI flows work in materialize theme'
-      - 'REQ-E2E-003: UI flows work in classic theme'
-      - 'REQ-E2E-003: UI flows work in pop theme'
+  - file: e2e/ui-themes.test.ts
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -120,22 +97,12 @@ requirements:
   - testing/strategy.md
   priority: high
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/navigation.test.ts
-      tests:
-      - 'REQ-E2E-004: dynamic traversal has no console or SolidJS errors'
-    - file: e2e/ui-pages-screenshots.test.ts
-      tests:
-      - 'REQ-E2E-004: export screenshots for all UI page specs'
-    - file: e2e/public-pages.test.ts
-      tests:
-      - 'REQ-E2E-004: public pages avoid auth-only portable preference requests'
-      - 'REQ-E2E-004: unknown routes show Ugoite recovery guidance instead of scaffold copy'
-    vitest:
-    - file: frontend/src/routes/[...404].test.tsx
-      tests:
-      - 'REQ-E2E-004: unknown routes keep users inside Ugoite recovery paths'
+  - file: e2e/navigation.test.ts
+  - file: e2e/public-pages.test.ts
+  - file: e2e/ui-pages-screenshots.test.ts
+  - file: frontend/src/routes/[...404].test.tsx
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -161,13 +128,9 @@ requirements:
   - ui/README.md
   priority: high
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/docsite-mobile-nav.test.ts
-      tests:
-      - 'REQ-E2E-005: mobile nav opens as drawer and keeps reading area uncluttered'
-      - 'REQ-E2E-005: mobile nav closes by escape and link tap'
-      - 'REQ-E2E-005: mobile nav closes by overlay click'
+  - file: e2e/docsite-mobile-nav.test.ts
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -191,27 +154,12 @@ requirements:
   - testing/strategy.md
   priority: high
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/docsite-links.test.ts
-      tests:
-      - 'REQ-E2E-006: docsite internal page links resolve without 404s'
-      - 'REQ-E2E-006: design relations specification pills navigate to docsite specs'
-    vitest:
-    - file: docsite/src/lib/base-path.test.ts
-      tests:
-      - 'REQ-E2E-006: withBasePath preserves external links and prefixes internal routes'
-      - 'REQ-E2E-006: withBasePath keeps configured non-root base paths stable'
-    - file: docsite/src/lib/doc-links.test.ts
-      tests:
-      - 'REQ-E2E-006: resolveDocHref preserves safe external targets and rejects unsupported schemes'
-      - 'REQ-E2E-006: resolveDocHref resolves absolute docsite and application routes against the configured base path'
-      - 'REQ-E2E-006: resolveDocHref resolves relative docs and repository source links without leaking outside the base path'
-    - file: docsite/src/lib/navigation.test.ts
-      tests:
-      - 'REQ-E2E-006: navigation helpers build child docsite links from spec data'
-      - 'REQ-E2E-006: navigation helpers tolerate missing child anchors without mutating shared nav state'
-      - 'REQ-E2E-006: application navigation keeps MCP as a first-class docsite route'
+  - file: docsite/src/lib/base-path.test.ts
+  - file: docsite/src/lib/doc-links.test.ts
+  - file: docsite/src/lib/navigation.test.ts
+  - file: e2e/docsite-links.test.ts
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -237,11 +185,9 @@ requirements:
   - testing/strategy.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/docsite-theme-controls.test.ts
-      tests:
-      - 'REQ-E2E-007: docsite keeps a fixed UI theme and only exposes color mode selection'
+  - file: e2e/docsite-theme-controls.test.ts
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -267,42 +213,12 @@ requirements:
   - ui/README.md
   priority: high
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/docsite-onboarding.test.ts
-      tests:
-      - 'REQ-E2E-008: landing page explains what Ugoite is and points first-time users to getting started'
-      - 'REQ-E2E-008: landing page labels the application overview CTA as documentation'
-      - 'REQ-E2E-008: landing and getting-started pages keep path choices ahead of the concepts primer'
-      - 'REQ-E2E-008: desktop navigation prioritizes getting-started content before design docs'
-      - 'REQ-E2E-008: run from source card opens the canonical host-dev workflow'
-      - 'REQ-E2E-008: mobile navigation keeps getting-started links ahead of design content'
-    vitest:
-    - file: docsite/src/lib/onboarding.test.ts
-      tests:
-      - 'REQ-E2E-008: onboarding content keeps try, source, and CLI paths as the first entry choices'
-      - 'REQ-E2E-008: onboarding content keeps browser, auth, and deeper reference docs available after the first step'
-      - 'REQ-E2E-008: onboarding content keeps browser caveats explicit on browser-first paths'
-      - 'REQ-E2E-008: onboarding content keeps the browser next step aligned to the walkthrough'
-      - 'REQ-E2E-008: onboarding content offers a concepts primer before deeper guides and references'
-      - 'REQ-E2E-008: onboarding content keeps core concepts ready for the follow-up primer'
-    pytest:
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_e2e_008_readme_start_here_mirrors_docsite_taxonomy
-      - test_docs_req_e2e_008_readme_start_here_surfaces_browser_caveat
-      - test_docs_req_e2e_008_readme_doc_map_focuses_on_deeper_refs
-      - test_docs_req_e2e_008_source_contributor_path_stays_canonical_across_docs
-      - test_docs_req_e2e_008_concepts_primer_order_stays_consistent
-    - file: docs/tests/test_browser_walkthrough_search_surface.py
-      tests:
-      - test_docs_req_e2e_008_browser_walkthrough_explains_search_surface
-    - file: docs/tests/test_browser_walkthrough_post_entry_recap.py
-      tests:
-      - test_docs_req_e2e_008_browser_walkthrough_recap_after_first_entry
-    - file: docs/tests/test_browser_walkthrough_api_next_steps.py
-      tests:
-      - test_docs_req_e2e_008_browser_walkthrough_points_to_api_and_automation
+  - file: docsite/src/lib/navigation.test.ts
+  - file: docsite/src/lib/onboarding.test.ts
+  - file: e2e/docsite-onboarding.test.ts
+  - file: frontend/src/routes/index.test.tsx
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -328,8 +244,6 @@ requirements:
   - ui/README.md
   priority: high
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/docsite-mobile-nav.test.ts
-      tests:
-      - 'REQ-E2E-009: desktop doc pages use the header nav without rendering a left sidebar'
+  - file: e2e/docsite-mobile-nav.test.ts

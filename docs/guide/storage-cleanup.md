@@ -1,25 +1,7 @@
-# Local Storage Growth and Cleanup Strategy
+# Storage cleanup
 
-Long-running local environments can accumulate spaces and temporary artifacts.
+There is no supported repository task named `cleanup:*` and no command that blindly removes old Space data.
 
-## Recommended routine
+Keep entries, forms, revision history, assets, membership data, and saved SQL. Indexes and transient SQL sessions are derived, but remove them only through a documented implementation path. Before cleanup, stop writes and back up the complete Space directory.
 
-- Check storage usage weekly.
-- Archive important spaces before deletion.
-- Remove stale E2E storage roots and temporary local review files.
-
-## Quick checks
-
-```bash
-du -sh backend/spaces || true
-du -sh /tmp/ugoite-e2e || true
-```
-
-## Cleanup examples
-
-```bash
-rm -rf /tmp/ugoite-e2e
-find backend/spaces -maxdepth 1 -type d -name "acl-*" -mtime +14 -print
-```
-
-Review matched paths before deleting in shared environments.
+Use `ugoite index run <space-path>` in core mode to rebuild an index rather than deleting unknown files manually.

@@ -1,168 +1,158 @@
-# Saved SQL APIs
-
-version: "0.1"
-updated: "2026-02"
+version: '0.2'
+updated: '2026-06-23'
 kind: sql
-
 apis:
-  - id: sql.list
-    method: GET
-    backend:
-      path: /spaces/{space_id}/sql
-      file: backend/src/app/api/endpoints/sql.py
-      function: list_sql_endpoint
-    frontend:
-      path: /spaces/{space_id}/sql
-      file: frontend/src/routes/spaces/[space_id]/sql.tsx
-      function: SpaceSqlRoute
-    ugoite_core:
-      file: ugoite-core/src/saved_sql.rs
-      function: list_sql
-    ugoite_cli:
-      command: ugoite sql saved-list
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
-
-  - id: sql.create
-    method: POST
-    backend:
-      path: /spaces/{space_id}/sql
-      file: backend/src/app/api/endpoints/sql.py
-      function: create_sql_endpoint
-    frontend:
-      path: /spaces/{space_id}/sql
-      file: frontend/src/routes/spaces/[space_id]/sql.tsx
-      function: SpaceSqlRoute
-    ugoite_core:
-      file: ugoite-core/src/saved_sql.rs
-      function: create_sql
-    ugoite_cli:
-      command: ugoite sql saved-create
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
-
-  - id: sql.get
-    method: GET
-    backend:
-      path: /spaces/{space_id}/sql/{sql_id}
-      file: backend/src/app/api/endpoints/sql.py
-      function: get_sql_endpoint
-    frontend:
-      path: /spaces/{space_id}/sql/{sql_id}
-      file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
-      function: SpaceSqlDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/saved_sql.rs
-      function: get_sql
-    ugoite_cli:
-      command: ugoite sql saved-get
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
-
-  - id: sql.update
-    method: PUT
-    backend:
-      path: /spaces/{space_id}/sql/{sql_id}
-      file: backend/src/app/api/endpoints/sql.py
-      function: update_sql_endpoint
-    frontend:
-      path: /spaces/{space_id}/sql/{sql_id}
-      file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
-      function: SpaceSqlDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/saved_sql.rs
-      function: update_sql
-    ugoite_cli:
-      command: ugoite sql saved-update
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
-
-  - id: sql.delete
-    method: DELETE
-    backend:
-      path: /spaces/{space_id}/sql/{sql_id}
-      file: backend/src/app/api/endpoints/sql.py
-      function: delete_sql_endpoint
-    frontend:
-      path: /spaces/{space_id}/sql/{sql_id}
-      file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].tsx
-      function: SpaceSqlDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/saved_sql.rs
-      function: delete_sql
-    ugoite_cli:
-      command: ugoite sql saved-delete
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
-
-  - id: sql.session.create
-    method: POST
-    backend:
-      path: /spaces/{space_id}/sql-sessions
-      file: backend/src/app/api/endpoints/sql_sessions.py
-      function: create_sql_session_endpoint
-    frontend:
-      path: /spaces/{space_id}/search
-      file: frontend/src/routes/spaces/[space_id]/search.tsx
-      function: SpaceSearchRoute
-    ugoite_core:
-      file: ugoite-core/src/sql_session.rs
-      function: create_sql_session
-    ugoite_cli:
-      command: ugoite query --sql
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
-
-  - id: sql.session.status
-    method: GET
-    backend:
-      path: /spaces/{space_id}/sql-sessions/{session_id}
-      file: backend/src/app/api/endpoints/sql_sessions.py
-      function: get_sql_session_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries
-      file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
-      function: SpaceEntriesIndexPane
-    ugoite_core:
-      file: ugoite-core/src/sql_session.rs
-      function: get_sql_session_status
-    ugoite_cli:
-      command: ugoite query --sql
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
-
-  - id: sql.session.count
-    method: GET
-    backend:
-      path: /spaces/{space_id}/sql-sessions/{session_id}/count
-      file: backend/src/app/api/endpoints/sql_sessions.py
-      function: get_sql_session_count_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries
-      file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
-      function: SpaceEntriesIndexPane
-    ugoite_core:
-      file: ugoite-core/ugoite_core/sql_sessions.py
-      function: get_sql_session_count_for_identity
-    ugoite_cli:
-      command: ugoite query --sql
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
-
-  - id: sql.session.rows
-    method: GET
-    backend:
-      path: /spaces/{space_id}/sql-sessions/{session_id}/rows
-      file: backend/src/app/api/endpoints/sql_sessions.py
-      function: get_sql_session_rows_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries
-      file: frontend/src/routes/spaces/[space_id]/entries/index.tsx
-      function: SpaceEntriesIndexPane
-    ugoite_core:
-      file: ugoite-core/ugoite_core/sql_sessions.py
-      function: get_sql_session_rows_for_identity
-    ugoite_cli:
-      command: ugoite query --sql
-      file: ugoite-cli/src/commands/sql.rs
-      function: run
+- id: sql.list
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql
+    file: crates/ugoite-server/src/lib.rs
+    function: list_sql
+  frontend:
+    path: /spaces/{space_id}/sql
+    file: frontend/src/lib/sql-api.ts
+    function: sqlApi.list
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: list_saved_sql
+  ugoite_cli:
+    command: ugoite sql saved-list
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
+- id: sql.create
+  method: POST
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql
+    file: crates/ugoite-server/src/lib.rs
+    function: create_sql
+  frontend:
+    path: /spaces/{space_id}/sql
+    file: frontend/src/lib/sql-api.ts
+    function: sqlApi.create
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: create_saved_sql
+  ugoite_cli:
+    command: ugoite sql saved-create
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
+- id: sql.get
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql/{sql_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: get_sql
+  frontend:
+    path: /spaces/{space_id}/sql/{sql_id}
+    file: frontend/src/lib/sql-api.ts
+    function: sqlApi.get
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: get_saved_sql
+  ugoite_cli:
+    command: ugoite sql saved-get
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
+- id: sql.update
+  method: PUT
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql/{sql_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: update_sql
+  frontend:
+    path: /spaces/{space_id}/sql/{sql_id}
+    file: frontend/src/lib/sql-api.ts
+    function: sqlApi.update
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: update_saved_sql
+  ugoite_cli:
+    command: ugoite sql saved-update
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
+- id: sql.delete
+  method: DELETE
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql/{sql_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: delete_sql
+  frontend:
+    path: /spaces/{space_id}/sql/{sql_id}
+    file: frontend/src/lib/sql-api.ts
+    function: sqlApi.delete
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: delete_saved_sql
+  ugoite_cli:
+    command: ugoite sql saved-delete
+    file: crates/ugoite-cli/src/commands/sql.rs
+    function: run
+- id: sql_session.create
+  method: POST
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql-sessions
+    file: crates/ugoite-server/src/lib.rs
+    function: create_sql_session
+  frontend:
+    path: /spaces/{space_id}/entries
+    file: frontend/src/lib/sql-session-api.ts
+    function: sqlSessionApi.create
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: create_sql_session
+  ugoite_cli:
+    command: ugoite query
+    file: crates/ugoite-cli/src/main.rs
+    function: run
+- id: sql_session.get
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql-sessions/{session_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: get_sql_session
+  frontend:
+    path: /spaces/{space_id}/entries
+    file: frontend/src/lib/sql-session-api.ts
+    function: sqlSessionApi.get
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: get_sql_session
+- id: sql_session.count
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql-sessions/{session_id}/count
+    file: crates/ugoite-server/src/lib.rs
+    function: get_sql_session_count
+  frontend:
+    path: /spaces/{space_id}/entries
+    file: frontend/src/lib/sql-session-api.ts
+    function: sqlSessionApi.count
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: get_sql_session_count
+- id: sql_session.rows
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/sql-sessions/{session_id}/rows
+    file: crates/ugoite-server/src/lib.rs
+    function: get_sql_session_rows
+  frontend:
+    path: /spaces/{space_id}/entries
+    file: frontend/src/lib/sql-session-api.ts
+    function: sqlSessionApi.rows
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: get_sql_session_rows
+  ugoite_cli:
+    command: ugoite query
+    file: crates/ugoite-cli/src/main.rs
+    function: run

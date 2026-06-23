@@ -1,19 +1,11 @@
-# Log Redaction Guidance
+# Log redaction
 
-Never expose authentication material in logs, screenshots, or bug reports.
+Never log credentials or sensitive payloads. Redact:
 
-## Always redact
+- authorization/API-key headers;
+- bootstrap tokens, static credentials, and signing secrets;
+- session cookies and signed tokens;
+- complete Entry bodies, assets, or SQL results unless deliberately enabled for local debugging;
+- local paths that expose operator or tenant details.
 
-- Bearer tokens
-- API keys
-- HMAC secrets
-- Authorization headers
-- Cookie or session secrets
-
-## Safe reporting checklist
-
-- Replace secrets with `[REDACTED]`.
-- Keep only token prefix when needed for correlation.
-- Remove credential-bearing query strings.
-- Review shell history before sharing command output.
-- Sanitize CI logs before publishing artifacts.
+Prefer operation name, request ID, Space ID, status, duration, and bounded error metadata. Development mock OAuth follows the same rule.

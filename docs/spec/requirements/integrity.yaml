@@ -19,27 +19,14 @@ requirements:
     '
   related_spec:
   - security/overview.md
-  - data-model/overview.md#integrity
+  - data-model/overview.md#assets-links-and-integrity
   priority: high
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: ugoite-cli/tests/test_integrity.rs
-      tests:
-      - test_integrity_provider_for_space_success
-      - test_integrity_provider_missing_hmac_key
-      - test_integrity_provider_invalid_hmac_key
-    - file: ugoite-cli/tests/test_entries.rs
-      tests:
-      - test_entry_history_append
-    rust:
-    - file: ugoite-minimum/tests/test_coverage.rs
-      tests:
-      - test_integrity_req_int_001_hmac_provider_matches_known_digest
-    - file: ugoite-core/tests/test_integrity.rs
-      tests:
-      - test_integrity_req_int_001_fake_integrity_provider
-      - test_integrity_req_int_001_real_integrity_provider
+  - file: crates/ugoite-cli/tests/test_integrity.rs
+  - file: crates/ugoite-core/tests/test_integrity.rs
+  - file: crates/ugoite-domain/tests/test_coverage.rs
 - set_id: REQCAT-INTEGRITY
   source_file: requirements/integrity.yaml
   scope: Data integrity and consistency requirements.
@@ -57,18 +44,10 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#integrity
+  - data-model/overview.md#assets-links-and-integrity
   priority: medium
   status: implemented
-  tests:
-    pytest:
-    - file: ugoite-cli/tests/test_entries.rs
-      tests:
-      - test_entry_history_append
-    rust:
-    - file: ugoite-core/tests/test_entry.rs
-      tests:
-      - test_entry_req_entry_005_entry_history_append
+  verification: untraced
 - set_id: REQCAT-INTEGRITY
   source_file: requirements/integrity.yaml
   scope: Data integrity and consistency requirements.
@@ -81,23 +60,13 @@ requirements:
   - SPEC-QUALITY-ERROR
   - SPEC-TESTING-STRATEGY
   id: REQ-INT-003
-  title: HMAC Signature for API Responses
-  description: 'Add HMAC signature header to API responses.
-
-    '
+  title: API response HMAC signing
+  description: The core can create Space-scoped response-signing material and compute a body signature, but the
+    HTTP server does not attach an HMAC signature header. Server middleware/header integration remains planned.
   related_spec:
   - security/overview.md
   priority: low
-  status: implemented
+  status: planned
+  verification: traced
   tests:
-    pytest:
-    - file: backend/tests/test_api.py
-      tests:
-      - test_middleware_hmac_signature
-      - test_middleware_hmac_signature_for_space_route
-    - file: ugoite-core/tests/test_integrity.rs
-      tests:
-      - test_response_hmac_material_is_space_scoped
-      - test_response_hmac_material_rejects_invalid_space_id
-      - test_response_hmac_material_defaults_missing_key_id
-      - test_response_hmac_material_rejects_missing_hmac_key
+  - file: crates/ugoite-core/tests/test_integrity.rs

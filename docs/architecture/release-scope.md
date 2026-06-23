@@ -1,24 +1,26 @@
-# Release Scope
+# Current release scope
 
-The pre-release Rust and Deno rearchitecture keeps the formal release scope
-focused on the current production path:
+## Included
 
-- Rust `ugoite-server` for the browser HTTP, auth, static asset, and MCP adapter
-  runtime.
-- Shared Rust crates for domain, storage, core services, CLI, WASM wrappers, and
-  release-critical repository tooling.
-- Deno as the repository TypeScript runtime for frontend, docsite, E2E, and
-  lightweight tooling.
-- `ci-required` and `codeql-required` as the normal pull request checks, with
-  heavier merge and release validation behind `mise run ci:merge` and
-  `mise run ci:release`.
+- local CLI core mode over operator-owned Spaces;
+- Rust REST server with authentication, Space membership/roles, entries, forms,
+  assets, preferences, search, saved SQL, and SQL query sessions;
+- server-backed browser application;
+- single non-root container image and Helm chart;
+- read-only MCP entry-list resource;
+- portable API protocol shared by CLI and browser/WASM;
+- Rust/Deno tests and CI gates.
 
-The release scope does not include browser-owned storage, OPFS or IndexedDB
-persistence, peer-to-peer sync, relay protocols, distributed trust graphs, or a
-signed operation log. Those belong to the North Star and future architecture
-work.
+## Limited or unavailable
 
-The practical rule is simple: improve the current server-backed browser and
-direct-core CLI paths, but keep server, CLI, frontend, WASM, and storage code on
-thin adapter boundaries so future runtimes can be added without rewriting the
-core model.
+- `/auth/login` is contracted but returns `403`; development uses mock OAuth and
+  deployments may configure static/signed credentials;
+- remote CLI asset upload is unavailable, although REST upload exists;
+- index run/stats are local core-mode commands;
+- service-account CRUD and audit-log endpoints are not implemented;
+- browser-local persistence, offline-first editing, and sync are not
+  implemented;
+- this tree has a local release-validation task but no publishing workflow.
+
+Release documentation and changelogs must use these boundaries rather than
+planned capability.

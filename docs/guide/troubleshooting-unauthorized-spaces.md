@@ -1,22 +1,11 @@
-# Troubleshooting Unauthorized Spaces Page
+# Troubleshooting unauthorized Spaces
 
-When the spaces page returns `Unauthorized`, validate these items in order.
-If the container stack is not healthy enough to reach `/login` or `/spaces` at
-all, start with
-[Compose Startup and Connectivity Troubleshooting](troubleshooting-compose-startup.md)
-instead:
+HTTP `401` means no valid identity; HTTP `403` means the identity lacks the required permission.
 
-1. Confirm backend is running and reachable.
-   - `curl -sS http://localhost:8000/health`
-2. Confirm frontend proxy target.
-   - `BACKEND_URL` must point to the backend reachable by the frontend process.
-3. Refresh local dev login/session.
-   - Re-run `mise run dev`.
-   - If needed, force refresh the prompted login context: `UGOITE_DEV_AUTH_FORCE_LOGIN=true mise run dev`.
-4. Confirm you completed explicit browser or CLI login after startup.
-   - Browser: open `http://localhost:3000/login`.
-   - CLI: `cargo run -q -p ugoite-cli -- auth login ...`
-5. Retry with clean browser session.
-   - Clear stale cookies and local storage, then log in again.
+1. Check `ugoite config current`.
+2. Check `ugoite auth profile` or `GET /auth/session`.
+3. Use a bare Space ID in backend/API mode and a filesystem path in core mode.
+4. Confirm membership and role for the identity.
+5. For Space creation, confirm `ManageSpace` on `admin-space`.
 
-If these checks still fail, capture request/response headers and backend logs with tokens redacted.
+Development mock OAuth does not bypass membership checks. Re-authenticating as the same user cannot repair a missing role.

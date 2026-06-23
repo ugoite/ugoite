@@ -1,27 +1,27 @@
 id: release-preparation
-version: "0.1"
-status: planned
-title: "Release Preparation"
-goal: >
-  Finalize release readiness for v0.1 with deployable images, operator-ready
-  documentation, and clear release communication.
+version: '0.1'
+status: in_progress
+title: Release Preparation
+goal: Turn the current single-image and CLI build into a published, verified, operator-ready release.
 phases:
-  - id: container-image-deployment
-    status: planned
-    tasks:
-      - description: "Validate backend/frontend images in staging and production workflows"
-        done: false
-  - id: quickstart-documentation-finalization
-    status: planned
-    tasks:
-      - description: "Finalize quick-start and tutorial docs for first-time operators"
-        done: false
-  - id: release-notes-drafting
-    status: planned
-    tasks:
-      - description: "Prepare stable release notes and operator guidance"
-        done: false
-      - description: "Prepare beta release notes and prerelease validation guidance"
-        done: false
-      - description: "Prepare alpha release notes and experimental guidance"
-        done: false
+- id: container-and-cli-artifacts
+  status: in_progress
+  tasks:
+  - description: Build and locally verify the single non-root runtime image.
+    done: true
+  - description: Build release server and CLI binaries through the local release gate.
+    done: true
+  - description: Publish signed/checksummed image and CLI artifacts through repository automation.
+    done: false
+- id: operator-documentation
+  status: in_progress
+  tasks:
+  - description: Keep quick-start, authentication, storage, Helm, and troubleshooting docs aligned with implementation.
+    done: true
+  - description: Validate published quick-start assets after release.
+    done: false
+- id: release-communication
+  status: planned
+  tasks:
+  - description: Publish channel-specific stable, beta, and alpha release notes only when artifacts exist.
+    done: false
