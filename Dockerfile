@@ -9,6 +9,7 @@ COPY deno.json deno.lock ./
 COPY frontend ./frontend
 COPY docsite ./docsite
 COPY docs ./docs
+COPY scripts ./scripts
 COPY shared ./shared
 RUN cd frontend && deno install --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp
 RUN cd docsite && deno install --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp
