@@ -47,6 +47,8 @@ mise run setup
 mise run dev
 ```
 
+For CLI-only iteration, use `mise run test:cli` before the full workspace test gate.
+
 Focused gates:
 
 ```bash

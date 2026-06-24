@@ -271,7 +271,7 @@ pub fn resolve_space_reference(
     }
     explicit_core_space_path(space_path).ok_or_else(|| {
         anyhow!(
-            "{command_name} requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+            "{command_name} cannot use {space_path:?} in core mode. SPACE_ID_OR_PATH must be a filesystem path like /path/to/workspace/spaces/demo because core mode needs the workspace location. Use backend/api mode when you want to pass a bare Space ID."
         )
     })
 }

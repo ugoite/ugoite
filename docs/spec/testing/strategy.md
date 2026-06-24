@@ -10,3 +10,5 @@ Tests are organized around the shared Rust core and thin adapters.
 Requirement IDs embedded in test names/source provide traceability. A requirement without a current test reference is labeled `untraced`; deleted paths are not retained as evidence.
 
 Use focused crate/package tests while developing, then run `mise run ci` or the merge/release gates as appropriate.
+
+For CLI-only work, start with `mise run test:cli` so you can iterate on `ugoite-cli` without running the full workspace suite.

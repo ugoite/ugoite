@@ -430,10 +430,12 @@ fn test_create_space_req_sto_010_requires_root_only_in_core_mode() {
     let stderr = String::from_utf8_lossy(&core_output.stderr);
     assert!(
         stderr.contains(
-            "space create requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
+            r#"space create cannot use "local-space" in core mode"#
         ),
         "{stderr}"
     );
+    assert!(stderr.contains("/path/to/workspace/spaces/demo"));
+    assert!(stderr.contains("Use backend/api mode when you want to pass a bare Space ID."));
 
     let legacy_output = Command::new(ugoite_bin())
         .args(["create-space", "local-space"])
