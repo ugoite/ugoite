@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createMemo, createSignal } from "solid-js";
 import SpaceFormsIndexPane from "./index";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
@@ -26,10 +26,6 @@ vi.mock("~/components/FormTable", () => ({
   FormTable: (props: { entryForm: { name: string } }) => (
     <div>Form table: {props.entryForm.name}</div>
   ),
-}));
-
-vi.mock("~/components/create-dialogs", () => ({
-  CreateFormDialog: () => <div>Create form dialog</div>,
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
@@ -111,6 +107,11 @@ describe("/spaces/:space_id/forms", () => {
       expect(screen.getByText("Create a form to get started."))
         .toBeInTheDocument();
     });
+    expect(
+      screen.getAllByRole("button", { name: "New form" }),
+    ).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole("button", { name: "New form" })[0]);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(setSearchParamsMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("option", { name: "Assets" })).not
       .toBeInTheDocument();
@@ -124,8 +125,9 @@ describe("/spaces/:space_id/forms", () => {
       expect(screen.getByRole("heading", { name: "フォームグリッド" }))
         .toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: "新しいフォーム" }))
-      .toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "新しいフォーム" }),
+    ).toHaveLength(2);
     expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
   });
 });
