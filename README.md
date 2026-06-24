@@ -47,6 +47,8 @@ mise run setup
 mise run dev
 ```
 
+For the local dev stack URLs, browser auth flow, and docsite port, see [docs/guide/local-dev-auth-login.md](docs/guide/local-dev-auth-login.md).
+
 Focused gates:
 
 ```bash
