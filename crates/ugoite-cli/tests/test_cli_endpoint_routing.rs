@@ -429,9 +429,7 @@ fn test_create_space_req_sto_010_requires_root_only_in_core_mode() {
     );
     let stderr = String::from_utf8_lossy(&core_output.stderr);
     assert!(
-        stderr.contains(
-            r#"space create cannot use "local-space" in core mode"#
-        ),
+        stderr.contains(r#"space create cannot use "local-space" in core mode"#),
         "{stderr}"
     );
     assert!(stderr.contains("/path/to/workspace/spaces/demo"));

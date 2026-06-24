@@ -1111,16 +1111,12 @@ fn test_cli_req_ops_006_space_local_and_remote_paths() {
         .output()
         .expect("space create missing root");
     assert!(!missing_root_create_output.status.success());
-    assert!(
-        String::from_utf8_lossy(&missing_root_create_output.stderr).contains(
-            r#"space create cannot use "space-missing-root" in core mode"#
-        )
-    );
     let missing_root_create_stderr = String::from_utf8_lossy(&missing_root_create_output.stderr);
+    assert!(missing_root_create_stderr
+        .contains(r#"space create cannot use "space-missing-root" in core mode"#));
     assert!(missing_root_create_stderr.contains("/path/to/workspace/spaces/demo"));
-    assert!(missing_root_create_stderr.contains(
-        "Use backend/api mode when you want to pass a bare Space ID."
-    ));
+    assert!(missing_root_create_stderr
+        .contains("Use backend/api mode when you want to pass a bare Space ID."));
 
     let backend_api_mode_hint = "Run `ugoite config current` to inspect the active mode, then switch with `ugoite config set --mode backend --backend-url http://localhost:8000` or `ugoite config set --mode api --api-url http://localhost:3000/api`.";
 
