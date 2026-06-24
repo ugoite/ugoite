@@ -28,6 +28,9 @@ export function SpaceShell(props: SpaceShellProps) {
 
       <header class="ui-topbar">
         <div class="ui-topbar-inner">
+          <a href="/spaces" class="text-sm ui-link whitespace-nowrap">
+            All spaces
+          </a>
           <div class="ui-topbar-center">
             <div class="ui-floating ui-tabs">
               <a
