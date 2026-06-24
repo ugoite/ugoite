@@ -18,6 +18,11 @@ const localDevAuthGuideUrl = getDocsiteHref(
 const managedRoles = ["admin", "editor", "viewer"] as const;
 type ManagedRole = (typeof managedRoles)[number];
 
+const invitationExpiryFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 const toMessage = (value: unknown): string => {
   if (typeof value === "string" && value.trim()) return value;
   if (value instanceof Error && value.message.trim()) return value.message;
@@ -53,6 +58,45 @@ const authHintFromError = (
   return null;
 };
 
+const formatInvitationExpiry = (expiresAt: string) => {
+  const date = new Date(expiresAt);
+  return Number.isNaN(date.getTime())
+    ? expiresAt
+    : invitationExpiryFormatter.format(date);
+};
+
+const copyToClipboard = async (text: string) => {
+  const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+  if (clipboard?.writeText) {
+    try {
+      await clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall back to the legacy clipboard path below.
+    }
+  }
+
+  if (typeof document === "undefined" || !document.body) {
+    throw new Error("Clipboard is unavailable in this environment.");
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const copied = typeof document.execCommand === "function" &&
+    document.execCommand("copy");
+  textarea.remove();
+
+  if (!copied) {
+    throw new Error("Copy to clipboard failed.");
+  }
+};
+
 export default function SpaceSettingsRoute() {
   const params = useParams<{ space_id: string }>();
   const spaceId = () => params.space_id;
@@ -67,7 +111,14 @@ export default function SpaceSettingsRoute() {
   const [inviteUserId, setInviteUserId] = createSignal("");
   const [inviteRole, setInviteRole] = createSignal<ManagedRole>("viewer");
   const [inviteEmail, setInviteEmail] = createSignal("");
-  const [inviteToken, setInviteToken] = createSignal("");
+  const [inviteDetails, setInviteDetails] = createSignal<{
+    token: string;
+    expiresAt: string;
+  } | null>(null);
+  const [inviteFeedback, setInviteFeedback] = createSignal<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
   const [memberActionError, setMemberActionError] = createSignal("");
   const [memberActionPending, setMemberActionPending] = createSignal(false);
 
@@ -90,14 +141,18 @@ export default function SpaceSettingsRoute() {
     }
     setMemberActionPending(true);
     setMemberActionError("");
-    setInviteToken("");
+    setInviteDetails(null);
+    setInviteFeedback(null);
     try {
       const response = await spaceApi.inviteMember(spaceId(), {
         user_id: userId,
         role: inviteRole(),
         email: inviteEmail().trim() || undefined,
       });
-      setInviteToken(response.invitation.token);
+      setInviteDetails({
+        token: response.invitation.token,
+        expiresAt: response.invitation.expires_at,
+      });
       setInviteUserId("");
       setInviteEmail("");
       await refetchMembers();
@@ -105,6 +160,23 @@ export default function SpaceSettingsRoute() {
       setMemberActionError(toMessage(error) || "Failed to invite member.");
     } finally {
       setMemberActionPending(false);
+    }
+  };
+
+  const handleCopyInviteToken = async () => {
+    const details = inviteDetails();
+    if (!details) return;
+    try {
+      await copyToClipboard(details.token);
+      setInviteFeedback({
+        kind: "success",
+        message: "Invitation token copied to clipboard.",
+      });
+    } catch (error) {
+      setInviteFeedback({
+        kind: "error",
+        message: toMessage(error) || "Failed to copy invitation token.",
+      });
     }
   };
 
@@ -247,10 +319,45 @@ export default function SpaceSettingsRoute() {
             Invite Member
           </button>
 
-          <Show when={inviteToken()}>
-            <div class="ui-alert ui-alert-info text-sm">
-              Invitation token (share once): <code>{inviteToken()}</code>
-            </div>
+          <Show when={inviteDetails()}>
+            {(details) => (
+              <div class="ui-alert ui-alert-info text-sm ui-stack-sm">
+                <p class="font-medium">Invitation token (share once)</p>
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <code class="break-all">{details().token}</code>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary ui-button-sm w-fit"
+                    onClick={() => void handleCopyInviteToken()}
+                  >
+                    Copy token
+                  </button>
+                </div>
+                <p class="text-xs ui-muted">
+                  Expires at{" "}
+                  <time
+                    datetime={details().expiresAt}
+                    title={details().expiresAt}
+                  >
+                    {formatInvitationExpiry(details().expiresAt)}
+                  </time>
+                </p>
+                <p class="text-xs ui-muted">
+                  Treat this token as a secret and share it once.
+                </p>
+                <Show when={inviteFeedback()}>
+                  {(feedback) => (
+                    <p
+                      class="text-xs"
+                      role={feedback().kind === "error" ? "alert" : "status"}
+                      aria-live="polite"
+                    >
+                      {feedback().message}
+                    </p>
+                  )}
+                </Show>
+              </div>
+            )}
           </Show>
           <Show when={memberActionError()}>
             <p class="text-sm ui-text-danger">{memberActionError()}</p>
