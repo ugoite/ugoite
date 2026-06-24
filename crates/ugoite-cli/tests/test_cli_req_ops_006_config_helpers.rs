@@ -282,15 +282,17 @@ fn test_cli_req_ops_006_parse_space_path_variants() {
 
     let err =
         resolve_space_reference(&core, "backend-space", "entry list").expect_err("bare core ID");
-    assert!(err.to_string().contains(
-        "entry list requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
-    ));
+    let err_text = err.to_string();
+    assert!(err_text.contains(r#"entry list cannot use "backend-space" in core mode"#));
+    assert!(err_text.contains("/path/to/workspace/spaces/demo"));
+    assert!(err_text.contains("Use backend/api mode when you want to pass a bare Space ID."));
 
     let malformed = resolve_space_reference(&core, "/tmp/demo/spaces//nested", "entry list")
         .expect_err("malformed core path");
-    assert!(malformed.to_string().contains(
-        "entry list requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
-    ));
+    let malformed_text = malformed.to_string();
+    assert!(malformed_text.contains(r#"entry list cannot use "/tmp/demo/spaces//nested" in core mode"#));
+    assert!(malformed_text.contains("/path/to/workspace/spaces/demo"));
+    assert!(malformed_text.contains("Use backend/api mode when you want to pass a bare Space ID."));
 
     assert_eq!(normalize_space_root("/"), "/");
     assert_eq!(normalize_space_root("/spaces"), "/");

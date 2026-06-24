@@ -75,6 +75,10 @@ run = [
   "deno task frontend:test",
 ]
 
+[tasks."test:cli"]
+description = "Run the CLI package tests"
+run = "cargo test -p ugoite-cli --locked"
+
 [tasks.ci]
 run = [
   "mise run fmt:check",
