@@ -48,6 +48,7 @@ mise run dev
 ```
 
 For CLI-only iteration, use `mise run test:cli` before the full workspace test gate.
+For the local dev stack URLs, browser auth flow, and docsite port, see [docs/guide/local-dev-auth-login.md](docs/guide/local-dev-auth-login.md).
 
 Focused gates:
 
