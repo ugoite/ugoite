@@ -301,7 +301,18 @@ export default function SpaceFormsIndexPane() {
           <Show when={!sessionId().trim()}>
             <Show
               when={selectedForm()}
-              fallback={<p class="text-sm ui-muted">{t("formsPage.empty")}</p>}
+              fallback={
+                <div class="ui-card ui-stack-sm max-w-lg">
+                  <p class="text-sm ui-muted">{t("formsPage.empty")}</p>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-primary text-sm w-fit"
+                    onClick={() => setShowCreateFormDialog(true)}
+                  >
+                    {t("formsPage.newButton")}
+                  </button>
+                </div>
+              }
             >
               {(form) => (
                 <>
