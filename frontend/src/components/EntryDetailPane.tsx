@@ -507,6 +507,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 </Show>
               </div>
               <div class="flex items-center gap-2">
+                <A
+                  href={`/spaces/${encodeURIComponent(props.spaceId())}/entries/${
+                    encodeURIComponent(props.entryId())
+                  }/history`}
+                  class="ui-button ui-button-secondary ui-button-sm inline-flex items-center gap-2 text-sm"
+                >
+                  History
+                </A>
                 <button
                   type="button"
                   onClick={() => refetchEntry()}
