@@ -290,7 +290,9 @@ fn test_cli_req_ops_006_parse_space_path_variants() {
     let malformed = resolve_space_reference(&core, "/tmp/demo/spaces//nested", "entry list")
         .expect_err("malformed core path");
     let malformed_text = malformed.to_string();
-    assert!(malformed_text.contains(r#"entry list cannot use "/tmp/demo/spaces//nested" in core mode"#));
+    assert!(
+        malformed_text.contains(r#"entry list cannot use "/tmp/demo/spaces//nested" in core mode"#)
+    );
     assert!(malformed_text.contains("/path/to/workspace/spaces/demo"));
     assert!(malformed_text.contains("Use backend/api mode when you want to pass a bare Space ID."));
 
