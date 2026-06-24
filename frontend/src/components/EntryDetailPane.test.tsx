@@ -308,6 +308,34 @@ describe("EntryDetailPane", () => {
 
     expect(backLink).toHaveAttribute("href", "/spaces/default/entries");
   });
+
+  it("REQ-ENTRY-005: entry detail surfaces a history link with encoded identifiers", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry/1",
+      title: "Test Entry",
+      form: null,
+      content: "# Test Entry",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "space id"}
+        entryId={() => "entry/1"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
+
+    const historyLink = await screen.findByRole("link", { name: "History" });
+    expect(historyLink).toHaveAttribute(
+      "href",
+      "/spaces/space%20id/entries/entry%2F1/history",
+    );
+  });
   it("REQ-FE-038: renders form validation warnings", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
