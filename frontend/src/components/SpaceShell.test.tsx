@@ -49,6 +49,10 @@ describe("SpaceShell", () => {
         <div>Content</div>
       </SpaceShell>
     ));
+    expect(screen.getByRole("link", { name: "All spaces" })).toHaveAttribute(
+      "href",
+      "/spaces",
+    );
     const dashboardLink = screen.getByRole("link", { name: /dashboard/i });
     expect(dashboardLink).toHaveAttribute("href", "/spaces/my-space/dashboard");
   });
