@@ -1,150 +1,150 @@
-# Entry APIs
-
-version: "0.1"
-updated: "2026-01"
+version: '0.2'
+updated: '2026-06-23'
 kind: entries
-
 apis:
-  - id: entry.create
-    method: POST
-    backend:
-      path: /spaces/{space_id}/entries
-      file: backend/src/app/api/endpoints/entry.py
-      function: create_entry_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries
-      file: frontend/src/routes/spaces/[space_id]/entries.tsx
-      function: SpaceEntriesRoute
-    ugoite_core:
-      file: ugoite-core/src/entry.rs
-      function: create_entry
-    ugoite_cli:
-      command: ugoite entry create
-      file: ugoite-cli/src/commands/entry.rs
-      function: run
-
-  - id: entry.list
-    method: GET
-    backend:
-      path: /spaces/{space_id}/entries
-      file: backend/src/app/api/endpoints/entry.py
-      function: list_entries_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries
-      file: frontend/src/routes/spaces/[space_id]/entries.tsx
-      function: SpaceEntriesRoute
-    ugoite_core:
-      file: ugoite-core/src/entry.rs
-      function: list_entries
-    ugoite_cli:
-      command: ugoite entry list
-      file: ugoite-cli/src/commands/entry.rs
-      function: run
-
-  - id: entry.get
-    method: GET
-    backend:
-      path: /spaces/{space_id}/entries/{entry_id}
-      file: backend/src/app/api/endpoints/entry.py
-      function: get_entry_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries/{entry_id}
-      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
-      function: SpaceEntryDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/entry.rs
-      function: get_entry
-    ugoite_cli:
-      command: ugoite entry get
-      file: ugoite-cli/src/commands/entry.rs
-      function: run
-
-  - id: entry.update
-    method: PUT
-    backend:
-      path: /spaces/{space_id}/entries/{entry_id}
-      file: backend/src/app/api/endpoints/entry.py
-      function: update_entry_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries/{entry_id}
-      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
-      function: SpaceEntryDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/entry.rs
-      function: update_entry
-    ugoite_cli:
-      command: ugoite entry update
-      file: ugoite-cli/src/commands/entry.rs
-      function: run
-
-  - id: entry.delete
-    method: DELETE
-    backend:
-      path: /spaces/{space_id}/entries/{entry_id}
-      file: backend/src/app/api/endpoints/entry.py
-      function: delete_entry_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries/{entry_id}
-      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/index.tsx
-      function: SpaceEntryDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/entry.rs
-      function: delete_entry
-    ugoite_cli:
-      command: ugoite entry delete
-      file: ugoite-cli/src/commands/entry.rs
-      function: run
-
-  - id: entry.history
-    method: GET
-    backend:
-      path: /spaces/{space_id}/entries/{entry_id}/history
-      file: backend/src/app/api/endpoints/entry.py
-      function: get_entry_history_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries/{entry_id}/history
-      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history.tsx
-      function: SpaceEntryHistoryRoute
-    ugoite_core:
-      file: ugoite-core/src/entry.rs
-      function: get_entry_history
-    ugoite_cli:
-      command: ugoite entry history
-      file: ugoite-cli/src/commands/entry.rs
-      function: run
-
-  - id: entry.revision
-    method: GET
-    backend:
-      path: /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
-      file: backend/src/app/api/endpoints/entry.py
-      function: get_entry_revision_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
-      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/history/[revision_id].tsx
-      function: SpaceEntryRevisionRoute
-    ugoite_core:
-      file: ugoite-core/src/entry.rs
-      function: get_entry_revision
-    ugoite_cli:
-      command: ugoite entry revision
-      file: ugoite-cli/src/commands/entry.rs
-      function: run
-
-  - id: entry.restore
-    method: POST
-    backend:
-      path: /spaces/{space_id}/entries/{entry_id}/restore
-      file: backend/src/app/api/endpoints/entry.py
-      function: restore_entry_endpoint
-    frontend:
-      path: /spaces/{space_id}/entries/{entry_id}/restore
-      file: frontend/src/routes/spaces/[space_id]/entries/[entry_id]/restore.tsx
-      function: SpaceEntryRestoreRoute
-    ugoite_core:
-      file: ugoite-core/src/entry.rs
-      function: restore_entry
-    ugoite_cli:
-      command: ugoite entry restore
-      file: ugoite-cli/src/commands/entry.rs
-      function: run
+- id: entry.list
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries
+    file: crates/ugoite-server/src/lib.rs
+    function: list_entries
+  frontend:
+    path: /spaces/{space_id}/entries
+    file: frontend/src/lib/entry-api.ts
+    function: entryApi.list
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: list_entries
+  ugoite_cli:
+    command: ugoite entry list
+    file: crates/ugoite-cli/src/commands/entry.rs
+    function: run
+- id: entry.create
+  method: POST
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries
+    file: crates/ugoite-server/src/lib.rs
+    function: create_entry
+  frontend:
+    path: /spaces/{space_id}/entries
+    file: frontend/src/lib/entry-api.ts
+    function: entryApi.create
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: create_entry
+  ugoite_cli:
+    command: ugoite entry create
+    file: crates/ugoite-cli/src/commands/entry.rs
+    function: run
+- id: entry.options
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries/options
+    file: crates/ugoite-server/src/lib.rs
+    function: entry_options
+  frontend:
+    path: /spaces/{space_id}/entries
+    file: frontend/src/lib/search-api.ts
+    function: searchApi.rowReferenceOptions
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: list_entry_options
+- id: entry.get
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries/{entry_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: get_entry
+  frontend:
+    path: /spaces/{space_id}/entries/{entry_id}
+    file: frontend/src/lib/entry-api.ts
+    function: entryApi.get
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: get_entry
+  ugoite_cli:
+    command: ugoite entry get
+    file: crates/ugoite-cli/src/commands/entry.rs
+    function: run
+- id: entry.update
+  method: PUT
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries/{entry_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: update_entry
+  frontend:
+    path: /spaces/{space_id}/entries/{entry_id}
+    file: frontend/src/lib/entry-api.ts
+    function: entryApi.update
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: update_entry
+  ugoite_cli:
+    command: ugoite entry update
+    file: crates/ugoite-cli/src/commands/entry.rs
+    function: run
+- id: entry.delete
+  method: DELETE
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries/{entry_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: delete_entry
+  frontend:
+    path: /spaces/{space_id}/entries/{entry_id}
+    file: frontend/src/lib/entry-api.ts
+    function: entryApi.delete
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: delete_entry
+  ugoite_cli:
+    command: ugoite entry delete
+    file: crates/ugoite-cli/src/commands/entry.rs
+    function: run
+- id: entry.history
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries/{entry_id}/history
+    file: crates/ugoite-server/src/lib.rs
+    function: entry_history
+  frontend:
+    path: /spaces/{space_id}/entries/{entry_id}/history
+    file: frontend/src/lib/entry-api.ts
+    function: entryApi.history
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: entry_history
+- id: entry.revision
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: entry_revision
+  frontend:
+    path: /spaces/{space_id}/entries/{entry_id}/history/{revision_id}
+    file: frontend/src/lib/entry-api.ts
+    function: entryApi.getRevision
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: entry_revision
+- id: entry.restore
+  method: POST
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/entries/{entry_id}/restore
+    file: crates/ugoite-server/src/lib.rs
+    function: restore_entry
+  frontend:
+    path: /spaces/{space_id}/entries/{entry_id}/restore
+    file: frontend/src/lib/entry-api.ts
+    function: entryApi.restore
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: restore_entry

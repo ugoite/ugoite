@@ -7,31 +7,40 @@ import { setResponseHeader, setResponseStatus } from "vinxi/http";
 // biome-ignore lint/style/noDefaultExport: Nitro requires default export for error handler
 // biome-ignore lint/suspicious/noExplicitAny: handler for Nitro/Vinxi
 export default function errorHandler(error: any, event: any) {
-	// 1. Check if headers are already sent
-	if (event.node?.res?.headersSent || event.res?.headersSent) {
-		// biome-ignore lint/suspicious/noConsole: Error handler should log to console
-		console.error("[ugoite-error-handler] Error occurring after headers sent:", error);
-		if (event.node?.res && !event.node.res.writableEnded) {
-			event.node.res.end();
-		}
-		return;
-	}
+  // 1. Check if headers are already sent
+  if (event.node?.res?.headersSent || event.res?.headersSent) {
+    // biome-ignore lint/suspicious/noConsole: Error handler should log to console
+    console.error(
+      "[ugoite-error-handler] Error occurring after headers sent:",
+      error,
+    );
+    if (event.node?.res && !event.node.res.writableEnded) {
+      event.node.res.end();
+    }
+    return;
+  }
 
-	// 2. Clear out any state if possible (though we can't easily reset headers)
-	// biome-ignore lint/suspicious/noConsole: Error handler should log to console
-	console.error("[ugoite-error-handler] Server Error:", error);
+  // 2. Clear out any state if possible (though we can't easily reset headers)
+  // biome-ignore lint/suspicious/noConsole: Error handler should log to console
+  console.error("[ugoite-error-handler] Server Error:", error);
 
-	try {
-		setResponseStatus(event, 503, "Server Unavailable");
-		setResponseHeader(event, "Content-Type", "text/html; charset=UTF-8");
-		setResponseHeader(event, "Cache-Control", "no-cache, no-store, must-revalidate");
+  try {
+    setResponseStatus(event, 503, "Server Unavailable");
+    setResponseHeader(event, "Content-Type", "text/html; charset=UTF-8");
+    setResponseHeader(
+      event,
+      "Cache-Control",
+      "no-cache, no-store, must-revalidate",
+    );
 
-		const isDev = process.env.NODE_ENV === "development";
-		const stack = isDev
-			? `<pre style="padding: 1rem; background: #eee; overflow: auto;">${error?.stack || error}</pre>`
-			: "";
+    const isDev = process.env.NODE_ENV === "development";
+    const stack = isDev
+      ? `<pre style="padding: 1rem; background: #eee; overflow: auto;">${
+        error?.stack || error
+      }</pre>`
+      : "";
 
-		event.node.res.end(`<!DOCTYPE html>
+    event.node.res.end(`<!DOCTYPE html>
 <html>
 <head>
     <title>Server Error</title>
@@ -43,11 +52,11 @@ export default function errorHandler(error: any, event: any) {
     ${stack}
 </body>
 </html>`);
-	} catch (e) {
-		// biome-ignore lint/suspicious/noConsole: Error handler should log to console
-		console.error("[ugoite-error-handler] Fatal error in error handler:", e);
-		if (event.node?.res && !event.node.res.writableEnded) {
-			event.node.res.end("Internal Server Error");
-		}
-	}
+  } catch (e) {
+    // biome-ignore lint/suspicious/noConsole: Error handler should log to console
+    console.error("[ugoite-error-handler] Fatal error in error handler:", e);
+    if (event.node?.res && !event.node.res.writableEnded) {
+      event.node.res.end("Internal Server Error");
+    }
+  }
 }

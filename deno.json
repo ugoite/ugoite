@@ -8,8 +8,8 @@
   "nodeModulesDir": "auto",
   "tasks": {
     "dev": "deno run -A tools/dev.ts",
-    "check": "deno check tools/**/*.ts",
-    "test": "deno test -A tools/*_test.ts",
+    "check": "deno check tools/**/*.ts e2e/**/*.ts && deno task frontend:build && deno task --cwd docsite check",
+    "test": "deno test -A tools/*_test.ts && deno task frontend:test && deno task docsite:test",
     "frontend:dev": "deno task --cwd frontend dev",
     "frontend:build": "deno task --cwd frontend build",
     "frontend:test": "deno task --cwd frontend test",
@@ -17,8 +17,9 @@
     "docsite:build": "deno task --cwd docsite build",
     "docsite:test": "deno task --cwd docsite test",
     "e2e:install:browsers": "deno task --cwd e2e install:browsers",
-    "e2e:smoke": "deno task --cwd e2e smoke",
-    "e2e:full": "deno task --cwd e2e full"
+    "e2e:smoke": "bash e2e/scripts/run-e2e-parity.sh smoke",
+    "e2e:full": "bash e2e/scripts/run-e2e-parity.sh full",
+    "e2e:static": "E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true bash e2e/scripts/run-e2e.sh smoke"
   },
   "fmt": {
     "include": [
@@ -40,6 +41,18 @@
     ]
   },
   "lint": {
-    "include": ["tools"]
+    "include": ["tools", "e2e", "frontend/src", "docsite/src"],
+    "rules": {
+      "exclude": [
+        "no-explicit-any",
+        "no-sloppy-imports",
+        "no-unused-vars",
+        "no-window",
+        "no-window-prefix",
+        "require-await",
+        "jsx-boolean-value",
+        "jsx-curly-braces"
+      ]
+    }
   }
 }

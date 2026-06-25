@@ -1,211 +1,178 @@
 import type {
-	Entry,
-	EntryCreatePayload,
-	EntryRecord,
-	EntryRevision,
-	EntryUpdatePayload,
-	Form,
+  Entry,
+  EntryCreatePayload,
+  EntryRecord,
+  EntryRevision,
+  EntryUpdatePayload,
+  Form,
 } from "./types";
-import { apiFetch } from "./api";
 import { normalizeTimestamp } from "./date-format";
 import { buildEntryMarkdownByMode } from "./entry-input";
+import {
+  protocolFetch,
+  UgoiteApiError,
+} from "./ugoite-client/protocol";
 
 type EntryResponse = Omit<Entry, "content"> & {
-	content?: string;
-	markdown?: string;
+  content?: string;
+  markdown?: string;
 };
 
 const normalizeEntryRecord = (entry: EntryRecord): EntryRecord => ({
-	...entry,
-	updated_at: normalizeTimestamp(entry.updated_at),
+  ...entry,
+  updated_at: normalizeTimestamp(entry.updated_at),
 });
 
 const normalizeEntry = (entry: EntryResponse): Entry => ({
-	...entry,
-	content: entry.content ?? entry.markdown ?? "",
-	created_at: normalizeTimestamp(entry.created_at),
-	updated_at: normalizeTimestamp(entry.updated_at),
+  ...entry,
+  content: entry.content ?? entry.markdown ?? "",
+  created_at: normalizeTimestamp(entry.created_at),
+  updated_at: normalizeTimestamp(entry.updated_at),
 });
 
-/**
- * Entry API client
- */
-export const entryApi = {
-	/** List all entries in a space (uses index) */
-	async list(spaceId: string): Promise<EntryRecord[]> {
-		const res = await apiFetch(`/spaces/${encodeURIComponent(spaceId)}/entries`);
-		if (!res.ok) {
-			throw new Error(`Failed to list entries: ${res.statusText}`);
-		}
-		return ((await res.json()) as EntryRecord[]).map(normalizeEntryRecord);
-	},
-
-	/** Get a single entry */
-	async get(spaceId: string, entryId: string): Promise<Entry> {
-		const res = await apiFetch(
-			`/spaces/${encodeURIComponent(spaceId)}/entries/${encodeURIComponent(entryId)}`,
-		);
-		if (!res.ok) {
-			let detail = res.statusText;
-			try {
-				const data = (await res.json()) as { detail?: string };
-				if (data?.detail) {
-					detail = data.detail;
-				}
-			} catch {
-				// ignore parse errors
-			}
-			throw new Error(`Failed to get entry: ${detail}`);
-		}
-		return normalizeEntry((await res.json()) as EntryResponse);
-	},
-
-	/** Create a new entry */
-	async create(
-		spaceId: string,
-		payload: EntryCreatePayload,
-	): Promise<{ id: string; revision_id: string }> {
-		const res = await apiFetch(`/spaces/${encodeURIComponent(spaceId)}/entries`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-		});
-		if (!res.ok) {
-			/* v8 ignore start */
-			const error = (await res.json()) as { detail?: string };
-			throw new Error(error.detail || `Failed to create entry: ${res.statusText}`);
-			/* v8 ignore stop */
-		}
-		return (await res.json()) as { id: string; revision_id: string };
-	},
-
-	/** Create a new entry from markdown editor input */
-	async createFromMarkdown(
-		spaceId: string,
-		markdown: string,
-		id?: string,
-	): Promise<{ id: string; revision_id: string }> {
-		return await this.create(spaceId, { id, markdown });
-	},
-
-	/** Create a new entry from webform field input */
-	async createFromWebform(
-		spaceId: string,
-		formDef: Form,
-		title: string,
-		fieldValues: Record<string, string>,
-		id?: string,
-	): Promise<{ id: string; revision_id: string }> {
-		const markdown = buildEntryMarkdownByMode(formDef, title, fieldValues, "webform");
-		return await this.create(spaceId, { id, markdown });
-	},
-
-	/** Create a new entry from chat-style Q&A input */
-	async createFromChat(
-		spaceId: string,
-		formDef: Form,
-		title: string,
-		answers: Record<string, string>,
-		id?: string,
-	): Promise<{ id: string; revision_id: string }> {
-		const markdown = buildEntryMarkdownByMode(formDef, title, answers, "chat");
-		return await this.create(spaceId, { id, markdown });
-	},
-
-	/** Update a entry (requires parent_revision_id for optimistic locking) */
-	async update(
-		spaceId: string,
-		entryId: string,
-		payload: EntryUpdatePayload,
-	): Promise<{ id: string; revision_id: string }> {
-		const res = await apiFetch(
-			`/spaces/${encodeURIComponent(spaceId)}/entries/${encodeURIComponent(entryId)}`,
-			{
-				method: "PUT",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload),
-			},
-		);
-		if (!res.ok) {
-			/* v8 ignore start */
-			const error = (await res.json()) as {
-				detail?: string;
-				current_revision_id?: string;
-			};
-			if (res.status === 409) {
-				throw new RevisionConflictError(
-					error.detail || "Revision mismatch",
-					error.current_revision_id,
-				);
-			}
-			throw new Error(error.detail || `Failed to update entry: ${res.statusText}`);
-			/* v8 ignore stop */
-		}
-		return (await res.json()) as { id: string; revision_id: string };
-	},
-
-	/** Delete a entry */
-	async delete(spaceId: string, entryId: string): Promise<void> {
-		const res = await apiFetch(
-			`/spaces/${encodeURIComponent(spaceId)}/entries/${encodeURIComponent(entryId)}`,
-			{
-				method: "DELETE",
-			},
-		);
-		if (!res.ok) {
-			throw new Error(`Failed to delete entry: ${res.statusText}`);
-		}
-	},
-
-	/** Get entry revision history */
-	async history(spaceId: string, entryId: string): Promise<{ revisions: EntryRevision[] }> {
-		const res = await apiFetch(
-			`/spaces/${encodeURIComponent(spaceId)}/entries/${encodeURIComponent(entryId)}/history`,
-		);
-		if (!res.ok) {
-			throw new Error(`Failed to get entry history: ${res.statusText}`);
-		}
-		return (await res.json()) as { revisions: EntryRevision[] };
-	},
-
-	/** Get a specific entry revision */
-	async getRevision(spaceId: string, entryId: string, revisionId: string): Promise<Entry> {
-		const res = await apiFetch(
-			`/spaces/${encodeURIComponent(spaceId)}/entries/${encodeURIComponent(entryId)}/history/${encodeURIComponent(revisionId)}`,
-		);
-		if (!res.ok) {
-			throw new Error(`Failed to get entry revision: ${res.statusText}`);
-		}
-		return normalizeEntry((await res.json()) as EntryResponse);
-	},
-
-	/** Restore entry to a previous revision */
-	async restore(spaceId: string, entryId: string, revisionId: string): Promise<Entry> {
-		const res = await apiFetch(
-			`/spaces/${encodeURIComponent(spaceId)}/entries/${encodeURIComponent(entryId)}/restore`,
-			{
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ revision_id: revisionId }),
-			},
-		);
-		if (!res.ok) {
-			/* v8 ignore start */
-			const error = (await res.json()) as { detail?: string };
-			throw new Error(error.detail || `Failed to restore entry: ${res.statusText}`);
-			/* v8 ignore stop */
-		}
-		return normalizeEntry((await res.json()) as EntryResponse);
-	},
+const currentRevisionIdFromError = (error: UgoiteApiError): string | undefined => {
+  if (!error.payload || typeof error.payload !== "object") return undefined;
+  const value = (error.payload as Record<string, unknown>)[
+    "current_revision_id"
+  ];
+  return typeof value === "string" ? value : undefined;
 };
 
-/** Custom error for revision conflicts (409) */
+/** Entry API client backed by the shared Rust/WASM protocol. */
+export const entryApi = {
+  async list(spaceId: string): Promise<EntryRecord[]> {
+    const entries = await protocolFetch<EntryRecord[]>("entry.list", {
+      space_id: spaceId,
+    });
+    return entries.map(normalizeEntryRecord);
+  },
+
+  async get(spaceId: string, entryId: string): Promise<Entry> {
+    const entry = await protocolFetch<EntryResponse>("entry.get", {
+      space_id: spaceId,
+      entry_id: entryId,
+    });
+    return normalizeEntry(entry);
+  },
+
+  async create(
+    spaceId: string,
+    payload: EntryCreatePayload,
+  ): Promise<{ id: string; revision_id: string }> {
+    return await protocolFetch<{ id: string; revision_id: string }>(
+      "entry.create",
+      { space_id: spaceId },
+      payload,
+    );
+  },
+
+  async createFromMarkdown(
+    spaceId: string,
+    markdown: string,
+    id?: string,
+  ): Promise<{ id: string; revision_id: string }> {
+    return await this.create(spaceId, { id, markdown });
+  },
+
+  async createFromWebform(
+    spaceId: string,
+    formDef: Form,
+    title: string,
+    fieldValues: Record<string, string>,
+    id?: string,
+  ): Promise<{ id: string; revision_id: string }> {
+    const markdown = buildEntryMarkdownByMode(
+      formDef,
+      title,
+      fieldValues,
+      "webform",
+    );
+    return await this.create(spaceId, { id, markdown });
+  },
+
+  async createFromChat(
+    spaceId: string,
+    formDef: Form,
+    title: string,
+    answers: Record<string, string>,
+    id?: string,
+  ): Promise<{ id: string; revision_id: string }> {
+    const markdown = buildEntryMarkdownByMode(formDef, title, answers, "chat");
+    return await this.create(spaceId, { id, markdown });
+  },
+
+  async update(
+    spaceId: string,
+    entryId: string,
+    payload: EntryUpdatePayload,
+  ): Promise<{ id: string; revision_id: string }> {
+    try {
+      return await protocolFetch<{ id: string; revision_id: string }>(
+        "entry.update",
+        { space_id: spaceId, entry_id: entryId },
+        payload,
+      );
+    } catch (error) {
+      if (error instanceof UgoiteApiError && error.status === 409) {
+        throw new RevisionConflictError(
+          error.message,
+          currentRevisionIdFromError(error),
+        );
+      }
+      throw error;
+    }
+  },
+
+  async delete(spaceId: string, entryId: string): Promise<void> {
+    await protocolFetch<unknown>("entry.delete", {
+      space_id: spaceId,
+      entry_id: entryId,
+    });
+  },
+
+  async history(
+    spaceId: string,
+    entryId: string,
+  ): Promise<{ revisions: EntryRevision[] }> {
+    return await protocolFetch<{ revisions: EntryRevision[] }>("entry.history", {
+      space_id: spaceId,
+      entry_id: entryId,
+    });
+  },
+
+  async getRevision(
+    spaceId: string,
+    entryId: string,
+    revisionId: string,
+  ): Promise<Entry> {
+    const entry = await protocolFetch<EntryResponse>("entry.revision", {
+      space_id: spaceId,
+      entry_id: entryId,
+      revision_id: revisionId,
+    });
+    return normalizeEntry(entry);
+  },
+
+  async restore(
+    spaceId: string,
+    entryId: string,
+    revisionId: string,
+  ): Promise<Entry> {
+    const entry = await protocolFetch<EntryResponse>(
+      "entry.restore",
+      { space_id: spaceId, entry_id: entryId },
+      { revision_id: revisionId },
+    );
+    return normalizeEntry(entry);
+  },
+};
+
 export class RevisionConflictError extends Error {
-	constructor(
-		message: string,
-		public currentRevisionId?: string,
-	) {
-		super(message);
-		this.name = "RevisionConflictError";
-	}
+  constructor(
+    message: string,
+    public currentRevisionId?: string,
+  ) {
+    super(message);
+    this.name = "RevisionConflictError";
+  }
 }

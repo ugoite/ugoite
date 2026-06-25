@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { getFrontendUrl, waitForServers } from "./lib/client";
+import { getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 test.describe("Space settings storage guidance", () => {
 	test.beforeAll(async ({ request }) => {

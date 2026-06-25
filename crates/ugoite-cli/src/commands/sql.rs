@@ -1,12 +1,9 @@
-use crate::config::{
-    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
-    validated_base_url,
-};
+use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use ugoite_core::integrity::RealIntegrityProvider;
 use ugoite_core::saved_sql::SqlPayload;
+use ugoite_core::service::UgoiteService;
 
 #[derive(Args)]
 pub struct SqlCmd {
@@ -65,26 +62,35 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         SqlSubCmd::SavedList { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-list")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/sql")).await?;
+                let result = http::execute(
+                    &base,
+                    "sql.list",
+                    serde_json::json!({"space_id": space_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let sqls = ugoite_core::saved_sql::list_sql(&op, &ws).await?;
+            let service = UgoiteService::new(&root)?;
+            let sqls = service.list_saved_sql(&space_id).await?;
             print_json(&sqls);
         }
         SqlSubCmd::SavedGet { space_path, sql_id } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "sql saved-get")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_get(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
+                let result = http::execute(
+                    &base,
+                    "sql.get",
+                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let sql = ugoite_core::saved_sql::get_sql(&op, &ws, &sql_id).await?;
+            let service = UgoiteService::new(&root)?;
+            let sql = service.get_saved_sql(&space_id, &sql_id).await?;
             print_json(&sql);
         }
         SqlSubCmd::SavedCreate {
@@ -101,26 +107,25 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/sql"),
-                    &serde_json::json!({"id": sql_id, "name": name, "sql": sql, "variables": vars, "author": author}),
+                let result = http::execute(
+                    &base,
+                    "sql.create",
+                    serde_json::json!({"space_id": space_id}),
+                    Some(serde_json::json!({"id": sql_id, "name": name, "sql": sql, "variables": vars, "author": author})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let integrity = RealIntegrityProvider::from_space(&op, &space_id).await?;
             let payload = SqlPayload {
                 name,
                 sql,
                 variables: vars,
             };
-            let result = ugoite_core::saved_sql::create_sql(
-                &op, &ws, &sql_id, &payload, &author, &integrity,
-            )
-            .await?;
+            let service = UgoiteService::new(&root)?;
+            let result = service
+                .create_saved_sql(&space_id, &sql_id, &payload, &author)
+                .await?;
             print_json(&result);
         }
         SqlSubCmd::SavedUpdate {
@@ -138,46 +143,49 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_put(
-                    &format!("{base}/spaces/{space_id}/sql/{sql_id}"),
-                    &serde_json::json!({"name": name, "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author}),
+                let result = http::execute(
+                    &base,
+                    "sql.update",
+                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    Some(serde_json::json!({"name": name, "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let integrity = RealIntegrityProvider::from_space(&op, &space_id).await?;
             let payload = SqlPayload {
                 name,
                 sql,
                 variables: vars,
             };
-            let result = ugoite_core::saved_sql::update_sql(
-                &op,
-                &ws,
-                &sql_id,
-                &payload,
-                parent_revision_id.as_deref(),
-                &author,
-                &integrity,
-            )
-            .await?;
+            let service = UgoiteService::new(&root)?;
+            let result = service
+                .update_saved_sql(
+                    &space_id,
+                    &sql_id,
+                    &payload,
+                    parent_revision_id.as_deref(),
+                    &author,
+                )
+                .await?;
             print_json(&result);
         }
         SqlSubCmd::SavedDelete { space_path, sql_id } => {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-delete")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_delete(&format!("{base}/spaces/{space_id}/sql/{sql_id}")).await?;
+                let result = http::execute(
+                    &base,
+                    "sql.delete",
+                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            ugoite_core::saved_sql::delete_sql(&op, &ws, &sql_id).await?;
+            let service = UgoiteService::new(&root)?;
+            service.delete_saved_sql(&space_id, &sql_id).await?;
             print_json(&serde_json::json!({"deleted": true}));
         }
     }

@@ -7,214 +7,214 @@ import { testApiUrl } from "~/test/http-origin";
 const getRequestEventMock = vi.fn();
 
 vi.mock("solid-js/web", () => ({
-	getRequestEvent: getRequestEventMock,
+  getRequestEvent: getRequestEventMock,
 }));
 
 describe("apiFetch auth forwarding", () => {
-	beforeEach(() => {
-		getRequestEventMock.mockReset();
-		vi.resetModules();
-	});
+  beforeEach(() => {
+    getRequestEventMock.mockReset();
+    vi.resetModules();
+  });
 
-	afterEach(() => {
-		vi.unstubAllGlobals();
-		vi.unstubAllEnvs();
-	});
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
 
-	it("REQ-OPS-015: forwards SSR auth headers to local auth requests", async () => {
-		let seenCookie: string | null = null;
-		let seenAuthorization: string | null = null;
-		server.use(
-			http.get(testApiUrl("/auth/config"), ({ request }) => {
-				seenCookie = request.headers.get("cookie");
-				seenAuthorization = request.headers.get("authorization");
-				return HttpResponse.json({
-					mode: "passkey-totp",
-					username_hint: "dev-alice",
-					supports_passkey_totp: true,
-					supports_mock_oauth: false,
-				});
-			}),
-		);
-		vi.stubGlobal("window", undefined);
-		getRequestEventMock.mockReturnValue({
-			request: new Request("http://localhost:3000/login", {
-				headers: {
-					cookie: "ugoite_auth_bearer_token=server-token",
-					authorization: "Bearer forwarded-token",
-				},
-			}),
-		});
+  it("REQ-OPS-015: forwards SSR auth headers to local auth requests", async () => {
+    let seenCookie: string | null = null;
+    let seenAuthorization: string | null = null;
+    server.use(
+      http.get(testApiUrl("/auth/config"), ({ request }) => {
+        seenCookie = request.headers.get("cookie");
+        seenAuthorization = request.headers.get("authorization");
+        return HttpResponse.json({
+          mode: "passkey-totp",
+          username_hint: "dev-alice",
+          supports_passkey_totp: true,
+          supports_mock_oauth: false,
+        });
+      }),
+    );
+    vi.stubGlobal("window", undefined);
+    getRequestEventMock.mockReturnValue({
+      request: new Request("http://localhost:3000/login", {
+        headers: {
+          cookie: "ugoite_auth_bearer_token=server-token",
+          authorization: "Bearer forwarded-token",
+        },
+      }),
+    });
 
-		const { apiFetch } = await import("./api");
-		const response = await apiFetch("/auth/config", { trackLoading: false });
+    const { apiFetch } = await import("./api");
+    const response = await apiFetch("/auth/config", { trackLoading: false });
 
-		expect(response.status).toBe(200);
-		expect(seenCookie).toBe("ugoite_auth_bearer_token=server-token");
-		expect(seenAuthorization).toBe("Bearer forwarded-token");
-	});
+    expect(response.status).toBe(200);
+    expect(seenCookie).toBe("ugoite_auth_bearer_token=server-token");
+    expect(seenAuthorization).toBe("Bearer forwarded-token");
+  });
 
-	it("exposes the current server-backed runtime capabilities", async () => {
-		const { runtimeCapabilities } = await import("./ugoite-client");
+  it("exposes the current server-backed runtime capabilities", async () => {
+    const { runtimeCapabilities } = await import("./ugoite-client");
 
-		expect(runtimeCapabilities).toEqual({
-			mode: "server-backed",
-			serverBacked: true,
-			browserLocal: false,
-			sync: "none",
-		});
-	});
+    expect(runtimeCapabilities).toEqual({
+      mode: "server-backed",
+      serverBacked: true,
+      browserLocal: false,
+      sync: "none",
+    });
+  });
 
-	it("REQ-OPS-015: preserves explicit request auth headers during SSR", async () => {
-		let seenCookie: string | null = null;
-		let seenAuthorization: string | null = null;
-		server.use(
-			http.get(testApiUrl("/auth/config"), ({ request }) => {
-				seenCookie = request.headers.get("cookie");
-				seenAuthorization = request.headers.get("authorization");
-				return HttpResponse.json({
-					mode: "passkey-totp",
-					username_hint: "dev-alice",
-					supports_passkey_totp: true,
-					supports_mock_oauth: false,
-				});
-			}),
-		);
-		vi.stubGlobal("window", undefined);
-		getRequestEventMock.mockReturnValue({
-			request: new Request("http://localhost:3000/login", {
-				headers: {
-					cookie: "ugoite_auth_bearer_token=server-token",
-					authorization: "Bearer forwarded-token",
-				},
-			}),
-		});
+  it("REQ-OPS-015: preserves explicit request auth headers during SSR", async () => {
+    let seenCookie: string | null = null;
+    let seenAuthorization: string | null = null;
+    server.use(
+      http.get(testApiUrl("/auth/config"), ({ request }) => {
+        seenCookie = request.headers.get("cookie");
+        seenAuthorization = request.headers.get("authorization");
+        return HttpResponse.json({
+          mode: "passkey-totp",
+          username_hint: "dev-alice",
+          supports_passkey_totp: true,
+          supports_mock_oauth: false,
+        });
+      }),
+    );
+    vi.stubGlobal("window", undefined);
+    getRequestEventMock.mockReturnValue({
+      request: new Request("http://localhost:3000/login", {
+        headers: {
+          cookie: "ugoite_auth_bearer_token=server-token",
+          authorization: "Bearer forwarded-token",
+        },
+      }),
+    });
 
-		const { apiFetch } = await import("./api");
-		const response = await apiFetch("/auth/config", {
-			trackLoading: false,
-			headers: {
-				cookie: "ugoite_auth_bearer_token=explicit-token",
-				authorization: "Bearer explicit-token",
-			},
-		});
+    const { apiFetch } = await import("./api");
+    const response = await apiFetch("/auth/config", {
+      trackLoading: false,
+      headers: {
+        cookie: "ugoite_auth_bearer_token=explicit-token",
+        authorization: "Bearer explicit-token",
+      },
+    });
 
-		expect(response.status).toBe(200);
-		expect(seenCookie).toBe("ugoite_auth_bearer_token=explicit-token");
-		expect(seenAuthorization).toBe("Bearer explicit-token");
-	});
+    expect(response.status).toBe(200);
+    expect(seenCookie).toBe("ugoite_auth_bearer_token=explicit-token");
+    expect(seenAuthorization).toBe("Bearer explicit-token");
+  });
 
-	it("REQ-OPS-015: skips SSR auth forwarding without a request event", async () => {
-		let seenCookie: string | null = "unexpected";
-		let seenAuthorization: string | null = "unexpected";
-		server.use(
-			http.get(testApiUrl("/auth/config"), ({ request }) => {
-				seenCookie = request.headers.get("cookie");
-				seenAuthorization = request.headers.get("authorization");
-				return HttpResponse.json({
-					mode: "passkey-totp",
-					username_hint: "dev-alice",
-					supports_passkey_totp: true,
-					supports_mock_oauth: false,
-				});
-			}),
-		);
-		vi.stubGlobal("window", undefined);
-		getRequestEventMock.mockReturnValue(undefined);
+  it("REQ-OPS-015: skips SSR auth forwarding without a request event", async () => {
+    let seenCookie: string | null = "unexpected";
+    let seenAuthorization: string | null = "unexpected";
+    server.use(
+      http.get(testApiUrl("/auth/config"), ({ request }) => {
+        seenCookie = request.headers.get("cookie");
+        seenAuthorization = request.headers.get("authorization");
+        return HttpResponse.json({
+          mode: "passkey-totp",
+          username_hint: "dev-alice",
+          supports_passkey_totp: true,
+          supports_mock_oauth: false,
+        });
+      }),
+    );
+    vi.stubGlobal("window", undefined);
+    getRequestEventMock.mockReturnValue(undefined);
 
-		const { apiFetch } = await import("./api");
-		const response = await apiFetch("/auth/config", { trackLoading: false });
+    const { apiFetch } = await import("./api");
+    const response = await apiFetch("/auth/config", { trackLoading: false });
 
-		expect(response.status).toBe(200);
-		expect(seenCookie).toBeNull();
-		expect(seenAuthorization).toBeNull();
-	});
+    expect(response.status).toBe(200);
+    expect(seenCookie).toBeNull();
+    expect(seenAuthorization).toBeNull();
+  });
 
-	it("REQ-OPS-015: uses FRONTEND_URL for the SSR API origin when frontend origin env vars are unset", async () => {
-		let seenOrigin: string | null = null;
-		let seenCookie: string | null = null;
-		server.use(
-			http.get("http://localhost:13000/api/auth/config", ({ request }) => {
-				seenOrigin = new URL(request.url).origin;
-				seenCookie = request.headers.get("cookie");
-				return HttpResponse.json({
-					mode: "passkey-totp",
-					username_hint: "dev-alice",
-					supports_passkey_totp: true,
-					supports_mock_oauth: false,
-				});
-			}),
-		);
-		vi.stubGlobal("window", undefined);
-		vi.stubEnv("NODE_ENV", "development");
-		vi.stubEnv("FRONTEND_ORIGIN", "");
-		vi.stubEnv("ORIGIN", "");
-		vi.stubEnv("FRONTEND_URL", "http://localhost:13000");
-		getRequestEventMock.mockReturnValue({
-			request: new Request("http://attacker.invalid/login", {
-				headers: {
-					cookie: "ugoite_auth_bearer_token=server-token",
-				},
-			}),
-		});
+  it("REQ-OPS-015: uses FRONTEND_URL for the SSR API origin when frontend origin env vars are unset", async () => {
+    let seenOrigin: string | null = null;
+    let seenCookie: string | null = null;
+    server.use(
+      http.get("http://localhost:13000/api/auth/config", ({ request }) => {
+        seenOrigin = new URL(request.url).origin;
+        seenCookie = request.headers.get("cookie");
+        return HttpResponse.json({
+          mode: "passkey-totp",
+          username_hint: "dev-alice",
+          supports_passkey_totp: true,
+          supports_mock_oauth: false,
+        });
+      }),
+    );
+    vi.stubGlobal("window", undefined);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("FRONTEND_ORIGIN", "");
+    vi.stubEnv("ORIGIN", "");
+    vi.stubEnv("FRONTEND_URL", "http://localhost:13000");
+    getRequestEventMock.mockReturnValue({
+      request: new Request("http://attacker.invalid/login", {
+        headers: {
+          cookie: "ugoite_auth_bearer_token=server-token",
+        },
+      }),
+    });
 
-		const { apiFetch } = await import("./api");
-		const response = await apiFetch("/auth/config", { trackLoading: false });
+    const { apiFetch } = await import("./api");
+    const response = await apiFetch("/auth/config", { trackLoading: false });
 
-		expect(response.status).toBe(200);
-		expect(seenOrigin).toBe("http://localhost:13000");
-		expect(seenCookie).toBe("ugoite_auth_bearer_token=server-token");
-	});
+    expect(response.status).toBe(200);
+    expect(seenOrigin).toBe("http://localhost:13000");
+    expect(seenCookie).toBe("ugoite_auth_bearer_token=server-token");
+  });
 
-	it("REQ-OPS-015: uses FRONTEND_TEST_ORIGIN for the frontend test API base", async () => {
-		let seenOrigin: string | null = null;
-		vi.stubEnv("NODE_ENV", "test");
-		vi.stubEnv("FRONTEND_TEST_ORIGIN", "http://127.0.0.1:4310");
-		server.use(
-			http.get(testApiUrl("/auth/config"), ({ request }) => {
-				seenOrigin = new URL(request.url).origin;
-				return HttpResponse.json({
-					mode: "passkey-totp",
-					username_hint: "dev-alice",
-					supports_passkey_totp: true,
-					supports_mock_oauth: false,
-				});
-			}),
-		);
+  it("REQ-OPS-015: uses FRONTEND_TEST_ORIGIN for the frontend test API base", async () => {
+    let seenOrigin: string | null = null;
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("FRONTEND_TEST_ORIGIN", "http://127.0.0.1:4310");
+    server.use(
+      http.get(testApiUrl("/auth/config"), ({ request }) => {
+        seenOrigin = new URL(request.url).origin;
+        return HttpResponse.json({
+          mode: "passkey-totp",
+          username_hint: "dev-alice",
+          supports_passkey_totp: true,
+          supports_mock_oauth: false,
+        });
+      }),
+    );
 
-		const { apiFetch, getBackendBase } = await import("./api");
-		const response = await apiFetch("/auth/config", { trackLoading: false });
+    const { apiFetch, getBackendBase } = await import("./api");
+    const response = await apiFetch("/auth/config", { trackLoading: false });
 
-		expect(getBackendBase()).toBe("http://127.0.0.1:4310/api");
-		expect(response.status).toBe(200);
-		expect(seenOrigin).toBe("http://127.0.0.1:4310");
-	});
+    expect(getBackendBase()).toBe("http://127.0.0.1:4310/api");
+    expect(response.status).toBe(200);
+    expect(seenOrigin).toBe("http://127.0.0.1:4310");
+  });
 
-	it("REQ-OPS-015: falls back to the default SSR origin when no frontend origin env is configured", async () => {
-		vi.stubGlobal("window", undefined);
-		vi.stubEnv("NODE_ENV", "development");
-		vi.stubEnv("FRONTEND_ORIGIN", "");
-		vi.stubEnv("ORIGIN", "");
-		vi.stubEnv("FRONTEND_URL", "");
-		getRequestEventMock.mockReturnValue(undefined);
+  it("REQ-OPS-015: falls back to the default SSR origin when no frontend origin env is configured", async () => {
+    vi.stubGlobal("window", undefined);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("FRONTEND_ORIGIN", "");
+    vi.stubEnv("ORIGIN", "");
+    vi.stubEnv("FRONTEND_URL", "");
+    getRequestEventMock.mockReturnValue(undefined);
 
-		const { getBackendBase } = await import("./api");
+    const { getBackendBase } = await import("./api");
 
-		expect(getBackendBase()).toBe("http://localhost:3000/api");
-	});
+    expect(getBackendBase()).toBe("http://localhost:3000/api");
+  });
 
-	it("REQ-OPS-015: does not derive the SSR API origin from the incoming request", async () => {
-		vi.stubGlobal("window", undefined);
-		vi.stubEnv("NODE_ENV", "development");
-		vi.stubEnv("FRONTEND_ORIGIN", "");
-		vi.stubEnv("ORIGIN", "");
-		vi.stubEnv("FRONTEND_URL", "");
-		getRequestEventMock.mockReturnValue({
-			request: new Request("http://attacker.invalid/login"),
-		});
+  it("REQ-OPS-015: does not derive the SSR API origin from the incoming request", async () => {
+    vi.stubGlobal("window", undefined);
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("FRONTEND_ORIGIN", "");
+    vi.stubEnv("ORIGIN", "");
+    vi.stubEnv("FRONTEND_URL", "");
+    getRequestEventMock.mockReturnValue({
+      request: new Request("http://attacker.invalid/login"),
+    });
 
-		const { getBackendBase } = await import("./api");
+    const { getBackendBase } = await import("./api");
 
-		expect(getBackendBase()).toBe("http://localhost:3000/api");
-	});
+    expect(getBackendBase()).toBe("http://localhost:3000/api");
+  });
 });

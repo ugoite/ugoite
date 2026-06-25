@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 ugoite_core = { package = "ugoite-core", path = "../ugoite-core" }
+ugoite-api-client = { path = "../ugoite-api-client" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1.0", features = ["derive"] }

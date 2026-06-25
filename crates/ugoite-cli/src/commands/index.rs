@@ -1,10 +1,8 @@
-use crate::config::{
-    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
-    validated_base_url,
-};
+use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
 use crate::http;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
+use ugoite_core::service::UgoiteService;
 
 #[derive(Args)]
 pub struct IndexCmd {
@@ -43,30 +41,24 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
     match cmd.sub {
         IndexSubCmd::Run { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "index run")?;
-            if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/index"),
-                    &serde_json::json!({}),
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
+            if validated_base_url(&config)?.is_some() {
+                bail!(
+                    "index run is not available in backend/api mode in this release; use core mode for local reindexing"
+                );
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            ugoite_core::index::reindex_all(&op, &ws).await?;
+            let service = UgoiteService::new(&root)?;
+            service.reindex(&space_id).await?;
             print_json(&serde_json::json!({"reindexed": true}));
         }
         IndexSubCmd::Stats { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "index stats")?;
-            if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/stats")).await?;
-                print_json(&result);
-                return Ok(());
+            if validated_base_url(&config)?.is_some() {
+                bail!(
+                    "index stats is not available in backend/api mode in this release; use core mode for local index stats"
+                );
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let stats = ugoite_core::index::get_space_stats(&op, &ws).await?;
+            let service = UgoiteService::new(&root)?;
+            let stats = service.space_stats(&space_id).await?;
             print_json(&stats);
         }
     }
@@ -77,13 +69,34 @@ pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
     let config = load_config();
     let (root, space_id) = resolve_space_reference(&config, space_path, "query")?;
     if let Some(base) = validated_base_url(&config)? {
-        let result = http::http_get(&format!("{base}/spaces/{space_id}/query?sql={sql}")).await?;
-        print_json(&result);
+        let session = http::execute(
+            &base,
+            "sql_session.create",
+            serde_json::json!({"space_id": space_id}),
+            Some(serde_json::json!({"sql": sql})),
+        )
+        .await?;
+        let session_id = session
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("SQL session response did not include an id"))?;
+        let rows = http::execute(
+            &base,
+            "sql_session.rows",
+            serde_json::json!({
+                "space_id": space_id,
+                "session_id": session_id,
+                "offset": 0,
+                "limit": 1000,
+            }),
+            None,
+        )
+        .await?;
+        print_json(&rows);
         return Ok(());
     }
-    let op = operator_for_path(&root)?;
-    let ws = space_ws_path(&root, &space_id);
-    let results = ugoite_core::index::execute_sql_query(&op, &ws, sql).await?;
+    let service = UgoiteService::new(&root)?;
+    let results = service.execute_sql_query(&space_id, sql).await?;
     print_json(&results);
     Ok(())
 }

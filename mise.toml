@@ -40,14 +40,19 @@ run = [
 [tasks.lint]
 run = [
   "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-  "deno lint tools",
+  "deno lint tools e2e frontend/src docsite/src",
 ]
 
 [tasks.check]
 run = [
   "cargo check --workspace --all-targets --all-features --locked",
   "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
+  "cargo check -p ugoite-api-client --target wasm32-unknown-unknown --locked",
+  "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
   "deno task check",
+  "cargo run -p xtask -- openapi-check",
+  "cargo run -p xtask -- architecture-check",
+  "cargo run -p xtask -- docs-current-stack-check",
 ]
 
 [tasks.test]
@@ -55,6 +60,14 @@ run = [
   "cargo test --workspace --locked",
   "deno task test",
 ]
+
+[tasks.e2e]
+description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"
+run = "deno task e2e:full"
+
+[tasks."e2e:smoke"]
+description = "Run CI-parity E2E smoke tests"
+run = "deno task e2e:smoke"
 
 [tasks."test:smoke"]
 run = [
@@ -75,6 +88,7 @@ run = [
   "mise run ci",
   "deno task frontend:build",
   "deno task docsite:build",
+  "mise run e2e:smoke",
 ]
 
 [tasks."ci:release"]
@@ -83,4 +97,5 @@ run = [
   "cargo build -p ugoite-server --release --locked",
   "cargo build -p ugoite-cli --release --locked",
   "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
+  "bash scripts/verify-release-local-image.sh",
 ]

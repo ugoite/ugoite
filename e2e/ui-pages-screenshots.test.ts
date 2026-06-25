@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client.js";
+import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client.ts";
 
 type UiPageSpec = {
 	id: string;

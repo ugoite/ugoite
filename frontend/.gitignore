@@ -1,4 +1,5 @@
 dist
+src/lib/generated/ugoite_wasm.wasm
 .wrangler
 .output
 .vercel

@@ -1,181 +1,172 @@
-# Storage Schema Definitions
-#
-# Logical schema definitions for file-based resources and Iceberg tables.
-# These schemas are used for validation and documentation.
-
-version: "0.2"
-updated: "2026-03"
-
+version: '0.3'
+updated: 2026-06
 schemas:
-  # Space level
   space_meta:
-    description: Space metadata
+    description: Raw Space metadata written at creation.
     path: spaces/{id}/meta.json
     schema:
       type: object
       required:
-        [id, name, created_at, storage, hmac_key_id, hmac_key, last_rotation]
+      - id
+      - name
+      - created_at
+      - storage
+      - hmac_key_id
+      - hmac_key
+      - last_rotation
       properties:
         id:
           type: string
-          description: Unique space identifier
         name:
           type: string
-          description: Space identifier reused as the current display name
         created_at:
           type: number
-          description: Unix timestamp in seconds
         storage:
           type: object
-          required: [type, root]
+          required:
+          - type
+          - root
           properties:
             type:
               type: string
-              description: Storage backend kind (for example local or s3)
             root:
               type: string
-              description: Backend-specific storage root (for example an absolute path for fs:// or a bucket/prefix for object stores) interpreted by the configured operator
         hmac_key_id:
           type: string
-          description: Integrity-signing key identifier for entry and revision writes
         hmac_key:
           type: string
-          description: Base64-encoded integrity-signing secret
         last_rotation:
           type: string
           format: date-time
-          description: Timestamp of the latest integrity-key rotation
-
   space_settings:
-    description: Space settings
+    description: Space settings. Membership objects are added lazily by dedicated
+      collaboration operations.
     path: spaces/{id}/settings.json
     schema:
       type: object
-      required: [default_form]
+      required:
+      - default_form
       properties:
         default_form:
           type: string
-          description: Starter/user-selected form surfaced to clients for
-            first-entry authoring; bootstrapped to Entry for new spaces.
-        editor_theme:
-          type: string
-          enum: [light, dark]
-        sync_interval_seconds:
+        members:
+          type: object
+          additionalProperties:
+            type: object
+        member_invitations:
+          type: object
+          additionalProperties:
+            type: object
+        membership_version:
           type: integer
-
+  user_preferences:
+    description: Portable user-scoped browser preferences.
+    path: users/{sha256(user_id)}/preferences.json
+    schema:
+      type: object
+      properties:
+        selected_space_id:
+          type:
+          - string
+          - 'null'
+        locale:
+          type:
+          - string
+          - 'null'
+          enum:
+          - en
+          - ja
+          - null
+        ui_theme:
+          type:
+          - string
+          - 'null'
+          enum:
+          - materialize
+          - classic
+          - pop
+          - null
+        color_mode:
+          type:
+          - string
+          - 'null'
+          enum:
+          - light
+          - dark
+          - null
+        primary_color:
+          type:
+          - string
+          - 'null'
+          enum:
+          - violet
+          - blue
+          - emerald
+          - amber
+          - null
   response_hmac:
-    description: Space-local response-signing key material
+    description: Lazily created response-signing material.
     path: spaces/{id}/hmac.json
     schema:
       type: object
-      required: [hmac_key_id, hmac_key, last_rotation]
+      required:
+      - hmac_key_id
+      - hmac_key
+      - last_rotation
       properties:
         hmac_key_id:
           type: string
         hmac_key:
           type: string
-          description: Base64-encoded response-signing secret
         last_rotation:
           type: string
           format: date-time
-
-  # Form definitions (Iceberg)
   form_definition:
-    description: Form definition stored in Iceberg table metadata
+    description: Normalized Form definition persisted through Iceberg metadata.
     path: iceberg://forms/{name}
     schema:
       type: object
-      required: [name, version, fields]
+      required:
+      - name
+      - version
+      - fields
+      - allow_extra_attributes
       properties:
         name:
           type: string
-          description: Form name (Iceberg table namespace)
         version:
           type: integer
-          description: Schema version for migrations
         allow_extra_attributes:
           type: string
-          enum: [deny, allow_json, allow_columns]
-          description: Policy for non-registered H2 sections
-        read_principals:
-          type: array
-          description: Allowed read principals (User/UserGroup) for this Form
-          items:
-            type: object
-            required: [kind, id]
-            properties:
-              kind:
-                type: string
-                enum: [user, user_group]
-              id:
-                type: string
-        write_principals:
-          type: array
-          description: Allowed write principals (User/UserGroup) for this Form
-          items:
-            type: object
-            required: [kind, id]
-            properties:
-              kind:
-                type: string
-                enum: [user, user_group]
-              id:
-                type: string
+          enum:
+          - deny
+          - allow_json
+          - allow_columns
         fields:
           type: object
           additionalProperties:
             type: object
-            required: [type]
+            required:
+            - type
             properties:
               type:
                 type: string
-                enum:
-                  [string, markdown, number, double, float, integer, long, boolean, date, time, timestamp, timestamp_tz, timestamp_ns, timestamp_tz_ns, uuid, row_reference, binary, list, object_list]
               required:
                 type: boolean
               target_form:
                 type: string
-                description: Required when type is row_reference; names the target Form/table.
-              default:
-                description: Default value for field
-                type: [string, number, boolean, array, object, null]
-
-  sql_variable:
-    description: SQL variable definition stored in the SQL Form
-    schema:
-      type: object
-      required: [type, name, description]
-      properties:
-        type:
-          type: string
-          description: Variable type (string, number, date, etc.)
-        name:
-          type: string
-          description: Variable name used in SQL
-        description:
-          type: string
-          description: Human-readable description
-
-  sql_record:
-    description: SQL record stored in the SQL Form
-    schema:
-      type: object
-      required: [sql, variables]
-      properties:
-        sql:
-          type: string
-          description: SQL query text
-        variables:
-          type: array
-          items:
-            $ref: "#/schemas/sql_variable"
-
+              default: {}
   materialized_view_meta:
-    description: Metadata for a SQL materialized view (optional)
+    description: Metadata-only placeholder; no result rows.
     path: spaces/{id}/materialized_views/{sql_id}/meta.json
     schema:
       type: object
-      required: [sql_id, created_at, updated_at, snapshot_id, sql]
+      required:
+      - sql_id
+      - sql
+      - created_at
+      - updated_at
+      - snapshot_id
       properties:
         sql_id:
           type: string
@@ -189,15 +180,22 @@ schemas:
           format: date-time
         snapshot_id:
           type: integer
-        schema_hash:
-          type: string
-
   sql_session_meta:
-    description: SQL session metadata (result rows are not stored)
+    description: SQL session metadata; count and rows are evaluated on demand.
     path: spaces/{id}/sql_sessions/{session_id}/meta.json
     schema:
       type: object
-      required: [id, space_id, sql_id, sql, created_at, expires_at, status, view, pagination]
+      required:
+      - id
+      - space_id
+      - sql_id
+      - sql
+      - status
+      - created_at
+      - expires_at
+      - view
+      - pagination
+      - count
       properties:
         id:
           type: string
@@ -209,7 +207,9 @@ schemas:
           type: string
         status:
           type: string
-          enum: [ready, running, failed, expired]
+          enum:
+          - ready
+          - expired
         created_at:
           type: string
           format: date-time
@@ -217,133 +217,66 @@ schemas:
           type: string
           format: date-time
         error:
-          type: [string, "null"]
+          type:
+          - string
+          - 'null'
         view:
           type: object
-          required: [sql_id, snapshot_id]
-          properties:
-            sql_id:
-              type: string
-            snapshot_id:
-              type: integer
-            snapshot_at:
-              type: string
-              format: date-time
-            schema_version:
-              type: integer
         pagination:
           type: object
-          required: [strategy, order_by, default_limit, max_limit]
-          properties:
-            strategy:
-              type: string
-              enum: [offset]
-            order_by:
-              type: array
-              items:
-                type: string
-            default_limit:
-              type: integer
-            max_limit:
-              type: integer
         count:
           type: object
-          properties:
-            mode:
-              type: string
-              enum: [on_demand, cached]
-            cached_at:
-              type: [string, "null"]
-              format: date-time
-            value:
-              type: [integer, "null"]
-
-  # Iceberg tables
-  entries_table:
-    description: Entries table for a Form (current head rows)
+  entry_row:
+    description: Logical current Entry row for one Form.
     path: iceberg://forms/{name}/entries
     schema:
       type: object
-      required: [entry_id, title, updated_at, fields]
+      required:
+      - entry_id
+      - title
+      - form
+      - created_at
+      - updated_at
+      - fields
+      - revision_id
+      - author
       properties:
-        entry_id:
-          type: string
-        title:
-          type: string
-        form:
-          type: string
-          description: Associated form name (optional when implied by table)
-        tags:
-          type: array
-          items:
-            type: string
-        links:
-          type: array
-          items:
-            type: object
-            required: [id, target, kind]
-            properties:
-              id:
-                type: string
-              target:
-                type: string
-                description: Target entry ID
-              kind:
-                type: string
-                enum: [related, parent, child, reference]
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        fields:
-          type: object
-          description: Form-defined fields
-        extra_attributes:
-          type: object
-          description: Extra attributes stored as JSON when allowed
-        integrity:
-          $ref: "#/schemas/integrity"
-
-  revisions_table:
-    description: Revision history table for a Form
+        entry_id: {}
+        title: {}
+        form: {}
+        tags: {}
+        links: {}
+        created_at: {}
+        updated_at: {}
+        fields: {}
+        extra_attributes: {}
+        revision_id: {}
+        parent_revision_id: {}
+        assets: {}
+        integrity: {}
+        deleted: {}
+        deleted_at: {}
+        author: {}
+  revision_row:
+    description: Logical append-only revision row for one Form.
     path: iceberg://forms/{name}/revisions
     schema:
       type: object
-      required: [revision_id, entry_id, timestamp, fields]
+      required:
+      - revision_id
+      - entry_id
+      - timestamp
+      - author
+      - fields
+      - markdown_checksum
       properties:
-        revision_id:
-          type: string
-        entry_id:
-          type: string
-        parent_revision_id:
-          type: string
-        timestamp:
-          type: string
-          format: date-time
-        author:
-          type: string
-        fields:
-          type: object
-          description: Form-defined fields snapshot
-        extra_attributes:
-          type: object
-          description: Extra attributes snapshot when allowed
-        markdown_checksum:
-          type: string
-        integrity:
-          $ref: "#/schemas/integrity"
-
-  # Shared schemas
-  integrity:
-    description: Integrity metadata
-    schema:
-      type: object
-      properties:
-        checksum:
-          type: string
-          description: SHA-256 hash
-        signature:
-          type: string
-          description: HMAC signature
+        revision_id: {}
+        entry_id: {}
+        parent_revision_id: {}
+        timestamp: {}
+        author: {}
+        fields: {}
+        extra_attributes: {}
+        markdown_checksum: {}
+        integrity: {}
+        restored_from: {}

@@ -71,7 +71,13 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
         FormSubCmd::List { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "form list")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/forms")).await?;
+                let result = http::execute(
+                    &base,
+                    "form.list",
+                    serde_json::json!({"space_id": space_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -85,8 +91,13 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "form get")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_get(&format!("{base}/spaces/{space_id}/forms/{form_name}")).await?;
+                let result = http::execute(
+                    &base,
+                    "form.get",
+                    serde_json::json!({"space_id": space_id, "form_name": form_name}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -103,13 +114,11 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
             let form_text = std::fs::read_to_string(&form_file)?;
             let form_def: serde_json::Value = serde_json::from_str(&form_text)?;
             if let Some(base) = validated_base_url(&config)? {
-                let form_name = form_def
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                let result = http::http_put(
-                    &format!("{base}/spaces/{space_id}/forms/{form_name}"),
-                    &form_def,
+                let result = http::execute(
+                    &base,
+                    "form.upsert",
+                    serde_json::json!({"space_id": space_id}),
+                    Some(form_def),
                 )
                 .await?;
                 print_json(&result);

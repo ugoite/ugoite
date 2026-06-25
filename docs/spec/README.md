@@ -1,32 +1,16 @@
-# Ugoite Spec (v2)
+# Ugoite specification
 
-This directory contains the **current, canonical** specification for Ugoite.
+This directory combines human guidance with machine-readable product records.
 
-Start here:
-- [index.md](index.md) - Master navigation
+Start with [`index.md`](index.md).
 
-## What lives here
+## Sources of truth
 
-- **Architecture**: [architecture/](architecture/)
-- **API**: [api/](api/)
-- **Data Model**: [data-model/](data-model/)
-- **Stories** (YAML): [stories/](stories/)
-- **Requirements** (YAML + test mapping): [requirements/](requirements/)
-- **Governance Taxonomy** (YAML): [philosophy/](philosophy/), [policies/](policies/), [requirements/](requirements/), [specifications.yaml](specifications.yaml)
-- **Feature Registry** (API-level): [features/](features/)
-- **Security & Testing**: [security/](security/), [testing/](testing/)
+- REST implementation and generated contract: `crates/ugoite-server/src/lib.rs` and `/openapi.json`.
+- Portable remote-operation contract: `crates/ugoite-api-client`.
+- Application behavior: `crates/ugoite-core`.
+- Filesystem/object-storage behavior: `crates/ugoite-storage` plus core modules.
+- Browser behavior: `frontend` (currently server-backed).
+- Task/CI surface: root `mise.toml`, `deno.json`, and `.github/workflows/ci.yml`.
 
-## Conventions
-
-- **"Form" is the user-facing term** (legacy term: schema).
-- **API paths**: Backend paths are canonical; frontend calls the same
-  path prefixed with `/api`.
-- **Machine-readable docs**: Stories, Requirements, and Features are expressed
-  in YAML so we can validate doc↔code consistency in tests.
-
-## Editing rules
-
-- When adding a new requirement, update the appropriate file in
-  [requirements/](requirements/) and ensure the verifying tests exist.
-- When adding/removing endpoints, update the per-kind YAML files under
-  [features/](features/) so code navigation stays accurate.
+Machine-readable registries under `features/`, `requirements/`, `ui/`, and `docs/version/` must use existing source/test paths. Planned capability must be labeled planned rather than represented as implemented.

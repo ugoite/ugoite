@@ -7,7 +7,7 @@ use opendal::Operator;
 use serde_json::Value;
 #[cfg(unix)]
 use tempfile::tempdir;
-use ugoite_core::{form, space};
+use ugoite_core::{form, service::UgoiteService, space};
 
 #[tokio::test]
 /// REQ-STO-002, REQ-STO-004
@@ -102,6 +102,177 @@ async fn test_space_req_sto_005_create_space_idempotency() -> anyhow::Result<()>
 }
 
 #[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_create_space_for_does_not_repair_existing_space(
+) -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-create-for-duplicate")?;
+    service.create_space_for("team-space", "owner-a").await?;
+
+    let before = service.list_members("team-space").await?;
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0]["user_id"], "owner-a");
+
+    let result = service.create_space_for("team-space", "owner-b").await;
+    assert!(result.is_err(), "duplicate create should fail");
+
+    let after = service.list_members("team-space").await?;
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0]["user_id"], "owner-a");
+    assert_eq!(after[0]["role"], "admin");
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_bootstrap_repair_is_idempotent() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-bootstrap-repair")?;
+    service
+        .ensure_bootstrap_space_for("default", "owner-a")
+        .await?;
+    service
+        .ensure_bootstrap_space_for("default", "owner-a")
+        .await?;
+
+    let members = service.list_members("default").await?;
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0]["user_id"], "owner-a");
+    assert_eq!(members[0]["role"], "admin");
+    assert_eq!(members[0]["state"], "active");
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_patch_rejects_membership_managed_settings() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-patch-guard")?;
+    service.create_space_for("team-space", "owner-a").await?;
+
+    let patch = serde_json::json!({
+        "settings": {
+            "default_form": "Entry",
+            "members": {
+                "owner-a": {"role": "viewer"}
+            }
+        }
+    });
+
+    let result = service.patch_space("team-space", &patch).await;
+    assert!(result.is_err(), "membership-managed patch should fail");
+
+    let space = service.get_space("team-space").await?;
+    assert!(space.get("settings").is_some());
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_membership_invariants() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-membership-invariants")?;
+    service.create_space_for("team-space", "owner-a").await?;
+
+    let reinvite_owner = service
+        .invite_member("team-space", "owner-a", "viewer", "owner-a", None)
+        .await;
+    assert!(
+        reinvite_owner.is_err(),
+        "active members cannot be reinvited"
+    );
+
+    let demote_last_admin = service
+        .update_member_role("team-space", "owner-a", "viewer")
+        .await;
+    assert!(
+        demote_last_admin.is_err(),
+        "last active admin cannot be demoted"
+    );
+
+    let revoke_last_admin = service.revoke_member("team-space", "owner-a").await;
+    assert!(
+        revoke_last_admin.is_err(),
+        "last active admin cannot be revoked"
+    );
+
+    let invite = service
+        .invite_member("team-space", "bob", "editor", "owner-a", Some(300))
+        .await?;
+    let token = invite["invitation"]["token"].as_str().unwrap();
+    service
+        .accept_invitation("team-space", token, "bob")
+        .await?;
+    service.revoke_member("team-space", "bob").await?;
+    let reinvite = service
+        .invite_member("team-space", "bob", "viewer", "owner-a", Some(300))
+        .await?;
+    assert_eq!(reinvite["invitation"]["state"], "pending");
+    assert_eq!(service.list_members("team-space").await?.len(), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_invitation_expiry_and_reuse() -> anyhow::Result<()> {
+    let service = UgoiteService::new("memory://space-invitation-expiry")?;
+    service.create_space_for("team-space", "owner-a").await?;
+
+    let negative_expiry = service
+        .invite_member("team-space", "bob", "viewer", "owner-a", Some(-1))
+        .await;
+    assert!(negative_expiry.is_err());
+
+    let invite = service
+        .invite_member("team-space", "bob", "viewer", "owner-a", Some(300))
+        .await?;
+    let token = invite["invitation"]["token"].as_str().unwrap().to_string();
+    service
+        .accept_invitation("team-space", &token, "bob")
+        .await?;
+    let reuse = service.accept_invitation("team-space", &token, "bob").await;
+    assert!(reuse.is_err(), "accepted invitations cannot be reused");
+
+    let expired = service
+        .invite_member("team-space", "alice", "viewer", "owner-a", Some(300))
+        .await?;
+    let expired_token = expired["invitation"]["token"].as_str().unwrap();
+    let settings_path = "spaces/team-space/settings.json";
+    let mut settings: Value =
+        serde_json::from_slice(&service.operator().read(settings_path).await?.to_vec())?;
+    settings["member_invitations"][expired_token]["expires_at"] =
+        Value::String("2000-01-01T00:00:00.000Z".to_string());
+    service
+        .operator()
+        .write(settings_path, serde_json::to_vec_pretty(&settings)?)
+        .await?;
+
+    let expired_accept = service
+        .accept_invitation("team-space", expired_token, "alice")
+        .await;
+    assert!(expired_accept.is_err(), "expired invitations are rejected");
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-OPS-017
+async fn test_space_req_ops_017_list_accessible_spaces_keeps_admin_space_last() -> anyhow::Result<()>
+{
+    let service = UgoiteService::new("memory://space-list-order")?;
+    service.create_space_for("default", "owner-a").await?;
+    service.create_space_for("admin-space", "owner-a").await?;
+
+    let listed = service.list_accessible_space_ids("owner-a").await?;
+    assert_eq!(
+        listed,
+        vec!["default".to_string(), "admin-space".to_string()]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-STO-004
 async fn test_space_req_sto_004_list_spaces_from_directory() -> anyhow::Result<()> {
     let op = setup_operator()?;
@@ -132,7 +303,11 @@ async fn test_space_req_sto_008_list_spaces_ignores_missing_meta() -> anyhow::Re
 #[tokio::test]
 /// REQ-STO-002
 async fn test_space_req_sto_002_test_storage_connection_memory() -> anyhow::Result<()> {
-    let result = space::test_storage_connection("memory://").await?;
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: "memory://".to_string(),
+        endpoint: None,
+    })
+    .await?;
     assert_eq!(result["status"], "ok");
     assert_eq!(result["mode"], "memory");
     Ok(())
@@ -144,7 +319,11 @@ async fn test_space_req_sto_002_test_storage_connection_memory() -> anyhow::Resu
 async fn test_space_req_sto_002_test_storage_connection_local() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let local_uri = format!("file://{}", dir.path().display());
-    let result = space::test_storage_connection(&local_uri).await?;
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: local_uri,
+        endpoint: None,
+    })
+    .await?;
     assert_eq!(result["status"], "ok");
     assert_eq!(result["mode"], "local");
 
@@ -155,7 +334,40 @@ async fn test_space_req_sto_002_test_storage_connection_local() -> anyhow::Resul
 /// REQ-STO-006
 async fn test_space_req_sto_006_test_storage_connection_unknown_rejects_unsupported_scheme(
 ) -> anyhow::Result<()> {
-    let result = space::test_storage_connection("ftp://somehost").await;
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: "ftp://somehost".to_string(),
+        endpoint: None,
+    })
+    .await;
     assert!(result.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-STO-006
+async fn test_space_req_sto_006_test_storage_connection_rejects_blocked_endpoint(
+) -> anyhow::Result<()> {
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: "s3://bucket-name/prefix".to_string(),
+        endpoint: Some("http://127.0.0.1:9000".to_string()),
+    })
+    .await;
+    assert!(result.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-STO-006
+async fn test_space_req_sto_006_test_storage_connection_accepts_custom_s3_endpoint_validation(
+) -> anyhow::Result<()> {
+    let result = space::test_storage_connection(&space::StorageConnectionTestConfig {
+        uri: "s3://bucket-name/prefix".to_string(),
+        endpoint: Some("https://s3.example.test".to_string()),
+    })
+    .await;
+    assert!(
+        result.is_err(),
+        "unreachable custom endpoint should not be a false success"
+    );
     Ok(())
 }

@@ -1,297 +1,330 @@
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import {
-	createEffect,
-	createMemo,
-	createResource,
-	createSignal,
-	For,
-	Show,
-	onCleanup,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
 } from "solid-js";
-import { CreateEntryDialog, CreateFormDialog } from "~/components/create-dialogs";
+import {
+  CreateEntryDialog,
+  CreateFormDialog,
+} from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
-import { buildEntryMarkdownByMode, type EntryInputMode } from "~/lib/entry-input";
+import {
+  buildEntryMarkdownByMode,
+  type EntryInputMode,
+} from "~/lib/entry-input";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
-import { formApi } from "~/lib/form-api";
+import { formApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { sqlSessionApi } from "~/lib/sql-session-api";
+import { sqlSessionApi } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
 
 export default function SpaceEntriesIndexPane() {
-	const navigate = useNavigate();
-	const [searchParams] = useSearchParams();
-	const ctx = useEntriesRouteContext();
-	const spaceId = () => ctx.spaceId();
-	const [showCreateEntryDialog, setShowCreateEntryDialog] = createSignal(false);
-	const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
-	const creatableForms = createMemo(() => filterCreatableEntryForms(ctx.forms()));
-	const hasCreatableForms = createMemo(() => creatableForms().length > 0);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const ctx = useEntriesRouteContext();
+  const spaceId = () => ctx.spaceId();
+  const [showCreateEntryDialog, setShowCreateEntryDialog] = createSignal(false);
+  const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
+  const creatableForms = createMemo(() =>
+    filterCreatableEntryForms(ctx.forms())
+  );
+  const hasCreatableForms = createMemo(() => creatableForms().length > 0);
 
-	const sessionId = createMemo(() => (searchParams.session ? String(searchParams.session) : ""));
-	const [page, setPage] = createSignal(1);
-	const [pageSize] = createSignal(24);
+  const sessionId = createMemo(
+    () => (searchParams.session ? String(searchParams.session) : ""),
+  );
+  const [page, setPage] = createSignal(1);
+  const [pageSize] = createSignal(24);
 
-	const [session, { refetch: refetchSession }] = createResource(
-		() => sessionId().trim() || null,
-		async (id) => sqlSessionApi.get(spaceId(), id),
-	);
+  const [session, { refetch: refetchSession }] = createResource(
+    () => sessionId().trim() || null,
+    async (id) => sqlSessionApi.get(spaceId(), id),
+  );
 
-	const [sessionRows] = createResource(
-		() => {
-			const id = sessionId().trim();
-			if (!id || session()?.status !== "ready") return null;
-			return { id, offset: (page() - 1) * pageSize(), limit: pageSize() };
-		},
-		async ({ id, offset, limit }) => sqlSessionApi.rows(spaceId(), id, offset, limit),
-	);
+  const [sessionRows] = createResource(
+    () => {
+      const id = sessionId().trim();
+      if (!id || session()?.status !== "ready") return null;
+      return { id, offset: (page() - 1) * pageSize(), limit: pageSize() };
+    },
+    async ({ id, offset, limit }) =>
+      sqlSessionApi.rows(spaceId(), id, offset, limit),
+  );
 
-	createEffect(() => {
-		if (spaceId() && !sessionId().trim()) {
-			ctx.entryStore.loadEntries();
-		}
-	});
+  createEffect(() => {
+    if (spaceId() && !sessionId().trim()) {
+      ctx.entryStore.loadEntries();
+    }
+  });
 
-	createEffect(() => {
-		const id = sessionId().trim();
-		if (!id) return;
-		const interval = setInterval(() => {
-			if (session()?.status === "running") {
-				refetchSession();
-			}
-		}, 1000);
-		onCleanup(() => clearInterval(interval));
-	});
+  createEffect(() => {
+    const id = sessionId().trim();
+    if (!id) return;
+    const interval = setInterval(() => {
+      if (session()?.status === "running") {
+        refetchSession();
+      }
+    }, 1000);
+    onCleanup(() => clearInterval(interval));
+  });
 
-	createEffect(() => {
-		if (sessionId().trim()) {
-			setPage(1);
-		}
-	});
+  createEffect(() => {
+    if (sessionId().trim()) {
+      setPage(1);
+    }
+  });
 
-	const displayEntries = createMemo<EntryRecord[]>(() => {
-		if (sessionId().trim()) {
-			return sessionRows()?.rows || [];
-		}
-		return ctx.entryStore.entries() || [];
-	});
+  const displayEntries = createMemo<EntryRecord[]>(() => {
+    if (sessionId().trim()) {
+      return sessionRows()?.rows || [];
+    }
+    return ctx.entryStore.entries() || [];
+  });
 
-	const totalCount = createMemo(() => sessionRows()?.totalCount ?? displayEntries().length);
+  const totalCount = createMemo(() =>
+    sessionRows()?.totalCount ?? displayEntries().length
+  );
 
-	const totalPages = createMemo(() => Math.max(1, Math.ceil(totalCount() / pageSize())));
+  const totalPages = createMemo(() =>
+    Math.max(1, Math.ceil(totalCount() / pageSize()))
+  );
 
-	const isLoading = createMemo(() => {
-		if (sessionId().trim()) {
-			return session.loading || sessionRows.loading;
-		}
-		return ctx.entryStore.loading();
-	});
+  const isLoading = createMemo(() => {
+    if (sessionId().trim()) {
+      return session.loading || sessionRows.loading;
+    }
+    return ctx.entryStore.loading();
+  });
 
-	const error = createMemo(() => {
-		if (sessionId().trim()) {
-			return session.error || sessionRows.error;
-		}
-		return ctx.entryStore.error();
-	});
+  const error = createMemo(() => {
+    if (sessionId().trim()) {
+      return session.error || sessionRows.error;
+    }
+    return ctx.entryStore.error();
+  });
 
-	const errorMessage = createMemo(() => {
-		const err = error();
-		if (!err) return null;
-		return err instanceof Error ? err.message : String(err);
-	});
-	const needsFirstFormGuidance = createMemo(
-		() =>
-			!sessionId().trim() &&
-			!isLoading() &&
-			!ctx.loadingForms() &&
-			displayEntries().length === 0 &&
-			!errorMessage() &&
-			!hasCreatableForms(),
-	);
+  const errorMessage = createMemo(() => {
+    const err = error();
+    if (!err) return null;
+    return err instanceof Error ? err.message : String(err);
+  });
+  const needsFirstFormGuidance = createMemo(
+    () =>
+      !sessionId().trim() &&
+      !isLoading() &&
+      !ctx.loadingForms() &&
+      displayEntries().length === 0 &&
+      !errorMessage() &&
+      !hasCreatableForms(),
+  );
 
-	const handleSelectEntry = (entryId: string) => {
-		navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(entryId)}`);
-	};
+  const handleSelectEntry = (entryId: string) => {
+    navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(entryId)}`);
+  };
 
-	const handleCreateForm = async (payload: FormCreatePayload) => {
-		await formApi.create(spaceId(), payload);
-		setShowCreateFormDialog(false);
-		void ctx.refetchForms();
-	};
+  const handleCreateForm = async (payload: FormCreatePayload) => {
+    await formApi.create(spaceId(), payload);
+    setShowCreateFormDialog(false);
+    void ctx.refetchForms();
+  };
 
-	const handleCreateEntry = async (
-		title: string,
-		formName: string,
-		requiredValues: Record<string, string>,
-		inputMode: EntryInputMode = "webform",
-	) => {
-		if (!formName) {
-			throw new Error(t("dashboard.error.selectFormBeforeCreate"));
-		}
-		const formDef = creatableForms().find((s) => s.name === formName);
-		if (!formDef) {
-			throw new Error(t("dashboard.error.selectedFormNotFound"));
-		}
-		const initialContent = buildEntryMarkdownByMode(formDef, title, requiredValues, inputMode);
-		const result = await ctx.entryStore.createEntry(initialContent);
-		setShowCreateEntryDialog(false);
-		navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
-	};
+  const handleCreateEntry = async (
+    title: string,
+    formName: string,
+    requiredValues: Record<string, string>,
+    inputMode: EntryInputMode = "webform",
+  ) => {
+    if (!formName) {
+      throw new Error(t("dashboard.error.selectFormBeforeCreate"));
+    }
+    const formDef = creatableForms().find((s) => s.name === formName);
+    if (!formDef) {
+      throw new Error(t("dashboard.error.selectedFormNotFound"));
+    }
+    const initialContent = buildEntryMarkdownByMode(
+      formDef,
+      title,
+      requiredValues,
+      inputMode,
+    );
+    const result = await ctx.entryStore.createEntry(initialContent);
+    setShowCreateEntryDialog(false);
+    navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
+  };
 
-	return (
-		<SpaceShell
-			spaceId={spaceId()}
-			showBottomTabs
-			activeBottomTab="object"
-			bottomTabHrefSuffix={sessionId().trim() ? `?session=${encodeURIComponent(sessionId())}` : ""}
-		>
-			<div class="mx-auto max-w-6xl">
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<div>
-						<h1 class="ui-page-title">
-							{sessionId().trim() ? t("querySession.heading") : t("entriesPage.heading")}
-						</h1>
-						<Show when={sessionId().trim()}>
-							<p class="text-sm ui-muted">{t("entriesPage.queryDescription")}</p>
-						</Show>
-					</div>
-					<div class="flex items-center gap-2">
-						<Show when={sessionId().trim()}>
-							<button
-								type="button"
-								class="ui-button ui-button-secondary text-sm"
-								onClick={() => navigate(`/spaces/${spaceId()}/entries`)}
-							>
-								{t("querySession.clear")}
-							</button>
-						</Show>
-						<button
-							type="button"
-							class="ui-button text-sm"
-							classList={{
-								"ui-button-primary": hasCreatableForms(),
-								"ui-button-secondary": !hasCreatableForms(),
-							}}
-							disabled={!hasCreatableForms()}
-							onClick={() => setShowCreateEntryDialog(true)}
-						>
-							{t("entriesPage.newButton")}
-						</button>
-					</div>
-				</div>
+  return (
+    <SpaceShell
+      spaceId={spaceId()}
+      showBottomTabs
+      activeBottomTab="object"
+      bottomTabHrefSuffix={sessionId().trim()
+        ? `?session=${encodeURIComponent(sessionId())}`
+        : ""}
+    >
+      <div class="mx-auto max-w-6xl">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 class="ui-page-title">
+              {sessionId().trim()
+                ? t("querySession.heading")
+                : t("entriesPage.heading")}
+            </h1>
+            <Show when={sessionId().trim()}>
+              <p class="text-sm ui-muted">
+                {t("entriesPage.queryDescription")}
+              </p>
+            </Show>
+          </div>
+          <div class="flex items-center gap-2">
+            <Show when={sessionId().trim()}>
+              <button
+                type="button"
+                class="ui-button ui-button-secondary text-sm"
+                onClick={() => navigate(`/spaces/${spaceId()}/entries`)}
+              >
+                {t("querySession.clear")}
+              </button>
+            </Show>
+            <button
+              type="button"
+              class="ui-button text-sm"
+              classList={{
+                "ui-button-primary": hasCreatableForms(),
+                "ui-button-secondary": !hasCreatableForms(),
+              }}
+              disabled={!hasCreatableForms()}
+              onClick={() => setShowCreateEntryDialog(true)}
+            >
+              {t("entriesPage.newButton")}
+            </button>
+          </div>
+        </div>
 
-				<div class="mt-6">
-					<Show when={sessionId().trim() && session()?.status === "running"}>
-						<p class="text-sm ui-muted">{t("querySession.preparing")}</p>
-					</Show>
-					<Show when={session()?.status === "failed"}>
-						<p class="text-sm ui-text-danger">{session()?.error || t("querySession.failed")}</p>
-					</Show>
-					<Show when={session()?.status === "expired"}>
-						<p class="text-sm ui-text-danger">{t("querySession.expired")}</p>
-					</Show>
-					<Show when={isLoading()}>
-						<p class="text-sm ui-muted">{t("listPanel.loadingEntries")}</p>
-					</Show>
-					<Show when={errorMessage()}>
-						<p class="text-sm ui-text-danger">{errorMessage()}</p>
-					</Show>
-					<Show
-						when={
-							!needsFirstFormGuidance() &&
-							!isLoading() &&
-							displayEntries().length === 0 &&
-							!errorMessage()
-						}
-					>
-						<p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
-					</Show>
-					<Show when={needsFirstFormGuidance()}>
-						<div class="ui-alert ui-alert-warning mb-4 text-sm ui-stack-sm">
-							<div class="ui-stack-sm">
-								<p class="font-medium">{t("dashboard.section.createEntry.empty")}</p>
-								<p>{t("dashboard.section.createEntry.firstFormDescription")}</p>
-							</div>
-							<div>
-								<button
-									type="button"
-									class="ui-button ui-button-primary text-sm"
-									onClick={() => setShowCreateFormDialog(true)}
-								>
-									{t("dashboard.section.createEntry.createFirstForm")}
-								</button>
-							</div>
-						</div>
-					</Show>
-					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-						<For each={displayEntries()}>
-							{(entry) => (
-								<button
-									type="button"
-									class="ui-card ui-card-interactive text-left"
-									onClick={() => handleSelectEntry(entry.id)}
-								>
-									<div class="flex items-start justify-between gap-2">
-										<h2 class="text-base font-semibold">{entry.title || t("common.untitled")}</h2>
-										<Show when={entry.form}>
-											<span class="ui-pill">{entry.form}</span>
-										</Show>
-									</div>
-									<p class="mt-2 text-xs ui-muted">
-										{t("common.updatedAt", { date: formatDateLabel(entry.updated_at) })}
-									</p>
-								</button>
-							)}
-						</For>
-					</div>
-					<Show when={sessionId().trim() && totalCount() > 0}>
-						<div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
-							<div>
-								{t("querySession.pagination", {
-									page: page(),
-									totalPages: totalPages(),
-									resultCount: totalCount(),
-								})}
-							</div>
-							<div class="flex items-center gap-2">
-								<button
-									type="button"
-									class="ui-button ui-button-secondary text-sm"
-									disabled={page() <= 1}
-									onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-								>
-									{t("common.previous")}
-								</button>
-								<button
-									type="button"
-									class="ui-button ui-button-secondary text-sm"
-									disabled={page() >= totalPages()}
-									onClick={() => setPage((prev) => Math.min(totalPages(), prev + 1))}
-								>
-									{t("common.next")}
-								</button>
-							</div>
-						</div>
-					</Show>
-				</div>
-			</div>
+        <div class="mt-6">
+          <Show when={sessionId().trim() && session()?.status === "running"}>
+            <p class="text-sm ui-muted">{t("querySession.preparing")}</p>
+          </Show>
+          <Show when={session()?.status === "failed"}>
+            <p class="text-sm ui-text-danger">
+              {session()?.error || t("querySession.failed")}
+            </p>
+          </Show>
+          <Show when={session()?.status === "expired"}>
+            <p class="text-sm ui-text-danger">{t("querySession.expired")}</p>
+          </Show>
+          <Show when={isLoading()}>
+            <p class="text-sm ui-muted">{t("listPanel.loadingEntries")}</p>
+          </Show>
+          <Show when={errorMessage()}>
+            <p class="text-sm ui-text-danger">{errorMessage()}</p>
+          </Show>
+          <Show
+            when={!needsFirstFormGuidance() &&
+              !isLoading() &&
+              displayEntries().length === 0 &&
+              !errorMessage()}
+          >
+            <p class="text-sm ui-muted">{t("entriesPage.noEntries")}</p>
+          </Show>
+          <Show when={needsFirstFormGuidance()}>
+            <div class="ui-alert ui-alert-warning mb-4 text-sm ui-stack-sm">
+              <div class="ui-stack-sm">
+                <p class="font-medium">
+                  {t("dashboard.section.createEntry.empty")}
+                </p>
+                <p>{t("dashboard.section.createEntry.firstFormDescription")}</p>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  class="ui-button ui-button-primary text-sm"
+                  onClick={() => setShowCreateFormDialog(true)}
+                >
+                  {t("dashboard.section.createEntry.createFirstForm")}
+                </button>
+              </div>
+            </div>
+          </Show>
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <For each={displayEntries()}>
+              {(entry) => (
+                <button
+                  type="button"
+                  class="ui-card ui-card-interactive text-left"
+                  onClick={() => handleSelectEntry(entry.id)}
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <h2 class="text-base font-semibold">
+                      {entry.title || t("common.untitled")}
+                    </h2>
+                    <Show when={entry.form}>
+                      <span class="ui-pill">{entry.form}</span>
+                    </Show>
+                  </div>
+                  <p class="mt-2 text-xs ui-muted">
+                    {t("common.updatedAt", {
+                      date: formatDateLabel(entry.updated_at),
+                    })}
+                  </p>
+                </button>
+              )}
+            </For>
+          </div>
+          <Show when={sessionId().trim() && totalCount() > 0}>
+            <div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
+              <div>
+                {t("querySession.pagination", {
+                  page: page(),
+                  totalPages: totalPages(),
+                  resultCount: totalCount(),
+                })}
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="ui-button ui-button-secondary text-sm"
+                  disabled={page() <= 1}
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                >
+                  {t("common.previous")}
+                </button>
+                <button
+                  type="button"
+                  class="ui-button ui-button-secondary text-sm"
+                  disabled={page() >= totalPages()}
+                  onClick={() =>
+                    setPage((prev) => Math.min(totalPages(), prev + 1))}
+                >
+                  {t("common.next")}
+                </button>
+              </div>
+            </div>
+          </Show>
+        </div>
+      </div>
 
-			<CreateEntryDialog
-				open={showCreateEntryDialog()}
-				forms={creatableForms()}
-				defaultForm={creatableForms()[0]?.name}
-				spaceId={spaceId()}
-				onClose={() => setShowCreateEntryDialog(false)}
-				onSubmit={handleCreateEntry}
-			/>
-			<CreateFormDialog
-				open={showCreateFormDialog()}
-				columnTypes={ctx.columnTypes()}
-				formNames={ctx.forms().map((form) => form.name)}
-				onClose={() => setShowCreateFormDialog(false)}
-				onSubmit={handleCreateForm}
-			/>
-		</SpaceShell>
-	);
+      <CreateEntryDialog
+        open={showCreateEntryDialog()}
+        forms={creatableForms()}
+        defaultForm={creatableForms()[0]?.name}
+        spaceId={spaceId()}
+        onClose={() => setShowCreateEntryDialog(false)}
+        onSubmit={handleCreateEntry}
+      />
+      <CreateFormDialog
+        open={showCreateFormDialog()}
+        columnTypes={ctx.columnTypes()}
+        formNames={ctx.forms().map((form) => form.name)}
+        onClose={() => setShowCreateFormDialog(false)}
+        onSubmit={handleCreateForm}
+      />
+    </SpaceShell>
+  );
 }

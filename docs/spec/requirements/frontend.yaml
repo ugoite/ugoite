@@ -22,21 +22,11 @@ requirements:
   - stories/core.yaml#STORY-003
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/SpaceSelector.test.tsx
-      tests:
-      - should render space options
-      - should show loading state
-      - should show error message
-      - should call onSelect when space changes
-    - file: frontend/src/lib/space-store.test.ts
-      tests:
-      - should keep selection empty when no spaces exist
-      - should select existing default space
-      - should restore persisted space selection
-      - should select space and persist choice
-      - should not select non-existent space
+  - file: frontend/src/components/SpaceSelector.test.tsx
+  - file: frontend/src/lib/space-store.test.ts
+  - file: frontend/src/routes/spaces/index.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -62,17 +52,11 @@ requirements:
   - architecture/overview.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/space-store.test.ts
-      tests:
-      - should keep selection empty when no spaces exist
-    - file: frontend/src/routes/spaces/index.test.tsx
-      tests:
-      - 'REQ-FE-002: shows a create-space action when no spaces exist'
-      - 'REQ-FE-002: creates a space only after explicit user submission'
-      - 'REQ-FE-002: labels the create-space field as a space ID and explains allowed characters'
-      - 'REQ-FE-002: rewrites invalid space_id backend errors into user-facing guidance'
+  - file: frontend/src/components/SpaceSelector.test.tsx
+  - file: frontend/src/lib/space-store.test.ts
+  - file: frontend/src/routes/spaces/index.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -102,21 +86,12 @@ requirements:
   - architecture/overview.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/space-store.test.ts
-      tests:
-      - should restore persisted space selection
-      - should select space and persist choice
-      - 'REQ-FE-003: should prefer portable selected space preference'
-    - file: frontend/src/lib/preferences-store.test.ts
-      tests:
-      - 'REQ-FE-003: initializes selected space from local fallback and migrates portable storage'
-      - 'REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization'
-      - 'REQ-FE-003: public routes keep initialized remote portable preferences'
-      - 'REQ-FE-003: reuses an in-flight portable preferences initialization'
-      - 'REQ-FE-003: returns cached portable preferences after initialization'
-      - 'REQ-FE-003: skips empty portable preference patches'
+  - file: frontend/src/components/SpaceSelector.test.tsx
+  - file: frontend/src/lib/preferences-local.test.ts
+  - file: frontend/src/lib/preferences-store.test.ts
+  - file: frontend/src/lib/space-store.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -138,23 +113,11 @@ requirements:
   - stories/core.yaml
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/EntryList.test.tsx
-      tests:
-      - should render empty state when no entries exist
-      - should render list of entries with titles
-      - should display extracted properties in entry cards
-      - should handle entries with null or undefined properties gracefully
-      - should call onSelect when a entry is clicked
-      - should show loading state
-      - should highlight selected entry
-      - should render empty state when no entries exist
-      - should render list of entries with titles
-      - should call onSelect when a entry is clicked
-    - file: frontend/src/lib/entry-store.test.ts
-      tests:
-      - should load entries from API
+  - file: frontend/src/components/CanvasPlaceholder.test.tsx
+  - file: frontend/src/components/EntryList.test.tsx
+  - file: frontend/src/components/ListPanel.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -176,22 +139,11 @@ requirements:
   - stories/core.yaml#STORY-002
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/MarkdownEditor.test.tsx
-      tests:
-      - should render textarea with initial content
-      - should call onChange when content is edited
-      - should render markdown preview when preview mode is enabled
-      - should be readonly when disabled
-      - should show save indicator when dirty
-      - should call onSave when save button is clicked
-      - should support keyboard shortcut for save
-      - should show conflict message when there is a conflict
-      - should handle undefined content gracefully
-      - should handle null content gracefully
-      - should render preview with undefined content without crashing
-      - should display placeholder when content is empty
+  - file: e2e/entries.test.ts
+  - file: frontend/src/components/MarkdownEditor.test.tsx
+  - file: frontend/src/lib/markdown.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -220,17 +172,12 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#error-handling-standards
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/MarkdownEditor.test.tsx
-      tests:
-      - should handle undefined content gracefully
-      - should handle null content gracefully
-      - should render preview with undefined content without crashing
-      - should display placeholder when content is empty
+  - file: frontend/src/components/MarkdownEditor.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -245,19 +192,16 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-006
   title: Optimistic Updates
-  description: 'UI reflects changes immediately and syncs in background.
+  description: 'For supported mutations, the UI may update optimistically while the same server-backed request completes.
+
+    This requirement does not imply offline storage or a background synchronization engine.
 
     '
   related_spec:
-  - architecture/decisions.md#adr-005
+  - architecture/decisions.md#adr-005-current-browser-is-server-backed
   priority: high
   status: implemented
-  tests:
-    vitest:
-    - file: frontend/src/lib/entry-store.test.ts
-      tests:
-      - should apply optimistic updates during update
-      - should delete entry optimistically
+  verification: untraced
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -276,17 +220,12 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#interaction-patterns
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/EntryList.test.tsx
-      tests:
-      - should highlight selected entry
-    - file: frontend/src/lib/entry-store.test.ts
-      tests:
-      - should handle entry selection
+  - file: frontend/src/components/EntryList.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -311,18 +250,14 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#error-handling-standards
-  - architecture/decisions.md#adr-005
+  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - architecture/decisions.md#adr-005-current-browser-is-server-backed
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/MarkdownEditor.test.tsx
-      tests:
-      - 'REQ-FE-009: should show conflict message when there is a conflict'
-    - file: frontend/src/components/EntryDetailPane.test.tsx
-      tests:
-      - 'REQ-FE-009: shows refresh guidance on revision conflict'
+  - file: frontend/src/components/EntryDetailPane.test.tsx
+  - file: frontend/src/components/MarkdownEditor.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -346,14 +281,15 @@ requirements:
   - architecture/overview.md
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/entry-store.test.ts
-      tests:
-      - should not refetch after successful update
-    - file: frontend/src/lib/store.test.ts
-      tests:
-      - legacy placeholder delegates to entry-store tests
+  - file: e2e/entries.test.ts
+  - file: frontend/src/components/Counter.test.tsx
+  - file: frontend/src/components/HelloWorld.test.tsx
+  - file: frontend/src/components/SpaceShell.test.tsx
+  - file: frontend/src/lib/entries-route-context.test.ts
+  - file: frontend/src/lib/entry-store.test.ts
+  - file: frontend/src/lib/store.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -374,14 +310,13 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#error-handling-standards
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/client.test.ts
-      tests:
-      - should surface validation errors without object placeholders [REQ-FE-043]
+  - file: frontend/src/components/create-dialogs.test.tsx
+  - file: frontend/src/lib/client.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -414,51 +349,22 @@ requirements:
   - tasks/tasks.md#phase-7-5-ui-polish-added
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/i18n.test.ts
-      tests:
-      - switches locale and translates labels
-      - applies locale attributes on initialize
-      - 'REQ-FE-044: interpolates localized placeholders'
-    - file: frontend/src/components/create-dialogs.test.tsx
-      tests:
-      - 'REQ-FE-044: localizes create-form dialog copy in Japanese'
-      - 'REQ-FE-044: localizes create-entry dialog copy in Japanese'
-    - file: frontend/src/components/AssetUploader.test.tsx
-      tests:
-      - 'REQ-FE-044: localizes asset uploader controls in Japanese'
-    - file: frontend/src/components/ListPanel.test.tsx
-      tests:
-      - 'REQ-FE-044: localizes entry list controls and empty state in Japanese'
-    - file: frontend/src/lib/preferences-store.test.ts
-      tests:
-      - 'REQ-FE-044: initializes locale from portable preferences and refreshes local fallback'
-      - 'REQ-FE-044: public routes apply local locale without remote preference fetch'
-    - file: frontend/src/routes/index.test.tsx
-      tests:
-      - 'REQ-FE-044: localizes home route CTA copy in Japanese'
-    - file: frontend/src/routes/about.test.tsx
-      tests:
-      - 'REQ-FE-044: localizes about route copy in Japanese'
-    - file: frontend/src/lib/preferences-api.test.ts
-      tests:
-      - 'REQ-FE-044: surfaces string detail on portable preference load failure'
-    - file: frontend/src/components/ThemeMenu.test.tsx
-      tests:
-      - shows language options in settings menu
-      - switches locale when language changes
-      - 'REQ-FE-044: persists locale via portable preferences with local fallback'
-    - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
-      tests:
-      - 'REQ-FE-044: dashboard localizes main workflow copy in Japanese'
-      - 'REQ-FE-044: dashboard localizes first-run onboarding copy in Japanese'
-    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
-      tests:
-      - 'REQ-FE-044: localizes entries route CTA copy in Japanese'
-    - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
-      tests:
-      - 'REQ-FE-044: localizes forms route CTA copy in Japanese'
+  - file: frontend/src/components/AssetUploader.test.tsx
+  - file: frontend/src/components/ListPanel.test.tsx
+  - file: frontend/src/components/SearchBar.test.tsx
+  - file: frontend/src/components/ThemeMenu.test.tsx
+  - file: frontend/src/components/create-dialogs.test.tsx
+  - file: frontend/src/lib/i18n.test.ts
+  - file: frontend/src/lib/preferences-api.test.ts
+  - file: frontend/src/lib/preferences-local.test.ts
+  - file: frontend/src/lib/preferences-store.test.ts
+  - file: frontend/src/routes/about.test.tsx
+  - file: frontend/src/routes/index.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -487,16 +393,10 @@ requirements:
   - stories/core.yaml#STORY-005
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/sql.test.ts
-      tests:
-      - should flag missing select clause
-      - should accept valid select queries
-      - should include entries table in schema
-    - file: frontend/src/components/SqlQueryEditor.test.tsx
-      tests:
-      - should render without runtime errors
+  - file: frontend/src/components/SqlQueryEditor.test.tsx
+  - file: frontend/src/lib/sql.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -520,13 +420,9 @@ requirements:
   - ui/README.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/themes/registry.test.ts
-      tests:
-      - defines a CSS file for each theme
-      - uses English-only theme labels
-      - maps neutral colors to theme tokens
+  - file: frontend/src/themes/registry.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -550,11 +446,9 @@ requirements:
   - ui/README.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/themes/usage.test.ts
-      tests:
-      - 'REQ-FE-042: avoids raw color utilities in themed components'
+  - file: frontend/src/themes/usage.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -597,15 +491,10 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#interaction-patterns
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
-  tests:
-    vitest:
-    - file: frontend/src/lib/entry-store.test.ts
-      tests:
-      - should handle entry selection
-      - should clear selection when deleting selected entry
+  verification: untraced
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -639,19 +528,12 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#interaction-patterns
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/entry-store.test.ts
-      tests:
-      - should support consecutive saves with updated revision_id
-    e2e:
-    - file: e2e/entries.test.ts
-      tests:
-      - consecutive PUT should succeed with updated revision_id
-      - PUT with stale revision_id should return 409 conflict
+  - file: frontend/src/lib/entry-store.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -685,18 +567,10 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#interaction-patterns
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
-  tests:
-    pytest:
-    - file: backend/tests/test_api.py
-      tests:
-      - test_update_entry
-    e2e:
-    - file: e2e/entries.test.ts
-      tests:
-      - saved content should persist after reload (REQ-FE-010)
+  verification: untraced
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -718,15 +592,12 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-005
-  - api/rest.md#keyword-search
+  - api/rest.md#endpoints
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/SearchBar.test.tsx
-      tests:
-      - should render search input
-      - should call onSearch when form is submitted
+  - file: frontend/src/components/SearchBar.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -748,20 +619,12 @@ requirements:
     '
   related_spec:
   - stories/advanced.yaml#STORY-006
-  - api/rest.md#assets
+  - api/rest.md#endpoints
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/AssetUploader.test.tsx
-      tests:
-      - should render file input
-      - should call onUpload when file is selected
-      - should display uploading state
-      - should display uploaded assets
-      - should allow removing assets
-      - should accept specific file types
-      - should display error message on upload failure
+  - file: frontend/src/components/AssetUploader.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -778,8 +641,8 @@ requirements:
   title: Space Storage Configuration
   description: 'Space settings MUST allow saving storage connector metadata (local,
 
-    S3, remote) with connection validation before saving. The test flow MUST
-    surface any optional remote endpoint needed for a real backend probe.
+    S3, remote) with connection validation before saving. The test flow MUST surface any optional remote endpoint
+    needed for a real backend probe.
 
     The UI MUST explain that changing `storage_config.uri` updates saved metadata
 
@@ -787,22 +650,14 @@ requirements:
 
     '
   related_spec:
-  - api/rest.md#spaces
+  - api/rest.md#endpoints
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/SpaceSettings.test.tsx
-      tests:
-      - should display space name
-      - should display storage config
-      - should call onSave when save button is clicked
-      - should test connection when test button is clicked
-      - should display success message after test connection
-      - should display error message on test connection failure
-      - should save storage config
-      - 'REQ-FE-017: explains that saved storage URIs are metadata-only before migration'
-      - 'REQ-FE-017: frames connector URIs as future migration targets'
+  - file: e2e/space-settings-storage-guidance.test.ts
+  - file: frontend/src/components/SpaceSettings.test.tsx
+  - file: frontend/src/lib/docsite-links.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -824,11 +679,7 @@ requirements:
   - stories/advanced.yaml#STORY-009
   priority: medium
   status: implemented
-  tests:
-    vitest:
-    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
-      tests:
-      - selecting an entry form navigates correctly
+  verification: untraced
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -852,11 +703,9 @@ requirements:
   - stories/advanced.yaml#STORY-009
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/FormTable.test.tsx
-      tests:
-      - 'REQ-FE-019: sorts entries when clicking headers'
+  - file: frontend/src/components/FormTable.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -880,11 +729,11 @@ requirements:
   - stories/advanced.yaml#STORY-009
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/FormTable.test.tsx
-      tests:
-      - 'REQ-FE-020: filters entries globally'
+  - file: frontend/src/components/FormList.test.tsx
+  - file: frontend/src/components/FormTable.test.tsx
+  - file: frontend/src/lib/form-store.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -908,11 +757,9 @@ requirements:
   - stories/advanced.yaml#STORY-009
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/FormTable.test.tsx
-      tests:
-      - 'REQ-FE-021: exports filtered data to CSV'
+  - file: frontend/src/components/FormTable.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -934,11 +781,10 @@ requirements:
   - stories/advanced.yaml#STORY-009
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/FormTable.test.tsx
-      tests:
-      - 'REQ-FE-030: Add Row button creates a new entry'
+  - file: frontend/src/components/FormTable.test.tsx
+  - file: frontend/src/lib/search-store.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -962,12 +808,9 @@ requirements:
   - stories/advanced.yaml#STORY-009
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/FormTable.test.tsx
-      tests:
-      - 'REQ-FE-031: Edit Mode toggle and inline edit'
-      - 'REQ-FE-031: keyboard copy shortcut'
+  - file: frontend/src/components/FormTable.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -989,11 +832,10 @@ requirements:
   - features/README.md
   priority: low
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/routes/entries/index.test.tsx
-      tests:
-      - 'REQ-FE-032: legacy entries route redirects'
+  - file: frontend/src/components/create-dialogs.test.tsx
+  - file: frontend/src/routes/entries/index.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1014,22 +856,15 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#interaction-patterns
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
-      tests:
-      - 'REQ-FE-033: selecting an entry navigates with encoded id'
-    - file: frontend/src/routes/spaces/[space_id]/forms/form-detail.test.tsx
-      tests:
-      - 'REQ-FE-033: form detail navigation encodes entry id'
-    e2e:
-    - file: e2e/entries.test.ts
-      tests:
-      - 'REQ-FE-033: Retrieve entry with special characters'
-      - 'REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)'
+  - file: e2e/entries.test.ts
+  - file: frontend/src/components/EntryDetailPane.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/forms/form-detail.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1063,14 +898,12 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#interaction-patterns
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: critical
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/entries.test.ts
-      tests:
-      - 'REQ-FE-034: Multi-entry navigation should not get stuck in loading state'
+  - file: e2e/entries.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1085,19 +918,13 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-035
   title: Robust Entry Navigation and Recovery
-  description: 'Navigation to entry details must include fail-safes (e.g., timeouts) to prevent infinite loading states.
-
-    The UI must successfully transition from loading to content or error state within 10 seconds.
-
-    Users must be able to navigate away from a pending load without the UI becoming unresponsive.
-
-    '
+  description: Entry navigation must time out or recover from failed loading states and allow the user to retry
+    or return to a stable route.
   type: non-functional
+  status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/entries.test.ts
-      tests:
-      - 'REQ-FE-035: Navigation timeout handling and recovery'
+  - file: e2e/entries.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1123,21 +950,11 @@ requirements:
   - ui/README.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/spec/ui-pages.test.ts
-      tests:
-      - 'REQ-FE-040: loads UI page specs'
-      - 'REQ-FE-040: validates page links'
-      - 'REQ-FE-040: validates component types'
-      - 'REQ-FE-040: validates docs pages map to implemented routes'
-      - 'REQ-FE-040: validates implemented routes are documented'
-      - 'REQ-FE-040: implemented page specs reject placeholder route content'
-      - 'REQ-FE-040: validates shared space chrome'
-      - 'REQ-FE-040: validates entries/forms bottom tabs use product labels'
-    - file: frontend/src/components/SpaceShell.test.tsx
-      tests:
-      - 'REQ-FE-040: renders entries/forms bottom tabs with product labels'
+  - file: frontend/src/components/SpaceShell.test.tsx
+  - file: frontend/src/lib/asset-store.test.ts
+  - file: frontend/src/spec/ui-pages.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1172,53 +989,21 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#forms
-  - data-model/directory-structure.md#space-level
+  - data-model/overview.md#forms-and-entries
+  - data-model/directory-structure.md#workspace-layout
   - stories/core.yaml#STORY-002
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/create-dialogs.test.tsx
-      tests:
-      - 'REQ-FE-037: requires form selection before creating an entry'
-      - 'REQ-FE-037: blocks submission when required fields are empty'
-      - 'REQ-FE-037: pre-fills defaults for required fields'
-      - 'REQ-FE-037: renders optional fields in webform mode'
-      - 'REQ-FE-037: sanitizes webform field ids for labels'
-      - 'REQ-FE-037: falls back to a stable id when a field name slug is empty'
-      - 'REQ-FE-037: supports markdown mode submission'
-      - 'REQ-FE-037: clears the markdown flow after successful submission'
-      - 'REQ-FE-037: shows error when markdown is empty in markdown mode'
-      - 'REQ-FE-037: keeps the form open and shows required-field errors on submit'
-      - 'REQ-FE-037: excludes reserved metadata forms from entry creation'
-      - 'REQ-FE-037: closes the create-entry dialog from the backdrop and Escape key'
-    - file: frontend/src/components/ListPanel.test.tsx
-      tests:
-      - 'REQ-FE-037: disables new entry when no forms exist'
-    - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
-      tests:
-      - 'REQ-FE-037: dashboard ignores reserved metadata forms in the entry count'
-      - 'REQ-FE-037: dashboard opens the starter entry flow for a new space'
-      - 'REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist'
-      - 'REQ-FE-037: dashboard promotes form creation when a space has no creatable forms'
-    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
-      tests:
-      - 'REQ-FE-037: entries route disables entry creation when only reserved metadata forms exist'
-      - 'REQ-FE-037: entries route opens the starter entry flow for a new space'
-      - 'REQ-FE-037: entries route guides spaces with no creatable forms toward form creation'
-      - 'REQ-FE-037: entries route opens the create-entry dialog when creatable forms exist'
-    - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
-      tests:
-      - 'REQ-FE-037: form grid defaults to the first creatable form'
-      - 'REQ-FE-037: form grid shows empty state when only reserved metadata forms exist'
-    e2e:
-    - file: e2e/dashboard-first-form.test.ts
-      tests:
-      - 'REQ-FE-037: dashboard lets a new space create a first entry with the starter form'
-    - file: e2e/entries.test.ts
-      tests:
-      - 'REQ-FE-037: entries route opens the starter entry flow for new spaces'
+  - file: e2e/dashboard-first-form.test.ts
+  - file: e2e/entries.test.ts
+  - file: frontend/src/components/ListPanel.test.tsx
+  - file: frontend/src/components/create-dialogs.test.tsx
+  - file: frontend/src/lib/entry-input.test.ts
+  - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1242,11 +1027,9 @@ requirements:
   - stories/core.yaml#STORY-002
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/EntryDetailPane.test.tsx
-      tests:
-      - 'REQ-FE-038: renders form validation warnings'
+  - file: frontend/src/components/EntryDetailPane.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1272,17 +1055,13 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#metadata-vs-content-columns
+  - data-model/overview.md#forms-and-entries
   - requirements/form.yaml#REQ-FORM-005
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/create-dialogs.test.tsx
-      tests:
-      - 'REQ-FE-039: blocks reserved metadata column names'
-      - 'REQ-FE-039: hides reserved-name guidance until a reserved name is entered in create form'
-      - 'REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form'
+  - file: frontend/src/components/create-dialogs.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1311,12 +1090,9 @@ requirements:
   - requirements/form.yaml#REQ-FORM-005
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/create-dialogs.test.tsx
-      tests:
-      - 'REQ-FE-055: keeps create-form column inputs readable on narrow layouts'
-      - 'REQ-FE-055: keeps edit-form column inputs readable on narrow layouts'
+  - file: frontend/src/components/create-dialogs.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1331,8 +1107,8 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-050
   title: SQL Query Management API Client
-  description: 'The frontend SQL query API client MUST support CRUD operations for saved
-    SQL queries (list, create, get, update, delete) and provide typed error handling.
+  description: 'The frontend SQL query API client MUST support CRUD operations for saved SQL queries (list, create,
+    get, update, delete) and provide typed error handling.
 
     '
   related_spec:
@@ -1340,20 +1116,9 @@ requirements:
   - requirements/api.yaml
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/sql-api.test.ts
-      tests:
-      - lists SQL entries (empty by default)
-      - creates a SQL entry and returns id/revisionId
-      - gets a SQL entry by id
-      - updates a SQL entry
-      - deletes a SQL entry
-      - throws on list failure
-      - throws on get failure
-      - throws on create failure with detail
-      - throws on update failure with detail
-      - throws on delete failure
+  - file: frontend/src/lib/sql-api.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1368,8 +1133,8 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-051
   title: SQL Session Management API Client
-  description: 'The frontend SQL session API client MUST support creating, getting,
-    and querying SQL sessions with typed error handling.
+  description: 'The frontend SQL session API client MUST support creating, getting, and querying SQL sessions with
+    typed error handling.
 
     '
   related_spec:
@@ -1377,18 +1142,9 @@ requirements:
   - requirements/api.yaml
   priority: high
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/sql-session-api.test.ts
-      tests:
-      - creates a SQL session
-      - gets a SQL session by id
-      - counts rows in a session
-      - fetches rows from a session
-      - throws on create failure
-      - throws on get failure
-      - throws on count failure
-      - throws on rows failure
+  - file: frontend/src/lib/sql-session-api.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1414,16 +1170,12 @@ requirements:
     '
   related_spec:
   - stories/core.yaml#STORY-002
-  - data-model/overview.md#content-column-types--markdown-parsing
+  - data-model/overview.md#markdown-mapping
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/EntryDetailPane.test.tsx
-      tests:
-      - 'REQ-FE-052: shows form-aware markdown H2 guidance and inserts missing required sections'
-      - 'REQ-FE-052: omits example heading when form has no fields'
-      - 'REQ-FE-052: omits example heading when form data lacks a fields map'
+  - file: frontend/src/components/EntryDetailPane.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1452,16 +1204,10 @@ requirements:
   - requirements/frontend.yaml#REQ-FE-044
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/create-dialogs.test.tsx
-      tests:
-      - 'REQ-FE-053: renders English entry guidance across input modes'
-      - 'REQ-FE-053: keeps web-form guidance free of Markdown-only instructions'
-    - file: frontend/src/components/EntryDetailPane.test.tsx
-      tests:
-      - 'REQ-FE-053: renders English editor guidance and type warnings'
-      - 'REQ-FE-053: renders Japanese editor guidance without mixed-language examples'
+  - file: frontend/src/components/EntryDetailPane.test.tsx
+  - file: frontend/src/components/create-dialogs.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1490,30 +1236,14 @@ requirements:
   - requirements/api.yaml
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/client.test.ts
-      tests:
-      - 'REQ-FE-054: entryApi normalizes unix-second timestamps for entry lists'
-    - file: frontend/src/lib/sql-api.test.ts
-      tests:
-      - 'REQ-FE-054: sqlApi normalizes unix-second timestamps for saved queries'
-    - file: frontend/src/lib/sql-session-api.test.ts
-      tests:
-      - 'REQ-FE-054: sqlSessionApi normalizes unix-second timestamps for session rows'
-    - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
-      tests:
-      - 'REQ-FE-054: renders human-readable updated dates in search history'
-    - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
-      tests:
-      - 'REQ-FE-054: renders human-readable updated dates for query result cards'
-    - file: frontend/src/lib/date-format.test.ts
-      tests:
-      - 'REQ-FE-054: normalizeTimestamp converts unix-second timestamps from numbers and numeric strings'
-      - 'REQ-FE-054: normalizeTimestamp handles millisecond timestamps and trimmed string inputs'
-      - 'REQ-FE-054: normalizeTimestamp falls back to string output for missing or invalid numeric inputs'
-      - 'REQ-FE-054: formatDateLabel renders valid timestamps as locale dates'
-      - 'REQ-FE-054: formatDateLabel falls back to trimmed text or em dash'
+  - file: frontend/src/lib/client.test.ts
+  - file: frontend/src/lib/date-format.test.ts
+  - file: frontend/src/lib/sql-api.test.ts
+  - file: frontend/src/lib/sql-session-api.test.ts
+  - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/search.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1536,16 +1266,13 @@ requirements:
 
     '
   related_spec:
-  - architecture/frontend-backend-interface.md#error-handling-standards
+  - architecture/frontend-backend-interface.md#frontendserver-interface
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/routes/spaces/index.test.tsx
-      tests:
-      - 'REQ-FE-056: does not show persistent auth guidance during normal space listing'
-      - 'REQ-FE-056: shows concise auth errors only when space loading fails'
-      - 'REQ-FE-056: links auth guidance to Local Dev Auth/Login when auth fails'
+  - file: frontend/src/lib/docsite-links.test.ts
+  - file: frontend/src/routes/spaces/index.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1575,17 +1302,9 @@ requirements:
   - architecture/frontend-backend-interface.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/components/create-dialogs.test.tsx
-      tests:
-      - 'REQ-FE-057: chat step pills react to answers and current step'
-      - 'REQ-FE-057: chat step pills let users jump back to answered questions'
-      - 'REQ-FE-057: chat mode blocks advancing past an empty required field'
-      - 'REQ-FE-057: chat mode blocks skipping a required field'
-      - 'REQ-FE-057: chat mode walks through optional fields instead of only required ones'
-      - 'REQ-FE-057: chat mode submits answered required and optional fields'
-      - 'REQ-FE-057: skipping an optional chat field clears its draft answer'
+  - file: frontend/src/components/create-dialogs.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1615,12 +1334,9 @@ requirements:
   - architecture/frontend-backend-interface.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
-      tests:
-      - 'REQ-FE-058: dashboard avoids a persistent top-level loading banner during routine navigation'
-      - 'REQ-FE-058: dashboard replaces the fallback title when space metadata loads'
+  - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1650,22 +1366,12 @@ requirements:
   - architecture/frontend-backend-interface.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/preferences-store.test.ts
-      tests:
-      - 'REQ-FE-059: initializes theme preferences from portable storage and updates local fallback'
-      - 'REQ-FE-059: migrates missing primary color from local fallback'
-      - 'REQ-FE-059: public routes apply local theme preferences without remote fetch'
-    - file: frontend/src/lib/preferences-api.test.ts
-      tests:
-      - 'REQ-FE-059: stringifies structured detail on portable preference update failure'
-      - 'REQ-FE-059: falls back to status text when portable preference errors are not JSON'
-    - file: frontend/src/components/ThemeMenu.test.tsx
-      tests:
-      - switches UI theme
-      - switches color mode
-      - switches primary color
+  - file: frontend/src/components/ThemeMenu.test.tsx
+  - file: frontend/src/lib/preferences-api.test.ts
+  - file: frontend/src/lib/preferences-local.test.ts
+  - file: frontend/src/lib/preferences-store.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1697,23 +1403,11 @@ requirements:
   - architecture/overview.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/lib/storage-topology.test.ts
-      tests:
-      - 'REQ-FE-060: summarizes backend local storage as local filesystem'
-      - 'REQ-FE-060: preserves already formatted backend storage URIs'
-      - 'REQ-FE-060: preserves relative local storage roots verbatim'
-      - 'REQ-FE-060: summarizes backend s3 storage as remote object store'
-      - 'REQ-FE-060: falls back to backend API when no backend storage metadata is present'
-      - 'REQ-FE-060: ignores blank backend storage roots when summarizing topology'
-      - 'REQ-FE-060: treats unrecognized backend storage types as backend-managed topology'
-    - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
-      tests:
-      - 'REQ-FE-060: dashboard surfaces the active storage topology with a settings link'
-    - file: frontend/src/components/SpaceSettings.test.tsx
-      tests:
-      - 'REQ-FE-060: settings show the current storage topology before editing'
+  - file: frontend/src/components/SpaceSettings.test.tsx
+  - file: frontend/src/lib/storage-topology.test.ts
+  - file: frontend/src/routes/spaces/[space_id]/dashboard.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1728,28 +1422,16 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-061
   title: Saved SQL Placeholder Recovery Guidance
-  description: 'The `/spaces/{space_id}/sql` route MUST explain that named-query
-
-    management is not available there yet, link users to the working query flow
-
-    from Search, and provide a clear route back to the dashboard or other useful
-
-    space pages instead of acting as a dead end.
-
-    '
+  description: The saved SQL list route must load existing named queries, provide creation/navigation actions supported
+    by the API, and surface actionable empty/error states.
   related_spec:
   - ui/pages/space-sql.yaml
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/saved-sql-route.test.ts
-      tests:
-      - 'REQ-FE-061: saved SQL route provides recovery links instead of a dead end'
-    vitest:
-    - file: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
-      tests:
-      - 'REQ-FE-061: saved SQL route explains the missing UI and links to working recovery paths'
+  - file: e2e/saved-sql-route.test.ts
+  - file: frontend/src/routes/spaces/[space_id]/sql/index.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1779,16 +1461,10 @@ requirements:
   - ui/pages/space-sql-detail.yaml
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/saved-sql-route.test.ts
-      tests:
-      - 'REQ-FE-062: saved SQL detail loads query text and routes variable-free runs to entries'
-    vitest:
-    - file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
-      tests:
-      - 'REQ-FE-062: saved SQL detail renders a read-only query summary and supported actions'
-      - 'REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions'
+  - file: e2e/saved-sql-route.test.ts
+  - file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1816,11 +1492,9 @@ requirements:
   - ui/pages/space-search.yaml
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    vitest:
-    - file: frontend/src/routes/spaces/[space_id]/query.test.tsx
-      tests:
-      - 'REQ-FE-063: legacy query route explains the supported search path'
+  - file: frontend/src/routes/spaces/[space_id]/query.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1846,16 +1520,10 @@ requirements:
   - ui/README.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/public-pages.test.ts
-      tests:
-      - 'REQ-FE-064: public landing pages respect the saved Japanese locale'
-    vitest:
-    - file: frontend/src/routes/public-pages.test.tsx
-      tests:
-      - 'REQ-FE-064: home page localizes public copy through the shared dictionary'
-      - 'REQ-FE-064: about page localizes public copy through the shared dictionary'
+  - file: e2e/public-pages.test.ts
+  - file: frontend/src/routes/public-pages.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1883,30 +1551,14 @@ requirements:
     '
   related_spec:
   - architecture/frontend-backend-interface.md
-  - data-model/overview.md#content-column-types--markdown-parsing
+  - data-model/overview.md#markdown-mapping
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/entries.test.ts
-      tests:
-      - 'REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id'
-    vitest:
-    - file: frontend/src/components/create-dialogs.test.tsx
-      tests:
-      - 'REQ-FE-065: row_reference fields offer a searchable picker while storing stable entry ids'
-      - 'REQ-FE-065: chat mode stores the selected row_reference entry id'
-      - 'REQ-FE-065: row_reference searches must resolve to a saved entry before submit'
-      - 'REQ-FE-065: row_reference pickers surface load errors when reference lookup fails'
-      - 'REQ-FE-065: clearing a selected row_reference removes the saved entry id'
-      - 'REQ-FE-065: row_reference fields without target_form keep raw text entry'
-      - 'REQ-FE-065: row_reference pickers fall back to entry ids and sort duplicate titles by id'
-    - file: frontend/src/lib/client.test.ts
-      tests:
-      - 'REQ-FE-065: row_reference picker options request bounded form-scoped summaries'
-    - file: backend/tests/test_api.py
-      tests:
-      - 'REQ-FE-065: row_reference picker options stay form-scoped and bounded'
+  - file: e2e/entries.test.ts
+  - file: frontend/src/components/create-dialogs.test.tsx
+  - file: frontend/src/lib/client.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1934,16 +1586,10 @@ requirements:
   - architecture/frontend-backend-interface.md
   priority: medium
   status: implemented
+  verification: traced
   tests:
-    e2e:
-    - file: e2e/smoke.test.ts
-      tests:
-      - 'REQ-FE-066: signed-in browser nav exposes sign-out and returns to login'
-    vitest:
-    - file: frontend/src/components/Nav.test.tsx
-      tests:
-      - 'REQ-FE-066: signed-out nav shows primary routes and a login link'
-      - 'REQ-FE-066: active state tracks the current route for signed-out nav links'
-      - 'REQ-FE-066: stays hidden on space explorer pages'
-      - 'REQ-FE-066: signed-in nav swaps Login for session status and sign-out'
-      - 'REQ-FE-066: sign-out clears the auth cookie and redirects to login'
+  - file: e2e/smoke.test.ts
+  - file: frontend/src/components/Nav.test.tsx
+  - file: frontend/src/lib/auth-api.test.ts
+  - file: frontend/src/lib/auth-cookie.test.ts
+  - file: frontend/src/routes/api/auth/session.test.ts

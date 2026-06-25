@@ -15,48 +15,13 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-001
   title: Localhost Binding
-  description: 'API binds to 127.0.0.1 only by default. Remote access requires
-
-    explicit UGOITE_ALLOW_REMOTE=true environment variable.
-
-    When `UGOITE_TRUST_PROXY_HEADERS=true`, forwarded client headers MUST only
-
-    be honored from trusted loopback proxy peers so direct remote clients cannot
-
-    spoof loopback access.
-
-    Source Docker Compose defaults MUST keep browser access loopback-only, and
-
-    containerized dev-auth packaging MUST avoid repository-known signing or proxy
-
-    secrets when network exposure is possible.
-
-    '
+  description: The server binds to `127.0.0.1:8000` by default. Remote exposure requires an explicit `UGOITE_SERVER_ADDRESS`;
+    supplied Compose files bind host ports to loopback.
   related_spec:
   - security/overview.md
   priority: high
   status: implemented
-  tests:
-    pytest:
-    - file: backend/tests/test_api.py
-      tests:
-      - test_middleware_blocks_remote_clients
-      - test_middleware_blocks_remote_clients_when_proxy_headers_trusted
-      - test_middleware_blocks_spoofed_loopback_forwarded_for_when_proxy_headers_trusted
-    - file: backend/tests/test_auth.py
-      tests:
-      - test_resolve_client_host_trusted_proxy
-      - test_resolve_client_host_empty_forwarded
-      - test_resolve_client_host_ignores_untrusted_forwarded_for
-    - file: backend/tests/test_dev_auth.py
-      tests:
-      - test_dev_auth_req_sec_001_startup_derives_bearer_env_from_signing_material
-    - file: docs/tests/test_guides.py
-      tests:
-      - test_docs_req_sec_001_source_compose_requires_unique_dev_auth_secrets
-    - file: docs/tests/test_helm_chart.py
-      tests:
-      - test_docs_req_sec_001_helm_chart_requires_unique_auth_secrets
+  verification: untraced
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -71,24 +36,13 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-002
   title: Security Headers
-  description: 'Set security-related HTTP headers (X-Content-Type-Options,
-
-    X-Frame-Options, etc.).
-
-    '
+  description: The server should add an explicit production security-header policy. Current middleware provides
+    request IDs, tracing, body limits, and CORS but does not set the full header set described here.
   related_spec:
   - security/overview.md
   priority: medium
-  status: implemented
-  tests:
-    pytest:
-    - file: backend/tests/test_api.py
-      tests:
-      - test_middleware_headers
-      - test_middleware_headers_req_sec_002_sets_hsts_for_trusted_https_proxy
-      - test_middleware_headers_req_sec_002_ignores_untrusted_forwarded_https
-      - test_middleware_headers_req_sec_002_skips_csp_for_docs_ui
-      - test_middleware_req_sec_002_preserves_error_response_when_signing_fails
+  status: planned
+  verification: untraced
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -113,40 +67,15 @@ requirements:
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
-  - api/mcp.md#security-model
+  - api/mcp.md#model-context-protocol-surface
   priority: high
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: backend/tests/test_auth.py
-      tests:
-      - test_auth_rejects_unauthenticated_localhost_requests
-      - test_auth_rejects_unauthenticated_remote_requests
-      - test_auth_rejects_malformed_signed_token_segments
-      - test_auth_rejects_invalid_bearer_signature
-      - test_auth_rejects_expired_bearer_token
-      - test_auth_rejects_revoked_api_key
-    - file: ugoite-core/tests/test_auth.py
-      tests:
-      - test_bootstrap_warning_redacts_token_value
-      - test_get_auth_manager_req_sec_003_refreshes_bootstrap_token_after_ttl
-      - test_get_auth_manager_req_sec_003_keeps_generated_token_until_clear
-      - test_authenticate_headers_req_sec_003_rejects_revoked_key_after_cache_expiry
-    - file: ugoite-core/tests/test_auth_overview_consistency.py
-      tests:
-      - test_auth_overview_matches_security_yaml_contract
-    - file: ugoite-cli/tests/test_auth.rs
-      tests:
-      - test_cli_auth_overview_req_sec_003_includes_channels
-    vitest:
-    - file: frontend/src/routes/api/[...path].test.ts
-      tests:
-      - 'REQ-SEC-003: rejects protocol-relative proxy paths before forwarding browser bearer tokens'
-      - 'REQ-SEC-003: pins forwarded browser auth to the configured backend origin'
-    e2e:
-    - file: e2e/api-proxy-security.test.ts
-      tests:
-      - 'REQ-SEC-003: browser /api proxy rejects protocol-relative upstream targets'
+  - file: crates/ugoite-cli/tests/test_auth.rs
+  - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+  - file: e2e/api-proxy-security.test.ts
+  - file: frontend/src/routes/api/[...path].test.ts
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -169,17 +98,12 @@ requirements:
 
     '
   related_spec:
-  - security/overview.md#authentication-future
-  - api/rest.md#auth--user-management-milestone-4-phase-0-baseline
+  - security/overview.md#current-limitations
+  - api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
   status: planned
-  tests:
-    pytest:
-    - file: backend/tests/test_auth_passkeys_oauth2_linking.py
-      tests:
-      - test_passkey_primary_authentication__planned
-      - test_oauth2_account_linking__planned
+  verification: untraced
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -202,17 +126,11 @@ requirements:
 
     '
   related_spec:
-  - security/overview.md#recovery--administration
-  - api/rest.md#auth--user-management-milestone-4-phase-0-baseline
+  - security/overview.md#current-limitations
+  - api/rest.md#authentication
   priority: high
   status: planned
-  tests:
-    pytest:
-    - file: backend/tests/test_auth_admin_recovery.py
-      tests:
-      - test_admin_invite_token_bootstrap_enrollment__planned
-      - test_admin_forced_reset__planned
-      - test_admin_backup_code_issuance__planned
+  verification: untraced
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -226,52 +144,18 @@ requirements:
   - SPEC-SECURITY-SANDBOX
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-006
-  title: Space-Scoped Authorization and Form ACL
-  description: 'Identity MUST be scoped to each space. Space creator becomes initial
-
-    admin and can delegate admins. Forms MUST support user/group read-write
-
-    restrictions, and materialized views MUST inherit source-Form policy.
-
-    Markdown-based entry writes MUST resolve the target Form from frontmatter
-
-    or extracted properties, enforce the corresponding Form write ACL (or
-
-    space-level entry_write when no Form is resolved), and surface authorization
-
-    failures as HTTP 403 from backend adapters.
-
-    '
+  title: Space-Scoped Authorization and Planned Form ACL
+  description: Space-scoped membership and role authorization is implemented. Finer Form-level ACL behavior remains
+    planned and must not be presented as shipped.
   related_spec:
-  - data-model/overview.md#form-level-access-control-metadata
-  - api/rest.md#entries
-  - architecture/frontend-backend-interface.md#entry-creation--indexing
-  - data-model/sql-sessions.md#materialized-view-metadata-current-placeholder-state
+  - data-model/overview.md#forms-and-entries
+  - api/rest.md#endpoints
+  - architecture/frontend-backend-interface.md#frontendserver-interface
+  - data-model/sql-sessions.md#saved-sql-and-materialized-view-metadata
   - stories/experimental.yaml
   priority: high
-  status: implemented
-  tests:
-    pytest:
-    - file: backend/tests/test_forms_acl.py
-      tests:
-      - test_form_acl_denies_unauthorized_read_access
-      - test_form_acl_denies_unauthorized_write_access
-      - test_form_acl_allows_group_principal_access
-      - test_materialized_view_inherits_form_acl_policies
-    - file: backend/tests/test_api.py
-      tests:
-      - test_restore_entry_checks_target_revision_write_access
-      - test_restore_entry_target_revision_authorization_error
-    - file: docs/tests/test_authz_docs.py
-      tests:
-      - test_docs_req_sec_006_markdown_write_contract_covers_entry_mutations
-      - test_docs_req_sec_006_markdown_write_contract_keeps_backend_thin
-      - test_docs_req_sec_006_markdown_write_contract_defines_403_behavior
-    e2e:
-    - file: e2e/forms-acl.test.ts
-      tests:
-      - Enforces Form ACL Read/Write Restrictions for Space Members
-      - Enforces Materialized View Policy Intersection with Form ACL
+  status: planned
+  verification: untraced
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -297,25 +181,14 @@ requirements:
     '
   related_spec:
   - stories/experimental.yaml
-  - api/rest.md#spaces
+  - api/rest.md#endpoints
   priority: high
   status: implemented
+  verification: traced
   tests:
-    pytest:
-    - file: backend/tests/test_space_members.py
-      tests:
-      - test_space_member_invite_and_accept_transitions_to_active
-      - test_space_member_role_change_controls_admin_permissions
-      - test_space_member_revoke_removes_access
-    vitest:
-    - file: frontend/src/routes/spaces/join.test.tsx
-      tests:
-      - "REQ-SEC-007: accepts an invitation token and confirms the joined membership"
-    e2e:
-    - file: e2e/space-membership.test.ts
-      tests:
-      - "REQ-SEC-007: invitation lifecycle invite/accept/revoke"
-      - "REQ-SEC-007: role changes switch admin privileges"
+  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_coverage.rs
+  - file: e2e/space-membership.test.ts
+  - file: frontend/src/routes/spaces/join.test.tsx
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -330,30 +203,14 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-008
   title: Security Audit Logging and Attribution
-  description: 'Security-relevant events MUST be recorded with actor attribution,
-
-    action, outcome, target, and request metadata. Audit logs MUST support
-
-    paginated retrieval with filtering and MUST include tamper-evident integrity
-
-    checks.
-
-    '
+  description: Security-relevant audit events should be persisted append-only and exposed through authorized pagination.
+    No audit module or REST listing route is shipped.
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
   priority: high
-  status: implemented
-  tests:
-    pytest:
-    - file: backend/tests/test_audit.py
-      tests:
-      - test_audit_lists_data_mutation_events
-      - test_audit_logs_authorization_denial
-    - file: ugoite-core/tests/test_audit.py
-      tests:
-      - test_audit_appends_and_lists_events
-      - test_audit_detects_chain_tampering
+  status: planned
+  verification: untraced
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -368,34 +225,15 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-009
   title: Service Accounts and Scoped API Keys for Automation
-  description: 'Automation access MUST be provided by explicit service accounts
-
-    with least-privilege action scopes. API keys MUST support create/list/revoke/rotate
-
-    workflows with one-time secret reveal, and revoked keys MUST fail authentication
-
-    immediately across REST/MCP channels. Key usage MUST be audit-visible.
-
-    '
+  description: Managed service accounts with scoped key creation, rotation, listing, and revocation remain planned.
+    This release only supports credentials configured out of band, and scope-enforced identities are rejected.
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
-  - api/mcp.md#security-model
+  - api/mcp.md#model-context-protocol-surface
   priority: high
-  status: implemented
-  tests:
-    pytest:
-    - file: ugoite-core/tests/test_service_accounts.py
-      tests:
-      - test_service_account_scopes_are_enforced
-      - test_service_account_revoked_key_is_rejected
-      - test_service_account_key_usage_is_audit_logged
-    - file: backend/tests/test_service_accounts.py
-      tests:
-      - test_service_account_scopes_and_revocation_flow
-    - file: ugoite-cli/tests/test_cli_endpoint_routing.rs
-      tests:
-      - test_space_service_account_create_routes_to_backend
+  status: planned
+  verification: untraced
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -410,28 +248,13 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-010
   title: Credentialed CORS Allowlist
-  description: 'Credentialed browser access MUST use explicit CORS origin, method,
-
-    and request-header allowlists. Wildcard origin configuration MUST be rejected
-
-    and request-header allowlists. Preflight requests that ask for methods or
-
-    headers outside the allowlist MUST be rejected. Wildcard origin configuration
-
-    MUST be rejected when remote access is enabled.
-
-    '
+  description: Shared cross-origin deployments should use explicit CORS allowlists. The current server uses permissive
+    origin/method/header middleware and relies on same-origin browser deployment by default.
   related_spec:
   - security/overview.md
   priority: high
-  status: implemented
-  tests:
-    pytest:
-    - file: backend/tests/test_api.py
-      tests:
-      - test_cors_req_sec_010_preflight_allows_explicit_method_and_header_lists
-      - test_cors_req_sec_010_rejects_wildcard_origin_config_when_remote_enabled
-      - test_cors_req_sec_010_preflight_rejects_disallowed_method_and_header
+  status: planned
+  verification: untraced
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -461,20 +284,7 @@ requirements:
   - security/overview.md
   priority: high
   status: implemented
+  verification: traced
   tests:
-    rust:
-    - file: ugoite-cli/tests/test_endpoint_config.rs
-      tests:
-      - test_config_set_req_sec_011_rejects_non_loopback_cleartext_urls
-      - test_config_set_req_sec_011_allows_loopback_cleartext_urls
-      - test_config_current_req_sec_011_warns_about_saved_non_loopback_cleartext_url
-      - test_space_list_req_sec_011_rejects_saved_non_loopback_cleartext_endpoint
-    - file: ugoite-cli/tests/test_cli_req_sec_011_endpoint_transport.rs
-      tests:
-      - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_api_urls
-      - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_backend_urls
-      - test_cli_req_sec_011_config_set_allows_loopback_cleartext_development_endpoints
-      - test_cli_req_sec_011_config_set_allows_ipv6_loopback_cleartext_development_endpoints
-      - test_cli_req_sec_011_config_set_rejects_non_loopback_cleartext_ipv6_api_urls
-      - test_cli_req_sec_011_config_current_warns_about_legacy_insecure_remote_endpoints
-      - test_cli_req_sec_011_server_backed_commands_refuse_legacy_insecure_remote_endpoints_before_requests_are_sent
+  - file: crates/ugoite-cli/tests/test_cli_req_sec_011_endpoint_transport.rs
+  - file: crates/ugoite-cli/tests/test_endpoint_config.rs

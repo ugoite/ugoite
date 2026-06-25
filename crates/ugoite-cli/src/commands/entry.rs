@@ -1,6 +1,6 @@
 use crate::config::{
-    effective_format, load_config, operator_for_path, print_json, print_json_table,
-    resolve_space_reference, space_ws_path, validated_base_url, Format,
+    effective_format, load_config, print_json, print_json_table, resolve_space_reference,
+    validated_base_url, Format,
 };
 use crate::http;
 use anyhow::{bail, Result};
@@ -158,7 +158,13 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         EntrySubCmd::List { space_path } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry list")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!("{base}/spaces/{space_id}/entries")).await?;
+                let result = http::execute(
+                    &base,
+                    "entry.list",
+                    serde_json::json!({"space_id": space_id}),
+                    None,
+                )
+                .await?;
                 if fmt != Format::Json {
                     if let Some(arr) = result.as_array() {
                         print_json_table(arr, &[("ID", "id"), ("TITLE", "title")]);
@@ -191,8 +197,13 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry get")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result =
-                    http::http_get(&format!("{base}/spaces/{space_id}/entries/{entry_id}")).await?;
+                let result = http::execute(
+                    &base,
+                    "entry.get",
+                    serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
@@ -213,9 +224,11 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         "entry create --author is only supported in core mode; backend/api derive author from the authenticated identity"
                     );
                 }
-                let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/entries"),
-                    &serde_json::json!({"id": entry_id, "markdown": content}),
+                let result = http::execute(
+                    &base,
+                    "entry.create",
+                    serde_json::json!({"space_id": space_id}),
+                    Some(serde_json::json!({"id": entry_id, "markdown": content})),
                 )
                 .await?;
                 print_json(&result);
@@ -246,34 +259,32 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     let v: serde_json::Value = serde_json::from_str(a)?;
                     body["assets"] = v;
                 }
-                let result = http::http_put(
-                    &format!("{base}/spaces/{space_id}/entries/{entry_id}"),
-                    &body,
+                let result = http::execute(
+                    &base,
+                    "entry.update",
+                    serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+                    Some(body),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let integrity =
-                ugoite_core::integrity::RealIntegrityProvider::from_space(&op, &space_id).await?;
+            let service = UgoiteService::new(&root)?;
             let assets_vec: Option<Vec<serde_json::Value>> = if let Some(a) = assets {
                 Some(serde_json::from_str(&a)?)
             } else {
                 None
             };
-            let result = ugoite_core::entry::update_entry(
-                &op,
-                &ws,
-                &entry_id,
-                &markdown,
-                parent_revision_id.as_deref(),
-                &author,
-                assets_vec,
-                &integrity,
-            )
-            .await?;
+            let result = service
+                .update_entry(
+                    &space_id,
+                    &entry_id,
+                    &markdown,
+                    parent_revision_id.as_deref(),
+                    &author,
+                    assets_vec,
+                )
+                .await?;
             print_json(&result);
         }
         EntrySubCmd::Delete {
@@ -283,18 +294,24 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry delete")?;
             if let Some(base) = validated_base_url(&config)? {
-                let url = if hard_delete {
-                    format!("{base}/spaces/{space_id}/entries/{entry_id}?hard_delete=true")
-                } else {
-                    format!("{base}/spaces/{space_id}/entries/{entry_id}")
-                };
-                let result = http::http_delete(&url).await?;
+                let result = http::execute(
+                    &base,
+                    "entry.delete",
+                    serde_json::json!({
+                        "space_id": space_id,
+                        "entry_id": entry_id,
+                        "hard_delete": hard_delete,
+                    }),
+                    None,
+                )
+                .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            ugoite_core::entry::delete_entry(&op, &ws, &entry_id, hard_delete).await?;
+            let service = UgoiteService::new(&root)?;
+            service
+                .delete_entry(&space_id, &entry_id, hard_delete)
+                .await?;
             print_json(&serde_json::json!({"deleted": true}));
         }
         EntrySubCmd::History {
@@ -303,16 +320,18 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry history")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!(
-                    "{base}/spaces/{space_id}/entries/{entry_id}/history"
-                ))
+                let result = http::execute(
+                    &base,
+                    "entry.history",
+                    serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+                    None,
+                )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let history = ugoite_core::entry::get_entry_history(&op, &ws, &entry_id).await?;
+            let service = UgoiteService::new(&root)?;
+            let history = service.entry_history(&space_id, &entry_id).await?;
             print_json(&history);
         }
         EntrySubCmd::Revision {
@@ -322,17 +341,24 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry revision")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_get(&format!(
-                    "{base}/spaces/{space_id}/entries/{entry_id}/revisions/{revision_id}"
-                ))
+                let result = http::execute(
+                    &base,
+                    "entry.revision",
+                    serde_json::json!({
+                        "space_id": space_id,
+                        "entry_id": entry_id,
+                        "revision_id": revision_id,
+                    }),
+                    None,
+                )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let rev =
-                ugoite_core::entry::get_entry_revision(&op, &ws, &entry_id, &revision_id).await?;
+            let service = UgoiteService::new(&root)?;
+            let rev = service
+                .entry_revision(&space_id, &entry_id, &revision_id)
+                .await?;
             print_json(&rev);
         }
         EntrySubCmd::Restore {
@@ -343,27 +369,20 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry restore")?;
             if let Some(base) = validated_base_url(&config)? {
-                let result = http::http_post(
-                    &format!("{base}/spaces/{space_id}/entries/{entry_id}/restore/{revision_id}"),
-                    &serde_json::json!({"author": author}),
+                let result = http::execute(
+                    &base,
+                    "entry.restore",
+                    serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
+                    Some(serde_json::json!({"revision_id": revision_id, "author": author})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
-            let op = operator_for_path(&root)?;
-            let ws = space_ws_path(&root, &space_id);
-            let integrity =
-                ugoite_core::integrity::RealIntegrityProvider::from_space(&op, &space_id).await?;
-            let result = ugoite_core::entry::restore_entry(
-                &op,
-                &ws,
-                &entry_id,
-                &revision_id,
-                &author,
-                &integrity,
-            )
-            .await?;
+            let service = UgoiteService::new(&root)?;
+            let result = service
+                .restore_entry(&space_id, &entry_id, &revision_id, &author)
+                .await?;
             print_json(&result);
         }
     }

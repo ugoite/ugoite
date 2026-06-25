@@ -1,76 +1,82 @@
-# Advanced User Stories
-#
-# Power user and experimental features.
-# These extend the core functionality for specialized use cases.
-
-version: "0.1"
-updated: "2026-01"
+version: '0.1'
+updated: 2026-06
 category: Advanced User Stories
-
 stories:
-  - id: STORY-006
-    title: Voice-to-Form
-    type: BYOAI
-    as_a: mobile user
-    i_want: to record a voice memo and have my chosen AI assistant structure it
-    so_that: >
-      I can use the best AI model available (Claude, GPT-4, etc.)
-      without being locked into the app's built-in model.
-    acceptance_criteria:
-      - User records audio; app saves it as an entry asset
-      - User invokes their connected MCP Agent (e.g., "Format this voice entry")
-      - Agent reads the transcript (via MCP), extracts fields, and updates the entry with H2 headers
-    related_apis:
-      - rest: POST /spaces/{space_id}/assets
-      - rest: PUT /spaces/{space_id}/entries/{entry_id}
-      - mcp: ugoite://{space_id}/entries/{entry_id}
-    requirements:
-      - REQ-ENTRY-008
+- id: STORY-006
+  title: Voice-to-Form
+  type: BYOAI
+  as_a: mobile user
+  i_want: to record a voice memo and have my chosen AI assistant structure it
+  so_that: 'I can use the best AI model available (Claude, GPT-4, etc.) without being locked into the app''s built-in
+    model.
 
-  - id: STORY-007
-    title: Computational Workbooks
-    type: Live Code
-    as_a: data-driven user
-    i_want: to embed JavaScript code blocks in my entries that execute and render results
-    so_that: I can create live reports or analyze my own knowledge base within the app.
-    acceptance_criteria:
-      - Markdown code blocks tagged `javascript` can be executed
-      - Code execution is handled by explicit tooling (future)
-      - Output (text, tables, charts) is rendered interactively below the code block
-    related_apis:
-      - rest: POST /spaces/{space_id}/entries/{entry_id}/blocks/{block_id}/execute
-    requirements: []
-
-  - id: STORY-008
-    title: Agentic Refactoring
-    type: BYOAI
-    as_a: user with a messy space
-    i_want: to ask my AI agent to "clean up this folder"
-    so_that: I can leverage external intelligence to organize my knowledge base on demand.
-    acceptance_criteria:
-      - App exposes MCP resources for entry discovery and updates
-      - User asks Agent: "Find duplicates in Project X and merge them."
-      - Agent executes the logic and presents the result for confirmation
-    related_apis:
-      - mcp: ugoite://{space_id}/entries/list
-      - rest: GET/PUT /spaces/{space_id}/entries/{entry_id}
-    requirements: []
-
-  - id: STORY-009
-    title: Data Grid
-    type: Form
-    as_a: power user
-    i_want: to view and edit my form data in a spreadsheet-like grid
-    so_that: I can bulk edit, copy-paste to/from Excel, and manage data efficiently.
-    acceptance_criteria:
-      - Form Detail view presents a data grid
-      - Drag Select: Users can drag to select multiple cells (rectangular selection) and copy
-      - Inline Edit: Users can toggle Edit Mode and edit cells in place
-      - Quick Add: Users can add a new row (Entry) directly from the grid view
-      - Changes are saved immediately or on blur
-    related_apis:
-      - rest: PUT /spaces/{space_id}/entries/{entry_id}
-      - rest: POST /spaces/{space_id}/entries
-    requirements:
-      - REQ-FE-030
-      - REQ-FE-031
+    '
+  acceptance_criteria:
+  - User records audio; app saves it as an entry asset
+  - User invokes their connected MCP Agent (e.g., "Format this voice entry")
+  - Agent reads the transcript (via MCP), extracts fields, and updates the entry with H2 headers
+  requirements:
+  - REQ-ENTRY-008
+  status: planned
+  implementation_notes: Asset upload exists, but recording/transcription and MCP entry read/update coverage are
+    not shipped.
+  planned_apis:
+  - MCP entry-detail resource
+  - MCP entry update tool
+  - transcription integration
+  available_api:
+  - 'rest: POST /spaces/{space_id}/assets'
+  - 'rest: PUT /spaces/{space_id}/entries/{entry_id}'
+- id: STORY-007
+  title: Computational Workbooks
+  type: Live Code
+  as_a: data-driven user
+  i_want: to embed JavaScript code blocks in my entries that execute and render results
+  so_that: I can create live reports or analyze my own knowledge base within the app.
+  acceptance_criteria:
+  - Markdown code blocks tagged `javascript` can be executed
+  - Code execution is handled by explicit tooling (future)
+  - Output (text, tables, charts) is rendered interactively below the code block
+  requirements: []
+  status: planned
+  implementation_notes: No code-block execution endpoint or sandbox is shipped.
+  planned_apis:
+  - rest: POST /spaces/{space_id}/entries/{entry_id}/blocks/{block_id}/execute
+- id: STORY-008
+  title: Agentic Refactoring
+  type: BYOAI
+  as_a: user with a messy space
+  i_want: to ask my AI agent to "clean up this folder"
+  so_that: I can leverage external intelligence to organize my knowledge base on demand.
+  acceptance_criteria:
+  - App exposes MCP resources for entry discovery and updates
+  - User asks Agent: Find duplicates in Project X and merge them.
+  - Agent executes the logic and presents the result for confirmation
+  requirements: []
+  status: planned
+  implementation_notes: The current MCP surface is an authenticated Entry-list resource only; mutation tools and
+    confirmation workflows are not shipped.
+  planned_apis:
+  - MCP entry-detail resources
+  - MCP mutation tools with confirmation
+  available_api:
+  - 'mcp: GET /mcp/resources/{space_id}/entries/list'
+- id: STORY-009
+  title: Data Grid
+  type: Form
+  as_a: power user
+  i_want: to view and edit my form data in a spreadsheet-like grid
+  so_that: I can bulk edit, copy-paste to/from Excel, and manage data efficiently.
+  acceptance_criteria:
+  - Form Detail view presents a data grid
+  - Drag Select: Users can drag to select multiple cells (rectangular selection) and copy
+  - Inline Edit: Users can toggle Edit Mode and edit cells in place
+  - Quick Add: Users can add a new row (Entry) directly from the grid view
+  - Changes are saved immediately or on blur
+  related_apis:
+  - rest: PUT /spaces/{space_id}/entries/{entry_id}
+  - rest: POST /spaces/{space_id}/entries
+  requirements:
+  - REQ-FE-030
+  - REQ-FE-031
+  status: implemented

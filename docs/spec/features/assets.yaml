@@ -1,60 +1,59 @@
-# Asset APIs
-
-version: "0.1"
-updated: "2026-01"
+version: '0.2'
+updated: '2026-06-23'
 kind: assets
-
 apis:
-  - id: asset.upload
-    method: POST
-    backend:
-      path: /spaces/{space_id}/assets
-      file: backend/src/app/api/endpoints/asset.py
-      function: upload_asset_endpoint
-    frontend:
-      path: /spaces/{space_id}/assets
-      file: frontend/src/routes/spaces/[space_id]/assets.tsx
-      function: SpaceAssetsRoute
-    ugoite_core:
-      file: ugoite-core/src/asset.rs
-      function: save_asset
-    ugoite_cli:
-      command: ugoite asset upload
-      file: ugoite-cli/src/commands/asset.rs
-      function: run
-
-  - id: asset.list
-    method: GET
-    backend:
-      path: /spaces/{space_id}/assets
-      file: backend/src/app/api/endpoints/asset.py
-      function: list_assets_endpoint
-    frontend:
-      path: /spaces/{space_id}/assets
-      file: frontend/src/routes/spaces/[space_id]/assets.tsx
-      function: SpaceAssetsRoute
-    ugoite_core:
-      file: ugoite-core/src/asset.rs
-      function: list_assets
-    ugoite_cli:
-      command: ugoite asset list
-      file: ugoite-cli/src/commands/asset.rs
-      function: run
-
-  - id: asset.delete
-    method: DELETE
-    backend:
-      path: /spaces/{space_id}/assets/{asset_id}
-      file: backend/src/app/api/endpoints/asset.py
-      function: delete_asset_endpoint
-    frontend:
-      path: /spaces/{space_id}/assets/{asset_id}
-      file: frontend/src/routes/spaces/[space_id]/assets/[asset_id].tsx
-      function: SpaceAssetDetailRoute
-    ugoite_core:
-      file: ugoite-core/src/asset.rs
-      function: delete_asset
-    ugoite_cli:
-      command: ugoite asset delete
-      file: ugoite-cli/src/commands/asset.rs
-      function: run
+- id: asset.list
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/assets
+    file: crates/ugoite-server/src/lib.rs
+    function: list_assets
+  frontend:
+    path: /spaces/{space_id}/assets
+    file: frontend/src/lib/asset-api.ts
+    function: assetApi.list
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: list_assets
+  ugoite_cli:
+    command: ugoite asset list
+    file: crates/ugoite-cli/src/commands/asset.rs
+    function: run
+- id: asset.upload
+  method: POST
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/assets
+    file: crates/ugoite-server/src/lib.rs
+    function: upload_asset
+  frontend:
+    path: /spaces/{space_id}/assets
+    file: frontend/src/lib/asset-api.ts
+    function: assetApi.upload
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: save_asset
+  ugoite_cli:
+    command: ugoite asset upload
+    file: crates/ugoite-cli/src/commands/asset.rs
+    function: run
+  notes: REST and browser implemented; remote CLI upload is rejected in this release.
+- id: asset.delete
+  method: DELETE
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/assets/{asset_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: delete_asset
+  frontend:
+    path: /spaces/{space_id}/assets/{asset_id}
+    file: frontend/src/lib/asset-api.ts
+    function: assetApi.delete
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: delete_asset
+  ugoite_cli:
+    command: ugoite asset delete
+    file: crates/ugoite-cli/src/commands/asset.rs
+    function: run

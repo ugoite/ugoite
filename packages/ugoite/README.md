@@ -1,31 +1,13 @@
-# ugoite installer package
+# ugoite npm installer
 
-This directory is the public package-managed distribution surface for the
-released `ugoite` CLI.
+Release-oriented installer package source for Ugoite CLI binaries on supported Linux and macOS architectures. A checkout of this repository does not prove that the npm package or matching GitHub release assets have been published.
 
-The repository root `package.json` remains private and only exists for
-repository-level Husky/commitlint tooling. This package is the public metadata
-surface that release automation versions for registry publication.
+The package is not the repository development toolchain and does not contain the Ugoite application. When a matching package version and GitHub release exist, its `ugoite-install` executable resolves the release archive, downloads the checksum manifest and signature material expected by the release process, verifies the archive, and installs the CLI binary.
 
-## Install after publish
+For an actually published package, prefer a pinned version:
 
 ```bash
-npm install -g ugoite
-ugoite-install
-ugoite --help
+npx ugoite@<version>
 ```
 
-`ugoite-install` boots the canonical `scripts/install-ugoite-cli.sh` release
-installer from the matching version tag in this repository. By default it uses
-the package version as `UGOITE_VERSION` so the package and the released Rust CLI
-stay aligned.
-
-Environment passthrough:
-
-- `UGOITE_VERSION`
-- `UGOITE_INSTALL_DIR`
-- `UGOITE_GITHUB_REPO`
-- `UGOITE_DOWNLOAD_BASE_URL`
-
-Current package metadata targets the same released CLI targets as the shell
-installer today: Linux/macOS on `x64` and `arm64`.
+Do not use this package as a replacement for `mise`, Rust, or Deno when developing the repository.

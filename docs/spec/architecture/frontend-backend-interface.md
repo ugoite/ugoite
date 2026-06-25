@@ -1,86 +1,13 @@
-# Frontend–Backend Interface (Behavioral Contracts)
+# Frontend–server interface
 
-This document defines the interaction contracts between the frontend (SolidStart)
-and backend (FastAPI). It complements the REST reference by focusing on behavior
-and responsibility boundaries.
+The browser uses `/api` when the server hosts static files or a development proxy is present. The server-generated OpenAPI paths omit that deployment prefix.
 
-## Responsibility Matrix
+Frontend product API modules call the Rust/WASM portable protocol. Rust prepares method/path/query/body/auth metadata and decodes responses; JavaScript performs `fetch`, forwards SSR credentials, manages cookies, and tracks loading state.
 
-| Feature | Frontend | Backend | Shared Contract |
-|---|---|---|---|
-| State management | Optimistic updates, local cache, selection/view state | Persistence, history, indexing | `revision_id` optimistic concurrency |
-| Validation | UI/form validation, basic format checks | Form validation, business rules, integrity checks | Request/response models |
-| Search & query | Query construction + display | Indexing, query execution | Query payload shape |
-| Code execution | Code execution UI (future) | MCP host | MCP protocol |
+Contracts:
 
-## Interaction Patterns
-
-### Optimistic Updates & Concurrency
-
-- Frontend sends updates with `parent_revision_id`.
-- Backend compares `parent_revision_id` with current head.
-- On match: backend persists, appends history, returns new `revision_id`.
-- On mismatch: backend returns **409 Conflict** with the current revision info.
-- Current entry-editor recovery flow keeps the local draft visible, shows refresh
-  guidance, and leaves merge/reconciliation to the user. A dedicated merge UI is
-  not part of the current milestone contract.
-
-### Entry Creation & Indexing
-
-- Frontend always sends Markdown to the backend and may compose that Markdown
-  from structured inputs (e.g., Web form, Chat), but it does not parse Markdown
-  for business logic or indexing rules.
-- Frontend supports multiple authoring modes for form-first entries: Markdown,
-  Web form, and Chat Q&A. Web form/Chat are transformed to Markdown before API
-  submission.
-- Backend/CLI parses frontmatter/H2 sections, updates indices, and returns
-  extracted properties (via entry list / query / get endpoints).
-- For create/update/restore flows, backend MAY pre-check authorization by
-  calling `ugoite-core` helpers such as `require_markdown_write()` and
-  `require_entry_write()` before invoking the mutation itself.
-- ACL evaluation still lives in `ugoite-core`; the backend remains a thin
-  adapter that translates HTTP requests into core authorization + mutation
-  calls and returns `403 Forbidden` on authorization failure.
-
-### Space Switching
-
-- Frontend clears selection/editor state on space change.
-- Frontend reloads space-scoped resources (entries, forms, etc.).
-
-### Frontend API Proxy Boundary
-
-- The frontend `/api/*` proxy MUST pin upstream requests to the configured
-  `BACKEND_URL` origin.
-- Malformed or protocol-relative target paths MUST be rejected with **400 Bad
-  Request** before the proxy copies browser bearer cookies or other credentials
-  upstream.
-
-## Storage Boundary (Backend ↔ ugoite-core)
-
-- All runtime filesystem I/O lives behind the shared Rust storage abstraction.
-  The current backend/CLI runtime uses `ugoite-core`'s OpenDAL-backed adapter
-  layer over `ugoite-minimum`.
-- The earlier Python/`fsspec` implementation is historical context only and is
-  not part of the current runtime boundary.
-- Backend is a routing/translation layer and must not perform direct filesystem operations.
-- The fsspec-to-OpenDAL runtime transition is complete. Remaining Milestone 3
-  work is about continuing to extract portable logic into `ugoite-minimum`, not
-  about maintaining two active runtime storage stacks.
-- Backend tests must cover OpenDAL `fs://` (local filesystem) and `memory://`
-  backends via the shared core bindings.
-
-## Error Handling Standards
-
-| HTTP | Frontend Behavior | User Feedback |
-|---|---|---|
-| 400 | Treat as validation bug; log details | "Invalid input" |
-| 404 | Remove stale selection; redirect to list | "Not found" |
-| 409 | Keep the current draft visible and prompt an explicit refresh | "Changed on server. Refresh to load the latest version." |
-| 422 | Highlight invalid fields | Field-level error |
-| 5xx | Retry/backoff or show offline mode | "Server error" |
-
-## MCP Content Boundary
-
-- `ugoite-core` remains the source of entry data and ACL filtering for MCP resources.
-- The backend MCP adapter is responsible for the final agent-facing framing of that data.
-- MCP responses MUST label entry `content`/`markdown` fields as untrusted user input and strip raw HTML or `<script>`-style constructs before serialization.
+- JSON uses server/OpenAPI field names at the transport boundary.
+- Authentication failures use `401`; known identities without permission use `403`.
+- optimistic Entry updates use revision IDs and may return `409` conflicts.
+- browser routes must not bypass Space authorization.
+- current runtime capabilities are `server-backed`, `browserLocal=false`, and `sync=none`.

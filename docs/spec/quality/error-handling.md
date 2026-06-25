@@ -1,37 +1,30 @@
-# Error Handling & Resilience
+# Error handling and resilience
 
-This document defines cross-cutting error-handling principles for Ugoite.
+## Server mapping
 
-## Principles
+The Rust server maps typed core errors as follows:
 
-- Prefer **clear, stable HTTP status codes** over ambiguous 200 responses.
-- Preserve the **root cause** in logs but return **safe messages** to clients.
-- Treat **409 Conflict** as a first-class, expected outcome (optimistic concurrency).
-- Do not leak filesystem paths or secrets in API errors.
+| Core error kind | HTTP status |
+|---|---:|
+| invalid input | 422 |
+| forbidden | 403 |
+| not found | 404 |
+| conflict | 409 |
+| expired | 410 |
+| unimplemented | 501 |
+| dependency unavailable | 502 |
+| internal | 500 |
 
-## Common Scenarios
+Identifier parsing failures at the HTTP boundary use 400. Missing or invalid authentication uses 401. Explicitly unavailable login modes and rejected scope-enforced service identities use 403.
 
-### Validation Errors
+Typed core errors return a JSON object with stable `code` and safe `message` fields. Adapter-only errors may use a `detail` field. Unexpected failures must not expose filesystem paths, credentials, integrity secrets, or complete user content.
 
-- Use **400** for invalid path ids / malformed requests.
-- Use **422** for semantic validation failures (e.g., Form validation warnings).
+## Client behavior
 
-### Concurrency Conflicts
+- Treat 409 as a recoverable revision conflict and offer refresh/retry guidance.
+- Treat 410 SQL sessions as expired and create a new session.
+- Treat 501 as an intentionally unavailable capability rather than retrying indefinitely.
+- Preserve the current editor value while displaying save failures.
+- Do not interpret a 2xx response as durable success until the corresponding client decoder accepts the response body.
 
-- Use **409** with enough context for the client to recover:
-  - current revision id
-  - or current entry snapshot
-
-### Not Found
-
-- Use **404** when space/entry/form does not exist.
-
-### Server Errors
-
-- Use **5xx** for unexpected failures.
-- Log exceptions with request context.
-
-## Client Behavior
-
-See [frontend–backend contracts](../architecture/frontend-backend-interface.md#error-handling-standards).
-
+See [frontend–backend interface](../architecture/frontend-backend-interface.md) for transport ownership and protocol decoding.

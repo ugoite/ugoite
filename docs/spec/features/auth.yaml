@@ -1,56 +1,89 @@
-# Explicit Login APIs
-
-version: "0.1"
-updated: "2026-03"
+version: '0.2'
+updated: '2026-06-23'
 kind: auth
-
 apis:
-  - id: auth.config
-    method: GET
-    backend:
-      path: /auth/config
-      file: backend/src/app/api/endpoints/auth.py
-      function: auth_config_endpoint
-    frontend:
-      path: /login
-      file: frontend/src/routes/login.tsx
-      function: LoginRoute
-    ugoite_core:
-      file: ugoite-core/ugoite_core/auth.py
-      function: validate_totp_code
-
-  - id: auth.login
-    method: POST
-    backend:
-      path: /auth/login
-      file: backend/src/app/api/endpoints/auth.py
-      function: login_endpoint
-    frontend:
-      path: /login
-      file: frontend/src/routes/login.tsx
-      function: LoginRoute
-    ugoite_core:
-      file: ugoite-core/ugoite_core/auth.py
-      function: mint_signed_bearer_token
-    ugoite_cli:
-      command: ugoite auth login
-      file: ugoite-cli/src/commands/auth.rs
-      function: run
-
-  - id: auth.mock-oauth
-    method: POST
-    backend:
-      path: /auth/mock-oauth
-      file: backend/src/app/api/endpoints/auth.py
-      function: mock_oauth_login_endpoint
-    frontend:
-      path: /login
-      file: frontend/src/routes/login.tsx
-      function: LoginRoute
-    ugoite_core:
-      file: ugoite-core/ugoite_core/auth.py
-      function: mint_signed_bearer_token
-    ugoite_cli:
-      command: ugoite auth login --mock-oauth
-      file: ugoite-cli/src/commands/auth.rs
-      function: run
+- id: auth.config
+  method: GET
+  status: implemented
+  backend:
+    path: /auth/config
+    file: crates/ugoite-server/src/lib.rs
+    function: auth_config
+  frontend:
+    path: /login
+    file: frontend/src/lib/auth-api.ts
+    function: authApi.getConfig
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: not_applicable
+  notes: Server configuration response; no core service call.
+- id: auth.login
+  method: POST
+  status: contracted_unavailable
+  backend:
+    path: /auth/login
+    file: crates/ugoite-server/src/lib.rs
+    function: auth_login
+  frontend:
+    path: /login
+    file: frontend/src/lib/auth-api.ts
+    function: authApi.loginWithPasskeyTotp
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: not_applicable
+  ugoite_cli:
+    command: ugoite auth login
+    file: crates/ugoite-cli/src/commands/auth.rs
+    function: run
+  notes: Route returns HTTP 403 in this release; passkey/TOTP verification is not implemented.
+- id: auth.mock-oauth
+  method: POST
+  status: implemented
+  backend:
+    path: /auth/mock-oauth
+    file: crates/ugoite-server/src/lib.rs
+    function: auth_mock_oauth
+  frontend:
+    path: /login
+    file: frontend/src/lib/auth-api.ts
+    function: authApi.loginWithMockOauth
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: not_applicable
+  ugoite_cli:
+    command: ugoite auth login --mock-oauth
+    file: crates/ugoite-cli/src/commands/auth.rs
+    function: run
+  notes: Development-only when UGOITE_DEV_AUTH_MODE=mock-oauth.
+- id: auth.session.get
+  method: GET
+  status: implemented
+  backend:
+    path: /auth/session
+    file: crates/ugoite-server/src/lib.rs
+    function: auth_session
+  frontend:
+    path: /login
+    file: frontend/src/lib/auth-api.ts
+    function: authApi.getSession
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: not_applicable
+- id: auth.session.delete
+  method: DELETE
+  status: implemented
+  backend:
+    path: /auth/session
+    file: crates/ugoite-server/src/lib.rs
+    function: auth_session_delete
+  frontend:
+    path: /login
+    file: frontend/src/lib/auth-api.ts
+    function: authApi.clearSession
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: not_applicable
+  ugoite_cli:
+    command: ugoite auth logout
+    file: crates/ugoite-cli/src/commands/auth.rs
+    function: run

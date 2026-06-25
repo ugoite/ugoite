@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
 
 ## Contributing
 
-Check out the [CONTRIBUTING.md](./CONTRIBUTING.md) guide for more details on getting started with contributing to this project.
+Check out the the upstream project contribution guide guide for more details on getting started with contributing to this project.
 
 ## Getting help
 

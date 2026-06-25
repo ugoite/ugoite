@@ -2,178 +2,235 @@
 // REQ-FE-005a: Editor content graceful handling
 // REQ-FE-009: Conflict message display
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@solidjs/testing-library";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { MarkdownEditor } from "./MarkdownEditor";
 
 describe("MarkdownEditor", () => {
-	it("should render textarea with initial content", () => {
-		render(() => <MarkdownEditor content="# Hello World" onChange={() => {}} />);
+  it("should render textarea with initial content", () => {
+    render(() => (
+      <MarkdownEditor
+        content="# Hello World"
+        onChange={() => {}}
+      />
+    ));
 
-		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-		expect(textarea.value).toBe("# Hello World");
-	});
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("# Hello World");
+  });
 
-	it("should call onChange when content is edited", async () => {
-		const onChange = vi.fn();
-		render(() => <MarkdownEditor content="# Initial" onChange={onChange} />);
+  it("should call onChange when content is edited", async () => {
+    const onChange = vi.fn();
+    render(() => <MarkdownEditor content="# Initial" onChange={onChange} />);
 
-		const textarea = screen.getByRole("textbox");
-		fireEvent.input(textarea, { target: { value: "# Updated" } });
+    const textarea = screen.getByRole("textbox");
+    fireEvent.input(textarea, { target: { value: "# Updated" } });
 
-		expect(onChange).toHaveBeenCalledWith("# Updated");
-	});
+    expect(onChange).toHaveBeenCalledWith("# Updated");
+  });
 
-	it("should render markdown preview when preview mode is enabled", async () => {
-		render(() => <MarkdownEditor content="# Preview Test" onChange={() => {}} showPreview />);
+  it("should render markdown preview when preview mode is enabled", async () => {
+    render(() => (
+      <MarkdownEditor
+        content="# Preview Test"
+        onChange={() => {}}
+        showPreview
+      />
+    ));
 
-		// Should show preview toggle
-		const previewButton = screen.getByRole("button", { name: /preview/i });
-		expect(previewButton).toBeInTheDocument();
-	});
+    // Should show preview toggle
+    const previewButton = screen.getByRole("button", { name: /preview/i });
+    expect(previewButton).toBeInTheDocument();
+  });
 
-	it("should be readonly when disabled", () => {
-		render(() => <MarkdownEditor content="# Readonly" onChange={() => {}} disabled />);
+  it("should be readonly when disabled", () => {
+    render(() => (
+      <MarkdownEditor content="# Readonly" onChange={() => {}} disabled />
+    ));
 
-		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-		expect(textarea.disabled).toBe(true);
-	});
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(textarea.disabled).toBe(true);
+  });
 
-	it("should show save indicator when dirty", () => {
-		render(() => <MarkdownEditor content="# Test" onChange={() => {}} isDirty />);
+  it("should show save indicator when dirty", () => {
+    render(() => (
+      <MarkdownEditor
+        content="# Test"
+        onChange={() => {}}
+        isDirty
+      />
+    ));
 
-		expect(screen.getByText(/unsaved/i)).toBeInTheDocument();
-	});
+    expect(screen.getByText(/unsaved/i)).toBeInTheDocument();
+  });
 
-	it("should call onSave when save button is clicked", async () => {
-		const onSave = vi.fn();
-		render(() => <MarkdownEditor content="# Test" onChange={() => {}} isDirty onSave={onSave} />);
+  it("should call onSave when save button is clicked", async () => {
+    const onSave = vi.fn();
+    render(() => (
+      <MarkdownEditor
+        content="# Test"
+        onChange={() => {}}
+        isDirty
+        onSave={onSave}
+      />
+    ));
 
-		const saveButton = screen.getByRole("button", { name: /save/i });
-		fireEvent.click(saveButton);
+    const saveButton = screen.getByRole("button", { name: /save/i });
+    fireEvent.click(saveButton);
 
-		expect(onSave).toHaveBeenCalled();
-	});
+    expect(onSave).toHaveBeenCalled();
+  });
 
-	it("should support keyboard shortcut for save", async () => {
-		const onSave = vi.fn();
-		render(() => <MarkdownEditor content="# Test" onChange={() => {}} isDirty onSave={onSave} />);
+  it("should support keyboard shortcut for save", async () => {
+    const onSave = vi.fn();
+    render(() => (
+      <MarkdownEditor
+        content="# Test"
+        onChange={() => {}}
+        isDirty
+        onSave={onSave}
+      />
+    ));
 
-		const textarea = screen.getByRole("textbox");
-		fireEvent.keyDown(textarea, { key: "s", metaKey: true });
+    const textarea = screen.getByRole("textbox");
+    fireEvent.keyDown(textarea, { key: "s", metaKey: true });
 
-		expect(onSave).toHaveBeenCalled();
-	});
+    expect(onSave).toHaveBeenCalled();
+  });
 
-	it("REQ-FE-009: should show conflict message when there is a conflict", () => {
-		render(() => (
-			<MarkdownEditor
-				content="# Test"
-				onChange={() => {}}
-				conflictMessage="Revision mismatch - please refresh"
-			/>
-		));
+  it("REQ-FE-009: should show conflict message when there is a conflict", () => {
+    render(() => (
+      <MarkdownEditor
+        content="# Test"
+        onChange={() => {}}
+        conflictMessage="Revision mismatch - please refresh"
+      />
+    ));
 
-		expect(screen.getByText(/revision mismatch/i)).toBeInTheDocument();
-	});
+    expect(screen.getByText(/revision mismatch/i)).toBeInTheDocument();
+  });
 
-	it("should handle undefined content gracefully", () => {
-		// @ts-expect-error Testing undefined content handling
-		render(() => <MarkdownEditor content={undefined} onChange={() => {}} />);
+  it("should handle undefined content gracefully", () => {
+    // @ts-expect-error Testing undefined content handling
+    render(() => <MarkdownEditor content={undefined} onChange={() => {}} />);
 
-		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-		// Should not show "undefined" as text, should be empty
-		expect(textarea.value).toBe("");
-		expect(textarea.value).not.toBe("undefined");
-	});
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    // Should not show "undefined" as text, should be empty
+    expect(textarea.value).toBe("");
+    expect(textarea.value).not.toBe("undefined");
+  });
 
-	it("should handle null content gracefully", () => {
-		// @ts-expect-error Testing null content handling
-		render(() => <MarkdownEditor content={null} onChange={() => {}} />);
+  it("should handle null content gracefully", () => {
+    // @ts-expect-error Testing null content handling
+    render(() => <MarkdownEditor content={null} onChange={() => {}} />);
 
-		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-		// Should not show "null" as text, should be empty
-		expect(textarea.value).toBe("");
-		expect(textarea.value).not.toBe("null");
-	});
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    // Should not show "null" as text, should be empty
+    expect(textarea.value).toBe("");
+    expect(textarea.value).not.toBe("null");
+  });
 
-	it("should render preview with undefined content without crashing", async () => {
-		// @ts-expect-error Testing undefined content handling in preview
-		render(() => <MarkdownEditor content={undefined} onChange={() => {}} showPreview />);
+  it("should render preview with undefined content without crashing", async () => {
+    // @ts-expect-error Testing undefined content handling in preview
+    render(() => (
+      <MarkdownEditor content={undefined} onChange={() => {}} showPreview />
+    ));
 
-		const previewButton = screen.getByRole("button", { name: /preview/i });
-		fireEvent.click(previewButton);
+    const previewButton = screen.getByRole("button", { name: /preview/i });
+    fireEvent.click(previewButton);
 
-		// Should toggle to preview mode without crashing
-		expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
-	});
+    // Should toggle to preview mode without crashing
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+  });
 
-	it("should display placeholder when content is empty", () => {
-		render(() => <MarkdownEditor content="" onChange={() => {}} placeholder="Start typing..." />);
+  it("should display placeholder when content is empty", () => {
+    render(() => (
+      <MarkdownEditor
+        content=""
+        onChange={() => {}}
+        placeholder="Start typing..."
+      />
+    ));
 
-		const textarea = screen.getByPlaceholderText("Start typing...");
-		expect(textarea).toBeInTheDocument();
-	});
+    const textarea = screen.getByPlaceholderText("Start typing...");
+    expect(textarea).toBeInTheDocument();
+  });
 
-	it("should render split mode with editor and preview side by side", () => {
-		render(() => <MarkdownEditor content="# Split Test" onChange={() => {}} mode="split" />);
+  it("should render split mode with editor and preview side by side", () => {
+    render(() => (
+      <MarkdownEditor content="# Split Test" onChange={() => {}} mode="split" />
+    ));
 
-		const textareas = document.querySelectorAll("textarea");
-		expect(textareas).toHaveLength(1);
-		const preview = document.querySelector(".preview");
-		expect(preview).toBeInTheDocument();
-	});
+    const textareas = document.querySelectorAll("textarea");
+    expect(textareas).toHaveLength(1);
+    const preview = document.querySelector(".preview");
+    expect(preview).toBeInTheDocument();
+  });
 
-	it("REQ-FE-005: split preview escapes raw HTML content", () => {
-		render(() => (
-			<MarkdownEditor
-				content={'# Preview\n\n<img src=x onerror="alert(1)">\n\n**bold**'}
-				onChange={() => {}}
-				mode="split"
-			/>
-		));
+  it("REQ-FE-005: split preview escapes raw HTML content", () => {
+    render(() => (
+      <MarkdownEditor
+        content={'# Preview\n\n<img src=x onerror="alert(1)">\n\n**bold**'}
+        onChange={() => {}}
+        mode="split"
+      />
+    ));
 
-		const preview = document.querySelector(".preview");
-		expect(preview).toBeInTheDocument();
-		expect(preview?.querySelector("img")).not.toBeInTheDocument();
-		expect(preview).toHaveTextContent('<img src=x onerror="alert(1)">');
-		expect(preview?.querySelector("strong")).toHaveTextContent("bold");
-	});
+    const preview = document.querySelector(".preview");
+    expect(preview).toBeInTheDocument();
+    expect(preview?.querySelector("img")).not.toBeInTheDocument();
+    expect(preview).toHaveTextContent('<img src=x onerror="alert(1)">');
+    expect(preview?.querySelector("strong")).toHaveTextContent("bold");
+  });
 
-	it("should render forced preview mode without edit toggle", () => {
-		render(() => <MarkdownEditor content="# Preview" onChange={() => {}} mode="preview" />);
+  it("should render forced preview mode without edit toggle", () => {
+    render(() => (
+      <MarkdownEditor content="# Preview" onChange={() => {}} mode="preview" />
+    ));
 
-		expect(document.querySelector(".preview")).toBeInTheDocument();
-		expect(document.querySelector("textarea")).not.toBeInTheDocument();
-	});
+    expect(document.querySelector(".preview")).toBeInTheDocument();
+    expect(document.querySelector("textarea")).not.toBeInTheDocument();
+  });
 
-	it("should not call onSave when not dirty on Ctrl+S", async () => {
-		const onSave = vi.fn();
-		render(() => (
-			<MarkdownEditor content="# Test" onChange={() => {}} isDirty={false} onSave={onSave} />
-		));
+  it("should not call onSave when not dirty on Ctrl+S", async () => {
+    const onSave = vi.fn();
+    render(() => (
+      <MarkdownEditor
+        content="# Test"
+        onChange={() => {}}
+        isDirty={false}
+        onSave={onSave}
+      />
+    ));
 
-		const textarea = screen.getByRole("textbox");
-		fireEvent.keyDown(textarea, { key: "s", ctrlKey: true });
+    const textarea = screen.getByRole("textbox");
+    fireEvent.keyDown(textarea, { key: "s", ctrlKey: true });
 
-		expect(onSave).not.toHaveBeenCalled();
-	});
+    expect(onSave).not.toHaveBeenCalled();
+  });
 
-	it("does not save on non-matching keydown", () => {
-		const onSave = vi.fn();
-		render(() => (
-			<MarkdownEditor content="# Test" onChange={() => {}} isDirty={true} onSave={onSave} />
-		));
-		const textarea = screen.getByRole("textbox");
-		fireEvent.keyDown(textarea, { key: "x", metaKey: true });
-		expect(onSave).not.toHaveBeenCalled();
-	});
+  it("does not save on non-matching keydown", () => {
+    const onSave = vi.fn();
+    render(() => (
+      <MarkdownEditor
+        content="# Test"
+        onChange={() => {}}
+        isDirty={true}
+        onSave={onSave}
+      />
+    ));
+    const textarea = screen.getByRole("textbox");
+    fireEvent.keyDown(textarea, { key: "x", metaKey: true });
+    expect(onSave).not.toHaveBeenCalled();
+  });
 
-	it("renders split mode with null content", () => {
-		// @ts-expect-error Testing null content in split mode
-		render(() => <MarkdownEditor content={null} onChange={() => {}} mode="split" />);
-		const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-		expect(textarea.value).toBe("");
-		expect(document.querySelector(".preview")).toBeInTheDocument();
-	});
+  it("renders split mode with null content", () => {
+    // @ts-expect-error Testing null content in split mode
+    render(() => (
+      <MarkdownEditor content={null} onChange={() => {}} mode="split" />
+    ));
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("");
+    expect(document.querySelector(".preview")).toBeInTheDocument();
+  });
 });

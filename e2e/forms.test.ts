@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { getBackendUrl, waitForServers } from "./lib/client";
+import { getBackendUrl, waitForServers } from "./lib/client.ts";
 
 const spaceId = "default";
 

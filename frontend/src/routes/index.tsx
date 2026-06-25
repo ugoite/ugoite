@@ -1,68 +1,75 @@
-import { A } from "@solidjs/router";
-import { createMemo, createResource } from "solid-js";
-import { authApi } from "~/lib/auth-api";
+import { createMemo, createSignal, onMount } from "solid-js";
+import { authApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 
-const learnMoreHref =
-	process.env.NODE_ENV === "development"
-		? "http://localhost:4321/getting-started"
-		: "https://ugoite.github.io/ugoite/getting-started";
+const learnMoreHref = process.env.NODE_ENV === "development"
+  ? "http://localhost:4321/getting-started"
+  : "https://ugoite.github.io/ugoite/getting-started";
 
 export default function Home() {
-	const [authSession] = createResource(async () => {
-		try {
-			return await authApi.getSession();
-		} catch {
-			return { authenticated: false };
-		}
-	});
-	const copy = createMemo(() => ({
-		subtitle: t("homePage.subtitle"),
-		login: t("homePage.login"),
-		openSpaces: t("homePage.openSpaces"),
-		learnMore: t("homePage.learnMore"),
-		loginHint: t("homePage.loginHint"),
-		markdownTitle: t("homePage.card.markdown.title"),
-		markdownDescription: t("homePage.card.markdown.description"),
-		aiTitle: t("homePage.card.ai.title"),
-		aiDescription: t("homePage.card.ai.description"),
-		localFirstTitle: t("homePage.card.localFirst.title"),
-		localFirstDescription: t("homePage.card.localFirst.description"),
-	}));
-	const openSpacesHref = createMemo(() =>
-		authSession()?.authenticated === false ? "/login?next=%2Fspaces" : "/spaces",
-	);
+  const [authSession, setAuthSession] = createSignal({
+    authenticated: false,
+  });
+  onMount(() => {
+    void (async () => {
+      try {
+        setAuthSession(await authApi.getSession());
+      } catch {
+        setAuthSession({ authenticated: false });
+      }
+    })();
+  });
+  const copy = createMemo(() => ({
+    subtitle: t("homePage.subtitle"),
+    login: t("homePage.login"),
+    openSpaces: t("homePage.openSpaces"),
+    learnMore: t("homePage.learnMore"),
+    loginHint: t("homePage.loginHint"),
+    markdownTitle: t("homePage.card.markdown.title"),
+    markdownDescription: t("homePage.card.markdown.description"),
+    aiTitle: t("homePage.card.ai.title"),
+    aiDescription: t("homePage.card.ai.description"),
+    localFirstTitle: t("homePage.card.localFirst.title"),
+    localFirstDescription: t("homePage.card.localFirst.description"),
+  }));
+  const openSpacesHref = createMemo(() =>
+    authSession().authenticated === false ? "/login?next=%2Fspaces" : "/spaces"
+  );
 
-	return (
-		<main class="ui-page text-center mx-auto">
-			<h1 class="max-w-6xl text-4xl sm:text-6xl font-thin uppercase my-10 sm:my-16">Ugoite</h1>
-			<p class="text-base sm:text-xl mb-6 sm:mb-8 ui-muted">{copy().subtitle}</p>
-			<div class="flex justify-center gap-3 sm:gap-4 flex-wrap">
-				<A href="/login" class="ui-button ui-button-primary">
-					{copy().login}
-				</A>
-				<A href={openSpacesHref()} class="ui-button ui-button-secondary">
-					{copy().openSpaces}
-				</A>
-				<a href={learnMoreHref} class="ui-button ui-button-secondary">
-					{copy().learnMore}
-				</a>
-			</div>
-			<p class="mt-4 text-sm ui-muted">{copy().loginHint}</p>
-			<div class="mt-12 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-4xl mx-auto text-left">
-				<div class="ui-card">
-					<h3 class="text-lg font-semibold mb-2">{copy().markdownTitle}</h3>
-					<p class="ui-muted text-sm">{copy().markdownDescription}</p>
-				</div>
-				<div class="ui-card">
-					<h3 class="text-lg font-semibold mb-2">{copy().aiTitle}</h3>
-					<p class="ui-muted text-sm">{copy().aiDescription}</p>
-				</div>
-				<div class="ui-card">
-					<h3 class="text-lg font-semibold mb-2">{copy().localFirstTitle}</h3>
-					<p class="ui-muted text-sm">{copy().localFirstDescription}</p>
-				</div>
-			</div>
-		</main>
-	);
+  return (
+    <main class="ui-page text-center mx-auto">
+      <h1 class="max-w-6xl text-4xl sm:text-6xl font-thin uppercase my-10 sm:my-16">
+        Ugoite
+      </h1>
+      <p class="text-base sm:text-xl mb-6 sm:mb-8 ui-muted">
+        {copy().subtitle}
+      </p>
+      <div class="flex justify-center gap-3 sm:gap-4 flex-wrap">
+        <a href="/login" class="ui-button ui-button-primary">
+          {copy().login}
+        </a>
+        <a href={openSpacesHref()} class="ui-button ui-button-secondary">
+          {copy().openSpaces}
+        </a>
+        <a href={learnMoreHref} class="ui-button ui-button-secondary">
+          {copy().learnMore}
+        </a>
+      </div>
+      <p class="mt-4 text-sm ui-muted">{copy().loginHint}</p>
+      <div class="mt-12 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-4xl mx-auto text-left">
+        <div class="ui-card">
+          <h3 class="text-lg font-semibold mb-2">{copy().markdownTitle}</h3>
+          <p class="ui-muted text-sm">{copy().markdownDescription}</p>
+        </div>
+        <div class="ui-card">
+          <h3 class="text-lg font-semibold mb-2">{copy().aiTitle}</h3>
+          <p class="ui-muted text-sm">{copy().aiDescription}</p>
+        </div>
+        <div class="ui-card">
+          <h3 class="text-lg font-semibold mb-2">{copy().localFirstTitle}</h3>
+          <p class="ui-muted text-sm">{copy().localFirstDescription}</p>
+        </div>
+      </div>
+    </main>
+  );
 }

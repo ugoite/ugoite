@@ -1,8 +1,14 @@
 use crate::config::{effective_api_key, effective_bearer_token};
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::Deserialize;
+use serde_json::Value;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+use ugoite_api_client::{
+    decode_response, prepare_request, ApiResponse, AuthMode, Header, HttpMethod, PreparedRequest,
+    RequestBodyKind,
+};
 
 const DEV_AUTH_PROXY_HEADER_NAME: &str = "x-ugoite-dev-auth-proxy-token";
 const DEV_PASSKEY_CONTEXT_HEADER_NAME: &str = "x-ugoite-dev-passkey-context";
@@ -13,107 +19,109 @@ struct CachedDevAuthFile {
     passkey_context: Option<String>,
 }
 
-pub async fn http_get(url: &str) -> Result<serde_json::Value> {
-    ensure_safe_remote_request_url(url)?;
-    let client = reqwest::Client::new();
-    let req = add_auth_headers(client.get(url));
-    let resp = match req.send().await {
-        Ok(resp) => resp,
-        Err(error) => return Err(error.into()),
-    };
-    if !resp.status().is_success() {
-        let status = resp.status();
-        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
+/// Execute one named Ugoite API operation through the native reqwest transport.
+/// Endpoint construction and response decoding are owned by
+/// `ugoite-api-client`, which is also compiled into the browser WASM adapter.
+pub async fn execute(
+    base_url: &str,
+    operation: &str,
+    arguments: Value,
+    body: Option<Value>,
+) -> Result<Value> {
+    let prepared = prepare_request(operation, &arguments, body.as_ref())?;
+    if prepared.body_kind == RequestBodyKind::Multipart {
+        bail!("operation {operation} requires the multipart transport");
     }
-    Ok(resp.json().await?)
+    execute_prepared(base_url, prepared).await
 }
 
-pub async fn http_post(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
-    ensure_safe_remote_request_url(url)?;
-    let client = reqwest::Client::new();
-    let req = add_auth_headers(client.post(url).json(body));
-    let resp = match req.send().await {
-        Ok(resp) => resp,
-        Err(error) => return Err(error.into()),
+async fn execute_prepared(base_url: &str, prepared: PreparedRequest) -> Result<Value> {
+    let operation = prepared.operation.clone();
+    let url = join_base_and_path(base_url, &prepared.path);
+    ensure_safe_remote_request_url(&url)?;
+
+    let mut request = match prepared.method {
+        HttpMethod::Get => client().get(&url),
+        HttpMethod::Post => client().post(&url),
+        HttpMethod::Put => client().put(&url),
+        HttpMethod::Patch => client().patch(&url),
+        HttpMethod::Delete => client().delete(&url),
     };
-    if !resp.status().is_success() {
-        let status = resp.status();
-        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
+
+    for header in &prepared.headers {
+        request = request.header(header.name.as_str(), header.value.as_str());
     }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+    request = add_auth_headers(request);
+    if prepared.auth_mode == AuthMode::DevProxy {
+        request = add_dev_local_auth_headers(&url, request);
+    }
+
+    request = match (prepared.body_kind, prepared.body) {
+        (RequestBodyKind::Multipart, _) => {
+            bail!("operation {operation} requires the multipart transport")
+        }
+        (RequestBodyKind::Json, Some(body)) => request.body(body),
+        (RequestBodyKind::Json, None) => {
+            bail!("operation {operation} requires a JSON body")
+        }
+        (RequestBodyKind::None, _) => request,
+    };
+
+    let response = request
+        .send()
+        .await
+        .with_context(|| format!("send {operation} request"))?;
+    let status = response.status();
+    let status_text = status.canonical_reason().unwrap_or_default().to_string();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            value.to_str().ok().map(|value| Header {
+                name: name.as_str().to_string(),
+                value: value.to_string(),
+            })
+        })
+        .collect();
+    let body = response.text().await?;
+
+    decode_response(
+        &operation,
+        ApiResponse {
+            status: status.as_u16(),
+            status_text,
+            headers,
+            body,
+        },
+    )
+    .map_err(anyhow::Error::from)
 }
 
-pub async fn http_post_with_dev_auth_proxy(
-    url: &str,
-    body: &serde_json::Value,
-) -> Result<serde_json::Value> {
-    let client = reqwest::Client::new();
-    let req = add_dev_local_auth_headers(url, add_auth_headers(client.post(url).json(body)));
-    ensure_safe_remote_request_url(url)?;
-    let resp = match req.send().await {
-        Ok(resp) => resp,
-        Err(error) => return Err(error.into()),
-    };
-    if !resp.status().is_success() {
-        let status = resp.status();
-        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
-    }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+fn client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
 }
 
-pub async fn http_put(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
-    ensure_safe_remote_request_url(url)?;
-    let client = reqwest::Client::new();
-    let req = add_auth_headers(client.put(url).json(body));
-    let resp = match req.send().await {
-        Ok(resp) => resp,
-        Err(error) => return Err(error.into()),
-    };
-    if !resp.status().is_success() {
-        let status = resp.status();
-        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
-    }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
-}
-
-pub async fn http_patch(url: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
-    ensure_safe_remote_request_url(url)?;
-    let client = reqwest::Client::new();
-    let req = add_auth_headers(client.patch(url).json(body));
-    let resp = match req.send().await {
-        Ok(resp) => resp,
-        Err(error) => return Err(error.into()),
-    };
-    if !resp.status().is_success() {
-        let status = resp.status();
-        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
-    }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
-}
-
-pub async fn http_delete(url: &str) -> Result<serde_json::Value> {
-    ensure_safe_remote_request_url(url)?;
-    let client = reqwest::Client::new();
-    let req = add_auth_headers(client.delete(url));
-    let resp = match req.send().await {
-        Ok(resp) => resp,
-        Err(error) => return Err(error.into()),
-    };
-    if !resp.status().is_success() {
-        let status = resp.status();
-        bail!("HTTP {}: {}", status, resp.text().await.unwrap_or_default());
-    }
-    Ok(resp.json().await.unwrap_or(serde_json::Value::Null))
+fn join_base_and_path(base_url: &str, path: &str) -> String {
+    format!(
+        "{}{}",
+        base_url.trim_end_matches('/'),
+        if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{path}")
+        }
+    )
 }
 
 fn add_auth_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-    let mut r = req;
+    let mut request = req;
     if let Some(token) = effective_bearer_token() {
-        r = r.header("Authorization", format!("Bearer {token}"));
+        request = request.header("Authorization", format!("Bearer {token}"));
     } else if let Some(key) = effective_api_key() {
-        r = r.header("X-Api-Key", key);
+        request = request.header("X-Api-Key", key);
     }
-    r
+    request
 }
 
 fn ensure_safe_remote_request_url(url: &str) -> Result<()> {
@@ -179,7 +187,7 @@ fn add_dev_local_auth_headers(url: &str, req: reqwest::RequestBuilder) -> reqwes
         return req;
     }
 
-    let req = if let Some(token) = non_empty_env_var("UGOITE_DEV_AUTH_PROXY_TOKEN") {
+    let request = if let Some(token) = non_empty_env_var("UGOITE_DEV_AUTH_PROXY_TOKEN") {
         req.header(DEV_AUTH_PROXY_HEADER_NAME, token)
     } else {
         req
@@ -188,18 +196,26 @@ fn add_dev_local_auth_headers(url: &str, req: reqwest::RequestBuilder) -> reqwes
     if let Some(context) =
         non_empty_env_var("UGOITE_DEV_PASSKEY_CONTEXT").or_else(cached_dev_passkey_context)
     {
-        req.header(DEV_PASSKEY_CONTEXT_HEADER_NAME, context)
+        request.header(DEV_PASSKEY_CONTEXT_HEADER_NAME, context)
     } else {
-        req
+        request
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        add_dev_local_auth_headers, is_local_dev_request_url, DEV_AUTH_PROXY_HEADER_NAME,
-        DEV_PASSKEY_CONTEXT_HEADER_NAME,
+        add_dev_local_auth_headers, is_local_dev_request_url, join_base_and_path,
+        DEV_AUTH_PROXY_HEADER_NAME, DEV_PASSKEY_CONTEXT_HEADER_NAME,
     };
+
+    #[test]
+    fn test_api_req_api_001_joins_prepared_paths_without_double_slashes() {
+        assert_eq!(
+            join_base_and_path("https://example.com/api/", "/spaces/demo"),
+            "https://example.com/api/spaces/demo"
+        );
+    }
 
     #[test]
     fn test_dev_local_auth_headers_req_ops_015_only_allow_loopback_hosts() {

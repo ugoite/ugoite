@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { waitForServers } from "./lib/client";
+import { waitForServers } from "./lib/client.ts";
 
 test.describe("Public page stability", () => {
 	test.beforeAll(async ({ request }) => {

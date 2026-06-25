@@ -1,12 +1,20 @@
-import { expect, test, type APIRequestContext, type Playwright } from "@playwright/test";
-import { getBackendUrl, waitForServers } from "./lib/client";
+import { expect, test, type APIRequestContext } from "@playwright/test";
+import { getBackendUrl, waitForServers } from "./lib/client.ts";
 
 const OWNER_TOKEN = process.env.E2E_AUTH_BEARER_TOKEN ?? "local-dev-token";
 const ALICE_TOKEN = "alice-token";
 const BOB_TOKEN = "bob-token";
 
+type RequestContextFactory = {
+	request: {
+		newContext(options: {
+			extraHTTPHeaders: Record<string, string>;
+		}): Promise<APIRequestContext>;
+	};
+};
+
 async function authContext(
-	playwright: Playwright,
+	playwright: RequestContextFactory,
 	token: string,
 ): Promise<APIRequestContext> {
 	return playwright.request.newContext({

@@ -1,19 +1,32 @@
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
+use futures::TryStreamExt;
 use opendal::Operator;
 use rand::TryRng;
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
+use url::Url;
 
+use crate::error::{AppError, ErrorCode};
 use crate::form;
+use crate::storage::operator_from_uri_with_endpoint;
 use crate::storage::{OpendalStorage, StorageBackend};
+use ugoite_domain::id::validate_space_id;
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct StorageConnectionTestConfig {
+    pub uri: String,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+}
 
 async fn space_exists_with_storage<S: StorageBackend + ?Sized>(
     storage: &S,
     name: &str,
 ) -> Result<bool> {
+    validate_space_path_segment(name)?;
     let ws_path = format!("spaces/{name}/meta.json");
     storage.exists(&ws_path).await
 }
@@ -103,8 +116,13 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     name: &str,
     root_path: &str,
 ) -> Result<()> {
+    validate_space_path_segment(name)?;
     if space_exists_with_storage(storage, name).await? {
-        return Err(anyhow!("Space already exists: {name}"));
+        return Err(AppError::conflict(
+            ErrorCode::SpaceAlreadyExists,
+            format!("Space already exists: {name}"),
+        )
+        .into());
     }
 
     let ws_path = format!("spaces/{name}");
@@ -200,7 +218,11 @@ async fn get_space_with_storage<S: StorageBackend + ?Sized>(
     name: &str,
 ) -> Result<SpaceMeta> {
     if !space_exists_with_storage(storage, name).await? {
-        return Err(anyhow!("Space not found: {name}"));
+        return Err(AppError::not_found(
+            ErrorCode::SpaceNotFound,
+            format!("Space not found: {name}"),
+        )
+        .into());
     }
     storage.read_json(&format!("spaces/{name}/meta.json")).await
 }
@@ -215,7 +237,11 @@ async fn get_space_raw_with_storage<S: StorageBackend + ?Sized>(
     name: &str,
 ) -> Result<serde_json::Value> {
     if !space_exists_with_storage(storage, name).await? {
-        return Err(anyhow!("Space not found: {name}"));
+        return Err(AppError::not_found(
+            ErrorCode::SpaceNotFound,
+            format!("Space not found: {name}"),
+        )
+        .into());
     }
     let meta_path = format!("spaces/{name}/meta.json");
     let settings_path = format!("spaces/{name}/settings.json");
@@ -240,11 +266,16 @@ async fn patch_space_with_storage<S: StorageBackend + ?Sized>(
     space_id: &str,
     patch: &serde_json::Value,
 ) -> Result<serde_json::Value> {
+    validate_space_path_segment(space_id)?;
     let meta_path = format!("spaces/{space_id}/meta.json");
     let settings_path = format!("spaces/{space_id}/settings.json");
 
     if !storage.exists(&meta_path).await? {
-        return Err(anyhow!("Space {space_id} not found"));
+        return Err(AppError::not_found(
+            ErrorCode::SpaceNotFound,
+            format!("Space not found: {space_id}"),
+        )
+        .into());
     }
 
     let mut meta: serde_json::Value = storage.read_json(&meta_path).await?;
@@ -285,19 +316,98 @@ pub async fn patch_space(
     patch_space_with_storage(&storage, space_id, patch).await
 }
 
-/// Test a storage connection by checking if the URI is accessible.
-pub async fn test_storage_connection(uri: &str) -> Result<serde_json::Value> {
-    if uri.starts_with("memory://") {
-        Ok(serde_json::json!({"status": "ok", "mode": "memory"}))
-    } else if uri.starts_with("file://")
-        || uri.starts_with("fs://")
-        || uri.starts_with('/')
-        || uri.starts_with('.')
-    {
-        Ok(serde_json::json!({"status": "ok", "mode": "local"}))
-    } else if uri.starts_with("s3://") {
-        Ok(serde_json::json!({"status": "ok", "mode": "s3"}))
-    } else {
-        anyhow::bail!("unsupported storage URI: {uri}")
+/// Test a storage connection by checking if the proposed config is accessible.
+pub async fn test_storage_connection(
+    config: &StorageConnectionTestConfig,
+) -> Result<serde_json::Value> {
+    let trimmed = config.uri.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("storage URI is required");
     }
+    let mode = storage_connection_mode(trimmed)?;
+    let endpoint = validate_storage_endpoint(config.endpoint.as_deref())?;
+    let operator = operator_from_uri_with_endpoint(trimmed, endpoint)?;
+    let mut lister = operator.lister("").await.map_err(|error| {
+        AppError::dependency_unavailable(
+            ErrorCode::StorageConnectionFailed,
+            format!("storage connection failed: {error}"),
+        )
+    })?;
+    let _ = lister.try_next().await.map_err(|error| {
+        AppError::dependency_unavailable(
+            ErrorCode::StorageConnectionFailed,
+            format!("storage connection failed: {error}"),
+        )
+    })?;
+    Ok(serde_json::json!({"status": "ok", "mode": mode}))
+}
+
+fn validate_space_path_segment(name: &str) -> Result<()> {
+    validate_space_id(name).map_err(|error| AppError::invalid_identifier(error.to_string()).into())
+}
+
+fn storage_connection_mode(uri: &str) -> Result<&'static str> {
+    if uri.starts_with("memory://") {
+        return Ok("memory");
+    }
+    if uri.starts_with("file://") || uri.starts_with("fs://") || uri.starts_with('/') {
+        return Ok("local");
+    }
+    if uri.starts_with("s3://") {
+        validate_remote_storage_uri(uri)?;
+        return Ok("s3");
+    }
+    anyhow::bail!("unsupported storage URI: {uri}")
+}
+
+fn validate_storage_endpoint(endpoint: Option<&str>) -> Result<Option<&str>> {
+    let Some(endpoint) = endpoint.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let parsed = Url::parse(endpoint).map_err(|_| anyhow!("invalid storage endpoint"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        anyhow::bail!("unsupported storage endpoint scheme: {}", parsed.scheme());
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| anyhow!("storage endpoint host is required"))?;
+    if is_blocked_storage_host(host) {
+        anyhow::bail!("blocked storage endpoint host: {host}");
+    }
+    Ok(Some(endpoint))
+}
+
+fn validate_remote_storage_uri(uri: &str) -> Result<()> {
+    let parsed = Url::parse(uri).map_err(|_| anyhow!("invalid storage URI"))?;
+    if let Some(host) = parsed.host_str() {
+        if is_blocked_storage_host(host) {
+            anyhow::bail!("blocked storage endpoint host: {host}");
+        }
+    }
+    Ok(())
+}
+
+fn is_blocked_storage_host(host: &str) -> bool {
+    let normalized = host
+        .trim_matches('[')
+        .trim_matches(']')
+        .to_ascii_lowercase();
+    if matches!(normalized.as_str(), "localhost" | "0.0.0.0" | "::1") {
+        return true;
+    }
+    if normalized.starts_with("127.")
+        || normalized.starts_with("10.")
+        || normalized.starts_with("192.168.")
+        || normalized.starts_with("169.254.")
+    {
+        return true;
+    }
+    if let Some(second_octet) = normalized
+        .strip_prefix("172.")
+        .and_then(|rest| rest.split('.').next())
+        .and_then(|value| value.parse::<u8>().ok())
+    {
+        return (16..=31).contains(&second_octet);
+    }
+    false
 }

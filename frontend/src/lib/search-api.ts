@@ -1,56 +1,43 @@
 import type { EntryRecord, SearchResult } from "./types";
-import { apiFetch } from "./api";
+import { protocolFetch } from "./ugoite-client/protocol";
 
 export type EntrySummary = {
-	id: string;
-	title: string;
-	form: string;
+  id: string;
+  title: string;
+  form: string;
 };
 
-/** Search & query API client */
+/** Search & query API client backed by the shared Rust/WASM protocol. */
 export const searchApi = {
-	/** Query space index */
-	async query(spaceId: string, filter: Record<string, unknown>): Promise<EntryRecord[]> {
-		const res = await apiFetch(`/spaces/${spaceId}/query`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ filter }),
-		});
-		if (!res.ok) {
-			throw new Error(`Failed to query space: ${res.statusText}`);
-		}
-		return (await res.json()) as EntryRecord[];
-	},
+  async query(
+    spaceId: string,
+    filter: Record<string, unknown>,
+  ): Promise<EntryRecord[]> {
+    return await protocolFetch<EntryRecord[]>(
+      "search.query",
+      { space_id: spaceId },
+      { filter },
+    );
+  },
 
-	/** Search entries by keyword */
-	async keyword(spaceId: string, query: string): Promise<SearchResult[]> {
-		const params = new URLSearchParams({ q: query });
-		const res = await apiFetch(`/spaces/${spaceId}/search?${params.toString()}`);
-		if (!res.ok) {
-			throw new Error(`Failed to search entries: ${res.statusText}`);
-		}
-		return (await res.json()) as SearchResult[];
-	},
+  async keyword(spaceId: string, query: string): Promise<SearchResult[]> {
+    return await protocolFetch<SearchResult[]>("search.keyword", {
+      space_id: spaceId,
+      q: query,
+    });
+  },
 
-	/** List bounded entry summaries for row_reference pickers */
-	async rowReferenceOptions(
-		spaceId: string,
-		targetForm: string,
-		query: string,
-		limit: number,
-	): Promise<EntrySummary[]> {
-		const params = new URLSearchParams({
-			form: targetForm,
-			limit: String(limit),
-		});
-		const trimmedQuery = query.trim();
-		if (trimmedQuery) {
-			params.set("q", trimmedQuery);
-		}
-		const res = await apiFetch(`/spaces/${spaceId}/entries/options?${params.toString()}`);
-		if (!res.ok) {
-			throw new Error(`Failed to load row_reference options: ${res.statusText}`);
-		}
-		return (await res.json()) as EntrySummary[];
-	},
+  async rowReferenceOptions(
+    spaceId: string,
+    targetForm: string,
+    query: string,
+    limit: number,
+  ): Promise<EntrySummary[]> {
+    return await protocolFetch<EntrySummary[]>("entry.options", {
+      space_id: spaceId,
+      form: targetForm,
+      q: query,
+      limit,
+    });
+  },
 };

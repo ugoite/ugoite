@@ -1,73 +1,12 @@
-# User Stories
+# User stories
 
-This directory contains user stories organized by category.
+Stories describe user-visible intent and link to requirement IDs. They are not proof of implementation.
 
-## Files
+When changing a story:
 
-- [core.yaml](core.yaml) - Essential user scenarios that define the core product
-- [advanced.yaml](advanced.yaml) - Power user and experimental features
-- [experimental.yaml](experimental.yaml) - Future features under consideration
+1. keep current and planned behavior explicit;
+2. link valid requirement IDs;
+3. update feature/UI registries when the surface changes;
+4. use the current root validation commands (`mise run check`, `mise run test`).
 
-## Story Format
-
-Stories follow a structured YAML format for machine readability:
-
-```yaml
-stories:
-  - id: STORY-001
-    title: Short descriptive title
-    type: Category (AI Native, Form, Freedom, etc.)
-    as_a: Role (user, power user, AI agent, etc.)
-    i_want: Desired action or capability
-    so_that: Business value or outcome
-    acceptance_criteria:
-      - Specific, testable criteria
-      - Each criterion maps to tests
-    related_apis:
-      - API endpoints involved
-    requirements:
-      - REQ-* IDs that implement this story
-```
-
-## Story Categories
-
-| Type | Description |
-|------|-------------|
-| AI Native | Features leveraging AI and code execution |
-| Form | Structured data and form features |
-| Freedom | User control and data portability |
-| Versioning | History and time travel features |
-| BYOAI | Bring Your Own AI integrations |
-| Live Code | Interactive code execution |
-
-## Traceability
-
-Stories link to:
-- **Requirements**: `REQ-*` identifiers in `requirements/`
-- **APIs**: REST and MCP endpoints in `api/`
-- **Tests**: Acceptance criteria map to test cases
-
-## Usage
-
-Stories are used to:
-1. Guide feature development priorities
-2. Generate acceptance test templates
-3. Document product capabilities
-4. Communicate with stakeholders
-
-## Verification
-
-The repository's active documentation consistency suite lives in `docs/tests/` and
-runs via `mise run test:docs`. The matching strict pytest invocation is:
-
-```bash
-report="$(mktemp)"
-trap 'rm -f "$report"' EXIT
-uv run --with pytest --with pyyaml --with bashlex pytest docs/tests -W error --junitxml="$report"
-python3 scripts/check_pytest_no_skips.py "$report" "docs tests"
-```
-
-That suite currently focuses on requirement traceability plus targeted API, guide,
-storage, MCP, version, and governance contracts. A dedicated
-`docs/tests/test_stories.py` file does not ship today, so story-specific validation
-should be added there when the suite grows.
+The browser is currently server-backed, while local CLI core mode is the shipped direct local-first path.

@@ -6,113 +6,106 @@ cd "$repo_root"
 
 bash scripts/check-placeholder-artifacts.sh
 
-python3 - <<'PY'
-from __future__ import annotations
+deno eval '
+const maxTrackedFileBytes = 1024 * 1024;
+const forbiddenSegments = new Set(["node_modules", "target"]);
+const allowedLargeTrackedPaths = new Set([]);
 
-import os
-import subprocess
-from pathlib import PurePosixPath
+const decoder = new TextDecoder();
 
-MAX_TRACKED_FILE_BYTES = 1024 * 1024  # 1 MiB
-FORBIDDEN_SEGMENTS = {"node_modules", "target"}
-ALLOWED_LARGE_TRACKED_PATHS: set[str] = set()
+async function command(args) {
+  const output = await new Deno.Command(args[0], {
+    args: args.slice(1),
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!output.success) {
+    const stderr = decoder.decode(output.stderr).trim();
+    throw new Error(`${args.join(" ")} failed${stderr ? `: ${stderr}` : ""}`);
+  }
+  return decoder.decode(output.stdout);
+}
 
+function formatBytes(size) {
+  const units = ["bytes", "KiB", "MiB", "GiB"];
+  let value = size;
+  let unit = units[0];
+  for (const candidate of units) {
+    unit = candidate;
+    if (value < 1024 || candidate === units.at(-1)) break;
+    value /= 1024;
+  }
+  return unit === "bytes" ? `${Math.trunc(value)} ${unit}` : `${value.toFixed(1)} ${unit}`;
+}
 
-def format_bytes(size: int) -> str:
-    """Return a human-readable byte count."""
-    units = ["bytes", "KiB", "MiB", "GiB"]
-    value = float(size)
-    unit = units[0]
-    for candidate in units:
-        unit = candidate
-        if value < 1024 or candidate == units[-1]:
-            break
-        value /= 1024
-    if unit == "bytes":
-        return f"{int(value)} {unit}"
-    return f"{value:.1f} {unit}"
+const trackedPaths = (await command(["git", "ls-files", "-z"])).split("\0").filter(Boolean);
+const trackedIgnored = [];
+const forbiddenPaths = [];
+const oversizedPaths = [];
 
+for (const rawPath of trackedPaths) {
+  const ignored = await new Deno.Command("git", {
+    args: ["check-ignore", "--no-index", rawPath],
+    stdout: "null",
+    stderr: "null",
+  }).output();
+  if (ignored.success) trackedIgnored.push(rawPath);
 
-tracked_paths = subprocess.check_output(
-    ["git", "ls-files", "-z"],
-    text=False,
-).decode("utf-8").split("\0")
-tracked_ignored = [
-    path
-    for path in subprocess.check_output(
-        ["git", "ls-files", "-ci", "--exclude-standard"],
-        text=True,
-    ).splitlines()
-    if path
-]
+  const forbiddenSegment = rawPath.split("/").find((segment) => forbiddenSegments.has(segment));
+  if (forbiddenSegment) {
+    forbiddenPaths.push([rawPath, forbiddenSegment]);
+    continue;
+  }
 
-tracked_ignored: list[str] = []
-forbidden_paths: list[tuple[str, str]] = []
-oversized_paths: list[tuple[str, int]] = []
+  let stat;
+  try {
+    stat = await Deno.stat(rawPath);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) continue;
+    throw error;
+  }
+  if (
+    stat.size > maxTrackedFileBytes &&
+    !allowedLargeTrackedPaths.has(rawPath)
+  ) {
+    oversizedPaths.push([rawPath, stat.size]);
+  }
+}
 
-for raw_path in tracked_paths:
-    if not raw_path:
-        continue
+const messages = [];
+if (trackedIgnored.length > 0) {
+  messages.push([
+    "Tracked files must not also match ignore rules:",
+    ...trackedIgnored.sort().map((path) => `  - ${path}`),
+    "",
+    "Remove these files from git or adjust .gitignore before committing.",
+  ].join("\n"));
+}
+if (forbiddenPaths.length > 0) {
+  messages.push([
+    "Tracked files must not live in generated dependency/build directories:",
+    ...forbiddenPaths
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([path, segment]) => `  - ${path} (contains ${segment})`),
+    "",
+    "Generated dependency/build directories belong in local caches, not in source control.",
+  ].join("\n"));
+}
+if (oversizedPaths.length > 0) {
+  messages.push([
+    `Tracked files must stay below ${formatBytes(maxTrackedFileBytes)} unless allowlisted:`,
+    ...oversizedPaths
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([path, size]) => `  - ${path} (${formatBytes(size)})`),
+    "",
+    "Large binaries, generated bundles, and packaged artifacts should be published as release assets instead.",
+  ].join("\n"));
+}
 
-    if subprocess.run(
-        ["git", "check-ignore", "--no-index", raw_path],
-        capture_output=True,
-        check=False,
-    ).returncode == 0:
-        tracked_ignored.append(raw_path)
+if (messages.length > 0) {
+  console.error(messages.join("\n\n"));
+  Deno.exit(1);
+}
+'
 
-    path = PurePosixPath(raw_path)
-    forbidden_segment = next(
-        (segment for segment in path.parts if segment in FORBIDDEN_SEGMENTS),
-        None,
-    )
-    if forbidden_segment is not None:
-        forbidden_paths.append((raw_path, forbidden_segment))
-        continue
-
-    try:
-        size = os.path.getsize(raw_path)
-    except FileNotFoundError:
-        continue
-
-    if size > MAX_TRACKED_FILE_BYTES and raw_path not in ALLOWED_LARGE_TRACKED_PATHS:
-        oversized_paths.append((raw_path, size))
-
-if tracked_ignored or forbidden_paths or oversized_paths:
-    messages: list[str] = []
-    if tracked_ignored:
-        lines = [
-            "Tracked files must not also match ignore rules:",
-        ]
-        lines.extend(f"  - {path}" for path in sorted(tracked_ignored))
-        lines.extend(
-            [
-                "",
-                "Either untrack the artifact or narrow the ignore rules so",
-                "intentional source files do not appear as tracked+ignored.",
-            ]
-        )
-        messages.append("\n".join(lines))
-    if forbidden_paths:
-        lines = [
-            "Tracked files must not live under generated dependency/build directories:",
-        ]
-        lines.extend(
-            f"  - {path} (forbidden segment: {segment})"
-            for path, segment in sorted(forbidden_paths)
-        )
-        messages.append("\n".join(lines))
-    if oversized_paths:
-        lines = [
-            "Tracked files larger than 1 MiB must be explicitly allowlisted in "
-            "scripts/check-root-artifact-hygiene.sh:",
-        ]
-        lines.extend(
-            f"  - {path} ({format_bytes(size)})"
-            for path, size in sorted(oversized_paths)
-        )
-        messages.append("\n".join(lines))
-    raise SystemExit("\n\n".join(messages))
-
-print("Repository artifact hygiene check passed.")
-PY
+echo "Repository root artifact hygiene check passed."

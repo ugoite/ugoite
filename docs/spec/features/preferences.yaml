@@ -1,34 +1,32 @@
-# Portable user preference APIs
-
-version: "0.1"
-updated: "2026-03"
+version: '0.2'
+updated: '2026-06-23'
 kind: preferences
-
 apis:
-  - id: preferences.me.get
-    method: GET
-    backend:
-      path: /preferences/me
-      file: backend/src/app/api/endpoints/preferences.py
-      function: get_my_preferences_endpoint
-    frontend:
-      path: /spaces/{space_id}/settings
-      file: frontend/src/routes/spaces/[space_id]/settings.tsx
-      function: SpaceSettingsRoute
-    ugoite_core:
-      file: ugoite-core/src/preferences.rs
-      function: get_user_preferences
-
-  - id: preferences.me.patch
-    method: PATCH
-    backend:
-      path: /preferences/me
-      file: backend/src/app/api/endpoints/preferences.py
-      function: patch_my_preferences_endpoint
-    frontend:
-      path: /spaces/{space_id}/settings
-      file: frontend/src/routes/spaces/[space_id]/settings.tsx
-      function: SpaceSettingsRoute
-    ugoite_core:
-      file: ugoite-core/src/preferences.rs
-      function: patch_user_preferences
+- id: preferences.me.get
+  method: GET
+  status: implemented
+  backend:
+    path: /preferences/me
+    file: crates/ugoite-server/src/lib.rs
+    function: get_preferences
+  frontend:
+    path: /spaces/{space_id}/settings
+    file: frontend/src/lib/preferences-api.ts
+    function: preferencesApi.getMe
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: get_user_preferences
+- id: preferences.me.patch
+  method: PATCH
+  status: implemented
+  backend:
+    path: /preferences/me
+    file: crates/ugoite-server/src/lib.rs
+    function: patch_preferences
+  frontend:
+    path: /spaces/{space_id}/settings
+    file: frontend/src/lib/preferences-api.ts
+    function: preferencesApi.patchMe
+  ugoite_core:
+    file: crates/ugoite-core/src/service.rs
+    function: patch_user_preferences

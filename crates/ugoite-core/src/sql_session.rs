@@ -4,6 +4,7 @@ use opendal::Operator;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::error::{AppError, ErrorCode};
 use crate::index;
 use crate::materialized_view;
 use crate::saved_sql;
@@ -86,7 +87,7 @@ fn session_sql(meta: &Value) -> Result<&str> {
 async fn execute_session_sql(op: &Operator, ws_path: &str, session_id: &str) -> Result<Vec<Value>> {
     let meta = load_session_meta(op, ws_path, session_id).await?;
     if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
-        return Err(anyhow!("SQL session expired"));
+        return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
     }
     index::execute_sql_query(op, ws_path, session_sql(&meta)?).await
 }
@@ -100,7 +101,7 @@ async fn execute_session_sql_scoped(
 ) -> Result<Vec<Value>> {
     let meta = load_session_meta(op, ws_path, session_id).await?;
     if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
-        return Err(anyhow!("SQL session expired"));
+        return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
     }
     index::execute_sql_query_scoped(
         op,

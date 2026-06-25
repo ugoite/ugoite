@@ -5,270 +5,270 @@
 
 /** Space metadata */
 export interface SpaceStorage {
-	type?: string;
-	root?: string;
+  type?: string;
+  root?: string;
 }
 
 /** Space metadata */
 export interface SpaceStorage {
-	type?: string;
-	root?: string;
+  type?: string;
+  root?: string;
 }
 
 export interface StorageConnectionConfig {
-	uri: string;
-	endpoint?: string;
-	[key: string]: unknown;
+  uri: string;
+  endpoint?: string;
+  [key: string]: unknown;
 }
 
 /** Space metadata */
 export interface Space {
-	id: string;
-	name: string;
-	created_at: string;
-	is_admin_space?: boolean;
-	storage?: SpaceStorage;
-	storage_config?: StorageConnectionConfig;
-	settings?: Record<string, unknown>;
+  id: string;
+  name: string;
+  created_at: string;
+  is_admin_space?: boolean;
+  storage?: SpaceStorage;
+  storage_config?: StorageConnectionConfig;
+  settings?: Record<string, unknown>;
 }
 
 /** Space patch payload */
 export interface SpacePatchPayload {
-	name?: string;
-	storage_config?: StorageConnectionConfig;
-	settings?: Record<string, unknown>;
+  name?: string;
+  storage_config?: StorageConnectionConfig;
+  settings?: Record<string, unknown>;
 }
 
 export interface UserPreferences {
-	selected_space_id: string | null;
-	locale: "en" | "ja" | null;
-	ui_theme: "materialize" | "classic" | "pop" | null;
-	color_mode: "light" | "dark" | null;
-	primary_color: "violet" | "blue" | "emerald" | "amber" | null;
+  selected_space_id: string | null;
+  locale: "en" | "ja" | null;
+  ui_theme: "materialize" | "classic" | "pop" | null;
+  color_mode: "light" | "dark" | null;
+  primary_color: "violet" | "blue" | "emerald" | "amber" | null;
 }
 
 export type UserPreferencesPatchPayload = Partial<UserPreferences>;
 
 /** Test connection payload */
 export interface TestConnectionPayload {
-	storage_config: StorageConnectionConfig;
+  storage_config: StorageConnectionConfig;
 }
 
 export interface SpaceMember {
-	user_id: string;
-	role: "owner" | "admin" | "editor" | "viewer";
-	state: "invited" | "active" | "revoked";
-	invited_by?: string;
-	invited_at?: string;
-	activated_at?: string;
-	revoked_at?: string | null;
-	updated_at?: string;
+  user_id: string;
+  role: "owner" | "admin" | "editor" | "viewer";
+  state: "invited" | "active" | "revoked";
+  invited_by?: string;
+  invited_at?: string;
+  activated_at?: string;
+  revoked_at?: string | null;
+  updated_at?: string;
 }
 
 export interface SpaceMemberInvitePayload {
-	user_id: string;
-	role: "admin" | "editor" | "viewer";
-	email?: string;
-	expires_in_seconds?: number;
+  user_id: string;
+  role: "admin" | "editor" | "viewer";
+  email?: string;
+  expires_in_seconds?: number;
 }
 
 export interface SpaceMemberInviteResponse {
-	invitation: {
-		token: string;
-		user_id: string;
-		role: "admin" | "editor" | "viewer";
-		state: "pending" | "accepted" | "expired" | "revoked";
-		invited_by: string;
-		invited_at: string;
-		expires_at: string;
-	};
-	delivery: Record<string, unknown>;
-	audit_event: Record<string, unknown>;
+  invitation: {
+    token: string;
+    user_id: string;
+    role: "admin" | "editor" | "viewer";
+    state: "pending" | "accepted" | "expired" | "revoked";
+    invited_by: string;
+    invited_at: string;
+    expires_at: string;
+  };
+  delivery: Record<string, unknown>;
+  audit_event: Record<string, unknown>;
 }
 
 export interface SpaceMemberAcceptPayload {
-	token: string;
+  token: string;
 }
 
 export interface SpaceMemberRoleUpdatePayload {
-	role: "admin" | "editor" | "viewer";
+  role: "admin" | "editor" | "viewer";
 }
 
 /** Asset metadata */
 export interface Asset {
-	id: string;
-	name: string;
-	path: string;
-	link?: string;
-	uploaded_at?: string;
+  id: string;
+  name: string;
+  path: string;
+  link?: string;
+  uploaded_at?: string;
 }
 
 /** Entry record (from index) */
 export interface EntryRecord {
-	id: string;
-	title: string;
-	form?: string;
-	updated_at: string;
-	properties: Record<string, unknown>;
-	tags: string[];
-	links: EntryLink[];
-	canvas_position?: CanvasPosition;
-	checksum?: string;
-	assets?: Asset[];
+  id: string;
+  title: string;
+  form?: string;
+  updated_at: string;
+  properties: Record<string, unknown>;
+  tags: string[];
+  links: EntryLink[];
+  canvas_position?: CanvasPosition;
+  checksum?: string;
+  assets?: Asset[];
 }
 
 /** Entry link */
 export interface EntryLink {
-	id: string;
-	source?: string;
-	target: string;
-	kind: string;
+  id: string;
+  source?: string;
+  target: string;
+  kind: string;
 }
 
 /** Canvas position for spatial view */
 export interface CanvasPosition {
-	x: number;
-	y: number;
+  x: number;
+  y: number;
 }
 
 /** Full entry content */
 export interface Entry {
-	id: string;
-	title?: string;
-	frontmatter?: Record<string, unknown>;
-	sections?: Record<string, string>;
-	assets?: Asset[];
-	links?: EntryLink[];
-	form?: string;
-	tags?: string[];
-	canvas_position?: CanvasPosition;
-	content: string;
-	markdown?: string;
-	revision_id: string;
-	created_at: string;
-	updated_at: string;
+  id: string;
+  title?: string;
+  frontmatter?: Record<string, unknown>;
+  sections?: Record<string, string>;
+  assets?: Asset[];
+  links?: EntryLink[];
+  form?: string;
+  tags?: string[];
+  canvas_position?: CanvasPosition;
+  content: string;
+  markdown?: string;
+  revision_id: string;
+  created_at: string;
+  updated_at: string;
 }
 
 /** Entry history entry */
 export interface EntryRevision {
-	revision_id: string;
-	created_at: string;
-	checksum: string;
+  revision_id: string;
+  created_at: string;
+  checksum: string;
 }
 
 /** Create entry payload */
 export interface EntryCreatePayload {
-	id?: string;
-	markdown: string;
+  id?: string;
+  markdown: string;
 }
 
 /** Update entry payload */
 export interface EntryUpdatePayload {
-	markdown: string;
-	parent_revision_id: string;
-	frontmatter?: Record<string, unknown>;
-	canvas_position?: CanvasPosition;
-	assets?: Asset[];
+  markdown: string;
+  parent_revision_id: string;
+  frontmatter?: Record<string, unknown>;
+  canvas_position?: CanvasPosition;
+  assets?: Asset[];
 }
 
 export interface FormField {
-	type: string;
-	required: boolean;
-	target_form?: string;
+  type: string;
+  required: boolean;
+  target_form?: string;
 }
 
 export interface Form {
-	name: string;
-	version: number;
-	template: string;
-	fields: Record<string, FormField>;
-	defaults?: Record<string, unknown>;
+  name: string;
+  version: number;
+  template: string;
+  fields: Record<string, FormField>;
+  defaults?: Record<string, unknown>;
 }
 
 export interface FormCreatePayload {
-	name: string;
-	version?: number;
-	template: string;
-	fields: Record<string, FormField>;
-	defaults?: Record<string, unknown>;
-	strategies?: Record<string, unknown>;
+  name: string;
+  version?: number;
+  template: string;
+  fields: Record<string, FormField>;
+  defaults?: Record<string, unknown>;
+  strategies?: Record<string, unknown>;
 }
 
 /** Query request */
 export interface QueryRequest {
-	filter: Record<string, unknown>;
+  filter: Record<string, unknown>;
 }
 
 /** SQL variable definition */
 export interface SqlVariable {
-	type: string;
-	name: string;
-	description: string;
+  type: string;
+  name: string;
+  description: string;
 }
 
 /** Saved SQL entry */
 export interface SqlEntry {
-	id: string;
-	name: string;
-	sql: string;
-	variables: SqlVariable[];
-	created_at: string;
-	updated_at: string;
-	revision_id: string;
+  id: string;
+  name: string;
+  sql: string;
+  variables: SqlVariable[];
+  created_at: string;
+  updated_at: string;
+  revision_id: string;
 }
 
 export interface SqlCreatePayload {
-	id?: string;
-	name: string;
-	sql: string;
-	variables: SqlVariable[];
+  id?: string;
+  name: string;
+  sql: string;
+  variables: SqlVariable[];
 }
 
 export interface SqlUpdatePayload {
-	name: string;
-	sql: string;
-	variables: SqlVariable[];
-	parent_revision_id?: string | null;
+  name: string;
+  sql: string;
+  variables: SqlVariable[];
+  parent_revision_id?: string | null;
 }
 
 export interface SqlSession {
-	id: string;
-	space_id: string;
-	sql_id: string;
-	sql: string;
-	status: "ready" | "running" | "failed" | "expired";
-	created_at: string;
-	expires_at: string;
-	error?: string | null;
-	view: {
-		sql_id: string;
-		snapshot_id: number;
-		snapshot_at?: string;
-		schema_version?: number;
-	};
-	pagination: {
-		strategy: "offset";
-		order_by: string[];
-		default_limit: number;
-		max_limit: number;
-	};
-	count?: {
-		mode: "on_demand" | "cached";
-		cached_at?: string | null;
-		value?: number | null;
-	};
+  id: string;
+  space_id: string;
+  sql_id: string;
+  sql: string;
+  status: "ready" | "running" | "failed" | "expired";
+  created_at: string;
+  expires_at: string;
+  error?: string | null;
+  view: {
+    sql_id: string;
+    snapshot_id: number;
+    snapshot_at?: string;
+    schema_version?: number;
+  };
+  pagination: {
+    strategy: "offset";
+    order_by: string[];
+    default_limit: number;
+    max_limit: number;
+  };
+  count?: {
+    mode: "on_demand" | "cached";
+    cached_at?: string | null;
+    value?: number | null;
+  };
 }
 
 export interface SqlSessionRows {
-	rows: EntryRecord[];
-	offset: number;
-	limit: number;
-	totalCount: number;
+  rows: EntryRecord[];
+  offset: number;
+  limit: number;
+  totalCount: number;
 }
 
 /** API error response */
 export interface ApiError {
-	detail: string;
+  detail: string;
 }
 
 /** Search result entry */
