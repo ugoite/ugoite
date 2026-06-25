@@ -61,7 +61,9 @@ export default function SpaceFormsIndexPane() {
 		const select = formSelectEl;
 		if (!select) return;
 		const interval = setInterval(() => {
-			const selected = select.value.trim();
+			const currentSelect = formSelectEl;
+			if (!currentSelect) return;
+			const selected = currentSelect.value?.trim() ?? "";
 			if (!selected) return;
 			if (selected !== selectedFormName().trim()) {
 				setSearchParams({ form: selected });
