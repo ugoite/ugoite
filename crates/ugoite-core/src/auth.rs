@@ -1,11 +1,11 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{json, Map, Value};
-use sha2_hmac::Sha256 as HmacSha256Digest;
+use sha2::Sha256;
 use std::collections::{HashMap, HashSet};
 use subtle::ConstantTimeEq;
 
-type HmacSha256 = Hmac<HmacSha256Digest>;
+type HmacSha256 = Hmac<Sha256>;
 
 const AUTH_HEADER_PARTS: usize = 2;
 const SIGNED_TOKEN_PARTS: usize = 3;
