@@ -1,6 +1,6 @@
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
-use sha2_hmac::Sha256 as HmacSha256Digest;
+use sha2::Sha256 as HmacSha256Digest;
 
 pub trait IntegrityProvider {
     fn checksum(&self, content: &str) -> String;

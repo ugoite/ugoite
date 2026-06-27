@@ -23,7 +23,6 @@ rand = "0.10.1"
 serde_yaml = "0.9.34"
 regex = "1.12.3"
 sha2 = "0.11"
-sha2_hmac = { package = "sha2", version = "0.11" }
 hmac = "0.13"
 pbkdf2 = "0.13"
 hex = "0.4"
