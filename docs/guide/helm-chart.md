@@ -1,4 +1,6 @@
-# Helm chart
+---
+title: 'Helm chart'
+---
 
 `charts/ugoite` deploys the same single image used by Docker Compose.
 

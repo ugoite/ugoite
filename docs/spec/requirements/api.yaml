@@ -106,8 +106,7 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-003
   title: MCP Resource Content Framing
-  description: MCP resource responses MUST label entry content as user-supplied untrusted data and strip raw HTML
-    or script-like constructs before returning JSON payloads to AI clients.
+  description: MCP resource responses MUST label entry content as user-supplied untrusted data and strip raw HTML or script-like constructs before returning JSON payloads to AI clients.
   related_spec:
   - api/mcp.md
   - architecture/frontend-backend-interface.md
@@ -146,13 +145,13 @@ requirements:
 
     '
   related_spec:
-  - features/README.md
+  - features/index.md
   - features/features.yaml
   priority: high
   status: implemented
   verification: traced
   tests:
-  - file: docsite/src/lib/spec-data.test.ts
+  - file: docsite/src/spec-integrity.test.ts
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.
@@ -179,10 +178,9 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-005
   title: Requirements Traceability Automation
-  description: Requirements and tests should be linked by stable REQ IDs and validated automatically. Current tests
-    contain IDs, but no complete repository gate validates every YAML mapping.
+  description: Requirements and tests should be linked by stable REQ IDs and validated automatically. Current tests contain IDs, but no complete repository gate validates every YAML mapping.
   related_spec:
-  - requirements/README.md
+  - requirements/index.md
   - testing/strategy.md
   priority: high
   status: planned
@@ -295,8 +293,7 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-008
   title: SQL session query API
-  description: The API creates SQL query sessions and exposes status, count, and paged rows. Session metadata is
-    persisted; result rows are evaluated from current Space tables. No stream endpoint is shipped.
+  description: The API creates SQL query sessions and exposes status, count, and paged rows. Session metadata is persisted; result rows are evaluated from current Space tables. No stream endpoint is shipped.
   related_spec:
   - api/rest.md#endpoints
   priority: high
@@ -526,7 +523,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: docsite/src/lib/app-mcp-page.test.ts
+  - file: docsite/src/spec-integrity.test.ts
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.

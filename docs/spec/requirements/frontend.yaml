@@ -346,7 +346,6 @@ requirements:
     '
   related_spec:
   - architecture/frontend-backend-interface.md
-  - tasks/tasks.md#phase-7-5-ui-polish-added
   priority: medium
   status: implemented
   verification: traced
@@ -417,7 +416,7 @@ requirements:
 
     '
   related_spec:
-  - ui/README.md
+  - ui/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -443,7 +442,7 @@ requirements:
 
     '
   related_spec:
-  - ui/README.md
+  - ui/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -641,8 +640,7 @@ requirements:
   title: Space Storage Configuration
   description: 'Space settings MUST allow saving storage connector metadata (local,
 
-    S3, remote) with connection validation before saving. The test flow MUST surface any optional remote endpoint
-    needed for a real backend probe.
+    S3, remote) with connection validation before saving. The test flow MUST surface any optional remote endpoint needed for a real backend probe.
 
     The UI MUST explain that changing `storage_config.uri` updates saved metadata
 
@@ -829,7 +827,7 @@ requirements:
 
     '
   related_spec:
-  - features/README.md
+  - features/index.md
   priority: low
   status: implemented
   verification: traced
@@ -918,8 +916,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-035
   title: Robust Entry Navigation and Recovery
-  description: Entry navigation must time out or recover from failed loading states and allow the user to retry
-    or return to a stable route.
+  description: Entry navigation must time out or recover from failed loading states and allow the user to retry or return to a stable route.
   type: non-functional
   status: implemented
   verification: traced
@@ -947,7 +944,7 @@ requirements:
 
     '
   related_spec:
-  - ui/README.md
+  - ui/index.md
   priority: medium
   status: implemented
   verification: traced
@@ -1107,8 +1104,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-050
   title: SQL Query Management API Client
-  description: 'The frontend SQL query API client MUST support CRUD operations for saved SQL queries (list, create,
-    get, update, delete) and provide typed error handling.
+  description: 'The frontend SQL query API client MUST support CRUD operations for saved SQL queries (list, create, get, update, delete) and provide typed error handling.
 
     '
   related_spec:
@@ -1133,8 +1129,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-051
   title: SQL Session Management API Client
-  description: 'The frontend SQL session API client MUST support creating, getting, and querying SQL sessions with
-    typed error handling.
+  description: 'The frontend SQL session API client MUST support creating, getting, and querying SQL sessions with typed error handling.
 
     '
   related_spec:
@@ -1422,8 +1417,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-061
   title: Saved SQL Placeholder Recovery Guidance
-  description: The saved SQL list route must load existing named queries, provide creation/navigation actions supported
-    by the API, and surface actionable empty/error states.
+  description: The saved SQL list route must load existing named queries, provide creation/navigation actions supported by the API, and surface actionable empty/error states.
   related_spec:
   - ui/pages/space-sql.yaml
   priority: medium
@@ -1517,7 +1511,7 @@ requirements:
 
     '
   related_spec:
-  - ui/README.md
+  - ui/index.md
   priority: medium
   status: implemented
   verification: traced

@@ -1,4 +1,6 @@
-# Storage migration
+---
+title: 'Storage migration'
+---
 
 1. Record the running version and configuration.
 2. Stop writes.

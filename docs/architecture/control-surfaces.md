@@ -1,4 +1,6 @@
-# Control surfaces
+---
+title: 'Control surfaces'
+---
 
 Ugoite exposes one application model through several adapters.
 

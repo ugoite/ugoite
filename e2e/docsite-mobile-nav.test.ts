@@ -1,89 +1,78 @@
 import { expect, test } from "@playwright/test";
-import { startDocsiteServer, type DocsiteServer } from "./support/docsite-server.ts";
+import {
+  type DocsiteServer,
+  startDocsiteServer,
+} from "./support/docsite-server.ts";
 
-const docPath = "/docs/spec/index";
+const docPath = "/docs/spec/";
 
 let docsiteServer: DocsiteServer | undefined;
 
 test.describe("Docsite navigation layout", () => {
-	test.beforeAll(async () => {
-		test.setTimeout(180_000);
-		docsiteServer = await startDocsiteServer();
-	});
+  test.beforeAll(async () => {
+    test.setTimeout(180_000);
+    docsiteServer = await startDocsiteServer();
+  });
 
-	test.afterAll(async () => {
-		await docsiteServer?.stop();
-	});
+  test.afterAll(async () => {
+    await docsiteServer?.stop();
+  });
 
-	test("REQ-E2E-005: mobile nav opens as drawer and keeps reading area uncluttered", async ({
-		page,
-	}) => {
-		await page.setViewportSize({ width: 390, height: 844 });
-		await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
+  test("REQ-E2E-005: Starlight exposes the documentation sidebar as a mobile menu", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
-		await expect(page.locator(".mobile-nav-toggle")).toBeVisible();
-		await expect(page.locator(".site-nav")).toBeHidden();
-		await expect(page.locator("main .doc-sidebar")).toHaveCount(0);
-		await expect(page.locator(".doc-right")).toBeHidden();
+    const menuButton = page.getByRole("button", { name: "Menu" });
+    const menuHost = page.locator("starlight-menu-button");
+    const sidebar = page.locator("#starlight__sidebar");
 
-		await page.locator(".mobile-nav-toggle").click();
-		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
-		await expect(page.locator(".mobile-nav-overlay")).toBeVisible();
-		await expect(page.locator(".mobile-doc-nav .doc-sidebar-link").first()).toBeVisible();
-		await expect(page.locator("body")).toHaveClass(/mobile-nav-open/);
-	});
+    await expect(menuButton).toBeVisible();
+    await expect(menuHost).toHaveAttribute("aria-expanded", "false");
+    await expect(sidebar).toBeHidden();
 
-	test("REQ-E2E-005: mobile nav closes by escape and link tap", async ({ page }) => {
-		await page.setViewportSize({ width: 390, height: 844 });
-		await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
+    await menuButton.click();
+    await expect(menuHost).toHaveAttribute("aria-expanded", "true");
+    await expect(sidebar).toBeVisible();
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-mobile-menu-expanded",
+      "",
+    );
+    await expect(
+      page.locator('#starlight__sidebar nav[aria-label="Main"]'),
+    ).toBeVisible();
+  });
 
-		await page.locator(".mobile-nav-toggle").click();
-		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
-		await page.keyboard.press("Escape");
-		await expect(page.locator(".mobile-doc-nav")).not.toHaveClass(/is-open/);
+  test("REQ-E2E-005: the mobile menu closes with Escape", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
-		await page.locator(".mobile-nav-toggle").click();
-		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
-		await page.locator(".mobile-doc-nav .doc-sidebar-link").first().click();
-		await expect(page.locator(".mobile-doc-nav")).not.toHaveClass(/is-open/);
-	});
+    const menuButton = page.getByRole("button", { name: "Menu" });
+    const menuHost = page.locator("starlight-menu-button");
+    await menuButton.click();
+    await expect(menuHost).toHaveAttribute("aria-expanded", "true");
 
-	test("REQ-E2E-005: mobile nav closes by overlay click", async ({ page }) => {
-		await page.setViewportSize({ width: 390, height: 844 });
-		await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
+    await menuButton.press("Escape");
+    await expect(menuHost).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("body")).not.toHaveAttribute(
+      "data-mobile-menu-expanded",
+      /.+/,
+    );
+  });
 
-		await page.locator(".mobile-nav-toggle").click();
-		await expect(page.locator(".mobile-doc-nav")).toHaveClass(/is-open/);
-		const overlay = page.locator(".mobile-nav-overlay");
-		await expect(overlay).toBeVisible();
+  test("REQ-E2E-009: desktop pages use Starlight's sidebar and table of contents", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
 
-		const overlayBox = await overlay.boundingBox();
-		if (!overlayBox) {
-			throw new Error("Overlay bounding box is unavailable");
-		}
-		await page.mouse.click(
-			overlayBox.x + overlayBox.width - 6,
-			overlayBox.y + Math.min(40, overlayBox.height - 6),
-		);
-		await expect(page.locator(".mobile-doc-nav")).not.toHaveClass(/is-open/);
-	});
-
-	test("REQ-E2E-009: desktop doc pages use the header nav without rendering a left sidebar", async ({
-		page,
-	}) => {
-		await page.setViewportSize({ width: 1440, height: 900 });
-		await page.goto(buildDocsiteUrl(docPath), { waitUntil: "networkidle" });
-
-		await expect(page.locator(".site-nav")).toBeVisible();
-		await expect(page.locator(".mobile-nav-toggle")).toBeHidden();
-		await expect(page.locator("main .doc-sidebar")).toHaveCount(0);
-		await expect(page.locator(".doc-right")).toBeVisible();
-	});
+    await expect(page.getByRole("button", { name: "Menu" })).toBeHidden();
+    await expect(page.locator("#starlight__sidebar")).toBeVisible();
+    await expect(page.locator('nav.sidebar[aria-label="Main"]')).toBeVisible();
+    await expect(page.locator(".right-sidebar-container")).toBeVisible();
+  });
 });
 
 function buildDocsiteUrl(path: string): string {
-	if (!docsiteServer) {
-		throw new Error("Docsite server is unavailable");
-	}
-	return docsiteServer.buildUrl(path);
+  if (!docsiteServer) {
+    throw new Error("Docsite server is unavailable");
+  }
+  return docsiteServer.buildUrl(path);
 }

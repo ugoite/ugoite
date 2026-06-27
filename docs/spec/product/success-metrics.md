@@ -1,4 +1,6 @@
-# Success metrics
+---
+title: 'Success metrics'
+---
 
 Metrics must distinguish the current server-backed product from the browser-local North Star and must not treat planned features as shipped.
 

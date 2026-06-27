@@ -1,4 +1,6 @@
-# Portable API client
+---
+title: 'Portable API client'
+---
 
 `ugoite-api-client` is the shared remote-operation contract for native and WebAssembly clients.
 

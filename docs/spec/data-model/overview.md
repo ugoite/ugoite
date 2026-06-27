@@ -1,4 +1,6 @@
-# Data model overview
+---
+title: 'Data model overview'
+---
 
 Ugoite treats operator-controlled files as the persistence boundary. A **Space** is a self-contained directory below the configured storage root, while Apache Iceberg owns the physical table layout used for Forms, Entries, and revisions.
 
@@ -25,7 +27,7 @@ users/{sha256(user_id)}/
   preferences.json
 ```
 
-See [directory-structure.md](directory-structure.md) and [directory-layout.yaml](directory-layout.yaml) for the exact repository-owned paths. Iceberg-internal filenames are deliberately not specified.
+See [directory-structure.md](directory-structure.md) and [directory-layout.yaml](https://github.com/ugoite/ugoite/blob/main/docs/spec/data-model/directory-layout.yaml) for the exact repository-owned paths. Iceberg-internal filenames are deliberately not specified.
 
 ## Spaces
 

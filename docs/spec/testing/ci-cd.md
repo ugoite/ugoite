@@ -1,4 +1,6 @@
-# CI and release gates
+---
+title: 'CI and release gates'
+---
 
 The required build/test gate is `.github/workflows/ci.yml`. Separate workflows run CodeQL and validate required pull-request body sections/issue links.
 

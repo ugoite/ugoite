@@ -18,8 +18,7 @@ requirements:
   - SPEC-PRODUCT-METRICS
   id: REQ-OPS-001
   title: Developer Guides for Local Runs
-  description: Current English guides must cover root mise development, Docker Compose, CLI core/backend modes,
-    and runtime prerequisites.
+  description: Current English guides must cover root mise development, Docker Compose, CLI core/backend modes, and runtime prerequisites.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -33,8 +32,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-002
   title: Container Build Validation
-  description: The single runtime image must be built and smoke-tested by an automated release gate. The current
-    repository provides a local `ci:release` gate but does not run it in hosted CI.
+  description: The single runtime image must be built and smoke-tested by an automated release gate. The current repository provides a local `ci:release` gate but does not run it in hosted CI.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -56,7 +54,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: docsite/src/lib/spec-data.test.ts
+  - file: docsite/src/spec-integrity.test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -64,8 +62,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-004
   title: Version Milestone Definitions
-  description: Version and milestone status must be represented under `docs/version` and distinguish implemented
-    from planned work.
+  description: Version and milestone status must be represented under `docs/version` and distinguish implemented from planned work.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -79,8 +76,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-005
   title: Repository Lint and Hygiene Gates
-  description: Root checks must cover formatting, Rust/Deno linting, architecture/OpenAPI drift, and repository
-    artifact hygiene where configured.
+  description: Root checks must cover formatting, Rust/Deno linting, architecture/OpenAPI drift, and repository artifact hygiene where configured.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -94,8 +90,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-006
   title: Rust Quality Gate Parity
-  description: Root local and CI gates must run workspace formatting, Clippy, checks, and tests with the pinned
-    Rust toolchain.
+  description: Root local and CI gates must run workspace formatting, Clippy, checks, and tests with the pinned Rust toolchain.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -128,8 +123,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-008
   title: PR Template Validation Gates
-  description: Non-draft, non-Dependabot pull requests must contain Summary, Related Issue, and Testing sections
-    with a closing issue link.
+  description: Non-draft, non-Dependabot pull requests must contain Summary, Related Issue, and Testing sections with a closing issue link.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -143,8 +137,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-009
   title: Release Metadata Bootstrap
-  description: Release Please metadata and the public installer package must keep compatible bootstrap versions
-    and paths.
+  description: Release Please metadata and the public installer package must keep compatible bootstrap versions and paths.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -158,8 +151,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-010
   title: Frontend Local Dev Proxy Readiness
-  description: The integrated developer launcher must start the Rust server and make the browser `/api` route usable
-    before normal interaction.
+  description: The integrated developer launcher must start the Rust server and make the browser `/api` route usable before normal interaction.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -167,7 +159,6 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: docsite/src/lib/app-api-storage-healthcheck.test.ts
   - file: frontend/src/app.config.test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
@@ -190,8 +181,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-012
   title: Devcontainer Change Detection
-  description: A hosted workflow should build/smoke the devcontainer only when relevant paths change while always
-    emitting a required result. No such workflow is present.
+  description: A hosted workflow should build/smoke the devcontainer only when relevant paths change while always emitting a required result. No such workflow is present.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -233,8 +223,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-015
   title: Local Dev Auth Mode Selection
-  description: Development must require explicit login. Mock OAuth is operational; passkey/TOTP must be labeled
-    unavailable until the server implements it.
+  description: Development must require explicit login. Mock OAuth is operational; passkey/TOTP must be labeled unavailable until the server implements it.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -245,7 +234,6 @@ requirements:
   - file: crates/ugoite-cli/src/commands/auth.rs
   - file: crates/ugoite-cli/tests/test_auth.rs
   - file: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
-  - file: docsite/src/lib/app-cli-backend-mode.test.ts
   - file: e2e/public-pages.test.ts
   - file: e2e/smoke.test.ts
   - file: frontend/src/lib/api.test.ts
@@ -265,8 +253,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-016
   title: Local Dev Sample-Data Seeding Workflow
-  description: A root developer task should expose sample-data seeding. A helper script exists, but no root mise
-    task is currently defined.
+  description: A root developer task should expose sample-data seeding. A helper script exists, but no root mise task is currently defined.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -283,8 +270,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-017
   title: Release Container Publishing and Quick Start
-  description: Release automation should publish one deterministic runtime image and verify the documented Compose
-    quick start. No publishing workflow is present.
+  description: Release automation should publish one deterministic runtime image and verify the documented Compose quick start. No publishing workflow is present.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -300,8 +286,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-018
   title: CLI Release Binaries and Install Path
-  description: Release automation should publish checksum-verified CLI archives for supported platforms. Installer
-    scripts/package exist, but publication automation is absent.
+  description: Release automation should publish checksum-verified CLI archives for supported platforms. Installer scripts/package exist, but publication automation is absent.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -310,7 +295,6 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/integration_test.rs
-  - file: docsite/src/lib/app-cli-published-install.test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -318,8 +302,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-019
   title: Explicit Root Mise Task Surface
-  description: All supported developer entrypoints must be declared in the root `mise.toml`; package-scoped mise
-    tasks are not part of the current repository.
+  description: All supported developer entrypoints must be declared in the root `mise.toml`; package-scoped mise tasks are not part of the current repository.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -333,8 +316,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-020
   title: Portable Rust WASM Gates
-  description: '`ugoite-domain`, `ugoite-api-client`, and `ugoite-wasm` must compile for `wasm32-unknown-unknown`
-    through the root check/release gates.'
+  description: '`ugoite-domain`, `ugoite-api-client`, and `ugoite-wasm` must compile for `wasm32-unknown-unknown` through the root check/release gates.'
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -348,8 +330,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-021
   title: Frontend Coverage Hard Gate
-  description: A numeric frontend coverage threshold should be enforced in CI. The current gate runs tests but no
-    hard coverage threshold.
+  description: A numeric frontend coverage threshold should be enforced in CI. The current gate runs tests but no hard coverage threshold.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -363,8 +344,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-022
   title: Path-Aware Pull Request E2E Tiering
-  description: Hosted CI may select E2E tiers by changed paths while merge/push retains smoke coverage. Current
-    CI uses fixed pull-request and merge gates.
+  description: Hosted CI may select E2E tiers by changed paths while merge/push retains smoke coverage. Current CI uses fixed pull-request and merge gates.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -392,8 +372,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-024
   title: Docsite Coverage Hard Gate
-  description: A numeric docsite coverage threshold should be enforced in CI. The current gate runs tests but no
-    hard threshold.
+  description: A numeric docsite coverage threshold should be enforced in CI. The current gate runs tests but no hard threshold.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -407,8 +386,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-025
   title: Published Release Quick-Start Verification
-  description: Automation should download published artifacts and verify browser and CLI quick starts. Supporting
-    scripts exist; no hosted workflow is present.
+  description: Automation should download published artifacts and verify browser and CLI quick starts. Supporting scripts exist; no hosted workflow is present.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -422,8 +400,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-026
   title: Channel-Scoped Changelog Sources
-  description: Stable, beta, and alpha changelog sources must remain separate and must not imply unpublished artifacts
-    exist.
+  description: Stable, beta, and alpha changelog sources must remain separate and must not imply unpublished artifacts exist.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -437,8 +414,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-027
   title: Strict Lockfile Discipline
-  description: Rust commands must use `--locked` and Deno workflows must use the committed lockfile without silently
-    changing dependency resolution.
+  description: Rust commands must use `--locked` and Deno workflows must use the committed lockfile without silently changing dependency resolution.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -452,8 +428,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-028
   title: Repository-Owned Helm Chart
-  description: The Helm chart must deploy the single image, persistent `/data`, non-root defaults, and explicit
-    auth secrets.
+  description: The Helm chart must deploy the single image, persistent `/data`, non-root defaults, and explicit auth secrets.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -467,8 +442,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-030
   title: Pre-Merge Release Quick-Start Verification
-  description: A required hosted pre-merge release-like artifact test is desired; current merge CI runs builds and
-    E2E smoke but not the full release quick start.
+  description: A required hosted pre-merge release-like artifact test is desired; current merge CI runs builds and E2E smoke but not the full release quick start.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -496,8 +470,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-032
   title: Contributor Setup and Hooks
-  description: Historical mandatory local hook installation is superseded by explicit root mise commands and hosted
-    required checks.
+  description: Historical mandatory local hook installation is superseded by explicit root mise commands and hosted required checks.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -553,8 +526,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-036
   title: Contributor Workflow Guide
-  description: Contributor docs must explain architecture boundaries, spec updates, requirement traceability, and
-    current root gates.
+  description: Contributor docs must explain architecture boundaries, spec updates, requirement traceability, and current root gates.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -596,8 +568,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-041
   title: Browser Walkthrough Main Surfaces
-  description: The browser walkthrough must explain Dashboard, Entries, Forms, Search, SQL, Assets, and Settings
-    at a high level.
+  description: The browser walkthrough must explain Dashboard, Entries, Forms, Search, SQL, Assets, and Settings at a high level.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -611,8 +582,7 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-042
   title: Script-Driven Pull Request Creation
-  description: A repository-owned script should validate a pull-request body before invoking GitHub tooling. No
-    such script is present.
+  description: A repository-owned script should validate a pull-request body before invoking GitHub tooling. No such script is present.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md

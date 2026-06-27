@@ -137,7 +137,7 @@
   linked_requirements:
   - REQCAT-API
 - id: SPEC-UI-OVERVIEW
-  source_file: ui/README.md
+  source_file: ui/index.md
   linked_policies:
   - POL-006
   linked_requirements:

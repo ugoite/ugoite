@@ -1,4 +1,6 @@
-# Sandbox status
+---
+title: 'Sandbox status'
+---
 
 No general-purpose code-execution sandbox is shipped. The earlier Wasm `run_script` surface was removed and must not be advertised as an available API or MCP tool.
 
