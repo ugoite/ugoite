@@ -35,11 +35,11 @@ mise run verify
 mise run e2e:smoke
 ```
 
-CI mappings:
+Local CI-parity entrypoints:
 
-- pull requests: `mise run ci`
-- merge queue and pushes to `main`: `mise run ci:merge`
-- local release candidate validation: `mise run ci:release`
+- `mise run ci`: formatting, lint, source checks, and non-E2E tests
+- `mise run ci:merge`: `ci`, canonical build/package/verify tasks, and E2E smoke
+- `mise run ci:release`: `ci:merge` plus the full E2E suite
 
 Tasks are defined at the repository root; package-scoped `mise run //...` commands are not supported. `build:*` tasks may be skipped locally when declared outputs are newer than their inputs, but test tasks remain authoritative and are never satisfied by cached success markers.
 

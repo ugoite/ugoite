@@ -161,7 +161,24 @@ run = [
 
 [tasks."build:image"]
 description = "Build the runtime image once for E2E and packaging"
-run = "docker build --tag ${UGOITE_IMAGE_TAG:-ugoite:e2e} ."
+run = """bash -lc 'set -euo pipefail
+tag="${UGOITE_IMAGE_TAG:-ugoite:e2e}"
+if [[ "${UGOITE_IMAGE_USE_BUILDX:-false}" == "true" || -n "${UGOITE_IMAGE_CACHE_FROM:-}" || -n "${UGOITE_IMAGE_CACHE_TO:-}" ]]; then
+  cmd=(docker buildx build --tag "$tag" --load)
+  if [[ -n "${UGOITE_IMAGE_PLATFORM:-}" ]]; then
+    cmd+=(--platform "${UGOITE_IMAGE_PLATFORM}")
+  fi
+  if [[ -n "${UGOITE_IMAGE_CACHE_FROM:-}" ]]; then
+    cmd+=(--cache-from "${UGOITE_IMAGE_CACHE_FROM}")
+  fi
+  if [[ -n "${UGOITE_IMAGE_CACHE_TO:-}" ]]; then
+    cmd+=(--cache-to "${UGOITE_IMAGE_CACHE_TO}")
+  fi
+  cmd+=(.)
+  "${cmd[@]}"
+else
+  docker build --tag "$tag" .
+fi'"""
 
 [tasks.build]
 description = "Build all reusable release-facing outputs"
@@ -239,12 +256,16 @@ run = "mkdir -p target/artifacts/helm && helm package charts/ugoite --destinatio
 description = "Export the built runtime image under target/artifacts"
 run = "bash -lc 'set -euo pipefail; mkdir -p target/artifacts/image; tmp=target/artifacts/image/ugoite-e2e-docker.tar.gz.tmp; final=target/artifacts/image/ugoite-e2e-docker.tar.gz; rm -f \"$tmp\" \"$final\"; cleanup(){ rm -f \"$tmp\"; }; trap cleanup EXIT; docker save ${UGOITE_IMAGE_TAG:-ugoite:e2e} | gzip -c > \"$tmp\"; mv \"$tmp\" \"$final\"; trap - EXIT'"
 
+[tasks."package:manifest"]
+description = "Write the artifact manifest and checksums under target/artifacts"
+run = "deno run -A tools/artifacts.ts write-manifest"
+
 [tasks.package]
 description = "Package deployable outputs without rebuilding them"
 run = [
   "rm -rf target/artifacts && mkdir -p target/artifacts",
   { tasks = ["package:docsite", "package:cli", "package:helm", "package:image"] },
-  "deno run -A tools/artifacts.ts write-manifest",
+  { task = "package:manifest" },
 ]
 
 [tasks."verify:docsite"]

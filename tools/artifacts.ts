@@ -30,6 +30,7 @@ type ManifestArtifact = {
 type ArtifactManifest = {
   schema_version: 1;
   source_sha: string | null;
+  ci_run_id: string | null;
   contract_version: 1;
   generated_at: string;
   artifacts: ManifestArtifact[];
@@ -80,6 +81,9 @@ async function writeManifest(): Promise<void> {
     source_sha: Deno.env.get("UGOITE_SOURCE_SHA") ??
       Deno.env.get("GITHUB_SHA") ??
       null,
+    ci_run_id: Deno.env.get("UGOITE_CI_RUN_ID") ??
+      Deno.env.get("GITHUB_RUN_ID") ??
+      null,
     contract_version: 1,
     generated_at: new Date().toISOString(),
     artifacts: [
@@ -122,9 +126,7 @@ async function writeManifest(): Promise<void> {
         build_profile: "release",
         path: "image",
         files: await collectFiles(imagePackageDir),
-        config: {
-          tag: Deno.env.get("UGOITE_IMAGE_TAG") ?? "ugoite:e2e",
-        },
+        config: await imageConfig(),
       },
     ],
   };
@@ -375,6 +377,30 @@ async function chartVersion(): Promise<string> {
     throw new Error("chart version was not found in charts/ugoite/Chart.yaml");
   }
   return match[1].trim().replace(/^"|"$/g, "");
+}
+
+async function imageConfig(): Promise<Record<string, string>> {
+  const tag = Deno.env.get("UGOITE_IMAGE_TAG") ?? "ugoite:e2e";
+  const config: Record<string, string> = {
+    tag,
+    platform: Deno.env.get("UGOITE_IMAGE_PLATFORM") ?? "linux/amd64",
+  };
+  try {
+    const inspect = await run("docker", [
+      "image",
+      "inspect",
+      tag,
+      "--format",
+      '{{.Id}}|{{join .RepoDigests ","}}',
+    ]);
+    const [imageId, repoDigests] = inspect.stdout.split("|", 2);
+    if (imageId) config.image_id = imageId;
+    if (repoDigests) config.repo_digests = repoDigests;
+  } catch {
+    // Packaging may be inspected outside CI; keep the manifest usable even if the
+    // local daemon is unavailable.
+  }
+  return config;
 }
 
 async function run(
