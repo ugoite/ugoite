@@ -156,4 +156,14 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
     rootMise.match(/docker image inspect/g)?.length,
     2,
   );
+  assertEquals(
+    rootMise.includes(
+      'env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }',
+    ),
+    false,
+  );
+  assertEquals(
+    rootMise.includes("${DOCSITE_ORIGIN:-http://localhost:4321}"),
+    true,
+  );
 });

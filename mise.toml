@@ -127,15 +127,13 @@ sources = [
   "target/build-metadata/docsite-inputs.txt",
 ]
 outputs = ["docsite/dist/index.html"]
-env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }
-run = "deno task docsite:build"
+run = "DOCSITE_ORIGIN=\"${DOCSITE_ORIGIN:-http://localhost:4321}\" DOCSITE_BASE=\"${DOCSITE_BASE:-/}\" deno task docsite:build"
 
 [tasks."prepare:docsite:inputs"]
 description = "Record docsite build identity inputs"
-env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }
 run = [
   "mkdir -p target/build-metadata",
-  "tmpfile=\"$(mktemp)\" && printf 'DOCSITE_ORIGIN=%s\\nDOCSITE_BASE=%s\\n' \"$DOCSITE_ORIGIN\" \"$DOCSITE_BASE\" > \"$tmpfile\" && if ! cmp -s \"$tmpfile\" target/build-metadata/docsite-inputs.txt 2>/dev/null; then mv \"$tmpfile\" target/build-metadata/docsite-inputs.txt; else rm -f \"$tmpfile\"; fi",
+  "tmpfile=\"$(mktemp)\" && printf 'DOCSITE_ORIGIN=%s\\nDOCSITE_BASE=%s\\n' \"${DOCSITE_ORIGIN:-http://localhost:4321}\" \"${DOCSITE_BASE:-/}\" > \"$tmpfile\" && if ! cmp -s \"$tmpfile\" target/build-metadata/docsite-inputs.txt 2>/dev/null; then mv \"$tmpfile\" target/build-metadata/docsite-inputs.txt; else rm -f \"$tmpfile\"; fi",
 ]
 
 [tasks."build:rust:release"]
