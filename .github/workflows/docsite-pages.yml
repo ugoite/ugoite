@@ -133,6 +133,7 @@ jobs:
           DOCSITE_DIR: ${{ runner.temp }}/docsite-pages
           MANIFEST_PATH: ${{ runner.temp }}/artifact-manifest/manifest.json
           CHECKSUMS_PATH: ${{ runner.temp }}/artifact-manifest/SHA256SUMS
+          EXPECTED_RUN_ID: ${{ steps.resolve-run.outputs.run_id }}
           EXPECTED_SHA: ${{ steps.resolve-run.outputs.head_sha }}
           PAGE_ORIGIN: ${{ steps.pages.outputs.origin }}
           PAGE_BASE_PATH: ${{ steps.pages.outputs.base_path }}
@@ -148,6 +149,7 @@ jobs:
           docsite_dir = pathlib.Path(os.environ["DOCSITE_DIR"]).resolve()
           manifest_path = pathlib.Path(os.environ["MANIFEST_PATH"]).resolve()
           checksums_path = pathlib.Path(os.environ["CHECKSUMS_PATH"]).resolve()
+          expected_run_id = os.environ["EXPECTED_RUN_ID"]
           expected_sha = os.environ["EXPECTED_SHA"]
           page_origin = os.environ["PAGE_ORIGIN"]
           page_base_path = os.environ.get("PAGE_BASE_PATH", "")
@@ -168,6 +170,10 @@ jobs:
           if manifest.get("source_sha") != expected_sha:
               fail(
                   f"manifest source_sha {manifest.get('source_sha')!r} does not match upstream SHA {expected_sha!r}",
+              )
+          if str(manifest.get("ci_run_id")) != expected_run_id:
+              fail(
+                  f"manifest ci_run_id {manifest.get('ci_run_id')!r} does not match upstream run {expected_run_id!r}",
               )
 
           artifacts = manifest.get("artifacts") or []
@@ -221,12 +227,12 @@ jobs:
 
           actual_files: list[str] = []
           for path in docsite_dir.rglob("*"):
-              path = path.resolve()
-              if docsite_dir not in path.parents and path != docsite_dir:
-                  fail(f"artifact path escapes docsite root: {path}")
               stats = os.lstat(path)
               if stat.S_ISLNK(stats.st_mode):
                   fail(f"artifact contains symlink: {path}")
+              resolved_path = path.resolve(strict=True)
+              if docsite_dir not in resolved_path.parents:
+                  fail(f"artifact path escapes docsite root: {path}")
               if stat.S_ISDIR(stats.st_mode):
                   continue
               if not stat.S_ISREG(stats.st_mode):
