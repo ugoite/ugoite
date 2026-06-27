@@ -12,19 +12,17 @@ RUN rustup target add wasm32-unknown-unknown
 COPY deno.json deno.lock ./
 COPY Cargo.toml Cargo.lock ./
 COPY frontend ./frontend
-COPY docsite ./docsite
-COPY docs ./docs
 COPY scripts ./scripts
 COPY crates ./crates
 COPY vendor ./vendor
 COPY shared ./shared
 RUN cd frontend && deno install --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp
-RUN cd docsite && deno install --allow-scripts=npm:@tailwindcss/oxide,npm:esbuild,npm:sharp
+RUN bash scripts/build-ugoite-wasm.sh release target/wasm/ugoite_wasm.release.wasm
+RUN bash scripts/activate-ugoite-wasm.sh release
 RUN UGOITE_STATIC_SPA=true deno task frontend:build
 RUN deno run -A frontend/scripts/generate-static-index.ts \
   frontend/.output/public/_build/.vite/manifest.json \
   frontend/.output/public/index.html
-RUN deno task docsite:build
 
 FROM rust:1.96-bookworm AS rust-build
 WORKDIR /repo

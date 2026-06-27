@@ -13,9 +13,9 @@ Endpoint semantics come from the Rust `ugoite-api-client` crate through the `ugo
 From the repository root:
 
 ```bash
-deno task frontend:dev
-deno task frontend:build
-deno task frontend:test
+mise run build:wasm
+mise run build:frontend
+mise run test:frontend
 ```
 
-Or use `mise run dev`, `mise run check`, and `mise run test` for repository-wide workflows. The build first compiles the WASM adapter with `scripts/build-ugoite-wasm.sh`.
+Package-local Deno tasks are low-level commands. The supported orchestration surface is the root Mise task graph, which activates the correct WASM output before frontend build and test runs.

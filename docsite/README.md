@@ -9,6 +9,15 @@ deno task --cwd docsite test
 deno task --cwd docsite build
 ```
 
+Repository-level orchestration stays at the root:
+
+```bash
+mise run build:docsite
+mise run test:docsite
+mise run package:docsite
+mise run verify:docsite
+```
+
 Do not add product documentation, custom navigation, search code, or hand-authored routes under `docsite/`. Starlight owns those responsibilities; `docs/` owns the content.
 
 ## Why the collection loader is custom
@@ -36,3 +45,5 @@ DOCSITE_BASE=/ugoite/ \
 ```
 
 `DOCSITE_BASE` is never inferred from `GITHUB_ACTIONS`; preview and validation workflows therefore cannot accidentally emit repository-prefixed links.
+
+`DOCSITE_ORIGIN` and `DOCSITE_BASE` are explicit build inputs. Repository-wide checks are `mise run check`, `mise run test`, `mise run package`, and `mise run verify`.

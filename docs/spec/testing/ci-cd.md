@@ -11,8 +11,30 @@ The required build/test gate is `.github/workflows/ci.yml`. Separate workflows r
 
 Root task composition:
 
-- `ci`: formatting check, lint, architecture/OpenAPI/type checks, and tests;
-- `ci:merge`: `ci`, frontend/docsite builds, and E2E smoke;
-- `ci:release`: local release candidate gate adding release Rust builds, WASM check, and local image verification.
+- `build:*`: deterministic compile/build steps with declared inputs and outputs;
+- `test:*`: authoritative assertions that may reuse `build:*` outputs but always execute when called;
+- `package:*`: staging under `target/artifacts/` only; packaging must fail if required build outputs are absent;
+- `verify:*`: checks packaged outputs without rebuilding them;
+- `ci`: formatting check, lint, architecture/OpenAPI/type checks, and non-E2E tests;
+- `ci:merge`: `ci`, build/package/verify, and E2E smoke;
+- `ci:release`: `ci:merge` plus the full E2E suite.
 
-The uploaded repository does not contain a publishing workflow, so `ci:release` proves local readiness only. All task names are root `mise.toml` tasks; package-scoped task syntax is invalid.
+Deployable artifacts are staged below `target/artifacts/` with a machine-readable `manifest.json` and `SHA256SUMS`. This layout is for promotion by later workflows; deployment workflows must not compile source code again.
+
+Build reuse and test-result caching are different concepts. `sources`/`outputs` may skip deterministic `build:*` work when inputs are unchanged, but they are never evidence that a test passed.
+
+Current artifact layout:
+
+```text
+target/artifacts/
+  manifest.json
+  SHA256SUMS
+  docsite/
+  cli/
+  helm/
+  image/
+```
+
+Build identity currently includes explicit environment such as `DOCSITE_ORIGIN`, `DOCSITE_BASE`, and `UGOITE_IMAGE_TAG`. To force a clean rebuild, remove `target/rust`, `target/wasm`, `target/artifacts`, `frontend/.output`, `docsite/dist`, and `frontend/src/lib/generated/ugoite_wasm.wasm`.
+
+All task names are root `mise.toml` tasks; package-scoped task syntax is invalid.
