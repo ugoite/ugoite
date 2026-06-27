@@ -26,6 +26,8 @@ The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies 
 
 Deployable artifacts are staged below `target/artifacts/` with a machine-readable `manifest.json` and `SHA256SUMS`. This layout is for promotion by later workflows; deployment workflows must not compile source code again.
 
+`.github/workflows/docsite-pages.yml` promotes the verified `ugoite-docsite-pages` artifact from a successful push-to-`main` CI run. It validates the upstream run identity, manifest, checksums, and current Pages origin/base metadata, then deploys the downloaded static files without checking out or rebuilding source.
+
 Build reuse and test-result caching are different concepts. `sources`/`outputs` may skip deterministic `build:*` work when inputs are unchanged, but they are never evidence that a test passed.
 
 Current artifact layout:
