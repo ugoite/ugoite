@@ -105,7 +105,8 @@ sources = [
 outputs = ["frontend/.output/public/index.html"]
 run = [
   "bash scripts/activate-ugoite-wasm.sh release",
-  "deno task frontend:build",
+  "UGOITE_STATIC_SPA=true deno task frontend:build",
+  "deno run -A frontend/scripts/generate-static-index.ts frontend/.output/public/_build/.vite/manifest.json frontend/.output/public/index.html",
 ]
 
 [tasks."build:docsite"]
@@ -163,8 +164,15 @@ run = [
 description = "Build the runtime image once for E2E and packaging"
 run = """bash -lc 'set -euo pipefail
 tag="${UGOITE_IMAGE_TAG:-ugoite:e2e}"
+target_args=()
+if [[ "${UGOITE_IMAGE_PREBUILT:-false}" == "true" ]]; then
+  test -x target/rust/release/ugoite
+  test -x target/rust/release/ugoite-server
+  test -s frontend/.output/public/index.html
+  target_args=(--target runtime-prebuilt)
+fi
 if [[ "${UGOITE_IMAGE_USE_BUILDX:-false}" == "true" || -n "${UGOITE_IMAGE_CACHE_FROM:-}" || -n "${UGOITE_IMAGE_CACHE_TO:-}" ]]; then
-  cmd=(docker buildx build --tag "$tag" --load)
+  cmd=(docker buildx build --tag "$tag" --load "${target_args[@]}")
   if [[ -n "${UGOITE_IMAGE_PLATFORM:-}" ]]; then
     cmd+=(--platform "${UGOITE_IMAGE_PLATFORM}")
   fi
@@ -177,14 +185,14 @@ if [[ "${UGOITE_IMAGE_USE_BUILDX:-false}" == "true" || -n "${UGOITE_IMAGE_CACHE_
   cmd+=(.)
   "${cmd[@]}"
 else
-  docker build --tag "$tag" .
+  docker build --tag "$tag" "${target_args[@]}" .
 fi'"""
 
 [tasks.build]
 description = "Build all reusable release-facing outputs"
 run = [
   { tasks = ["build:frontend", "build:docsite", "build:rust:release"] },
-  { task = "build:image" },
+  { task = "build:image", env = { UGOITE_IMAGE_PREBUILT = "true" } },
 ]
 
 [tasks.check]
@@ -219,12 +227,10 @@ run = "deno task docsite:test"
 run = [{ tasks = ["test:rust", "test:tools", "test:frontend", "test:docsite"] }]
 
 [tasks."test:e2e"]
-depends = ["build:image"]
-run = "E2E_BUILD_IMAGES=false deno task e2e:full"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:full"
 
 [tasks."test:e2e:smoke"]
-depends = ["build:image"]
-run = "E2E_BUILD_IMAGES=false deno task e2e:smoke"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke"
 
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"

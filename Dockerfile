@@ -32,7 +32,7 @@ COPY vendor ./vendor
 RUN cargo build -p ugoite-server --release --locked
 RUN cargo build -p ugoite-cli --release --locked
 
-FROM debian:bookworm-slim AS runtime
+FROM ubuntu:24.04 AS runtime-base
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
@@ -40,12 +40,22 @@ RUN apt-get update \
   && useradd --system --create-home --home-dir /nonexistent --shell /usr/sbin/nologin ugoite \
   && mkdir -p /data /app/static \
   && chown -R ugoite:ugoite /data /app
-COPY --from=rust-build /repo/target/release/ugoite-server /usr/local/bin/ugoite-server
-COPY --from=rust-build /repo/target/release/ugoite /usr/local/bin/ugoite
-COPY --from=frontend-build /repo/frontend/.output/public /app/static
 ENV UGOITE_STATIC_DIR=/app/static
 ENV UGOITE_ROOT=/data
 ENV UGOITE_SERVER_ADDRESS=0.0.0.0:8000
 EXPOSE 8000
 USER ugoite
 ENTRYPOINT ["ugoite-server"]
+
+FROM runtime-base AS runtime-source
+COPY --from=rust-build /repo/target/release/ugoite-server /usr/local/bin/ugoite-server
+COPY --from=rust-build /repo/target/release/ugoite /usr/local/bin/ugoite
+COPY --from=frontend-build /repo/frontend/.output/public /app/static
+
+FROM runtime-base AS runtime-prebuilt
+COPY target/rust/release/ugoite-server /usr/local/bin/ugoite-server
+COPY target/rust/release/ugoite /usr/local/bin/ugoite
+COPY frontend/.output/public /app/static
+
+# Keep the portable source-build image as the default Dockerfile target.
+FROM runtime-source AS runtime

@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   required:
     name: ci-required
@@ -151,6 +155,7 @@ jobs:
       - name: Build runtime image
         id: build-image
         env:
+          UGOITE_IMAGE_PREBUILT: "true"
           UGOITE_IMAGE_USE_BUILDX: "true"
           UGOITE_IMAGE_CACHE_FROM: ${{ steps.ci-config.outputs.docker_cache_from }}
           UGOITE_IMAGE_CACHE_TO: ${{ steps.ci-config.outputs.docker_cache_to }}

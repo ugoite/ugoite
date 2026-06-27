@@ -8,3 +8,16 @@
 target
 spaces
 wt
+
+# The runtime-prebuilt target consumes only canonical release outputs.
+!frontend/.output/
+!frontend/.output/public/
+!frontend/.output/public/**
+!target/
+target/*
+!target/rust/
+target/rust/*
+!target/rust/release/
+target/rust/release/*
+!target/rust/release/ugoite
+!target/rust/release/ugoite-server
