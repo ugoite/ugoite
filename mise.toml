@@ -105,7 +105,8 @@ sources = [
 outputs = ["frontend/.output/public/index.html"]
 run = [
   "bash scripts/activate-ugoite-wasm.sh release",
-  "deno task frontend:build",
+  "UGOITE_STATIC_SPA=true deno task frontend:build",
+  "deno run -A frontend/scripts/generate-static-index.ts frontend/.output/public/_build/.vite/manifest.json frontend/.output/public/index.html",
 ]
 
 [tasks."build:docsite"]
@@ -126,15 +127,13 @@ sources = [
   "target/build-metadata/docsite-inputs.txt",
 ]
 outputs = ["docsite/dist/index.html"]
-env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }
-run = "deno task docsite:build"
+run = "DOCSITE_ORIGIN=\"${DOCSITE_ORIGIN:-http://localhost:4321}\" DOCSITE_BASE=\"${DOCSITE_BASE:-/}\" deno task docsite:build"
 
 [tasks."prepare:docsite:inputs"]
 description = "Record docsite build identity inputs"
-env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }
 run = [
   "mkdir -p target/build-metadata",
-  "tmpfile=\"$(mktemp)\" && printf 'DOCSITE_ORIGIN=%s\\nDOCSITE_BASE=%s\\n' \"$DOCSITE_ORIGIN\" \"$DOCSITE_BASE\" > \"$tmpfile\" && if ! cmp -s \"$tmpfile\" target/build-metadata/docsite-inputs.txt 2>/dev/null; then mv \"$tmpfile\" target/build-metadata/docsite-inputs.txt; else rm -f \"$tmpfile\"; fi",
+  "tmpfile=\"$(mktemp)\" && printf 'DOCSITE_ORIGIN=%s\\nDOCSITE_BASE=%s\\n' \"${DOCSITE_ORIGIN:-http://localhost:4321}\" \"${DOCSITE_BASE:-/}\" > \"$tmpfile\" && if ! cmp -s \"$tmpfile\" target/build-metadata/docsite-inputs.txt 2>/dev/null; then mv \"$tmpfile\" target/build-metadata/docsite-inputs.txt; else rm -f \"$tmpfile\"; fi",
 ]
 
 [tasks."build:rust:release"]
@@ -161,13 +160,37 @@ run = [
 
 [tasks."build:image"]
 description = "Build the runtime image once for E2E and packaging"
-run = "docker build --tag ${UGOITE_IMAGE_TAG:-ugoite:e2e} ."
+run = """bash -lc 'set -euo pipefail
+tag="${UGOITE_IMAGE_TAG:-ugoite:e2e}"
+target_args=()
+if [[ "${UGOITE_IMAGE_PREBUILT:-false}" == "true" ]]; then
+  test -x target/rust/release/ugoite
+  test -x target/rust/release/ugoite-server
+  test -s frontend/.output/public/index.html
+  target_args=(--target runtime-prebuilt)
+fi
+if [[ "${UGOITE_IMAGE_USE_BUILDX:-false}" == "true" || -n "${UGOITE_IMAGE_CACHE_FROM:-}" || -n "${UGOITE_IMAGE_CACHE_TO:-}" ]]; then
+  cmd=(docker buildx build --tag "$tag" --load "${target_args[@]}")
+  if [[ -n "${UGOITE_IMAGE_PLATFORM:-}" ]]; then
+    cmd+=(--platform "${UGOITE_IMAGE_PLATFORM}")
+  fi
+  if [[ -n "${UGOITE_IMAGE_CACHE_FROM:-}" ]]; then
+    cmd+=(--cache-from "${UGOITE_IMAGE_CACHE_FROM}")
+  fi
+  if [[ -n "${UGOITE_IMAGE_CACHE_TO:-}" ]]; then
+    cmd+=(--cache-to "${UGOITE_IMAGE_CACHE_TO}")
+  fi
+  cmd+=(.)
+  "${cmd[@]}"
+else
+  docker build --tag "$tag" "${target_args[@]}" .
+fi'"""
 
 [tasks.build]
 description = "Build all reusable release-facing outputs"
 run = [
   { tasks = ["build:frontend", "build:docsite", "build:rust:release"] },
-  { task = "build:image" },
+  { task = "build:image", env = { UGOITE_IMAGE_PREBUILT = "true" } },
 ]
 
 [tasks.check]
@@ -202,12 +225,10 @@ run = "deno task docsite:test"
 run = [{ tasks = ["test:rust", "test:tools", "test:frontend", "test:docsite"] }]
 
 [tasks."test:e2e"]
-depends = ["build:image"]
-run = "E2E_BUILD_IMAGES=false deno task e2e:full"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:full"
 
 [tasks."test:e2e:smoke"]
-depends = ["build:image"]
-run = "E2E_BUILD_IMAGES=false deno task e2e:smoke"
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke"
 
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"
@@ -239,12 +260,16 @@ run = "mkdir -p target/artifacts/helm && helm package charts/ugoite --destinatio
 description = "Export the built runtime image under target/artifacts"
 run = "bash -lc 'set -euo pipefail; mkdir -p target/artifacts/image; tmp=target/artifacts/image/ugoite-e2e-docker.tar.gz.tmp; final=target/artifacts/image/ugoite-e2e-docker.tar.gz; rm -f \"$tmp\" \"$final\"; cleanup(){ rm -f \"$tmp\"; }; trap cleanup EXIT; docker save ${UGOITE_IMAGE_TAG:-ugoite:e2e} | gzip -c > \"$tmp\"; mv \"$tmp\" \"$final\"; trap - EXIT'"
 
+[tasks."package:manifest"]
+description = "Write the artifact manifest and checksums under target/artifacts"
+run = "deno run -A tools/artifacts.ts write-manifest"
+
 [tasks.package]
 description = "Package deployable outputs without rebuilding them"
 run = [
   "rm -rf target/artifacts && mkdir -p target/artifacts",
   { tasks = ["package:docsite", "package:cli", "package:helm", "package:image"] },
-  "deno run -A tools/artifacts.ts write-manifest",
+  { task = "package:manifest" },
 ]
 
 [tasks."verify:docsite"]

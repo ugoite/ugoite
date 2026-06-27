@@ -4,10 +4,11 @@ title: 'CI and release gates'
 
 The required build/test gate is `.github/workflows/ci.yml`. Separate workflows run CodeQL and validate required pull-request body sections/issue links.
 
-| Event | Command |
+| Event | Hosted CI behavior |
 |---|---|
-| pull request to `main` | `mise run ci` |
-| merge queue or push to `main` | `mise run ci:merge` |
+| pull request to `main` | validation, canonical build/package steps, artifact verification, and E2E smoke |
+| merge queue to `main` | same merge gate as pull requests against the queued head |
+| push to `main` | merge gate plus shared-cache refresh and verified artifact upload |
 
 Root task composition:
 
@@ -18,6 +19,10 @@ Root task composition:
 - `ci`: formatting check, lint, architecture/OpenAPI/type checks, and non-E2E tests;
 - `ci:merge`: `ci`, build/package/verify, and E2E smoke;
 - `ci:release`: `ci:merge` plus the full E2E suite.
+
+Hosted CI restores Rust, Deno, and BuildKit caches on every event. Shared project caches are refreshed only after successful pushes to `main`. Successful `main` runs also upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
+
+The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies the canonical frontend and Rust release outputs into the image instead of compiling them again inside Docker. E2E tasks require the already loaded `ugoite:e2e` image and never invoke an image build. The default Dockerfile target remains a portable source build for direct Docker and Compose use.
 
 Deployable artifacts are staged below `target/artifacts/` with a machine-readable `manifest.json` and `SHA256SUMS`. This layout is for promotion by later workflows; deployment workflows must not compile source code again.
 

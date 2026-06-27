@@ -127,3 +127,43 @@ Deno.test("release path does not reference removed runtimes", async () => {
     }
   }
 });
+
+Deno.test("CI image and E2E tasks preserve the build-once contract", async () => {
+  const rootMise = await Deno.readTextFile("mise.toml");
+  const workflow = await Deno.readTextFile(".github/workflows/ci.yml");
+
+  assertEquals(
+    workflow.includes('UGOITE_IMAGE_PREBUILT: "true"'),
+    true,
+  );
+  assertEquals(
+    workflow.includes("cancel-in-progress: true"),
+    true,
+  );
+  assertEquals(
+    rootMise.includes(
+      '[tasks."test:e2e"]\ndepends = ["build:image"]',
+    ),
+    false,
+  );
+  assertEquals(
+    rootMise.includes(
+      '[tasks."test:e2e:smoke"]\ndepends = ["build:image"]',
+    ),
+    false,
+  );
+  assertEquals(
+    rootMise.match(/docker image inspect/g)?.length,
+    2,
+  );
+  assertEquals(
+    rootMise.includes(
+      'env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }',
+    ),
+    false,
+  );
+  assertEquals(
+    rootMise.includes("${DOCSITE_ORIGIN:-http://localhost:4321}"),
+    true,
+  );
+});
