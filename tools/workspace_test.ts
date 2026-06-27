@@ -167,3 +167,35 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
     true,
   );
 });
+
+Deno.test("Pages promotion consumes trusted artifacts without rebuilding", async () => {
+  const workflow = await Deno.readTextFile(
+    ".github/workflows/docsite-pages.yml",
+  );
+
+  for (
+    const forbidden of [
+      "actions/checkout@",
+      "pull_request_target:",
+      "mise run",
+      "deno task",
+      "docsite:build",
+    ]
+  ) {
+    assertEquals(workflow.includes(forbidden), false, forbidden);
+  }
+  for (
+    const required of [
+      "workflow_run:",
+      "workflow_dispatch:",
+      "permissions: {}",
+      "actions: read",
+      "pages: write",
+      "id-token: write",
+      "environment:",
+      "name: github-pages",
+    ]
+  ) {
+    assertEquals(workflow.includes(required), true, required);
+  }
+});

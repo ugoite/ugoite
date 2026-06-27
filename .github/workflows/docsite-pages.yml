@@ -1,0 +1,285 @@
+name: Docsite Pages
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful main-push CI run containing the artifact
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      pages: read
+    outputs:
+      head_sha: ${{ steps.resolve-run.outputs.head_sha }}
+      run_id: ${{ steps.resolve-run.outputs.run_id }}
+    steps:
+      - name: Resolve trusted CI run
+        id: resolve-run
+        env:
+          MANUAL_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          event_path = os.environ["GITHUB_EVENT_PATH"]
+          token = os.environ["GITHUB_TOKEN"]
+          output_path = os.environ["GITHUB_OUTPUT"]
+
+          def fail(message: str) -> None:
+              print(message, file=sys.stderr)
+              raise SystemExit(1)
+
+          def normalize_run(run: dict) -> tuple[str, str]:
+              name = run.get("name")
+              conclusion = run.get("conclusion")
+              trigger = run.get("event")
+              head_branch = run.get("head_branch")
+              head_sha = run.get("head_sha")
+              repo_name = ((run.get("repository") or {}).get("full_name"))
+              head_repo_name = ((run.get("head_repository") or {}).get("full_name"))
+              if name != "CI":
+                  fail(f"expected workflow name CI, got {name!r}")
+              if conclusion != "success":
+                  fail(f"upstream run conclusion must be success, got {conclusion!r}")
+              if trigger != "push":
+                  fail(f"upstream run event must be push, got {trigger!r}")
+              if head_branch != "main":
+                  fail(f"upstream head branch must be main, got {head_branch!r}")
+              if repo_name != repo or head_repo_name != repo:
+                  fail(
+                      f"upstream run must come from {repo}, got repository={repo_name!r} head_repository={head_repo_name!r}",
+                  )
+              if not head_sha:
+                  fail("upstream run is missing head SHA")
+              return str(run["id"]), head_sha
+
+          if event_name == "workflow_run":
+              payload = json.load(open(event_path, "r", encoding="utf-8"))
+              workflow_run = payload.get("workflow_run") or {}
+              run_id, head_sha = normalize_run(workflow_run)
+          elif event_name == "workflow_dispatch":
+              run_id = os.environ.get("MANUAL_RUN_ID", "").strip()
+              if not run_id:
+                  fail("workflow_dispatch requires ci_run_id")
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/actions/runs/{run_id}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urllib.request.urlopen(request) as response:
+                  workflow_run = json.load(response)
+              run_id, head_sha = normalize_run(workflow_run)
+          else:
+              fail(f"unsupported trigger: {event_name}")
+
+          with open(output_path, "a", encoding="utf-8") as output:
+              output.write(f"run_id={run_id}\n")
+              output.write(f"head_sha={head_sha}\n")
+          PY
+
+      - name: Download docsite artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-docsite-pages
+          path: ${{ runner.temp }}/docsite-pages
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve-run.outputs.run_id }}
+          digest-mismatch: error
+
+      - name: Download artifact manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ugoite-artifact-manifest
+          path: ${{ runner.temp }}/artifact-manifest
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve-run.outputs.run_id }}
+          digest-mismatch: error
+
+      - name: Resolve Pages metadata
+        id: pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Validate promoted docsite artifact
+        env:
+          DOCSITE_DIR: ${{ runner.temp }}/docsite-pages
+          MANIFEST_PATH: ${{ runner.temp }}/artifact-manifest/manifest.json
+          CHECKSUMS_PATH: ${{ runner.temp }}/artifact-manifest/SHA256SUMS
+          EXPECTED_RUN_ID: ${{ steps.resolve-run.outputs.run_id }}
+          EXPECTED_SHA: ${{ steps.resolve-run.outputs.head_sha }}
+          PAGE_ORIGIN: ${{ steps.pages.outputs.origin }}
+          PAGE_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import stat
+          import sys
+
+          docsite_dir = pathlib.Path(os.environ["DOCSITE_DIR"]).resolve()
+          manifest_path = pathlib.Path(os.environ["MANIFEST_PATH"]).resolve()
+          checksums_path = pathlib.Path(os.environ["CHECKSUMS_PATH"]).resolve()
+          expected_run_id = os.environ["EXPECTED_RUN_ID"]
+          expected_sha = os.environ["EXPECTED_SHA"]
+          page_origin = os.environ["PAGE_ORIGIN"]
+          page_base_path = os.environ.get("PAGE_BASE_PATH", "")
+          page_base = f"{page_base_path.rstrip('/')}/" if page_base_path else "/"
+
+          def fail(message: str) -> None:
+              print(message, file=sys.stderr)
+              raise SystemExit(1)
+
+          def sha256_file(path: pathlib.Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          if manifest.get("source_sha") != expected_sha:
+              fail(
+                  f"manifest source_sha {manifest.get('source_sha')!r} does not match upstream SHA {expected_sha!r}",
+              )
+          if str(manifest.get("ci_run_id")) != expected_run_id:
+              fail(
+                  f"manifest ci_run_id {manifest.get('ci_run_id')!r} does not match upstream run {expected_run_id!r}",
+              )
+
+          artifacts = manifest.get("artifacts") or []
+          docsite_artifact = next(
+              (artifact for artifact in artifacts if artifact.get("kind") == "docsite"),
+              None,
+          )
+          if docsite_artifact is None:
+              fail("manifest is missing docsite artifact")
+
+          config = docsite_artifact.get("config") or {}
+          manifest_origin = config.get("origin", "")
+          manifest_base = config.get("base", "")
+          if manifest_origin != page_origin:
+              fail(
+                  f"manifest origin {manifest_origin!r} does not match current Pages origin {page_origin!r}",
+              )
+          if manifest_base != page_base:
+              fail(
+                  f"manifest base {manifest_base!r} does not match current Pages base {page_base!r}",
+              )
+          if "localhost" in manifest_origin or "example.invalid" in manifest_origin:
+              fail(f"manifest origin must be production-safe, got {manifest_origin!r}")
+
+          index_path = docsite_dir / "index.html"
+          if not index_path.is_file():
+              fail("docsite artifact is missing top-level index.html")
+          index_text = index_path.read_text(encoding="utf-8")
+          if not index_text.strip():
+              fail("docsite index.html is empty")
+          for forbidden in ("localhost", "127.0.0.1", "example.invalid"):
+              if forbidden in index_text:
+                  fail(f"docsite index.html contains forbidden origin text {forbidden!r}")
+
+          expected_files = sorted(
+              file_entry["path"]
+              for file_entry in (docsite_artifact.get("files") or [])
+          )
+          if not expected_files:
+              fail("manifest docsite artifact has no files")
+
+          checksum_entries: dict[str, str] = {}
+          for line in checksums_path.read_text(encoding="utf-8").splitlines():
+              if not line.strip():
+                  continue
+              parts = line.split("  ", 1)
+              if len(parts) != 2:
+                  fail(f"invalid SHA256SUMS line: {line!r}")
+              digest, relative_path = parts
+              checksum_entries[relative_path] = digest
+
+          actual_files: list[str] = []
+          for path in docsite_dir.rglob("*"):
+              stats = os.lstat(path)
+              if stat.S_ISLNK(stats.st_mode):
+                  fail(f"artifact contains symlink: {path}")
+              resolved_path = path.resolve(strict=True)
+              if docsite_dir not in resolved_path.parents:
+                  fail(f"artifact path escapes docsite root: {path}")
+              if stat.S_ISDIR(stats.st_mode):
+                  continue
+              if not stat.S_ISREG(stats.st_mode):
+                  fail(f"artifact contains unsupported file type: {path}")
+              if stats.st_nlink != 1:
+                  fail(f"artifact contains hard-linked file: {path}")
+              relative = path.relative_to(docsite_dir).as_posix()
+              actual_files.append(f"docsite/site/{relative}")
+
+          actual_files.sort()
+          if actual_files != expected_files:
+              fail(
+                  f"docsite file set does not match manifest\nexpected={expected_files}\nactual={actual_files}",
+              )
+
+          for file_entry in docsite_artifact["files"]:
+              relative_path = file_entry["path"]
+              if not relative_path.startswith("docsite/site/"):
+                  fail(f"unexpected docsite manifest path: {relative_path!r}")
+              artifact_path = docsite_dir / relative_path.removeprefix("docsite/site/")
+              if not artifact_path.is_file():
+                  fail(f"manifest file is missing from artifact: {relative_path}")
+              digest = sha256_file(artifact_path)
+              if digest != file_entry["sha256"]:
+                  fail(
+                      f"manifest checksum mismatch for {relative_path}: {digest} != {file_entry['sha256']}",
+                  )
+              if checksum_entries.get(relative_path) != file_entry["sha256"]:
+                  fail(f"SHA256SUMS entry mismatch for {relative_path}")
+          PY
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/docsite-pages
+
+  deploy:
+    runs-on: ubuntu-24.04
+    needs:
+      - prepare
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
