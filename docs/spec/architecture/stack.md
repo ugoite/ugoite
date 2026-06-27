@@ -1,4 +1,6 @@
-# Technology stack
+---
+title: 'Technology stack'
+---
 
 | Area | Current technology |
 |---|---|

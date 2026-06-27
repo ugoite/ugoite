@@ -1,4 +1,6 @@
-# Service accounts
+---
+title: 'Service accounts'
+---
 
 Managed service-account CRUD is **not implemented** in the current Rust server or CLI. The checked-in OpenAPI document contains no `/service-accounts` routes.
 

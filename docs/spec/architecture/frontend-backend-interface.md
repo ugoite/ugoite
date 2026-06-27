@@ -1,4 +1,6 @@
-# Frontend–server interface
+---
+title: 'Frontend–server interface'
+---
 
 The browser uses `/api` when the server hosts static files or a development proxy is present. The server-generated OpenAPI paths omit that deployment prefix.
 

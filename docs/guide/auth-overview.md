@@ -1,4 +1,6 @@
-# Authentication overview
+---
+title: 'Authentication overview'
+---
 
 The Rust server currently accepts:
 

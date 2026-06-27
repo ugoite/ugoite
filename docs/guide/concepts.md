@@ -1,4 +1,6 @@
-# Core concepts
+---
+title: 'Core concepts'
+---
 
 A **Space** is Ugoite's ownership and storage boundary. On disk it is a directory below the configured root containing entries, forms, assets, saved SQL, history, membership data, and derived indexes.
 

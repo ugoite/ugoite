@@ -1,4 +1,6 @@
-# Docker Compose
+---
+title: 'Docker Compose'
+---
 
 - `docker-compose.yaml` builds the current source and publishes a random loopback port.
 - `docker-compose.release.yaml` runs `ghcr.io/ugoite/ugoite:${UGOITE_VERSION}` at `${UGOITE_PORT:-8000}`.

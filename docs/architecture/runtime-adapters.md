@@ -1,4 +1,6 @@
-# Runtime adapters
+---
+title: 'Runtime adapters'
+---
 
 Runtime-specific code surrounds the portable Rust model.
 

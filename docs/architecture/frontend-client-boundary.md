@@ -1,4 +1,6 @@
-# Frontend client boundary
+---
+title: 'Frontend client boundary'
+---
 
 The frontend owns interaction state, rendering, routing, and the runtime HTTP transport. It does not own endpoint semantics.
 

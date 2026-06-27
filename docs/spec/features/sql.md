@@ -1,4 +1,6 @@
-# Ugoite SQL
+---
+title: 'Ugoite SQL'
+---
 
 Ugoite exposes two related surfaces:
 

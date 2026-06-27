@@ -1,4 +1,6 @@
-# SQL sessions and materialized-view metadata
+---
+title: 'SQL sessions and materialized-view metadata'
+---
 
 The current implementation persists query metadata through OpenDAL and re-evaluates results from current Entry tables. It does not require an RDB, queue, or shared filesystem beyond the configured storage operator.
 

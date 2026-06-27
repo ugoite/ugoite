@@ -1,4 +1,6 @@
-# Versions overview
+---
+title: 'Versions overview'
+---
 
 Machine-readable status lives under `docs/version/`; these pages explain the product meaning.
 
