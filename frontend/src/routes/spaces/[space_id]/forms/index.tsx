@@ -64,18 +64,20 @@ export default function SpaceFormsIndexPane() {
     setSearchParams({ form: value });
   };
 
-  createEffect(() => {
-    const select = formSelectEl;
-    if (!select) return;
-    const interval = setInterval(() => {
-      const selected = select.value.trim();
-      if (!selected) return;
-      if (selected !== selectedFormName().trim()) {
-        setSearchParams({ form: selected });
-      }
-    }, 200);
-    onCleanup(() => clearInterval(interval));
-  });
+	createEffect(() => {
+		const select = formSelectEl;
+		if (!select) return;
+		const interval = setInterval(() => {
+			const currentSelect = formSelectEl;
+			if (!currentSelect) return;
+			const selected = currentSelect.value?.trim() ?? "";
+			if (!selected) return;
+			if (selected !== selectedFormName().trim()) {
+				setSearchParams({ form: selected });
+			}
+		}, 200);
+		onCleanup(() => clearInterval(interval));
+	});
 
   createEffect(() => {
     if (sessionId().trim()) {

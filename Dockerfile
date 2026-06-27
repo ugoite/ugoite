@@ -26,7 +26,7 @@ RUN deno run -A frontend/scripts/generate-static-index.ts \
   frontend/.output/public/index.html
 RUN deno task docsite:build
 
-FROM rust:1.93-bookworm AS rust-build
+FROM rust:1.96-bookworm AS rust-build
 WORKDIR /repo
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates

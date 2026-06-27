@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{json, Map, Value};
-use sha2_hmac::Sha256 as HmacSha256Digest;
+use sha2::Sha256 as HmacSha256Digest;
 use std::collections::{HashMap, HashSet};
 use subtle::ConstantTimeEq;
 
