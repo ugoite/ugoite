@@ -10,6 +10,7 @@ DENO_NO_UPDATE_CHECK = "1"
 
 [tools]
 deno = "2.8.3"
+helm = "3.19.0"
 rust = "1.93.0"
 
 [tasks.setup]
@@ -23,7 +24,11 @@ run = [
 
 [tasks.dev]
 description = "Run the current backend, frontend, and docsite development servers"
-run = "deno task dev"
+depends = ["build:wasm:debug"]
+run = [
+  "bash scripts/activate-ugoite-wasm.sh debug",
+  "deno task dev",
+]
 
 [tasks.fmt]
 run = [
@@ -43,6 +48,128 @@ run = [
   "deno lint tools e2e frontend/src docsite/src",
 ]
 
+[tasks."build:wasm:debug"]
+description = "Build the debug WASM adapter once for reuse"
+sources = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "crates/ugoite-domain/Cargo.toml",
+  "crates/ugoite-domain/src/**/*.rs",
+  "crates/ugoite-api-client/Cargo.toml",
+  "crates/ugoite-api-client/src/**/*.rs",
+  "crates/ugoite-wasm/Cargo.toml",
+  "crates/ugoite-wasm/src/**/*.rs",
+  "scripts/build-ugoite-wasm.sh",
+]
+outputs = ["target/wasm/ugoite_wasm.debug.wasm"]
+run = "bash scripts/build-ugoite-wasm.sh debug target/wasm/ugoite_wasm.debug.wasm"
+
+[tasks."build:wasm:release"]
+description = "Build the release WASM adapter once for reuse"
+sources = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "crates/ugoite-domain/Cargo.toml",
+  "crates/ugoite-domain/src/**/*.rs",
+  "crates/ugoite-api-client/Cargo.toml",
+  "crates/ugoite-api-client/src/**/*.rs",
+  "crates/ugoite-wasm/Cargo.toml",
+  "crates/ugoite-wasm/src/**/*.rs",
+  "scripts/build-ugoite-wasm.sh",
+]
+outputs = ["target/wasm/ugoite_wasm.release.wasm"]
+run = "bash scripts/build-ugoite-wasm.sh release target/wasm/ugoite_wasm.release.wasm"
+
+[tasks."build:wasm"]
+description = "Activate the debug WASM adapter for local workflows"
+depends = ["build:wasm:debug"]
+run = "bash scripts/activate-ugoite-wasm.sh debug"
+
+[tasks."build:frontend"]
+description = "Build the production frontend using the release WASM adapter"
+depends = ["build:wasm:release"]
+sources = [
+  "deno.json",
+  "deno.lock",
+  "frontend/deno.json",
+  "frontend/app.config.ts",
+  "frontend/error-handler.ts",
+  "frontend/vitest.config.ts",
+  "frontend/tsconfig.json",
+  "frontend/public/**/*",
+  "frontend/scripts/**/*.ts",
+  "frontend/src/**/*",
+  "shared/**/*",
+  "scripts/activate-ugoite-wasm.sh",
+]
+outputs = ["frontend/.output/public/index.html"]
+run = [
+  "bash scripts/activate-ugoite-wasm.sh release",
+  "deno task frontend:build",
+]
+
+[tasks."build:docsite"]
+description = "Build the docsite with explicit origin and base inputs"
+depends = ["prepare:docsite:inputs"]
+sources = [
+  "deno.json",
+  "deno.lock",
+  "docsite/README.md",
+  "docsite/astro.config.mjs",
+  "docsite/deno.json",
+  "docsite/src/**/*",
+  "docsite/tailwind.config.mjs",
+  "docsite/tsconfig.json",
+  "docsite/vitest.config.ts",
+  "docs/**/*",
+  "shared/**/*",
+  "target/build-metadata/docsite-inputs.txt",
+]
+outputs = ["docsite/dist/index.html"]
+env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }
+run = "deno task docsite:build"
+
+[tasks."prepare:docsite:inputs"]
+description = "Record docsite build identity inputs"
+env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }
+run = [
+  "mkdir -p target/build-metadata",
+  "tmpfile=\"$(mktemp)\" && printf 'DOCSITE_ORIGIN=%s\\nDOCSITE_BASE=%s\\n' \"$DOCSITE_ORIGIN\" \"$DOCSITE_BASE\" > \"$tmpfile\" && if ! cmp -s \"$tmpfile\" target/build-metadata/docsite-inputs.txt 2>/dev/null; then mv \"$tmpfile\" target/build-metadata/docsite-inputs.txt; else rm -f \"$tmpfile\"; fi",
+]
+
+[tasks."build:rust:release"]
+description = "Build supported release binaries"
+sources = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "crates/ugoite-domain/**/*",
+  "crates/ugoite-api-client/**/*",
+  "crates/ugoite-storage/**/*",
+  "crates/ugoite-core/**/*",
+  "crates/ugoite-server/**/*",
+  "crates/ugoite-cli/**/*",
+  "vendor/**/*",
+]
+outputs = [
+  "target/rust/release/ugoite",
+  "target/rust/release/ugoite-server",
+]
+run = [
+  "cargo build -p ugoite-server --release --locked",
+  "cargo build -p ugoite-cli --release --locked",
+]
+
+[tasks."build:image"]
+description = "Build the runtime image once for E2E and packaging"
+run = "docker build --tag ${UGOITE_IMAGE_TAG:-ugoite:e2e} ."
+
+[tasks.build]
+description = "Build all reusable release-facing outputs"
+run = [
+  { tasks = ["build:frontend", "build:docsite", "build:rust:release"] },
+  { task = "build:image" },
+]
+
 [tasks.check]
 run = [
   "cargo check --workspace --all-targets --all-features --locked",
@@ -55,11 +182,32 @@ run = [
   "cargo run -p xtask -- docs-current-stack-check",
 ]
 
-[tasks.test]
+[tasks."test:rust"]
+run = "cargo test --workspace --locked"
+
+[tasks."test:tools"]
+run = "deno test -A tools/*_test.ts"
+
+[tasks."test:frontend"]
+depends = ["build:wasm:debug"]
 run = [
-  "cargo test --workspace --locked",
-  "deno task test",
+  "bash scripts/activate-ugoite-wasm.sh debug",
+  "deno task frontend:test",
 ]
+
+[tasks."test:docsite"]
+run = "deno task docsite:test"
+
+[tasks.test]
+run = [{ tasks = ["test:rust", "test:tools", "test:frontend", "test:docsite"] }]
+
+[tasks."test:e2e"]
+depends = ["build:image"]
+run = "E2E_BUILD_IMAGES=false deno task e2e:full"
+
+[tasks."test:e2e:smoke"]
+depends = ["build:image"]
+run = "E2E_BUILD_IMAGES=false deno task e2e:smoke"
 
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"
@@ -72,30 +220,68 @@ run = "deno task e2e:smoke"
 [tasks."test:smoke"]
 run = [
   "cargo test -p ugoite-domain -p ugoite-core -p ugoite-server --locked",
-  "deno task frontend:test",
+  { task = "test:frontend" },
 ]
+
+[tasks."package:docsite"]
+description = "Stage the built docsite under target/artifacts"
+run = "deno run -A tools/artifacts.ts package-docsite"
+
+[tasks."package:cli"]
+description = "Package the Linux CLI archive under target/artifacts"
+run = "mkdir -p target/artifacts/cli && test -x target/rust/release/ugoite && tar -C target/rust/release -czf target/artifacts/cli/ugoite-cli-linux-x86_64.tar.gz ugoite"
+
+[tasks."package:helm"]
+description = "Package the Helm chart under target/artifacts"
+run = "mkdir -p target/artifacts/helm && helm package charts/ugoite --destination target/artifacts/helm"
+
+[tasks."package:image"]
+description = "Export the built runtime image under target/artifacts"
+run = "bash -lc 'set -euo pipefail; mkdir -p target/artifacts/image; tmp=target/artifacts/image/ugoite-e2e-docker.tar.gz.tmp; final=target/artifacts/image/ugoite-e2e-docker.tar.gz; rm -f \"$tmp\" \"$final\"; cleanup(){ rm -f \"$tmp\"; }; trap cleanup EXIT; docker save ${UGOITE_IMAGE_TAG:-ugoite:e2e} | gzip -c > \"$tmp\"; mv \"$tmp\" \"$final\"; trap - EXIT'"
+
+[tasks.package]
+description = "Package deployable outputs without rebuilding them"
+run = [
+  "rm -rf target/artifacts && mkdir -p target/artifacts",
+  { tasks = ["package:docsite", "package:cli", "package:helm", "package:image"] },
+  "deno run -A tools/artifacts.ts write-manifest",
+]
+
+[tasks."verify:docsite"]
+run = "deno run -A tools/artifacts.ts verify-docsite"
+
+[tasks."verify:cli"]
+run = "deno run -A tools/artifacts.ts verify-cli"
+
+[tasks."verify:helm"]
+run = "deno run -A tools/artifacts.ts verify-helm"
+
+[tasks."verify:image"]
+run = "deno run -A tools/artifacts.ts verify-image"
+
+[tasks.verify]
+description = "Verify packaged outputs without rebuilding them"
+run = [{ tasks = ["verify:docsite", "verify:cli", "verify:helm", "verify:image"] }]
 
 [tasks.ci]
 run = [
-  "mise run fmt:check",
-  "mise run lint",
-  "mise run check",
-  "mise run test",
+  { task = "fmt:check" },
+  { task = "lint" },
+  { task = "check" },
+  { task = "test" },
 ]
 
 [tasks."ci:merge"]
 run = [
-  "mise run ci",
-  "deno task frontend:build",
-  "deno task docsite:build",
-  "mise run e2e:smoke",
+  { task = "ci" },
+  { task = "build" },
+  { task = "package" },
+  { task = "verify" },
+  { task = "test:e2e:smoke" },
 ]
 
 [tasks."ci:release"]
 run = [
-  "mise run ci:merge",
-  "cargo build -p ugoite-server --release --locked",
-  "cargo build -p ugoite-cli --release --locked",
-  "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
-  "bash scripts/verify-release-local-image.sh",
+  { task = "ci:merge" },
+  { task = "test:e2e" },
 ]

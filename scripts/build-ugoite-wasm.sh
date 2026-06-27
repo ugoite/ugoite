@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE="${1:-debug}"
+DESTINATION="${2:-$ROOT_DIR/frontend/src/lib/generated/ugoite_wasm.wasm}"
 
 case "$PROFILE" in
   debug)
@@ -36,7 +37,6 @@ if [[ "$TARGET_ROOT" != /* ]]; then
   TARGET_ROOT="$ROOT_DIR/$TARGET_ROOT"
 fi
 SOURCE="$TARGET_ROOT/wasm32-unknown-unknown/$PROFILE_DIR/ugoite_wasm.wasm"
-DESTINATION="$ROOT_DIR/frontend/src/lib/generated/ugoite_wasm.wasm"
 
 if [[ ! -f "$SOURCE" ]]; then
   echo "WASM build succeeded but output was not found: $SOURCE" >&2

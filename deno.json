@@ -8,7 +8,7 @@
   "nodeModulesDir": "auto",
   "tasks": {
     "dev": "deno run -A tools/dev.ts",
-    "check": "deno check tools/**/*.ts e2e/**/*.ts && deno task frontend:build && deno task --cwd docsite check",
+    "check": "deno check tools/**/*.ts e2e/**/*.ts && deno task --cwd frontend check && deno task --cwd docsite check",
     "test": "deno test -A tools/*_test.ts && deno task frontend:test && deno task docsite:test",
     "frontend:dev": "deno task --cwd frontend dev",
     "frontend:build": "deno task --cwd frontend build",
