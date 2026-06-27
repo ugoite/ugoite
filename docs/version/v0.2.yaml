@@ -8,7 +8,7 @@ milestones:
     status: planned
     source:
       - docs/version/v0.2/user-controlled-view.yaml
-      - docs/spec/ui/README.md
+      - docs/spec/ui/index.md
     phases:
       - id: design
         status: planned

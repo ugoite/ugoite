@@ -1,4 +1,6 @@
-# Server health check
+---
+title: 'Server health check'
+---
 
 The unauthenticated health endpoint is:
 

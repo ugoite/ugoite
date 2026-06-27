@@ -1,4 +1,6 @@
-# Directory structure
+---
+title: 'Directory structure'
+---
 
 `directory-layout.yaml` is the machine-readable inventory for repository-owned paths. Apache Iceberg owns the subtree beneath `forms/`; documentation and tests must not depend on its internal filenames.
 

@@ -1,4 +1,6 @@
-# Space settings and storage
+---
+title: 'Space settings and storage'
+---
 
 A Space lives below `UGOITE_ROOT` and remains operator-owned. REST supports list/create/get/patch/test-connection operations, but Space creation requires `ManageSpace` on `admin-space`.
 

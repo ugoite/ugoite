@@ -1,4 +1,6 @@
-# Log redaction
+---
+title: 'Log redaction'
+---
 
 Never log credentials or sensitive payloads. Redact:
 

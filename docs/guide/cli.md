@@ -1,4 +1,6 @@
-# CLI guide
+---
+title: 'CLI guide'
+---
 
 The `ugoite` binary supports local core mode and remote backend/API mode.
 
@@ -22,6 +24,8 @@ ugoite space list
 ugoite entry list demo
 ```
 
-Use a full Space path in core mode and a bare Space ID in backend/API mode. `ugoite config current` prints the routing mode.
+Use a full `/path/to/root/spaces/<id>` path in core mode and a bare Space ID in backend/API mode. `ugoite config current` prints the routing mode. When core mode rejects a value, the error echoes the rejected input and points you back to the filesystem path form.
 
 Space, Entry, Form, search, saved SQL, SQL-session, and most asset operations use the corresponding adapter. `index run` and `index stats` are core-only. Remote CLI asset upload, service-account CRUD, and audit-log commands are unavailable in this release.
+
+For CLI-only iteration, `mise run test:cli` runs the CLI package tests before the full workspace gate.

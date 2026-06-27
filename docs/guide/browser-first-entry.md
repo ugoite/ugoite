@@ -1,4 +1,6 @@
-# Create the first browser entry
+---
+title: 'Create the first browser entry'
+---
 
 The shipped browser is server-backed.
 

@@ -1,6 +1,8 @@
-# REST API
+---
+title: 'REST API'
+---
 
-The Rust server implementation in `crates/ugoite-server/src/lib.rs` and its generated `/openapi.json` document are authoritative. The checked-in [`openapi.yaml`](openapi.yaml) is verified against that output by `cargo run -p xtask -- openapi-check`.
+The Rust server implementation in `crates/ugoite-server/src/lib.rs` and its generated `/openapi.json` document are authoritative. The checked-in [`openapi.yaml`](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml) is verified against that output by `cargo run -p xtask -- openapi-check`.
 
 When the server hosts static browser files (`UGOITE_STATIC_DIR` is set), application API routes are nested below `/api`; `/health` and `/openapi.json` also remain available at the root. When static hosting is disabled, the OpenAPI paths are served at the root.
 
@@ -71,4 +73,4 @@ Protected routes accept a bearer token/session cookie or configured API key. Aut
 
 The server applies a 20 MiB body limit, request IDs, tracing, and CORS middleware. Domain/service errors are mapped to JSON HTTP errors. Clients should branch on status and structured payload rather than matching human-readable text.
 
-For exact schemas, parameters, and response bodies, use [`openapi.yaml`](openapi.yaml).
+For exact schemas, parameters, and response bodies, use [`openapi.yaml`](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml).

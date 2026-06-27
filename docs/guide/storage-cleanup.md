@@ -1,4 +1,6 @@
-# Storage cleanup
+---
+title: 'Storage cleanup'
+---
 
 There is no supported repository task named `cleanup:*` and no command that blindly removes old Space data.
 

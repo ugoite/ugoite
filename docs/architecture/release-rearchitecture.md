@@ -1,4 +1,6 @@
-# Release rearchitecture status
+---
+title: "Release rearchitecture status"
+---
 
 The repository has completed the current Rust-centered consolidation:
 

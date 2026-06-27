@@ -65,8 +65,7 @@ requirements:
 
     '
   related_spec:
-  - ui/README.md
-  - tasks/tasks.md#phase-7-5-uiの洗練化-追加
+  - ui/index.md
   priority: high
   status: implemented
   verification: traced
@@ -116,16 +115,12 @@ requirements:
   - SPEC-TESTING-CICD
   - SPEC-UI-OVERVIEW
   id: REQ-E2E-005
-  title: Docsite Mobile Navigation Usability
-  description: 'Docsite mobile view MUST provide an uncluttered reading layout and
-
-    expose global/document navigation via a modern drawer interaction instead of
-
-    stacking the full sidebar above content.
+  title: Docsite Responsive Navigation
+  description: 'The docsite MUST delegate responsive global and document navigation to Starlight, exposing the sidebar through an accessible mobile menu and a persistent desktop layout.
 
     '
   related_spec:
-  - ui/README.md
+  - ui/index.md
   priority: high
   status: implemented
   verification: traced
@@ -145,9 +140,7 @@ requirements:
   - SPEC-UI-OVERVIEW
   id: REQ-E2E-006
   title: Docsite Internal Link Integrity
-  description: 'Docsite internal page transitions and page-discovered links MUST resolve
-
-    without 404 responses, including deployments that use a non-root base path.
+  description: 'Docsite internal page links MUST resolve without 404 responses, including deployments that use a non-root base path. The build shell MUST load repository-level `docs/` directly instead of maintaining a second route tree.
 
     '
   related_spec:
@@ -156,9 +149,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: docsite/src/lib/base-path.test.ts
-  - file: docsite/src/lib/doc-links.test.ts
-  - file: docsite/src/lib/navigation.test.ts
+  - file: docsite/src/ssot.test.ts
   - file: e2e/docsite-links.test.ts
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
@@ -173,12 +164,8 @@ requirements:
   - SPEC-TESTING-CICD
   - SPEC-UI-OVERVIEW
   id: REQ-E2E-007
-  title: Docsite Theme Controls Stay Documentation-Focused
-  description: 'Docsite pages MUST keep one canonical UI theme and only expose color
-
-    mode selection, so documentation does not inherit or advertise product UI
-
-    theme switching from app-local preferences.
+  title: Framework-Owned Docsite Theme Controls
+  description: 'The docsite MUST use Starlight''s single light, dark, and system color-mode selector and MUST NOT maintain product-specific theme-switching code.
 
     '
   related_spec:
@@ -201,24 +188,18 @@ requirements:
   - SPEC-TESTING-CICD
   - SPEC-UI-OVERVIEW
   id: REQ-E2E-008
-  title: Docsite Getting-Started First Navigation
-  description: 'The docsite landing experience and main navigation MUST explain what
-
-    Ugoite is and surface getting-started paths before design/developer
-
-    references, while keeping deeper design and source documentation available.
+  title: Canonical Documentation Landing Page
+  description: 'The canonical `docs/index.md` landing page MUST explain Ugoite, expose concrete operator and developer start paths, and state the current browser boundary and source-of-truth rules.
 
     '
   related_spec:
-  - ui/README.md
+  - ui/index.md
   priority: high
   status: implemented
   verification: traced
   tests:
-  - file: docsite/src/lib/navigation.test.ts
-  - file: docsite/src/lib/onboarding.test.ts
+  - file: docsite/src/ssot.test.ts
   - file: e2e/docsite-onboarding.test.ts
-  - file: frontend/src/routes/index.test.tsx
 - set_id: REQCAT-E2E
   source_file: requirements/e2e.yaml
   scope: End-to-end confidence and cross-layer behavior requirements.
@@ -232,16 +213,12 @@ requirements:
   - SPEC-TESTING-CICD
   - SPEC-UI-OVERVIEW
   id: REQ-E2E-009
-  title: Docsite Desktop Navigation Stays Content-First
-  description: 'Docsite desktop layouts MUST use the header navigation instead of rendering
-
-    a separate left documentation sidebar, while keeping the mobile drawer
-
-    navigation available on smaller viewports.
+  title: Framework-Owned Desktop Documentation Layout
+  description: 'Desktop documentation pages MUST use Starlight''s persistent documentation sidebar and page table of contents, while smaller viewports use the accessible mobile menu.
 
     '
   related_spec:
-  - ui/README.md
+  - ui/index.md
   priority: high
   status: implemented
   verification: traced

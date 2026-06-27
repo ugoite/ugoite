@@ -1,4 +1,6 @@
-# Future-proofing
+---
+title: 'Future-proofing'
+---
 
 Future work must preserve current invariants rather than create a second product model.
 

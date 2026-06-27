@@ -1,4 +1,6 @@
-# Container quick start
+---
+title: 'Container quick start'
+---
 
 When a tagged image has been published, the single release image contains the Rust server, `ugoite` CLI, and compiled browser application. The uploaded repository defines the image and local release gate, but it does not contain a hosted publishing workflow.
 

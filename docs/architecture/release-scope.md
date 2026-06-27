@@ -1,4 +1,9 @@
-# Current release scope
+---
+title: "Current release scope"
+---
+
+This page records the capability boundary of the current release so packaging,
+support, and product claims stay aligned with the implementation.
 
 ## Included
 

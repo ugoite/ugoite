@@ -1,4 +1,6 @@
-# Architecture overview
+---
+title: 'Architecture overview'
+---
 
 Ugoite is a layered Rust application around portable Space directories.
 

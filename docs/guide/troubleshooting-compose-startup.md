@@ -1,4 +1,9 @@
-# Troubleshooting Compose startup
+---
+title: "Troubleshooting Compose startup"
+---
+
+Use these checks when the Compose service does not start, cannot be reached,
+rejects login, or appears to lose mounted data.
 
 ## Find the URL
 
@@ -6,7 +11,8 @@
 docker compose port ugoite 8000
 ```
 
-Source Compose uses a random loopback port; release Compose uses `${UGOITE_PORT:-8000}`.
+Source Compose uses a random loopback port; release Compose uses
+`${UGOITE_PORT:-8000}`.
 
 ## Inspect an exit
 
@@ -15,12 +21,16 @@ docker compose ps
 docker compose logs ugoite
 ```
 
-Check image/build completion, required `UGOITE_VERSION`, and write permission on the `/data` mount for the non-root user.
+Check image/build completion, required `UGOITE_VERSION`, and write permission on
+the `/data` mount for the non-root user.
 
 ## Login failure
 
-Mock OAuth requires `UGOITE_DEV_AUTH_MODE=mock-oauth` and the matching `UGOITE_BOOTSTRAP_TOKEN`. Passkey/TOTP `/auth/login` is unavailable in this release.
+Mock OAuth requires `UGOITE_DEV_AUTH_MODE=mock-oauth` and the matching
+`UGOITE_BOOTSTRAP_TOKEN`. Passkey/TOTP `/auth/login` is unavailable in this
+release.
 
 ## Missing data
 
-Confirm the host directory is mounted at `/data` and `UGOITE_ROOT=/data`. There is no separate authoritative database or frontend container.
+Confirm the host directory is mounted at `/data` and `UGOITE_ROOT=/data`. There
+is no separate authoritative database or frontend container.

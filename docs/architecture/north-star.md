@@ -1,4 +1,9 @@
-# Architecture North Star
+---
+title: "Architecture North Star"
+---
+
+This document defines the architectural promise, present boundary, target state,
+and invariants that guide Ugoite development.
 
 ## Product promise
 

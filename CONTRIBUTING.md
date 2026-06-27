@@ -25,6 +25,7 @@ mise run test
 ```
 
 Run `mise run e2e:smoke` for a representative browser/container path and `mise run e2e` for the full suite.
+For CLI-only changes, `mise run test:cli` gives a faster package-focused loop before the full workspace tests.
 
 ## Responsibility boundaries
 

@@ -1,4 +1,6 @@
-# Operations
+---
+title: 'Operations'
+---
 
 ```bash
 docker compose up -d

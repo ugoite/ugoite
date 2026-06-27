@@ -1,4 +1,6 @@
-# Troubleshooting unauthorized Spaces
+---
+title: 'Troubleshooting unauthorized Spaces'
+---
 
 HTTP `401` means no valid identity; HTTP `403` means the identity lacks the required permission.
 

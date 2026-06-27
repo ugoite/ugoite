@@ -1,4 +1,6 @@
-# Admin Space operations
+---
+title: 'Admin Space operations'
+---
 
 `admin-space` is the reserved authorization boundary for deployment-wide Space administration.
 
