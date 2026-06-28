@@ -274,7 +274,11 @@ async function readVersionState(): Promise<VersionState> {
       "Helm chart version",
     ),
     helmApp: capture(chartYaml, /\nappVersion:\s*([^\n]+)/, "Helm appVersion"),
-    helmImageTag: capture(valuesYaml, /\n  tag:\s*([^\n]+)/, "Helm image tag"),
+    helmImageTag: capture(
+      valuesYaml,
+      /\n\x20\x20tag:\s*([^\n]+)/,
+      "Helm image tag",
+    ),
     releasePleaseManifest: releaseManifest["."] ??
       fail('.release-please-manifest.json must define "."'),
     npmPackageName: packageJson.name ??
