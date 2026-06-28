@@ -2,7 +2,7 @@
 title: 'Helm chart'
 ---
 
-`charts/ugoite` deploys the same single image used by Docker Compose.
+`charts/ugoite` deploys the same single image used by Docker Compose. Release publication pushes the packaged chart to `oci://ghcr.io/ugoite/charts`, and the chart defaults to the exact matching application version instead of a moving image alias.
 
 ```bash
 helm upgrade --install ugoite charts/ugoite   --set auth.bootstrapToken="$(openssl rand -hex 32)"   --set auth.signingSecret="$(openssl rand -hex 32)"

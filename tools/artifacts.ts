@@ -105,7 +105,8 @@ async function writeManifest(): Promise<void> {
         path: "cli",
         files: await collectFiles(cliPackageDir),
         config: {
-          target: Deno.env.get("UGOITE_CLI_TARGET") ?? "linux-amd64",
+          target: Deno.env.get("UGOITE_CLI_TARGET") ??
+            "x86_64-unknown-linux-gnu",
           version: await workspaceVersion(),
         },
       },

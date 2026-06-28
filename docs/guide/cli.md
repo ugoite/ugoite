@@ -29,3 +29,5 @@ Use a full `/path/to/root/spaces/<id>` path in core mode and a bare Space ID in 
 Space, Entry, Form, search, saved SQL, SQL-session, and most asset operations use the corresponding adapter. `index run` and `index stats` are core-only. Remote CLI asset upload, service-account CRUD, and audit-log commands are unavailable in this release.
 
 For CLI-only iteration, `mise run test:cli` runs the CLI package tests before the full workspace gate.
+
+Published installer packages use GitHub Packages under the scoped name `@ugoite/ugoite`. Configure `@ugoite:registry=https://npm.pkg.github.com` before running `npx --package @ugoite/ugoite@<version> ugoite-install`.

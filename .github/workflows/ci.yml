@@ -220,6 +220,10 @@ jobs:
         id: verify-cli
         run: scripts/measure-step.sh verify-cli mise run verify:cli
 
+      - name: Validate release metadata
+        id: validate-release
+        run: scripts/measure-step.sh validate-release mise run validate:release
+
       - name: Verify Helm artifact
         id: verify-helm
         run: scripts/measure-step.sh verify-helm mise run verify:helm
@@ -253,7 +257,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ugoite-cli-linux
-          path: target/artifacts/cli/ugoite-cli-linux-x86_64.tar.gz
+          path: target/artifacts/cli/*
           if-no-files-found: error
           compression-level: 0
 
@@ -263,7 +267,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ugoite-helm-chart
-          path: target/artifacts/helm/ugoite-0.0.1.tgz
+          path: target/artifacts/helm/*.tgz
           if-no-files-found: error
           compression-level: 0
 
@@ -376,6 +380,7 @@ jobs:
             echo "- verify:cli: ${{ steps.verify-cli.outputs.duration_seconds }}s"
             echo "- verify:helm: ${{ steps.verify-helm.outputs.duration_seconds }}s"
             echo "- verify:image: ${{ steps.verify-image.outputs.duration_seconds }}s"
+            echo "- validate:release: ${{ steps.validate-release.outputs.duration_seconds }}s"
             echo "- total workflow duration: ${total_duration_seconds}s"
             echo
             echo "### Artifact Digests"
