@@ -194,6 +194,8 @@ Deno.test("Pages promotion consumes trusted artifacts without rebuilding", async
       "id-token: write",
       "environment:",
       "name: github-pages",
+      "GITHUB_TOKEN: ${{ github.token }}",
+      'fail("workflow_dispatch requires GITHUB_TOKEN")',
     ]
   ) {
     assertEquals(workflow.includes(required), true, required);
