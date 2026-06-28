@@ -1,6 +1,7 @@
 {
   "tasks": {
     "install:browsers": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 install --with-deps chromium",
+    "docsite:navigation": "E2E_AUTH_BEARER_TOKEN=docsite-nav-token deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test docsite-mobile-nav.test.ts docsite-links.test.ts",
     "smoke": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts",
     "entries": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts",
     "forms": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test forms.test.ts",

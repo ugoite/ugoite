@@ -16,6 +16,7 @@
     "docsite:dev": "deno task --cwd docsite dev",
     "docsite:build": "deno task --cwd docsite build",
     "docsite:test": "deno task --cwd docsite test",
+    "docsite:e2e:navigation": "deno task --cwd e2e docsite:navigation",
     "e2e:install:browsers": "deno task --cwd e2e install:browsers",
     "e2e:smoke": "bash e2e/scripts/run-e2e-parity.sh smoke",
     "e2e:full": "bash e2e/scripts/run-e2e-parity.sh full",

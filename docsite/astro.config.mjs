@@ -1,6 +1,7 @@
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import { docsSidebarDirectory, docsSourceDirectory } from "./src/docs-ssot.mjs";
 import satteriDocLinks from "./src/satteri-doc-links.mjs";
 
 const configuredBase = process.env.DOCSITE_BASE ?? "/";
@@ -37,17 +38,19 @@ export default defineConfig({
       markdown: {
         // `docs/` is intentionally outside Starlight's conventional collection
         // directory so the repository and the website share one source tree.
-        processedDirs: ["../docs"],
+        processedDirs: [docsSourceDirectory],
       },
       sidebar: [
         { slug: "index" },
         {
           label: "Guides",
-          items: [{ autogenerate: { directory: "docs/guide" } }],
+          items: [{ autogenerate: { directory: docsSidebarDirectory("guide") } }],
         },
         {
           label: "Architecture",
-          items: [{ autogenerate: { directory: "docs/architecture" } }],
+          items: [
+            { autogenerate: { directory: docsSidebarDirectory("architecture") } },
+          ],
         },
         {
           label: "Specification",
@@ -55,7 +58,7 @@ export default defineConfig({
           items: [
             {
               autogenerate: {
-                directory: "docs/spec",
+                directory: docsSidebarDirectory("spec"),
                 collapsed: true,
               },
             },
