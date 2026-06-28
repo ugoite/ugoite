@@ -58,3 +58,15 @@ Requirement IDs use `REQ-<CATEGORY>-<NNN>`. Tests should include the relevant ID
 ## Pull requests
 
 Describe the behavior change, link an issue, list focused validation, and call out changes to storage compatibility, authentication, OpenAPI, or browser/server boundaries. `mise run ci` is the pull-request gate; `mise run ci:merge` is the merge gate.
+
+## Release flow
+
+Canonical release versions are synchronized across:
+
+- `Cargo.toml` `[workspace.package].version`
+- `.release-please-manifest.json`
+- `packages/ugoite/package.json`
+- `charts/ugoite/Chart.yaml`
+- `charts/ugoite/values.yaml`
+
+`mise run validate:release` verifies that contract locally. Pushes to `main` update or refresh the Release Please PR only. Merging that PR creates the `v<version>` tag and GitHub Release, then `.github/workflows/release-publish.yml` publishes the non-docsite artifacts for that exact version.

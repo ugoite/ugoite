@@ -253,7 +253,12 @@ run = "deno run -A tools/artifacts.ts package-docsite"
 
 [tasks."package:cli"]
 description = "Package the Linux CLI archive under target/artifacts"
-run = "mkdir -p target/artifacts/cli && test -x target/rust/release/ugoite && tar -C target/rust/release -czf target/artifacts/cli/ugoite-cli-linux-x86_64.tar.gz ugoite"
+env = { UGOITE_CLI_TARGET = "x86_64-unknown-linux-gnu", UGOITE_CLI_BINARY_PATH = "target/rust/release/ugoite" }
+run = "deno run -A tools/release.ts package-cli"
+
+[tasks."package:cli:target"]
+description = "Package an installer-compatible CLI archive for the configured native target"
+run = "deno run -A tools/release.ts package-cli"
 
 [tasks."package:helm"]
 description = "Package the Helm chart under target/artifacts"
@@ -279,7 +284,11 @@ run = [
 run = "deno run -A tools/artifacts.ts verify-docsite"
 
 [tasks."verify:cli"]
-run = "deno run -A tools/artifacts.ts verify-cli"
+env = { UGOITE_CLI_TARGET = "x86_64-unknown-linux-gnu" }
+run = "deno run -A tools/release.ts verify-cli"
+
+[tasks."verify:cli:target"]
+run = "deno run -A tools/release.ts verify-cli"
 
 [tasks."verify:helm"]
 run = "deno run -A tools/artifacts.ts verify-helm"
@@ -290,6 +299,26 @@ run = "deno run -A tools/artifacts.ts verify-image"
 [tasks.verify]
 description = "Verify packaged outputs without rebuilding them"
 run = [{ tasks = ["verify:docsite", "verify:cli", "verify:helm", "verify:image"] }]
+
+[tasks."package:npm"]
+description = "Pack the scoped npm installer tarball under target/artifacts"
+run = "deno run -A tools/release.ts package-npm"
+
+[tasks."verify:npm"]
+description = "Verify the scoped npm installer tarball without publishing it"
+run = "deno run -A tools/release.ts verify-npm"
+
+[tasks."verify:helm:release"]
+description = "Verify the packaged Helm archive without depending on the repo-wide artifact manifest"
+run = "deno run -A tools/release.ts verify-helm"
+
+[tasks."validate:release"]
+description = "Validate canonical release metadata and synchronized version sources"
+run = "deno run -A tools/release.ts validate-release"
+
+[tasks."print:version"]
+description = "Print the canonical repository release version"
+run = "deno run -A tools/release.ts print-version"
 
 [tasks.ci]
 run = [
@@ -310,6 +339,9 @@ run = [
 
 [tasks."ci:release"]
 run = [
+  { task = "validate:release" },
   { task = "ci:merge" },
+  { task = "package:npm" },
+  { task = "verify:npm" },
   { task = "test:e2e" },
 ]

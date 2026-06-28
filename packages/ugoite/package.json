@@ -1,6 +1,6 @@
 {
-  "name": "ugoite",
-  "version": "0.0.1",
+  "name": "@ugoite/ugoite",
+  "version": "0.1.0",
   "private": false,
   "description": "Public installer package for the released Ugoite CLI",
   "license": "MIT",
@@ -40,6 +40,7 @@
     "README.md"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
   }
 }

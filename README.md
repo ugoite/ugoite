@@ -98,6 +98,8 @@ The server-generated `/openapi.json` is authoritative. `cargo run -p xtask -- op
 ## Distribution safety
 
 Prefer package-manager or release-archive installation. The optional npm installer verifies release checksums before installing a binary. Do not present `curl | sh` as the recommended installation path.
+
+Release versions are synchronized across Cargo, the scoped GitHub Packages installer, and Helm metadata. Pushes to `main` update Release Please metadata only; merging the Release Please PR publishes versioned non-docsite artifacts from `.github/workflows/release-publish.yml`.
 ## License
 
 MIT

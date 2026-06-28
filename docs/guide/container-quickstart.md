@@ -2,7 +2,7 @@
 title: 'Container quick start'
 ---
 
-When a tagged image has been published, the single release image contains the Rust server, `ugoite` CLI, and compiled browser application. The uploaded repository defines the image and local release gate, but it does not contain a hosted publishing workflow.
+When a tagged image has been published, the single release image contains the Rust server, `ugoite` CLI, and compiled browser application. Versioned images are published to `ghcr.io/ugoite/ugoite:<version>`, stable releases additionally refresh the `stable` and `latest` aliases, and prereleases refresh only their matching `alpha` or `beta` alias.
 
 ```bash
 export UGOITE_VERSION=<release-tag>
