@@ -1,7 +1,6 @@
 ---
 title: Ugoite
 description: A private, portable knowledge space you can run with Docker, automate from the CLI, and keep on infrastructure you control.
-template: splash
 hero:
   tagline: A private, portable knowledge space built around operator-owned files.
   actions:

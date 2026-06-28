@@ -192,6 +192,10 @@ jobs:
         id: test-docsite
         run: scripts/measure-step.sh test-docsite mise run test:docsite
 
+      - name: Docsite navigation E2E
+        id: test-docsite-navigation
+        run: scripts/measure-step.sh test-docsite-navigation mise run test:docsite:e2e:navigation
+
       - name: E2E smoke
         id: test-e2e
         run: scripts/measure-step.sh test-e2e mise run test:e2e:smoke

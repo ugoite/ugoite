@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { docsSidebarDirectory, docsSourceDirectory } from "./docs-ssot.mjs";
 import { rewriteDocLink } from "./satteri-doc-links.mjs";
 
 const repoRoot = path.resolve(process.cwd(), "..");
@@ -12,7 +13,8 @@ describe("documentation single source of truth", () => {
       path.join(process.cwd(), "src/content.config.ts"),
       "utf8",
     );
-    expect(config).toContain('base: "../docs"');
+    expect(config).toContain('import { docsSourceDirectory } from "./docs-ssot.mjs"');
+    expect(config).toContain("base: docsSourceDirectory");
     expect(config).toContain("docsSchema()");
   });
 
@@ -27,10 +29,23 @@ describe("documentation single source of truth", () => {
     expect(config).toContain(
       "processor: satteri({ mdastPlugins: [satteriDocLinks] })",
     );
-    expect(config).toContain('processedDirs: ["../docs"]');
+    expect(config).toContain(
+      'import { docsSidebarDirectory, docsSourceDirectory } from "./src/docs-ssot.mjs"',
+    );
+    expect(config).toContain("processedDirs: [docsSourceDirectory]");
+    expect(config).toContain('docsSidebarDirectory("guide")');
+    expect(config).toContain('docsSidebarDirectory("architecture")');
+    expect(config).toContain('docsSidebarDirectory("spec")');
     expect(config).not.toContain("@astrojs/markdown-remark");
     expect(config).not.toContain("GITHUB_ACTIONS");
     expect(config).not.toContain("http://localhost");
+  });
+
+  test("shared docs path helpers keep loader and sidebar namespaces aligned", () => {
+    expect(docsSourceDirectory).toBe("../docs");
+    expect(docsSidebarDirectory("guide")).toBe("../docs/guide");
+    expect(docsSidebarDirectory("architecture")).toBe("../docs/architecture");
+    expect(docsSidebarDirectory("spec")).toBe("../docs/spec");
   });
 
   test("docsite contains no hand-authored route tree", async () => {

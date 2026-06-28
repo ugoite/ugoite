@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const docsiteDir = fileURLToPath(new URL("../../docsite", import.meta.url));
@@ -27,26 +27,38 @@ export async function startDocsiteServer(options?: {
 
   if (!configuredDocsiteUrl || options?.basePath) {
     resolvedDocsiteUrl = undefined;
+    const docsiteEnv = {
+      ...process.env,
+      ...(options?.basePath ? { DOCSITE_BASE: options.basePath } : {}),
+    };
+    const buildResult = spawnSync(
+      "deno",
+      ["task", "--cwd", docsiteDir, "build"],
+      {
+        cwd: fileURLToPath(new URL("../..", import.meta.url)),
+        env: docsiteEnv,
+        encoding: "utf8",
+      },
+    );
+    if (buildResult.status !== 0) {
+      throw new Error(
+        `Docsite build failed before preview startup.\n${
+          buildResult.stdout ?? ""
+        }${buildResult.stderr ?? ""}`,
+      );
+    }
     docsiteProcess = spawn(
       "deno",
       [
-        "run",
-        "-A",
-        "npm:astro@6.4.8",
-        "dev",
-        "--host",
-        "127.0.0.1",
-        "--strictPort",
-        "--port",
-        "0",
+        "task",
+        "--cwd",
+        docsiteDir,
+        "preview:e2e",
       ],
       {
-        cwd: docsiteDir,
+        cwd: fileURLToPath(new URL("../..", import.meta.url)),
         stdio: "pipe",
-        env: {
-          ...process.env,
-          ...(options?.basePath ? { DOCSITE_BASE: options.basePath } : {}),
-        },
+        env: docsiteEnv,
       },
     );
 

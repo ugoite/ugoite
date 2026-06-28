@@ -221,6 +221,9 @@ run = [
 [tasks."test:docsite"]
 run = "deno task docsite:test"
 
+[tasks."test:docsite:e2e:navigation"]
+run = "deno task docsite:e2e:navigation"
+
 [tasks.test]
 run = [{ tasks = ["test:rust", "test:tools", "test:frontend", "test:docsite"] }]
 
