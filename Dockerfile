@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM denoland/deno:2.8.3 AS frontend-build
+FROM denoland/deno:2.9.0 AS frontend-build
 WORKDIR /repo
 ENV CARGO_TARGET_DIR=target/rust
 RUN apt-get update \
@@ -32,7 +32,7 @@ COPY vendor ./vendor
 RUN cargo build -p ugoite-server --release --locked
 RUN cargo build -p ugoite-cli --release --locked
 
-FROM ubuntu:24.04 AS runtime-base
+FROM ubuntu:26.04 AS runtime-base
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
