@@ -16,6 +16,8 @@ use sha2::{Digest, Sha256};
 use std::time::Duration;
 use uuid::Uuid;
 
+pub const DEFAULT_DEVICE_ACTIONS: &str = "read,create,update";
+
 #[derive(Args)]
 pub struct AuthCmd {
     #[command(subcommand)]
@@ -35,7 +37,7 @@ pub enum AuthSubCmd {
         #[arg(
             long,
             value_delimiter = ',',
-            default_value = "read,create,update,delete"
+            default_value = DEFAULT_DEVICE_ACTIONS
         )]
         actions: Vec<String>,
     },

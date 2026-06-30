@@ -42,6 +42,12 @@ It never falls back to read-then-write. Browser sessions, access-token records,
 and audit events are directly addressed objects; expired records may be removed
 lazily or by storage lifecycle rules.
 
+Portable Space authorization state has its own monotonic revision. Mutations
+compare the expected revision and use the storage ETag with `If-Match` where the
+backend supports it. Conflicting member, agent, or policy changes fail closed
+instead of overwriting a newer revocation. Independently constructed core
+services also share the local-process write lock.
+
 `UGOITE_NODE_SECRET_KEY` or `UGOITE_NODE_SECRET_FILE` supplies at least 32 bytes
 of encryption-root material. Keep it outside the control namespace. Missing key
 material is a startup error. TOTP seeds and OIDC client secrets use authenticated
@@ -103,6 +109,8 @@ Approval shows the device, Space, and action set and requires a recent Passkey.
 Five-minute opaque access tokens are DPoP-bound to the device key; 30-day refresh
 credentials rotate on every use. Reuse revokes the device grant. The private key
 uses the OS keychain where available and otherwise an owner-only file.
+The proof `htu` is checked against the configured canonical public URL plus the
+actual request path; client-supplied forwarding headers cannot replace it.
 
 Agents are Space principals with a human sponsor, human owners, an expiry/review
 deadline, an autonomous/delegated mode, explicit grants, and independent public

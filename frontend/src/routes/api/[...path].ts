@@ -157,8 +157,6 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
   }
   const headers = filterRequestHeaders(request.headers);
   const requestId = ensureRequestId(headers);
-  headers.set("x-ugoite-public-uri", request.url);
-
   const timeoutMs = resolveProxyTimeoutMs();
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);

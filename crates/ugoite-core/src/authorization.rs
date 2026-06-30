@@ -9,7 +9,10 @@ use opendal::Operator;
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{Arc, OnceLock},
+};
 use tokio::sync::Mutex;
 use ugoite_domain::identity::{
     evaluate_policy, role_actions, AccessPolicy, Action, AgentMode, AgentPrincipal, Membership,
@@ -91,7 +94,12 @@ struct OwnerClaim {
 #[derive(Clone)]
 pub struct Authorizer {
     operator: Operator,
-    lock: std::sync::Arc<Mutex<()>>,
+    lock: Arc<Mutex<()>>,
+}
+
+fn authorization_write_lock() -> Arc<Mutex<()>> {
+    static LOCK: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
+    LOCK.get_or_init(|| Arc::new(Mutex::new(()))).clone()
 }
 
 pub struct CreateAgentRequest {
@@ -107,7 +115,7 @@ impl Authorizer {
     pub fn new(operator: Operator) -> Self {
         Self {
             operator,
-            lock: std::sync::Arc::new(Mutex::new(())),
+            lock: authorization_write_lock(),
         }
     }
 
@@ -762,9 +770,69 @@ impl Authorizer {
     }
 
     async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
-        self.operator
-            .write(&state_path(space_id), serde_json::to_vec_pretty(state)?)
-            .await?;
+        let path = state_path(space_id);
+        let serialized = serde_json::to_vec_pretty(state)?;
+        let capabilities = self.operator.info().full_capability();
+
+        if state.revision == 1 {
+            if capabilities.write_with_if_not_exists {
+                self.operator
+                    .write_with(&path, serialized)
+                    .if_not_exists(true)
+                    .await
+                    .context("atomically create Space authorization state")?;
+            } else {
+                if self.operator.exists(&path).await? {
+                    bail!("authorization state already exists");
+                }
+                self.operator.write(&path, serialized).await?;
+            }
+            return Ok(());
+        }
+
+        let expected_revision = state
+            .revision
+            .checked_sub(1)
+            .ok_or_else(|| anyhow!("invalid authorization revision"))?;
+        if capabilities.write_with_if_match {
+            let metadata = self
+                .operator
+                .stat(&path)
+                .await
+                .context("stat Space authorization state for compare-and-swap")?;
+            let version = metadata
+                .etag()
+                .or_else(|| metadata.version())
+                .ok_or_else(|| {
+                    anyhow!("Space authorization object has no conditional-write version")
+                })?
+                .to_string();
+            let current = self
+                .operator
+                .read_with(&path)
+                .if_match(&version)
+                .await
+                .context("read versioned Space authorization state")?;
+            let current: AuthorizationState = serde_json::from_slice(&current.to_vec())
+                .context("decode versioned Space authorization state")?;
+            if current.revision != expected_revision {
+                bail!("Space authorization revision conflict");
+            }
+            self.operator
+                .write_with(&path, serialized)
+                .if_match(&version)
+                .await
+                .context("compare-and-swap Space authorization state")?;
+        } else {
+            // Filesystem and in-memory adapters are serialized by the shared process lock.
+            // Remote production stores are required to expose conditional writes by the
+            // node-control startup capability check.
+            let current = self.state(space_id).await?;
+            if current.revision != expected_revision {
+                bail!("Space authorization revision conflict");
+            }
+            self.operator.write(&path, serialized).await?;
+        }
         Ok(())
     }
 }
@@ -910,6 +978,62 @@ mod tests {
             .effective_actions("demo", agent.agent_id, None)
             .await
             .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn concurrent_revocation_and_policy_update_cannot_restore_principal() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-cas")?;
+        op.create_dir("spaces/demo/").await?;
+        let first = Authorizer::new(op.clone());
+        let second = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        first
+            .initialize_owner("demo", Uuid::now_v7(), owner, "Owner")
+            .await?;
+        let member = Uuid::now_v7();
+        first
+            .add_human_member(
+                "demo",
+                owner,
+                SpacePrincipal {
+                    principal_id: member,
+                    kind: PrincipalKind::Human,
+                    display_name: "Member".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "entry".to_string(),
+            parent: None,
+        };
+        let revoke = first.revoke_principal("demo", owner, member);
+        let update = second.set_policy(
+            "demo",
+            owner,
+            &resource,
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: true,
+                grants: vec![],
+            },
+        );
+        let (revoke_result, update_result) = tokio::join!(revoke, update);
+        revoke_result?;
+        update_result?;
+        let state = first.state("demo").await?;
+        assert!(matches!(
+            state
+                .principals
+                .get(&member)
+                .map(|principal| &principal.state),
+            Some(PrincipalState::Revoked)
+        ));
+        assert!(state.policies.contains_key(&resource.key()));
         Ok(())
     }
 }

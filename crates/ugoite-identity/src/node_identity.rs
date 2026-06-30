@@ -796,48 +796,10 @@ impl NodeIdentityService {
     ) -> Result<InvitationRegistrationFinish> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
-        let challenge = match state.registration_challenges.remove(&challenge_id) {
-            Some(challenge) => challenge,
-            None => {
-                let invitation = state
-                    .invitations
-                    .values()
-                    .find(|invitation| {
-                        invitation.token_hash == token_hash(invitation_token)
-                            && invitation.used_at.is_some()
-                            && invitation.accepted_account_id.is_some()
-                    })
-                    .cloned()
-                    .ok_or_else(|| anyhow!("unknown or consumed registration challenge"))?;
-                let account_id = invitation
-                    .accepted_account_id
-                    .ok_or_else(|| anyhow!("accepted invitation has no account"))?;
-                let account = state
-                    .accounts
-                    .get(&account_id)
-                    .cloned()
-                    .ok_or_else(|| anyhow!("accepted invitation account is unavailable"))?;
-                let method_id = state
-                    .passkeys
-                    .values()
-                    .find(|passkey| passkey.account_id == account_id)
-                    .map(|passkey| passkey.method_id)
-                    .ok_or_else(|| anyhow!("accepted invitation Passkey is unavailable"))?;
-                let session_id = self
-                    .create_session(
-                        &state,
-                        account_id,
-                        method_id,
-                        AssuranceLevel::PhishingResistant,
-                    )
-                    .await?;
-                return Ok(InvitationRegistrationFinish {
-                    account,
-                    session_id,
-                    invitation,
-                });
-            }
-        };
+        let challenge = state
+            .registration_challenges
+            .remove(&challenge_id)
+            .ok_or_else(|| anyhow!("unknown or consumed registration challenge"))?;
         validate_expiry(&challenge.expires_at, "registration challenge")?;
         let RegistrationPurpose::Invitation { invitation_id } = challenge.purpose else {
             bail!("registration challenge has the wrong purpose");
@@ -2990,6 +2952,54 @@ mod tests {
             .await?;
         assert_eq!(first.accepted_principal_id, retry.accepted_principal_id);
         assert!(first.used_at.is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn consumed_invitation_cannot_replace_a_registration_challenge() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Invited user".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+            },
+        );
+        service.write_state(&state).await?;
+        let (_, token) = service
+            .issue_invitation(
+                account_id,
+                "Invited user",
+                Some(Uuid::now_v7()),
+                Some("viewer".to_string()),
+            )
+            .await?;
+        service
+            .accept_invitation_for_account(&token, account_id)
+            .await?;
+        let credential: RegisterPublicKeyCredential = serde_json::from_value(serde_json::json!({
+            "id": "invalid",
+            "rawId": "aW52YWxpZA",
+            "response": {
+                "attestationObject": "aW52YWxpZA",
+                "clientDataJSON": "aW52YWxpZA"
+            },
+            "type": "public-key"
+        }))?;
+        let error = service
+            .finish_invitation_registration(&token, Uuid::now_v7(), &credential)
+            .await
+            .expect_err("a consumed invitation must never mint a browser session");
+        assert!(error
+            .to_string()
+            .contains("unknown or consumed registration challenge"));
+        assert!(service.list_sessions(account_id).await?.is_empty());
         Ok(())
     }
 

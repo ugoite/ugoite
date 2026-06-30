@@ -98,7 +98,9 @@ key-binding metadata. They can be revoked immediately and expose no claims to
 the holder. Every API request uses DPoP. Ugoite validates the proof signature, registered
 key thumbprint, method, URI, access-token hash, timestamp, and one-use `jti`. A
 copied access token is unusable without the device key. Devices and last-use
-state are visible and individually revocable.
+state are visible and individually revocable. The expected URI comes from the
+Node's canonical public URL and the actual request path, never a client-provided
+forwarding header.
 
 ## Agents and MCP
 

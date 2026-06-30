@@ -555,7 +555,8 @@ async fn require_auth(
             let Ok(credential) = state.identity.agent_credential(claims.credential_id).await else {
                 return unauthorized("agent credential is revoked");
             };
-            if credential.agent_id != claims.sub {
+            let expected_agent_id = access_token_agent_id(&claims);
+            if &credential.agent_id != expected_agent_id {
                 return unauthorized("agent credential subject mismatch");
             }
             (Uuid::nil(), "Agent".to_string(), credential.public_key_jwk)
@@ -576,21 +577,15 @@ async fn require_auth(
         if thumbprint != claims.cnf.jkt {
             return unauthorized("access token is not bound to this proof key");
         }
-        let htu = headers
-            .get("x-ugoite-public-uri")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string)
-            .unwrap_or_else(|| {
-                format!(
-                    "{}{}",
-                    issuer.trim_end_matches('/'),
-                    request
-                        .uri()
-                        .path_and_query()
-                        .map(|value| value.as_str())
-                        .unwrap_or(request.uri().path())
-                )
-            });
+        let htu = format!(
+            "{}{}",
+            issuer.trim_end_matches('/'),
+            request
+                .uri()
+                .path_and_query()
+                .map(|value| value.as_str())
+                .unwrap_or(request.uri().path())
+        );
         let Ok(proof_claims) = oauth::verify_dpop_proof(
             proof,
             &proof_key,
@@ -2571,10 +2566,7 @@ async fn issue_agent_token(
             .effective_actions(space_id, human, None)
             .await
             .map_err(ApiError::from_core)?;
-        agent_actions
-            .intersection(&human_actions)
-            .cloned()
-            .collect::<BTreeSet<_>>()
+        delegated_agent_actions(&agent_actions, &human_actions)
     } else {
         agent_actions
     };
@@ -2648,6 +2640,17 @@ fn validate_action_names(actions: &BTreeSet<String>) -> ApiResult<()> {
         parse_action(action)?;
     }
     Ok(())
+}
+
+fn access_token_agent_id(claims: &AccessTokenClaims) -> &Uuid {
+    claims.actor_principal_id.as_ref().unwrap_or(&claims.sub)
+}
+
+fn delegated_agent_actions(
+    agent_actions: &BTreeSet<Action>,
+    human_actions: &BTreeSet<Action>,
+) -> BTreeSet<Action> {
+    agent_actions.intersection(human_actions).cloned().collect()
 }
 
 fn validate_access_credential_actions(actions: &BTreeSet<String>) -> ApiResult<()> {
@@ -4296,4 +4299,62 @@ fn strip_html_tags(input: &str) -> String {
 
 pub fn openapi_snapshot() -> Value {
     serde_json::from_str(OPENAPI_JSON).expect("embedded OpenAPI snapshot must be valid JSON")
+}
+
+#[cfg(test)]
+mod authentication_regression_tests {
+    use super::*;
+
+    fn token_claims(sub: Uuid, actor_principal_id: Option<Uuid>) -> AccessTokenClaims {
+        AccessTokenClaims {
+            iss: "https://ugoite.example".to_string(),
+            node_id: Uuid::now_v7(),
+            sub,
+            principal_type: if actor_principal_id.is_some() {
+                "human".to_string()
+            } else {
+                "agent".to_string()
+            },
+            actor_principal_id,
+            aud: "https://ugoite.example".to_string(),
+            space_uid: Uuid::now_v7(),
+            granted_actions: ["read".to_string()].into_iter().collect(),
+            actor_chain: Vec::new(),
+            exp: chrono::Utc::now().timestamp() + 300,
+            iat: chrono::Utc::now().timestamp(),
+            jti: Uuid::now_v7(),
+            credential_id: Uuid::now_v7(),
+            cnf: Confirmation {
+                jkt: "thumbprint".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn autonomous_and_delegated_tokens_authenticate_the_agent_credential_subject() {
+        let agent = Uuid::now_v7();
+        let human = Uuid::now_v7();
+        assert_eq!(access_token_agent_id(&token_claims(agent, None)), &agent);
+        assert_eq!(
+            access_token_agent_id(&token_claims(human, Some(agent))),
+            &agent
+        );
+    }
+
+    #[test]
+    fn delegated_permissions_are_an_intersection_and_cli_defaults_are_accepted() {
+        let agent = [Action::Read, Action::Update].into_iter().collect();
+        let human = [Action::Read, Action::Create].into_iter().collect();
+        assert_eq!(
+            delegated_agent_actions(&agent, &human),
+            [Action::Read].into_iter().collect()
+        );
+        let defaults = ["read", "create", "update"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        validate_action_names(&defaults).expect("CLI default actions are known");
+        validate_access_credential_actions(&defaults)
+            .expect("CLI default actions require no unavailable approval flow");
+    }
 }

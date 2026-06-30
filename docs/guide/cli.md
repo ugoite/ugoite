@@ -1,5 +1,5 @@
 ---
-title: CLI
+title: CLI guide
 ---
 
 Core mode is explicitly operator-local: it opens operator-owned Spaces directly,

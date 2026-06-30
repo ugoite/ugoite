@@ -1,4 +1,5 @@
 use std::process::Command;
+use ugoite_cli::commands::auth::DEFAULT_DEVICE_ACTIONS;
 
 fn ugoite_bin() -> String {
     let mut path = std::env::current_exe().unwrap();
@@ -19,6 +20,14 @@ fn test_help() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("ugoite"));
+}
+
+#[test]
+fn default_device_login_actions_exclude_unapproved_dangerous_actions() {
+    assert_eq!(DEFAULT_DEVICE_ACTIONS, "read,create,update");
+    assert!(!DEFAULT_DEVICE_ACTIONS
+        .split(',')
+        .any(|action| action == "delete" || action == "share"));
 }
 
 /// REQ-OPS-018: top-level help must show a task-oriented quick-start path.
