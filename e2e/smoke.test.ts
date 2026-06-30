@@ -7,201 +7,114 @@
  */
 
 import { expect, test } from "@playwright/test";
-import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client.ts";
+import {
+  ensureDefaultForm,
+  getDefaultSpaceId,
+  getBackendUrl,
+  waitForServers,
+} from "./lib/client.ts";
 
 test.describe("Smoke Tests", () => {
-	test.beforeAll(async ({ request }) => {
-		await waitForServers(request);
-		await ensureDefaultForm(request);
-	});
+  test.beforeAll(async ({ request }) => {
+    await waitForServers(request);
+    await ensureDefaultForm(request);
+  });
 
-	test("GET / returns HTML with DOCTYPE", async ({ page }) => {
-		await page.goto("/");
-		await page.waitForLoadState("networkidle");
-		const body = await page.content();
-		expect(body.toLowerCase()).toContain("<!doctype html>");
-	});
+  test("GET / returns HTML with DOCTYPE", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    const body = await page.content();
+    expect(body.toLowerCase()).toContain("<!doctype html>");
+  });
 
-	test("GET / has correct content-type", async ({ page }) => {
-		const response = await page.goto("/");
-		expect(response).not.toBeNull();
-		const contentType = response?.headers()["content-type"] ?? "";
-		expect(contentType).toContain("text/html");
-	});
+  test("GET / has correct content-type", async ({ page }) => {
+    const response = await page.goto("/");
+    expect(response).not.toBeNull();
+    const contentType = response?.headers()["content-type"] ?? "";
+    expect(contentType).toContain("text/html");
+  });
 
-	test("GET /spaces returns HTML", async ({ page }) => {
-		await page.goto("/spaces");
-		await page.waitForLoadState("networkidle");
-		const body = await page.content();
-		expect(body.toLowerCase()).toContain("<!doctype html>");
-	});
+  test("GET /spaces returns HTML", async ({ page }) => {
+    await page.goto("/spaces");
+    await page.waitForLoadState("networkidle");
+    const body = await page.content();
+    expect(body.toLowerCase()).toContain("<!doctype html>");
+  });
 
-	test("GET /spaces/default/entries/:id returns HTML", async ({
-		page,
-		request,
-	}) => {
-		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
-			{
-				data: {
-					markdown: `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${new Date().toISOString()}`,
-				},
-			},
-		);
-		expect(createRes.status()).toBe(201);
-		const created = (await createRes.json()) as { id: string };
+  test("GET /spaces/:space_id/entries/:id returns HTML", async ({ page, request }) => {
+    const spaceId = await getDefaultSpaceId(request);
+    const createRes = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/entries`),
+      {
+        data: {
+          markdown:
+            `---\nform: Entry\n---\n# E2E Detail Route Entry\n\n## Body\nCreated at ${
+              new Date().toISOString()
+            }`,
+        },
+      },
+    );
+    expect(createRes.status()).toBe(201);
+    const created = (await createRes.json()) as { id: string };
 
-		await page.goto(`/spaces/default/entries/${created.id}`);
-		await page.waitForLoadState("networkidle");
-		const body = await page.content();
-		expect(body.toLowerCase()).toContain("<!doctype html>");
+    await page.goto(`/spaces/${spaceId}/entries/${created.id}`);
+    await page.waitForLoadState("networkidle");
+    const body = await page.content();
+    expect(body.toLowerCase()).toContain("<!doctype html>");
 
-		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
-		);
-	});
+    await request.delete(
+      getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
+    );
+  });
 
-	test("GET /about returns HTML", async ({ page }) => {
-		await page.goto("/about");
-		await page.waitForLoadState("networkidle");
-		const body = await page.content();
-		expect(body.toLowerCase()).toContain("<!doctype html>");
-	});
+  test("GET /about returns HTML", async ({ page }) => {
+    await page.goto("/about");
+    await page.waitForLoadState("networkidle");
+    const body = await page.content();
+    expect(body.toLowerCase()).toContain("<!doctype html>");
+  });
 
-	test("REQ-OPS-015: browser mock-oauth login reaches /spaces with an HttpOnly auth cookie and default ahead of reserved admin-space", async ({
-		browser,
-	}) => {
-		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
-		const context = await browser.newContext({
-			storageState: { cookies: [], origins: [] },
-		});
-		const page = await context.newPage();
+  test("REQ-OPS-015: Passkey login produces only an opaque HttpOnly session cookie", async ({ page, context }) => {
+    await page.goto("/spaces");
+    await expect(page.getByText("Available Spaces")).toBeVisible();
+    const cookies = await context.cookies();
+    const session = cookies.find((cookie) => cookie.name === "ugoite_session");
+    expect(session).toBeDefined();
+    expect(session?.httpOnly).toBe(true);
+    expect(await page.evaluate(() => document.cookie)).not.toContain(
+      "ugoite_session=",
+    );
+    expect(cookies.some((cookie) => cookie.name.includes("bearer"))).toBe(
+      false,
+    );
+  });
 
-		try {
-			await page.goto("/login");
-			await page
-				.getByRole("button", { name: "Continue with Local Demo Login" })
-				.click();
-			await expect(page).toHaveURL(/\/spaces$/);
-			await expect(page.getByText("Available Spaces")).toBeVisible();
-			const userSpaces = page.getByRole("list", { name: "User spaces" });
-			await expect(userSpaces).toContainText("default");
-			await expect(userSpaces).not.toContainText("admin-space");
-			const adminSpaces = page.getByRole("list", { name: "Admin spaces" });
-			await expect(adminSpaces).toContainText("admin-space");
-			await userSpaces
-				.getByRole("link", { name: "Open Space" })
-				.first()
-				.click();
-			await expect(page).toHaveURL(/\/spaces\/default\/dashboard$/);
-			const cookies = await context.cookies(frontendUrl);
-			const authCookie = cookies.find(
-				(cookie) => cookie.name === "ugoite_auth_bearer_token",
-			);
-			expect(authCookie).toBeDefined();
-			expect(authCookie?.httpOnly).toBe(true);
-			expect(await page.evaluate(() => document.cookie)).not.toContain(
-				"ugoite_auth_bearer_token=",
-			);
-		} finally {
-			await context.close();
-		}
-	});
+  test("GET /spaces returns list", async ({ request }) => {
+    const res = await request.get(getBackendUrl("/spaces"));
+    expect(res.ok()).toBeTruthy();
 
-	test("REQ-OPS-015: visiting login does not clear an existing browser auth cookie", async ({
-		browser,
-	}) => {
-		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
-		const frontendOrigin = new URL(frontendUrl);
-		const context = await browser.newContext();
-		await context.addCookies([
-			{
-				name: "ugoite_auth_bearer_token",
-				value: "existing-browser-session",
-				domain: frontendOrigin.hostname,
-				path: "/",
-				httpOnly: false,
-				secure: frontendOrigin.protocol === "https:",
-				sameSite: "Lax",
-				expires: Math.floor(Date.now() / 1000) + 3_600,
-			},
-		]);
-		const page = await context.newPage();
+    const json = await res.json();
+    expect(Array.isArray(json)).toBe(true);
+  });
 
-		try {
-			await page.goto("/login");
-			await page.waitForLoadState("networkidle");
-			await expect(
-				page.getByRole("button", { name: "Continue with Local Demo Login" }),
-			).toBeVisible();
-			const cookies = await context.cookies(frontendUrl);
-			expect(
-				cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token")
-					?.value,
-			).toBe("existing-browser-session");
-		} finally {
-			await context.close();
-		}
-	});
+  test("GET /spaces includes default space", async ({ request }) => {
+    const res = await request.get(getBackendUrl("/spaces"));
+    const spaces = (await res.json()) as Array<{ name: string }>;
+    const defaultWs = spaces.find((ws) => ws.name === "default");
+    expect(defaultWs).toBeDefined();
+  });
 
-	test("REQ-FE-066: signed-in browser nav exposes sign-out and returns to login", async ({
-		browser,
-	}) => {
-		const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
-		const context = await browser.newContext({
-			storageState: { cookies: [], origins: [] },
-		});
-		const page = await context.newPage();
+  test("GET /spaces/:space_id/entries returns list", async ({ request }) => {
+    const spaceId = await getDefaultSpaceId(request);
+    const res = await request.get(getBackendUrl(`/spaces/${spaceId}/entries`));
+    expect(res.ok()).toBeTruthy();
 
-		try {
-			await page.goto("/login");
-			await page
-				.getByRole("button", { name: "Continue with Local Demo Login" })
-				.click();
-			await expect(page).toHaveURL(/\/spaces$/);
-			await expect(page.getByText("Signed in")).toBeVisible();
-			await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
-			await expect(page.getByRole("link", { name: "Login" })).toHaveCount(0);
+    const json = await res.json();
+    expect(Array.isArray(json)).toBe(true);
+  });
 
-			await page.getByRole("button", { name: "Sign out" }).click();
-			await expect(page).toHaveURL(/\/login$/);
-			const cookies = await context.cookies(frontendUrl);
-			expect(
-				cookies.find((cookie) => cookie.name === "ugoite_auth_bearer_token"),
-			).toBeUndefined();
-			await expect(page.getByRole("link", { name: "Login" })).toBeVisible();
-			await expect(page.getByText("Signed in")).toHaveCount(0);
-			await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
-		} finally {
-			await context.close();
-		}
-	});
-
-	test("GET /spaces returns list", async ({ request }) => {
-		const res = await request.get(getBackendUrl("/spaces"));
-		expect(res.ok()).toBeTruthy();
-
-		const json = await res.json();
-		expect(Array.isArray(json)).toBe(true);
-	});
-
-	test("GET /spaces includes default space", async ({ request }) => {
-		const res = await request.get(getBackendUrl("/spaces"));
-		const spaces = (await res.json()) as Array<{ name: string }>;
-		const defaultWs = spaces.find((ws) => ws.name === "default");
-		expect(defaultWs).toBeDefined();
-	});
-
-	test("GET /spaces/default/entries returns list", async ({ request }) => {
-		const res = await request.get(getBackendUrl("/spaces/default/entries"));
-		expect(res.ok()).toBeTruthy();
-
-		const json = await res.json();
-		expect(Array.isArray(json)).toBe(true);
-	});
-
-	test("GET /nonexistent-api returns 404", async ({ request }) => {
-		const res = await request.get(getBackendUrl("/nonexistent-endpoint-xyz"));
-		expect(res.status()).toBe(404);
-	});
+  test("GET /nonexistent-api returns 404", async ({ request }) => {
+    const res = await request.get(getBackendUrl("/nonexistent-endpoint-xyz"));
+    expect(res.status()).toBe(404);
+  });
 });

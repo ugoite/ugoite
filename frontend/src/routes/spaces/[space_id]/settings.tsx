@@ -5,6 +5,7 @@ import { SpaceSettings } from "~/components/SpaceSettings";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { spaceApi } from "~/lib/ugoite-client";
 import type {
+  AgentPrincipal,
   SpaceMember,
   SpacePatchPayload,
   StorageConnectionConfig,
@@ -15,8 +16,9 @@ const localDevAuthGuideUrl = getDocsiteHref(
   "docs/guide/local-dev-auth-login.md",
 );
 
-const managedRoles = ["admin", "editor", "viewer"] as const;
+const managedRoles = ["owner", "editor", "viewer"] as const;
 type ManagedRole = (typeof managedRoles)[number];
+type ManagedAgentMode = "autonomous" | "delegated" | "both";
 
 const toMessage = (value: unknown): string => {
   if (typeof value === "string" && value.trim()) return value;
@@ -63,13 +65,23 @@ export default function SpaceSettingsRoute() {
   const [members, { refetch: refetchMembers }] = createResource(async () => {
     return await spaceApi.listMembers(spaceId());
   });
+  const [agents, { refetch: refetchAgents }] = createResource(async () => {
+    return await spaceApi.listAgents(spaceId());
+  });
 
-  const [inviteUserId, setInviteUserId] = createSignal("");
+  const [inviteLabel, setInviteLabel] = createSignal("");
   const [inviteRole, setInviteRole] = createSignal<ManagedRole>("viewer");
-  const [inviteEmail, setInviteEmail] = createSignal("");
-  const [inviteToken, setInviteToken] = createSignal("");
+  const [inviteUrl, setInviteUrl] = createSignal("");
   const [memberActionError, setMemberActionError] = createSignal("");
   const [memberActionPending, setMemberActionPending] = createSignal(false);
+  const [agentName, setAgentName] = createSignal("");
+  const [agentDescription, setAgentDescription] = createSignal("");
+  const [agentMode, setAgentMode] = createSignal<ManagedAgentMode>("autonomous");
+  const [agentActions, setAgentActions] = createSignal("read");
+  const [agentExpiresAt, setAgentExpiresAt] = createSignal("");
+  const [agentPublicKey, setAgentPublicKey] = createSignal("");
+  const [agentError, setAgentError] = createSignal("");
+  const [agentCredential, setAgentCredential] = createSignal("");
 
   const handleSave = async (payload: SpacePatchPayload) => {
     await spaceApi.patch(spaceId(), payload);
@@ -83,23 +95,21 @@ export default function SpaceSettingsRoute() {
   };
 
   const handleInvite = async () => {
-    const userId = inviteUserId().trim();
-    if (!userId) {
-      setMemberActionError("User ID is required.");
+    const label = inviteLabel().trim();
+    if (!label) {
+      setMemberActionError("Invitation label is required.");
       return;
     }
     setMemberActionPending(true);
     setMemberActionError("");
-    setInviteToken("");
+    setInviteUrl("");
     try {
       const response = await spaceApi.inviteMember(spaceId(), {
-        user_id: userId,
+        label,
         role: inviteRole(),
-        email: inviteEmail().trim() || undefined,
       });
-      setInviteToken(response.invitation.token);
-      setInviteUserId("");
-      setInviteEmail("");
+      setInviteUrl(response.invitation_url);
+      setInviteLabel("");
       await refetchMembers();
     } catch (error) {
       setMemberActionError(toMessage(error) || "Failed to invite member.");
@@ -108,11 +118,11 @@ export default function SpaceSettingsRoute() {
     }
   };
 
-  const updateRole = async (memberUserId: string, role: ManagedRole) => {
+  const updateRole = async (principalId: string, role: ManagedRole) => {
     setMemberActionPending(true);
     setMemberActionError("");
     try {
-      await spaceApi.updateMemberRole(spaceId(), memberUserId, { role });
+      await spaceApi.updateMemberRole(spaceId(), principalId, { role });
       await refetchMembers();
     } catch (error) {
       setMemberActionError(toMessage(error) || "Failed to update role.");
@@ -121,16 +131,54 @@ export default function SpaceSettingsRoute() {
     }
   };
 
-  const revokeMember = async (memberUserId: string) => {
+  const revokeMember = async (principalId: string) => {
     setMemberActionPending(true);
     setMemberActionError("");
     try {
-      await spaceApi.revokeMember(spaceId(), memberUserId);
+      await spaceApi.revokeMember(spaceId(), principalId);
       await refetchMembers();
     } catch (error) {
       setMemberActionError(toMessage(error) || "Failed to revoke member.");
     } finally {
       setMemberActionPending(false);
+    }
+  };
+
+  const createAgent = async () => {
+    setAgentError("");
+    setAgentCredential("");
+    try {
+      const actions = agentActions().split(",").map((value) => value.trim())
+        .filter((value) => ["read", "create", "update"].includes(value)) as
+        Array<"read" | "create" | "update">;
+      if (!agentName().trim() || !agentExpiresAt() || actions.length === 0) {
+        throw new Error("Name, expiry, and at least one action are required.");
+      }
+      const result = await spaceApi.createAgent(spaceId(), {
+        display_name: agentName().trim(),
+        description: agentDescription().trim(),
+        mode: agentMode(),
+        public_key_jwk: JSON.parse(agentPublicKey()),
+        granted_actions: actions,
+        expires_at: new Date(agentExpiresAt()).toISOString(),
+      });
+      setAgentCredential(String(result.credential.credential_id ?? "registered"));
+      setAgentName("");
+      setAgentDescription("");
+      setAgentPublicKey("");
+      await refetchAgents();
+    } catch (error) {
+      setAgentError(toMessage(error) || "Failed to create agent.");
+    }
+  };
+
+  const revokeAgent = async (agentId: string) => {
+    setAgentError("");
+    try {
+      await spaceApi.revokeAgent(spaceId(), agentId);
+      await refetchAgents();
+    } catch (error) {
+      setAgentError(toMessage(error) || "Failed to revoke agent.");
     }
   };
 
@@ -207,13 +255,13 @@ export default function SpaceSettingsRoute() {
             Invite members, update roles, and revoke access in this space.
           </p>
 
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 items-end">
             <label class="ui-stack-sm">
-              <span class="text-xs ui-muted">User ID</span>
+              <span class="text-xs ui-muted">Invitation label</span>
               <input
                 class="ui-input"
-                value={inviteUserId()}
-                onInput={(event) => setInviteUserId(event.currentTarget.value)}
+                value={inviteLabel()}
+                onInput={(event) => setInviteLabel(event.currentTarget.value)}
               />
             </label>
             <label class="ui-stack-sm">
@@ -229,14 +277,6 @@ export default function SpaceSettingsRoute() {
                 </For>
               </select>
             </label>
-            <label class="ui-stack-sm md:col-span-2">
-              <span class="text-xs ui-muted">Email (optional)</span>
-              <input
-                class="ui-input"
-                value={inviteEmail()}
-                onInput={(event) => setInviteEmail(event.currentTarget.value)}
-              />
-            </label>
           </div>
           <button
             type="button"
@@ -247,9 +287,9 @@ export default function SpaceSettingsRoute() {
             Invite Member
           </button>
 
-          <Show when={inviteToken()}>
+          <Show when={inviteUrl()}>
             <div class="ui-alert ui-alert-info text-sm">
-              Invitation token (share once): <code>{inviteToken()}</code>
+              Invitation URL (share once): <code>{inviteUrl()}</code>
             </div>
           </Show>
           <Show when={memberActionError()}>
@@ -296,8 +336,12 @@ export default function SpaceSettingsRoute() {
                 <div class="ui-card flex flex-col gap-2">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p class="font-medium">{member.user_id}</p>
-                      <p class="text-xs ui-muted">state: {member.state}</p>
+                      <p class="font-medium">
+                        {member.principal.display_name}
+                      </p>
+                      <p class="text-xs ui-muted">
+                        state: {member.principal.state}
+                      </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                       <Show
@@ -306,16 +350,14 @@ export default function SpaceSettingsRoute() {
                       >
                         <select
                           class="ui-select"
-                          value={member.role === "owner"
-                            ? "admin"
-                            : member.role}
+                          value={member.role}
                           onInput={(event) =>
                             void updateRole(
-                              member.user_id,
+                              member.principal.principal_id,
                               event.currentTarget.value as ManagedRole,
                             )}
                           disabled={memberActionPending() ||
-                            member.state !== "active"}
+                            member.principal.state !== "active"}
                         >
                           <For each={managedRoles}>
                             {(role) => <option value={role}>{role}</option>}
@@ -325,10 +367,11 @@ export default function SpaceSettingsRoute() {
                       <button
                         type="button"
                         class="ui-button ui-button-secondary text-sm"
-                        onClick={() => void revokeMember(member.user_id)}
+                        onClick={() =>
+                          void revokeMember(member.principal.principal_id)}
                         disabled={memberActionPending() ||
                           member.role === "owner" ||
-                          member.state === "revoked"}
+                          member.principal.state === "revoked"}
                       >
                         Revoke
                       </button>
@@ -338,6 +381,92 @@ export default function SpaceSettingsRoute() {
               )}
             </For>
           </div>
+        </section>
+        <section class="ui-card ui-stack-sm">
+          <h2 class="text-lg font-semibold">Agents</h2>
+          <p class="text-sm ui-muted">
+            Register an independent public key, bounded actions, mode, sponsor,
+            and expiry. Agent delete, sharing, member, owner, and agent
+            administration remain denied.
+          </p>
+          <input
+            class="ui-input"
+            placeholder="Agent name"
+            value={agentName()}
+            onInput={(event) => setAgentName(event.currentTarget.value)}
+          />
+          <input
+            class="ui-input"
+            placeholder="Description"
+            value={agentDescription()}
+            onInput={(event) => setAgentDescription(event.currentTarget.value)}
+          />
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <select
+              class="ui-select"
+              value={agentMode()}
+              onInput={(event) =>
+                setAgentMode(event.currentTarget.value as ManagedAgentMode)}
+            >
+              <option value="autonomous">autonomous</option>
+              <option value="delegated">delegated</option>
+              <option value="both">both</option>
+            </select>
+            <input
+              class="ui-input"
+              value={agentActions()}
+              onInput={(event) => setAgentActions(event.currentTarget.value)}
+              aria-label="Agent actions"
+              placeholder="read,create,update"
+            />
+            <input
+              class="ui-input"
+              type="datetime-local"
+              value={agentExpiresAt()}
+              onInput={(event) => setAgentExpiresAt(event.currentTarget.value)}
+              aria-label="Agent expiry"
+            />
+          </div>
+          <textarea
+            class="ui-input font-mono"
+            rows="5"
+            placeholder='Public JWK, for example {"kty":"EC","crv":"P-256",...}'
+            value={agentPublicKey()}
+            onInput={(event) => setAgentPublicKey(event.currentTarget.value)}
+          />
+          <button
+            type="button"
+            class="ui-button ui-button-primary w-fit"
+            onClick={() => void createAgent()}
+          >
+            Register agent
+          </button>
+          <Show when={agentCredential()}>
+            <p class="ui-alert ui-alert-success">
+              Credential registered: <code>{agentCredential()}</code>
+            </p>
+          </Show>
+          <Show when={agentError()}>
+            <p class="ui-text-danger">{agentError()}</p>
+          </Show>
+          <For each={agents() || []}>
+            {(agent: AgentPrincipal) => (
+              <div class="ui-card flex items-center justify-between gap-2">
+                <span>
+                  {agent.display_name} · {agent.mode} · {agent.status} · expires{" "}
+                  {agent.expires_at}
+                </span>
+                <button
+                  type="button"
+                  class="ui-button ui-button-secondary"
+                  disabled={agent.status === "revoked"}
+                  onClick={() => void revokeAgent(agent.agent_id)}
+                >
+                  Revoke
+                </button>
+              </div>
+            )}
+          </For>
         </section>
       </div>
     </SpaceShell>

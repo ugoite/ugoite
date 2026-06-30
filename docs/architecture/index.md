@@ -9,6 +9,7 @@ These documents describe the current implementation boundaries and the intended
 local-first direction.
 
 - [Architecture North Star](north-star.md)
+- [Authentication and authorization](authentication-authorization.md)
 - [Control surfaces](control-surfaces.md)
 - [Runtime adapters](runtime-adapters.md)
 - [Portable API client](portable-api-client.md)

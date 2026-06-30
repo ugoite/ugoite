@@ -56,6 +56,59 @@ pub async fn execute_sql_query(
     sql::filter_entries_by_sql(&tables, &parsed)
 }
 
+pub async fn execute_sql_query_authorized(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entry_ids: &HashSet<String>,
+) -> Result<Vec<Value>> {
+    let forms = load_forms(op, ws_path).await?;
+    let entries_map = collect_entries(op, ws_path, &forms)
+        .await?
+        .into_iter()
+        .filter(|(entry_id, _)| readable_entry_ids.contains(entry_id))
+        .collect();
+    let parsed = sql::parse_sql(sql_query)?;
+    let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
+    sql::filter_entries_by_sql(&tables, &parsed)
+}
+
+pub async fn query_index_authorized(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    readable_entry_ids: &HashSet<String>,
+) -> Result<Vec<Value>> {
+    let forms = load_forms(op, ws_path).await?;
+    let entries_map: Map<String, Value> = collect_entries(op, ws_path, &forms)
+        .await?
+        .into_iter()
+        .filter(|(entry_id, _)| readable_entry_ids.contains(entry_id))
+        .collect();
+    let query_value = if query.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(query).unwrap_or(Value::Null)
+    };
+    if let Some(sql_query) = extract_sql_query(&query_value) {
+        let parsed = sql::parse_sql(&sql_query)?;
+        let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
+        return sql::filter_entries_by_sql(&tables, &parsed);
+    }
+    let filters = query_value.as_object();
+    entries_map
+        .into_values()
+        .filter_map(|entry| match filters {
+            Some(filter) => match matches_filters(&entry, filter) {
+                Ok(true) => Some(Ok(entry)),
+                Ok(false) => None,
+                Err(error) => Some(Err(error)),
+            },
+            None => Some(Ok(entry)),
+        })
+        .collect()
+}
+
 pub async fn execute_sql_query_scoped(
     op: &Operator,
     ws_path: &str,

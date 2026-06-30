@@ -46,8 +46,8 @@ require_command curl
 require_command deno
 require_command docker
 
-mkdir -p "$WORK_ROOT/spaces" "$WORK_ROOT/cli-home"
-chmod 0777 "$WORK_ROOT/spaces"
+mkdir -p "$WORK_ROOT/spaces" "$WORK_ROOT/node" "$WORK_ROOT/cli-home"
+chmod 0777 "$WORK_ROOT/spaces" "$WORK_ROOT/node"
 
 log "Building release CLI binary"
 (
@@ -58,9 +58,7 @@ log "Building release CLI binary"
 log "Building and starting release-like single-image container"
 (
   cd "$WORK_ROOT" &&
-    UGOITE_DEV_USER_ID=dev-local-user \
-      UGOITE_BOOTSTRAP_TOKEN=dev-token \
-      docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" up -d --build
+    docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" up -d --build
 )
 
 HOST_PORT="$(
@@ -78,20 +76,12 @@ API_URL="${APP_URL}/api"
 bash "$SCRIPT_DIR/wait-for-http.sh" "${APP_URL}/health" 180
 bash "$SCRIPT_DIR/wait-for-http.sh" "${APP_URL}/login" 180
 
-login_payload="$(curl -fsS -X POST "${API_URL}/auth/mock-oauth")"
-token="$(
-  JSON_INPUT="$login_payload" deno eval "const value = JSON.parse(Deno.env.get('JSON_INPUT') ?? '{}'); console.log(value.bearer_token ?? '');"
-)"
-if [ -z "$token" ]; then
-  fail "release-like /api mock OAuth did not return a bearer token"
-fi
-
 HOME="$WORK_ROOT/cli-home" "$CLI_BINARY" config set --mode api --api-url "$API_URL" >/dev/null
-HOME="$WORK_ROOT/cli-home" UGOITE_AUTH_BEARER_TOKEN="$token" "$CLI_BINARY" space list >/dev/null
-space_id="release-local-$(date +%s)"
-HOME="$WORK_ROOT/cli-home" UGOITE_AUTH_BEARER_TOKEN="$token" "$CLI_BINARY" space create "$space_id" >/dev/null
-HOME="$WORK_ROOT/cli-home" UGOITE_AUTH_BEARER_TOKEN="$token" "$CLI_BINARY" space list |
-  grep -Fq "$space_id" || fail "release-like CLI-created space was not listed"
+curl -fsS "${API_URL}/auth/config" | grep -Fq '"status":"uninitialized"' ||
+  fail "release-like node did not start uninitialized"
+curl -fsS "${APP_URL}/.well-known/oauth-protected-resource" >/dev/null
+status="$(curl -sS -o /dev/null -w '%{http_code}' "${API_URL}/spaces")"
+[ "$status" = "401" ] || fail "unauthenticated Space listing must return 401 (got ${status})"
 
 curl -fsS "${APP_URL}/" | grep -Fqi "<html" || fail "release-like root did not serve frontend HTML"
 log "Release-like local image verification passed at ${APP_URL}"

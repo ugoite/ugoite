@@ -1,4 +1,5 @@
 use std::process::Command;
+use ugoite_cli::commands::auth::DEFAULT_DEVICE_ACTIONS;
 
 fn ugoite_bin() -> String {
     let mut path = std::env::current_exe().unwrap();
@@ -19,6 +20,14 @@ fn test_help() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("ugoite"));
+}
+
+#[test]
+fn default_device_login_actions_exclude_unapproved_dangerous_actions() {
+    assert_eq!(DEFAULT_DEVICE_ACTIONS, "read,create,update");
+    assert!(!DEFAULT_DEVICE_ACTIONS
+        .split(',')
+        .any(|action| action == "delete" || action == "share"));
 }
 
 /// REQ-OPS-018: top-level help must show a task-oriented quick-start path.
@@ -128,6 +137,14 @@ fn test_space_create_and_list() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let created: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("create response should be JSON");
+    let created_id = created["id"].as_str().expect("immutable Space id");
+    assert_eq!(
+        uuid::Uuid::parse_str(created_id).unwrap().get_version_num(),
+        7
+    );
+    assert_eq!(created["slug"], "test-space");
 
     let output = Command::new(ugoite_bin())
         .args(["space", "list", &root])
@@ -143,6 +160,5 @@ fn test_space_create_and_list() {
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("should be JSON");
     assert!(v
         .as_array()
-        .map(|a| a.iter().any(|x| x.as_str() == Some("test-space")))
-        .unwrap_or(false));
+        .is_some_and(|ids| { ids.iter().any(|value| value.as_str() == Some(created_id)) }));
 }

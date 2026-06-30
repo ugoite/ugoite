@@ -1,10 +1,19 @@
-// REQ-OPS-015: Local dev auth mode selection.
+// REQ-SEC-003: authenticated SSR request forwarding.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "~/test/mocks/server";
 import { testApiUrl } from "~/test/http-origin";
 
 const getRequestEventMock = vi.fn();
+const authConfig = {
+  status: "active",
+  node_id: "01900000-0000-7000-8000-000000000001",
+  issuer: "http://localhost:3000",
+  rp_id: "localhost",
+  passkey: true,
+  oidc: false,
+  login_required: true,
+};
 
 vi.mock("solid-js/web", () => ({
   getRequestEvent: getRequestEventMock,
@@ -28,20 +37,15 @@ describe("apiFetch auth forwarding", () => {
       http.get(testApiUrl("/auth/config"), ({ request }) => {
         seenCookie = request.headers.get("cookie");
         seenAuthorization = request.headers.get("authorization");
-        return HttpResponse.json({
-          mode: "passkey-totp",
-          username_hint: "dev-alice",
-          supports_passkey_totp: true,
-          supports_mock_oauth: false,
-        });
+        return HttpResponse.json(authConfig);
       }),
     );
     vi.stubGlobal("window", undefined);
     getRequestEventMock.mockReturnValue({
       request: new Request("http://localhost:3000/login", {
         headers: {
-          cookie: "ugoite_auth_bearer_token=server-token",
-          authorization: "Bearer forwarded-token",
+          cookie: "ugoite_session=server-session",
+          authorization: "DPoP forwarded-token",
         },
       }),
     });
@@ -50,8 +54,8 @@ describe("apiFetch auth forwarding", () => {
     const response = await apiFetch("/auth/config", { trackLoading: false });
 
     expect(response.status).toBe(200);
-    expect(seenCookie).toBe("ugoite_auth_bearer_token=server-token");
-    expect(seenAuthorization).toBe("Bearer forwarded-token");
+    expect(seenCookie).toBe("ugoite_session=server-session");
+    expect(seenAuthorization).toBe("DPoP forwarded-token");
   });
 
   it("exposes the current server-backed runtime capabilities", async () => {
@@ -72,20 +76,15 @@ describe("apiFetch auth forwarding", () => {
       http.get(testApiUrl("/auth/config"), ({ request }) => {
         seenCookie = request.headers.get("cookie");
         seenAuthorization = request.headers.get("authorization");
-        return HttpResponse.json({
-          mode: "passkey-totp",
-          username_hint: "dev-alice",
-          supports_passkey_totp: true,
-          supports_mock_oauth: false,
-        });
+        return HttpResponse.json(authConfig);
       }),
     );
     vi.stubGlobal("window", undefined);
     getRequestEventMock.mockReturnValue({
       request: new Request("http://localhost:3000/login", {
         headers: {
-          cookie: "ugoite_auth_bearer_token=server-token",
-          authorization: "Bearer forwarded-token",
+          cookie: "ugoite_session=server-session",
+          authorization: "DPoP forwarded-token",
         },
       }),
     });
@@ -94,14 +93,14 @@ describe("apiFetch auth forwarding", () => {
     const response = await apiFetch("/auth/config", {
       trackLoading: false,
       headers: {
-        cookie: "ugoite_auth_bearer_token=explicit-token",
-        authorization: "Bearer explicit-token",
+        cookie: "ugoite_session=explicit-session",
+        authorization: "DPoP explicit-token",
       },
     });
 
     expect(response.status).toBe(200);
-    expect(seenCookie).toBe("ugoite_auth_bearer_token=explicit-token");
-    expect(seenAuthorization).toBe("Bearer explicit-token");
+    expect(seenCookie).toBe("ugoite_session=explicit-session");
+    expect(seenAuthorization).toBe("DPoP explicit-token");
   });
 
   it("REQ-OPS-015: skips SSR auth forwarding without a request event", async () => {
@@ -111,12 +110,7 @@ describe("apiFetch auth forwarding", () => {
       http.get(testApiUrl("/auth/config"), ({ request }) => {
         seenCookie = request.headers.get("cookie");
         seenAuthorization = request.headers.get("authorization");
-        return HttpResponse.json({
-          mode: "passkey-totp",
-          username_hint: "dev-alice",
-          supports_passkey_totp: true,
-          supports_mock_oauth: false,
-        });
+        return HttpResponse.json(authConfig);
       }),
     );
     vi.stubGlobal("window", undefined);
@@ -137,12 +131,7 @@ describe("apiFetch auth forwarding", () => {
       http.get("http://localhost:13000/api/auth/config", ({ request }) => {
         seenOrigin = new URL(request.url).origin;
         seenCookie = request.headers.get("cookie");
-        return HttpResponse.json({
-          mode: "passkey-totp",
-          username_hint: "dev-alice",
-          supports_passkey_totp: true,
-          supports_mock_oauth: false,
-        });
+        return HttpResponse.json(authConfig);
       }),
     );
     vi.stubGlobal("window", undefined);
@@ -153,7 +142,7 @@ describe("apiFetch auth forwarding", () => {
     getRequestEventMock.mockReturnValue({
       request: new Request("http://attacker.invalid/login", {
         headers: {
-          cookie: "ugoite_auth_bearer_token=server-token",
+          cookie: "ugoite_session=server-session",
         },
       }),
     });
@@ -163,7 +152,7 @@ describe("apiFetch auth forwarding", () => {
 
     expect(response.status).toBe(200);
     expect(seenOrigin).toBe("http://localhost:13000");
-    expect(seenCookie).toBe("ugoite_auth_bearer_token=server-token");
+    expect(seenCookie).toBe("ugoite_session=server-session");
   });
 
   it("REQ-OPS-015: uses FRONTEND_TEST_ORIGIN for the frontend test API base", async () => {
@@ -173,12 +162,7 @@ describe("apiFetch auth forwarding", () => {
     server.use(
       http.get(testApiUrl("/auth/config"), ({ request }) => {
         seenOrigin = new URL(request.url).origin;
-        return HttpResponse.json({
-          mode: "passkey-totp",
-          username_hint: "dev-alice",
-          supports_passkey_totp: true,
-          supports_mock_oauth: false,
-        });
+        return HttpResponse.json(authConfig);
       }),
     );
 

@@ -27,11 +27,11 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-001
   title: Space CRUD
-  description: 'Create, retrieve, and list spaces. `/spaces` MUST keep the default
+  description: 'Create, retrieve, and list spaces. Every Space MUST expose an immutable
 
-    user workspace ahead of the reserved admin-space and identify the reserved
+    UUIDv7 `space_uid` independently from its mutable human-facing slug. `/spaces`
 
-    admin-space explicitly for clients.
+    MUST return only Spaces authorized for the current principal.
 
     '
   related_spec:

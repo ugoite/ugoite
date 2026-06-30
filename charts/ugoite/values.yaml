@@ -14,7 +14,13 @@ service:
 
 containerPort: 8000
 staticDir: /app/static
-bootstrapDefaultSpace: true
+publicOrigin: http://localhost:8000
+apiBaseUrl: ""
+webauthnRpId: localhost
+nodeControlUri: ""
+nodeSecret:
+  existingSecret: ""
+  key: encryption-key
 extraEnv: []
 podAnnotations: {}
 
@@ -46,13 +52,3 @@ securityContext:
 nodeSelector: {}
 tolerations: []
 affinity: {}
-
-auth:
-  mode: mock-oauth
-  devUserId: dev-local-user
-  bootstrapToken: ""
-  signingKid: release-compose-local-v1
-  signingSecret: ""
-  bearerSecrets: ""
-  bearerActiveKids:
-    - release-compose-local-v1

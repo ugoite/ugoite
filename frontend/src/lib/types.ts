@@ -26,7 +26,6 @@ export interface Space {
   id: string;
   name: string;
   created_at: string;
-  is_admin_space?: boolean;
   storage?: SpaceStorage;
   storage_config?: StorageConnectionConfig;
   settings?: Record<string, unknown>;
@@ -55,43 +54,52 @@ export interface TestConnectionPayload {
 }
 
 export interface SpaceMember {
-  user_id: string;
-  role: "owner" | "admin" | "editor" | "viewer";
-  state: "invited" | "active" | "revoked";
-  invited_by?: string;
-  invited_at?: string;
-  activated_at?: string;
-  revoked_at?: string | null;
-  updated_at?: string;
+  principal: {
+    principal_id: string;
+    kind: "human" | "agent";
+    display_name: string;
+    state: "invited" | "active" | "suspended" | "revoked";
+    created_at: string;
+  };
+  role: "owner" | "editor" | "viewer";
+  created_at: string;
 }
 
 export interface SpaceMemberInvitePayload {
-  user_id: string;
-  role: "admin" | "editor" | "viewer";
-  email?: string;
-  expires_in_seconds?: number;
+  label: string;
+  role: "owner" | "editor" | "viewer";
 }
 
 export interface SpaceMemberInviteResponse {
-  invitation: {
-    token: string;
-    user_id: string;
-    role: "admin" | "editor" | "viewer";
-    state: "pending" | "accepted" | "expired" | "revoked";
-    invited_by: string;
-    invited_at: string;
-    expires_at: string;
-  };
-  delivery: Record<string, unknown>;
-  audit_event: Record<string, unknown>;
-}
-
-export interface SpaceMemberAcceptPayload {
-  token: string;
+  invitation_id: string;
+  expires_at: string;
+  invitation_url: string;
 }
 
 export interface SpaceMemberRoleUpdatePayload {
-  role: "admin" | "editor" | "viewer";
+  role: "owner" | "editor" | "viewer";
+}
+
+export interface AgentPrincipal {
+  agent_id: string;
+  display_name: string;
+  description: string;
+  sponsor_principal_id: string;
+  owner_principal_ids: string[];
+  mode: "autonomous" | "delegated" | "both";
+  status: "active" | "suspended" | "revoked";
+  created_at: string;
+  expires_at: string;
+  last_used_at?: string;
+}
+
+export interface AgentCreatePayload {
+  display_name: string;
+  description: string;
+  mode: "autonomous" | "delegated" | "both";
+  public_key_jwk: Record<string, unknown>;
+  granted_actions: Array<"read" | "create" | "update">;
+  expires_at: string;
 }
 
 /** Asset metadata */

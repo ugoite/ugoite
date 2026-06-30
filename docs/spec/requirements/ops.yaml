@@ -100,8 +100,6 @@ requirements:
   tests:
   - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
   - file: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
-  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_coverage.rs
-  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_http_helpers.rs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -222,8 +220,9 @@ requirements:
   linked_policies: *id001
   linked_specifications: *id002
   id: REQ-OPS-015
-  title: Local Dev Auth Mode Selection
-  description: Development must require explicit login. Mock OAuth is operational; passkey/TOTP must be labeled unavailable until the server implements it.
+  title: Production Authentication in Development
+  description: Development MUST use the same setup, WebAuthn, OIDC, browser-session, and device-authorization protocols
+    as production. No product configuration may enable a fake identity or preconfigured credential.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operations.md
@@ -232,20 +231,15 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/src/commands/auth.rs
-  - file: crates/ugoite-cli/tests/test_auth.rs
   - file: crates/ugoite-cli/tests/test_cli_req_ops_006_config_helpers.rs
   - file: e2e/public-pages.test.ts
   - file: e2e/smoke.test.ts
   - file: frontend/src/lib/api.test.ts
-  - file: frontend/src/lib/auth-api.test.ts
-  - file: frontend/src/lib/auth-cookie.test.ts
   - file: frontend/src/lib/frontend-origin.test.ts
   - file: frontend/src/routes/about.test.tsx
   - file: frontend/src/routes/api/[...path].test.ts
   - file: frontend/src/routes/index.test.tsx
-  - file: frontend/src/routes/login.test.tsx
   - file: frontend/src/routes/spaces/index.test.tsx
-  - file: frontend/src/test/mocks/handlers.test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -261,7 +255,6 @@ requirements:
   status: planned
   verification: traced
   tests:
-  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_coverage.rs
   - file: crates/ugoite-core/tests/test_sample_data.rs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml

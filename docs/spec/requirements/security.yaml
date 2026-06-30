@@ -72,7 +72,6 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-cli/tests/test_auth.rs
   - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
   - file: e2e/api-proxy-security.test.ts
   - file: frontend/src/routes/api/[...path].test.ts
@@ -89,21 +88,25 @@ requirements:
   - SPEC-SECURITY-SANDBOX
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-004
-  title: Passkey-First Authentication and OAuth2 Linking
+  title: Passkey-First Authentication and OIDC Linking
   description: 'Primary user authentication MUST be passkey/WebAuthn with passwordless
 
-    login. Optional external OAuth2 identity linking MAY be enabled and MAY
+    login. Optional external OIDC identity linking MAY be enabled, MUST identify
 
-    auto-provision new User records.
+    users by issuer and subject, and MUST NOT auto-provision uninvited accounts.
 
     '
   related_spec:
-  - security/overview.md#current-limitations
+  - security/overview.md
   - api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-identity/src/node_identity.rs
+  - file: crates/ugoite-server/tests/api_contract.rs
+  - file: e2e/global-setup.ts
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -118,19 +121,25 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-005
   title: Admin Bootstrap and Recovery Controls
-  description: 'Admin onboarding MUST support one-time invite-token enrollment for
+  description: 'Initial setup MUST use an expiring one-time secret stored only as a
 
-    initial WebAuthn registration. Admin UI capabilities MUST include forced
+    hash and MUST establish either two passkeys or a passkey plus confirmed TOTP
 
-    credential reset and backup-code issuance, with audit visibility.
+    and recovery codes. Recovery codes and invitation tokens MUST be single-use
+
+    and stored only as hashes.
 
     '
   related_spec:
-  - security/overview.md#current-limitations
+  - security/overview.md
   - api/rest.md#authentication
   priority: high
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-identity/src/node_identity.rs
+  - file: crates/ugoite-server/tests/api_contract.rs
+  - file: e2e/global-setup.ts
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -144,9 +153,10 @@ requirements:
   - SPEC-SECURITY-SANDBOX
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-006
-  title: Space-Scoped Authorization and Planned Form ACL
-  description: Space-scoped membership and role authorization is implemented. Finer Form-level ACL behavior remains
-    planned and must not be presented as shipped.
+  title: Space-Scoped Entry and Asset Authorization
+  description: Space roles and grant-only inheritable ACLs MUST protect Entries and Assets. Private policies disable
+    role inheritance and grant only named principals. Filtering MUST occur before search, SQL, aggregation, history,
+    Asset access, link-option generation, and MCP results are produced.
   related_spec:
   - data-model/overview.md#forms-and-entries
   - api/rest.md#endpoints
@@ -154,8 +164,12 @@ requirements:
   - data-model/sql-sessions.md#saved-sql-and-materialized-view-metadata
   - stories/experimental.yaml
   priority: high
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-core/src/authorization.rs
+  - file: crates/ugoite-core/src/service.rs
+  - file: crates/ugoite-server/tests/api_contract.rs
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -186,9 +200,8 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-cli/tests/test_cli_req_ops_006_coverage.rs
   - file: e2e/space-membership.test.ts
-  - file: frontend/src/routes/spaces/join.test.tsx
+  - file: frontend/src/routes/spaces/join.tsx
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -203,14 +216,17 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-008
   title: Security Audit Logging and Attribution
-  description: Security-relevant audit events should be persisted append-only and exposed through authorized pagination.
-    No audit module or REST listing route is shipped.
+  description: Security-relevant Space authorization events MUST be persisted append-only with principal attribution
+    and exposed only to authorized Space owners.
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
   priority: high
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-core/src/authorization.rs
+  - file: crates/ugoite-server/tests/api_contract.rs
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -224,16 +240,21 @@ requirements:
   - SPEC-SECURITY-SANDBOX
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-009
-  title: Service Accounts and Scoped API Keys for Automation
-  description: Managed service accounts with scoped key creation, rotation, listing, and revocation remain planned.
-    This release only supports credentials configured out of band, and scope-enforced identities are rejected.
+  title: Agent Principals and Scoped Proof-of-Possession Credentials
+  description: Automation MUST use sponsored Agent Principals with independent public-key credentials, expiry,
+    explicit Space/action grants, opaque short-lived access tokens, and attributable audit records. Agents MUST NOT
+    manage members, ownership, or agents, and delete/share MUST be rejected without recent human passkey approval.
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
   - api/mcp.md#model-context-protocol-surface
   priority: high
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-core/src/authorization.rs
+  - file: crates/ugoite-identity/src/oauth.rs
+  - file: crates/ugoite-server/tests/api_contract.rs
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.

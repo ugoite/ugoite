@@ -22,13 +22,14 @@ export BROWSERSLIST_IGNORE_OLD_DATA=true
 TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
-DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-e2e-local-signing-secret-0123456789abcdef}"
 PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
-STATIC_E2E_TOKENS_JSON='{"e2e-token":{"user_id":"e2e-user","principal_type":"user"},"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
 ENFORCE_CI_GATES="${E2E_ENFORCE_CI_GATES:-false}"
-FRONTEND_MODE="${E2E_FRONTEND_MODE:-dev}"
-FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
+FRONTEND_MODE="${E2E_FRONTEND_MODE:-static}"
+if [ "$FRONTEND_MODE" = "static" ]; then
+  FRONTEND_URL="${FRONTEND_URL:-http://localhost:8000}"
+else
+  FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
+fi
 BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
 export FRONTEND_URL
 export BACKEND_URL
@@ -124,20 +125,16 @@ cd "$ROOT_DIR"
 BACKEND_ENV=(
   "UGOITE_ROOT=$E2E_STORAGE_ROOT"
   "UGOITE_SERVER_ADDRESS=0.0.0.0:$BACKEND_PORT"
-  "UGOITE_BOOTSTRAP_DEFAULT_SPACE=true"
-  "UGOITE_BOOTSTRAP_TOKEN=e2e-token"
-  "UGOITE_DEV_AUTH_MODE=mock-oauth"
-  "UGOITE_DEV_USER_ID=e2e-user"
-  "UGOITE_DEV_SIGNING_KID=$DEV_SIGNING_KID"
-  "UGOITE_DEV_SIGNING_SECRET=$DEV_SIGNING_SECRET"
-  "UGOITE_AUTH_BEARER_TOKENS=$STATIC_E2E_TOKENS_JSON"
-  "UGOITE_AUTH_BEARER_SIGNING_SECRETS=$DEV_SIGNING_KID:$DEV_SIGNING_SECRET"
-  "UGOITE_AUTH_BEARER_ACTIVE_KIDS=$DEV_SIGNING_KID"
+  "UGOITE_PUBLIC_ORIGIN=$FRONTEND_URL"
+  "UGOITE_WEBAUTHN_RP_ID=$(node -e 'console.log(new URL(process.argv[1]).hostname)' "$FRONTEND_URL")"
+  "UGOITE_API_BASE_URL=$FRONTEND_URL/api"
+  "UGOITE_NODE_SECRET_KEY=${UGOITE_NODE_SECRET_KEY:-$(head -c 32 /dev/urandom | base64)}"
 )
 if [ -n "$STATIC_DIR" ]; then
   BACKEND_ENV+=("UGOITE_STATIC_DIR=$STATIC_DIR")
 fi
-env "${BACKEND_ENV[@]}" cargo run -p ugoite-server --locked &
+BACKEND_LOG="$E2E_STORAGE_ROOT/backend.log"
+env "${BACKEND_ENV[@]}" cargo run -p ugoite-server --locked > >(tee "$BACKEND_LOG") 2>&1 &
 BACKEND_PID=$!
 
 FRONTEND_PID=""
@@ -150,7 +147,7 @@ if [ "$FRONTEND_MODE" != "static" ]; then
     echo "Starting production frontend server..."
     BACKEND_URL="$BACKEND_URL" UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" NODE_ENV=production PORT="$FRONTEND_PORT" deno task start &
   else
-    BACKEND_URL="$BACKEND_URL" UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" PORT="$FRONTEND_PORT" deno task dev &
+    BACKEND_URL="$BACKEND_URL" UGOITE_STATIC_SPA=true UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS" PORT="$FRONTEND_PORT" deno task dev &
   fi
   FRONTEND_PID=$!
 fi
@@ -185,8 +182,12 @@ for i in {1..30}; do
   sleep 1
 done
 
-E2E_AUTH_BEARER_TOKEN="e2e-token"
-export E2E_AUTH_BEARER_TOKEN
+E2E_SETUP_SECRET="$(sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' "$BACKEND_LOG" | tail -n 1)"
+if [ -z "$E2E_SETUP_SECRET" ]; then
+  echo "✗ ERROR: setup secret was not present in the local startup log"
+  exit 1
+fi
+export E2E_SETUP_SECRET
 
 echo "Waiting for frontend (${FRONTEND_URL})..."
 for i in {1..60}; do

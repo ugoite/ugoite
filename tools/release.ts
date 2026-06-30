@@ -207,9 +207,7 @@ async function verifyHelmPackage(): Promise<void> {
     "ugoite",
     `${tempDir}/ugoite`,
     "--set",
-    "auth.bootstrapToken=test-bootstrap-token",
-    "--set",
-    "auth.signingSecret=test-signing-secret",
+    "nodeSecret.existingSecret=ugoite-node-secret",
   ]);
 }
 

@@ -18,22 +18,16 @@ TEST_TYPE="${1:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.e2e.yml"
-DEV_SIGNING_KID="${UGOITE_DEV_SIGNING_KID:-dev-local-v1}"
-DEV_SIGNING_SECRET="${UGOITE_DEV_SIGNING_SECRET:-e2e-local-signing-secret-0123456789abcdef}"
 PROXY_TIMEOUT_MS="${UGOITE_PROXY_TIMEOUT_MS:-30000}"
 BUILD_IMAGES="${E2E_BUILD_IMAGES:-true}"
-STATIC_E2E_TOKENS_JSON='{"e2e-token":{"user_id":"e2e-user","principal_type":"user"},"alice-token":{"user_id":"alice-user","principal_type":"user"},"bob-token":{"user_id":"bob-user","principal_type":"user"}}'
-export UGOITE_DEV_AUTH_MODE=mock-oauth
-export UGOITE_DEV_USER_ID=e2e-user
-export UGOITE_DEV_SIGNING_KID="$DEV_SIGNING_KID"
-export UGOITE_DEV_SIGNING_SECRET="$DEV_SIGNING_SECRET"
-export UGOITE_BOOTSTRAP_TOKEN=e2e-token
-export UGOITE_AUTH_BEARER_TOKENS="$STATIC_E2E_TOKENS_JSON"
-export UGOITE_AUTH_BEARER_SIGNING_SECRETS="$DEV_SIGNING_KID:$DEV_SIGNING_SECRET"
-export UGOITE_AUTH_BEARER_ACTIVE_KIDS="$DEV_SIGNING_KID"
 export UGOITE_PROXY_TIMEOUT_MS="$PROXY_TIMEOUT_MS"
-export FRONTEND_URL="${FRONTEND_URL:-http://localhost:8000}"
-export BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
+export E2E_COMPOSE_PORT="${E2E_COMPOSE_PORT:-18000}"
+export UGOITE_PUBLIC_ORIGIN="http://localhost:${E2E_COMPOSE_PORT}"
+export UGOITE_API_BASE_URL="${UGOITE_PUBLIC_ORIGIN}/api"
+export UGOITE_WEBAUTHN_RP_ID="localhost"
+export UGOITE_NODE_SECRET_KEY="${UGOITE_NODE_SECRET_KEY:-$(head -c 32 /dev/urandom | base64)}"
+export FRONTEND_URL="$UGOITE_PUBLIC_ORIGIN"
+export BACKEND_URL="$UGOITE_PUBLIC_ORIGIN"
 
 ensure_playwright_browsers() {
   if [ "${UGOITE_SKIP_PLAYWRIGHT_DEPS:-}" = "1" ]; then
@@ -75,8 +69,8 @@ if [ -z "$compose_host_port" ]; then
   exit 1
 fi
 
-export FRONTEND_URL="http://127.0.0.1:${compose_host_port}"
-export BACKEND_URL="http://127.0.0.1:${compose_host_port}"
+export FRONTEND_URL="http://localhost:${compose_host_port}"
+export BACKEND_URL="http://localhost:${compose_host_port}"
 
 echo "Published compose port: ${compose_host_port}"
 echo "Waiting for backend (${BACKEND_URL})..."
@@ -93,8 +87,12 @@ for i in $(seq 1 "$backend_start_timeout"); do
   sleep 1
 done
 
-E2E_AUTH_BEARER_TOKEN="e2e-token"
-export E2E_AUTH_BEARER_TOKEN
+E2E_SETUP_SECRET="$("${compose_cmd[@]}" logs --no-color ugoite | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | tail -n 1)"
+if [ -z "$E2E_SETUP_SECRET" ]; then
+  echo "✗ ERROR: setup secret was not present in the container startup log"
+  exit 1
+fi
+export E2E_SETUP_SECRET
 
 echo "Frontend URL: $FRONTEND_URL"
 

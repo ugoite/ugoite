@@ -4,9 +4,10 @@ import { apiFetch, type ApiFetchOptions } from "../api";
 export const UGOITE_API_OPERATIONS = [
   "auth.get_config",
   "auth.get_session",
-  "auth.login",
-  "auth.mock_oauth",
   "auth.clear_session",
+  "auth.accept_invitation",
+  "auth.list_sessions",
+  "auth.revoke_session",
   "preferences.get",
   "preferences.patch",
   "space.list",
@@ -16,7 +17,6 @@ export const UGOITE_API_OPERATIONS = [
   "space.test_connection",
   "space.members.list",
   "space.members.invite",
-  "space.members.accept",
   "space.members.update_role",
   "space.members.revoke",
   "form.list_types",
@@ -43,6 +43,11 @@ export const UGOITE_API_OPERATIONS = [
   "sql_session.get",
   "sql_session.count",
   "sql_session.rows",
+  "agent.list",
+  "agent.create",
+  "agent.revoke",
+  "access.get",
+  "access.put",
   "asset.list",
   "asset.upload",
   "asset.delete",
@@ -62,7 +67,6 @@ type PreparedRequest = {
   headers: ProtocolHeader[];
   body?: string;
   body_kind: "none" | "json" | "multipart";
-  auth_mode: "standard" | "dev_proxy";
 };
 
 type ProtocolErrorPayload = {
@@ -148,7 +152,6 @@ const invokeProtocol = async <T>(command: unknown): Promise<T> => {
   }
 };
 
-
 export const getWasmSupportedOperations = async (): Promise<
   UgoiteApiOperation[]
 > => await invokeProtocol<UgoiteApiOperation[]>({ action: "operations" });
@@ -203,12 +206,14 @@ const decodeApiResponse = async <T>(
   });
 };
 
-export type ProtocolFetchOptions = Omit<
-  ApiFetchOptions,
-  "method" | "body"
-> & {
-  body?: BodyInit | null;
-};
+export type ProtocolFetchOptions =
+  & Omit<
+    ApiFetchOptions,
+    "method" | "body"
+  >
+  & {
+    body?: BodyInit | null;
+  };
 
 /**
  * Execute a named Ugoite operation.

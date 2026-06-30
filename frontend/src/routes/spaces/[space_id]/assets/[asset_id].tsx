@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, Show } from "solid-js";
 import { assetApi } from "~/lib/ugoite-client";
+import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { t } from "~/lib/i18n";
 
 export default function SpaceAssetDetailRoute() {
@@ -64,6 +65,13 @@ export default function SpaceAssetDetailRoute() {
               <p class="text-sm ui-muted">
                 {t("assetDetail.path", { path: item().path })}
               </p>
+              <div class="mt-4">
+                <AccessPolicyEditor
+                  spaceId={spaceId()}
+                  kind="asset"
+                  resourceId={assetId()}
+                />
+              </div>
               <button
                 type="button"
                 class="ui-button ui-button-danger mt-4"

@@ -1,13 +1,16 @@
 ---
-title: 'Service accounts'
+title: Agent identities
 ---
 
-Managed service-account CRUD is **not implemented** in the current Rust server or CLI. The checked-in OpenAPI document contains no `/service-accounts` routes.
+Automation uses Agent Principals with registered P-256 public keys. Shared
+secrets and long-lived API keys are not supported.
 
-For unattended access in this release, provision credentials out of band through server configuration:
+A Space owner creates an agent with a display name, human sponsor/owners,
+explicit actions, expiry, and public JWK. The agent signs an ES256 client
+assertion to obtain a five-minute opaque DPoP access token. Autonomous access is
+limited to the agent grant. A delegated token additionally records the human
+principal and intersects both permission sets.
 
-- `UGOITE_AUTH_API_KEYS` for static API keys;
-- `UGOITE_AUTH_BEARER_TOKENS` for static bearer tokens;
-- signing-secret variables for signed bearer validation.
-
-Grant the associated identity only the required Space membership, rotate configuration deliberately, restart the service, and never commit secrets. Managed creation, rotation, revocation, and audit history remain future work.
+Revoke the agent to disable all of its credentials. Agent creation, delegation,
+use and revocation are attributed in the Space audit chain. Agents cannot
+manage membership, ownership, or agents, and cannot receive `delete` or `share`.

@@ -1,21 +1,22 @@
 ---
-title: 'Docker Compose'
+title: Docker Compose
 ---
 
-- `docker-compose.yaml` builds the current source and publishes a random loopback port.
-- `docker-compose.release.yaml` runs `ghcr.io/ugoite/ugoite:${UGOITE_VERSION}` at `${UGOITE_PORT:-8000}`.
-
-Both files define one `ugoite` service and mount host Space storage at `/data`.
+Generate an encryption root and start the source image:
 
 ```bash
-# Source build
+export UGOITE_NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"
 docker compose up --build -d
-docker compose port ugoite 8000
-
-# Release image
-export UGOITE_VERSION=<release-tag>
-export UGOITE_BOOTSTRAP_TOKEN="$(openssl rand -hex 32)"
-docker compose -f docker-compose.release.yaml up -d
 ```
 
-The current deployment is not split into separate frontend and backend images.
+This builds the image, binds localhost port
+`${UGOITE_PORT:-8000}`, mounts portable Space directories from `./spaces` at
+`/data/spaces`, and keeps atomic Node control objects separately in `./node`. Read the setup URL
+with `docker compose logs ugoite`.
+
+Set `UGOITE_PUBLIC_ORIGIN` and `UGOITE_WEBAUTHN_RP_ID` to the externally visible
+HTTPS origin and host before registering Passkeys. Set `UGOITE_NODE_SECRET_KEY`
+to at least 32 random bytes, or adapt the deployment to mount
+`UGOITE_NODE_SECRET_FILE`. This encryption root is not a login credential and
+must not be stored in the Node control namespace. Preserve it in a deployment
+secret across restarts; losing it makes encrypted recovery and OIDC material unusable.

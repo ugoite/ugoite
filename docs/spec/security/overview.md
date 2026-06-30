@@ -1,32 +1,38 @@
 ---
-title: "Security overview"
+title: Security architecture
 ---
 
-This overview summarizes the security controls implemented today and the
-limitations that deployments must account for.
+Authentication and authorization follow
+[the operator guide](../../guide/auth-overview.md). The normative invariants
+are:
 
-## Current controls
+- Passkey/WebAuthn is the standard human authenticator; OIDC
+  authorization-code + PKCE is an optional linked method keyed by issuer and
+  subject.
+- Browser cookies contain only an opaque server-side session identifier. Idle
+  timeout is 24 hours and absolute timeout is 30 days.
+- Setup stays uninitialized until two Passkeys or Passkey + TOTP + recovery
+  codes are established. Setup and invitations are random, expiring, one-use values stored only as
+  SHA-256 hashes.
+- Recovery codes are one-use hashes. Replacing a Passkey requires a recovery
+  code plus TOTP; the TOTP seed is encrypted at rest and TOTP alone is never
+  sufficient.
+- Node administrator and Space owner are separate roles.
+- `space_uid`, principals, memberships, ACLs, attribution, and authorization
+  audit events are portable Space state; accounts, bindings, sessions, RP
+  configuration, and credential metadata are Node-local atomic control-store state.
+- CLI and agents register P-256 public keys. Access tokens are opaque,
+  hash-stored, five-minute,
+  Space/action restricted, and sender-constrained with RFC 9449 DPoP.
+- Entry and Asset use grant-only ACLs with default Space-role inheritance. Every
+  adapter uses the core Authorizer. SQL
+  constructs authorized source tables before joins, counts, and aggregates.
+- The last Space owner and last account Passkey cannot be removed.
+- Agents cannot manage members, owners, or agents. Noninteractive credentials
+  cannot perform delete or share.
+- Fixed passwords, shared credentials, preconfigured bearer credentials, development
+  bypasses, default credentials, and long-lived universal tokens do not exist.
 
-- server defaults to loopback unless deployment configuration changes it;
-- supplied container/chart run as non-root and use private persistent storage;
-- bearer tokens, API keys, signed tokens, and session cookies authenticate
-  requests;
-- Space membership and roles authorize reads, content writes, membership
-  operations, and administration;
-- IDs are validated before storage access;
-- local Space directories and sensitive files use owner-only permissions on
-  Unix;
-- request bodies are limited to 20 MiB;
-- MCP output frames Entry content as untrusted and sanitizes unsafe HTML/script
-  content;
-- integrity keys and append-only revisions protect stored content history.
-
-## Current limitations
-
-Passkey/TOTP login is not implemented even though the route is contracted.
-Managed service-account lifecycle, scope-enforced identities, and audit-log APIs
-are unavailable. Development mock OAuth must not be treated as production
-authentication.
-
-Secrets must be injected through deployment configuration, never committed or
-logged.
+`UGOITE_PUBLIC_ORIGIN` must be HTTPS except on loopback. The WebAuthn RP ID must
+be a registrable suffix of that origin host and must be configured before
+credential registration.

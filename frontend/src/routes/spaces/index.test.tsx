@@ -146,13 +146,12 @@ describe("/spaces", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("REQ-FE-001: keeps reserved admin-space out of the primary newcomer list", async () => {
+  it("REQ-FE-001: lists every authorized Space in one section", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        id: "admin-space",
-        name: "admin-space",
+        id: "operations",
+        name: "Operations",
         created_at: "2025-01-01T00:00:00Z",
-        is_admin_space: true,
       },
       {
         id: "default",
@@ -164,44 +163,36 @@ describe("/spaces", () => {
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByRole("list", { name: "User spaces" }))
+      expect(screen.getByRole("list", { name: "Spaces" }))
         .toBeInTheDocument();
     });
 
-    const userList = screen.getByRole("list", { name: "User spaces" });
-    expect(within(userList).getByText("default")).toBeInTheDocument();
-    expect(within(userList).queryByText("admin-space")).not.toBeInTheDocument();
-    expect(within(userList).getByRole("link", { name: "Open Space" }))
+    const spacesList = screen.getByRole("list", { name: "Spaces" });
+    expect(within(spacesList).getByText("default")).toBeInTheDocument();
+    expect(within(spacesList).getByText("Operations")).toBeInTheDocument();
+    expect(within(spacesList).getAllByRole("link", { name: "Open Space" })[0])
       .toHaveAttribute(
         "href",
         "/spaces/default/dashboard",
       );
-
-    const adminList = screen.getByRole("list", { name: "Admin spaces" });
-    expect(within(adminList).getByText("admin-space")).toBeInTheDocument();
   });
 
-  it("REQ-FE-002: treats reserved admin-space-only responses as an empty user-space state", async () => {
+  it("REQ-FE-002: treats any authorized Space as selectable content", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        id: "admin-space",
-        name: "admin-space",
+        id: "operations",
+        name: "Operations",
         created_at: "2025-01-01T00:00:00Z",
-        is_admin_space: true,
       },
     ]);
 
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByText("No user spaces available yet."))
+      expect(screen.getByRole("list", { name: "Spaces" }))
         .toBeInTheDocument();
     });
-
-    expect(screen.getByRole("button", { name: "Create space" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("list", { name: "Admin spaces" }))
-      .toBeInTheDocument();
+    expect(screen.queryByText("No spaces available.")).not.toBeInTheDocument();
   });
 
   it("REQ-FE-056: shows concise auth errors only when space loading fails", async () => {

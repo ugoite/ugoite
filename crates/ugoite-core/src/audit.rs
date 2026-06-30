@@ -18,7 +18,7 @@ pub struct AuditListOptions {
     pub offset: usize,
     pub limit: usize,
     pub action: Option<String>,
-    pub actor_user_id: Option<String>,
+    pub actor_principal_id: Option<String>,
     pub outcome: Option<String>,
 }
 
@@ -28,7 +28,7 @@ impl Default for AuditListOptions {
             offset: 0,
             limit: DEFAULT_AUDIT_LIMIT,
             action: None,
-            actor_user_id: None,
+            actor_principal_id: None,
             outcome: None,
         }
     }
@@ -197,12 +197,19 @@ pub async fn append_audit_event(
         .ok_or_else(|| anyhow!("audit action must not be empty"))?
         .to_string();
 
-    let actor_user_id = payload_obj
-        .get("actor_user_id")
+    let subject_principal_id = payload_obj
+        .get("subject_principal_id")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow!("actor_user_id must not be empty"))?
+        .ok_or_else(|| anyhow!("subject_principal_id must not be empty"))?
+        .to_string();
+    let actor_principal_id = payload_obj
+        .get("actor_principal_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("actor_principal_id must not be empty"))?
         .to_string();
 
     let lock = space_lock(&safe_space_id).await;
@@ -231,11 +238,13 @@ pub async fn append_audit_event(
         .unwrap_or_else(|| json!({}));
 
     let mut event = json!({
-        "id": format!("audit-{}", uuid::Uuid::new_v4().simple()),
+        "event_id": uuid::Uuid::now_v7(),
         "timestamp": now_iso(),
         "space_id": safe_space_id,
         "action": action,
-        "actor_user_id": actor_user_id,
+        "subject_principal_id": subject_principal_id,
+        "actor_principal_id": actor_principal_id,
+        "credential_id": payload_obj.get("credential_id").cloned().unwrap_or(Value::Null),
         "outcome": normalize_outcome(payload_obj.get("outcome").and_then(Value::as_str)),
         "target_type": payload_obj.get("target_type").cloned().unwrap_or(Value::Null),
         "target_id": payload_obj.get("target_id").cloned().unwrap_or(Value::Null),
@@ -282,7 +291,7 @@ pub async fn list_audit_events(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let actor = options
-        .actor_user_id
+        .actor_principal_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
@@ -303,7 +312,7 @@ pub async fn list_audit_events(
             }
         }
         if let Some(actor_value) = actor {
-            if obj.get("actor_user_id").and_then(Value::as_str) != Some(actor_value) {
+            if obj.get("actor_principal_id").and_then(Value::as_str) != Some(actor_value) {
                 return false;
             }
         }

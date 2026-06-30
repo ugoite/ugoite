@@ -1,16 +1,27 @@
 ---
-title: 'Container quick start'
+title: Container quick start
 ---
 
-When a tagged image has been published, the single release image contains the Rust server, `ugoite` CLI, and compiled browser application. Versioned images are published to `ghcr.io/ugoite/ugoite:<version>`, stable releases additionally refresh the `stable` and `latest` aliases, and prereleases refresh only their matching `alpha` or `beta` alias.
-
 ```bash
-export UGOITE_VERSION=<release-tag>
-export UGOITE_BOOTSTRAP_TOKEN="$(openssl rand -hex 32)"
+export UGOITE_VERSION=0.1.0
+export UGOITE_NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"
 docker compose -f docker-compose.release.yaml up -d
-curl --fail http://127.0.0.1:${UGOITE_PORT:-8000}/health
+docker compose -f docker-compose.release.yaml logs ugoite
 ```
 
-`${UGOITE_SPACES_DIR:-./spaces}` is mounted at `/data`, the authoritative workspace. The image runs as a non-root user.
+Open the one-use setup URL shown in the log and register a Passkey. Complete
+setup with a second Passkey or TOTP plus the displayed recovery codes. The URL
+expires after 30 minutes and can be used once. Portable Spaces live in
+`${UGOITE_SPACES_DIR:-./spaces}`. Atomic Node control objects live separately in
+`${UGOITE_NODE_DIR:-./node}`; back up both and the separately managed encryption
+key with owner-only permissions.
 
-The release Compose file defaults to development `mock-oauth`; configure an appropriate authentication mode before exposing the service outside a trusted local environment.
+For a remote hostname, configure the WebAuthn origin before first start:
+
+```bash
+export UGOITE_PUBLIC_ORIGIN=https://ugoite.example.com
+export UGOITE_WEBAUTHN_RP_ID=ugoite.example.com
+docker compose -f docker-compose.release.yaml up -d
+```
+
+HTTPS is mandatory for non-localhost Passkeys and Secure session cookies.

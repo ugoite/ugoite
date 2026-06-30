@@ -85,8 +85,8 @@ ASSET_BASE_URL="${ASSET_BASE_URL_INPUT:-https://github.com/ugoite/ugoite/release
 COMPOSE_PROJECT="ugoite-release-quickstart-${VERSION_INPUT//[^A-Za-z0-9]/-}-$$"
 compose_cmd=(docker compose -p "$COMPOSE_PROJECT" -f docker-compose.release.yaml)
 
-mkdir -p "$STACK_DIR/spaces" "$DOWNLOAD_DIR" "$CLI_INSTALL_DIR"
-chmod 0777 "$STACK_DIR/spaces"
+mkdir -p "$STACK_DIR/spaces" "$STACK_DIR/node" "$DOWNLOAD_DIR" "$CLI_INSTALL_DIR"
+chmod 0777 "$STACK_DIR/spaces" "$STACK_DIR/node"
 
 cleanup() {
   status=$?
@@ -126,10 +126,11 @@ gzip -dc "$DOWNLOAD_DIR/ugoite-image.tar.gz" | docker load
 cat >"$STACK_DIR/.env" <<EOF
 UGOITE_VERSION=${VERSION_INPUT}
 UGOITE_SPACES_DIR=./spaces
+UGOITE_NODE_DIR=./node
 UGOITE_PORT=8000
-UGOITE_DEV_AUTH_MODE=mock-oauth
-UGOITE_DEV_USER_ID=dev-local-user
-UGOITE_BOOTSTRAP_TOKEN=dev-token
+UGOITE_PUBLIC_ORIGIN=http://127.0.0.1:8000
+UGOITE_API_BASE_URL=http://127.0.0.1:8000/api
+UGOITE_WEBAUTHN_RP_ID=127.0.0.1
 EOF
 
 log "Starting released compose stack"
@@ -146,19 +147,21 @@ bash "$SCRIPT_DIR/wait-for-http.sh" \
   "http://127.0.0.1:8000/login" \
   "$STACK_TIMEOUT_SECONDS"
 
-login_payload="$(curl -fsS -X POST http://127.0.0.1:8000/api/auth/mock-oauth)"
-E2E_AUTH_BEARER_TOKEN="$(deno_json_query "value.bearer_token" "$login_payload")"
-if [ -z "$E2E_AUTH_BEARER_TOKEN" ] || [ "$E2E_AUTH_BEARER_TOKEN" = "null" ]; then
-  fail "release quick-start mock OAuth did not return a bearer token"
+E2E_SETUP_SECRET="$(
+  cd "$STACK_DIR" &&
+    "${compose_cmd[@]}" logs --no-color ugoite | sed -n 's/.*#secret=\([^[:space:]]*\).*/\1/p' | tail -n 1
+)"
+if [ -z "$E2E_SETUP_SECRET" ]; then
+  fail "release quick-start setup secret was not present in startup logs"
 fi
-export E2E_AUTH_BEARER_TOKEN
+export E2E_SETUP_SECRET
 
 log "Running release browser quick-start stories"
 (
   cd "$REPO_ROOT/e2e"
   FRONTEND_URL="http://127.0.0.1:8000" \
-    BACKEND_URL="http://127.0.0.1:8000/api" \
-    E2E_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
+    BACKEND_URL="http://127.0.0.1:8000" \
+    E2E_SETUP_SECRET="$E2E_SETUP_SECRET" \
     deno task smoke
 )
 
@@ -182,45 +185,8 @@ log "Verified: installed CLI answers --help"
 HOME="$CLI_HOME" PATH="$CLI_INSTALL_DIR:$PATH" "$CLI_BINARY" \
   config set --mode api --api-url http://127.0.0.1:8000/api >/dev/null
 
-profile_output="$(
-  HOME="$CLI_HOME" \
-    PATH="$CLI_INSTALL_DIR:$PATH" \
-    UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
-    "$CLI_BINARY" auth profile
-)"
-active_token="$(deno_json_query "value.UGOITE_AUTH_BEARER_TOKEN ?? ''" "$profile_output")"
-if [ -z "$active_token" ]; then
-  fail "missing active CLI bearer token profile"
-fi
-log "Verified: CLI auth profile exposes a bearer token"
-
-space_list_before="$(
-  HOME="$CLI_HOME" \
-    PATH="$CLI_INSTALL_DIR:$PATH" \
-    UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
-    "$CLI_BINARY" space list
-)"
-has_default="$(deno_json_query "value.some((item) => item?.name === 'default')" "$space_list_before")"
-if [ "$has_default" != "true" ]; then
-  fail "default space missing from remote CLI space list"
-fi
-log "Verified: remote CLI can list release backend spaces"
-
-remote_space="release-quickstart-remote-$(date +%s)"
-HOME="$CLI_HOME" \
-  PATH="$CLI_INSTALL_DIR:$PATH" \
-  UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
-  "$CLI_BINARY" space create "$remote_space" >/dev/null
-space_list_after="$(
-  HOME="$CLI_HOME" \
-    PATH="$CLI_INSTALL_DIR:$PATH" \
-    UGOITE_AUTH_BEARER_TOKEN="$E2E_AUTH_BEARER_TOKEN" \
-    "$CLI_BINARY" space list
-)"
-has_remote="$(REMOTE_SPACE="$remote_space" deno_json_query "value.some((item) => item?.name === Deno.env.get('REMOTE_SPACE'))" "$space_list_after")"
-if [ "$has_remote" != "true" ]; then
-  fail "${remote_space} missing from remote CLI space list"
-fi
-log "Verified: remote CLI can create and observe release backend spaces"
+auth_help="$($CLI_BINARY auth --help 2>&1)"
+printf '%s' "$auth_help" | grep -Fq "login" || fail "installed CLI does not expose device login"
+log "Verified: installed CLI exposes device authorization login"
 
 log "Release container quick-start verification passed for ${VERSION_INPUT}"

@@ -3,6 +3,13 @@
 
 use std::process::Command;
 
+fn created_space_dir(root: &std::path::Path, output: &std::process::Output) -> std::path::PathBuf {
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let space_id = result["id"].as_str().unwrap();
+    assert!(uuid::Uuid::parse_str(space_id).is_ok());
+    root.join("spaces").join(space_id)
+}
+
 fn ugoite_bin() -> String {
     let mut path = std::env::current_exe().unwrap();
     path.pop();
@@ -42,7 +49,7 @@ fn test_create_space_scaffolding() {
     );
 
     // Verify the space directory was created
-    let space_dir = space_path;
+    let space_dir = created_space_dir(dir.path(), &output);
     assert!(space_dir.exists(), "Space directory should be created");
 
     let settings: serde_json::Value =
@@ -88,7 +95,7 @@ fn test_create_space_req_sto_003_permissions() {
     );
 
     let spaces_root = dir.path().join("spaces");
-    let space_dir = spaces_root.join("private-space");
+    let space_dir = created_space_dir(dir.path(), &output);
     assert_eq!(mode(&spaces_root), 0o700);
     assert_eq!(mode(&space_dir), 0o700);
     for dir_name in ["forms", "assets", "materialized_views", "sql_sessions"] {
@@ -179,7 +186,7 @@ fn test_create_sample_space_req_api_009() {
     );
 
     // Verify space was created
-    let space_dir = dir.path().join("spaces").join("sample-space");
+    let space_dir = created_space_dir(dir.path(), &output);
     assert!(space_dir.exists());
 }
 
@@ -229,7 +236,12 @@ fn test_sample_data_progress_req_api_009() {
         "Expected completed progress output, got: {stderr}"
     );
 
-    let space_dir = dir.path().join("spaces").join("sample-progress");
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["slug"], "sample-progress");
+    let space_dir = dir
+        .path()
+        .join("spaces")
+        .join(result["id"].as_str().unwrap());
     assert!(
         space_dir.exists(),
         "Sample data command should create the space"

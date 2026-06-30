@@ -26,9 +26,10 @@ the `/data` mount for the non-root user.
 
 ## Login failure
 
-Mock OAuth requires `UGOITE_DEV_AUTH_MODE=mock-oauth` and the matching
-`UGOITE_BOOTSTRAP_TOKEN`. Passkey/TOTP `/auth/login` is unavailable in this
-release.
+First startup prints a one-use setup URL. If Passkey registration reports an
+origin or RP mismatch, verify that `UGOITE_PUBLIC_ORIGIN` exactly matches the
+browser origin and `UGOITE_WEBAUTHN_RP_ID` matches its host, then restart with
+an empty data root before any credential has been registered.
 
 ## Missing data
 

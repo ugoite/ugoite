@@ -162,15 +162,18 @@ run = [
 description = "Build the runtime image once for E2E and packaging"
 run = """bash -lc 'set -euo pipefail
 tag="${UGOITE_IMAGE_TAG:-ugoite:e2e}"
-target_args=()
+prebuilt=false
 if [[ "${UGOITE_IMAGE_PREBUILT:-false}" == "true" ]]; then
   test -x target/rust/release/ugoite
   test -x target/rust/release/ugoite-server
   test -s frontend/.output/public/index.html
-  target_args=(--target runtime-prebuilt)
+  prebuilt=true
 fi
 if [[ "${UGOITE_IMAGE_USE_BUILDX:-false}" == "true" || -n "${UGOITE_IMAGE_CACHE_FROM:-}" || -n "${UGOITE_IMAGE_CACHE_TO:-}" ]]; then
-  cmd=(docker buildx build --tag "$tag" --load "${target_args[@]}")
+  cmd=(docker buildx build --tag "$tag" --load)
+  if [[ "$prebuilt" == "true" ]]; then
+    cmd+=(--target runtime-prebuilt)
+  fi
   if [[ -n "${UGOITE_IMAGE_PLATFORM:-}" ]]; then
     cmd+=(--platform "${UGOITE_IMAGE_PLATFORM}")
   fi
@@ -183,7 +186,11 @@ if [[ "${UGOITE_IMAGE_USE_BUILDX:-false}" == "true" || -n "${UGOITE_IMAGE_CACHE_
   cmd+=(.)
   "${cmd[@]}"
 else
-  docker build --tag "$tag" "${target_args[@]}" .
+  if [[ "$prebuilt" == "true" ]]; then
+    docker build --tag "$tag" --target runtime-prebuilt .
+  else
+    docker build --tag "$tag" .
+  fi
 fi'"""
 
 [tasks.build]
@@ -203,6 +210,7 @@ run = [
   "cargo run -p xtask -- openapi-check",
   "cargo run -p xtask -- architecture-check",
   "cargo run -p xtask -- docs-current-stack-check",
+  "cargo run -p xtask -- legacy-auth-check",
 ]
 
 [tasks."test:rust"]

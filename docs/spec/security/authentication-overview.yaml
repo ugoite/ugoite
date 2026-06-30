@@ -1,46 +1,41 @@
-version: rust-auth-current-v1
-updated: 2026-06
-enforcement:
-  mandatory_authentication: true
-  localhost_requires_authentication: true
-  remote_requires_authentication: true
-routes:
-  GET /auth/config: implemented
-  POST /auth/login: contracted_unavailable
-  POST /auth/mock-oauth: development_only
-  GET /auth/session: implemented
-  DELETE /auth/session: implemented
-accepted_credentials:
-  bearer:
-    static_tokens: configured through UGOITE_AUTH_BEARER_TOKENS or UGOITE_BOOTSTRAP_TOKEN
-    signed_tokens: configured through signing-secret and active-kid environment variables
-  api_key:
-    static_keys: configured through UGOITE_AUTH_API_KEYS
-  session_cookie:
-    source: development mock-oauth response or another accepted bearer token flow
-identity_model:
-  principal_types:
-  - user
-  - service
-  parsed_fields:
-  - user_id
-  - principal_type
-  - display_name
-  - auth_method
-  - key_id
-  - scopes
-  - scope_enforced
-  - service_account_id
-  server_limit: requests with scope_enforced=true are rejected with HTTP 403 in this
-    release
-unavailable:
-- passkey/TOTP enrollment and verification
-- OAuth provider integration other than the local mock-oauth development route
-- managed service-account creation, rotation, listing, and revocation APIs
-- scope enforcement for service identities
-- audit-log persistence and listing APIs
-channels:
-- REST
-- the current MCP resource route
-- CLI remote mode
-- server-backed browser
+version: 0.3
+updated: "2026-06-29"
+node_identity:
+  human_authentication: [passkey, invited_oidc]
+  browser_session: {
+    kind: opaque_server_side,
+    idle_hours: 24,
+    absolute_days: 30,
+  }
+  setup: { random: true, hashed: true, one_use: true, lifetime_minutes: 30 }
+  setup_strength:
+    accepted: [two_passkeys, passkey_totp_recovery_codes]
+  persistence: atomic_opendal_node_control_store
+  recovery:
+    recovery_code: { hashed: true, one_use: true }
+    totp: { encrypted_at_rest: true, sufficient_alone: false }
+    passkey_replacement_requires: [recovery_code, totp]
+space_identity:
+  id: UUIDv7 space_uid
+  portable: [principals, memberships, acl, attribution, authorization_audit]
+  node_local: [accounts, principal_bindings, sessions, issuer, webauthn_rp]
+oauth:
+  device_authorization: implemented
+  access_token: opaque_hashed_server_side
+  access_token_minutes: 5
+  refresh_rotation: every_use
+  sender_constraint: RFC9449_DPoP
+  metadata:
+    - /.well-known/oauth-protected-resource
+    - /.well-known/oauth-authorization-server
+agents:
+  sponsor_required: true
+  autonomous: explicit_agent_grant
+  delegated: agent_grant_intersection_human_permission
+prohibited:
+  - fixed_password
+  - shared_api_key
+  - static_bearer
+  - default_credential
+  - development_authentication_bypass
+  - external_oidc_token_as_api_credential

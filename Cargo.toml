@@ -3,6 +3,7 @@ members = [
     "crates/ugoite-domain",
     "crates/ugoite-api-client",
     "crates/ugoite-storage",
+    "crates/ugoite-identity",
     "crates/ugoite-core",
     "crates/ugoite-server",
     "crates/ugoite-cli",

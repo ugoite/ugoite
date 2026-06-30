@@ -1584,6 +1584,6 @@ requirements:
   tests:
   - file: e2e/smoke.test.ts
   - file: frontend/src/components/Nav.test.tsx
-  - file: frontend/src/lib/auth-api.test.ts
-  - file: frontend/src/lib/auth-cookie.test.ts
-  - file: frontend/src/routes/api/auth/session.test.ts
+  - file: frontend/src/lib/auth-api.ts
+  - file: frontend/src/routes/api/[...path].test.ts
+  - file: frontend/src/routes/login.tsx

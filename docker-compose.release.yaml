@@ -4,12 +4,13 @@ services:
     ports:
       - "127.0.0.1:${UGOITE_PORT:-8000}:8000"
     volumes:
-      - "${UGOITE_SPACES_DIR:-./spaces}:/data"
+      - "${UGOITE_SPACES_DIR:-./spaces}:/data/spaces"
+      - "${UGOITE_NODE_DIR:-./node}:/data/_ugoite"
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_SERVER_ADDRESS=0.0.0.0:8000
       - UGOITE_STATIC_DIR=/app/static
-      - UGOITE_BOOTSTRAP_DEFAULT_SPACE=true
-      - UGOITE_DEV_AUTH_MODE=${UGOITE_DEV_AUTH_MODE:-mock-oauth}
-      - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-dev-local-user}
-      - UGOITE_BOOTSTRAP_TOKEN=${UGOITE_BOOTSTRAP_TOKEN:-dev-token}
+      - UGOITE_PUBLIC_ORIGIN=${UGOITE_PUBLIC_ORIGIN:-http://localhost:8000}
+      - UGOITE_API_BASE_URL=${UGOITE_API_BASE_URL:-http://localhost:8000/api}
+      - UGOITE_WEBAUTHN_RP_ID=${UGOITE_WEBAUTHN_RP_ID:-localhost}
+      - UGOITE_NODE_SECRET_KEY=${UGOITE_NODE_SECRET_KEY:?set UGOITE_NODE_SECRET_KEY to at least 32 random bytes}

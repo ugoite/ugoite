@@ -24,7 +24,6 @@ describe("portable Ugoite API protocol WASM", () => {
       method: "GET",
       path: "/spaces/team%2F%E6%9D%B1%E4%BA%AC/search?q=a+%26+b%23c",
       body_kind: "none",
-      auth_mode: "standard",
     });
   });
 

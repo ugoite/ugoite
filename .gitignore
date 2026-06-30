@@ -20,6 +20,7 @@ frontend/.output/
 frontend/dist/
 docsite/coverage/
 e2e/test-results/
+e2e/.auth/
 /uv.lock
 __pycache__/
 /target/
