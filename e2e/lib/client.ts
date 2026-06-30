@@ -67,7 +67,8 @@ export async function waitForServers(
 export async function ensureDefaultForm(
 	request: APIRequestContext,
 ): Promise<void> {
-	const response = await request.post(getBackendUrl("/spaces/default/forms"), {
+	const spaceId = await getDefaultSpaceId(request);
+	const response = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
 		data: {
 			name: "Entry",
 			version: 1,
@@ -79,4 +80,17 @@ export async function ensureDefaultForm(
 		const body = await response.text();
 		throw new Error(`Failed to ensure default form: ${response.status()} ${body}`);
 	}
+}
+
+export async function getDefaultSpaceId(
+	request: APIRequestContext,
+): Promise<string> {
+	const response = await request.get(getBackendUrl("/spaces"));
+	if (!response.ok()) throw new Error(`Failed to list Spaces: ${response.status()}`);
+	const spaces = await response.json() as Array<{ id: string; slug?: string; name: string }>;
+	const space = spaces.find((candidate) =>
+		candidate.slug === "default" || candidate.name === "default"
+	);
+	if (!space) throw new Error("Default Space was not created during setup");
+	return space.id;
 }

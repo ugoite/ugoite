@@ -128,6 +128,14 @@ fn test_space_create_and_list() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let created: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("create response should be JSON");
+    let created_id = created["id"].as_str().expect("immutable Space id");
+    assert_eq!(
+        uuid::Uuid::parse_str(created_id).unwrap().get_version_num(),
+        7
+    );
+    assert_eq!(created["slug"], "test-space");
 
     let output = Command::new(ugoite_bin())
         .args(["space", "list", &root])
@@ -143,6 +151,5 @@ fn test_space_create_and_list() {
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("should be JSON");
     assert!(v
         .as_array()
-        .map(|a| a.iter().any(|x| x.as_str() == Some("test-space")))
-        .unwrap_or(false));
+        .is_some_and(|ids| { ids.iter().any(|value| value.as_str() == Some(created_id)) }));
 }

@@ -193,15 +193,25 @@ fn test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths() 
     std::env::set_var("UGOITE_CLI_CONFIG_PATH", &nested_config_path);
 
     let session = AuthSession {
-        bearer_token: Some("issued-token".to_string()),
+        credential_id: uuid::Uuid::nil(),
+        device_name: "test-device".to_string(),
+        public_key_jwk: serde_json::json!({}),
+        private_key_pkcs8: Some("private-key".to_string()),
+        access_token: "access-token".to_string(),
+        refresh_token: "refresh-token".to_string(),
+        expires_at: 1_900_000_000,
+        base_url: "https://example.test".to_string(),
+        space_uid: uuid::Uuid::nil(),
     };
     let session_path = auth_session_path();
     let saved_path = save_auth_session(&session).expect("save auth session");
     assert_eq!(saved_path, session_path);
     assert!(saved_path.exists(), "auth session should be written");
     assert_eq!(
-        load_auth_session().bearer_token.as_deref(),
-        Some("issued-token")
+        load_auth_session()
+            .as_ref()
+            .map(|session| session.access_token.as_str()),
+        Some("access-token")
     );
 
     assert!(clear_auth_session().expect("clear saved auth session"));
@@ -227,7 +237,7 @@ fn test_cli_req_ops_015_auth_session_helpers_cover_unreadable_and_error_paths() 
 
     std::env::set_var("UGOITE_CLI_CONFIG_PATH", &nested_config_path);
     std::fs::create_dir_all(&session_path).expect("create unreadable auth-session directory");
-    assert_eq!(load_auth_session(), AuthSession::default());
+    assert_eq!(load_auth_session(), None);
 
     let clear_err =
         clear_auth_session().expect_err("directory auth-session path should fail to clear");

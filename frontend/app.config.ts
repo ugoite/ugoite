@@ -27,8 +27,14 @@ if (!currentEnv || typeof currentEnv !== "object") {
   /* v8 ignore stop */
 }
 
+const denoEnv = (globalThis as typeof globalThis & {
+  Deno?: { env: { toObject(): Record<string, string> } };
+}).Deno?.env.toObject() ?? {};
 /* v8 ignore next */
-const env = (globalThis.process as ProcessLike | undefined)?.env ?? {};
+const env = {
+  ...denoEnv,
+  ...((globalThis.process as ProcessLike | undefined)?.env ?? {}),
+};
 
 const [{ defineConfig }, { default: tailwindcss }, { VitePWA }] = await Promise
   .all([

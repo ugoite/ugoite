@@ -1,23 +1,21 @@
 ---
-title: 'Environment variable matrix'
+title: Environment variables
 ---
 
-| Variable | Purpose | Default |
-|---|---|---|
-| `UGOITE_ROOT` | authoritative workspace root | `./data`; image sets `/data` |
-| `UGOITE_SERVER_ADDRESS` | HTTP listen address | `127.0.0.1:8000`; image sets `0.0.0.0:8000` |
-| `UGOITE_STATIC_DIR` | compiled browser files | unset; image sets `/app/static` |
-| `UGOITE_BOOTSTRAP_DEFAULT_SPACE` | create initial default Space when true | false unless set |
-| `UGOITE_DEV_AUTH_MODE` | development auth mode | `mock-oauth` |
-| `UGOITE_DEV_USER_ID` | development/bootstrap identity | `dev-local-user` |
-| `UGOITE_BOOTSTRAP_TOKEN` | secret required by mock OAuth | unset |
-| `UGOITE_AUTH_BEARER_TOKENS` | static bearer credential set | unset |
-| `UGOITE_AUTH_API_KEYS` | static API-key credential set | unset |
-| `UGOITE_AUTH_BEARER_SIGNING_SECRETS` | `kid:secret` signing keys | unset |
-| `UGOITE_AUTH_BEARER_ACTIVE_KIDS` | active signing key IDs | unset |
-| `UGOITE_AUTH_REVOKED_KEY_IDS` | revoked signing key IDs | unset |
-| `UGOITE_VERSION` | release image tag | required by release Compose |
-| `UGOITE_PORT` | release host port | `8000` |
-| `UGOITE_SPACES_DIR` | release host storage directory | `./spaces` |
+| Variable                | Purpose                                                            | Default                 |
+| ----------------------- | ------------------------------------------------------------------ | ----------------------- |
+| `UGOITE_ROOT`           | Node state and operator-owned Spaces                               | `./data`                |
+| `UGOITE_SERVER_ADDRESS` | HTTP listen address                                                | `127.0.0.1:8000`        |
+| `UGOITE_STATIC_DIR`     | Optional compiled browser directory                                | unset                   |
+| `UGOITE_PUBLIC_ORIGIN`  | Exact public WebAuthn/OAuth issuer origin                          | `http://localhost:8000` |
+| `UGOITE_API_BASE_URL`   | Public API base, including `/api` for the integrated browser image | public origin           |
+| `UGOITE_WEBAUTHN_RP_ID` | WebAuthn relying-party ID                                          | public-origin host      |
+| `UGOITE_NODE_CONTROL_URI` | Optional separate durable OpenDAL URI for Node control state     | `UGOITE_ROOT` storage     |
+| `UGOITE_NODE_SECRET_KEY` | AEAD root key of at least 32 bytes                                | required unless file set |
+| `UGOITE_NODE_SECRET_FILE` | Mounted file containing the AEAD root key                         | unset                    |
+| `BACKEND_URL`           | Frontend server proxy target                                       | deployment-specific     |
 
-Historical split-stack and alternate package-manager variables are not part of the current runtime.
+Remote deployments must use an HTTPS public origin. Authentication credentials
+are generated and persisted by Ugoite; no environment variable accepts a
+password, API key, bearer token, or setup credential. The Node secret encrypts
+recoverable values and must be stored outside the control-store namespace.

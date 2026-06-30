@@ -6,17 +6,14 @@ services:
       dockerfile: Dockerfile
     ports:
       - target: 8000
-        published: 0
+        published: ${E2E_COMPOSE_PORT:-18000}
         host_ip: 127.0.0.1
         protocol: tcp
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_SERVER_ADDRESS=0.0.0.0:8000
       - UGOITE_STATIC_DIR=/app/static
-      - UGOITE_DEV_AUTH_MODE=${UGOITE_DEV_AUTH_MODE:-mock-oauth}
-      - UGOITE_DEV_USER_ID=${UGOITE_DEV_USER_ID:-e2e-user}
-      - UGOITE_BOOTSTRAP_TOKEN=${UGOITE_BOOTSTRAP_TOKEN:-e2e-token}
-      - UGOITE_AUTH_BEARER_TOKENS=${UGOITE_AUTH_BEARER_TOKENS:-}
-      - UGOITE_AUTH_BEARER_SIGNING_SECRETS=${UGOITE_AUTH_BEARER_SIGNING_SECRETS:-}
-      - UGOITE_AUTH_BEARER_ACTIVE_KIDS=${UGOITE_AUTH_BEARER_ACTIVE_KIDS:-}
-      - UGOITE_BOOTSTRAP_DEFAULT_SPACE=true
+      - UGOITE_PUBLIC_ORIGIN=${UGOITE_PUBLIC_ORIGIN:-http://localhost:8000}
+      - UGOITE_API_BASE_URL=${UGOITE_API_BASE_URL:-http://localhost:8000/api}
+      - UGOITE_WEBAUTHN_RP_ID=${UGOITE_WEBAUTHN_RP_ID:-localhost}
+      - UGOITE_NODE_SECRET_KEY=${UGOITE_NODE_SECRET_KEY:?E2E runner must provide a node secret}

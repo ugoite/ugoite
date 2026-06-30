@@ -15,7 +15,7 @@ tokio = { version = "1.52", features = ["rt-multi-thread", "macros"] }
 anyhow = "1.0"
 chrono = { version = "0.4.44", features = ["serde"] }
 url = "2.5.0"
-uuid = { version = "1.23.2", features = ["v4", "serde"] }
+uuid = { version = "1.23.2", features = ["v4", "v7", "serde"] }
 futures = { version = "0.3.32", features = ["std"] }
 thiserror = "2.0.18"
 base64 = "0.22.1"
@@ -24,9 +24,7 @@ serde_yaml = "0.9.34"
 regex = "1.12.3"
 sha2 = "0.11"
 hmac = "0.13"
-pbkdf2 = "0.13"
 hex = "0.4"
-subtle = "2.6"
 iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs", "storage-memory", "storage-s3", "storage-gcs", "storage-azdls", "storage-oss"] }
 arrow-array = "57.3"
 arrow-schema = "57.3"

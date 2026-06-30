@@ -28,8 +28,16 @@ pub struct EndpointConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthSession {
+    pub credential_id: uuid::Uuid,
+    pub device_name: String,
+    pub public_key_jwk: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bearer_token: Option<String>,
+    pub private_key_pkcs8: Option<String>,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_at: i64,
+    pub base_url: String,
+    pub space_uid: uuid::Uuid,
 }
 
 fn default_backend_url() -> String {
@@ -67,7 +75,7 @@ pub fn auth_session_path() -> PathBuf {
     config_path()
         .parent()
         .unwrap_or(Path::new("."))
-        .join("cli-auth.json")
+        .join("cli-credentials.json")
 }
 
 fn non_empty_env_path(key: &str) -> Option<PathBuf> {
@@ -112,19 +120,17 @@ pub fn load_config() -> EndpointConfig {
     serde_json::from_str(&text).unwrap_or_default()
 }
 
-pub fn load_auth_session() -> AuthSession {
+pub fn load_auth_session() -> Option<AuthSession> {
     let path = auth_session_path();
     if !path.exists() {
-        return AuthSession::default();
+        return None;
     }
     let read_text = std::fs::read_to_string(&path);
     let text = match read_text {
         Ok(text) => text,
-        Err(_) => return AuthSession::default(),
+        Err(_) => return None,
     };
-    let mut session: AuthSession = serde_json::from_str(&text).unwrap_or_default();
-    session.bearer_token = session.bearer_token.and_then(non_empty_string);
-    session
+    serde_json::from_str(&text).ok()
 }
 
 pub fn save_config(config: &EndpointConfig) -> Result<PathBuf> {
@@ -142,11 +148,8 @@ pub fn save_auth_session(session: &AuthSession) -> Result<PathBuf> {
     let path = auth_session_path();
     let parent = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent)?;
-    let normalized = AuthSession {
-        bearer_token: session.bearer_token.clone().and_then(non_empty_string),
-    };
     let text =
-        serde_json::to_string_pretty(&normalized).expect("AuthSession serialization is infallible");
+        serde_json::to_string_pretty(session).expect("AuthSession serialization is infallible");
     write_auth_session_text(&path, &text)?;
     set_owner_only_permissions(&path)?;
     Ok(path)
@@ -159,14 +162,6 @@ pub fn clear_auth_session() -> Result<bool> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.into()),
     }
-}
-
-pub fn effective_bearer_token() -> Option<String> {
-    non_empty_env_value("UGOITE_AUTH_BEARER_TOKEN").or_else(|| load_auth_session().bearer_token)
-}
-
-pub fn effective_api_key() -> Option<String> {
-    non_empty_env_value("UGOITE_AUTH_API_KEY")
 }
 
 #[cfg(unix)]
@@ -269,11 +264,32 @@ pub fn resolve_space_reference(
     if validated_base_url(config)?.is_some() {
         return Ok(parsed);
     }
-    explicit_core_space_path(space_path).ok_or_else(|| {
+    let (root, reference) = explicit_core_space_path(space_path).ok_or_else(|| {
         anyhow!(
             "{command_name} requires SPACE_ID_OR_PATH as /path/to/root/spaces/<id> in core mode"
         )
-    })
+    })?;
+    let spaces = std::path::Path::new(&root).join("spaces");
+    if spaces.join(&reference).join("meta.json").is_file() {
+        return Ok((root, reference));
+    }
+    if let Ok(entries) = std::fs::read_dir(&spaces) {
+        for entry in entries.flatten() {
+            let meta_path = entry.path().join("meta.json");
+            let Ok(contents) = std::fs::read(&meta_path) else {
+                continue;
+            };
+            let Ok(meta) = serde_json::from_slice::<serde_json::Value>(&contents) else {
+                continue;
+            };
+            if meta.get("slug").and_then(serde_json::Value::as_str) == Some(reference.as_str()) {
+                if let Some(immutable_id) = entry.file_name().to_str() {
+                    return Ok((root, immutable_id.to_string()));
+                }
+            }
+        }
+    }
+    Ok((root, reference))
 }
 
 pub fn normalize_space_root(root_path: &str) -> String {

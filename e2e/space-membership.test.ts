@@ -1,159 +1,78 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
 
-const OWNER_TOKEN = process.env.E2E_AUTH_BEARER_TOKEN ?? "local-dev-token";
-const ALICE_TOKEN = "alice-token";
-const BOB_TOKEN = "bob-token";
-
-type RequestContextFactory = {
-	request: {
-		newContext(options: {
-			extraHTTPHeaders: Record<string, string>;
-		}): Promise<APIRequestContext>;
-	};
-};
-
-async function authContext(
-	playwright: RequestContextFactory,
-	token: string,
-): Promise<APIRequestContext> {
-	return playwright.request.newContext({
-		extraHTTPHeaders: {
-			Authorization: `Bearer ${token}`,
-		},
-	});
-}
-
-async function createSpace(ownerRequest: APIRequestContext): Promise<string> {
-	const response = await ownerRequest.post(getBackendUrl("/spaces"), {
-		data: { name: `e2e-members-${Date.now()}-${Math.floor(Math.random() * 1000)}` },
-	});
-	expect(response.status()).toBe(201);
-	const body = (await response.json()) as { id: string };
-	return body.id;
-}
-
 test.describe("Space Membership", () => {
-	test.beforeAll(async ({ request }) => {
-		await waitForServers(request);
-	});
+  test.beforeAll(async ({ request }) => await waitForServers(request));
 
-	test("REQ-SEC-007: invitation lifecycle invite/accept/revoke", async ({ playwright }) => {
-		const owner = await authContext(playwright, OWNER_TOKEN);
-		const alice = await authContext(playwright, ALICE_TOKEN);
+  test("REQ-SEC-007: one-use invitation registers a real Passkey and can be revoked", async ({ browser, request }) => {
+    const spaceId = `e2e-members-${Date.now()}`;
+    const created = await request.post(getBackendUrl("/spaces"), {
+      data: { name: spaceId },
+    });
+    expect(created.status()).toBe(201);
+    const invite = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/members/invitations`),
+      { data: { display_name: "Invited viewer", role: "viewer" } },
+    );
+    expect(invite.status()).toBe(201);
+    const { invitation_url: invitationUrl } = await invite.json() as {
+      invitation_url: string;
+    };
 
-		try {
-			const spaceId = await createSpace(owner);
+    const invited = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+    const page = await invited.newPage();
+    const cdp = await invited.newCDPSession(page);
+    await cdp.send("WebAuthn.enable");
+    await cdp.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        automaticPresenceSimulation: true,
+      },
+    });
 
-			const invite = await owner.post(
-				getBackendUrl(`/spaces/${spaceId}/members/invitations`),
-				{ data: { user_id: "alice-user", role: "viewer" } },
-			);
-			expect(invite.status()).toBe(201);
-			const inviteBody = (await invite.json()) as {
-				invitation: { token: string };
-			};
-			const token = inviteBody.invitation.token;
+    try {
+      await page.goto(invitationUrl);
+      await page.getByRole("button", { name: "Register Passkey and join" })
+        .click();
+      await expect(page).toHaveURL(/\/spaces$/);
+      const space = await invited.request.get(
+        getBackendUrl(`/spaces/${spaceId}`),
+      );
+      expect(space.status()).toBe(200);
 
-			const beforeAccept = await alice.get(getBackendUrl(`/spaces/${spaceId}`));
-			expect(beforeAccept.status()).toBe(403);
-
-			const accept = await alice.post(getBackendUrl(`/spaces/${spaceId}/members/accept`), {
-				data: { token },
-			});
-			expect(accept.status()).toBe(200);
-
-			const afterAccept = await alice.get(getBackendUrl(`/spaces/${spaceId}`));
-			expect(afterAccept.status()).toBe(200);
-
-			const revoke = await owner.delete(getBackendUrl(`/spaces/${spaceId}/members/alice-user`));
-			expect(revoke.status()).toBe(200);
-
-			const afterRevoke = await alice.get(getBackendUrl(`/spaces/${spaceId}`));
-			expect(afterRevoke.status()).toBe(403);
-		} finally {
-			await owner.dispose();
-			await alice.dispose();
-		}
-	});
-
-	test("REQ-SEC-007: role changes switch admin privileges", async ({ playwright }) => {
-		const owner = await authContext(playwright, OWNER_TOKEN);
-		const bob = await authContext(playwright, BOB_TOKEN);
-
-		try {
-			const spaceId = await createSpace(owner);
-
-			const invite = await owner.post(
-				getBackendUrl(`/spaces/${spaceId}/members/invitations`),
-				{ data: { user_id: "bob-user", role: "viewer" } },
-			);
-			expect(invite.status()).toBe(201);
-			const inviteBody = (await invite.json()) as {
-				invitation: { token: string };
-			};
-			const token = inviteBody.invitation.token;
-
-			const accept = await bob.post(getBackendUrl(`/spaces/${spaceId}/members/accept`), {
-				data: { token },
-			});
-			expect(accept.status()).toBe(200);
-
-			const deniedPatch = await bob.patch(getBackendUrl(`/spaces/${spaceId}`), {
-				data: { settings: { default_form: "Entry" } },
-			});
-			expect(deniedPatch.status()).toBe(403);
-
-			const promote = await owner.post(
-				getBackendUrl(`/spaces/${spaceId}/members/bob-user/role`),
-				{ data: { role: "admin" } },
-			);
-			expect(promote.status()).toBe(200);
-
-			const allowedPatch = await bob.patch(getBackendUrl(`/spaces/${spaceId}`), {
-				data: { settings: { default_form: "Entry" } },
-			});
-			expect(allowedPatch.status()).toBe(200);
-		} finally {
-			await owner.dispose();
-			await bob.dispose();
-		}
-	});
-
-	test("REQ-SEC-007: members endpoint reflects lifecycle states", async ({ playwright }) => {
-		const owner = await authContext(playwright, OWNER_TOKEN);
-		const alice = await authContext(playwright, ALICE_TOKEN);
-
-		try {
-			const spaceId = await createSpace(owner);
-
-			const invite = await owner.post(
-				getBackendUrl(`/spaces/${spaceId}/members/invitations`),
-				{ data: { user_id: "alice-user", role: "viewer" } },
-			);
-			expect(invite.status()).toBe(201);
-			const inviteBody = (await invite.json()) as {
-				invitation: { token: string };
-			};
-
-			const listedAfterInvite = await owner.get(getBackendUrl(`/spaces/${spaceId}/members`));
-			expect(listedAfterInvite.status()).toBe(200);
-			const invitedMembers = (await listedAfterInvite.json()) as Array<{ user_id: string; state: string }>;
-			expect(invitedMembers.some((member) => member.user_id === "alice-user" && member.state === "invited")).toBeTruthy();
-
-			const accept = await alice.post(getBackendUrl(`/spaces/${spaceId}/members/accept`), {
-				data: { token: inviteBody.invitation.token },
-			});
-			expect(accept.status()).toBe(200);
-
-			const listedAfterAccept = await owner.get(getBackendUrl(`/spaces/${spaceId}/members`));
-			expect(listedAfterAccept.status()).toBe(200);
-			const activeMembers = (await listedAfterAccept.json()) as Array<{ user_id: string; state: string }>;
-			expect(activeMembers.some((member) => member.user_id === "alice-user" && member.state === "active")).toBeTruthy();
-		} finally {
-			await owner.dispose();
-			await alice.dispose();
-		}
-	});
-
+      const members = await request.get(
+        getBackendUrl(`/spaces/${spaceId}/members`),
+      );
+      const body = await members.json() as Array<{
+        principal: {
+          principal_id: string;
+          display_name: string;
+          state: string;
+        };
+        role: string;
+      }>;
+      const viewer = body.find((member) =>
+        member.principal.display_name === "Invited viewer"
+      );
+      expect(viewer?.role).toBe("viewer");
+      const revoked = await request.delete(
+        getBackendUrl(
+          `/spaces/${spaceId}/members/${viewer?.principal.principal_id}`,
+        ),
+      );
+      expect(revoked.status()).toBe(200);
+      const denied = await invited.request.get(
+        getBackendUrl(`/spaces/${spaceId}`),
+      );
+      expect(denied.status()).toBe(403);
+    } finally {
+      await invited.close();
+    }
+  });
 });

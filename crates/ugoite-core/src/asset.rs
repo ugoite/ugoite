@@ -21,6 +21,11 @@ pub struct AssetInfo {
     pub uploaded_at: String,
 }
 
+pub struct AssetContent {
+    pub info: AssetInfo,
+    pub bytes: Vec<u8>,
+}
+
 fn asset_form_definition() -> serde_json::Value {
     serde_json::json!({
         "name": ASSET_FORM_NAME,
@@ -178,6 +183,22 @@ pub async fn list_assets(op: &Operator, ws_path: &str) -> Result<Vec<AssetInfo>>
     }
 
     Ok(assets)
+}
+
+pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<AssetContent> {
+    let info = list_assets(op, ws_path)
+        .await?
+        .into_iter()
+        .find(|asset| asset.id == asset_id)
+        .ok_or_else(|| {
+            AppError::not_found(
+                ErrorCode::AssetNotFound,
+                format!("Asset {asset_id} not found"),
+            )
+        })?;
+    let path = format!("{ws_path}/{}", info.path);
+    let bytes = op.read(&path).await?.to_vec();
+    Ok(AssetContent { info, bytes })
 }
 
 async fn is_asset_referenced(op: &Operator, ws_path: &str, asset_id: &str) -> Result<bool> {

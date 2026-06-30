@@ -248,9 +248,9 @@ requirements:
   - SPEC-ARCH-DECISIONS
   id: REQ-STO-009
   title: Accessible Space listing API
-  description: The authenticated API lists only Spaces where the caller has read permission, sorts the reserved
-    admin-space after ordinary Spaces, and ignores missing or incomplete Space directories through the core listing
-    rules. Unexpected storage errors are returned rather than converted to false success.
+  description: The authenticated API lists only Spaces where the caller has read permission and ignores missing or
+    incomplete Space directories through the core listing rules. Node administration does not grant Space read access.
+    Unexpected storage errors are returned rather than converted to false success.
   related_spec:
   - api/rest.md#endpoints
   priority: high

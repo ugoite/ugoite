@@ -1,13 +1,14 @@
 ---
-title: 'Helm chart'
+title: Helm chart
 ---
 
-`charts/ugoite` deploys the same single image used by Docker Compose. Release publication pushes the packaged chart to `oci://ghcr.io/ugoite/charts`, and the chart defaults to the exact matching application version instead of a moving image alias.
-
 ```bash
-helm upgrade --install ugoite charts/ugoite   --set auth.bootstrapToken="$(openssl rand -hex 32)"   --set auth.signingSecret="$(openssl rand -hex 32)"
+helm upgrade --install ugoite charts/ugoite \
+  --set publicOrigin=https://ugoite.example.com \
+  --set webauthnRpId=ugoite.example.com
 ```
 
-Important values include `image.*`, `service.*`, `persistence.*`, `bootstrapDefaultSpace`, `auth.*`, and `extraEnv`. Templates require unique bootstrap and signing secrets.
-
-The pod runs as non-root UID/GID `10001`, drops Linux capabilities, and mounts `/data`. Change the development `mock-oauth` default before exposing a shared deployment.
+The chart mounts one PVC at `/data`, runs as non-root UID/GID `10001`, drops
+capabilities, and does not install a default credential. Read the initial
+one-use setup URL from the pod log. Keep one replica in this release: browser
+sessions and access-token issuers are node-local and are not federated.

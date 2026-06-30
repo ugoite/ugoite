@@ -1,11 +1,20 @@
 use crate::config::{
-    clear_auth_session, effective_api_key, effective_bearer_token, load_config, print_json,
-    save_auth_session, validated_base_url, AuthSession, EndpointConfig, EndpointMode,
+    clear_auth_session, load_auth_session, load_config, print_json, save_auth_session,
+    validated_base_url, AuthSession, EndpointMode,
 };
-use crate::http;
-use anyhow::{anyhow, Result};
-use clap::{Args, Subcommand, ValueEnum};
-use std::io::{self, Write};
+use anyhow::{anyhow, bail, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use chrono::Utc;
+use clap::{Args, Subcommand};
+use p256::{
+    ecdsa::{signature::Signer, Signature, SigningKey},
+    elliptic_curve::rand_core::OsRng,
+    pkcs8::{DecodePrivateKey, EncodePrivateKey},
+};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::time::Duration;
+use uuid::Uuid;
 
 #[derive(Args)]
 pub struct AuthCmd {
@@ -13,1101 +22,267 @@ pub struct AuthCmd {
     pub sub: AuthSubCmd,
 }
 
-#[derive(ValueEnum, Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum AuthShell {
-    #[default]
-    #[value(name = "sh", alias = "posix")]
-    Sh,
-    #[value(name = "bash")]
-    Bash,
-    #[value(name = "zsh")]
-    Zsh,
-    #[value(name = "fish")]
-    Fish,
-    #[value(name = "powershell", alias = "pwsh")]
-    PowerShell,
-}
-
-impl AuthShell {
-    fn cli_name(self) -> &'static str {
-        match self {
-            Self::Sh => "sh",
-            Self::Bash => "bash",
-            Self::Zsh => "zsh",
-            Self::Fish => "fish",
-            Self::PowerShell => "powershell",
-        }
-    }
-}
-
-#[derive(Args, Clone, Copy, Debug)]
-pub struct AuthShellArgs {
-    #[arg(
-        long,
-        value_enum,
-        default_value_t = AuthShell::Sh,
-        help = "Shell syntax for printed environment commands",
-        long_help = "Shell syntax for printed environment commands. Defaults to `sh` for POSIX-compatible `export` and `unset` output. Use `fish` or `powershell` when you want shell-native syntax."
-    )]
-    shell: AuthShell,
-}
-
 #[derive(Subcommand)]
 pub enum AuthSubCmd {
-    /// Show auth mode, credential status, and next step
+    /// Show the paired device and short-lived token state.
     Profile,
-    /// Authenticate via local backend/API passkey + 2FA login and print shell-ready env commands.
-    ///
-    /// Prerequisite: configure backend or api mode first:
-    ///   ugoite config set --mode backend --backend-url http://localhost:8000
-    ///
-    /// Apply the printed export in a POSIX-compatible shell with:
-    ///   eval "$(ugoite auth login --username USER --totp-code CODE)"
-    #[command(
-        long_about = "Authenticate via backend/API passkey + 2FA login and print shell-ready environment commands.\n\nPrerequisite: configure backend or api mode first:\n  ugoite config set --mode backend --backend-url http://localhost:8000\n\nWhen local development auth uses `passkey-totp`, the CLI first reads UGOITE_DEV_PASSKEY_CONTEXT from the current shell and then falls back to the cached local dev auth file prepared by `eval \"$(bash scripts/dev-auth-env.sh)\"` for loopback backend/API endpoints.\nDirect loopback backend mode does not require UGOITE_DEV_AUTH_PROXY_TOKEN for `--mock-oauth`, but proxied/container flows require UGOITE_DEV_AUTH_PROXY_TOKEN.\n\nExamples:\n  # Login with username and TOTP code (POSIX export syntax by default)\n  ugoite auth login --username alice --totp-code 123456\n\n  # Apply the escaped token in one step (POSIX shells)\n  eval \"$(ugoite auth login --username alice --totp-code 123456)\"\n\n  # Apply the token in fish\n  ugoite auth login --shell fish --username alice --totp-code 123456 | source\n\n  # Apply the token in PowerShell\n  ugoite auth login --shell powershell --username alice --totp-code 123456 | Invoke-Expression\n\n  # Interactive mode (prompts for username and TOTP)\n  ugoite auth login\n\n  # Development: mock OAuth flow in POSIX shells\n  eval \"$(ugoite auth login --mock-oauth)\"\n\n  # Development: mock OAuth flow in PowerShell\n  ugoite auth login --shell powershell --mock-oauth | Invoke-Expression"
-    )]
+    /// Pair this terminal without requiring a browser on the terminal itself.
     Login {
+        #[arg(long, default_value = "Ugoite CLI")]
+        device_name: String,
+        #[arg(long)]
+        space_uid: Option<Uuid>,
         #[arg(
             long,
-            help = "Username to authenticate with (prompted interactively if omitted)"
+            value_delimiter = ',',
+            default_value = "read,create,update,delete"
         )]
-        username: Option<String>,
-        #[arg(
-            long,
-            help = "6-digit TOTP code from your authenticator app (prompted interactively if omitted)"
-        )]
-        totp_code: Option<String>,
-        #[arg(
-            long,
-            default_value_t = false,
-            help = "Use mock OAuth flow (development only; direct loopback backend mode does not require UGOITE_DEV_AUTH_PROXY_TOKEN, but proxied/container flows do)"
-        )]
-        mock_oauth: bool,
-        #[command(flatten)]
-        output: AuthShellArgs,
+        actions: Vec<String>,
     },
-    /// Print shell-ready clear commands for auth tokens
-    TokenClear {
-        #[command(flatten)]
-        output: AuthShellArgs,
-    },
-    /// Clear auth tokens (alias for token-clear)
-    Logout {
-        #[command(flatten)]
-        output: AuthShellArgs,
-    },
-    /// Print authentication capabilities
-    Overview,
+    /// Revoke local access by deleting the local device credential.
+    Logout,
 }
 
 pub async fn run(cmd: AuthCmd) -> Result<()> {
     match cmd.sub {
         AuthSubCmd::Profile => {
-            let config = load_config();
-            print_json(&auth_profile_snapshot(&config));
+            let profile = load_auth_session().map(|session| json!({
+                "paired": true,
+                "credential_id": session.credential_id,
+                "device_name": session.device_name,
+                "space_uid": session.space_uid,
+                "access_token_expires_at": session.expires_at,
+                "private_key_storage": if session.private_key_pkcs8.is_some() { "owner_only_file" } else { "os_keychain" },
+            })).unwrap_or_else(|| json!({"paired": false}));
+            print_json(&profile);
         }
         AuthSubCmd::Login {
-            username,
-            totp_code,
-            mock_oauth,
-            output,
+            device_name,
+            space_uid,
+            actions,
         } => {
             let config = load_config();
             if config.mode == EndpointMode::Core {
-                return Err(anyhow!(
-                    "auth login requires backend or api mode.\nRun: ugoite config set --mode backend --backend-url http://localhost:8000"
-                ));
+                bail!("auth login requires backend or api mode");
             }
-            let base =
-                validated_base_url(&config)?.expect("backend/api mode always has a base URL");
-
-            let result = login_request(&base, username, totp_code, mock_oauth).await?;
-            persist_login_session(&result, output.shell, mock_oauth)?;
+            let base = validated_base_url(&config)?
+                .ok_or_else(|| anyhow!("remote endpoint is missing"))?;
+            login(&base, &device_name, space_uid, actions).await?;
         }
-        AuthSubCmd::TokenClear { output } | AuthSubCmd::Logout { output } => {
-            let cleared_saved_session = clear_auth_session()?;
-            println!(
-                "{}",
-                auth_env_unset_command(output.shell, "UGOITE_AUTH_BEARER_TOKEN")
-            );
-            println!(
-                "{}",
-                auth_env_unset_command(output.shell, "UGOITE_AUTH_API_KEY")
-            );
-            if cleared_saved_session {
-                eprintln!("# Cleared the saved CLI session.");
+        AuthSubCmd::Logout => {
+            if let Some(session) = load_auth_session() {
+                if session.private_key_pkcs8.is_none() {
+                    let _ = keyring::Entry::new("ugoite-cli", &session.credential_id.to_string())
+                        .and_then(|entry| entry.delete_credential());
+                }
             }
-        }
-        AuthSubCmd::Overview => {
-            let caps = ugoite_core::auth::auth_capabilities_snapshot(None, None, None, None, None);
-            print_json(&caps);
+            clear_auth_session()?;
+            println!("Local CLI credential removed.");
         }
     }
     Ok(())
 }
 
-async fn login_request(
+async fn login(
     base: &str,
-    username: Option<String>,
-    totp_code: Option<String>,
-    mock_oauth: bool,
-) -> Result<serde_json::Value> {
-    if mock_oauth {
-        return http::execute(
-            base,
-            "auth.mock_oauth",
-            serde_json::json!({}),
-            Some(serde_json::json!({})),
-        )
-        .await;
-    }
-
-    let resolved_username = prompt_non_empty_value("Username", username)?;
-    let resolved_totp_code = prompt_totp_code(totp_code)?;
-    http::execute(
-        base,
-        "auth.login",
-        serde_json::json!({}),
-        Some(serde_json::json!({
-            "username": resolved_username,
-            "totp_code": resolved_totp_code,
-        })),
-    )
-    .await
-    .map_err(add_passkey_context_recovery_hint)
-}
-
-fn persist_login_session(
-    result: &serde_json::Value,
-    shell: AuthShell,
-    mock_oauth: bool,
+    device_name: &str,
+    space_uid: Option<Uuid>,
+    actions: Vec<String>,
 ) -> Result<()> {
-    if let Some(token) = result.get("bearer_token").and_then(|value| value.as_str()) {
-        let session_path = save_auth_session(&AuthSession {
-            bearer_token: Some(token.to_string()),
-        })?;
-        println!(
-            "{}",
-            auth_env_set_command(shell, "UGOITE_AUTH_BEARER_TOKEN", token)
-        );
-        eprintln!(
-            "# Saved CLI session to {} with owner-only permissions where supported.\n# Future `ugoite` commands will use it automatically.",
-            session_path.display()
-        );
-        eprintln!("{}", login_shell_guidance(shell, mock_oauth));
+    let signing_key = SigningKey::random(&mut OsRng);
+    let public_key_jwk = public_jwk(&signing_key);
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/oauth/device/authorization",
+            base.trim_end_matches('/')
+        ))
+        .json(&json!({
+            "device_name": device_name,
+            "public_key_jwk": public_key_jwk,
+            "space_uid": space_uid,
+            "requested_actions": actions,
+        }))
+        .send()
+        .await
+        .context("start device authorization")?;
+    let status = response.status();
+    let device: Value = response.json().await?;
+    if !status.is_success() {
+        bail!("device authorization failed: {device}");
     }
+    let user_code = device["user_code"]
+        .as_str()
+        .ok_or_else(|| anyhow!("server omitted user_code"))?;
+    let verification_uri = device["verification_uri"]
+        .as_str()
+        .ok_or_else(|| anyhow!("server omitted verification_uri"))?;
+    eprintln!("Open {verification_uri} on any signed-in device and approve code {user_code}.");
+    let device_code = device["device_code"]
+        .as_str()
+        .ok_or_else(|| anyhow!("server omitted device_code"))?;
+    let interval = device["interval"].as_u64().unwrap_or(5).max(1);
+    let expires = Utc::now().timestamp() + device["expires_in"].as_i64().unwrap_or(600);
+    let token_url = format!("{}/oauth/token", base.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let token = loop {
+        if Utc::now().timestamp() >= expires {
+            bail!("device authorization expired");
+        }
+        let assertion = client_assertion(&signing_key, &public_key_jwk, &token_url)?;
+        let response = client
+            .post(&token_url)
+            .json(&json!({
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "device_code": device_code,
+                "client_assertion": assertion,
+            }))
+            .send()
+            .await
+            .context("poll device authorization")?;
+        let status = response.status();
+        let value: Value = response.json().await?;
+        if status.is_success() {
+            break value;
+        }
+        if value.get("error").and_then(Value::as_str) != Some("authorization_pending") {
+            bail!("device authorization failed: {value}");
+        }
+        tokio::time::sleep(Duration::from_secs(interval)).await;
+    };
+    let credential_id: Uuid = token["credential_id"]
+        .as_str()
+        .ok_or_else(|| anyhow!("token response omitted credential_id"))?
+        .parse()?;
+    let private_key = URL_SAFE_NO_PAD.encode(signing_key.to_pkcs8_der()?.as_bytes());
+    let stored_in_keychain = keyring::Entry::new("ugoite-cli", &credential_id.to_string())
+        .and_then(|entry| entry.set_password(&private_key))
+        .is_ok();
+    let session = AuthSession {
+        credential_id,
+        device_name: device_name.to_string(),
+        public_key_jwk,
+        private_key_pkcs8: (!stored_in_keychain).then_some(private_key),
+        access_token: token["access_token"]
+            .as_str()
+            .ok_or_else(|| anyhow!("token response omitted access_token"))?
+            .to_string(),
+        refresh_token: token["refresh_token"]
+            .as_str()
+            .ok_or_else(|| anyhow!("token response omitted refresh_token"))?
+            .to_string(),
+        expires_at: Utc::now().timestamp() + token["expires_in"].as_i64().unwrap_or(300),
+        base_url: base.to_string(),
+        space_uid: token["space_uid"]
+            .as_str()
+            .ok_or_else(|| anyhow!("token response omitted space_uid"))?
+            .parse()?,
+    };
+    let path = save_auth_session(&session)?;
+    println!(
+        "Paired device {} for Space {}. Credential metadata saved to {}.",
+        session.credential_id,
+        session.space_uid,
+        path.display()
+    );
     Ok(())
 }
 
-fn add_passkey_context_recovery_hint(error: anyhow::Error) -> anyhow::Error {
-    let message = error.to_string();
-    if !message.contains("Passkey-bound local context is missing or invalid.") {
-        return error;
-    }
-
-    let cached_path = http::dev_auth_file_path()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "~/.ugoite/dev-auth.json".to_string());
-    anyhow!(
-        "{message}\nHint: passkey-totp CLI login requires UGOITE_DEV_PASSKEY_CONTEXT. The CLI reuses the cached local dev auth file at {cached_path} when it exists. If that file is missing or stale, rerun `eval \"$(bash scripts/dev-auth-env.sh)\"` from the repo root or export UGOITE_DEV_PASSKEY_CONTEXT in this shell before retrying `ugoite auth login`."
-    )
-}
-
-fn mask_token(t: &str) -> String {
-    if t.len() > 8 {
-        format!("{}...", &t[..4])
-    } else {
-        "****".to_string()
-    }
-}
-
-fn auth_profile_snapshot(config: &EndpointConfig) -> serde_json::Value {
-    let bearer = effective_bearer_token();
-    let api_key = effective_api_key();
-    let credential_state = credential_state_label(bearer.as_deref(), api_key.as_deref());
-
-    let (topology, endpoint_url) = match &config.mode {
-        EndpointMode::Core => ("local filesystem via ugoite-core".to_string(), None),
-        EndpointMode::Backend => (
-            format!("direct backend server at {}", config.backend_url),
-            Some(config.backend_url.as_str()),
-        ),
-        EndpointMode::Api => (
-            format!("API endpoint at {}", config.api_url),
-            Some(config.api_url.as_str()),
-        ),
+pub fn load_signing_key(session: &AuthSession) -> Result<SigningKey> {
+    let encoded = match &session.private_key_pkcs8 {
+        Some(value) => value.clone(),
+        None => keyring::Entry::new("ugoite-cli", &session.credential_id.to_string())?
+            .get_password()
+            .context("read CLI private key from OS keychain")?,
     };
-
-    serde_json::json!({
-        "endpoint_mode": endpoint_mode_label(&config.mode),
-        "topology": topology,
-        "endpoint_url": endpoint_url,
-        "backend_auth_required": config.mode != EndpointMode::Core,
-        "credential_state": credential_state,
-        "status": auth_profile_status(&config.mode, credential_state),
-        "next_action": auth_profile_next_action(config, credential_state),
-        "UGOITE_AUTH_BEARER_TOKEN": bearer.as_deref().map(mask_token),
-        "UGOITE_AUTH_API_KEY": api_key.as_deref().map(mask_token),
-    })
+    SigningKey::from_pkcs8_der(&URL_SAFE_NO_PAD.decode(encoded)?).context("decode CLI private key")
 }
 
-fn endpoint_mode_label(mode: &EndpointMode) -> &'static str {
-    match mode {
-        EndpointMode::Core => "core",
-        EndpointMode::Backend => "backend",
-        EndpointMode::Api => "api",
-    }
-}
-
-fn credential_state_label(bearer: Option<&str>, api_key: Option<&str>) -> &'static str {
-    match (bearer, api_key) {
-        (Some(_), Some(_)) => "bearer_token_and_api_key",
-        (Some(_), None) => "bearer_token",
-        (None, Some(_)) => "api_key",
-        (None, None) => "none",
-    }
-}
-
-fn auth_profile_status(mode: &EndpointMode, credential_state: &str) -> String {
-    match mode {
-        EndpointMode::Core => {
-            if credential_state == "none" {
-                "Core mode does not require backend authentication.".to_string()
-            } else {
-                "Core mode does not require backend authentication. Saved or exported server credentials are present but only matter after switching to backend or api mode.".to_string()
-            }
-        }
-        EndpointMode::Backend => server_auth_status("Backend", credential_state),
-        EndpointMode::Api => server_auth_status("API", credential_state),
-    }
-}
-
-fn server_auth_status(mode_label: &str, credential_state: &str) -> String {
-    if credential_state == "none" {
-        format!("{mode_label} mode is configured, but no bearer token or API key is currently set.")
-    } else {
-        format!("{mode_label} mode is configured and a server credential is available.")
-    }
-}
-
-fn auth_profile_next_action(config: &EndpointConfig, credential_state: &str) -> String {
-    match &config.mode {
-        EndpointMode::Core => format!(
-            "Run CLI commands directly against your local workspace, or switch to backend mode with `ugoite config set --mode backend --backend-url {}`.",
-            config.backend_url
-        ),
-        EndpointMode::Backend | EndpointMode::Api => {
-            if credential_state == "none" {
-                "Run `ugoite auth login` for a bearer token (use `--shell fish` or `--shell powershell` when you want shell-native env output), or export `UGOITE_AUTH_API_KEY` before using server-backed commands.".to_string()
-            } else {
-                "Continue with server-backed commands, or run `ugoite auth token-clear` to clear any saved CLI session. In POSIX shells, `eval \"$(ugoite auth token-clear)\"` also applies the printed credential unsets to your current shell; in fish, use `ugoite auth token-clear --shell fish | source`; in PowerShell, use `ugoite auth token-clear --shell powershell | Invoke-Expression`.".to_string()
-            }
-        }
-    }
-}
-
-fn posix_shell_quote(value: &str) -> String {
-    if value.is_empty() {
-        return "''".to_string();
-    }
-
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
-
-fn fish_shell_quote(value: &str) -> String {
-    if value.is_empty() {
-        return "''".to_string();
-    }
-
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        match ch {
-            '\'' => quoted.push_str("\\'"),
-            '\\' => quoted.push_str("\\\\"),
-            _ => quoted.push(ch),
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
-
-fn powershell_shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
-}
-
-fn auth_env_set_command(shell: AuthShell, key: &str, value: &str) -> String {
-    match shell {
-        AuthShell::Sh | AuthShell::Bash | AuthShell::Zsh => {
-            format!("export {key}={}", posix_shell_quote(value))
-        }
-        AuthShell::Fish => format!("set -gx {key} {}", fish_shell_quote(value)),
-        AuthShell::PowerShell => format!("$env:{key} = {}", powershell_shell_quote(value)),
-    }
-}
-
-fn auth_env_unset_command(shell: AuthShell, key: &str) -> String {
-    match shell {
-        AuthShell::Sh | AuthShell::Bash | AuthShell::Zsh => format!("unset {key}"),
-        AuthShell::Fish => format!("set -e {key}"),
-        AuthShell::PowerShell => {
-            format!("Remove-Item Env:{key} -ErrorAction SilentlyContinue")
-        }
-    }
-}
-
-fn auth_login_command_example(shell: AuthShell, mock_oauth: bool) -> String {
-    let mut command = String::from("ugoite auth login");
-    let shell_name = shell.cli_name();
-    if shell_name != "sh" {
-        command.push_str(" --shell ");
-        command.push_str(shell_name);
-    }
-    if mock_oauth {
-        command.push_str(" --mock-oauth");
-    } else {
-        command.push_str(" --username USER --totp-code CODE");
-    }
-    command
-}
-
-fn login_shell_guidance(shell: AuthShell, mock_oauth: bool) -> String {
-    let command = auth_login_command_example(shell, mock_oauth);
-    match shell {
-        AuthShell::Sh | AuthShell::Bash | AuthShell::Zsh => format!(
-            "# Output uses POSIX shell quoting.\n# To apply: eval \"$({command})\"\n# Or copy the export line above into your shell."
-        ),
-        AuthShell::Fish => format!(
-            "# To apply in fish: {command} | source\n# Or copy the `set` line above into your shell."
-        ),
-        AuthShell::PowerShell => format!(
-            "# To apply in PowerShell: {command} | Invoke-Expression\n# Or copy the `$env:` line above into your shell."
-        ),
-    }
-}
-
-fn prompt_value(label: &str, provided: Option<String>) -> Result<String> {
-    prompt_value_with(
-        label,
-        provided,
-        || io::stdout().flush(),
-        |buffer| io::stdin().read_line(buffer),
+pub fn dpop_proof(session: &AuthSession, method: &str, uri: &str) -> Result<String> {
+    let key = load_signing_key(session)?;
+    signed_jwt(
+        &key,
+        json!({"alg":"ES256","typ":"dpop+jwt","jwk":session.public_key_jwk}),
+        json!({
+            "htm": method.to_uppercase(), "htu": uri, "ath": URL_SAFE_NO_PAD.encode(Sha256::digest(session.access_token.as_bytes())),
+            "iat": Utc::now().timestamp(), "jti": Uuid::now_v7().to_string(),
+        }),
     )
 }
 
-fn prompt_value_with(
-    label: &str,
-    provided: Option<String>,
-    flush_stdout: fn() -> io::Result<()>,
-    read_line: fn(&mut String) -> io::Result<usize>,
-) -> Result<String> {
-    if let Some(value) = provided {
-        return Ok(value.trim().to_string());
+pub async fn active_session(base_url: &str) -> Result<Option<AuthSession>> {
+    let Some(mut session) = load_auth_session() else {
+        return Ok(None);
+    };
+    if session.base_url.trim_end_matches('/') != base_url.trim_end_matches('/') {
+        bail!("saved CLI credential belongs to a different server; run `ugoite auth login`");
     }
-
-    print!("{label}: ");
-    flush_stdout()?;
-    let mut buffer = String::new();
-    read_line(&mut buffer)?;
-    Ok(buffer.trim().to_string())
+    if session.expires_at > Utc::now().timestamp() + 30 {
+        return Ok(Some(session));
+    }
+    let key = load_signing_key(&session)?;
+    let token_url = format!("{}/oauth/token", base_url.trim_end_matches('/'));
+    let assertion = client_assertion(&key, &session.public_key_jwk, &token_url)?;
+    let response = reqwest::Client::new()
+        .post(&token_url)
+        .json(&json!({
+            "grant_type": "refresh_token",
+            "refresh_token": session.refresh_token,
+            "client_assertion": assertion,
+        }))
+        .send()
+        .await
+        .context("refresh CLI access token")?;
+    let status = response.status();
+    let payload: Value = response.json().await?;
+    if !status.is_success() {
+        bail!("CLI credential refresh failed: {payload}");
+    }
+    session.access_token = payload["access_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("refresh response omitted access_token"))?
+        .to_string();
+    session.refresh_token = payload["refresh_token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("refresh response omitted refresh_token"))?
+        .to_string();
+    session.expires_at = Utc::now().timestamp() + payload["expires_in"].as_i64().unwrap_or(300);
+    save_auth_session(&session)?;
+    Ok(Some(session))
 }
 
-fn prompt_non_empty_value(label: &str, provided: Option<String>) -> Result<String> {
-    prompt_non_empty_value_with(label, provided, prompt_value)
+fn client_assertion(key: &SigningKey, jwk: &Value, audience: &str) -> Result<String> {
+    let now = Utc::now().timestamp();
+    let x = jwk["x"].as_str().ok_or_else(|| anyhow!("JWK x missing"))?;
+    let y = jwk["y"].as_str().ok_or_else(|| anyhow!("JWK y missing"))?;
+    let client_id = URL_SAFE_NO_PAD.encode(Sha256::digest(
+        format!(r#"{{"crv":"P-256","kty":"EC","x":"{x}","y":"{y}"}}"#).as_bytes(),
+    ));
+    signed_jwt(
+        key,
+        json!({"alg":"ES256","typ":"JWT","jwk":jwk}),
+        json!({
+            "iss": client_id, "sub": client_id,
+            "aud": audience, "iat": now, "exp": now + 60, "jti": Uuid::now_v7().to_string(),
+        }),
+    )
 }
 
-fn prompt_non_empty_value_with(
-    label: &str,
-    provided: Option<String>,
-    prompt: fn(&str, Option<String>) -> Result<String>,
-) -> Result<String> {
-    let value = prompt(label, provided)?;
-    if value.is_empty() {
-        return Err(anyhow!("{label} must not be empty."));
-    }
-    Ok(value)
+fn signed_jwt(key: &SigningKey, header: Value, claims: Value) -> Result<String> {
+    let header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
+    let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims)?);
+    let input = format!("{header}.{payload}");
+    let signature: Signature = key.sign(input.as_bytes());
+    Ok(format!(
+        "{input}.{}",
+        URL_SAFE_NO_PAD.encode(signature.to_bytes())
+    ))
 }
 
-fn prompt_totp_code(provided: Option<String>) -> Result<String> {
-    prompt_totp_code_with(provided, prompt_non_empty_value)
-}
-
-fn prompt_totp_code_with(
-    provided: Option<String>,
-    prompt_non_empty: fn(&str, Option<String>) -> Result<String>,
-) -> Result<String> {
-    let value = prompt_non_empty("2FA code", provided)?;
-    if value.len() != 6 || !value.chars().all(|ch| ch.is_ascii_digit()) {
-        return Err(anyhow!("2FA code must be exactly 6 digits."));
-    }
-    Ok(value)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::{BufRead, BufReader, Read, Write};
-    use std::net::TcpListener;
-    use std::sync::mpsc;
-    use std::thread;
-    use std::time::Duration;
-
-    fn clear_test_env() {
-        for key in [
-            "UGOITE_CLI_CONFIG_PATH",
-            "UGOITE_AUTH_BEARER_TOKEN",
-            "UGOITE_AUTH_API_KEY",
-            "UGOITE_DEV_AUTH_PROXY_TOKEN",
-            "UGOITE_DEV_PASSKEY_CONTEXT",
-        ] {
-            std::env::remove_var(key);
-        }
-    }
-
-    fn assert_io_error_kind(error: &anyhow::Error, kind: std::io::ErrorKind) {
-        assert!(error.chain().any(|cause| {
-            cause
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|io_error| {
-                    io_error.kind() == kind
-                        || (kind == std::io::ErrorKind::IsADirectory
-                            && io_error.kind() == std::io::ErrorKind::PermissionDenied)
-                })
-        }));
-    }
-
-    fn spawn_recording_server(
-        status_line: &'static str,
-        body: &'static str,
-    ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (tx, rx) = mpsc::channel();
-        let handle = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut request = String::new();
-            let mut content_length = 0_usize;
-
-            loop {
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                request.push_str(&line);
-                let lower = line.to_ascii_lowercase();
-                if let Some(value) = lower.strip_prefix("content-length:") {
-                    content_length = value.trim().parse().unwrap();
-                }
-                if line == "\r\n" {
-                    break;
-                }
-            }
-
-            let mut body_buffer = vec![0_u8; content_length];
-            reader.read_exact(&mut body_buffer).unwrap();
-            request.push_str(&String::from_utf8_lossy(&body_buffer));
-            tx.send(request).unwrap();
-
-            let response = format!(
-                "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            stream.write_all(response.as_bytes()).unwrap();
-        });
-        (format!("http://{}", addr), rx, handle)
-    }
-
-    #[test]
-    fn test_auth_shell_helpers_req_ops_015_cover_shell_variants() {
-        assert_eq!(AuthShell::Sh.cli_name(), "sh");
-        assert_eq!(AuthShell::Bash.cli_name(), "bash");
-        assert_eq!(AuthShell::Zsh.cli_name(), "zsh");
-
-        assert_eq!(fish_shell_quote(""), "''");
-        assert_eq!(fish_shell_quote("it's"), r"'it\'s'");
-        assert_eq!(fish_shell_quote(r"C:\tmp\ugoite"), r"'C:\\tmp\\ugoite'");
-
-        assert_eq!(
-            auth_login_command_example(AuthShell::Bash, true),
-            "ugoite auth login --shell bash --mock-oauth",
-        );
-        assert_eq!(
-            auth_login_command_example(AuthShell::Zsh, false),
-            "ugoite auth login --shell zsh --username USER --totp-code CODE",
-        );
-
-        assert_eq!(posix_shell_quote(""), "''");
-        assert_eq!(posix_shell_quote("it's"), "'it'\\''s'");
-        assert_eq!(powershell_shell_quote("value"), "'value'");
-        assert_eq!(powershell_shell_quote("it's"), "'it''s'");
-    }
-
-    /// REQ-OPS-015: core mode login must fail before any network prompt or request.
-    #[test]
-    fn test_auth_run_req_ops_015_rejects_core_mode_login() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        crate::config::save_config(&EndpointConfig {
-            mode: EndpointMode::Core,
-            backend_url: "http://localhost:8000".to_string(),
-            api_url: "http://localhost:3000/api".to_string(),
-        })
-        .unwrap();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let error = runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Login {
-                    username: Some("dev-alice".to_string()),
-                    totp_code: Some("123456".to_string()),
-                    mock_oauth: false,
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap_err();
-
-        clear_test_env();
-        assert!(error
-            .to_string()
-            .contains("auth login requires backend or api mode"));
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must surface invalid configured backend URLs.
-    #[test]
-    fn test_auth_run_req_ops_015_rejects_invalid_backend_url() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        crate::config::save_config(&EndpointConfig {
-            mode: EndpointMode::Backend,
-            backend_url: "http://example.com".to_string(),
-            api_url: "http://localhost:3000/api".to_string(),
-        })
-        .unwrap();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let error = runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Login {
-                    username: Some("dev-alice".to_string()),
-                    totp_code: Some("123456".to_string()),
-                    mock_oauth: false,
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap_err();
-
-        clear_test_env();
-        assert!(error
-            .to_string()
-            .contains("uses cleartext http:// for a non-loopback host"));
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must surface provided login validation failures.
-    #[test]
-    fn test_auth_run_req_ops_015_rejects_blank_username_before_request() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        crate::config::save_config(&EndpointConfig {
-            mode: EndpointMode::Backend,
-            backend_url: "http://127.0.0.1:8000".to_string(),
-            api_url: "http://localhost:3000/api".to_string(),
-        })
-        .unwrap();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let error = runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Login {
-                    username: Some("   ".to_string()),
-                    totp_code: Some("123456".to_string()),
-                    mock_oauth: false,
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap_err();
-
-        clear_test_env();
-        assert!(error.to_string().contains("Username must not be empty"));
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must exercise the overview subcommand path.
-    #[test]
-    fn test_auth_run_req_ops_015_overview_succeeds() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Overview,
-            }))
-            .unwrap();
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must exercise the profile subcommand path.
-    #[test]
-    fn test_auth_run_req_ops_015_profile_succeeds() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Profile,
-            }))
-            .unwrap();
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must exercise the mock OAuth loopback path.
-    #[test]
-    fn test_auth_run_req_ops_015_posts_mock_oauth_directly() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        let (base, requests, handle) = spawn_recording_server(
-            "HTTP/1.1 200 OK",
-            r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
-        );
-
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        crate::config::save_config(&EndpointConfig {
-            mode: EndpointMode::Backend,
-            backend_url: base,
-            api_url: "http://localhost:3000/api".to_string(),
-        })
-        .unwrap();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Login {
-                    username: None,
-                    totp_code: None,
-                    mock_oauth: true,
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap();
-
-        let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
-        handle.join().unwrap();
-        clear_test_env();
-        assert!(request_text.starts_with("POST /auth/mock-oauth HTTP/1.1"));
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must exercise the provided credential path.
-    #[test]
-    fn test_auth_run_req_ops_015_posts_totp_credentials_directly() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        let (base, requests, handle) = spawn_recording_server(
-            "HTTP/1.1 200 OK",
-            r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
-        );
-
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        std::env::set_var("UGOITE_DEV_AUTH_PROXY_TOKEN", "proxy-secret");
-        std::env::set_var("UGOITE_DEV_PASSKEY_CONTEXT", "passkey-context");
-        crate::config::save_config(&EndpointConfig {
-            mode: EndpointMode::Backend,
-            backend_url: base,
-            api_url: "http://localhost:3000/api".to_string(),
-        })
-        .unwrap();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Login {
-                    username: Some("dev-alice".to_string()),
-                    totp_code: Some("123456".to_string()),
-                    mock_oauth: false,
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap();
-
-        let request_text = requests.recv_timeout(Duration::from_secs(5)).unwrap();
-        handle.join().unwrap();
-        clear_test_env();
-        assert!(request_text.starts_with("POST /auth/login HTTP/1.1"));
-        assert!(request_text.contains("dev-alice"));
-        assert!(request_text.contains("123456"));
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must surface login session persistence failures.
-    #[test]
-    fn test_auth_run_req_ops_015_surfaces_session_write_failures() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        let (base, requests, handle) = spawn_recording_server(
-            "HTTP/1.1 200 OK",
-            r#"{"bearer_token":"issued-token","user_id":"dev-alice","expires_at":1900000000}"#,
-        );
-
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        crate::config::save_config(&EndpointConfig {
-            mode: EndpointMode::Backend,
-            backend_url: base,
-            api_url: "http://localhost:3000/api".to_string(),
-        })
-        .unwrap();
-        std::fs::create_dir(crate::config::auth_session_path()).unwrap();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let error = runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Login {
-                    username: None,
-                    totp_code: None,
-                    mock_oauth: true,
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap_err();
-
-        requests.recv_timeout(Duration::from_secs(5)).unwrap();
-        handle.join().unwrap();
-        clear_test_env();
-        assert_io_error_kind(&error, std::io::ErrorKind::IsADirectory);
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must surface token-clear session removal failures.
-    #[test]
-    fn test_auth_run_req_ops_015_surfaces_token_clear_session_remove_failures() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        std::fs::create_dir(crate::config::auth_session_path()).unwrap();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let error = runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::TokenClear {
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap_err();
-
-        clear_test_env();
-        assert_io_error_kind(&error, std::io::ErrorKind::IsADirectory);
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must exercise token-clear when no saved session exists.
-    #[test]
-    fn test_auth_run_req_ops_015_token_clear_without_saved_session_succeeds() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::TokenClear {
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap();
-
-        clear_test_env();
-    }
-
-    /// REQ-OPS-015: direct auth run coverage must exercise the logout alias success path.
-    #[test]
-    fn test_auth_run_req_ops_015_logout_clears_saved_session_successfully() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        save_auth_session(&AuthSession {
-            bearer_token: Some("issued-token".to_string()),
-        })
-        .unwrap();
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime
-            .block_on(run(AuthCmd {
-                sub: AuthSubCmd::Logout {
-                    output: AuthShellArgs {
-                        shell: AuthShell::Sh,
-                    },
-                },
-            }))
-            .unwrap();
-
-        assert!(!crate::config::auth_session_path().exists());
-        clear_test_env();
-    }
-
-    /// REQ-OPS-015: helper coverage must validate provided auth prompt values without stdin.
-    #[test]
-    fn test_prompt_helpers_req_ops_015_validate_provided_values() {
-        assert_eq!(
-            prompt_value("Username", Some("  dev-alice  ".to_string())).unwrap(),
-            "dev-alice",
-        );
-        assert!(prompt_non_empty_value("Username", Some("   ".to_string()))
-            .unwrap_err()
-            .to_string()
-            .contains("Username must not be empty"));
-        assert_eq!(
-            prompt_totp_code(Some("123456".to_string())).unwrap(),
-            "123456",
-        );
-        assert!(prompt_totp_code(Some("abc123".to_string()))
-            .unwrap_err()
-            .to_string()
-            .contains("2FA code must be exactly 6 digits"));
-    }
-
-    /// REQ-OPS-015: helper coverage must surface prompt reader failures without touching stdio globals.
-    #[test]
-    fn test_prompt_helpers_req_ops_015_surface_prompt_failures() {
-        let username_error = prompt_non_empty_value_with("Username", None, |_label, _provided| {
-            Err(anyhow!("prompt unavailable"))
-        })
-        .unwrap_err();
-        assert!(username_error.to_string().contains("prompt unavailable"));
-
-        let totp_error =
-            prompt_totp_code_with(None, |_label, _provided| Err(anyhow!("prompt unavailable")))
-                .unwrap_err();
-        assert!(totp_error.to_string().contains("prompt unavailable"));
-    }
-
-    /// REQ-OPS-015: helper coverage must surface prompt stdio failures without mutating global stdio.
-    #[test]
-    fn test_prompt_helpers_req_ops_015_surface_prompt_stdio_failures() {
-        let flush_error = prompt_value_with(
-            "Username",
-            None,
-            || Err(io::Error::other("flush failed")),
-            |_buffer| Ok(0),
-        )
-        .unwrap_err();
-        assert!(flush_error.to_string().contains("flush failed"));
-
-        let read_error = prompt_value_with(
-            "Username",
-            None,
-            || Ok(()),
-            |_buffer| Err(io::Error::other("read failed")),
-        )
-        .unwrap_err();
-        assert!(read_error.to_string().contains("read failed"));
-    }
-
-    /// REQ-OPS-015: helper coverage must still trim prompt input when injected stdio succeeds.
-    #[test]
-    fn test_prompt_helpers_req_ops_015_prompt_value_with_trims_injected_input() {
-        let value = prompt_value_with(
-            "Username",
-            None,
-            || Ok(()),
-            |buffer| {
-                buffer.push_str("  dev-alice  \n");
-                Ok(buffer.len())
-            },
-        )
-        .unwrap();
-        assert_eq!(value, "dev-alice");
-    }
-
-    /// REQ-OPS-015: direct login coverage must surface provided username validation failures.
-    #[test]
-    fn test_login_request_req_ops_015_rejects_blank_username_directly() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let error = runtime
-            .block_on(login_request(
-                "http://127.0.0.1:65535",
-                Some("   ".to_string()),
-                Some("123456".to_string()),
-                false,
-            ))
-            .unwrap_err();
-
-        assert!(error.to_string().contains("Username must not be empty"));
-    }
-
-    /// REQ-OPS-015: direct login coverage must surface provided 2FA validation failures.
-    #[test]
-    fn test_login_request_req_ops_015_rejects_invalid_totp_directly() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let error = runtime
-            .block_on(login_request(
-                "http://127.0.0.1:65535",
-                Some("dev-alice".to_string()),
-                Some("12ab56".to_string()),
-                false,
-            ))
-            .unwrap_err();
-
-        assert!(error
-            .to_string()
-            .contains("2FA code must be exactly 6 digits"));
-    }
-
-    /// REQ-OPS-015: auth login must surface session persistence I/O failures.
-    #[test]
-    fn test_persist_login_session_req_ops_015_surfaces_session_write_failures() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("cli-endpoints.json");
-        std::env::set_var("UGOITE_CLI_CONFIG_PATH", &config_path);
-        std::fs::create_dir(crate::config::auth_session_path()).unwrap();
-
-        let error = persist_login_session(
-            &serde_json::json!({
-                "bearer_token": "issued-token",
-            }),
-            AuthShell::Sh,
-            false,
-        )
-        .unwrap_err();
-
-        clear_test_env();
-        assert_io_error_kind(&error, std::io::ErrorKind::IsADirectory);
-    }
-
-    /// REQ-OPS-015: core-mode profile snapshots ignore blank env vars and stay local-first.
-    #[test]
-    fn test_auth_profile_snapshot_req_ops_015_core_mode_ignores_blank_env_vars() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-        std::env::set_var("UGOITE_AUTH_BEARER_TOKEN", "   ");
-        std::env::set_var("UGOITE_AUTH_API_KEY", "   ");
-
-        let payload = auth_profile_snapshot(&EndpointConfig {
-            mode: EndpointMode::Core,
-            backend_url: "http://localhost:8000".to_string(),
-            api_url: "http://localhost:3000/api".to_string(),
-        });
-
-        clear_test_env();
-        assert_eq!(payload["endpoint_mode"], "core");
-        assert_eq!(payload["topology"], "local filesystem via ugoite-core");
-        assert!(payload["endpoint_url"].is_null());
-        assert_eq!(payload["credential_state"], "none");
-        assert_eq!(
-            payload["next_action"],
-            "Run CLI commands directly against your local workspace, or switch to backend mode with `ugoite config set --mode backend --backend-url http://localhost:8000`.",
-        );
-    }
-
-    /// REQ-OPS-015: backend/api profile snapshots must report remote credential states directly.
-    #[test]
-    fn test_auth_profile_snapshot_req_ops_015_reports_remote_modes_and_credentials() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
-        clear_test_env();
-
-        let backend_config = EndpointConfig {
-            mode: EndpointMode::Backend,
-            backend_url: "http://localhost:8000".to_string(),
-            api_url: "http://localhost:3000/api".to_string(),
-        };
-        let api_config = EndpointConfig {
-            mode: EndpointMode::Api,
-            backend_url: "http://localhost:8000".to_string(),
-            api_url: "http://localhost:3000/api".to_string(),
-        };
-
-        let backend_none = auth_profile_snapshot(&backend_config);
-        assert_eq!(backend_none["endpoint_mode"], "backend");
-        assert_eq!(backend_none["credential_state"], "none",);
-        assert_eq!(
-            backend_none["status"],
-            "Backend mode is configured, but no bearer token or API key is currently set.",
-        );
-        assert!(backend_none["next_action"]
-            .as_str()
-            .is_some_and(|value| value.contains("ugoite auth login")));
-
-        std::env::set_var("UGOITE_AUTH_BEARER_TOKEN", "issued-token");
-        let backend_bearer = auth_profile_snapshot(&backend_config);
-        assert_eq!(backend_bearer["credential_state"], "bearer_token");
-        assert_eq!(
-            backend_bearer["status"],
-            "Backend mode is configured and a server credential is available.",
-        );
-        assert!(backend_bearer["next_action"]
-            .as_str()
-            .is_some_and(|value| value.contains("ugoite auth token-clear")));
-
-        clear_test_env();
-        std::env::set_var("UGOITE_AUTH_API_KEY", "api-secret");
-        let api_key = auth_profile_snapshot(&api_config);
-        assert_eq!(api_key["endpoint_mode"], "api");
-        assert_eq!(
-            api_key["topology"],
-            "API endpoint at http://localhost:3000/api"
-        );
-        assert_eq!(api_key["credential_state"], "api_key");
-        assert_eq!(
-            api_key["status"],
-            "API mode is configured and a server credential is available.",
-        );
-
-        std::env::set_var("UGOITE_AUTH_BEARER_TOKEN", "issued-token");
-        let both_creds = auth_profile_snapshot(&backend_config);
-        assert_eq!(both_creds["credential_state"], "bearer_token_and_api_key",);
-        assert_eq!(
-            credential_state_label(Some("issued-token"), Some("api-secret")),
-            "bearer_token_and_api_key",
-        );
-
-        clear_test_env();
-    }
+fn public_jwk(key: &SigningKey) -> Value {
+    let point = key.verifying_key().to_encoded_point(false);
+    json!({
+        "kty": "EC", "crv": "P-256",
+        "x": URL_SAFE_NO_PAD.encode(point.x().expect("uncompressed x")),
+        "y": URL_SAFE_NO_PAD.encode(point.y().expect("uncompressed y")),
+    })
 }

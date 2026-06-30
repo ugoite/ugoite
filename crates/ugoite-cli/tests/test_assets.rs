@@ -14,6 +14,15 @@ fn ugoite_bin() -> String {
     path.to_string_lossy().to_string()
 }
 
+fn immutable_space_path(root: &str) -> std::path::PathBuf {
+    std::fs::read_dir(Path::new(root).join("spaces"))
+        .expect("spaces directory")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| path.join("meta.json").is_file())
+        .expect("UUID Space directory")
+}
+
 /// REQ-ASSET-001: Asset upload, list, and delete lifecycle.
 #[test]
 fn test_asset_lifecycle() {
@@ -107,8 +116,9 @@ fn test_asset_req_asset_001_upload_strips_filename_traversal() {
 
     assert_eq!(asset_name, "outside.txt");
     assert!(asset_path.ends_with("_outside.txt"));
-    assert!(Path::new(&space_path).join(asset_path).exists());
-    assert!(!Path::new(&space_path).join("outside.txt").exists());
+    let stored_space = immutable_space_path(&root);
+    assert!(stored_space.join(asset_path).exists());
+    assert!(!stored_space.join("outside.txt").exists());
 }
 
 /// REQ-ASSET-001: Asset upload normalizes metadata-spoofing explicit filenames.
@@ -156,5 +166,5 @@ fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
     assert!(asset_path.ends_with("_uploaded_at spoofed.txt"));
     assert!(!asset_name.contains('\n'));
     assert!(!asset_name.starts_with('#'));
-    assert!(Path::new(&space_path).join(asset_path).exists());
+    assert!(immutable_space_path(&root).join(asset_path).exists());
 }

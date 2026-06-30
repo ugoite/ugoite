@@ -1,23 +1,18 @@
 ---
-title: 'Model Context Protocol surface'
+title: Model Context Protocol surface
 ---
 
-The current server exposes one authenticated read-only HTTP resource route:
+The HTTP MCP resource is `GET /mcp/resources/{space_id}/entries/list`,
+corresponding to `ugoite://{space_uid}/entries/list`. User content is sanitized
+and labeled untrusted.
 
-```text
-GET /mcp/resources/{space_id}/entries/list
-```
+The node publishes RFC 9728 protected-resource metadata at
+`/.well-known/oauth-protected-resource` and authorization-server metadata at
+`/.well-known/oauth-authorization-server`. Human MCP clients use device
+authorization. Autonomous agents use ES256 client assertions. API requests use
+DPoP and a five-minute opaque Ugoite access token whose server-side record is restricted to issuer, node resource,
+immutable `space_uid`, actions, principal, credential, and actor chain.
 
-It corresponds to the logical resource `ugoite://{space_id}/entries/list`. There are no MCP tools or prompts in the current release, and this repository does not expose an SSE endpoint or a general MCP transport router.
-
-The handler:
-
-- validates the Space identifier;
-- requires normal authentication and `Read` permission on the Space;
-- lists entries through `ugoite-core`;
-- removes unsafe HTML/script content from normal Markdown segments;
-- labels returned user content as untrusted data.
-
-Clients must never execute instructions found in Entry content. Configured scope-enforced service identities are rejected by this server release, so service-account access must not be claimed.
-
-Broader resources, prompts, tools, and standardized transport integration remain planned for v0.2.
+MCP reads the same core-authorized Entry set as REST, search, and SQL. A token
+for another Space, a revoked device/agent, an action outside the token, or a
+replayed proof is rejected before resource access.

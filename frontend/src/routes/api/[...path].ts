@@ -1,19 +1,7 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { buildServerAuthCookie, readAuthCookie } from "~/lib/auth-cookie";
 
 const backendUrl = process.env.BACKEND_URL;
 const defaultProxyTimeoutMs = 15_000;
-const devAuthProxyToken = process.env.UGOITE_DEV_AUTH_PROXY_TOKEN;
-const devAuthProxyTokenHeader = "x-ugoite-dev-auth-proxy-token";
-const devPasskeyContext = process.env.UGOITE_DEV_PASSKEY_CONTEXT;
-const devPasskeyContextHeader = "x-ugoite-dev-passkey-context";
-const proxyTokenAuthPaths = new Set([
-  "/auth/config",
-  "/auth/login",
-  "/auth/mock-oauth",
-]);
-const passkeyContextAuthPaths = new Set(["/auth/login"]);
-const authCookieProxyPaths = new Set(["/auth/login", "/auth/mock-oauth"]);
 const invalidProxyPathMessage = "Invalid API proxy path";
 const invalidBackendUrlMessage = "BACKEND_URL is invalid";
 
@@ -34,6 +22,8 @@ const requestHeaderAllowlist = new Set([
   "accept",
   "accept-language",
   "authorization",
+  "cookie",
+  "dpop",
   "content-type",
   "if-match",
   "if-none-match",
@@ -107,53 +97,6 @@ const resolveProxyTimeoutMs = (): number => {
   return parsed;
 };
 
-const requestUsesHttps = (request: Request): boolean => {
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  const effectiveProto = forwardedProto?.split(",", 1)[0]?.trim().toLowerCase();
-  if (effectiveProto) {
-    return effectiveProto === "https";
-  }
-  return new URL(request.url).protocol === "https:";
-};
-
-const applyProxyCredentials = (
-  headers: Headers,
-  cookieHeader: string | null,
-): void => {
-  if (!headers.has("authorization")) {
-    const proxyBearerToken = readAuthCookie(cookieHeader);
-    if (proxyBearerToken) {
-      headers.set("authorization", `Bearer ${proxyBearerToken}`);
-    }
-  }
-  if (!headers.has("x-api-key")) {
-    const proxyApiKey = process.env.UGOITE_AUTH_API_KEY;
-    if (proxyApiKey) {
-      headers.set("x-api-key", proxyApiKey);
-    }
-  }
-};
-
-const applyDevAuthProxyToken = (headers: Headers, pathname: string): void => {
-  if (!proxyTokenAuthPaths.has(pathname)) {
-    return;
-  }
-  if (!devAuthProxyToken?.trim()) {
-    return;
-  }
-  headers.set(devAuthProxyTokenHeader, devAuthProxyToken);
-};
-
-const applyDevPasskeyContext = (headers: Headers, pathname: string): void => {
-  if (!passkeyContextAuthPaths.has(pathname)) {
-    return;
-  }
-  if (!devPasskeyContext?.trim()) {
-    return;
-  }
-  headers.set(devPasskeyContextHeader, devPasskeyContext);
-};
-
 const handleProxyError = (
   error: unknown,
   requestMethod: string,
@@ -171,63 +114,6 @@ const handleProxyError = (
     `error=${error instanceof Error ? error.message : String(error)}\n`;
   process.stderr.write(message);
   return new Response("Backend service unavailable", { status: 502 });
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-const invalidAuthProxyResponse = (requestId: string): Response =>
-  new Response(
-    JSON.stringify({
-      detail: "Frontend auth proxy received an invalid login response.",
-    }),
-    {
-      status: 502,
-      headers: {
-        "content-type": "application/json",
-        "x-request-id": requestId,
-      },
-    },
-  );
-
-const rewriteAuthProxyResponse = async (
-  response: Response,
-  requestId: string,
-  secure: boolean,
-): Promise<Response> => {
-  const payload = (await response.json()) as unknown;
-  if (!isRecord(payload)) {
-    return invalidAuthProxyResponse(requestId);
-  }
-  const bearerToken = payload.bearer_token;
-  if (typeof bearerToken !== "string") {
-    return invalidAuthProxyResponse(requestId);
-  }
-  const userId = payload.user_id;
-  if (typeof userId !== "string") {
-    return invalidAuthProxyResponse(requestId);
-  }
-  const expiresAt = payload.expires_at;
-  if (typeof expiresAt !== "number") {
-    return invalidAuthProxyResponse(requestId);
-  }
-  const responseHeaders = filterResponseHeaders(response.headers);
-  responseHeaders.delete("content-length");
-  responseHeaders.delete("set-cookie");
-  if (!responseHeaders.has("x-request-id")) {
-    responseHeaders.set("x-request-id", requestId);
-  }
-  responseHeaders.append(
-    "set-cookie",
-    buildServerAuthCookie(bearerToken, expiresAt, { secure }),
-  );
-  const redactedPayload = { ...payload };
-  delete redactedPayload.bearer_token;
-  return new Response(JSON.stringify(redactedPayload), {
-    status: response.status,
-    statusText: response.statusText,
-    headers: responseHeaders,
-  });
 };
 
 const handleInvalidTargetPath = (
@@ -271,9 +157,7 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
   }
   const headers = filterRequestHeaders(request.headers);
   const requestId = ensureRequestId(headers);
-  applyProxyCredentials(headers, request.headers.get("cookie"));
-  applyDevAuthProxyToken(headers, targetUrl.pathname);
-  applyDevPasskeyContext(headers, targetUrl.pathname);
+  headers.set("x-ugoite-public-uri", request.url);
 
   const timeoutMs = resolveProxyTimeoutMs();
   const controller = new AbortController();
@@ -294,13 +178,6 @@ const proxyRequest = async (event: APIEvent): Promise<Response> => {
 
   try {
     const response = await fetch(targetUrl, init);
-    if (response.ok && authCookieProxyPaths.has(targetUrl.pathname)) {
-      return await rewriteAuthProxyResponse(
-        response,
-        requestId,
-        requestUsesHttps(request),
-      );
-    }
     const responseHeaders = filterResponseHeaders(response.headers);
     if (!responseHeaders.has("x-request-id")) {
       responseHeaders.set("x-request-id", requestId);

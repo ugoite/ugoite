@@ -93,19 +93,18 @@ describe("createSpaceStore", () => {
     });
   });
 
-  it("REQ-FE-001: should skip reserved admin-space when choosing the first user space", async () => {
-    const adminSpace: Space = {
-      id: "admin-space",
-      name: "admin-space",
+  it("REQ-FE-001: selects the first ordinary Space when default is absent", async () => {
+    const operationsSpace: Space = {
+      id: "operations",
+      name: "Operations",
       created_at: "2025-01-01T00:00:00Z",
-      is_admin_space: true,
     };
     const workspace: Space = {
       id: "workspace-a",
       name: "Workspace A",
       created_at: "2025-01-01T00:00:00Z",
     };
-    seedSpace(adminSpace);
+    seedSpace(operationsSpace);
     seedSpace(workspace);
 
     await createRoot(async (dispose) => {
@@ -113,50 +112,39 @@ describe("createSpaceStore", () => {
 
       const selectedId = await store.loadSpaces();
 
-      expect(selectedId).toBe("workspace-a");
+      expect(selectedId).toBe("operations");
       expect(store.spaces().map((space) => space.id)).toEqual([
+        "operations",
         "workspace-a",
-        "admin-space",
       ]);
-      expect(store.selectedSpaceId()).toBe("workspace-a");
+      expect(store.selectedSpaceId()).toBe("operations");
 
       dispose();
     });
   });
 
-  it("REQ-FE-001: should ignore a stale reserved admin-space local selection", async () => {
-    const adminSpace: Space = {
-      id: "admin-space",
-      name: "admin-space",
+  it("REQ-FE-001: restores any persisted authorized Space", async () => {
+    const operationsSpace: Space = {
+      id: "operations",
+      name: "Operations",
       created_at: "2025-01-01T00:00:00Z",
-      is_admin_space: true,
     };
     const workspace: Space = {
       id: "workspace-a",
       name: "Workspace A",
       created_at: "2025-01-01T00:00:00Z",
     };
-    seedSpace(adminSpace);
+    seedSpace(operationsSpace);
     seedSpace(workspace);
-    localStorageMock.setItem("ugoite-selected-space", "admin-space");
+    localStorageMock.setItem("ugoite-selected-space", "operations");
 
     await createRoot(async (dispose) => {
       const store = createSpaceStore();
 
       const selectedId = await store.loadSpaces();
 
-      expect(selectedId).toBe("workspace-a");
-      expect(store.selectedSpaceId()).toBe("workspace-a");
-      expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "ugoite-selected-space",
-        "workspace-a",
-      );
-      await waitFor(() => {
-        const expectedPatch =
-          {} as import("./types").UserPreferencesPatchPayload;
-        expectedPatch.selected_space_id = "workspace-a";
-        expect(getPreferencePatches()).toContainEqual(expectedPatch);
-      });
+      expect(selectedId).toBe("operations");
+      expect(store.selectedSpaceId()).toBe("operations");
 
       dispose();
     });
@@ -255,12 +243,11 @@ describe("createSpaceStore", () => {
     });
   });
 
-  it("REQ-FE-003: should ignore a reserved admin-space portable preference", async () => {
-    const adminSpace: Space = {
-      id: "admin-space",
-      name: "admin-space",
+  it("REQ-FE-003: portable preference may select any authorized Space", async () => {
+    const operationsSpace: Space = {
+      id: "operations",
+      name: "Operations",
       created_at: "2025-01-01T00:00:00Z",
-      is_admin_space: true,
     };
     const defaultSpace: Space = {
       id: "default",
@@ -272,12 +259,12 @@ describe("createSpaceStore", () => {
       name: "Workspace A",
       created_at: "2025-01-01T00:00:00Z",
     };
-    seedSpace(adminSpace);
+    seedSpace(operationsSpace);
     seedSpace(defaultSpace);
     seedSpace(workspace);
     const portableSelection =
       {} as import("./types").UserPreferencesPatchPayload;
-    portableSelection.selected_space_id = "admin-space";
+    portableSelection.selected_space_id = "operations";
     seedPreferences(portableSelection);
     localStorageMock.setItem("ugoite-selected-space", "workspace-a");
 
@@ -291,49 +278,29 @@ describe("createSpaceStore", () => {
 
       const selectedId = await store.loadSpaces();
 
-      expect(selectedId).toBe("default");
-      expect(store.selectedSpaceId()).toBe("default");
-      expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "ugoite-selected-space",
-        "default",
-      );
-      await waitFor(() => {
-        const expectedPatch =
-          {} as import("./types").UserPreferencesPatchPayload;
-        expectedPatch.selected_space_id = "default";
-        expect(getPreferencePatches()).toContainEqual(expectedPatch);
-      });
+      expect(selectedId).toBe("operations");
+      expect(store.selectedSpaceId()).toBe("operations");
 
       dispose();
     });
   });
 
-  it("REQ-FE-002: should keep selection empty when only reserved admin spaces exist", async () => {
-    const adminSpace: Space = {
-      id: "admin-space",
-      name: "admin-space",
+  it("REQ-FE-002: a single authorized Space remains selectable", async () => {
+    const operationsSpace: Space = {
+      id: "operations",
+      name: "Operations",
       created_at: "2025-01-01T00:00:00Z",
-      is_admin_space: true,
     };
-    seedSpace(adminSpace);
-    localStorageMock.setItem("ugoite-selected-space", "admin-space");
+    seedSpace(operationsSpace);
+    localStorageMock.setItem("ugoite-selected-space", "operations");
 
     await createRoot(async (dispose) => {
       const store = createSpaceStore();
 
       const selectedId = await store.loadSpaces();
 
-      expect(selectedId).toBe("");
-      expect(store.selectedSpaceId()).toBeNull();
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith(
-        "ugoite-selected-space",
-      );
-      await waitFor(() => {
-        const expectedPatch =
-          {} as import("./types").UserPreferencesPatchPayload;
-        expectedPatch.selected_space_id = null;
-        expect(getPreferencePatches()).toContainEqual(expectedPatch);
-      });
+      expect(selectedId).toBe("operations");
+      expect(store.selectedSpaceId()).toBe("operations");
 
       dispose();
     });

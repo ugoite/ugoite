@@ -2005,6 +2005,17 @@ pub async fn list_entry_summaries(
     query: Option<&str>,
     limit: usize,
 ) -> Result<Vec<EntrySummary>> {
+    list_entry_summaries_authorized(op, ws_path, form_filter, query, limit, None).await
+}
+
+pub async fn list_entry_summaries_authorized(
+    op: &Operator,
+    ws_path: &str,
+    form_filter: Option<&str>,
+    query: Option<&str>,
+    limit: usize,
+    readable_entry_ids: Option<&std::collections::HashSet<String>>,
+) -> Result<Vec<EntrySummary>> {
     let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
     let normalized_query = query
         .map(str::trim)
@@ -2012,7 +2023,8 @@ pub async fn list_entry_summaries(
         .map(str::to_lowercase);
     let mut entries = Vec::new();
     for (form_name, row) in list_entry_rows(op, ws_path).await? {
-        if row.deleted {
+        if row.deleted || readable_entry_ids.is_some_and(|allowed| !allowed.contains(&row.entry_id))
+        {
             continue;
         }
         if let Some(expected_form) = normalized_form {

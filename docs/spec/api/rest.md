@@ -1,76 +1,46 @@
 ---
-title: 'REST API'
+title: REST API
 ---
 
-The Rust server implementation in `crates/ugoite-server/src/lib.rs` and its generated `/openapi.json` document are authoritative. The checked-in [`openapi.yaml`](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml) is verified against that output by `cargo run -p xtask -- openapi-check`.
+`crates/ugoite-server` and runtime `/openapi.json` are authoritative. The
+checked-in OpenAPI snapshot and generated frontend path registry are verified in
+CI.
 
-When the server hosts static browser files (`UGOITE_STATIC_DIR` is set), application API routes are nested below `/api`; `/health` and `/openapi.json` also remain available at the root. When static hosting is disabled, the OpenAPI paths are served at the root.
+## Authentication surfaces
 
-## Authentication
+- `GET /auth/config`: Node lifecycle, issuer, and WebAuthn RP information.
+- `POST /auth/setup/start|finish`: one-use first-account Passkey registration;
+  the Node remains uninitialized until a second Passkey or confirmed TOTP is added.
+- `POST /auth/passkey/start|finish`: discoverable Passkey login and opaque
+  session issuance.
+- `GET|DELETE /auth/session`: inspect or revoke the current browser session.
+- `POST /auth/invitations/start|finish`: invited Passkey registration.
+- `GET /auth/oidc/{provider_id}/start` and `GET /auth/oidc/callback`: OIDC
+  authorization code + PKCE.
+- `GET|POST /auth/oidc/providers`: Node administrator provider configuration.
+- `/auth/passkeys` and `/auth/devices`: credential inventory and revocation.
+- `/auth/recovery/*`: encrypted TOTP enrollment and recovery-code + TOTP
+  replacement Passkey registration.
+- `/auth/accounts`: Node administrator account inventory and suspension.
+- `POST /oauth/device/authorization`, `/oauth/device/approve`, `/oauth/token`:
+  CLI/MCP device flow and rotating refresh.
+- `POST /oauth/agent/token`: autonomous agent issuance.
 
-Protected routes accept a bearer token/session cookie or configured API key. Authentication establishes an identity; Space membership and role checks authorize each operation. `POST /auth/login` is contracted but returns HTTP `403` in this release. Development login uses `POST /auth/mock-oauth` only when `UGOITE_DEV_AUTH_MODE=mock-oauth`.
+Browser requests authenticate with the `ugoite_session` HttpOnly cookie. CLI,
+MCP, and agent requests use `Authorization: DPoP <opaque-access-token>` plus a DPoP
+proof header. Only its hash and authorization metadata are stored server-side.
+No endpoint accepts external OIDC tokens or preconfigured long-lived
+credentials, or setup values as API authorization.
 
-## Endpoints
+## Authorization surfaces
 
-| Method | Path | Summary | Availability |
-|---|---|---|---|
-| `GET` | `/health` | Health check | implemented |
-| `GET` | `/openapi.json` | OpenAPI snapshot | implemented |
-| `GET` | `/auth/config` | Read local development auth configuration | implemented |
-| `POST` | `/auth/login` | Passkey/TOTP login | contracted; returns 403 |
-| `POST` | `/auth/mock-oauth` | Local mock OAuth login | implemented |
-| `GET` | `/auth/session` | Read browser session | implemented |
-| `DELETE` | `/auth/session` | Clear browser session | implemented |
-| `GET` | `/preferences/me` | Read current user preferences | implemented |
-| `PATCH` | `/preferences/me` | Patch current user preferences | implemented |
-| `GET` | `/spaces` | List spaces visible to the authenticated identity | implemented |
-| `POST` | `/spaces` | Create a space owned by the authenticated identity | implemented |
-| `GET` | `/spaces/{space_id}` | Get a space | implemented |
-| `PATCH` | `/spaces/{space_id}` | Patch space settings | implemented |
-| `POST` | `/spaces/{space_id}/test-connection` | Test storage connection | implemented |
-| `GET` | `/spaces/{space_id}/members` | List members | implemented |
-| `POST` | `/spaces/{space_id}/members/invitations` | Invite a member | implemented |
-| `POST` | `/spaces/{space_id}/members/accept` | Accept a member invitation | implemented |
-| `POST` | `/spaces/{space_id}/members/{member_user_id}/role` | Update member role | implemented |
-| `DELETE` | `/spaces/{space_id}/members/{member_user_id}` | Revoke a member | implemented |
-| `POST` | `/spaces/{space_id}/sql-sessions` | Create SQL session | implemented |
-| `GET` | `/spaces/{space_id}/sql-sessions/{session_id}` | Get SQL session status | implemented |
-| `GET` | `/spaces/{space_id}/sql-sessions/{session_id}/count` | Get SQL session row count | implemented |
-| `GET` | `/spaces/{space_id}/sql-sessions/{session_id}/rows` | Get SQL session rows | implemented |
-| `GET` | `/spaces/{space_id}/entries` | List entries | implemented |
-| `POST` | `/spaces/{space_id}/entries` | Create entry | implemented |
-| `GET` | `/spaces/{space_id}/entries/options` | List entry options | implemented |
-| `GET` | `/spaces/{space_id}/entries/{entry_id}` | Get entry | implemented |
-| `PUT` | `/spaces/{space_id}/entries/{entry_id}` | Update entry | implemented |
-| `DELETE` | `/spaces/{space_id}/entries/{entry_id}` | Delete entry | implemented |
-| `GET` | `/spaces/{space_id}/entries/{entry_id}/history` | Get entry history | implemented |
-| `GET` | `/spaces/{space_id}/entries/{entry_id}/history/{revision_id}` | Get entry revision | implemented |
-| `POST` | `/spaces/{space_id}/entries/{entry_id}/restore` | Restore entry revision | implemented |
-| `GET` | `/spaces/{space_id}/forms` | List forms | implemented |
-| `POST` | `/spaces/{space_id}/forms` | Upsert form | implemented |
-| `GET` | `/spaces/{space_id}/forms/types` | List form column types | implemented |
-| `GET` | `/spaces/{space_id}/forms/{form_name}` | Get form | implemented |
-| `GET` | `/spaces/{space_id}/search` | Search entries | implemented |
-| `POST` | `/spaces/{space_id}/query` | Structured entry query | implemented |
-| `GET` | `/spaces/{space_id}/sql` | List saved SQL | implemented |
-| `POST` | `/spaces/{space_id}/sql` | Create saved SQL | implemented |
-| `GET` | `/spaces/{space_id}/sql/{sql_id}` | Get saved SQL | implemented |
-| `PUT` | `/spaces/{space_id}/sql/{sql_id}` | Update saved SQL | implemented |
-| `DELETE` | `/spaces/{space_id}/sql/{sql_id}` | Delete saved SQL | implemented |
-| `GET` | `/spaces/{space_id}/assets` | List assets | implemented |
-| `POST` | `/spaces/{space_id}/assets` | Upload asset | implemented |
-| `DELETE` | `/spaces/{space_id}/assets/{asset_id}` | Delete asset | implemented |
-| `GET` | `/mcp/resources/{space_id}/entries/list` | MCP entry list resource | implemented |
+Space CRUD, membership, Entries, Forms, Saved SQL, Assets, search, query, SQL
+sessions, MCP, agents, and resource policies are represented in OpenAPI.
+`PUT /spaces/{space_id}/policies/{kind}/{resource_id}` updates grant-only ACLs
+for `entry` or `asset`.
+`POST /spaces/{space_id}/bindings/rebind-owner` binds an imported Space owner to
+the current Node administrator after migration.
 
-## Current exclusions
-
-- No service-account CRUD routes are shipped. Static/signed credentials are configured out of band.
-- No audit-log listing route is shipped.
-- Remote CLI asset upload is not supported even though REST/browser upload is implemented.
-- MCP is documented separately and currently exposes one read-only resource route.
-
-## Request limits and errors
-
-The server applies a 20 MiB body limit, request IDs, tracing, and CORS middleware. Domain/service errors are mapped to JSON HTTP errors. Clients should branch on status and structured payload rather than matching human-readable text.
-
-For exact schemas, parameters, and response bodies, use [`openapi.yaml`](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml).
+Errors are structured JSON. Authentication failures use 401; valid identities
+lacking Space/token/resource permission use 403; stale/used one-time credentials
+fail without revealing stored secret material.

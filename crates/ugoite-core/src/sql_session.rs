@@ -89,6 +89,15 @@ async fn execute_session_sql(op: &Operator, ws_path: &str, session_id: &str) -> 
     if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
         return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
     }
+    if let Some(ids) = meta.get("readable_entry_ids").and_then(Value::as_array) {
+        let allowed = ids
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect();
+        return index::execute_sql_query_authorized(op, ws_path, session_sql(&meta)?, &allowed)
+            .await;
+    }
     index::execute_sql_query(op, ws_path, session_sql(&meta)?).await
 }
 
@@ -175,6 +184,68 @@ pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Resu
 
     write_json(op, &meta_path(ws_path, &session_id), &meta).await?;
     Ok(meta)
+}
+
+pub async fn create_sql_session_authorized(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    readable_entry_ids: &std::collections::HashSet<String>,
+) -> Result<Value> {
+    let mut meta = create_sql_session(op, ws_path, sql).await?;
+    let mut ids: Vec<&String> = readable_entry_ids.iter().collect();
+    ids.sort();
+    meta["readable_entry_ids"] = serde_json::to_value(ids)?;
+    let session_id = meta
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("SQL session id missing"))?;
+    write_json(op, &meta_path(ws_path, session_id), &meta).await?;
+    Ok(meta)
+}
+
+pub async fn create_sql_session_authorized_for_principals(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    readable_entry_ids: &std::collections::HashSet<String>,
+    principal_ids: &[Uuid],
+) -> Result<Value> {
+    let mut meta = create_sql_session_authorized(op, ws_path, sql, readable_entry_ids).await?;
+    meta["authorized_principal_ids"] = serde_json::to_value(principal_ids)?;
+    let session_id = meta
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("SQL session id missing"))?;
+    write_json(op, &meta_path(ws_path, session_id), &meta).await?;
+    Ok(meta)
+}
+
+pub async fn require_session_principals(
+    op: &Operator,
+    ws_path: &str,
+    session_id: &str,
+    principal_ids: &[Uuid],
+) -> Result<()> {
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    let stored = meta
+        .get("authorized_principal_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::forbidden("SQL session is not bound to an authorized principal"))?
+        .iter()
+        .filter_map(Value::as_str)
+        .filter_map(|value| Uuid::parse_str(value).ok())
+        .collect::<std::collections::BTreeSet<_>>();
+    let requested = principal_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    if stored != requested {
+        return Err(
+            AppError::forbidden("SQL session belongs to a different principal context").into(),
+        );
+    }
+    Ok(())
 }
 
 pub async fn get_sql_session_status(

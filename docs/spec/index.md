@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-**Updated:** 2026-06-23\
+**Updated:** 2026-06-29\
 **Implementation status:** Rust/Deno v0.1 stream in progress
 
 Ugoite is a local-first knowledge-space system based on three principles: **Low
@@ -19,8 +19,9 @@ authoritative; indexes and query sessions are derived.
   hosting.
 - The browser is server-backed.
 - Browser-local persistence and optional sync are planned.
-- Passkey/TOTP login, managed service-account CRUD, and audit-log APIs are not
-  operational in this release.
+- Passkey login, optional invited OIDC, opaque sessions, CLI device
+  authorization, Agent Principals, Space ACLs, and authorization audit chains
+  are operational.
 
 ## Navigation
 

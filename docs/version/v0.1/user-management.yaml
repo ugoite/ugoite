@@ -20,24 +20,22 @@ phases:
   - description: Define passkey/TOTP, managed service accounts, and audit history as future capability.
     done: true
 - id: implementation
-  status: in_progress
+  status: completed
   tasks:
-  - description: Implement bearer/API-key/signed-token authentication and session cookies.
+  - description: Implement Passkey authentication and opaque server-side sessions.
     done: true
-  - description: Implement Space role checks and invitation/accept/role/revoke flows.
+  - description: Implement portable Space principals, roles, invitations, and resource policies.
     done: true
-  - description: Implement development mock OAuth and browser/CLI login UX.
+  - description: Implement OAuth device authorization and sender-constrained CLI credentials.
     done: true
-  - description: Implement production passkey/TOTP enrollment and login.
-    done: false
-  - description: Implement managed service-account lifecycle APIs.
-    done: false
-  - description: Implement audit-log persistence and listing APIs.
-    done: false
+  - description: Implement sponsored agent principals and public-key credentials.
+    done: true
+  - description: Implement node and Space security audit persistence.
+    done: true
 - id: testing
-  status: in_progress
+  status: completed
   tasks:
-  - description: Cover authentication, membership transitions, and privilege checks.
+  - description: Cover authentication, recovery, membership transitions, and privilege checks.
     done: true
-  - description: Cover passkey/TOTP, service-account scope/revocation, and audit completeness.
-    done: false
+  - description: Cover OAuth constraints, agent lifecycle, ACL leak prevention, and audit completeness.
+    done: true

@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn accepts_documented_safe_identifiers() {
-        for value in ["default", "admin-space", "Entry", "SQL_2026", "id-123_ABC"] {
+        for value in ["default", "operations", "Entry", "SQL_2026", "id-123_ABC"] {
             validate_space_id(value).unwrap();
             validate_form_name(value).unwrap();
         }

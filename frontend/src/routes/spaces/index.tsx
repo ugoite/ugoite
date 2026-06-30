@@ -9,7 +9,7 @@ import {
 } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { spaceApi } from "~/lib/ugoite-client";
-import { partitionSpaces } from "~/lib/space-list";
+import { sortSpaces } from "~/lib/space-list";
 import type { Space } from "~/lib/types";
 
 const localDevAuthGuideUrl = getDocsiteHref(
@@ -80,9 +80,7 @@ export default function SpacesIndexRoute() {
   const [newSpaceId, setNewSpaceId] = createSignal("");
   const [createError, setCreateError] = createSignal<string | null>(null);
   const [isCreating, setIsCreating] = createSignal(false);
-  const listedSpaces = createMemo(() => partitionSpaces(spaces() || []));
-  const userSpaces = createMemo(() => listedSpaces().userSpaces);
-  const adminSpaces = createMemo(() => listedSpaces().adminSpaces);
+  const listedSpaces = createMemo(() => sortSpaces(spaces() || []));
 
   const authHint = createMemo(
     (): { message: string; showGuide: boolean } | null => {
@@ -114,12 +112,7 @@ export default function SpacesIndexRoute() {
   );
 
   const hasNoSpaces = createMemo(
-    () => !spaces.loading && !spacesError() && userSpaces().length === 0,
-  );
-  const emptyStateMessage = createMemo(() =>
-    adminSpaces().length > 0
-      ? "No user spaces available yet."
-      : "No spaces available."
+    () => !spaces.loading && !spacesError() && listedSpaces().length === 0,
   );
 
   const openCreateForm = () => {
@@ -197,12 +190,6 @@ export default function SpacesIndexRoute() {
 
       <section class="ui-card">
         <h2 class="text-lg font-semibold mb-3">Available Spaces</h2>
-        <Show when={adminSpaces().length > 0}>
-          <p class="mb-3 text-sm ui-muted">
-            User-facing spaces stay primary here. Reserved admin spaces remain
-            available in a separate section below.
-          </p>
-        </Show>
         <Show when={showCreateForm()}>
           <form class="ui-card ui-stack-sm mb-4" onSubmit={handleCreateSpace}>
             <div>
@@ -276,7 +263,7 @@ export default function SpacesIndexRoute() {
         </Show>
         <Show when={hasNoSpaces() && !showCreateForm()}>
           <div class="ui-card ui-card-dashed ui-stack-sm">
-            <p class="text-sm ui-muted">{emptyStateMessage()}</p>
+            <p class="text-sm ui-muted">No spaces available.</p>
             <div>
               <button
                 type="button"
@@ -288,19 +275,8 @@ export default function SpacesIndexRoute() {
             </div>
           </div>
         </Show>
-        <Show when={userSpaces().length > 0}>
-          <SpaceCards label="User spaces" spaces={userSpaces()} />
-        </Show>
-        <Show when={adminSpaces().length > 0}>
-          <div class="mt-4 ui-stack-sm">
-            <div>
-              <h3 class="text-base font-semibold">Admin Spaces</h3>
-              <p class="text-sm ui-muted">
-                Reserved workspaces for administration and setup tasks.
-              </p>
-            </div>
-            <SpaceCards label="Admin spaces" spaces={adminSpaces()} />
-          </div>
+        <Show when={listedSpaces().length > 0}>
+          <SpaceCards label="Spaces" spaces={listedSpaces()} />
         </Show>
       </section>
     </main>

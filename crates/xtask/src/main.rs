@@ -1,11 +1,11 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
-use std::{env, fs, path::Path};
+use std::{env, fs, path::Path, process::Command};
 
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     let Some(command) = args.next() else {
-        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|architecture-check|docs-current-stack-check>");
+        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|architecture-check|docs-current-stack-check|legacy-auth-check>");
         return Ok(());
     };
     match command.as_str() {
@@ -13,6 +13,7 @@ fn main() -> Result<()> {
         "openapi-check" => openapi_check(),
         "architecture-check" => architecture_check(),
         "docs-current-stack-check" => docs_current_stack_check(),
+        "legacy-auth-check" => legacy_auth_check(),
         other => bail!("unknown xtask command: {other}"),
     }
 }
@@ -76,10 +77,16 @@ fn validate_openapi_contract(spec: &Value) -> Result<()> {
                 .and_then(Value::as_object)
                 .map(|responses| {
                     responses.iter().any(|(status, response)| {
-                        status.starts_with('2')
-                            && response
-                                .pointer("/content/application~1json/schema")
-                                .is_some()
+                        (status == "204")
+                            || (status.starts_with('2')
+                                && response
+                                    .get("content")
+                                    .and_then(Value::as_object)
+                                    .is_some_and(|content| {
+                                        content.values().any(|media| media.get("schema").is_some())
+                                    }))
+                            || (status.starts_with('3')
+                                && response.pointer("/headers/Location/schema").is_some())
                     })
                 })
                 .unwrap_or(false);
@@ -335,6 +342,59 @@ fn docs_current_stack_check() -> Result<()> {
             }
         }
     }
+    if !violations.is_empty() {
+        bail!("{}", violations.join("\n"));
+    }
+    Ok(())
+}
+
+fn legacy_auth_check() -> Result<()> {
+    let patterns = [
+        ["/auth/mock", "oauth"].join("-"),
+        ["mock", "oauth"].join("_"),
+        ["UGOITE_DEV", "AUTH_MODE"].join("_"),
+        ["UGOITE_DEV", "USER_ID"].join("_"),
+        ["UGOITE_DEV", "PASSKEY_CONTEXT"].join("_"),
+        ["UGOITE", "BOOTSTRAP_TOKEN"].join("_"),
+        ["UGOITE_AUTH", "BEARER"].join("_"),
+        ["UGOITE_AUTH", "API_KEY"].join("_"),
+        ["ugoite_auth", "bearer_token"].join("_"),
+        ["cli", "auth.json"].join("-"),
+        ["passkey", "totp"].join("-"),
+    ];
+    let output = Command::new("git")
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ])
+        .output()
+        .context("list tracked files for legacy authentication check")?;
+    if !output.status.success() {
+        bail!("git ls-files failed during legacy authentication check");
+    }
+    let mut violations = Vec::new();
+    for raw_path in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let path = Path::new(std::str::from_utf8(raw_path).context("tracked path is not UTF-8")?);
+        let Ok(bytes) = fs::read(path) else { continue };
+        let text = String::from_utf8_lossy(&bytes);
+        for pattern in &patterns {
+            if text.contains(pattern) {
+                violations.push(format!(
+                    "{} contains removed authentication name",
+                    path.display()
+                ));
+            }
+        }
+    }
+    violations.sort();
+    violations.dedup();
     if !violations.is_empty() {
         bail!("{}", violations.join("\n"));
     }

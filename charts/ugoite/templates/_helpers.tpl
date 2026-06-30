@@ -36,30 +36,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- include "ugoite.fullname" . -}}
 {{- end -}}
 
-{{- define "ugoite.authSecretName" -}}
-{{- printf "%s-auth" (include "ugoite.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
 {{- define "ugoite.pvcName" -}}
 {{- if .Values.persistence.existingClaim -}}
 {{- .Values.persistence.existingClaim -}}
 {{- else -}}
 {{- printf "%s-data" (include "ugoite.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "ugoite.authBearerSecrets" -}}
-{{- if .Values.auth.bearerSecrets -}}
-{{- .Values.auth.bearerSecrets -}}
-{{- else -}}
-{{- printf "%s:%s" .Values.auth.signingKid (required "charts/ugoite values.auth.signingSecret must be set to a unique secret" .Values.auth.signingSecret) -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "ugoite.authBearerActiveKids" -}}
-{{- if .Values.auth.bearerActiveKids -}}
-{{- join "," .Values.auth.bearerActiveKids -}}
-{{- else -}}
-{{- .Values.auth.signingKid -}}
 {{- end -}}
 {{- end -}}

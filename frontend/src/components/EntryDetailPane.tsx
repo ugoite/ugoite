@@ -11,6 +11,7 @@ import type { Accessor } from "solid-js";
 
 import { isServer } from "solid-js/web";
 import { AssetUploader } from "~/components/AssetUploader";
+import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { MarkdownEditor } from "~/components/MarkdownEditor";
 import { assetApi } from "~/lib/ugoite-client";
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
@@ -229,6 +230,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     null,
   );
   const [entryError, setEntryError] = createSignal<string | null>(null);
+  const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
 
   const [entry, { refetch: refetchEntry }] = createResource(
     () => {
@@ -637,6 +639,26 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             </div>
           </div>
         )}
+      </Show>
+      <Show when={entry()}>
+        <div class="mt-4">
+          <button
+            type="button"
+            class="ui-button ui-button-secondary"
+            onClick={() => setShowAccessPolicy((value) => !value)}
+          >
+            {showAccessPolicy() ? "Close sharing" : "Share and manage access"}
+          </button>
+          <Show when={showAccessPolicy()}>
+            <div class="mt-2">
+              <AccessPolicyEditor
+                spaceId={props.spaceId()}
+                kind="entry"
+                resourceId={props.entryId()}
+              />
+            </div>
+          </Show>
+        </div>
       </Show>
     </div>
   );

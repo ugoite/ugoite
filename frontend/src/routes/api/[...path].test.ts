@@ -1,6 +1,5 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { authCookieName } from "~/lib/auth-cookie";
 
 const makeEvent = (url: string, init: RequestInit = {}): APIEvent =>
   ({ request: new Request(url, init) }) as APIEvent;
@@ -19,77 +18,6 @@ describe("api proxy route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("REQ-OPS-015: proxy login stores browser auth in an HttpOnly cookie and redacts the bearer token", async () => {
-    vi.stubEnv("BACKEND_URL", "http://localhost:8000");
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          bearer_token: "backend-token",
-          user_id: "dev-alice",
-          expires_at: 1_900_000_000,
-        }),
-        {
-          headers: {
-            "content-type": "application/json",
-            "set-cookie": "upstream-session=backend-cookie; Path=/; HttpOnly",
-          },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const { POST } = await import("./[...path]");
-    const response = await POST(
-      makeEvent("http://localhost:3000/api/auth/mock-oauth", {
-        method: "POST",
-      }),
-    );
-
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "http://localhost:8000/auth/mock-oauth",
-    );
-    const payload = (await response.json()) as Record<string, unknown>;
-    expect(payload).toEqual({
-      user_id: "dev-alice",
-      expires_at: 1_900_000_000,
-    });
-    expect(JSON.stringify(payload)).not.toContain("backend-token");
-    const setCookie = response.headers.get("set-cookie");
-    expect(setCookie).toContain(`${authCookieName}=backend-token`);
-    expect(setCookie).toContain("Path=/");
-    expect(setCookie).toContain("HttpOnly");
-    expect(setCookie).toContain("SameSite=Lax");
-    expect(setCookie).toContain("Max-Age=");
-    expect(setCookie).toContain("Expires=");
-    expect(setCookie).not.toContain("Secure");
-    expect(setCookie).not.toContain("upstream-session=");
-  });
-
-  it("REQ-OPS-015: proxy login marks auth cookies Secure when HTTPS is forwarded", async () => {
-    vi.stubEnv("BACKEND_URL", "http://localhost:8000");
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({
-        bearer_token: "backend-token",
-        user_id: "dev-alice",
-        expires_at: 1_900_000_000,
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const { POST } = await import("./[...path]");
-    const response = await POST(
-      makeEvent("http://localhost:3000/api/auth/login", {
-        method: "POST",
-        headers: {
-          "x-forwarded-proto": "https",
-        },
-        body: JSON.stringify({ username: "dev-alice", totp_code: "123456" }),
-      }),
-    );
-
-    expect(response.headers.get("set-cookie")).toContain("Secure");
-  });
-
   it("REQ-SEC-003: rejects protocol-relative proxy paths before forwarding browser bearer tokens", async () => {
     vi.stubEnv("BACKEND_URL", "http://127.0.0.1:8000");
     const fetchMock = vi.fn();
@@ -99,7 +27,7 @@ describe("api proxy route", () => {
     const response = await GET(
       makeEvent("http://127.0.0.1:3000/api//127.0.0.1:9998/browser-steal?z=1", {
         headers: {
-          cookie: "ugoite_auth_bearer_token=browser-token",
+          cookie: "ugoite_session=browser-session",
         },
       }),
     );
@@ -118,7 +46,7 @@ describe("api proxy route", () => {
     const response = await GET(
       makeEvent("http://127.0.0.1:3000/api/spaces?z=1", {
         headers: {
-          cookie: "ugoite_auth_bearer_token=browser-token",
+          cookie: "ugoite_session=browser-session",
         },
       }),
     );
@@ -129,7 +57,8 @@ describe("api proxy route", () => {
     expect(targetUrl.toString()).toBe("http://127.0.0.1:8000/spaces?z=1");
     expect(targetUrl.origin).toBe("http://127.0.0.1:8000");
     const headers = new Headers(init.headers);
-    expect(headers.get("authorization")).toBe("Bearer browser-token");
+    expect(headers.get("cookie")).toBe("ugoite_session=browser-session");
+    expect(headers.get("authorization")).toBeNull();
   });
 
   it("REQ-SEC-003: surfaces malformed BACKEND_URL as server misconfiguration", async () => {

@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 use url::Url;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SpaceMeta {
+    pub space_uid: Uuid,
+    pub slug: String,
     pub id: String,
     pub name: String,
     pub created_at: f64,

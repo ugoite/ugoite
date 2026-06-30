@@ -1,7 +1,8 @@
 import type {
+  AgentCreatePayload,
+  AgentPrincipal,
   Space,
   SpaceMember,
-  SpaceMemberAcceptPayload,
   SpaceMemberInvitePayload,
   SpaceMemberInviteResponse,
   SpaceMemberRoleUpdatePayload,
@@ -54,36 +55,43 @@ export const spaceApi = {
     );
   },
 
-  async acceptInvitation(
-    id: string,
-    payload: SpaceMemberAcceptPayload,
-  ): Promise<{ member: SpaceMember }> {
-    return await protocolFetch<{ member: SpaceMember }>(
-      "space.members.accept",
-      { space_id: id },
-      payload,
-    );
-  },
-
   async updateMemberRole(
     id: string,
-    memberUserId: string,
+    principalId: string,
     payload: SpaceMemberRoleUpdatePayload,
-  ): Promise<{ member: SpaceMember }> {
-    return await protocolFetch<{ member: SpaceMember }>(
+  ): Promise<{ principal_id: string; role: SpaceMember["role"] }> {
+    return await protocolFetch<{ principal_id: string; role: SpaceMember["role"] }>(
       "space.members.update_role",
-      { space_id: id, member_user_id: memberUserId },
+      { space_id: id, principal_id: principalId },
       payload,
     );
   },
 
   async revokeMember(
     id: string,
-    memberUserId: string,
-  ): Promise<{ member: SpaceMember }> {
-    return await protocolFetch<{ member: SpaceMember }>("space.members.revoke", {
+    principalId: string,
+  ): Promise<{ principal_id: string; state: "revoked" }> {
+    return await protocolFetch<{ principal_id: string; state: "revoked" }>("space.members.revoke", {
       space_id: id,
-      member_user_id: memberUserId,
+      principal_id: principalId,
+    });
+  },
+
+  async listAgents(id: string): Promise<AgentPrincipal[]> {
+    return await protocolFetch<AgentPrincipal[]>("agent.list", { space_id: id });
+  },
+
+  async createAgent(
+    id: string,
+    payload: AgentCreatePayload,
+  ): Promise<{ agent: AgentPrincipal; credential: Record<string, unknown> }> {
+    return await protocolFetch("agent.create", { space_id: id }, payload);
+  },
+
+  async revokeAgent(id: string, agentId: string): Promise<void> {
+    await protocolFetch("agent.revoke", {
+      space_id: id,
+      agent_id: agentId,
     });
   },
 };

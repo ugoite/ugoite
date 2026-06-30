@@ -15,8 +15,8 @@ The remaining architectural work is product capability, not stack migration:
 
 - browser-local Space persistence;
 - optional synchronization/relay semantics;
-- production passkey/TOTP enrollment and login;
-- managed service accounts and audit-log APIs;
+- production Passkey enrollment/login and optional invited OIDC;
+- sponsored Agent Principals and append-only authorization audit history;
 - release automation beyond the local `ci:release` gate.
 
 These items are future scope and must remain labeled as such.

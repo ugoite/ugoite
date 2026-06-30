@@ -86,7 +86,8 @@ fn test_parse_space_id_from_path_and_id() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // List spaces - verify the space shows up with the expected ID
+    // List spaces - verify the immutable UUID Space ID is reported. The path
+    // component is only a mutable slug and must not become the persistent ID.
     let list_output = Command::new(ugoite_bin())
         .args(["space", "list", &root])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
@@ -95,7 +96,11 @@ fn test_parse_space_id_from_path_and_id() {
 
     assert!(list_output.status.success());
     let stdout = String::from_utf8_lossy(&list_output.stdout);
-    assert!(stdout.contains("path-id-space"));
+    let created_stdout = String::from_utf8_lossy(&output.stdout);
+    let created: serde_json::Value = serde_json::from_str(&created_stdout).unwrap();
+    let space_id = created["id"].as_str().unwrap();
+    assert!(uuid::Uuid::parse_str(space_id).is_ok());
+    assert!(stdout.contains(space_id));
 }
 
 /// REQ-SEC-011: config set must reject non-loopback cleartext backend and API URLs.

@@ -1,19 +1,22 @@
 use anyhow::{anyhow, Result};
-use chrono::{Duration, SecondsFormat, Utc};
 use opendal::Operator;
-use serde_json::{json, Value};
+use serde_json::Value;
+use std::collections::HashSet;
 use uuid::Uuid;
 
-use crate::error::{AppError, ErrorCode};
+use crate::error::AppError;
 use crate::integrity::RealIntegrityProvider;
 use crate::{
-    asset, entry, form, index, preferences, saved_sql, search, space, sql_session,
+    asset,
+    authorization::{Authorizer, ResourceKind, ResourceRef},
+    entry, form, index, preferences, saved_sql, search, space, sql_session,
     storage::operator_from_uri,
 };
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
     validate_space_id, validate_sql_id, validate_sql_session_id,
 };
+use ugoite_domain::identity::Action;
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "admin_user_ids",
@@ -70,50 +73,65 @@ impl UgoiteService {
         space::create_space(&self.operator, space_id, &self.root_uri).await
     }
 
-    pub async fn create_space_for(&self, space_id: &str, actor_user_id: &str) -> Result<()> {
-        validate_member_user_id(actor_user_id)?;
-        self.create_space(space_id).await?;
-        self.bootstrap_admin_member(space_id, actor_user_id).await
+    /// Creates an operator-local Space with an immutable UUIDv7 directory and
+    /// no application principal. A node must explicitly claim it before remote use.
+    pub async fn create_operator_space(&self, slug: &str) -> Result<Uuid> {
+        validate_storage_id(validate_space_id(slug))?;
+        if self.space_id_by_slug(slug).await?.is_some() {
+            return Err(AppError::conflict(
+                crate::error::ErrorCode::SpaceAlreadyExists,
+                format!("Space slug already exists: {slug}"),
+            )
+            .into());
+        }
+        let space_id = Uuid::now_v7();
+        space::create_space_with_identity(&self.operator, space_id, slug, &self.root_uri).await?;
+        Ok(space_id)
     }
 
-    pub async fn ensure_bootstrap_space_for(
+    pub async fn create_space_for_principal(
         &self,
-        space_id: &str,
-        actor_user_id: &str,
-    ) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
-        validate_member_user_id(actor_user_id)?;
-        match self.create_space(space_id).await {
-            Ok(()) => self.bootstrap_admin_member(space_id, actor_user_id).await,
-            Err(error) if error.to_string().to_lowercase().contains("already exists") => {
-                self.bootstrap_admin_member(space_id, actor_user_id).await
-            }
-            Err(error) => Err(error),
+        slug: &str,
+        principal_id: Uuid,
+        display_name: &str,
+    ) -> Result<Uuid> {
+        validate_storage_id(validate_space_id(slug))?;
+        if self.space_id_by_slug(slug).await?.is_some() {
+            return Err(AppError::conflict(
+                crate::error::ErrorCode::SpaceAlreadyExists,
+                format!("Space slug already exists: {slug}"),
+            )
+            .into());
         }
+        let space_uid = Uuid::now_v7();
+        let space_id = space_uid.to_string();
+        space::create_space_with_identity(&self.operator, space_uid, slug, &self.root_uri).await?;
+        Authorizer::new(self.operator.clone())
+            .initialize_owner(&space_id, space_uid, principal_id, display_name)
+            .await?;
+        Ok(space_uid)
+    }
+
+    pub async fn space_uid(&self, space_id: &str) -> Result<Uuid> {
+        let raw = self.get_space(space_id).await?;
+        raw.get("space_uid")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
+            .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))
     }
 
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
         space::list_spaces(&self.operator).await
     }
 
-    pub async fn list_accessible_space_ids(&self, actor_user_id: &str) -> Result<Vec<String>> {
-        let mut accessible = Vec::new();
+    pub async fn space_id_by_slug(&self, slug: &str) -> Result<Option<String>> {
         for space_id in self.list_space_ids().await? {
-            if self
-                .has_permission(&space_id, actor_user_id, SpacePermission::Read)
-                .await?
-            {
-                accessible.push(space_id);
+            let meta = self.get_space(&space_id).await?;
+            if meta.get("slug").and_then(Value::as_str) == Some(slug) {
+                return Ok(Some(space_id));
             }
         }
-        accessible.sort_by(|left, right| {
-            let left_reserved = left == "admin-space";
-            let right_reserved = right == "admin-space";
-            left_reserved
-                .cmp(&right_reserved)
-                .then_with(|| left.cmp(right))
-        });
-        Ok(accessible)
+        Ok(None)
     }
 
     pub async fn get_space(&self, space_id: &str) -> Result<Value> {
@@ -130,25 +148,6 @@ impl UgoiteService {
     pub async fn ensure_space(&self, space_id: &str) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
         space::get_space(&self.operator, space_id).await.map(|_| ())
-    }
-
-    pub async fn require_permission(
-        &self,
-        space_id: &str,
-        actor_user_id: &str,
-        permission: SpacePermission,
-    ) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
-        if self
-            .has_permission(space_id, actor_user_id, permission)
-            .await?
-        {
-            return Ok(());
-        }
-        Err(AppError::forbidden(format!(
-            "Forbidden: user {actor_user_id} does not have {permission:?} permission for space {space_id}"
-        ))
-        .into())
     }
 
     pub async fn list_forms(&self, space_id: &str) -> Result<Vec<Value>> {
@@ -313,6 +312,48 @@ impl UgoiteService {
         .await
     }
 
+    pub async fn list_entry_options_authorized(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        form: Option<&str>,
+        query: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<entry::EntrySummary>> {
+        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
+        entry::list_entry_summaries_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            form,
+            query,
+            limit,
+            Some(&allowed),
+        )
+        .await
+    }
+
+    pub async fn list_entry_options_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        form: Option<&str>,
+        query: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<entry::EntrySummary>> {
+        let allowed = self
+            .authorized_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        entry::list_entry_summaries_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            form,
+            query,
+            limit,
+            Some(&allowed),
+        )
+        .await
+    }
+
     pub async fn search_entries(
         &self,
         space_id: &str,
@@ -335,6 +376,329 @@ impl UgoiteService {
     pub async fn execute_sql_query(&self, space_id: &str, sql: &str) -> Result<Vec<Value>> {
         validate_storage_id(validate_space_id(space_id))?;
         index::execute_sql_query(&self.operator, &self.workspace_path(space_id), sql).await
+    }
+
+    pub async fn require_resource_action(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        action: Action,
+        kind: ResourceKind,
+        resource_id: &str,
+        parent: Option<ResourceRef>,
+    ) -> Result<()> {
+        let parent = if matches!(kind, ResourceKind::Asset) && parent.is_none() {
+            self.asset_parent_entry(space_id, resource_id)
+                .await?
+                .map(|id| ResourceRef {
+                    kind: ResourceKind::Entry,
+                    id,
+                    parent: None,
+                })
+        } else {
+            parent
+        };
+        Authorizer::new(self.operator.clone())
+            .require(
+                space_id,
+                principal_id,
+                action,
+                Some(&ResourceRef {
+                    kind,
+                    id: resource_id.to_string(),
+                    parent: parent.map(Box::new),
+                }),
+            )
+            .await
+    }
+
+    pub async fn authorized_entry_ids(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+    ) -> Result<HashSet<String>> {
+        let entries = self.list_entries(space_id).await?;
+        let resources: Vec<ResourceRef> = entries
+            .iter()
+            .filter_map(|entry| entry.get("id").and_then(Value::as_str).map(str::to_string))
+            .map(|id| ResourceRef {
+                kind: ResourceKind::Entry,
+                id,
+                parent: None,
+            })
+            .collect();
+        Ok(Authorizer::new(self.operator.clone())
+            .filter_authorized_resources(space_id, principal_id, resources, Action::Read)
+            .await?
+            .into_iter()
+            .collect())
+    }
+
+    pub async fn authorized_entry_ids_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<HashSet<String>> {
+        let mut principals = principal_ids.iter().copied();
+        let Some(first) = principals.next() else {
+            return Ok(HashSet::new());
+        };
+        let mut allowed = self.authorized_entry_ids(space_id, first).await?;
+        for principal_id in principals {
+            let next = self.authorized_entry_ids(space_id, principal_id).await?;
+            allowed.retain(|entry_id| next.contains(entry_id));
+        }
+        Ok(allowed)
+    }
+
+    pub async fn list_entries_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Vec<Value>> {
+        let allowed = self
+            .authorized_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        Ok(self
+            .list_entries(space_id)
+            .await?
+            .into_iter()
+            .filter(|entry| {
+                entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| allowed.contains(id))
+            })
+            .collect())
+    }
+
+    pub async fn list_entries_authorized(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+    ) -> Result<Vec<Value>> {
+        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
+        Ok(self
+            .list_entries(space_id)
+            .await?
+            .into_iter()
+            .filter(|entry| {
+                entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| allowed.contains(id))
+            })
+            .collect())
+    }
+
+    pub async fn filter_json_resources_authorized(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        kind: ResourceKind,
+        id_field: &str,
+        values: Vec<Value>,
+    ) -> Result<Vec<Value>> {
+        let mut resources = Vec::new();
+        for value in &values {
+            let Some(id) = value.get(id_field).and_then(Value::as_str) else {
+                continue;
+            };
+            let parent = if matches!(kind, ResourceKind::Asset) {
+                self.asset_parent_entry(space_id, id)
+                    .await?
+                    .map(|entry_id| {
+                        Box::new(ResourceRef {
+                            kind: ResourceKind::Entry,
+                            id: entry_id,
+                            parent: None,
+                        })
+                    })
+            } else {
+                None
+            };
+            resources.push(ResourceRef {
+                kind: kind.clone(),
+                id: id.to_string(),
+                parent,
+            });
+        }
+        let allowed = Authorizer::new(self.operator.clone())
+            .filter_authorized_resources(space_id, principal_id, resources, Action::Read)
+            .await?;
+        Ok(values
+            .into_iter()
+            .filter(|value| {
+                value
+                    .get(id_field)
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| allowed.contains(id))
+            })
+            .collect())
+    }
+
+    pub async fn filter_json_resources_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        kind: ResourceKind,
+        id_field: &str,
+        values: Vec<Value>,
+    ) -> Result<Vec<Value>> {
+        let mut filtered = values;
+        for principal_id in principal_ids {
+            filtered = self
+                .filter_json_resources_authorized(
+                    space_id,
+                    *principal_id,
+                    kind.clone(),
+                    id_field,
+                    filtered,
+                )
+                .await?;
+        }
+        Ok(filtered)
+    }
+
+    pub async fn search_entries_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        query: &str,
+    ) -> Result<Vec<search::SearchResult>> {
+        let allowed = self
+            .authorized_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        search::search_entries_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            query,
+            &allowed,
+        )
+        .await
+    }
+
+    pub async fn query_entries_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        filter: &Value,
+    ) -> Result<Vec<Value>> {
+        let allowed = self
+            .authorized_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        index::query_index_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &filter.to_string(),
+            &allowed,
+        )
+        .await
+    }
+
+    pub async fn create_sql_session_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        sql: &str,
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        let allowed = self
+            .authorized_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        sql_session::create_sql_session_authorized_for_principals(
+            &self.operator,
+            &self.workspace_path(space_id),
+            sql,
+            &allowed,
+            principal_ids,
+        )
+        .await
+    }
+
+    pub async fn require_sql_session_principals(
+        &self,
+        space_id: &str,
+        session_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<()> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_sql_session_id(session_id))?;
+        sql_session::require_session_principals(
+            &self.operator,
+            &self.workspace_path(space_id),
+            session_id,
+            principal_ids,
+        )
+        .await
+    }
+
+    async fn asset_parent_entry(&self, space_id: &str, asset_id: &str) -> Result<Option<String>> {
+        Ok(self
+            .list_entries(space_id)
+            .await?
+            .into_iter()
+            .find_map(|entry| {
+                let linked = entry
+                    .get("assets")
+                    .and_then(Value::as_array)
+                    .is_some_and(|assets| {
+                        assets
+                            .iter()
+                            .any(|asset| asset.get("id").and_then(Value::as_str) == Some(asset_id))
+                    });
+                linked
+                    .then(|| entry.get("id").and_then(Value::as_str).map(str::to_string))
+                    .flatten()
+            }))
+    }
+
+    pub async fn search_entries_authorized(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        query: &str,
+    ) -> Result<Vec<search::SearchResult>> {
+        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
+        search::search_entries_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            query,
+            &allowed,
+        )
+        .await
+    }
+
+    pub async fn query_entries_authorized(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        filter: &Value,
+    ) -> Result<Vec<Value>> {
+        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
+        index::query_index_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &filter.to_string(),
+            &allowed,
+        )
+        .await
+    }
+
+    pub async fn execute_sql_query_authorized(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        sql: &str,
+    ) -> Result<Vec<Value>> {
+        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
+        index::execute_sql_query_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            sql,
+            &allowed,
+        )
+        .await
     }
 
     pub async fn reindex(&self, space_id: &str) -> Result<()> {
@@ -368,6 +732,12 @@ impl UgoiteService {
         .await
     }
 
+    pub async fn read_asset(&self, space_id: &str, asset_id: &str) -> Result<asset::AssetContent> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_asset_id(asset_id))?;
+        asset::read_asset(&self.operator, &self.workspace_path(space_id), asset_id).await
+    }
+
     pub async fn delete_asset(&self, space_id: &str, asset_id: &str) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_asset_id(asset_id))?;
@@ -392,6 +762,23 @@ impl UgoiteService {
     pub async fn create_sql_session(&self, space_id: &str, sql: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         sql_session::create_sql_session(&self.operator, &self.workspace_path(space_id), sql).await
+    }
+
+    pub async fn create_sql_session_authorized(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        sql: &str,
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
+        sql_session::create_sql_session_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            sql,
+            &allowed,
+        )
+        .await
     }
 
     pub async fn get_sql_session(&self, space_id: &str, session_id: &str) -> Result<Value> {
@@ -499,322 +886,11 @@ impl UgoiteService {
         saved_sql::delete_sql(&self.operator, &self.workspace_path(space_id), sql_id).await
     }
 
-    pub async fn list_members(&self, space_id: &str) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
-        let settings = self.read_space_settings(space_id).await?;
-        let mut members: Vec<Value> = settings
-            .get("members")
-            .and_then(Value::as_object)
-            .map(|members| members.values().cloned().collect())
-            .unwrap_or_default();
-        members.sort_by(|left, right| {
-            left.get("user_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .cmp(
-                    right
-                        .get("user_id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                )
-        });
-        Ok(members)
-    }
-
-    pub async fn invite_member(
-        &self,
-        space_id: &str,
-        user_id: &str,
-        role: &str,
-        invited_by: &str,
-        expires_in_seconds: Option<i64>,
-    ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        validate_member_user_id(user_id)?;
-        validate_assignable_role(role)?;
-        let expires_in_seconds = validate_invitation_expiry(expires_in_seconds)?;
-        let mut settings = self.read_space_settings(space_id).await?;
-        if let Some(existing) = settings
-            .get("members")
-            .and_then(Value::as_object)
-            .and_then(|members| members.get(user_id))
-        {
-            match existing.get("state").and_then(Value::as_str) {
-                Some("active") | Some("invited") => {
-                    return Err(AppError::conflict(
-                        ErrorCode::MemberAlreadyActive,
-                        "Member is already active or invited",
-                    )
-                    .into());
-                }
-                _ => {}
-            }
-        }
-        let now = now_iso();
-        let expires_at = (Utc::now() + Duration::seconds(expires_in_seconds))
-            .to_rfc3339_opts(SecondsFormat::Millis, true);
-        let token = Uuid::new_v4().to_string();
-        let invitation = json!({
-            "token": token,
-            "user_id": user_id,
-            "role": role,
-            "state": "pending",
-            "invited_by": invited_by,
-            "invited_at": now,
-            "expires_at": expires_at,
-        });
-        let member = json!({
-            "user_id": user_id,
-            "role": role,
-            "state": "invited",
-            "invited_by": invited_by,
-            "invited_at": now,
-            "activated_at": Value::Null,
-            "revoked_at": Value::Null,
-            "updated_at": now,
-        });
-        settings["member_invitations"][&token] = invitation.clone();
-        settings["members"][user_id] = member;
-        bump_membership_version(&mut settings);
-        self.write_space_settings(space_id, &settings).await?;
-        Ok(json!({
-            "invitation": invitation,
-            "delivery": {"mode": "manual"},
-            "audit_event": {
-                "type": "space.member.invited",
-                "space_id": space_id,
-                "user_id": user_id,
-                "actor_user_id": invited_by,
-                "created_at": now,
-            },
-        }))
-    }
-
-    pub async fn accept_invitation(
-        &self,
-        space_id: &str,
-        token: &str,
-        accepted_by: &str,
-    ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        if token.trim().is_empty() {
-            return Err(AppError::invalid_input(
-                ErrorCode::InvalidInput,
-                "invitation token is required",
-            )
-            .into());
-        }
-        let mut settings = self.read_space_settings(space_id).await?;
-        let invitation = settings
-            .get_mut("member_invitations")
-            .and_then(Value::as_object_mut)
-            .and_then(|invitations| invitations.get_mut(token))
-            .ok_or_else(|| {
-                AppError::not_found(ErrorCode::InvitationNotFound, "Invitation not found")
-            })?;
-        if invitation.get("state").and_then(Value::as_str) != Some("pending") {
-            return Err(AppError::conflict(
-                ErrorCode::InvitationNotPending,
-                "Invitation is not pending",
-            )
-            .into());
-        }
-        let now = Utc::now();
-        let expires_at = invitation
-            .get("expires_at")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("Invitation expires_at is missing"))?;
-        let expires_at = chrono::DateTime::parse_from_rfc3339(expires_at)
-            .map_err(|_| anyhow!("Invitation expires_at is invalid"))?
-            .with_timezone(&Utc);
-        if expires_at <= now {
-            invitation["state"] = Value::String("expired".to_string());
-            bump_membership_version(&mut settings);
-            self.write_space_settings(space_id, &settings).await?;
-            return Err(
-                AppError::expired(ErrorCode::InvitationExpired, "Invitation has expired").into(),
-            );
-        }
-        let user_id = invitation
-            .get("user_id")
-            .and_then(Value::as_str)
-            .unwrap_or(accepted_by)
-            .to_string();
-        if user_id != accepted_by {
-            return Err(
-                AppError::forbidden("Forbidden: invitation belongs to a different user").into(),
-            );
-        }
-        let role = invitation
-            .get("role")
-            .and_then(Value::as_str)
-            .unwrap_or("viewer")
-            .to_string();
-        let invited_by = invitation
-            .get("invited_by")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let invited_at = invitation
-            .get("invited_at")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let now = now_iso();
-        invitation["state"] = Value::String("accepted".to_string());
-        let member = json!({
-            "user_id": user_id,
-            "role": role,
-            "state": "active",
-            "invited_by": invited_by,
-            "invited_at": invited_at,
-            "activated_at": now,
-            "revoked_at": Value::Null,
-            "updated_at": now,
-        });
-        settings["members"][&user_id] = member.clone();
-        bump_membership_version(&mut settings);
-        self.write_space_settings(space_id, &settings).await?;
-        Ok(json!({ "member": member }))
-    }
-
-    pub async fn update_member_role(
-        &self,
-        space_id: &str,
-        member_user_id: &str,
-        role: &str,
-    ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        validate_member_user_id(member_user_id)?;
-        validate_assignable_role(role)?;
-        let mut settings = self.read_space_settings(space_id).await?;
-        if role != "admin" && is_last_active_admin(&settings, member_user_id) {
-            return Err(AppError::conflict(
-                ErrorCode::LastAdminRequired,
-                "Cannot demote the last active admin",
-            )
-            .into());
-        }
-        let member = settings
-            .get_mut("members")
-            .and_then(Value::as_object_mut)
-            .and_then(|members| members.get_mut(member_user_id))
-            .ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound, "Member not found"))?;
-        member["role"] = Value::String(role.to_string());
-        member["updated_at"] = Value::String(now_iso());
-        let response = member.clone();
-        bump_membership_version(&mut settings);
-        self.write_space_settings(space_id, &settings).await?;
-        Ok(json!({ "member": response }))
-    }
-
-    pub async fn revoke_member(&self, space_id: &str, member_user_id: &str) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        validate_member_user_id(member_user_id)?;
-        let mut settings = self.read_space_settings(space_id).await?;
-        if is_last_active_admin(&settings, member_user_id) {
-            return Err(AppError::conflict(
-                ErrorCode::LastAdminRequired,
-                "Cannot revoke the last active admin",
-            )
-            .into());
-        }
-        let member = settings
-            .get_mut("members")
-            .and_then(Value::as_object_mut)
-            .and_then(|members| members.get_mut(member_user_id))
-            .ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound, "Member not found"))?;
-        let now = now_iso();
-        member["state"] = Value::String("revoked".to_string());
-        member["revoked_at"] = Value::String(now.clone());
-        member["updated_at"] = Value::String(now);
-        let response = member.clone();
-        bump_membership_version(&mut settings);
-        self.write_space_settings(space_id, &settings).await?;
-        Ok(json!({ "member": response }))
-    }
-
-    pub async fn bootstrap_admin_member(&self, space_id: &str, actor_user_id: &str) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
-        validate_member_user_id(actor_user_id)?;
-        let mut settings = self.read_space_settings(space_id).await?;
-        let members = settings
-            .get_mut("members")
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| anyhow!("Invalid members format in settings.json"))?;
-        if members
-            .get(actor_user_id)
-            .and_then(|member| member.get("state"))
-            .and_then(Value::as_str)
-            == Some("active")
-        {
-            return Ok(());
-        }
-        let now = now_iso();
-        members.insert(
-            actor_user_id.to_string(),
-            json!({
-                "user_id": actor_user_id,
-                "role": "admin",
-                "state": "active",
-                "invited_by": actor_user_id,
-                "invited_at": now,
-                "activated_at": now,
-                "revoked_at": Value::Null,
-                "updated_at": now,
-            }),
-        );
-        bump_membership_version(&mut settings);
-        self.write_space_settings(space_id, &settings).await
-    }
-
     pub async fn test_storage_connection(
         &self,
         config: &space::StorageConnectionTestConfig,
     ) -> Result<Value> {
         space::test_storage_connection(config).await
-    }
-
-    async fn has_permission(
-        &self,
-        space_id: &str,
-        actor_user_id: &str,
-        permission: SpacePermission,
-    ) -> Result<bool> {
-        validate_member_user_id(actor_user_id)?;
-        let settings = self.read_space_settings(space_id).await?;
-        let Some(member) = settings
-            .get("members")
-            .and_then(Value::as_object)
-            .and_then(|members| members.get(actor_user_id))
-        else {
-            return Ok(false);
-        };
-        if member.get("state").and_then(Value::as_str) != Some("active") {
-            return Ok(false);
-        }
-        let role = member.get("role").and_then(Value::as_str).unwrap_or("");
-        Ok(role_allows(role, permission))
-    }
-
-    async fn read_space_settings(&self, space_id: &str) -> Result<Value> {
-        self.ensure_space(space_id).await?;
-        let path = format!("{}/settings.json", self.workspace_path(space_id));
-        let mut settings = if self.operator.exists(&path).await? {
-            serde_json::from_slice(&self.operator.read(&path).await?.to_vec())?
-        } else {
-            json!({})
-        };
-        ensure_membership_objects(&mut settings)?;
-        Ok(settings)
-    }
-
-    async fn write_space_settings(&self, space_id: &str, settings: &Value) -> Result<()> {
-        let path = format!("{}/settings.json", self.workspace_path(space_id));
-        self.operator
-            .write(&path, serde_json::to_vec_pretty(settings)?)
-            .await?;
-        Ok(())
     }
 }
 
@@ -822,10 +898,6 @@ fn validate_storage_id(
     result: std::result::Result<(), ugoite_domain::id::IdentifierError>,
 ) -> Result<()> {
     result.map_err(|error| AppError::invalid_identifier(error.to_string()).into())
-}
-
-fn now_iso() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
@@ -858,92 +930,4 @@ pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
         "space patch does not allow membership-managed settings keys: {}. Use the dedicated member commands instead.",
         reserved_keys.join(", ")
     ))
-}
-
-fn ensure_membership_objects(settings: &mut Value) -> Result<()> {
-    if !settings.is_object() {
-        return Err(anyhow!("space settings must be a JSON object"));
-    }
-    let object = settings.as_object_mut().expect("checked object");
-    object.entry("members").or_insert_with(|| json!({}));
-    object
-        .entry("member_invitations")
-        .or_insert_with(|| json!({}));
-    object
-        .entry("membership_version")
-        .or_insert_with(|| json!(0));
-    Ok(())
-}
-
-fn bump_membership_version(settings: &mut Value) {
-    let next = settings
-        .get("membership_version")
-        .and_then(Value::as_u64)
-        .unwrap_or_default()
-        + 1;
-    settings["membership_version"] = json!(next);
-}
-
-fn validate_invitation_expiry(expires_in_seconds: Option<i64>) -> Result<i64> {
-    let seconds = expires_in_seconds.unwrap_or(604_800);
-    if !(60..=2_592_000).contains(&seconds) {
-        return Err(anyhow!(
-            "expires_in_seconds must be between 60 and 2592000 seconds"
-        ));
-    }
-    Ok(seconds)
-}
-
-fn is_last_active_admin(settings: &Value, member_user_id: &str) -> bool {
-    let Some(members) = settings.get("members").and_then(Value::as_object) else {
-        return false;
-    };
-    let Some(target) = members.get(member_user_id) else {
-        return false;
-    };
-    if target.get("state").and_then(Value::as_str) != Some("active")
-        || target.get("role").and_then(Value::as_str) != Some("admin")
-    {
-        return false;
-    }
-    members
-        .iter()
-        .filter(|(user_id, member)| {
-            user_id.as_str() != member_user_id
-                && member.get("state").and_then(Value::as_str) == Some("active")
-                && member.get("role").and_then(Value::as_str) == Some("admin")
-        })
-        .count()
-        == 0
-}
-
-fn validate_member_user_id(user_id: &str) -> Result<()> {
-    if user_id.is_empty()
-        || user_id.len() > 128
-        || !user_id
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
-    {
-        return Err(anyhow!("Invalid member user_id"));
-    }
-    Ok(())
-}
-
-fn validate_assignable_role(role: &str) -> Result<()> {
-    match role {
-        "admin" | "editor" | "viewer" => Ok(()),
-        _ => Err(anyhow!("Invalid member role")),
-    }
-}
-
-fn role_allows(role: &str, permission: SpacePermission) -> bool {
-    match role {
-        "admin" => true,
-        "editor" => matches!(
-            permission,
-            SpacePermission::Read | SpacePermission::WriteContent
-        ),
-        "viewer" => matches!(permission, SpacePermission::Read),
-        _ => false,
-    }
 }

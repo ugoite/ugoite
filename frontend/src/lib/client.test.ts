@@ -473,19 +473,10 @@ describe("spaceApi members", () => {
     resetMockData();
     await spaceApi.create("ws-invite");
     const result = await spaceApi.inviteMember("ws-invite", {
-      user_id: "user1",
+      label: "User One",
       role: "editor",
     });
-    expect(result.invitation.token).toBeDefined();
-  });
-
-  it("accepts invitation", async () => {
-    resetMockData();
-    await spaceApi.create("ws-accept");
-    const result = await spaceApi.acceptInvitation("ws-accept", {
-      token: "tok",
-    });
-    expect(result.member.state).toBe("active");
+    expect(result.invitation_url).toContain("test-token");
   });
 
   it("updates member role", async () => {
@@ -494,14 +485,14 @@ describe("spaceApi members", () => {
     const result = await spaceApi.updateMemberRole("ws-role", "user1", {
       role: "viewer",
     });
-    expect(result.member.role).toBe("viewer");
+    expect(result.role).toBe("viewer");
   });
 
   it("revokes member", async () => {
     resetMockData();
     await spaceApi.create("ws-revoke");
     const result = await spaceApi.revokeMember("ws-revoke", "user1");
-    expect(result.member.state).toBe("revoked");
+    expect(result.state).toBe("revoked");
   });
 });
 
@@ -577,19 +568,8 @@ describe("error paths", () => {
       ),
     );
     await expect(
-      spaceApi.inviteMember("nonexistent", { user_id: "u1", role: "editor" }),
+      spaceApi.inviteMember("nonexistent", { label: "User One", role: "editor" }),
     ).rejects.toThrow();
-  });
-
-  it("spaceApi.acceptInvitation throws on failure", async () => {
-    server.use(
-      http.post(
-        testApiUrl("/spaces/nonexistent/members/accept"),
-        () => HttpResponse.json({ detail: "Not found" }, { status: 404 }),
-      ),
-    );
-    await expect(spaceApi.acceptInvitation("nonexistent", { token: "tok" }))
-      .rejects.toThrow();
   });
 
   it("spaceApi.updateMemberRole throws on failure", async () => {

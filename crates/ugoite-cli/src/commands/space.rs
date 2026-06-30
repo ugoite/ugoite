@@ -102,8 +102,8 @@ pub enum SpaceSubCmd {
         entry_count: usize,
         #[arg(long, help = "Deterministic random seed for reproducible sample data")]
         seed: Option<u64>,
-        /// Bootstrap this user ID as the active admin owner of the seeded space.
-        /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
+        /// Create a portable owner principal with this display name.
+        /// A node binding is still required before remote access.
         #[arg(long)]
         owner: Option<String>,
     },
@@ -134,8 +134,8 @@ pub enum SpaceSubCmd {
         entry_count: usize,
         #[arg(long, help = "Deterministic random seed for reproducible sample data")]
         seed: Option<u64>,
-        /// Bootstrap this user ID as the active admin owner of the seeded space.
-        /// Defaults to the UGOITE_DEV_USER_ID environment variable when unset.
+        /// Create a portable owner principal with this display name.
+        /// A node binding is still required before remote access.
         #[arg(long)]
         owner: Option<String>,
     },
@@ -151,20 +151,6 @@ pub enum SpaceSubCmd {
     },
     /// Test storage connection
     TestConnection { storage_config_json: String },
-    /// List service accounts (backend/api mode only)
-    ServiceAccountList {
-        #[arg(value_name = "SPACE_ID")]
-        space_id: String,
-    },
-    /// Create a service account (backend/api mode only)
-    ServiceAccountCreate {
-        #[arg(value_name = "SPACE_ID")]
-        space_id: String,
-        #[arg(long)]
-        display_name: String,
-        #[arg(long, value_delimiter = ',')]
-        scopes: Vec<String>,
-    },
     /// List space members (backend/api mode only)
     Members {
         #[arg(
@@ -185,6 +171,16 @@ pub enum SpaceSubCmd {
         #[arg(long, default_value_t = 50)]
         limit: u64,
     },
+    /// Report or apply the breaking Space identity/authentication cutover.
+    AuthMigration {
+        #[arg(value_name = "LOCAL_ROOT")]
+        root_path: String,
+        #[arg(
+            long,
+            help = "Apply the migration. Without this flag, only a secret-free dry-run report is emitted."
+        )]
+        apply: bool,
+    },
 }
 
 fn require_local_root<'a>(root_path: Option<&'a str>, command_name: &str) -> Result<&'a str> {
@@ -203,16 +199,13 @@ fn require_space_list_root(root_path: Option<&str>) -> Result<String> {
         })
 }
 
-fn resolve_sample_owner_user_id(owner: Option<String>) -> Option<String> {
+fn resolve_sample_owner_display_name(owner: Option<String>) -> Option<String> {
     match owner {
-        Some(owner_user_id) => {
-            let owner_user_id = owner_user_id.trim().to_string();
-            (!owner_user_id.is_empty()).then_some(owner_user_id)
+        Some(owner_display_name) => {
+            let owner_display_name = owner_display_name.trim().to_string();
+            (!owner_display_name.is_empty()).then_some(owner_display_name)
         }
-        None => std::env::var("UGOITE_DEV_USER_ID")
-            .ok()
-            .map(|owner_user_id| owner_user_id.trim().to_string())
-            .filter(|owner_user_id| !owner_user_id.is_empty()),
+        None => None,
     }
 }
 
@@ -240,8 +233,8 @@ pub async fn create_space_cmd(
     }
     let root_path = require_local_root(root_path, command_name)?;
     let service = UgoiteService::new(root_path)?;
-    service.create_space(space_id).await?;
-    print_json(&serde_json::json!({"created": true, "id": space_id}));
+    let immutable_id = service.create_operator_space(space_id).await?;
+    print_json(&serde_json::json!({"created": true, "id": immutable_id, "slug": space_id}));
     Ok(())
 }
 
@@ -250,21 +243,24 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
     let fmt = effective_format(cmd.format);
     match cmd.sub {
         SpaceSubCmd::Create { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "space create")?;
+            let requested_slug = parse_space_path(&space_path).1;
+            let (root, _) = resolve_space_reference(&config, &space_path, "space create")?;
             if let Some(base) = validated_base_url(&config)? {
                 let result = http::execute(
                     &base,
                     "space.create",
                     serde_json::json!({}),
-                    Some(serde_json::json!({"name": space_id})),
+                    Some(serde_json::json!({"name": requested_slug})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
             let service = UgoiteService::new(&root)?;
-            service.create_space(&space_id).await?;
-            print_json(&serde_json::json!({"created": true, "id": space_id}));
+            let immutable_id = service.create_operator_space(&requested_slug).await?;
+            print_json(
+                &serde_json::json!({"created": true, "id": immutable_id, "slug": requested_slug}),
+            );
         }
         SpaceSubCmd::List { root_path } => {
             if let Some(base) = validated_base_url(&config)? {
@@ -357,13 +353,21 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 scenario: scenario.unwrap_or_default(),
                 entry_count,
                 seed,
-                owner_user_id: resolve_sample_owner_user_id(owner),
+                owner_display_name: resolve_sample_owner_display_name(owner),
             };
-            ugoite_core::sample_data::create_sample_space_with_terminal_progress(
+            let summary = ugoite_core::sample_data::create_sample_space_with_terminal_progress(
                 &op, &root_uri, &opts,
             )
             .await?;
-            print_json(&serde_json::json!({"created": true}));
+            print_json(&serde_json::json!({
+                "created": true,
+                "id": summary.space_id,
+                "slug": space_id,
+                "scenario": summary.scenario,
+                "entry_count": summary.entry_count,
+                "form_count": summary.form_count,
+                "forms": summary.forms,
+            }));
         }
         SpaceSubCmd::SampleScenarios => {
             let scenarios = ugoite_core::sample_data::list_sample_scenarios();
@@ -384,7 +388,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 scenario: scenario.unwrap_or_default(),
                 entry_count,
                 seed,
-                owner_user_id: resolve_sample_owner_user_id(owner),
+                owner_display_name: resolve_sample_owner_display_name(owner),
             };
             let job =
                 ugoite_core::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;
@@ -411,33 +415,6 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 "unknown"
             };
             print_json(&serde_json::json!({"status": "ok", "mode": mode}));
-        }
-        SpaceSubCmd::ServiceAccountList { space_id } => {
-            if validated_base_url(&config)?.is_some() {
-                bail!(
-                    "space service-account-list for {space_id} is not available in backend/api mode in this release"
-                );
-            }
-            bail!(
-                "{}",
-                backend_api_mode_error(&config, "service-account-list")
-            );
-        }
-        SpaceSubCmd::ServiceAccountCreate {
-            space_id,
-            display_name,
-            scopes,
-        } => {
-            if validated_base_url(&config)?.is_some() {
-                bail!(
-                    "space service-account-create for {space_id} ({display_name}, scopes: {}) is not available in backend/api mode in this release",
-                    scopes.join(",")
-                );
-            }
-            bail!(
-                "{}",
-                backend_api_mode_error(&config, "service-account-create")
-            );
         }
         SpaceSubCmd::Members { space_path } => {
             let (_, space_id) = parse_space_path(&space_path);
@@ -466,6 +443,18 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 );
             }
             bail!("{}", backend_api_mode_error(&config, "audit-events"));
+        }
+        SpaceSubCmd::AuthMigration { root_path, apply } => {
+            if validated_base_url(&config)?.is_some() {
+                bail!("auth-migration is an operator-local command");
+            }
+            let op = operator_for_path(&root_path)?;
+            let report = if apply {
+                ugoite_core::space::migrate_authentication_cutover(&op).await?
+            } else {
+                ugoite_core::space::authentication_cutover_report(&op).await?
+            };
+            print_json(&serde_json::to_value(report)?);
         }
     }
     Ok(())

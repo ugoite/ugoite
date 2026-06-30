@@ -14,7 +14,6 @@ spec:
       labels:
         {{- include "ugoite.selectorLabels" . | nindent 8 }}
       annotations:
-        checksum/auth-secret: {{ include (print $.Template.BasePath "/auth-secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -42,31 +41,23 @@ spec:
               value: {{ printf "0.0.0.0:%v" .Values.containerPort | quote }}
             - name: UGOITE_STATIC_DIR
               value: {{ .Values.staticDir | quote }}
-            - name: UGOITE_BOOTSTRAP_DEFAULT_SPACE
-              value: {{ ternary "true" "false" .Values.bootstrapDefaultSpace | quote }}
-            - name: UGOITE_DEV_AUTH_MODE
-              value: {{ .Values.auth.mode | quote }}
-            - name: UGOITE_DEV_USER_ID
-              value: {{ .Values.auth.devUserId | quote }}
-            - name: UGOITE_BOOTSTRAP_TOKEN
+            - name: UGOITE_PUBLIC_ORIGIN
+              value: {{ .Values.publicOrigin | quote }}
+            - name: UGOITE_API_BASE_URL
+              value: {{ default (printf "%s/api" (trimSuffix "/" .Values.publicOrigin)) .Values.apiBaseUrl | quote }}
+            - name: UGOITE_WEBAUTHN_RP_ID
+              value: {{ .Values.webauthnRpId | quote }}
+            {{- with .Values.nodeControlUri }}
+            - name: UGOITE_NODE_CONTROL_URI
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.nodeSecret.existingSecret }}
+            - name: UGOITE_NODE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ugoite.authSecretName" . }}
-                  key: UGOITE_BOOTSTRAP_TOKEN
-            - name: UGOITE_DEV_SIGNING_KID
-              value: {{ .Values.auth.signingKid | quote }}
-            - name: UGOITE_DEV_SIGNING_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "ugoite.authSecretName" . }}
-                  key: UGOITE_DEV_SIGNING_SECRET
-            - name: UGOITE_AUTH_BEARER_SIGNING_SECRETS
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "ugoite.authSecretName" . }}
-                  key: UGOITE_AUTH_BEARER_SIGNING_SECRETS
-            - name: UGOITE_AUTH_BEARER_ACTIVE_KIDS
-              value: {{ include "ugoite.authBearerActiveKids" . | quote }}
+                  name: {{ . | quote }}
+                  key: {{ $.Values.nodeSecret.key | quote }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

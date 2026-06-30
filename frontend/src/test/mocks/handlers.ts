@@ -29,12 +29,6 @@ let mockSqlEntries: Map<string, Map<string, Record<string, unknown>>> =
   new Map();
 let mockSqlSessions: Map<string, Map<string, Record<string, unknown>>> =
   new Map();
-let mockDevAuthConfig = {
-  mode: "passkey-totp" as "passkey-totp" | "mock-oauth",
-  username_hint: "dev-local-user",
-  supports_passkey_totp: true,
-  supports_mock_oauth: false,
-};
 let mockPreferences: UserPreferences = {
   selected_space_id: null,
   locale: null,
@@ -103,12 +97,6 @@ export const resetMockData = () => {
   mockForms = new Map();
   mockSqlEntries = new Map();
   mockSqlSessions = new Map();
-  mockDevAuthConfig = {
-    mode: "passkey-totp",
-    username_hint: "dev-local-user",
-    supports_passkey_totp: true,
-    supports_mock_oauth: false,
-  };
   mockPreferences = {
     selected_space_id: null,
     locale: null,
@@ -167,60 +155,9 @@ export const seedPreferences = (preferences: Partial<UserPreferences>) => {
   };
 };
 
-export const seedDevAuthConfig = (
-  config: Partial<{
-    mode: "passkey-totp" | "mock-oauth";
-    username_hint: string;
-    supports_passkey_totp: boolean;
-    supports_mock_oauth: boolean;
-  }>,
-) => {
-  mockDevAuthConfig = {
-    ...mockDevAuthConfig,
-    ...config,
-  };
-};
-
 export const getPreferencePatches = () => preferencePatches.slice();
 
 export const handlers = [
-  testHttp.get("/auth/config", () => {
-    return HttpResponse.json(mockDevAuthConfig);
-  }),
-
-  testHttp.post("/auth/login", async ({ request }) => {
-    const body = (await request.json()) as {
-      username?: string;
-      totp_code?: string;
-    };
-    if (
-      mockDevAuthConfig.mode !== "passkey-totp" ||
-      body.username !== mockDevAuthConfig.username_hint ||
-      body.totp_code !== "123456"
-    ) {
-      return HttpResponse.json({ detail: "Invalid username or 2FA code." }, {
-        status: 401,
-      });
-    }
-    return HttpResponse.json({
-      user_id: mockDevAuthConfig.username_hint,
-      expires_at: 1_900_000_000,
-    });
-  }),
-
-  testHttp.post("/auth/mock-oauth", () => {
-    if (mockDevAuthConfig.mode !== "mock-oauth") {
-      return HttpResponse.json(
-        { detail: "mock-oauth login is not enabled for this session." },
-        { status: 409 },
-      );
-    }
-    return HttpResponse.json({
-      user_id: mockDevAuthConfig.username_hint,
-      expires_at: 1_900_000_000,
-    });
-  }),
-
   testHttp.get("/preferences/me", () => {
     return HttpResponse.json(mockPreferences);
   }),
@@ -816,39 +753,19 @@ export const handlers = [
       if (!mockSpaces.has(spaceId)) {
         return HttpResponse.json({ detail: "Not found" }, { status: 404 });
       }
-      const body = (await request.json()) as { user_id: string; role: string };
+      const body = (await request.json()) as { label: string; role: string };
       return HttpResponse.json(
         {
-          invitation: {
-            token: "test-token",
-            user_id: body.user_id,
-            role: body.role,
-            state: "pending",
-          },
+          invitation_id: "01900000-0000-7000-8000-000000000001",
+          expires_at: "2026-07-01T00:00:00Z",
+          invitation_url: `http://localhost/invitations/test-token?label=${encodeURIComponent(body.label)}`,
         },
         { status: 201 },
       );
     },
   ),
   testHttp.post(
-    "/spaces/:spaceId/members/accept",
-    async ({ params, request }) => {
-      const spaceId = params.spaceId as string;
-      if (!mockSpaces.has(spaceId)) {
-        return HttpResponse.json({ detail: "Not found" }, { status: 404 });
-      }
-      const body = (await request.json()) as {
-        token: string;
-        user_id?: string;
-      };
-      const userId = body.user_id || "accepted-user";
-      return HttpResponse.json({
-        member: { user_id: userId, role: "editor", state: "active" },
-      });
-    },
-  ),
-  testHttp.post(
-    "/spaces/:spaceId/members/:userId/role",
+    "/spaces/:spaceId/members/:principalId/role",
     async ({ params, request }) => {
       const spaceId = params.spaceId as string;
       if (!mockSpaces.has(spaceId)) {
@@ -856,19 +773,29 @@ export const handlers = [
       }
       const body = (await request.json()) as { role: string };
       return HttpResponse.json({
-        member: { user_id: params.userId, role: body.role, state: "active" },
+        principal_id: params.principalId,
+        role: body.role,
       });
     },
   ),
-  testHttp.delete("/spaces/:spaceId/members/:userId", ({ params }) => {
+  testHttp.delete("/spaces/:spaceId/members/:principalId", ({ params }) => {
     const spaceId = params.spaceId as string;
     if (!mockSpaces.has(spaceId)) {
       return HttpResponse.json({ detail: "Not found" }, { status: 404 });
     }
     return HttpResponse.json({
-      member: { user_id: params.userId, state: "revoked" },
+      principal_id: params.principalId,
+      state: "revoked",
     });
   }),
+  testHttp.get(
+    "/spaces/:spaceId/policies/:kind/:resourceId",
+    () => HttpResponse.json(null),
+  ),
+  testHttp.put(
+    "/spaces/:spaceId/policies/:kind/:resourceId",
+    async ({ request }) => HttpResponse.json(await request.json()),
+  ),
 
   // Root API endpoint (used by HelloWorld)
   testHttp.get("/", () => {

@@ -7,11 +7,7 @@ import {
   portablePreferences,
   setSelectedSpacePreference,
 } from "~/lib/preferences-store";
-import {
-  DEFAULT_SPACE_ID,
-  isReservedAdminSpace,
-  sortSpaces,
-} from "./space-list";
+import { DEFAULT_SPACE_ID, sortSpaces } from "./space-list";
 import type { Space } from "./types";
 import { spaceApi } from "./ugoite-client";
 
@@ -57,9 +53,7 @@ export function createSpaceStore() {
     try {
       const fetchedSpaces = sortSpaces(await spaceApi.list());
       setSpaces(fetchedSpaces);
-      const selectableSpaces = fetchedSpaces.filter((space) =>
-        !isReservedAdminSpace(space)
-      );
+      const selectableSpaces = fetchedSpaces;
 
       // Try to restore persisted space selection
       const persistedId = getPersistedSpaceId();

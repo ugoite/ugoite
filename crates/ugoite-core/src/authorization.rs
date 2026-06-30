@@ -1,0 +1,915 @@
+//! Space-portable authorization state and the shared authorizer used by adapters.
+
+use crate::audit;
+use crate::error::{AppError, ErrorCode};
+use anyhow::{anyhow, bail, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use chrono::{SecondsFormat, Utc};
+use opendal::Operator;
+use rand::TryRng;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+use tokio::sync::Mutex;
+use ugoite_domain::identity::{
+    evaluate_policy, role_actions, AccessPolicy, Action, AgentMode, AgentPrincipal, Membership,
+    PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
+};
+use uuid::Uuid;
+
+const AUTHORIZATION_FILE: &str = "security/principals.json";
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceKind {
+    Entry,
+    Asset,
+    Form,
+    SavedSql,
+    MaterializedView,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ResourceRef {
+    pub kind: ResourceKind,
+    pub id: String,
+    /// Asset resources use their Entry as parent when present.
+    pub parent: Option<Box<ResourceRef>>,
+}
+
+impl ResourceRef {
+    pub fn key(&self) -> String {
+        format!(
+            "{}:{}",
+            serde_json::to_value(&self.kind)
+                .unwrap_or_default()
+                .as_str()
+                .unwrap_or("resource"),
+            self.id
+        )
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AuthorizationState {
+    pub schema_version: u32,
+    pub space_uid: Uuid,
+    #[serde(default)]
+    pub principals: BTreeMap<Uuid, SpacePrincipal>,
+    #[serde(default)]
+    pub memberships: BTreeMap<Uuid, Membership>,
+    #[serde(default)]
+    pub policies: BTreeMap<String, AccessPolicy>,
+    #[serde(default)]
+    pub policy_history: BTreeMap<String, Vec<PolicyRevision>>,
+    #[serde(default)]
+    pub agents: BTreeMap<Uuid, AgentPrincipal>,
+    #[serde(default)]
+    pub agent_grants: BTreeMap<Uuid, BTreeSet<Action>>,
+    #[serde(default)]
+    owner_claims: BTreeMap<Uuid, OwnerClaim>,
+    /// Reserved monotonic revision for future synchronization protocols.
+    pub revision: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PolicyRevision {
+    pub policy: AccessPolicy,
+    pub changed_at: String,
+    pub actor_principal_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct OwnerClaim {
+    claim_id: Uuid,
+    principal_id: Uuid,
+    token_hash: String,
+    expires_at: String,
+    used_at: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct Authorizer {
+    operator: Operator,
+    lock: std::sync::Arc<Mutex<()>>,
+}
+
+pub struct CreateAgentRequest {
+    pub display_name: String,
+    pub description: String,
+    pub mode: AgentMode,
+    pub owner_principal_ids: BTreeSet<Uuid>,
+    pub granted_actions: BTreeSet<Action>,
+    pub expires_at: Option<String>,
+}
+
+impl Authorizer {
+    pub fn new(operator: Operator) -> Self {
+        Self {
+            operator,
+            lock: std::sync::Arc::new(Mutex::new(())),
+        }
+    }
+
+    pub async fn initialize_owner(
+        &self,
+        space_id: &str,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        display_name: &str,
+    ) -> Result<()> {
+        let _guard = self.lock.lock().await;
+        let path = state_path(space_id);
+        if self.operator.exists(&path).await? {
+            bail!("authorization state already exists");
+        }
+        let now = now_iso();
+        let principal = SpacePrincipal {
+            principal_id,
+            kind: PrincipalKind::Human,
+            display_name: display_name.trim().to_string(),
+            state: PrincipalState::Active,
+            created_at: now.clone(),
+        };
+        let membership = Membership {
+            principal_id,
+            role: SpaceRole::Owner,
+            created_at: now,
+        };
+        let state = AuthorizationState {
+            schema_version: 1,
+            space_uid,
+            principals: [(principal_id, principal)].into_iter().collect(),
+            memberships: [(principal_id, membership)].into_iter().collect(),
+            policies: BTreeMap::new(),
+            policy_history: BTreeMap::new(),
+            agents: BTreeMap::new(),
+            agent_grants: BTreeMap::new(),
+            owner_claims: BTreeMap::new(),
+            revision: 1,
+        };
+        self.write_state(space_id, &state).await
+    }
+
+    /// Upgrades a pre-identity Space to portable authorization state. The generated
+    /// principal is intentionally left unbound until a node admin performs owner rebinding.
+    pub async fn ensure_migrated_owner(
+        &self,
+        space_id: &str,
+        space_uid: Uuid,
+        display_name: &str,
+    ) -> Result<Uuid> {
+        let path = state_path(space_id);
+        if self.operator.exists(&path).await? {
+            let state = self.state(space_id).await?;
+            if state.space_uid != space_uid {
+                bail!("Space metadata and authorization state use different space_uid values");
+            }
+            return state
+                .memberships
+                .values()
+                .find(|membership| matches!(membership.role, SpaceRole::Owner))
+                .map(|membership| membership.principal_id)
+                .ok_or_else(|| anyhow!("Space has no owner principal"));
+        }
+        let principal_id = Uuid::now_v7();
+        self.initialize_owner(space_id, space_uid, principal_id, display_name)
+            .await?;
+        Ok(principal_id)
+    }
+
+    pub async fn state(&self, space_id: &str) -> Result<AuthorizationState> {
+        let bytes = self
+            .operator
+            .read(&state_path(space_id))
+            .await
+            .context("read Space authorization state")?;
+        serde_json::from_slice(&bytes.to_vec()).context("decode Space authorization state")
+    }
+
+    pub async fn effective_actions(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        resource: Option<&ResourceRef>,
+    ) -> Result<BTreeSet<Action>> {
+        let state = self.state(space_id).await?;
+        let principal = state
+            .principals
+            .get(&principal_id)
+            .filter(|principal| matches!(principal.state, PrincipalState::Active))
+            .ok_or_else(|| AppError::forbidden("principal is not active in this space"))?;
+        if !matches!(principal.kind, PrincipalKind::Human | PrincipalKind::Agent) {
+            return Ok(BTreeSet::new());
+        }
+        let mut effective = if matches!(principal.kind, PrincipalKind::Agent) {
+            let agent = state
+                .agents
+                .get(&principal_id)
+                .filter(|agent| matches!(agent.status, PrincipalState::Active))
+                .ok_or_else(|| AppError::forbidden("agent is not active"))?;
+            if !state
+                .principals
+                .get(&agent.sponsor_principal_id)
+                .is_some_and(|sponsor| {
+                    matches!(sponsor.kind, PrincipalKind::Human)
+                        && matches!(sponsor.state, PrincipalState::Active)
+                })
+            {
+                return Err(AppError::forbidden("agent sponsor is not active").into());
+            }
+            let expires_at = agent
+                .expires_at
+                .as_deref()
+                .ok_or_else(|| AppError::forbidden("agent has no expiry or review deadline"))?;
+            if chrono::DateTime::parse_from_rfc3339(expires_at)
+                .context("invalid agent expiry")?
+                .with_timezone(&Utc)
+                <= Utc::now()
+            {
+                return Err(
+                    AppError::forbidden("agent expiry or review deadline has passed").into(),
+                );
+            }
+            state
+                .agent_grants
+                .get(&principal_id)
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            let membership = state
+                .memberships
+                .get(&principal_id)
+                .ok_or_else(|| AppError::forbidden("principal is not a member of this space"))?;
+            role_actions(&membership.role)
+        };
+        if let Some(resource) = resource {
+            if let Some(parent) = resource.parent.as_deref() {
+                effective =
+                    evaluate_policy(&effective, principal_id, state.policies.get(&parent.key()));
+            }
+            effective = evaluate_policy(
+                &effective,
+                principal_id,
+                state.policies.get(&resource.key()),
+            );
+        }
+        if state
+            .memberships
+            .get(&principal_id)
+            .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
+        {
+            effective.extend(role_actions(&SpaceRole::Owner));
+        }
+        Ok(effective)
+    }
+
+    pub async fn require(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        action: Action,
+        resource: Option<&ResourceRef>,
+    ) -> Result<()> {
+        if self
+            .effective_actions(space_id, principal_id, resource)
+            .await?
+            .contains(&action)
+        {
+            let state = self.state(space_id).await?;
+            if state
+                .principals
+                .get(&principal_id)
+                .is_some_and(|principal| matches!(principal.kind, PrincipalKind::Agent))
+            {
+                let target = resource
+                    .map(ResourceRef::key)
+                    .unwrap_or_else(|| "space".to_string());
+                let action_name = format!("{action:?}").to_lowercase();
+                audit::append_audit_event(
+                    &self.operator,
+                    space_id,
+                    &serde_json::json!({
+                        "action": format!("agent.authorization.{action_name}"),
+                        "subject_principal_id": principal_id,
+                        "actor_principal_id": principal_id,
+                        "target_type": "authorization",
+                        "target_id": target,
+                        "outcome": "success"
+                    }),
+                    None,
+                )
+                .await?;
+            }
+            return Ok(());
+        }
+        let target = resource
+            .map(ResourceRef::key)
+            .unwrap_or_else(|| "space".to_string());
+        let _ = audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "authorization.denied",
+                "subject_principal_id": principal_id,
+                "actor_principal_id": principal_id,
+                "outcome": "deny",
+                "target_type": "authorization",
+                "target_id": target,
+                "metadata": {"required_action": action}
+            }),
+            None,
+        )
+        .await;
+        Err(
+            AppError::forbidden(format!("principal lacks {action:?} permission on {target}"))
+                .into(),
+        )
+    }
+
+    pub async fn set_policy(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        resource: &ResourceRef,
+        policy: AccessPolicy,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, Some(resource))
+            .await?;
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        for grant in &policy.grants {
+            let Some(principal) = state.principals.get(&grant.principal_id) else {
+                bail!("policy references a principal outside the space");
+            };
+            if matches!(principal.kind, PrincipalKind::Agent)
+                && (grant.actions.contains(&Action::Delete)
+                    || grant.actions.contains(&Action::Share))
+            {
+                bail!("delete and share require a human approval object and cannot be granted to agents");
+            }
+        }
+        let resource_key = resource.key();
+        state.policies.insert(resource_key.clone(), policy.clone());
+        state
+            .policy_history
+            .entry(resource_key)
+            .or_default()
+            .push(PolicyRevision {
+                policy,
+                changed_at: now_iso(),
+                actor_principal_id: actor,
+            });
+        state.revision = state
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("authorization revision overflow"))?;
+        self.write_state(space_id, &state).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "authorization.policy.updated",
+                "subject_principal_id": actor,
+                "actor_principal_id": actor,
+                "target_type": "authorization_policy",
+                "target_id": resource.key(),
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn add_human_member(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        principal: SpacePrincipal,
+        role: SpaceRole,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        if !matches!(principal.kind, PrincipalKind::Human) {
+            bail!("human member must use a human principal");
+        }
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        if let Some(existing) = state.principals.get(&principal.principal_id) {
+            if existing.kind == principal.kind
+                && state.memberships.contains_key(&principal.principal_id)
+            {
+                return Ok(());
+            }
+            bail!("principal already exists with conflicting state");
+        }
+        let principal_id = principal.principal_id;
+        let created_at = principal.created_at.clone();
+        state.principals.insert(principal_id, principal);
+        state.memberships.insert(
+            principal_id,
+            Membership {
+                principal_id,
+                role,
+                created_at,
+            },
+        );
+        state.revision += 1;
+        self.write_state(space_id, &state).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "principal.activated",
+                "subject_principal_id": principal_id,
+                "actor_principal_id": actor,
+                "target_type": "space_principal",
+                "target_id": principal_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn resource_policy_history(
+        &self,
+        space_id: &str,
+        resource: &ResourceRef,
+    ) -> Result<Vec<PolicyRevision>> {
+        Ok(self
+            .state(space_id)
+            .await?
+            .policy_history
+            .get(&resource.key())
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    pub async fn create_agent(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        request: CreateAgentRequest,
+    ) -> Result<AgentPrincipal> {
+        let CreateAgentRequest {
+            display_name,
+            description,
+            mode,
+            owner_principal_ids,
+            granted_actions,
+            expires_at,
+        } = request;
+        self.require(space_id, actor, Action::Share, None).await?;
+        if granted_actions.contains(&Action::Delete) || granted_actions.contains(&Action::Share) {
+            bail!("agents cannot receive delete or share actions");
+        }
+        if expires_at.is_none() {
+            bail!("agent expiry or review deadline is required");
+        }
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        if owner_principal_ids.is_empty() || !owner_principal_ids.contains(&actor) {
+            bail!("agent sponsor must be one of at least one human owner");
+        }
+        if owner_principal_ids.iter().any(|id| {
+            !state.principals.get(id).is_some_and(|p| {
+                matches!(p.kind, PrincipalKind::Human) && matches!(p.state, PrincipalState::Active)
+            })
+        }) {
+            bail!("all agent owners must be active human principals in the Space");
+        }
+        let agent_id = Uuid::now_v7();
+        let now = now_iso();
+        let agent = AgentPrincipal {
+            agent_id,
+            display_name: display_name.trim().to_string(),
+            description: description.trim().to_string(),
+            sponsor_principal_id: actor,
+            owner_principal_ids,
+            mode,
+            status: PrincipalState::Active,
+            created_at: now.clone(),
+            expires_at,
+            last_used_at: None,
+        };
+        agent.validate()?;
+        state.principals.insert(
+            agent_id,
+            SpacePrincipal {
+                principal_id: agent_id,
+                kind: PrincipalKind::Agent,
+                display_name: agent.display_name.clone(),
+                state: PrincipalState::Active,
+                created_at: now,
+            },
+        );
+        state.agent_grants.insert(agent_id, granted_actions);
+        state.agents.insert(agent_id, agent.clone());
+        state.revision += 1;
+        self.write_state(space_id, &state).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "agent.created",
+                "subject_principal_id": agent_id,
+                "actor_principal_id": actor,
+                "target_type": "agent",
+                "target_id": agent_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(agent)
+    }
+
+    pub async fn revoke_agent(&self, space_id: &str, actor: Uuid, agent_id: Uuid) -> Result<()> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        let agent = state
+            .agents
+            .get_mut(&agent_id)
+            .ok_or_else(|| anyhow!("agent not found"))?;
+        if actor != agent.sponsor_principal_id && !agent.owner_principal_ids.contains(&actor) {
+            bail!("agent sponsor or owner is required");
+        }
+        agent.status = PrincipalState::Revoked;
+        if let Some(principal) = state.principals.get_mut(&agent_id) {
+            principal.state = PrincipalState::Revoked;
+        }
+        state.agent_grants.remove(&agent_id);
+        state.revision += 1;
+        self.write_state(space_id, &state).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "agent.revoked",
+                "subject_principal_id": agent_id,
+                "actor_principal_id": actor,
+                "target_type": "agent",
+                "target_id": agent_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn mark_agent_used(&self, space_id: &str, agent_id: Uuid) -> Result<()> {
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        let agent = state
+            .agents
+            .get_mut(&agent_id)
+            .filter(|agent| matches!(agent.status, PrincipalState::Active))
+            .ok_or_else(|| anyhow!("agent is not active"))?;
+        agent.last_used_at = Some(now_iso());
+        state.revision += 1;
+        self.write_state(space_id, &state).await
+    }
+
+    pub async fn change_role(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        principal_id: Uuid,
+        role: SpaceRole,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        let current = state
+            .memberships
+            .get(&principal_id)
+            .ok_or_else(|| anyhow!("member not found"))?;
+        if matches!(current.role, SpaceRole::Owner)
+            && !matches!(role, SpaceRole::Owner)
+            && owner_count(&state) == 1
+        {
+            return Err(AppError::conflict(
+                ErrorCode::LastAdminRequired,
+                "cannot demote the last Space owner",
+            )
+            .into());
+        }
+        state
+            .memberships
+            .get_mut(&principal_id)
+            .expect("checked membership")
+            .role = role;
+        state.revision += 1;
+        self.write_state(space_id, &state).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "principal.role_changed",
+                "subject_principal_id": principal_id,
+                "actor_principal_id": actor,
+                "target_type": "space_principal",
+                "target_id": principal_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn revoke_principal(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        principal_id: Uuid,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        if state
+            .memberships
+            .get(&principal_id)
+            .is_some_and(|m| matches!(m.role, SpaceRole::Owner))
+            && owner_count(&state) == 1
+        {
+            return Err(AppError::conflict(
+                ErrorCode::LastAdminRequired,
+                "cannot revoke the last Space owner",
+            )
+            .into());
+        }
+        let principal = state
+            .principals
+            .get_mut(&principal_id)
+            .ok_or_else(|| anyhow!("principal not found"))?;
+        principal.state = PrincipalState::Revoked;
+        state.revision += 1;
+        self.write_state(space_id, &state).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "principal.revoked",
+                "subject_principal_id": principal_id,
+                "actor_principal_id": actor,
+                "target_type": "space_principal",
+                "target_id": principal_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn issue_owner_claim(&self, space_id: &str, actor: Uuid) -> Result<String> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        if !state
+            .memberships
+            .get(&actor)
+            .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
+        {
+            bail!("only an active Space owner can create a migration claim");
+        }
+        let mut bytes = [0_u8; 32];
+        rand::rngs::SysRng
+            .try_fill_bytes(&mut bytes)
+            .map_err(|error| anyhow!("secure randomness unavailable: {error}"))?;
+        let token = URL_SAFE_NO_PAD.encode(bytes);
+        let claim_id = Uuid::now_v7();
+        state.owner_claims.insert(
+            claim_id,
+            OwnerClaim {
+                claim_id,
+                principal_id: actor,
+                token_hash: hex::encode(Sha256::digest(token.as_bytes())),
+                expires_at: (Utc::now() + chrono::Duration::hours(24)).to_rfc3339(),
+                used_at: None,
+            },
+        );
+        state.revision += 1;
+        self.write_state(space_id, &state).await?;
+        Ok(token)
+    }
+
+    pub async fn consume_owner_claim(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        token: &str,
+    ) -> Result<()> {
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        let hash = hex::encode(Sha256::digest(token.trim().as_bytes()));
+        let claim = state
+            .owner_claims
+            .values_mut()
+            .find(|claim| claim.principal_id == principal_id && claim.token_hash == hash)
+            .ok_or_else(|| AppError::forbidden("owner migration claim is invalid"))?;
+        if claim.used_at.is_some()
+            || chrono::DateTime::parse_from_rfc3339(&claim.expires_at)
+                .map(|expires| expires.with_timezone(&Utc) <= Utc::now())
+                .unwrap_or(true)
+        {
+            return Err(AppError::forbidden("owner migration claim is invalid or expired").into());
+        }
+        claim.used_at = Some(now_iso());
+        state.revision += 1;
+        self.write_state(space_id, &state).await
+    }
+
+    pub async fn validate_owner_claim(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        token: &str,
+    ) -> Result<()> {
+        let state = self.state(space_id).await?;
+        let hash = hex::encode(Sha256::digest(token.trim().as_bytes()));
+        let valid = state.owner_claims.values().any(|claim| {
+            claim.principal_id == principal_id
+                && claim.token_hash == hash
+                && claim.used_at.is_none()
+                && chrono::DateTime::parse_from_rfc3339(&claim.expires_at)
+                    .map(|expires| expires.with_timezone(&Utc) > Utc::now())
+                    .unwrap_or(false)
+        });
+        if !valid {
+            return Err(AppError::forbidden("owner migration claim is invalid or expired").into());
+        }
+        Ok(())
+    }
+
+    pub async fn filter_authorized_resources(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+        resources: impl IntoIterator<Item = ResourceRef>,
+        action: Action,
+    ) -> Result<BTreeSet<String>> {
+        let mut allowed = BTreeSet::new();
+        for resource in resources {
+            if self
+                .effective_actions(space_id, principal_id, Some(&resource))
+                .await?
+                .contains(&action)
+            {
+                allowed.insert(resource.id);
+            }
+        }
+        Ok(allowed)
+    }
+
+    async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
+        self.operator
+            .write(&state_path(space_id), serde_json::to_vec_pretty(state)?)
+            .await?;
+        Ok(())
+    }
+}
+
+fn owner_count(state: &AuthorizationState) -> usize {
+    state
+        .memberships
+        .values()
+        .filter(|membership| {
+            matches!(membership.role, SpaceRole::Owner)
+                && state
+                    .principals
+                    .get(&membership.principal_id)
+                    .is_some_and(|p| matches!(p.state, PrincipalState::Active))
+        })
+        .count()
+}
+
+fn state_path(space_id: &str) -> String {
+    format!("spaces/{space_id}/{AUTHORIZATION_FILE}")
+}
+
+fn now_iso() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::operator_from_uri;
+
+    #[tokio::test]
+    async fn authorizer_enforces_roles_and_last_owner() -> Result<()> {
+        let op = operator_from_uri("memory://authorizer")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), owner, "Owner")
+            .await?;
+        authorizer
+            .require("demo", owner, Action::Delete, None)
+            .await?;
+        assert!(authorizer
+            .change_role("demo", owner, owner, SpaceRole::Viewer)
+            .await
+            .is_err());
+
+        let viewer = Uuid::now_v7();
+        authorizer
+            .add_human_member(
+                "demo",
+                owner,
+                SpacePrincipal {
+                    principal_id: viewer,
+                    kind: PrincipalKind::Human,
+                    display_name: "Viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let entry = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "private-entry".to_string(),
+            parent: None,
+        };
+        authorizer
+            .set_policy(
+                "demo",
+                owner,
+                &entry,
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: vec![],
+                },
+            )
+            .await?;
+        assert!(authorizer
+            .require("demo", viewer, Action::Read, Some(&entry))
+            .await
+            .is_err());
+        let asset = ResourceRef {
+            kind: ResourceKind::Asset,
+            id: "private-asset".to_string(),
+            parent: Some(Box::new(entry)),
+        };
+        assert!(authorizer
+            .require("demo", viewer, Action::Read, Some(&asset))
+            .await
+            .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn agent_never_inherits_sponsor_rights_and_stops_with_sponsor() -> Result<()> {
+        let op = operator_from_uri("memory://agent-authorizer")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let sponsor = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), sponsor, "Sponsor")
+            .await?;
+        let other_owner = Uuid::now_v7();
+        authorizer
+            .add_human_member(
+                "demo",
+                sponsor,
+                SpacePrincipal {
+                    principal_id: other_owner,
+                    kind: PrincipalKind::Human,
+                    display_name: "Other owner".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Owner,
+            )
+            .await?;
+        let agent = authorizer
+            .create_agent(
+                "demo",
+                sponsor,
+                CreateAgentRequest {
+                    display_name: "Reader".to_string(),
+                    description: "Read-only automation".to_string(),
+                    mode: AgentMode::Both,
+                    owner_principal_ids: [sponsor].into_iter().collect(),
+                    granted_actions: [Action::Read].into_iter().collect(),
+                    expires_at: Some((Utc::now() + chrono::Duration::hours(1)).to_rfc3339()),
+                },
+            )
+            .await?;
+        let actions = authorizer
+            .effective_actions("demo", agent.agent_id, None)
+            .await?;
+        assert_eq!(actions, [Action::Read].into_iter().collect());
+        authorizer
+            .revoke_principal("demo", other_owner, sponsor)
+            .await?;
+        assert!(authorizer
+            .effective_actions("demo", agent.agent_id, None)
+            .await
+            .is_err());
+        Ok(())
+    }
+}

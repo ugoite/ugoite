@@ -16,9 +16,10 @@ pub const PROTOCOL_VERSION: u32 = 1;
 pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "auth.get_config",
     "auth.get_session",
-    "auth.login",
-    "auth.mock_oauth",
     "auth.clear_session",
+    "auth.accept_invitation",
+    "auth.list_sessions",
+    "auth.revoke_session",
     "preferences.get",
     "preferences.patch",
     "space.list",
@@ -28,7 +29,6 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "space.test_connection",
     "space.members.list",
     "space.members.invite",
-    "space.members.accept",
     "space.members.update_role",
     "space.members.revoke",
     "form.list_types",
@@ -55,6 +55,11 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "sql_session.get",
     "sql_session.count",
     "sql_session.rows",
+    "agent.list",
+    "agent.create",
+    "agent.revoke",
+    "access.get",
+    "access.put",
     "asset.list",
     "asset.upload",
     "asset.delete",
@@ -90,13 +95,6 @@ pub enum RequestBodyKind {
     Multipart,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AuthMode {
-    Standard,
-    DevProxy,
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Header {
     pub name: String,
@@ -111,7 +109,6 @@ pub struct PreparedRequest {
     pub headers: Vec<Header>,
     pub body: Option<String>,
     pub body_kind: RequestBodyKind,
-    pub auth_mode: AuthMode,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -186,7 +183,6 @@ impl std::error::Error for ApiProtocolError {}
 struct OperationSpec {
     method: HttpMethod,
     failure_context: &'static str,
-    auth_mode: AuthMode,
     body_kind: RequestBodyKind,
 }
 
@@ -195,7 +191,6 @@ impl OperationSpec {
         Self {
             method: HttpMethod::Get,
             failure_context,
-            auth_mode: AuthMode::Standard,
             body_kind: RequestBodyKind::None,
         }
     }
@@ -204,7 +199,6 @@ impl OperationSpec {
         Self {
             method,
             failure_context,
-            auth_mode: AuthMode::Standard,
             body_kind: RequestBodyKind::Json,
         }
     }
@@ -213,17 +207,7 @@ impl OperationSpec {
         Self {
             method,
             failure_context,
-            auth_mode: AuthMode::Standard,
             body_kind: RequestBodyKind::None,
-        }
-    }
-
-    const fn dev_json(failure_context: &'static str) -> Self {
-        Self {
-            method: HttpMethod::Post,
-            failure_context,
-            auth_mode: AuthMode::DevProxy,
-            body_kind: RequestBodyKind::Json,
         }
     }
 
@@ -231,7 +215,6 @@ impl OperationSpec {
         Self {
             method: HttpMethod::Post,
             failure_context,
-            auth_mode: AuthMode::Standard,
             body_kind: RequestBodyKind::Multipart,
         }
     }
@@ -259,19 +242,28 @@ pub fn prepare_request(
                 vec!["auth".into(), "session".into()],
                 vec![],
             ),
-            "auth.login" => (
-                OperationSpec::dev_json("Failed to log in"),
-                vec!["auth".into(), "login".into()],
-                vec![],
-            ),
-            "auth.mock_oauth" => (
-                OperationSpec::dev_json("Failed to start mock OAuth login"),
-                vec!["auth".into(), "mock-oauth".into()],
-                vec![],
-            ),
             "auth.clear_session" => (
                 OperationSpec::no_body(HttpMethod::Delete, "Failed to clear auth session"),
                 vec!["auth".into(), "session".into()],
+                vec![],
+            ),
+            "auth.accept_invitation" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to accept invitation"),
+                vec!["auth".into(), "invitations".into(), "accept".into()],
+                vec![],
+            ),
+            "auth.list_sessions" => (
+                OperationSpec::get("Failed to list browser sessions"),
+                vec!["auth".into(), "sessions".into()],
+                vec![],
+            ),
+            "auth.revoke_session" => (
+                OperationSpec::no_body(HttpMethod::Delete, "Failed to revoke browser session"),
+                vec![
+                    "auth".into(),
+                    "sessions".into(),
+                    required_string(operation, args, "session_id")?,
+                ],
                 vec![],
             ),
 
@@ -340,23 +332,13 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
-            "space.members.accept" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to accept invitation"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "members".into(),
-                    "accept".into(),
-                ],
-                vec![],
-            ),
             "space.members.update_role" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to update role"),
                 vec![
                     "spaces".into(),
                     required_string(operation, args, "space_id")?,
                     "members".into(),
-                    required_string(operation, args, "member_user_id")?,
+                    required_string(operation, args, "principal_id")?,
                     "role".into(),
                 ],
                 vec![],
@@ -367,7 +349,7 @@ pub fn prepare_request(
                     "spaces".into(),
                     required_string(operation, args, "space_id")?,
                     "members".into(),
-                    required_string(operation, args, "member_user_id")?,
+                    required_string(operation, args, "principal_id")?,
                 ],
                 vec![],
             ),
@@ -643,6 +625,57 @@ pub fn prepare_request(
                 ],
             ),
 
+            "agent.list" => (
+                OperationSpec::get("Failed to list agents"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "agents".into(),
+                ],
+                vec![],
+            ),
+            "agent.create" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to create agent"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "agents".into(),
+                ],
+                vec![],
+            ),
+            "agent.revoke" => (
+                OperationSpec::no_body(HttpMethod::Delete, "Failed to revoke agent"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "agents".into(),
+                    required_string(operation, args, "agent_id")?,
+                ],
+                vec![],
+            ),
+            "access.get" => (
+                OperationSpec::get("Failed to load access policy"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "policies".into(),
+                    required_string(operation, args, "kind")?,
+                    required_string(operation, args, "resource_id")?,
+                ],
+                vec![],
+            ),
+            "access.put" => (
+                OperationSpec::json(HttpMethod::Put, "Failed to update access policy"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "policies".into(),
+                    required_string(operation, args, "kind")?,
+                    required_string(operation, args, "resource_id")?,
+                ],
+                vec![],
+            ),
+
             "asset.list" => (
                 OperationSpec::get("Failed to list assets"),
                 vec![
@@ -725,7 +758,6 @@ pub fn prepare_request(
         headers,
         body: serialized_body,
         body_kind: spec.body_kind,
-        auth_mode: spec.auth_mode,
     })
 }
 
@@ -860,269 +892,246 @@ pub fn invoke_json(input: &str) -> String {
 }
 
 fn operation_spec(operation: &str) -> Option<OperationSpec> {
-    let (method, failure_context, auth_mode, body_kind) = match operation {
+    let (method, failure_context, body_kind) = match operation {
         "auth.get_config" => (
             HttpMethod::Get,
             "Failed to load auth config",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "auth.get_session" => (
             HttpMethod::Get,
             "Failed to load auth session",
-            AuthMode::Standard,
             RequestBodyKind::None,
-        ),
-        "auth.login" => (
-            HttpMethod::Post,
-            "Failed to log in",
-            AuthMode::DevProxy,
-            RequestBodyKind::Json,
-        ),
-        "auth.mock_oauth" => (
-            HttpMethod::Post,
-            "Failed to start mock OAuth login",
-            AuthMode::DevProxy,
-            RequestBodyKind::Json,
         ),
         "auth.clear_session" => (
             HttpMethod::Delete,
             "Failed to clear auth session",
-            AuthMode::Standard,
+            RequestBodyKind::None,
+        ),
+        "auth.accept_invitation" => (
+            HttpMethod::Post,
+            "Failed to accept invitation",
+            RequestBodyKind::Json,
+        ),
+        "auth.list_sessions" => (
+            HttpMethod::Get,
+            "Failed to list browser sessions",
+            RequestBodyKind::None,
+        ),
+        "auth.revoke_session" => (
+            HttpMethod::Delete,
+            "Failed to revoke browser session",
             RequestBodyKind::None,
         ),
         "preferences.get" => (
             HttpMethod::Get,
             "Failed to load preferences",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "preferences.patch" => (
             HttpMethod::Patch,
             "Failed to update preferences",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "space.list" => (
             HttpMethod::Get,
             "Failed to list spaces",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "space.create" => (
             HttpMethod::Post,
             "Failed to create space",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "space.get" => (
             HttpMethod::Get,
             "Failed to get space",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "space.patch" => (
             HttpMethod::Patch,
             "Failed to patch space",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "space.test_connection" => (
             HttpMethod::Post,
             "Failed to test connection",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "space.members.list" => (
             HttpMethod::Get,
             "Failed to list members",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "space.members.invite" => (
             HttpMethod::Post,
             "Failed to invite member",
-            AuthMode::Standard,
-            RequestBodyKind::Json,
-        ),
-        "space.members.accept" => (
-            HttpMethod::Post,
-            "Failed to accept invitation",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "space.members.update_role" => (
             HttpMethod::Post,
             "Failed to update role",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "space.members.revoke" => (
             HttpMethod::Delete,
             "Failed to revoke member",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "form.list_types" => (
             HttpMethod::Get,
             "Failed to list form types",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "form.list" => (
             HttpMethod::Get,
             "Failed to list forms",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
-        "form.get" => (
-            HttpMethod::Get,
-            "Failed to get form",
-            AuthMode::Standard,
-            RequestBodyKind::None,
-        ),
+        "form.get" => (HttpMethod::Get, "Failed to get form", RequestBodyKind::None),
         "form.upsert" => (
             HttpMethod::Post,
             "Failed to create form",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "entry.list" => (
             HttpMethod::Get,
             "Failed to list entries",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "entry.get" => (
             HttpMethod::Get,
             "Failed to get entry",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "entry.create" => (
             HttpMethod::Post,
             "Failed to create entry",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "entry.update" => (
             HttpMethod::Put,
             "Failed to update entry",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "entry.delete" => (
             HttpMethod::Delete,
             "Failed to delete entry",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "entry.history" => (
             HttpMethod::Get,
             "Failed to get entry history",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "entry.revision" => (
             HttpMethod::Get,
             "Failed to get entry revision",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "entry.restore" => (
             HttpMethod::Post,
             "Failed to restore entry",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "entry.options" => (
             HttpMethod::Get,
             "Failed to load row_reference options",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "search.keyword" => (
             HttpMethod::Get,
             "Failed to search entries",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "search.query" => (
             HttpMethod::Post,
             "Failed to query space",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "sql.list" => (
             HttpMethod::Get,
             "Failed to list saved SQL",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "sql.get" => (
             HttpMethod::Get,
             "Failed to get saved SQL",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "sql.create" => (
             HttpMethod::Post,
             "Failed to create saved SQL",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "sql.update" => (
             HttpMethod::Put,
             "Failed to update saved SQL",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "sql.delete" => (
             HttpMethod::Delete,
             "Failed to delete saved SQL",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "sql_session.create" => (
             HttpMethod::Post,
             "Failed to create SQL session",
-            AuthMode::Standard,
             RequestBodyKind::Json,
         ),
         "sql_session.get" => (
             HttpMethod::Get,
             "Failed to load SQL session",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "sql_session.count" => (
             HttpMethod::Get,
             "Failed to load SQL session count",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "sql_session.rows" => (
             HttpMethod::Get,
             "Failed to load SQL session rows",
-            AuthMode::Standard,
             RequestBodyKind::None,
+        ),
+        "agent.list" => (
+            HttpMethod::Get,
+            "Failed to list agents",
+            RequestBodyKind::None,
+        ),
+        "agent.create" => (
+            HttpMethod::Post,
+            "Failed to create agent",
+            RequestBodyKind::Json,
+        ),
+        "agent.revoke" => (
+            HttpMethod::Delete,
+            "Failed to revoke agent",
+            RequestBodyKind::None,
+        ),
+        "access.get" => (
+            HttpMethod::Get,
+            "Failed to load access policy",
+            RequestBodyKind::None,
+        ),
+        "access.put" => (
+            HttpMethod::Put,
+            "Failed to update access policy",
+            RequestBodyKind::Json,
         ),
         "asset.list" => (
             HttpMethod::Get,
             "Failed to list assets",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         "asset.upload" => (
             HttpMethod::Post,
             "Failed to upload asset",
-            AuthMode::Standard,
             RequestBodyKind::Multipart,
         ),
         "asset.delete" => (
             HttpMethod::Delete,
             "Failed to delete asset",
-            AuthMode::Standard,
             RequestBodyKind::None,
         ),
         _ => return None,
@@ -1130,7 +1139,6 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
     Some(OperationSpec {
         method,
         failure_context,
-        auth_mode,
         body_kind,
     })
 }
@@ -1329,7 +1337,7 @@ mod tests {
     #[test]
     fn test_api_req_api_001_uses_status_text_for_non_message_detail_values() {
         let error = decode_response(
-            "auth.mock_oauth",
+            "auth.get_config",
             ApiResponse {
                 status: 409,
                 status_text: "Conflict".into(),
@@ -1342,7 +1350,7 @@ mod tests {
         )
         .expect_err("must fail");
 
-        assert_eq!(error.message, "Failed to start mock OAuth login: Conflict");
+        assert_eq!(error.message, "Failed to load auth config: Conflict");
     }
 
     #[test]
@@ -1416,10 +1424,6 @@ mod tests {
                 request.body_kind, spec.body_kind,
                 "body kind drift for {operation}"
             );
-            assert_eq!(
-                request.auth_mode, spec.auth_mode,
-                "auth mode drift for {operation}"
-            );
         }
 
         let response = invoke_json(r#"{"action":"operations"}"#);
@@ -1435,6 +1439,8 @@ mod tests {
             || operation.starts_with("search.")
             || operation.starts_with("sql.")
             || operation.starts_with("sql_session.")
+            || operation.starts_with("agent.")
+            || operation.starts_with("access.")
             || operation.starts_with("asset.");
         if needs_space_id && !matches!(operation, "space.list" | "space.create") {
             arguments.insert("space_id".into(), json!("demo"));
@@ -1443,7 +1449,16 @@ mod tests {
             operation,
             "space.members.update_role" | "space.members.revoke"
         ) {
-            arguments.insert("member_user_id".into(), json!("user-1"));
+            arguments.insert(
+                "principal_id".into(),
+                json!("01900000-0000-7000-8000-000000000001"),
+            );
+        }
+        if operation == "auth.revoke_session" {
+            arguments.insert(
+                "session_id".into(),
+                json!("01900000-0000-7000-8000-000000000002"),
+            );
         }
         if operation == "form.get" {
             arguments.insert("form_name".into(), json!("Meeting Notes"));
@@ -1485,6 +1500,16 @@ mod tests {
         }
         if operation == "asset.delete" {
             arguments.insert("asset_id".into(), json!("asset-1"));
+        }
+        if operation == "agent.revoke" {
+            arguments.insert(
+                "agent_id".into(),
+                json!("01900000-0000-7000-8000-000000000003"),
+            );
+        }
+        if operation.starts_with("access.") {
+            arguments.insert("kind".into(), json!("entry"));
+            arguments.insert("resource_id".into(), json!("entry-1"));
         }
         Value::Object(arguments)
     }

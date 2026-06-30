@@ -3,6 +3,7 @@ title: 'Operations'
 ---
 
 ```bash
+export UGOITE_NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"
 docker compose up -d
 docker compose ps
 docker compose logs -f ugoite
