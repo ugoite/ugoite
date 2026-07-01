@@ -6,7 +6,7 @@ sidebar:
 ---
 
 **Updated:** 2026-06-29\
-**Implementation status:** Rust/Deno v0.1 stream in progress
+**Implementation status:** Rust/Deno ver1 stream in progress
 
 Ugoite is a local-first knowledge-space system based on three principles: **Low
 Cost**, **Easy**, and **Freedom**. Operator-owned Space directories are

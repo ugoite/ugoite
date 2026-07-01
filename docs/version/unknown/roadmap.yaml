@@ -20,17 +20,17 @@ phases:
   - id: implementation
     status: in_progress
     tasks:
-      - description: "Milestone 1 MVP - core functionality (v0.1)"
+      - description: "Milestone 1 MVP - core functionality (ver1)"
         done: true
-      - description: "Milestone 2 Full Configuration - architecture refinement (v0.1)"
+      - description: "Milestone 2 Full Configuration - architecture refinement (ver1)"
         done: true
-      - description: "Milestone 3 Markdown as Table - Iceberg storage + SQL (v0.1)"
+      - description: "Milestone 3 Markdown as Table - Iceberg storage + SQL (ver1)"
         done: true
-      - description: "Milestone 4 User Management - auth/authz/collaboration (v0.1)"
+      - description: "Milestone 4 User Management - auth/authz/collaboration (ver1)"
         done: false
-      - description: "Milestone 5 User Controlled View - query-driven UI views (v0.2)"
+      - description: "Milestone 5 User Controlled View - query-driven UI views (ver2)"
         done: false
-      - description: "Milestone 6 AI-Enabled & AI-Used - broader MCP resources/tools + vector search (v0.2)"
+      - description: "Milestone 6 AI-Enabled & AI-Used - broader MCP resources/tools + vector search (ver2)"
         done: false
       - description: "Milestone 7 Native App - Tauri desktop application"
         done: false
