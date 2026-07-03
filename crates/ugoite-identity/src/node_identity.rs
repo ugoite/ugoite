@@ -2692,8 +2692,9 @@ fn encrypt_recovery_secret(key_material: &str, secret: &[u8]) -> Result<String> 
     let cipher = <Aes256Gcm as KeyInit>::new_from_slice(&key)
         .map_err(|_| anyhow!("invalid recovery encryption key"))?;
     let nonce_bytes = random_bytes(12)?;
+    let nonce = Nonce::try_from(nonce_bytes.as_slice()).context("invalid recovery nonce")?;
     let ciphertext = cipher
-        .encrypt(Nonce::from_slice(&nonce_bytes), secret)
+        .encrypt(&nonce, secret)
         .map_err(|_| anyhow!("encrypt recovery secret"))?;
     let mut sealed = nonce_bytes;
     sealed.extend(ciphertext);
@@ -2710,8 +2711,9 @@ fn decrypt_recovery_secret(key_material: &str, sealed: &str) -> Result<Vec<u8>> 
     let key = Sha256::digest(key_material.as_bytes());
     let cipher = <Aes256Gcm as KeyInit>::new_from_slice(&key)
         .map_err(|_| anyhow!("invalid recovery encryption key"))?;
+    let nonce = Nonce::try_from(&sealed[..12]).context("invalid recovery nonce")?;
     cipher
-        .decrypt(Nonce::from_slice(&sealed[..12]), &sealed[12..])
+        .decrypt(&nonce, &sealed[12..])
         .map_err(|_| anyhow!("decrypt recovery secret"))
 }
 

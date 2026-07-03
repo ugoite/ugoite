@@ -20,7 +20,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "blo
 opendal = { version = "0.57", default-features = false, features = ["executors-tokio", "services-fs", "services-memory"] }
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 base64 = "0.22"
-sha2 = "0.10"
+sha2 = "0.11"
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
 uuid = { version = "1.23", features = ["v7", "serde"] }
 chrono = "0.4"
