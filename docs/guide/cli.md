@@ -171,11 +171,11 @@ a backend or API instead of the local filesystem.
 ## Command reference
 
 Beyond the `space`, `entry`, `auth`, and `config` commands the quick-start
-covers, the CLI ships five more top-level command families. Most of them take a
-`SPACE_ID_OR_PATH` positional - use `/root/spaces/<id>` in core mode and a bare
-`SPACE_ID` in backend/api mode. Run `ugoite config current` if you're not sure
-which mode you're in; `form list-types` and `sql lint` do not take a space
-argument.
+covers, the CLI ships five more top-level command families. Commands that
+operate on a space take a `SPACE_ID_OR_PATH` positional - use
+`/root/spaces/<id>` in core mode and a bare `SPACE_ID` in backend/api mode.
+Run `ugoite config current` if you're not sure which mode you're in. The
+`form list-types` and `sql lint` commands do not take a space argument.
 
 Every subcommand below has its own `--help` page (for example
 `ugoite form list --help`) with full flag details.
@@ -210,44 +210,50 @@ Example:
 ugoite search keyword /root/spaces/demo "meeting notes"
 ```
 
-Reach for `query` (below) when you need structured filters or index-backed
-queries; reach for `search keyword` when you want a direct substring scan across
-titles and bodies.
+Reach for `query` (below) when you need SQL filters over the query tables; reach
+for `search keyword` when you want a direct, case-insensitive substring scan of
+each serialized non-deleted entry row. It is not fuzzy search and does not read
+the index.
 
 ### `ugoite sql` - SQL tooling and saved queries
 
-- `ugoite sql lint` - lightweight SELECT-only lint for a SQL statement
+- `ugoite sql lint <SQL>` - reports `valid: true` only when the uppercased input
+  contains `SELECT`
 - `ugoite sql saved-list` - list saved queries for a space
 - `ugoite sql saved-get`, `saved-create`, `saved-update`, `saved-delete` - manage individual saved queries
 
 Use this family to keep your SQL snippets alongside the space instead of a
-shell history. Run `ugoite sql <subcommand> --help` for arguments.
+shell history. `sql lint` is only a simple `SELECT` substring check; it does not
+parse SQL or catch malformed queries. Run `ugoite sql <subcommand> --help` for
+arguments.
 
-### `ugoite index` - run and inspect the indexer
+### `ugoite index` - index commands and space stats
 
-- `ugoite index run <SPACE>` - rebuild the search/query index from the
-  current on-disk state of the space
-- `ugoite index stats <SPACE>` - aggregated index stats (entry counts,
-  form breakdown, last rebuild)
+- `ugoite index run <SPACE>` - invoke the index command for the space; in
+  current local core mode this completes without rebuilding persisted index data
+- `ugoite index stats <SPACE>` - aggregated space stats (entry counts, form
+  breakdown, tag counts)
 
-Run `index run` whenever you need to rebuild after an out-of-band edit (for
-example a bulk change with another tool). `query` reads the indexer's output;
-`search keyword` scans entry rows directly.
+In local core mode, `query` reloads forms and entries directly when it runs, and
+`index run` currently calls a no-op reindex function. `search keyword` also
+scans entry rows directly.
 
-### `ugoite query` - run SQL over the index
+### `ugoite query` - run SQL over entry tables
 
 ```bash
-ugoite query /root/spaces/demo --sql "SELECT id, title FROM entries LIMIT 10"
+ugoite query /root/spaces/demo --sql "SELECT * FROM entries LIMIT 10"
 ```
 
-The queryable table is `entries`. Standard columns: `id`, `title`, `form`,
-`updated_at`, `space_id`, `word_count`, `tags`. Form fields can also be
-referenced directly by field name or through `properties.<field>`.
+The queryable table is `entries`. Ugoite SQL currently supports wildcard
+projection only, so use `SELECT *`. Standard columns such as `id`, `title`,
+`form`, `updated_at`, `space_id`, `word_count`, and `tags` can be referenced in
+filters and ordering. Form fields can also be referenced directly by field name
+or through `properties.<field>`.
 
 Filter by form type:
 
 ```bash
-ugoite query /root/spaces/demo --sql "SELECT id, title FROM entries WHERE form='note'"
+ugoite query /root/spaces/demo --sql "SELECT * FROM entries WHERE form='note'"
 ```
 
 ## Contributor-only shortcut: seed local sample data
