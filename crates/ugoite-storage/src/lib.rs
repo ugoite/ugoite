@@ -173,7 +173,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn opendal_storage_implements_storage_backend_contract() -> Result<()> {
+    /// REQ-STO-001: JSON helpers remain part of the storage boundary after
+    /// I/O is moved out of the portable domain crate.
+    async fn test_storage_req_sto_001_json_helpers_use_storage_abstraction() -> Result<()> {
         let op = operator_from_uri("memory://storage-contract")?;
         let storage = OpendalStorage::from_operator(&op);
         storage.create_dir("spaces/demo/").await?;
@@ -182,6 +184,8 @@ mod tests {
             .await?;
 
         assert!(storage.exists("spaces/demo/readme.md").await?);
+        assert!(storage.exists("spaces/demo/").await?);
+        assert!(!storage.exists("spaces/missing/").await?);
         assert_eq!(storage.read("spaces/demo/readme.md").await?, b"hello");
         let entries = storage.list_dir("spaces/demo/").await?;
         assert!(entries
@@ -193,6 +197,13 @@ mod tests {
             .await?;
         let metadata: serde_json::Value = storage.read_json("spaces/demo/meta.json").await?;
         assert_eq!(metadata["id"], "demo");
+        assert_eq!(
+            storage.list_dir("spaces/").await?,
+            vec![super::StorageEntry {
+                name: "demo/".to_string(),
+                is_dir: true,
+            }]
+        );
 
         Ok(())
     }
