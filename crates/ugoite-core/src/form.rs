@@ -52,29 +52,25 @@ pub async fn get_form(op: &Operator, ws_path: &str, form_name: &str) -> Result<V
 }
 
 pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
-    let normalized = normalize_form_definition(form_def)?;
+    let mut normalized = normalize_form_definition(form_def)?;
     let form_name = normalized
         .get("name")
         .and_then(|v| v.as_str())
-        .context("Form definition missing 'name' field")?;
-    validate_row_reference_targets(op, ws_path, form_name, &normalized).await?;
-    let existing = match iceberg_store::load_form_definition(op, ws_path, form_name).await {
-        Ok(def) => Some(def),
-        Err(_) => iceberg_store::load_form_definition_from_metadata(op, ws_path, form_name)
-            .await
-            .ok()
-            .flatten(),
-    };
+        .context("Form definition missing 'name' field")?
+        .to_string();
+    validate_row_reference_targets(op, ws_path, &form_name, &normalized).await?;
+    let existing = iceberg_store::load_form_definition(op, ws_path, &form_name)
+        .await
+        .ok();
     if let Some(existing_def) = existing {
+        preserve_stable_identities(&mut normalized, &existing_def)?;
         let fields_changed = existing_def.get("fields") != normalized.get("fields");
-        let def_changed =
-            serde_json::to_string(&existing_def)? != serde_json::to_string(&normalized)?;
         let normalized_fields: HashSet<String> = normalized
             .get("fields")
             .and_then(|v| v.as_object())
             .map(|map| map.keys().cloned().collect())
             .unwrap_or_default();
-        let schema_fields = iceberg_store::load_form_schema_fields(op, ws_path, form_name)
+        let schema_fields = iceberg_store::load_form_schema_fields(op, ws_path, &form_name)
             .await
             .ok()
             .flatten();
@@ -82,9 +78,8 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
             Some(schema_fields) => schema_fields != normalized_fields,
             None => false,
         };
-        if fields_changed || def_changed || schema_mismatch {
-            rebuild_form_tables(op, ws_path, form_name, &existing_def, &normalized).await?;
-            return Ok(());
+        if fields_changed || schema_mismatch {
+            return Err(anyhow!("Form schema changes require an explicit FormChangeSet; destructive table rebuild is disabled"));
         }
     }
 
@@ -97,7 +92,16 @@ pub(crate) async fn upsert_metadata_form(
     ws_path: &str,
     form_def: &Value,
 ) -> Result<()> {
-    let normalized = normalize_form_definition_with_options(form_def, true)?;
+    let mut normalized = normalize_form_definition_with_options(form_def, true)?;
+    if let Some(form_name) = normalized
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    {
+        if let Ok(existing) = iceberg_store::load_form_definition(op, ws_path, &form_name).await {
+            preserve_stable_identities(&mut normalized, &existing)?;
+        }
+    }
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
     Ok(())
 }
@@ -112,18 +116,14 @@ pub async fn migrate_form<I: IntegrityProvider>(
     let normalized = normalize_form_definition(form_def)?;
     let form_name = normalized["name"].as_str().context("Form name required")?;
     validate_row_reference_targets(op, ws_path, form_name, &normalized).await?;
-    let existing_def = match iceberg_store::load_form_definition(op, ws_path, form_name).await {
-        Ok(def) => Some(def),
-        Err(_) => iceberg_store::load_form_definition_from_metadata(op, ws_path, form_name)
-            .await
-            .ok()
-            .flatten(),
-    };
+    let existing_def = iceberg_store::load_form_definition(op, ws_path, form_name)
+        .await
+        .ok();
 
     if let Some(existing_def) = existing_def {
         let fields_changed = existing_def.get("fields") != normalized.get("fields");
         if fields_changed {
-            rebuild_form_tables(op, ws_path, form_name, &existing_def, &normalized).await?;
+            return Err(anyhow!("Form schema changes require an explicit migration plan; destructive table rebuild is disabled"));
         } else {
             upsert_form(op, ws_path, &normalized).await?;
         }
@@ -202,6 +202,7 @@ pub async fn migrate_form<I: IntegrityProvider>(
 
         row.parent_revision_id = Some(row.revision_id.clone());
         row.revision_id = new_rev_id.clone();
+        row.entry_version = row.entry_version.saturating_add(1);
         row.updated_at = timestamp;
         row.fields = Value::Object(fields);
         row.author = "system-migration".to_string();
@@ -221,8 +222,6 @@ pub async fn migrate_form<I: IntegrityProvider>(
             signature: signature.clone(),
         };
 
-        entry::write_entry_row(op, ws_path, form_name, &entry_id, &row).await?;
-
         let revision = entry::RevisionRow {
             revision_id: new_rev_id.clone(),
             entry_id: entry_id.to_string(),
@@ -234,6 +233,11 @@ pub async fn migrate_form<I: IntegrityProvider>(
             markdown_checksum: checksum,
             integrity: row.integrity.clone(),
             restored_from: None,
+            state: Some(row.clone()),
+            entry_version: row.entry_version,
+            operation: "upsert".to_string(),
+            source_kind: "migration".to_string(),
+            source_id: None,
         };
         entry::append_revision_row_for_form(op, ws_path, form_name, &revision, &normalized).await?;
 
@@ -281,6 +285,11 @@ fn normalize_form_definition_with_options(
         .and_then(|v| v.as_i64())
         .unwrap_or(1);
     let fields = normalize_form_fields(form_def.get("fields"));
+    let form_id = form_def
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::now_v7().to_string());
     if let Some(field_map) = fields.as_object() {
         for name in field_map.keys() {
             if is_reserved_metadata_column(name) {
@@ -307,6 +316,7 @@ fn normalize_form_definition_with_options(
     }
 
     Ok(serde_json::json!({
+        "id": form_id,
         "name": name,
         "version": version,
         "fields": fields,
@@ -396,18 +406,36 @@ fn normalize_form_fields(fields: Option<&Value>) -> Value {
 
     match fields {
         Some(Value::Object(map)) => {
-            for (name, def) in map {
-                normalized.insert(name.clone(), def.clone());
+            for (index, (name, def)) in map.iter().enumerate() {
+                let mut def = def.clone();
+                if let Some(object) = def.as_object_mut() {
+                    // `required: false` is the default schema meaning. Do not
+                    // let an explicit default in an API payload look like a
+                    // Form evolution when the persisted definition omitted it.
+                    if object.get("required").and_then(Value::as_bool) == Some(false) {
+                        object.remove("required");
+                    }
+                    object.entry("id".to_string()).or_insert_with(|| {
+                        Value::from(100 + i64::try_from(index).unwrap_or_default())
+                    });
+                }
+                normalized.insert(name.clone(), def);
             }
         }
         Some(Value::Array(items)) => {
-            for item in items {
+            for (index, item) in items.iter().enumerate() {
                 let Some(name) = item.get("name").and_then(|v| v.as_str()) else {
                     continue;
                 };
                 let mut def = item.clone();
                 if let Some(obj) = def.as_object_mut() {
                     obj.remove("name");
+                    if obj.get("required").and_then(Value::as_bool) == Some(false) {
+                        obj.remove("required");
+                    }
+                    obj.entry("id".to_string()).or_insert_with(|| {
+                        Value::from(100 + i64::try_from(index).unwrap_or_default())
+                    });
                 }
                 normalized.insert(name.to_string(), def);
             }
@@ -416,6 +444,35 @@ fn normalize_form_fields(fields: Option<&Value>) -> Value {
     }
 
     Value::Object(normalized)
+}
+
+fn preserve_stable_identities(normalized: &mut Value, existing: &Value) -> Result<()> {
+    let existing_id = existing
+        .get("id")
+        .and_then(Value::as_str)
+        .context("stored Form is missing stable id")?;
+    normalized
+        .as_object_mut()
+        .context("normalized Form must be an object")?
+        .insert("id".to_string(), Value::String(existing_id.to_string()));
+    let existing_fields = existing.get("fields").and_then(Value::as_object);
+    if let (Some(fields), Some(existing_fields)) = (
+        normalized.get_mut("fields").and_then(Value::as_object_mut),
+        existing_fields,
+    ) {
+        for (name, field) in fields {
+            if let Some(id) = existing_fields
+                .get(name)
+                .and_then(|value| value.get("id"))
+                .cloned()
+            {
+                if let Some(object) = field.as_object_mut() {
+                    object.insert("id".to_string(), id);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn enrich_form_definition(form_def: &Value) -> Result<Value> {
@@ -443,30 +500,3 @@ fn form_template_from_fields(form_name: &str, fields: Option<&Value>) -> String 
     }
     template
 }
-
-async fn rebuild_form_tables(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-    existing_def: &Value,
-    new_def: &Value,
-) -> Result<()> {
-    let entry_rows = entry::list_form_entry_rows(op, ws_path, form_name, existing_def).await?;
-    let revision_rows =
-        entry::list_form_revision_rows(op, ws_path, form_name, existing_def).await?;
-
-    iceberg_store::drop_form_tables(op, ws_path, form_name).await?;
-    iceberg_store::ensure_form_tables(op, ws_path, new_def).await?;
-
-    for row in entry_rows {
-        entry::write_entry_row(op, ws_path, form_name, &row.entry_id, &row).await?;
-    }
-
-    for rev in revision_rows {
-        entry::append_revision_row_for_form(op, ws_path, form_name, &rev, new_def).await?;
-    }
-
-    Ok(())
-}
-
-// Migration logic handled via Iceberg row updates.

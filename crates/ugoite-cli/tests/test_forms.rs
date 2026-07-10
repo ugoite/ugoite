@@ -85,9 +85,9 @@ fn test_migrate_form_add_column_with_default() {
     assert_eq!(v.get("name").and_then(|x| x.as_str()), Some("Entry"));
 }
 
-/// REQ-FORM-002: Remove a column from a form.
+/// REQ-FORM-002: Implicit schema replacement is rejected in favor of FormChangeSet.
 #[test]
-fn test_migrate_form_remove_column() {
+fn test_form_update_rejects_implicit_column_change() {
     let dir = tempfile::tempdir().unwrap();
     let (root, space_path, config_path) = setup_space_with_form(&dir, "form-space");
 
@@ -105,11 +105,8 @@ fn test_migrate_form_remove_column() {
         .output()
         .expect("failed to execute");
 
-    assert!(
-        update_output.status.success(),
-        "update stderr: {}",
-        String::from_utf8_lossy(&update_output.stderr)
-    );
+    assert!(!update_output.status.success());
+    assert!(String::from_utf8_lossy(&update_output.stderr).contains("FormChangeSet"));
 
     // Verify form still accessible
     let get_output = Command::new(ugoite_bin())

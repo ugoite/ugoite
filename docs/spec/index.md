@@ -45,6 +45,7 @@ authoritative; indexes and query sessions are derived.
 | `ugoite-domain`     | portable domain types and validation                                 |
 | `ugoite-api-client` | transport-neutral HTTP operation protocol                            |
 | `ugoite-storage`    | OpenDAL-backed storage mechanics                                     |
+| `ugoite-iceberg`    | Catalog-backed Form tables, batch append, query, and migration       |
 | `ugoite-core`       | application service and persistence behavior                         |
 | `ugoite-server`     | REST/MCP/auth/static-hosting adapter                                 |
 | `ugoite-cli`        | local and remote command adapter                                     |

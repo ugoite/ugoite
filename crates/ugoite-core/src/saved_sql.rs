@@ -288,9 +288,8 @@ pub async fn create_sql<I: IntegrityProvider>(
         deleted: false,
         deleted_at: None,
         author: author.to_string(),
+        entry_version: 1,
     };
-
-    entry::write_entry_row(op, ws_path, SQL_FORM_NAME, sql_id, &row).await?;
 
     let revision = entry::RevisionRow {
         revision_id: revision_id.clone(),
@@ -303,6 +302,11 @@ pub async fn create_sql<I: IntegrityProvider>(
         markdown_checksum: integrity_payload.checksum.clone(),
         integrity: integrity_payload,
         restored_from: None,
+        state: Some(row.clone()),
+        entry_version: row.entry_version,
+        operation: "upsert".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 
@@ -355,10 +359,9 @@ pub async fn update_sql<I: IntegrityProvider>(
     row.fields = Value::Object(fields);
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();
+    row.entry_version = row.entry_version.saturating_add(1);
     row.author = author.to_string();
     row.integrity = integrity_payload.clone();
-
-    entry::write_entry_row(op, ws_path, SQL_FORM_NAME, sql_id, &row).await?;
 
     let revision = entry::RevisionRow {
         revision_id: revision_id.clone(),
@@ -371,6 +374,11 @@ pub async fn update_sql<I: IntegrityProvider>(
         markdown_checksum: integrity_payload.checksum.clone(),
         integrity: integrity_payload,
         restored_from: None,
+        state: Some(row.clone()),
+        entry_version: row.entry_version,
+        operation: "upsert".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 

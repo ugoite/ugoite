@@ -25,6 +25,15 @@ space_layout:
       kind: directory
       notes:
       - Iceberg owns all paths below this root.
+    - path: spaces/{space_id}/forms/catalog-pointers.v1.json
+      kind: file
+      schema: iceberg_catalog_pointers
+      notes:
+      - Portable local Catalog pointer manifest; never inferred by listing metadata files.
+    - path: spaces/{space_id}/forms/catalog-instance-id
+      kind: file
+      notes:
+      - Opaque cache isolation identity; it is not a Form or Space identifier.
     - path: spaces/{space_id}/assets
       kind: directory
     - path: spaces/{space_id}/materialized_views

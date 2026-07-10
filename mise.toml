@@ -144,6 +144,7 @@ sources = [
   "crates/ugoite-domain/**/*",
   "crates/ugoite-api-client/**/*",
   "crates/ugoite-storage/**/*",
+  "crates/ugoite-iceberg/**/*",
   "crates/ugoite-core/**/*",
   "crates/ugoite-server/**/*",
   "crates/ugoite-cli/**/*",
@@ -251,7 +252,7 @@ run = "deno task e2e:smoke"
 
 [tasks."test:smoke"]
 run = [
-  "cargo test -p ugoite-domain -p ugoite-core -p ugoite-server --locked",
+  "cargo test -p ugoite-domain -p ugoite-iceberg -p ugoite-core -p ugoite-server --locked",
   { task = "test:frontend" },
 ]
 

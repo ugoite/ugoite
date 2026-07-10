@@ -4,7 +4,7 @@ use crate::iceberg_store;
 use crate::index;
 use crate::integrity::IntegrityProvider;
 use crate::link::Link;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{FixedSizeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
     Array, ArrayRef, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array, Float64Array,
@@ -12,6 +12,7 @@ use arrow_array::{
     Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use arrow_schema::{DataType, Fields};
+use arrow_select::concat::concat_batches;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveTime, SecondsFormat, Timelike, Utc};
 use futures::TryStreamExt;
@@ -21,7 +22,7 @@ use iceberg::spec::DataFile;
 use iceberg::transaction::ApplyTransactionAction;
 use iceberg::transaction::Transaction;
 use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
-use iceberg::MemoryCatalog;
+use iceberg::{Catalog, MemoryCatalog};
 use opendal::Operator;
 use parquet::file::properties::WriterProperties;
 use regex::Regex;
@@ -132,6 +133,8 @@ pub struct EntryRow {
     pub deleted_at: Option<f64>,
     #[serde(default)]
     pub author: String,
+    #[serde(default = "initial_entry_version")]
+    pub entry_version: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -150,6 +153,26 @@ pub struct RevisionRow {
     pub integrity: IntegrityPayload,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restored_from: Option<String>,
+    #[serde(default)]
+    pub state: Option<EntryRow>,
+    #[serde(default = "initial_entry_version")]
+    pub entry_version: u64,
+    #[serde(default = "default_operation")]
+    pub operation: String,
+    #[serde(default = "default_source_kind")]
+    pub source_kind: String,
+    #[serde(default)]
+    pub source_id: Option<String>,
+}
+
+const fn initial_entry_version() -> u64 {
+    1
+}
+fn default_operation() -> String {
+    "upsert".to_string()
+}
+fn default_source_kind() -> String {
+    "api".to_string()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -590,6 +613,7 @@ fn list_element_field(list_field: &arrow_schema::Field) -> Result<arrow_schema::
     }
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_array_from_strings(
     values: &[String],
     list_field: &arrow_schema::Field,
@@ -681,6 +705,7 @@ fn struct_fields_from_field(field: &arrow_schema::Field) -> Result<Fields> {
     }
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_links_array_from_links(
     links: &[Link],
     list_field: &arrow_schema::Field,
@@ -712,6 +737,7 @@ fn list_links_array_from_links(
     Ok(Arc::new(list_builder.finish()))
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_assets_array_from_values(
     assets: &[Value],
     list_field: &arrow_schema::Field,
@@ -792,6 +818,7 @@ fn extra_attributes_from_string(raw: Option<&str>) -> Value {
     }
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
     if list_array.is_null(row) {
         return Vec::new();
@@ -809,6 +836,7 @@ fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
     values.unwrap_or_default()
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Result<Vec<Link>> {
     if list_array.is_null(row) {
         return Ok(Vec::new());
@@ -872,6 +900,7 @@ fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Re
     Ok(links)
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_assets_from_array(list_array: &ListArray, row: usize) -> Result<Vec<Value>> {
     if list_array.is_null(row) {
         return Ok(Vec::new());
@@ -1087,6 +1116,7 @@ async fn scan_table_batches(table: &iceberg::table::Table) -> Result<Vec<RecordB
     Ok(batches)
 }
 
+#[allow(dead_code)] // used by migration verification against legacy histories
 async fn latest_revision_for_entry(
     op: &Operator,
     ws_path: &str,
@@ -1371,6 +1401,7 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, form_def: &Va
     Value::Object(map)
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn entry_rows_from_batches(
     batches: &[RecordBatch],
     form_def: &Value,
@@ -1454,6 +1485,7 @@ fn entry_rows_from_batches(
                 deleted: !deleted.is_null(row_idx) && deleted.value(row_idx),
                 deleted_at: deleted_at_value,
                 author: "".to_string(),
+                entry_version: 1,
             });
         }
     }
@@ -1478,6 +1510,11 @@ fn revision_rows_from_batches(
         let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
         let integrity = column_as::<StructArray>(batch, "integrity")?;
         let restored_from = column_as::<StringArray>(batch, "restored_from")?;
+        let state_json = column_as::<StringArray>(batch, "state_json")?;
+        let entry_versions = column_as::<Int64Array>(batch, "entry_version")?;
+        let operations = column_as::<StringArray>(batch, "operation")?;
+        let source_kinds = column_as::<StringArray>(batch, "source_kind")?;
+        let source_ids = column_as::<StringArray>(batch, "source_id")?;
 
         for row_idx in 0..batch.num_rows() {
             if revision_ids.is_null(row_idx) {
@@ -1537,12 +1574,38 @@ fn revision_rows_from_batches(
                 } else {
                     Some(restored_from.value(row_idx).to_string())
                 },
+                state: if state_json.is_null(row_idx) {
+                    None
+                } else {
+                    Some(serde_json::from_str(state_json.value(row_idx))?)
+                },
+                entry_version: if entry_versions.is_null(row_idx) {
+                    1
+                } else {
+                    entry_versions.value(row_idx).try_into().unwrap_or(1)
+                },
+                operation: if operations.is_null(row_idx) {
+                    default_operation()
+                } else {
+                    operations.value(row_idx).to_string()
+                },
+                source_kind: if source_kinds.is_null(row_idx) {
+                    default_source_kind()
+                } else {
+                    source_kinds.value(row_idx).to_string()
+                },
+                source_id: if source_ids.is_null(row_idx) {
+                    None
+                } else {
+                    Some(source_ids.value(row_idx).to_string())
+                },
             });
         }
     }
     Ok(rows)
 }
 
+#[allow(dead_code)] // retained only for migration fixtures, never for production writes
 fn entry_row_to_record_batch(
     row: &EntryRow,
     form_def: &Value,
@@ -1625,6 +1688,17 @@ fn revision_row_to_record_batch(
                 struct_array_from_integrity(&row.integrity, &struct_fields)?
             }
             "restored_from" => Arc::new(StringArray::from(vec![row.restored_from.clone()])),
+            "state_json" => Arc::new(StringArray::from(vec![row
+                .state
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?])),
+            "entry_version" => Arc::new(Int64Array::from(vec![Some(i64::try_from(
+                row.entry_version,
+            )?)])),
+            "operation" => Arc::new(StringArray::from(vec![Some(row.operation.clone())])),
+            "source_kind" => Arc::new(StringArray::from(vec![Some(row.source_kind.clone())])),
+            "source_id" => Arc::new(StringArray::from(vec![row.source_id.clone()])),
             other => {
                 return Err(anyhow!("Unexpected column in revisions schema: {}", other));
             }
@@ -1663,6 +1737,7 @@ async fn write_record_batch(table: &iceberg::table::Table, batch: RecordBatch) -
         .ok_or_else(|| anyhow!("No data files produced by writer"))
 }
 
+#[allow(dead_code)] // retained only for migration fixture generation
 async fn append_entry_row_to_table(
     catalog: &MemoryCatalog,
     table: &iceberg::table::Table,
@@ -1684,10 +1759,54 @@ async fn append_revision_row_to_table(
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
-    let batch = revision_row_to_record_batch(row, form_def, table.metadata().current_schema())?;
+    append_revision_rows_to_table(catalog, table, std::slice::from_ref(row), form_def).await
+}
+
+async fn append_revision_rows_to_table(
+    catalog: &MemoryCatalog,
+    table: &iceberg::table::Table,
+    rows: &[RevisionRow],
+    form_def: &Value,
+) -> Result<()> {
+    if rows.is_empty() {
+        return Err(anyhow!("revision batch must not be empty"));
+    }
+    let batches = rows
+        .iter()
+        .map(|row| revision_row_to_record_batch(row, form_def, table.metadata().current_schema()))
+        .collect::<Result<Vec<_>>>()?;
+    let schema = batches
+        .first()
+        .context("revision batch must contain a schema")?
+        .schema();
+    let batch = concat_batches(&schema, &batches)?;
     let data_file = write_record_batch(table, batch).await?;
     let tx = Transaction::new(table);
-    let action = tx.fast_append().add_data_files(vec![data_file]);
+    let summary = std::collections::HashMap::from([
+        ("ugoite.revision-count".to_string(), rows.len().to_string()),
+        (
+            "ugoite.operations".to_string(),
+            rows.iter()
+                .map(|row| row.operation.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        (
+            "ugoite.authors".to_string(),
+            rows.iter()
+                .map(|row| row.author.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+    ]);
+    let action = tx
+        .fast_append()
+        .add_data_files(vec![data_file])
+        .set_snapshot_properties(summary);
     let tx = action.apply(tx)?;
     tx.commit(catalog).await?;
     Ok(())
@@ -1716,35 +1835,42 @@ pub(crate) async fn read_entry_row(
     entry_id: &str,
 ) -> Result<EntryRow> {
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
-    let (_, table) = iceberg_store::load_entries_table(op, ws_path, form_name).await?;
+    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
     let batches = scan_table_batches(&table).await?;
-    let rows = entry_rows_from_batches(&batches, &form_def, form_name)?;
-    let mut selected: Option<EntryRow> = None;
-    for row in rows {
-        if row.entry_id != entry_id {
+    let rows = revision_rows_from_batches(&batches, &form_def)?;
+    let mut selected: Option<RevisionRow> = None;
+    for revision in rows {
+        if revision.entry_id != entry_id || revision.state.is_none() {
             continue;
         }
         let replace = match &selected {
-            Some(existing) => row.updated_at >= existing.updated_at,
+            Some(existing) => revision.entry_version > existing.entry_version,
             None => true,
         };
         if replace {
-            selected = Some(row);
+            selected = Some(revision);
         }
     }
-    let mut selected = selected.ok_or_else(|| entry_not_found(entry_id))?;
-    if let Some(latest) =
-        latest_revision_for_entry(op, ws_path, form_name, &form_def, entry_id).await?
-    {
-        selected.revision_id = latest.revision_id;
-        selected.parent_revision_id = latest.parent_revision_id;
-        selected.author = latest.author;
-        if selected.integrity.checksum.is_empty() {
-            selected.integrity = latest.integrity;
-        }
+    let selected = selected.ok_or_else(|| entry_not_found(entry_id))?;
+    let conflicts = revision_rows_from_batches(&batches, &form_def)?
+        .into_iter()
+        .filter(|revision| {
+            revision.entry_id == entry_id && revision.entry_version == selected.entry_version
+        })
+        .count();
+    if conflicts > 1 {
+        return Err(AppError::conflict(
+            ErrorCode::RevisionConflict,
+            format!(
+                "multiple revisions exist for entry {entry_id} at version {}",
+                selected.entry_version
+            ),
+        )
+        .into());
     }
-
-    Ok(selected)
+    selected
+        .state
+        .ok_or_else(|| entry_not_found(entry_id).into())
 }
 
 pub(crate) async fn write_entry_row(
@@ -1754,11 +1880,29 @@ pub(crate) async fn write_entry_row(
     entry_id: &str,
     row: &EntryRow,
 ) -> Result<()> {
-    let _ = entry_id;
-    let (catalog, table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_entries_table(op, ws_path, form_name).await?;
+    let mut state = row.clone();
+    state.parent_revision_id = Some(row.revision_id.clone());
+    state.revision_id = Uuid::new_v4().to_string();
+    state.entry_version = row.entry_version.saturating_add(1);
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
-    append_entry_row_to_table(catalog.as_ref(), &table, row, &form_def).await
+    let revision = RevisionRow {
+        revision_id: state.revision_id.clone(),
+        entry_id: entry_id.to_string(),
+        parent_revision_id: state.parent_revision_id.clone(),
+        timestamp: state.updated_at,
+        author: state.author.clone(),
+        fields: state.fields.clone(),
+        extra_attributes: state.extra_attributes.clone(),
+        markdown_checksum: state.integrity.checksum.clone(),
+        integrity: state.integrity.clone(),
+        restored_from: None,
+        state: Some(state.clone()),
+        entry_version: state.entry_version,
+        operation: if state.deleted { "delete" } else { "upsert" }.to_string(),
+        source_kind: "application".to_string(),
+        source_id: None,
+    };
+    append_revision_row_for_form(op, ws_path, form_name, &revision, &form_def).await
 }
 
 pub(crate) async fn list_entry_rows(
@@ -1769,10 +1913,11 @@ pub(crate) async fn list_entry_rows(
         std::collections::HashMap::new();
     for form_name in list_form_names(op, ws_path).await? {
         let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-        let (_, table) = iceberg_store::load_entries_table(op, ws_path, &form_name).await?;
+        let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
         let batches = scan_table_batches(&table).await?;
-        let rows = entry_rows_from_batches(&batches, &form_def, &form_name)?;
-        for row in rows {
+        let rows = revision_rows_from_batches(&batches, &form_def)?;
+        for revision in rows {
+            let Some(row) = revision.state else { continue };
             let entry = latest.get(&row.entry_id);
             let should_replace = match entry {
                 Some((_, existing)) => row.updated_at >= existing.updated_at,
@@ -1792,9 +1937,12 @@ pub(crate) async fn list_form_entry_rows(
     form_name: &str,
     form_def: &Value,
 ) -> Result<Vec<EntryRow>> {
-    let (_, table) = iceberg_store::load_entries_table(op, ws_path, form_name).await?;
+    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
     let batches = scan_table_batches(&table).await?;
-    let rows = entry_rows_from_batches(&batches, form_def, form_name)?;
+    let rows = revision_rows_from_batches(&batches, form_def)?
+        .into_iter()
+        .filter_map(|revision| revision.state)
+        .collect::<Vec<_>>();
     let mut latest: std::collections::HashMap<String, EntryRow> = std::collections::HashMap::new();
     for row in rows {
         let entry = latest.get(&row.entry_id);
@@ -1809,6 +1957,7 @@ pub(crate) async fn list_form_entry_rows(
     Ok(latest.into_values().collect())
 }
 
+#[allow(dead_code)] // used by migration verification tooling
 pub(crate) async fn list_form_revision_rows(
     op: &Operator,
     ws_path: &str,
@@ -1829,7 +1978,22 @@ pub(crate) async fn append_revision_row_for_form(
 ) -> Result<()> {
     let (catalog, table): (Arc<MemoryCatalog>, iceberg::table::Table) =
         iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    append_revision_row_to_table(catalog.as_ref(), &table, row, form_def).await
+    append_revision_row_to_table(catalog.as_ref(), &table, row, form_def).await?;
+    let refreshed = catalog.load_table(table.identifier()).await?;
+    iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
+}
+
+pub async fn append_revision_batch_for_form(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    rows: &[RevisionRow],
+) -> Result<()> {
+    let form_def = form::read_form_definition(op, ws_path, form_name).await?;
+    let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
+    append_revision_rows_to_table(catalog.as_ref(), &table, rows, &form_def).await?;
+    let refreshed = catalog.load_table(table.identifier()).await?;
+    iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
 }
 
 fn extract_tags(frontmatter: &Value) -> Vec<String> {
@@ -1928,9 +2092,8 @@ pub async fn create_entry<I: IntegrityProvider>(
         deleted: false,
         deleted_at: None,
         author: author.to_string(),
+        entry_version: 1,
     };
-
-    write_entry_row(op, ws_path, &form_name, entry_id, &entry_row).await?;
 
     let revision = RevisionRow {
         revision_id: revision_id.clone(),
@@ -1946,10 +2109,13 @@ pub async fn create_entry<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: None,
+        state: Some(entry_row.clone()),
+        entry_version: entry_row.entry_version,
+        operation: "upsert".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
     };
-    let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &revision, &form_def).await?;
+    append_revision_row_for_form(op, ws_path, &form_name, &revision, &form_def).await?;
 
     let ws_id = ws_path
         .trim_end_matches('/')
@@ -2265,14 +2431,13 @@ pub async fn update_entry<I: IntegrityProvider>(
     row.extra_attributes = extra_attributes.clone();
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();
+    row.entry_version = row.entry_version.saturating_add(1);
     row.author = author.to_string();
     row.integrity = IntegrityPayload {
         checksum: checksum.clone(),
         signature: signature.clone(),
     };
     row.assets = assets.unwrap_or_else(|| row.assets.clone());
-
-    write_entry_row(op, ws_path, &form_name, entry_id, &row).await?;
 
     let revision = RevisionRow {
         revision_id: revision_id.clone(),
@@ -2288,10 +2453,13 @@ pub async fn update_entry<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: None,
+        state: Some(row.clone()),
+        entry_version: row.entry_version,
+        operation: "upsert".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
     };
-    let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &revision, &form_def).await?;
+    append_revision_row_for_form(op, ws_path, &form_name, &revision, &form_def).await?;
 
     get_entry(op, ws_path, entry_id).await
 }
@@ -2311,18 +2479,33 @@ pub async fn delete_entry(
     if delete_ts <= row.updated_at {
         delete_ts = row.updated_at + 0.001;
     }
-    if hard_delete {
-        row.deleted = true;
-        row.deleted_at = Some(delete_ts);
-        row.updated_at = delete_ts;
-        write_entry_row(op, ws_path, &form_name, entry_id, &row).await?;
-        return Ok(());
-    }
-
+    let _ = hard_delete;
+    let previous_revision_id = row.revision_id.clone();
     row.deleted = true;
     row.deleted_at = Some(delete_ts);
     row.updated_at = delete_ts;
-    write_entry_row(op, ws_path, &form_name, entry_id, &row).await?;
+    row.parent_revision_id = Some(previous_revision_id);
+    row.revision_id = Uuid::new_v4().to_string();
+    row.entry_version = row.entry_version.saturating_add(1);
+    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
+    let tombstone = RevisionRow {
+        revision_id: row.revision_id.clone(),
+        entry_id: entry_id.to_string(),
+        parent_revision_id: row.parent_revision_id.clone(),
+        timestamp: delete_ts,
+        author: row.author.clone(),
+        fields: Value::Object(Map::new()),
+        extra_attributes: Value::Object(Map::new()),
+        markdown_checksum: row.integrity.checksum.clone(),
+        integrity: row.integrity.clone(),
+        restored_from: None,
+        state: Some(row.clone()),
+        entry_version: row.entry_version,
+        operation: "delete".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
+    };
+    append_revision_row_for_form(op, ws_path, &form_name, &tombstone, &form_def).await?;
     Ok(())
 }
 
@@ -2422,6 +2605,7 @@ pub async fn restore_entry<I: IntegrityProvider>(
 
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = new_rev_id.clone();
+    row.entry_version = row.entry_version.saturating_add(1);
     row.updated_at = timestamp;
     row.fields = revision.fields.clone();
     row.extra_attributes = revision.extra_attributes.clone();
@@ -2430,8 +2614,6 @@ pub async fn restore_entry<I: IntegrityProvider>(
         signature: signature.clone(),
     };
     row.author = author.to_string();
-    write_entry_row(op, ws_path, &form_name, entry_id, &row).await?;
-
     let restore_revision = RevisionRow {
         revision_id: new_rev_id.clone(),
         entry_id: entry_id.to_string(),
@@ -2446,16 +2628,13 @@ pub async fn restore_entry<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: Some(revision_id.to_string()),
+        state: Some(row.clone()),
+        entry_version: row.entry_version,
+        operation: "restore".to_string(),
+        source_kind: "api".to_string(),
+        source_id: Some(revision_id.to_string()),
     };
-    let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    append_revision_row_to_table(
-        rev_catalog.as_ref(),
-        &rev_table,
-        &restore_revision,
-        &form_def,
-    )
-    .await?;
+    append_revision_row_for_form(op, ws_path, &form_name, &restore_revision, &form_def).await?;
 
     Ok(serde_json::json!({
         "revision_id": new_rev_id,

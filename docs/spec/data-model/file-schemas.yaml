@@ -123,15 +123,19 @@ schemas:
           format: date-time
   form_definition:
     description: Normalized Form definition persisted through Iceberg metadata.
-    path: iceberg://forms/{name}
+    path: iceberg://spaces/{space_id}/form_{form_id}
     schema:
       type: object
       required:
+      - id
       - name
       - version
       - fields
       - allow_extra_attributes
       properties:
+        id:
+          type: string
+          format: uuid
         name:
           type: string
         version:
@@ -147,8 +151,12 @@ schemas:
           additionalProperties:
             type: object
             required:
+            - id
             - type
             properties:
+              id:
+                type: integer
+                minimum: 100
               type:
                 type: string
               required:
@@ -156,6 +164,26 @@ schemas:
               target_form:
                 type: string
               default: {}
+  iceberg_catalog_pointers:
+    description: Versioned Catalog pointer manifest used by portable local Spaces; it replaces metadata-directory discovery.
+    path: spaces/{id}/forms/catalog-pointers.v1.json
+    schema:
+      type: object
+      required: [version, tables]
+      properties:
+        version:
+          const: 1
+        tables:
+          type: array
+          items:
+            type: object
+            required: [namespace, table, metadata_location]
+            properties:
+              namespace:
+                type: array
+                items: {type: string}
+              table: {type: string}
+              metadata_location: {type: string}
   materialized_view_meta:
     description: Metadata-only placeholder; no result rows.
     path: spaces/{id}/materialized_views/{sql_id}/meta.json
@@ -226,57 +254,30 @@ schemas:
           type: object
         count:
           type: object
-  entry_row:
-    description: Logical current Entry row for one Form.
-    path: iceberg://forms/{name}/entries
-    schema:
-      type: object
-      required:
-      - entry_id
-      - title
-      - form
-      - created_at
-      - updated_at
-      - fields
-      - revision_id
-      - author
-      properties:
-        entry_id: {}
-        title: {}
-        form: {}
-        tags: {}
-        links: {}
-        created_at: {}
-        updated_at: {}
-        fields: {}
-        extra_attributes: {}
-        revision_id: {}
-        parent_revision_id: {}
-        assets: {}
-        integrity: {}
-        deleted: {}
-        deleted_at: {}
-        author: {}
-  revision_row:
-    description: Logical append-only revision row for one Form.
-    path: iceberg://forms/{name}/revisions
+  entry_revision:
+    description: Authoritative append-only Entry revision for one stable Form ID.
+    path: iceberg://spaces/{space_id}/form_{form_id}
     schema:
       type: object
       required:
       - revision_id
       - entry_id
-      - timestamp
-      - author
-      - fields
-      - markdown_checksum
+      - entry_version
+      - operation
+      - committed_at
+      - author_id
+      - form_version
+      - source_kind
       properties:
         revision_id: {}
         entry_id: {}
         parent_revision_id: {}
-        timestamp: {}
-        author: {}
-        fields: {}
-        extra_attributes: {}
-        markdown_checksum: {}
-        integrity: {}
-        restored_from: {}
+        entry_version: {}
+        operation:
+          enum: [upsert, delete, restore]
+        committed_at: {}
+        author_id: {}
+        form_version: {}
+        source_kind: {}
+        source_id: {}
+        extension_metadata: {}

@@ -1,0 +1,27 @@
+[package]
+name = "ugoite-iceberg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0"
+arrow-array = "57.3"
+datafusion = "51.0"
+iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs", "storage-memory", "storage-s3", "storage-gcs", "storage-azdls", "storage-oss"] }
+iceberg-catalog-rest = "0.8.0"
+iceberg-datafusion = "0.8.0"
+parquet = { version = "57.3", default-features = false, features = ["arrow", "async"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.52", features = ["rt-multi-thread", "macros"] }
+ugoite-domain = { path = "../ugoite-domain" }
+uuid = { version = "1.23.2", features = ["v4", "serde"] }
+
+[dev-dependencies]
+criterion = "0.7"
+tempfile = "3"
+
+[[bench]]
+name = "revision_log"
+harness = false

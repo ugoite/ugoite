@@ -24,7 +24,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let form_def = serde_json::json!({
         "name": "Entry",
         "template": "# Entry\n\n## Body\n",
-        "fields": {"Body": {"type": "string"}}
+        "fields": {"Body": {"type": "markdown"}}
     });
     form::upsert_form(&op, ws_path, &form_def).await?;
 
@@ -230,13 +230,6 @@ async fn test_sql_sessions_req_api_008_scopes_auxiliary_tables() -> anyhow::Resu
         &MockIntegrity,
     )
     .await?;
-    let public_a_revision = entry::get_entry_content(&op, ws_path, "public-a")
-        .await?
-        .revision_id;
-    let restricted_z_revision = entry::get_entry_content(&op, ws_path, "restricted-z")
-        .await?
-        .revision_id;
-
     let public_asset = asset::save_asset(&op, ws_path, "public.txt", b"public").await?;
     let restricted_asset = asset::save_asset(&op, ws_path, "restricted.txt", b"restricted").await?;
     link::create_link(
@@ -248,6 +241,7 @@ async fn test_sql_sessions_req_api_008_scopes_auxiliary_tables() -> anyhow::Resu
         "public-link",
     )
     .await?;
+
     link::create_link(
         &op,
         ws_path,
@@ -257,6 +251,13 @@ async fn test_sql_sessions_req_api_008_scopes_auxiliary_tables() -> anyhow::Resu
         "restricted-link",
     )
     .await?;
+
+    let public_a_revision = entry::get_entry_content(&op, ws_path, "public-a")
+        .await?
+        .revision_id;
+    let restricted_z_revision = entry::get_entry_content(&op, ws_path, "restricted-z")
+        .await?
+        .revision_id;
 
     entry::update_entry(
         &op,

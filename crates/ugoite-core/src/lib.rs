@@ -8,6 +8,7 @@ pub mod entry;
 pub mod error;
 pub mod form;
 pub mod iceberg_store;
+pub use ugoite_iceberg as iceberg_workspace;
 pub mod index;
 pub mod integrity;
 pub mod link;

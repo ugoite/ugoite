@@ -44,3 +44,31 @@ runs as non-root, and mounts `/data`.
 
 **Accepted.** The current MCP surface is one authenticated, read-only Entry-list
 resource. Tools and prompts remain future work.
+
+## ADR-008 — Iceberg-native workspace model
+
+**Accepted.** A Space maps to one Iceberg namespace. A stable Form ID maps to
+one physical `form_<uuid>` table; display-name changes never rename the table.
+The Iceberg schema owns field IDs, types, and nullability. Versioned Ugoite
+labels, validation, references, and semantic metadata live in table properties.
+
+## ADR-009 — Entry history is the authority
+
+**Accepted.** Create, update, delete, and restore append revision rows to the
+Form table. Current state is the unique greatest `entry_version`; equal maximum
+versions are a conflict. There is no authoritative current-entry table and no
+two-table commit.
+
+## ADR-010 — Catalog and DataFusion are explicit
+
+**Accepted.** Production writes require an injected Iceberg Catalog. Object
+listing must not infer a metadata pointer. MemoryCatalog is test-only.
+DataFusion is the standard structured query engine and receives projection,
+predicate, limit, join, and snapshot work through Iceberg providers.
+
+## ADR-011 — Portable logic is not a storage adapter
+
+**Accepted.** `ugoite-domain` owns stable IDs, Form changes, compatibility,
+revision construction, and I/O-free validation. WASM exposes that logic and the
+portable API protocol; it never depends on Iceberg, Arrow, Parquet, OpenDAL, or
+a native repository interface.

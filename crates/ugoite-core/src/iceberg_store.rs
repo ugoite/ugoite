@@ -1,31 +1,39 @@
-use anyhow::{anyhow, Result};
-use futures::TryStreamExt;
+use anyhow::{anyhow, Context, Result};
 use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
 use iceberg::spec::{ListType, NestedField, Schema, StructType, Type, UnboundPartitionSpec};
 use iceberg::spec::{PrimitiveType, SortOrder};
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use iceberg::{Catalog, CatalogBuilder, MemoryCatalog, NamespaceIdent, TableCreation, TableIdent};
-use opendal::{options, Operator};
+use opendal::Operator;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
+use uuid::Uuid;
 
-const ENTRIES_TABLE_NAME: &str = "entries";
 const REVISIONS_TABLE_NAME: &str = "revisions";
 const FORM_DEF_PROP: &str = "ugoite.form_definition";
 const FORM_VERSION_PROP: &str = "ugoite.form_version";
+const CATALOG_POINTERS_FILE: &str = "forms/catalog-pointers.v1.json";
+const CATALOG_INSTANCE_FILE: &str = "forms/catalog-instance-id";
 
-static CATALOG_CACHE: OnceLock<Mutex<HashMap<String, Arc<MemoryCatalog>>>> = OnceLock::new();
-fn catalog_cache() -> &'static Mutex<HashMap<String, Arc<MemoryCatalog>>> {
-    CATALOG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct CatalogPointers {
+    version: u32,
+    tables: Vec<CatalogTablePointer>,
 }
 
-fn remove_catalog_cache(warehouse: &str) -> Result<()> {
-    let mut cache = catalog_cache()
-        .lock()
-        .map_err(|_| anyhow!("catalog cache lock poisoned"))?;
-    cache.remove(warehouse);
-    Ok(())
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CatalogTablePointer {
+    namespace: Vec<String>,
+    table: String,
+    metadata_location: String,
+}
+
+static CATALOG_CACHE: OnceLock<Mutex<HashMap<String, Arc<MemoryCatalog>>>> = OnceLock::new();
+
+fn catalog_cache() -> &'static Mutex<HashMap<String, Arc<MemoryCatalog>>> {
+    CATALOG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn scheme_to_uri_prefix(scheme: &str) -> &'static str {
@@ -58,219 +66,134 @@ fn warehouse_uri(op: &Operator, ws_path: &str) -> Result<String> {
     Ok(format!("{}{}{}", prefix, warehouse_path, "/forms"))
 }
 
-fn table_location(warehouse: &str, form_name: &str, table_name: &str) -> String {
-    format!(
-        "{}/{}/{}",
-        warehouse.trim_end_matches('/'),
-        form_name,
-        table_name
-    )
-}
-
-fn metadata_location(
-    warehouse: &str,
-    form_name: &str,
-    table_name: &str,
-    file_name: &str,
-) -> String {
-    format!(
-        "{}/metadata/{}",
-        table_location(warehouse, form_name, table_name),
-        file_name
-    )
-}
-
-fn parse_metadata_version(file_name: &str) -> Option<i32> {
-    let file_name = file_name.split('/').next_back()?;
-    let base = file_name.strip_suffix(".metadata.json")?;
-    let (version, _) = base.split_once('-')?;
-    version.parse::<i32>().ok()
-}
-
-async fn latest_metadata_file(op: &Operator, metadata_path: &str) -> Result<Option<String>> {
-    let scheme = op.info().scheme();
-    if scheme == "fs" || scheme == "file" {
-        let root = normalize_root(op.info().root().as_str());
-        let fs_path = format!("{}/{}", root, metadata_path.trim_start_matches('/'));
-        if let Ok(entries) = std::fs::read_dir(&fs_path) {
-            let mut latest: Option<(i32, String)> = None;
-            for entry in entries.flatten() {
-                let file_name = match entry.file_name().to_str() {
-                    Some(name) => name.to_string(),
-                    None => continue,
-                };
-                let Some(version) = parse_metadata_version(&file_name) else {
-                    continue;
-                };
-                let replace = match latest {
-                    Some((current, _)) => version > current,
-                    None => true,
-                };
-                if replace {
-                    latest = Some((version, file_name));
-                }
-            }
-            return Ok(latest.map(|(_, name)| name));
-        }
-    }
-
-    let mut lister = match op
-        .lister_options(
-            metadata_path,
-            options::ListOptions {
-                recursive: true,
-                ..Default::default()
-            },
-        )
-        .await
-    {
-        Ok(lister) => lister,
-        Err(_) => return Ok(None),
-    };
-    let mut latest: Option<(i32, String)> = None;
-
-    while let Some(entry) = lister.try_next().await? {
-        let name = entry.path();
-        let Some(version) = parse_metadata_version(name) else {
-            continue;
-        };
-        let file_name = name.split('/').next_back().unwrap_or("").to_string();
-        if file_name.is_empty() {
-            continue;
-        }
-        let replace = match latest {
-            Some((current, _)) => version > current,
-            None => true,
-        };
-        if replace {
-            latest = Some((version, file_name));
-        }
-    }
-
-    Ok(latest.map(|(_, name)| name))
-}
-
-async fn list_form_dirs(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let forms_path = format!("{}/forms/", ws_path.trim_end_matches('/'));
-    let mut lister = match op
-        .lister_options(
-            &forms_path,
-            options::ListOptions {
-                recursive: false,
-                ..Default::default()
-            },
-        )
-        .await
-    {
-        Ok(lister) => lister,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    let mut names = Vec::new();
-    let mut seen = HashSet::new();
-    let forms_prefix = forms_path.trim_end_matches('/');
-    while let Some(entry) = lister.try_next().await? {
-        if !entry.metadata().is_dir() {
-            continue;
-        }
-        let path = entry.path().trim_end_matches('/');
-        let relative = match path.strip_prefix(forms_prefix) {
-            Some(rest) => rest.trim_start_matches('/'),
-            None => continue,
-        };
-        if relative.is_empty() || relative.contains('/') {
-            continue;
-        }
-        if seen.contains(relative) {
-            continue;
-        }
-        seen.insert(relative.to_string());
-        names.push(relative.to_string());
-    }
-
-    Ok(names)
-}
-
-async fn register_existing_tables(
-    op: &Operator,
-    ws_path: &str,
-    catalog: &MemoryCatalog,
-) -> Result<()> {
-    let form_names = list_form_dirs(op, ws_path).await?;
-    if form_names.is_empty() {
-        return Ok(());
-    }
-
-    let warehouse = warehouse_uri(op, ws_path)?;
-    for form_name in form_names {
-        let namespace = form_namespace(&form_name);
-        if !catalog.namespace_exists(&namespace).await? {
-            if let Err(err) = catalog.create_namespace(&namespace, HashMap::new()).await {
-                let message = err.to_string();
-                if !message.contains("NamespaceAlreadyExists")
-                    && !message.to_lowercase().contains("already exists")
-                {
-                    return Err(err.into());
-                }
-            }
-        }
-
-        for table_name in [ENTRIES_TABLE_NAME, REVISIONS_TABLE_NAME] {
-            let table_ident = TableIdent::new(namespace.clone(), table_name.to_string());
-            if catalog.table_exists(&table_ident).await? {
-                continue;
-            }
-
-            let metadata_path = format!(
-                "{}/forms/{}/{}/metadata/",
-                ws_path.trim_end_matches('/'),
-                form_name,
-                table_name
-            );
-            let Some(latest) = latest_metadata_file(op, &metadata_path).await? else {
-                continue;
-            };
-            let metadata_location = metadata_location(&warehouse, &form_name, table_name, &latest);
-            catalog
-                .register_table(&table_ident, metadata_location)
-                .await?;
-        }
-    }
-
-    Ok(())
-}
-
 async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<MemoryCatalog>> {
     let warehouse = warehouse_uri(op, ws_path)?;
-    if let Some(cached) = {
-        let cache = catalog_cache()
-            .lock()
-            .map_err(|_| anyhow!("catalog cache lock poisoned"))?;
-        cache.get(&warehouse).cloned()
-    } {
-        register_existing_tables(op, ws_path, cached.as_ref()).await?;
-        return Ok(cached);
+    let instance_path = format!(
+        "{}/{}",
+        ws_path.trim_end_matches('/'),
+        CATALOG_INSTANCE_FILE
+    );
+    let instance_id = if op.exists(&instance_path).await? {
+        String::from_utf8(op.read(&instance_path).await?.to_vec())?
+    } else {
+        let value = Uuid::new_v4().to_string();
+        op.write(&instance_path, value.as_bytes().to_vec()).await?;
+        value
+    };
+    let cache_key = format!("{warehouse}#{instance_id}");
+    if let Some(catalog) = catalog_cache()
+        .lock()
+        .map_err(|_| anyhow!("catalog cache lock poisoned"))?
+        .get(&cache_key)
+        .cloned()
+    {
+        return Ok(catalog);
     }
-
     let mut props = HashMap::new();
     props.insert(MEMORY_CATALOG_WAREHOUSE.to_string(), warehouse.clone());
     let catalog: MemoryCatalog = MemoryCatalogBuilder::default()
         .load("ugoite", props)
         .await?;
-    register_existing_tables(op, ws_path, &catalog).await?;
+    let pointer_path = format!(
+        "{}/{}",
+        ws_path.trim_end_matches('/'),
+        CATALOG_POINTERS_FILE
+    );
+    if op.exists(&pointer_path).await? {
+        let bytes = op.read(&pointer_path).await?;
+        let pointers: CatalogPointers = serde_json::from_slice(&bytes.to_vec())?;
+        for pointer in pointers.tables {
+            let namespace = NamespaceIdent::from_vec(pointer.namespace)?;
+            if !catalog.namespace_exists(&namespace).await? {
+                catalog.create_namespace(&namespace, HashMap::new()).await?;
+            }
+            let ident = TableIdent::new(namespace, pointer.table);
+            if !catalog.table_exists(&ident).await? {
+                catalog
+                    .register_table(&ident, pointer.metadata_location)
+                    .await?;
+            }
+        }
+    }
     let catalog = Arc::new(catalog);
-    let mut cache = catalog_cache()
+    catalog_cache()
         .lock()
-        .map_err(|_| anyhow!("catalog cache lock poisoned"))?;
-    cache.entry(warehouse).or_insert_with(|| catalog.clone());
+        .map_err(|_| anyhow!("catalog cache lock poisoned"))?
+        .insert(cache_key, catalog.clone());
     Ok(catalog)
 }
 
-fn form_namespace(form_name: &str) -> NamespaceIdent {
-    NamespaceIdent::new(form_name.to_string())
+pub async fn persist_catalog_pointer(
+    op: &Operator,
+    ws_path: &str,
+    table: &iceberg::table::Table,
+) -> Result<()> {
+    let pointer_path = format!(
+        "{}/{}",
+        ws_path.trim_end_matches('/'),
+        CATALOG_POINTERS_FILE
+    );
+    let mut pointers = if op.exists(&pointer_path).await? {
+        serde_json::from_slice::<CatalogPointers>(&op.read(&pointer_path).await?.to_vec())?
+    } else {
+        CatalogPointers {
+            version: 1,
+            tables: Vec::new(),
+        }
+    };
+    let ident = table.identifier();
+    let pointer = CatalogTablePointer {
+        namespace: ident.namespace().as_ref().clone(),
+        table: ident.name().to_string(),
+        metadata_location: table.metadata_location_result()?.to_string(),
+    };
+    pointers.tables.retain(|existing| {
+        existing.namespace != pointer.namespace || existing.table != pointer.table
+    });
+    pointers.tables.push(pointer);
+    pointers.tables.sort_by(|left, right| {
+        left.namespace
+            .cmp(&right.namespace)
+            .then_with(|| left.table.cmp(&right.table))
+    });
+    op.write(&pointer_path, serde_json::to_vec_pretty(&pointers)?)
+        .await?;
+    Ok(())
 }
 
-fn form_field_defs(form_def: &Value) -> Result<Vec<(String, String, bool)>> {
+fn form_namespace(form_def: &Value) -> Result<NamespaceIdent> {
+    let form_id = form_def
+        .get("id")
+        .and_then(Value::as_str)
+        .context("Form definition missing stable 'id'")?;
+    Ok(NamespaceIdent::new(format!(
+        "form_{}",
+        form_id.replace('-', "")
+    )))
+}
+
+async fn resolve_form_namespace(
+    catalog: &MemoryCatalog,
+    form_name: &str,
+) -> Result<NamespaceIdent> {
+    for namespace in catalog.list_namespaces(None).await? {
+        let ident = TableIdent::new(namespace.clone(), REVISIONS_TABLE_NAME.to_string());
+        if !catalog.table_exists(&ident).await? {
+            continue;
+        }
+        let table = catalog.load_table(&ident).await?;
+        let Some(raw) = table.metadata().properties().get(FORM_DEF_PROP) else {
+            continue;
+        };
+        let definition: Value = serde_json::from_str(raw)?;
+        if definition.get("name").and_then(Value::as_str) == Some(form_name) {
+            return Ok(namespace);
+        }
+    }
+    Err(anyhow!("Form {form_name} not found in Catalog"))
+}
+
+fn form_field_defs(form_def: &Value) -> Result<Vec<(i32, String, String, bool)>> {
     let mut fields = Vec::new();
     let Some(def_fields) = form_def.get("fields") else {
         return Ok(fields);
@@ -279,6 +202,11 @@ fn form_field_defs(form_def: &Value) -> Result<Vec<(String, String, bool)>> {
     match def_fields {
         Value::Object(map) => {
             for (name, def) in map {
+                let field_id = def
+                    .get("id")
+                    .and_then(Value::as_i64)
+                    .and_then(|value| i32::try_from(value).ok())
+                    .context("Form field missing stable id")?;
                 let field_type = def
                     .get("type")
                     .and_then(|v| v.as_str())
@@ -288,7 +216,7 @@ fn form_field_defs(form_def: &Value) -> Result<Vec<(String, String, bool)>> {
                     .get("required")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                fields.push((name.clone(), field_type, required));
+                fields.push((field_id, name.clone(), field_type, required));
             }
         }
         Value::Array(items) => {
@@ -296,6 +224,11 @@ fn form_field_defs(form_def: &Value) -> Result<Vec<(String, String, bool)>> {
                 let Some(name) = item.get("name").and_then(|v| v.as_str()) else {
                     continue;
                 };
+                let field_id = item
+                    .get("id")
+                    .and_then(Value::as_i64)
+                    .and_then(|value| i32::try_from(value).ok())
+                    .context("Form field missing stable id")?;
                 let field_type = item
                     .get("type")
                     .and_then(|v| v.as_str())
@@ -305,7 +238,7 @@ fn form_field_defs(form_def: &Value) -> Result<Vec<(String, String, bool)>> {
                     .get("required")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                fields.push((name.to_string(), field_type, required));
+                fields.push((field_id, name.to_string(), field_type, required));
             }
         }
         _ => {}
@@ -378,8 +311,7 @@ fn iceberg_type_for_field(field_type: &str, id_counter: &mut i32) -> Result<Type
 
 fn build_fields_struct(form_def: &Value, id_counter: &mut i32) -> Result<Type> {
     let mut nested_fields = Vec::new();
-    for (name, field_type, required) in form_field_defs(form_def)? {
-        let field_id = next_id(id_counter);
+    for (field_id, name, field_type, required) in form_field_defs(form_def)? {
         let field_type = iceberg_type_for_field(&field_type, id_counter)?;
         nested_fields.push(Arc::new(NestedField::new(
             field_id, name, field_type, required,
@@ -389,6 +321,7 @@ fn build_fields_struct(form_def: &Value, id_counter: &mut i32) -> Result<Type> {
     Ok(Type::Struct(StructType::new(nested_fields)))
 }
 
+#[allow(dead_code)] // schema for frozen pre-refactor migration fixtures
 fn build_entries_schema(form_def: &Value) -> Result<Schema> {
     let mut counter = 1;
 
@@ -633,6 +566,36 @@ fn build_revisions_schema(form_def: &Value) -> Result<Schema> {
             Type::Primitive(PrimitiveType::String),
             false,
         )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "state_json",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "entry_version",
+            Type::Primitive(PrimitiveType::Long),
+            true,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "operation",
+            Type::Primitive(PrimitiveType::String),
+            true,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "source_kind",
+            Type::Primitive(PrimitiveType::String),
+            true,
+        )),
+        Arc::new(NestedField::new(
+            next_id(&mut counter),
+            "source_id",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )),
     ];
 
     Schema::builder()
@@ -654,12 +617,8 @@ fn table_properties(form_def: &Value) -> Result<HashMap<String, String>> {
 }
 
 pub async fn ensure_form_tables(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
-    let form_name = form_def
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Form definition missing 'name'"))?;
     let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
-    let namespace = form_namespace(form_name);
+    let namespace = form_namespace(form_def)?;
 
     if !catalog.namespace_exists(&namespace).await? {
         if let Err(err) = catalog.create_namespace(&namespace, HashMap::new()).await {
@@ -670,45 +629,6 @@ pub async fn ensure_form_tables(op: &Operator, ws_path: &str, form_def: &Value) 
                 return Err(err.into());
             }
         }
-    }
-
-    let entries_ident = TableIdent::new(namespace.clone(), ENTRIES_TABLE_NAME.to_string());
-    if !catalog.table_exists(&entries_ident).await? {
-        let schema = build_entries_schema(form_def)?;
-        let props = table_properties(form_def)?;
-        let creation = TableCreation::builder()
-            .name(ENTRIES_TABLE_NAME.to_string())
-            .schema(schema)
-            .partition_spec(UnboundPartitionSpec::default())
-            .sort_order(SortOrder::unsorted_order())
-            .properties(props)
-            .build();
-        let created = catalog.create_table(&namespace, creation).await;
-        if let Err(err) = created {
-            let message = err.to_string();
-            if !message.contains("TableAlreadyExists") && !message.contains("already exists") {
-                return Err(err.into());
-            }
-            let props = table_properties(form_def)?;
-            let table = catalog.load_table(&entries_ident).await?;
-            let tx = Transaction::new(&table);
-            let mut action = tx.update_table_properties();
-            for (key, value) in props {
-                action = action.set(key, value);
-            }
-            let tx = action.apply(tx)?;
-            tx.commit(catalog.as_ref()).await?;
-        }
-    } else {
-        let props = table_properties(form_def)?;
-        let table = catalog.load_table(&entries_ident).await?;
-        let tx = Transaction::new(&table);
-        let mut action = tx.update_table_properties();
-        for (key, value) in props {
-            action = action.set(key, value);
-        }
-        let tx = action.apply(tx)?;
-        tx.commit(catalog.as_ref()).await?;
     }
 
     let revisions_ident = TableIdent::new(namespace.clone(), REVISIONS_TABLE_NAME.to_string());
@@ -750,26 +670,10 @@ pub async fn ensure_form_tables(op: &Operator, ws_path: &str, form_def: &Value) 
         tx.commit(catalog.as_ref()).await?;
     }
 
+    let table = catalog.load_table(&revisions_ident).await?;
+    persist_catalog_pointer(op, ws_path, &table).await?;
+
     Ok(())
-}
-
-pub async fn load_form_tables(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-) -> Result<(
-    Arc<MemoryCatalog>,
-    iceberg::table::Table,
-    iceberg::table::Table,
-)> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
-    let namespace = form_namespace(form_name);
-    let entries_ident = TableIdent::new(namespace.clone(), ENTRIES_TABLE_NAME.to_string());
-    let revisions_ident = TableIdent::new(namespace.clone(), REVISIONS_TABLE_NAME.to_string());
-
-    let entries = catalog.load_table(&entries_ident).await?;
-    let revisions = catalog.load_table(&revisions_ident).await?;
-    Ok((catalog, entries, revisions))
 }
 
 pub async fn load_entries_table(
@@ -778,10 +682,10 @@ pub async fn load_entries_table(
     form_name: &str,
 ) -> Result<(Arc<MemoryCatalog>, iceberg::table::Table)> {
     let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
-    let namespace = form_namespace(form_name);
-    let entries_ident = TableIdent::new(namespace, ENTRIES_TABLE_NAME.to_string());
-    let entries = catalog.load_table(&entries_ident).await?;
-    Ok((catalog, entries))
+    let namespace = resolve_form_namespace(catalog.as_ref(), form_name).await?;
+    let table_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
+    let table = catalog.load_table(&table_ident).await?;
+    Ok((catalog, table))
 }
 
 pub async fn load_revisions_table(
@@ -790,7 +694,7 @@ pub async fn load_revisions_table(
     form_name: &str,
 ) -> Result<(Arc<MemoryCatalog>, iceberg::table::Table)> {
     let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
-    let namespace = form_namespace(form_name);
+    let namespace = resolve_form_namespace(catalog.as_ref(), form_name).await?;
     let revisions_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
     let revisions = catalog.load_table(&revisions_ident).await?;
     Ok((catalog, revisions))
@@ -801,91 +705,20 @@ pub async fn load_form_schema_fields(
     ws_path: &str,
     form_name: &str,
 ) -> Result<Option<std::collections::HashSet<String>>> {
-    let metadata_dir = format!(
-        "{}/forms/{}/entries/metadata/",
-        ws_path.trim_end_matches('/'),
-        form_name
-    );
-    let Some(latest) = latest_metadata_file(op, &metadata_dir).await? else {
+    let (_, table) = load_revisions_table(op, ws_path, form_name).await?;
+    let Some(field) = table.metadata().current_schema().field_by_name("fields") else {
         return Ok(None);
     };
-    let metadata_path = format!("{}{}", metadata_dir, latest);
-    let bytes = op.read(&metadata_path).await?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
-    let schemas = value.get("schemas").and_then(|v| v.as_array());
-    let current_schema_id = value.get("current-schema-id").and_then(|v| v.as_i64());
-    let schema = schemas.and_then(|arr| {
-        if let Some(current_id) = current_schema_id {
-            arr.iter()
-                .find(|schema| schema.get("schema-id").and_then(|v| v.as_i64()) == Some(current_id))
-                .or_else(|| arr.first())
-        } else {
-            arr.first()
-        }
-    });
-    let Some(schema) = schema else {
+    let Type::Struct(fields) = field.field_type.as_ref() else {
         return Ok(None);
     };
-    let fields = schema.get("fields").and_then(|v| v.as_array());
-    let Some(fields) = fields else {
-        return Ok(None);
-    };
-    for field in fields {
-        if field.get("name").and_then(|v| v.as_str()) == Some("fields") {
-            let struct_fields = field
-                .get("type")
-                .and_then(|v| v.get("fields"))
-                .and_then(|v| v.as_array());
-            let Some(struct_fields) = struct_fields else {
-                return Ok(None);
-            };
-            let names = struct_fields
-                .iter()
-                .filter_map(|f| {
-                    f.get("name")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                })
-                .collect();
-            return Ok(Some(names));
-        }
-    }
-    Ok(None)
-}
-
-pub async fn drop_form_tables(op: &Operator, ws_path: &str, form_name: &str) -> Result<()> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
-    let namespace = form_namespace(form_name);
-    let entries_ident = TableIdent::new(namespace.clone(), ENTRIES_TABLE_NAME.to_string());
-    let revisions_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
-
-    if catalog.table_exists(&entries_ident).await? {
-        catalog.drop_table(&entries_ident).await?;
-    }
-    if catalog.table_exists(&revisions_ident).await? {
-        catalog.drop_table(&revisions_ident).await?;
-    }
-
-    let namespace = form_namespace(form_name);
-    if catalog.namespace_exists(&namespace).await? {
-        let _ = catalog.drop_namespace(&namespace).await;
-    }
-
-    let form_root = format!("{}/forms/{}/", ws_path.trim_end_matches('/'), form_name);
-    let scheme = op.info().scheme();
-    if scheme == "fs" || scheme == "file" {
-        let root = normalize_root(op.info().root().as_str());
-        let ws_path = ws_path.trim_start_matches('/');
-        let fs_root = format!("{}/{}/forms/{}", root, ws_path, form_name);
-        let _ = std::fs::remove_dir_all(&fs_root);
-    } else {
-        let _ = op.delete_with(&form_root).recursive(true).await;
-    }
-
-    let warehouse = warehouse_uri(op, ws_path)?;
-    remove_catalog_cache(&warehouse)?;
-
-    Ok(())
+    Ok(Some(
+        fields
+            .fields()
+            .iter()
+            .map(|field| field.name.clone())
+            .collect(),
+    ))
 }
 
 pub async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
@@ -893,13 +726,20 @@ pub async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>
     let namespaces = catalog.list_namespaces(None).await?;
     let mut names = Vec::new();
     for namespace in namespaces {
-        if let Some(first) = namespace.as_ref().first() {
-            names.push(first.clone());
+        let ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
+        if !catalog.table_exists(&ident).await? {
+            continue;
+        }
+        let table = catalog.load_table(&ident).await?;
+        let Some(raw) = table.metadata().properties().get(FORM_DEF_PROP) else {
+            continue;
+        };
+        let definition: Value = serde_json::from_str(raw)?;
+        if let Some(name) = definition.get("name").and_then(Value::as_str) {
+            names.push(name.to_string());
         }
     }
-    if names.is_empty() {
-        return list_form_dirs(op, ws_path).await;
-    }
+    names.sort();
     Ok(names)
 }
 
@@ -912,31 +752,4 @@ pub async fn load_form_definition(op: &Operator, ws_path: &str, form_name: &str)
     };
     let form_def = serde_json::from_str::<Value>(definition)?;
     Ok(form_def)
-}
-
-pub async fn load_form_definition_from_metadata(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-) -> Result<Option<Value>> {
-    let metadata_dir = format!(
-        "{}/forms/{}/entries/metadata/",
-        ws_path.trim_end_matches('/'),
-        form_name
-    );
-    let Some(latest) = latest_metadata_file(op, &metadata_dir).await? else {
-        return Ok(None);
-    };
-    let metadata_path = format!("{}{}", metadata_dir, latest);
-    let bytes = op.read(&metadata_path).await?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
-    let props = value.get("properties").and_then(|v| v.as_object());
-    let Some(props) = props else {
-        return Ok(None);
-    };
-    let Some(definition) = props.get(FORM_DEF_PROP).and_then(|v| v.as_str()) else {
-        return Ok(None);
-    };
-    let form_def = serde_json::from_str::<Value>(definition)?;
-    Ok(Some(form_def))
 }
