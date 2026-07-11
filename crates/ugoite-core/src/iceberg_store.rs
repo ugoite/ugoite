@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Context, Result};
 use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
-use iceberg::spec::{ListType, NestedField, Schema, StructType, Type, UnboundPartitionSpec};
-use iceberg::spec::{PrimitiveType, SortOrder};
+use iceberg::spec::{ListType, NestedField, PrimitiveType, Schema, StructType, Type};
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
-use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
+use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableIdent};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,6 +11,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use uuid::Uuid;
 
 const FORM_DEF_PROP: &str = "ugoite.form_definition";
+const NATIVE_FORM_DEF_PROP: &str = "ugoite.form.definition.v1";
 const FORM_VERSION_PROP: &str = "ugoite.form_version";
 const CATALOG_POINTERS_FILE: &str = "forms/catalog-pointers.v1.json";
 const CATALOG_INSTANCE_FILE: &str = "forms/catalog-instance-id";
@@ -207,7 +207,8 @@ pub async fn persist_catalog_pointer(
         form_name: table
             .metadata()
             .properties()
-            .get(FORM_DEF_PROP)
+            .get(NATIVE_FORM_DEF_PROP)
+            .or_else(|| table.metadata().properties().get(FORM_DEF_PROP))
             .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
             .and_then(|definition| {
                 definition
@@ -230,6 +231,7 @@ pub async fn persist_catalog_pointer(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn form_namespace(form_def: &Value) -> Result<NamespaceIdent> {
     form_def
         .get("id")
@@ -240,6 +242,7 @@ fn form_namespace(form_def: &Value) -> Result<NamespaceIdent> {
     Ok(NamespaceIdent::new("space".to_string()))
 }
 
+#[allow(dead_code)]
 fn physical_form_table_name(form_def: &Value) -> Result<String> {
     let form_id = form_def
         .get("id")
@@ -258,7 +261,12 @@ async fn resolve_form_table_ident(
         let namespace = NamespaceIdent::new("space".to_string());
         for ident in catalog.list_tables(&namespace).await? {
             let table = catalog.load_table(&ident).await?;
-            if let Some(raw) = table.metadata().properties().get(FORM_DEF_PROP) {
+            if let Some(raw) = table
+                .metadata()
+                .properties()
+                .get(NATIVE_FORM_DEF_PROP)
+                .or_else(|| table.metadata().properties().get(FORM_DEF_PROP))
+            {
                 let definition: Value = serde_json::from_str(raw)?;
                 if definition.get("name").and_then(Value::as_str) == Some(form_name) {
                     return Ok(ident);
@@ -582,6 +590,7 @@ fn build_entries_schema(form_def: &Value) -> Result<Schema> {
         .map_err(|e| e.into())
 }
 
+#[allow(dead_code)]
 fn build_revisions_schema(form_def: &Value) -> Result<Schema> {
     let mut counter = 1;
     let fields_struct = build_fields_struct(form_def, &mut counter)?;
@@ -699,6 +708,7 @@ fn build_revisions_schema(form_def: &Value) -> Result<Schema> {
         .map_err(|e| e.into())
 }
 
+#[allow(dead_code)]
 fn table_properties(form_def: &Value) -> Result<HashMap<String, String>> {
     let mut props = HashMap::new();
     let form_def_str = serde_json::to_string(form_def)?;
@@ -712,65 +722,30 @@ fn table_properties(form_def: &Value) -> Result<HashMap<String, String>> {
 }
 
 pub async fn ensure_form_tables(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
-    let use_rest_catalog = uses_rest_catalog();
-    let catalog = catalog_for_space(op, ws_path).await?;
-    let namespace = form_namespace(form_def)?;
-
-    if !catalog.namespace_exists(&namespace).await? {
-        if let Err(err) = catalog.create_namespace(&namespace, HashMap::new()).await {
-            let message = err.to_string();
-            if !message.contains("NamespaceAlreadyExists")
-                && !message.to_lowercase().contains("already exists")
-            {
-                return Err(err.into());
-            }
-        }
+    let domain_form = crate::form::to_domain_form(form_def)?;
+    let workspace = native_workspace(op, ws_path).await?;
+    let ident = TableIdent::new(
+        workspace.namespace().clone(),
+        ugoite_iceberg::physical_form_name(domain_form.id),
+    );
+    if !workspace.catalog().table_exists(&ident).await? {
+        workspace.create_form(&domain_form).await?;
     }
-
-    let revisions_ident = TableIdent::new(namespace.clone(), physical_form_table_name(form_def)?);
-    if !catalog.table_exists(&revisions_ident).await? {
-        let schema = build_revisions_schema(form_def)?;
-        let props = table_properties(form_def)?;
-        let creation = TableCreation::builder()
-            .name(physical_form_table_name(form_def)?)
-            .schema(schema)
-            .partition_spec(UnboundPartitionSpec::default())
-            .sort_order(SortOrder::unsorted_order())
-            .properties(props)
-            .build();
-        let created = catalog.create_table(&namespace, creation).await;
-        if let Err(err) = created {
-            let message = err.to_string();
-            if !message.contains("TableAlreadyExists") && !message.contains("already exists") {
-                return Err(err.into());
-            }
-            let props = table_properties(form_def)?;
-            let table = catalog.load_table(&revisions_ident).await?;
-            let tx = Transaction::new(&table);
-            let mut action = tx.update_table_properties();
-            for (key, value) in props {
-                action = action.set(key, value);
-            }
-            let tx = action.apply(tx)?;
-            tx.commit(catalog.as_ref()).await?;
-        }
-    } else {
-        let props = table_properties(form_def)?;
-        let table = catalog.load_table(&revisions_ident).await?;
-        let tx = Transaction::new(&table);
-        let mut action = tx.update_table_properties();
-        for (key, value) in props {
-            action = action.set(key, value);
-        }
-        let tx = action.apply(tx)?;
-        tx.commit(catalog.as_ref()).await?;
+    let table = workspace.catalog().load_table(&ident).await?;
+    let tx = Transaction::new(&table);
+    let mut action = tx.update_table_properties();
+    action = action
+        .set(FORM_DEF_PROP.to_string(), serde_json::to_string(form_def)?)
+        .set(
+            FORM_VERSION_PROP.to_string(),
+            domain_form.version.get().to_string(),
+        );
+    let tx = action.apply(tx)?;
+    tx.commit(workspace.catalog().as_ref()).await?;
+    if !uses_rest_catalog() {
+        let refreshed = workspace.catalog().load_table(&ident).await?;
+        persist_catalog_pointer(op, ws_path, &refreshed).await?;
     }
-
-    let table = catalog.load_table(&revisions_ident).await?;
-    if !use_rest_catalog {
-        persist_catalog_pointer(op, ws_path, &table).await?;
-    }
-
     Ok(())
 }
 
@@ -856,9 +831,16 @@ pub async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>
 pub async fn load_form_definition(op: &Operator, ws_path: &str, form_name: &str) -> Result<Value> {
     let (_, entries) = load_entries_table(op, ws_path, form_name).await?;
     let props = entries.metadata().properties();
-    let Some(definition) = props.get(FORM_DEF_PROP) else {
+    let Some(definition) = props
+        .get(NATIVE_FORM_DEF_PROP)
+        .or_else(|| props.get(FORM_DEF_PROP))
+    else {
         return Err(anyhow!("Form definition missing in Iceberg metadata"));
     };
     let form_def = serde_json::from_str::<Value>(definition)?;
+    if props.contains_key(NATIVE_FORM_DEF_PROP) {
+        let domain_form: ugoite_domain::form::FormDefinition = serde_json::from_value(form_def)?;
+        return Ok(crate::form::from_domain_form(&domain_form));
+    }
     Ok(form_def)
 }

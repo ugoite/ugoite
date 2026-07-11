@@ -30,6 +30,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::sync::Arc;
+use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::id::{FieldId, RevisionId};
 use url::Url;
 use uuid::Uuid;
 
@@ -1496,6 +1498,14 @@ fn revision_rows_from_batches(
     batches: &[RecordBatch],
     form_def: &Value,
 ) -> Result<Vec<RevisionRow>> {
+    if batches
+        .first()
+        .and_then(|batch| batch.column_by_name("revision_id"))
+        .and_then(|column| column.as_any().downcast_ref::<FixedSizeBinaryArray>())
+        .is_some()
+    {
+        return native_revision_rows_from_batches(batches);
+    }
     let mut rows = Vec::new();
     for batch in batches {
         let revision_ids = column_as::<StringArray>(batch, "revision_id")?;
@@ -1605,6 +1615,111 @@ fn revision_rows_from_batches(
     Ok(rows)
 }
 
+fn native_revision_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<RevisionRow>> {
+    let mut rows = Vec::new();
+    for batch in batches {
+        let revision_ids = column_as::<FixedSizeBinaryArray>(batch, "revision_id")?;
+        let entry_ids = column_as::<FixedSizeBinaryArray>(batch, "entry_id")?;
+        let parents = batch
+            .column_by_name("parent_revision_id")
+            .context("Missing parent_revision_id")?;
+        let versions = column_as::<Int64Array>(batch, "entry_version")?;
+        let timestamps = column_as::<TimestampMicrosecondArray>(batch, "committed_at")?;
+        let authors = column_as::<StringArray>(batch, "author_id")?;
+        let operations = column_as::<StringArray>(batch, "operation")?;
+        let source_kinds = column_as::<StringArray>(batch, "source_kind")?;
+        let source_ids = column_as::<StringArray>(batch, "source_id")?;
+        let extensions = column_as::<StringArray>(batch, "extension_metadata")?;
+        let extra_attributes = column_as::<StringArray>(batch, "extra_attributes")?;
+        for row_idx in 0..batch.num_rows() {
+            let extension: serde_json::Map<String, Value> = if extensions.is_null(row_idx) {
+                Map::new()
+            } else {
+                serde_json::from_str(extensions.value(row_idx))?
+            };
+            let state = extension
+                .get("ugoite.legacy.state")
+                .cloned()
+                .filter(|value| !value.is_null())
+                .map(serde_json::from_value)
+                .transpose()?;
+            let fields = state
+                .as_ref()
+                .map(|state: &EntryRow| state.fields.clone())
+                .unwrap_or_else(|| Value::Object(Map::new()));
+            let integrity = extension
+                .get("ugoite.legacy.integrity")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()?
+                .unwrap_or_default();
+            let restored_from = extension
+                .get("ugoite.legacy.restored_from")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let legacy_entry_id = state
+                .as_ref()
+                .map(|state: &EntryRow| state.entry_id.clone())
+                .unwrap_or_else(|| {
+                    Uuid::from_slice(entry_ids.value(row_idx))
+                        .map(|value| value.to_string())
+                        .unwrap_or_default()
+                });
+            let physical_parent = if parents.is_null(row_idx) {
+                None
+            } else {
+                Some(
+                    Uuid::from_slice(
+                        parents
+                            .as_any()
+                            .downcast_ref::<FixedSizeBinaryArray>()
+                            .context("parent_revision_id must be UUID")?
+                            .value(row_idx),
+                    )?
+                    .to_string(),
+                )
+            };
+            rows.push(RevisionRow {
+                revision_id: state
+                    .as_ref()
+                    .filter(|state| !state.revision_id.is_empty())
+                    .map(|state| state.revision_id.clone())
+                    .unwrap_or(Uuid::from_slice(revision_ids.value(row_idx))?.to_string()),
+                entry_id: legacy_entry_id,
+                parent_revision_id: state
+                    .as_ref()
+                    .and_then(|state| state.parent_revision_id.clone())
+                    .or(physical_parent),
+                timestamp: from_timestamp_micros(timestamps.value(row_idx)),
+                author: authors.value(row_idx).to_string(),
+                fields,
+                extra_attributes: if extra_attributes.is_null(row_idx) {
+                    Value::Object(Map::new())
+                } else {
+                    serde_json::from_str(extra_attributes.value(row_idx))?
+                },
+                markdown_checksum: extension
+                    .get("ugoite.legacy.markdown_checksum")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                integrity,
+                restored_from,
+                state,
+                entry_version: u64::try_from(versions.value(row_idx))?,
+                operation: operations.value(row_idx).to_string(),
+                source_kind: source_kinds.value(row_idx).to_string(),
+                source_id: if source_ids.is_null(row_idx) {
+                    None
+                } else {
+                    Some(source_ids.value(row_idx).to_string())
+                },
+            });
+        }
+    }
+    Ok(rows)
+}
+
 #[allow(dead_code)] // retained only for migration fixtures, never for production writes
 fn entry_row_to_record_batch(
     row: &EntryRow,
@@ -1653,6 +1768,7 @@ fn entry_row_to_record_batch(
     RecordBatch::try_new(arrow_schema, arrays).map_err(|e| anyhow!("Record batch error: {}", e))
 }
 
+#[allow(dead_code)]
 fn revision_row_to_record_batch(
     row: &RevisionRow,
     form_def: &Value,
@@ -1754,14 +1870,139 @@ async fn append_entry_row_to_table(
 }
 
 async fn append_revision_row_to_table(
-    catalog: &dyn Catalog,
-    table: &iceberg::table::Table,
+    op: &Operator,
+    ws_path: &str,
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
-    append_revision_rows_to_table(catalog, table, std::slice::from_ref(row), form_def).await
+    append_revision_rows_to_workspace(op, ws_path, std::slice::from_ref(row), form_def).await
 }
 
+async fn append_revision_rows_to_workspace(
+    op: &Operator,
+    ws_path: &str,
+    rows: &[RevisionRow],
+    form_def: &Value,
+) -> Result<()> {
+    if rows.is_empty() {
+        return Err(anyhow!("revision batch must not be empty"));
+    }
+    let domain_form = form::to_domain_form(form_def)?;
+    let revisions = rows
+        .iter()
+        .map(|row| revision_row_to_domain(row, &domain_form))
+        .collect::<Result<Vec<_>>>()?;
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    workspace
+        .append_revisions(domain_form.id, revisions)
+        .await?;
+    Ok(())
+}
+
+fn revision_row_to_domain(
+    row: &RevisionRow,
+    form: &ugoite_domain::form::FormDefinition,
+) -> Result<EntryRevision> {
+    let entry_id = Uuid::parse_str(&row.entry_id)
+        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, row.entry_id.as_bytes()));
+    let revision_id = Uuid::parse_str(&row.revision_id)?;
+    let parent_revision_id = row
+        .parent_revision_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()?;
+    let mut extension_metadata = std::collections::BTreeMap::new();
+    extension_metadata.insert(
+        "ugoite.legacy.state".to_string(),
+        serde_json::to_value(&row.state)?,
+    );
+    extension_metadata.insert(
+        "ugoite.legacy.markdown_checksum".to_string(),
+        Value::String(row.markdown_checksum.clone()),
+    );
+    extension_metadata.insert(
+        "ugoite.legacy.integrity".to_string(),
+        serde_json::to_value(&row.integrity)?,
+    );
+    if let Some(restored_from) = &row.restored_from {
+        extension_metadata.insert(
+            "ugoite.legacy.restored_from".to_string(),
+            Value::String(restored_from.clone()),
+        );
+    }
+    let operation = match row.operation.as_str() {
+        "upsert" => EntryOperation::Upsert,
+        "delete" => EntryOperation::Delete,
+        "restore" => EntryOperation::Restore,
+        other => return Err(anyhow!("unsupported revision operation: {other}")),
+    };
+    let values = if operation == EntryOperation::Delete {
+        Default::default()
+    } else {
+        form_values_to_domain(&row.fields, form)?
+    };
+    let extra_attributes = row
+        .extra_attributes
+        .as_object()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    Ok(EntryRevision {
+        form_id: form.id,
+        entry_id: entry_id.into(),
+        revision_id: revision_id.into(),
+        parent_revision_id: parent_revision_id.map(RevisionId::from),
+        entry_version: row.entry_version,
+        expected_version: parent_revision_id.map(|_| row.entry_version.saturating_sub(1)),
+        operation,
+        committed_at_micros: to_timestamp_micros(row.timestamp),
+        author_id: row.author.clone(),
+        form_version: form.version,
+        source_kind: row.source_kind.clone(),
+        source_id: row.source_id.clone(),
+        values,
+        extra_attributes,
+        extension_metadata,
+    })
+}
+
+fn form_values_to_domain(
+    fields: &Value,
+    form: &ugoite_domain::form::FormDefinition,
+) -> Result<std::collections::BTreeMap<FieldId, FieldValue>> {
+    let object = fields.as_object().cloned().unwrap_or_default();
+    let mut values = std::collections::BTreeMap::new();
+    for field in &form.fields {
+        if let Some(value) = object.get(&field.name) {
+            values.insert(field.id, json_to_field_value(value)?);
+        }
+    }
+    Ok(values)
+}
+
+fn json_to_field_value(value: &Value) -> Result<FieldValue> {
+    Ok(match value {
+        Value::Null => FieldValue::Null,
+        Value::Bool(value) => FieldValue::Boolean(*value),
+        Value::String(value) => FieldValue::String(value.clone()),
+        Value::Number(value) => FieldValue::Number(value.as_f64().context("invalid number")?),
+        Value::Array(values) => FieldValue::List(
+            values
+                .iter()
+                .map(json_to_field_value)
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        Value::Object(values) => FieldValue::Object(
+            values
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), json_to_field_value(value)?)))
+                .collect::<Result<_>>()?,
+        ),
+    })
+}
+
+#[allow(dead_code)]
 async fn append_revision_rows_to_table(
     catalog: &dyn Catalog,
     table: &iceberg::table::Table,
@@ -1976,8 +2217,8 @@ pub(crate) async fn append_revision_row_for_form(
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
+    append_revision_row_to_table(op, ws_path, row, form_def).await?;
     let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    append_revision_row_to_table(catalog.as_ref(), &table, row, form_def).await?;
     let refreshed = catalog.load_table(table.identifier()).await?;
     if iceberg_store::uses_rest_catalog() {
         Ok(())
@@ -1993,8 +2234,8 @@ pub async fn append_revision_batch_for_form(
     rows: &[RevisionRow],
 ) -> Result<()> {
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
+    append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await?;
     let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    append_revision_rows_to_table(catalog.as_ref(), &table, rows, &form_def).await?;
     let refreshed = catalog.load_table(table.identifier()).await?;
     if iceberg_store::uses_rest_catalog() {
         Ok(())
