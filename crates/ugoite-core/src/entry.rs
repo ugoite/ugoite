@@ -2150,7 +2150,7 @@ pub(crate) async fn list_entry_rows(
     op: &Operator,
     ws_path: &str,
 ) -> Result<Vec<(String, EntryRow)>> {
-    let mut latest: std::collections::HashMap<String, (String, EntryRow)> =
+    let mut latest: std::collections::HashMap<String, (String, RevisionRow)> =
         std::collections::HashMap::new();
     for form_name in list_form_names(op, ws_path).await? {
         let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
@@ -2158,18 +2158,34 @@ pub(crate) async fn list_entry_rows(
         let batches = scan_table_batches(&table).await?;
         let rows = revision_rows_from_batches(&batches, &form_def)?;
         for revision in rows {
-            let Some(row) = revision.state else { continue };
+            let Some(row) = revision.state.as_ref() else {
+                continue;
+            };
             let entry = latest.get(&row.entry_id);
+            if let Some((_, existing)) = entry {
+                if revision.entry_version == existing.entry_version
+                    && revision.revision_id != existing.revision_id
+                {
+                    return Err(anyhow!(
+                        "multiple revisions exist for entry {} at version {}",
+                        row.entry_id,
+                        revision.entry_version
+                    ));
+                }
+            }
             let should_replace = match entry {
-                Some((_, existing)) => row.updated_at >= existing.updated_at,
+                Some((_, existing)) => revision.entry_version > existing.entry_version,
                 None => true,
             };
             if should_replace {
-                latest.insert(row.entry_id.clone(), (form_name.clone(), row));
+                latest.insert(row.entry_id.clone(), (form_name.clone(), revision));
             }
         }
     }
-    Ok(latest.into_values().collect())
+    Ok(latest
+        .into_values()
+        .filter_map(|(form_name, revision)| revision.state.map(|row| (form_name, row)))
+        .collect())
 }
 
 pub(crate) async fn list_form_entry_rows(
@@ -2180,22 +2196,36 @@ pub(crate) async fn list_form_entry_rows(
 ) -> Result<Vec<EntryRow>> {
     let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
     let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, form_def)?
-        .into_iter()
-        .filter_map(|revision| revision.state)
-        .collect::<Vec<_>>();
-    let mut latest: std::collections::HashMap<String, EntryRow> = std::collections::HashMap::new();
-    for row in rows {
+    let mut latest: std::collections::HashMap<String, RevisionRow> =
+        std::collections::HashMap::new();
+    for revision in revision_rows_from_batches(&batches, form_def)? {
+        let Some(row) = revision.state.as_ref() else {
+            continue;
+        };
         let entry = latest.get(&row.entry_id);
+        if let Some(existing) = entry {
+            if revision.entry_version == existing.entry_version
+                && revision.revision_id != existing.revision_id
+            {
+                return Err(anyhow!(
+                    "multiple revisions exist for entry {} at version {}",
+                    row.entry_id,
+                    revision.entry_version
+                ));
+            }
+        }
         let should_replace = match entry {
-            Some(existing) => row.updated_at >= existing.updated_at,
+            Some(existing) => revision.entry_version > existing.entry_version,
             None => true,
         };
         if should_replace {
-            latest.insert(row.entry_id.clone(), row);
+            latest.insert(row.entry_id.clone(), revision);
         }
     }
-    Ok(latest.into_values().collect())
+    Ok(latest
+        .into_values()
+        .filter_map(|revision| revision.state)
+        .collect())
 }
 
 #[allow(dead_code)] // used by migration verification tooling
