@@ -12,19 +12,11 @@ use arrow_array::{
     Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use arrow_schema::{DataType, Fields};
-use arrow_select::concat::concat_batches;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveTime, SecondsFormat, Timelike, Utc};
 use futures::TryStreamExt;
-use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::arrow::ArrowReaderBuilder;
-use iceberg::spec::DataFile;
-use iceberg::transaction::ApplyTransactionAction;
-use iceberg::transaction::Transaction;
-use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
-use iceberg::Catalog;
 use opendal::Operator;
-use parquet::file::properties::WriterProperties;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -1720,155 +1712,6 @@ fn native_revision_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<Revi
     Ok(rows)
 }
 
-#[allow(dead_code)] // retained only for migration fixtures, never for production writes
-fn entry_row_to_record_batch(
-    row: &EntryRow,
-    form_def: &Value,
-    table_schema: &iceberg::spec::Schema,
-) -> Result<RecordBatch> {
-    let arrow_schema = Arc::new(schema_to_arrow_schema(table_schema)?);
-
-    let mut arrays = Vec::new();
-    for field in arrow_schema.fields() {
-        let array: ArrayRef = match field.name().as_str() {
-            "entry_id" => Arc::new(StringArray::from(vec![Some(row.entry_id.clone())])),
-            "title" => Arc::new(StringArray::from(vec![Some(row.title.clone())])),
-            "tags" => list_array_from_strings(&row.tags, field.as_ref())?,
-            "links" => list_links_array_from_links(&row.links, field.as_ref())?,
-            "created_at" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
-                to_timestamp_micros(row.created_at),
-            )])),
-            "updated_at" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
-                to_timestamp_micros(row.updated_at),
-            )])),
-            "fields" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_fields(form_def, &row.fields, &struct_fields)?
-            }
-            "extra_attributes" => {
-                let json_value = extra_attributes_to_string(&row.extra_attributes);
-                Arc::new(StringArray::from(vec![json_value]))
-            }
-            "assets" => list_assets_array_from_values(&row.assets, field.as_ref())?,
-            "integrity" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_integrity(&row.integrity, &struct_fields)?
-            }
-            "deleted" => Arc::new(BooleanArray::from(vec![Some(row.deleted)])),
-            "deleted_at" => Arc::new(TimestampMicrosecondArray::from(vec![row
-                .deleted_at
-                .map(to_timestamp_micros)])),
-            other => {
-                return Err(anyhow!("Unexpected column in entries schema: {}", other));
-            }
-        };
-        arrays.push(array);
-    }
-
-    RecordBatch::try_new(arrow_schema, arrays).map_err(|e| anyhow!("Record batch error: {}", e))
-}
-
-#[allow(dead_code)]
-fn revision_row_to_record_batch(
-    row: &RevisionRow,
-    form_def: &Value,
-    table_schema: &iceberg::spec::Schema,
-) -> Result<RecordBatch> {
-    let arrow_schema = Arc::new(schema_to_arrow_schema(table_schema)?);
-
-    let mut arrays = Vec::new();
-    for field in arrow_schema.fields() {
-        let array: ArrayRef = match field.name().as_str() {
-            "revision_id" => Arc::new(StringArray::from(vec![Some(row.revision_id.clone())])),
-            "entry_id" => Arc::new(StringArray::from(vec![Some(row.entry_id.clone())])),
-            "parent_revision_id" => {
-                Arc::new(StringArray::from(vec![row.parent_revision_id.clone()]))
-            }
-            "timestamp" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
-                to_timestamp_micros(row.timestamp),
-            )])),
-            "author" => Arc::new(StringArray::from(vec![Some(row.author.clone())])),
-            "fields" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_fields(form_def, &row.fields, &struct_fields)?
-            }
-            "extra_attributes" => {
-                let json_value = extra_attributes_to_string(&row.extra_attributes);
-                Arc::new(StringArray::from(vec![json_value]))
-            }
-            "markdown_checksum" => {
-                Arc::new(StringArray::from(vec![Some(row.markdown_checksum.clone())]))
-            }
-            "integrity" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_integrity(&row.integrity, &struct_fields)?
-            }
-            "restored_from" => Arc::new(StringArray::from(vec![row.restored_from.clone()])),
-            "state_json" => Arc::new(StringArray::from(vec![row
-                .state
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?])),
-            "entry_version" => Arc::new(Int64Array::from(vec![Some(i64::try_from(
-                row.entry_version,
-            )?)])),
-            "operation" => Arc::new(StringArray::from(vec![Some(row.operation.clone())])),
-            "source_kind" => Arc::new(StringArray::from(vec![Some(row.source_kind.clone())])),
-            "source_id" => Arc::new(StringArray::from(vec![row.source_id.clone()])),
-            other => {
-                return Err(anyhow!("Unexpected column in revisions schema: {}", other));
-            }
-        };
-        arrays.push(array);
-    }
-
-    RecordBatch::try_new(arrow_schema, arrays).map_err(|e| anyhow!("Record batch error: {}", e))
-}
-
-async fn write_record_batch(table: &iceberg::table::Table, batch: RecordBatch) -> Result<DataFile> {
-    let schema = table.metadata().current_schema();
-    let props = WriterProperties::builder().build();
-    let output_path = format!(
-        "{}/data/{}.parquet",
-        table.metadata().location(),
-        Uuid::new_v4()
-    );
-    let output_file = table.file_io().new_output(&output_path)?;
-    let mut writer = ParquetWriterBuilder::new(props, schema.clone())
-        .build(output_file)
-        .await?;
-    writer.write(&batch).await?;
-    let builders = writer.close().await?;
-    let mut data_files = Vec::new();
-    for builder in builders {
-        data_files.push(
-            builder
-                .build()
-                .map_err(|e| anyhow!("Data file build error: {}", e))?,
-        );
-    }
-    data_files
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow!("No data files produced by writer"))
-}
-
-#[allow(dead_code)] // retained only for migration fixture generation
-async fn append_entry_row_to_table(
-    catalog: &dyn Catalog,
-    table: &iceberg::table::Table,
-    row: &EntryRow,
-    form_def: &Value,
-) -> Result<()> {
-    let batch = entry_row_to_record_batch(row, form_def, table.metadata().current_schema())?;
-    let data_file = write_record_batch(table, batch).await?;
-    let tx = Transaction::new(table);
-    let action = tx.fast_append().add_data_files(vec![data_file]);
-    let tx = action.apply(tx)?;
-    tx.commit(catalog).await?;
-    Ok(())
-}
-
 async fn append_revision_row_to_table(
     op: &Operator,
     ws_path: &str,
@@ -2000,57 +1843,6 @@ fn json_to_field_value(value: &Value) -> Result<FieldValue> {
                 .collect::<Result<_>>()?,
         ),
     })
-}
-
-#[allow(dead_code)]
-async fn append_revision_rows_to_table(
-    catalog: &dyn Catalog,
-    table: &iceberg::table::Table,
-    rows: &[RevisionRow],
-    form_def: &Value,
-) -> Result<()> {
-    if rows.is_empty() {
-        return Err(anyhow!("revision batch must not be empty"));
-    }
-    let batches = rows
-        .iter()
-        .map(|row| revision_row_to_record_batch(row, form_def, table.metadata().current_schema()))
-        .collect::<Result<Vec<_>>>()?;
-    let schema = batches
-        .first()
-        .context("revision batch must contain a schema")?
-        .schema();
-    let batch = concat_batches(&schema, &batches)?;
-    let data_file = write_record_batch(table, batch).await?;
-    let tx = Transaction::new(table);
-    let summary = std::collections::HashMap::from([
-        ("ugoite.revision-count".to_string(), rows.len().to_string()),
-        (
-            "ugoite.operations".to_string(),
-            rows.iter()
-                .map(|row| row.operation.as_str())
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        (
-            "ugoite.authors".to_string(),
-            rows.iter()
-                .map(|row| row.author.as_str())
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-    ]);
-    let action = tx
-        .fast_append()
-        .add_data_files(vec![data_file])
-        .set_snapshot_properties(summary);
-    let tx = action.apply(tx)?;
-    tx.commit(catalog).await?;
-    Ok(())
 }
 
 pub(crate) async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
