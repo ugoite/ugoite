@@ -393,7 +393,9 @@ impl IcebergWorkspace {
             return Err(anyhow!("append batch must not be empty"));
         }
         let form = self.load_form(form_id).await?;
-        let batch = revision_batch_from_values(&form, &revisions)?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let batch =
+            revision_batch_from_values(&form, table.metadata().current_schema(), &revisions)?;
         self.append_record_batches(form_id, vec![batch], &revisions)
             .await
     }
@@ -617,7 +619,10 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
             physical_field_id(field),
             field.name.clone(),
             iceberg_type(&field.field_type, physical_field_id(field)),
-            field.required,
+            // Revision tables also contain tombstones. Requiredness is enforced
+            // by EntryRevision validation and Form metadata; physical columns
+            // must remain nullable so a delete can carry no value payload.
+            false,
         )));
     }
     Ok(Schema::builder().with_fields(fields).build()?)
@@ -717,9 +722,10 @@ fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<
 
 fn revision_batch_from_values(
     form: &FormDefinition,
+    table_schema: &iceberg::spec::Schema,
     revisions: &[EntryRevision],
 ) -> Result<RecordBatch> {
-    let schema = Arc::new(arrow_schema_for_form(form)?);
+    let schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(table_schema)?);
     let mut entry_ids = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
     let mut revision_ids = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
     let mut parents = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
@@ -798,12 +804,22 @@ fn revision_batch_from_values(
         )),
     ];
     for field in &form.fields {
-        arrays.push(field_array(field, revisions)?);
+        arrays.push(field_array(
+            field,
+            schema
+                .field_with_name(&field.name)
+                .map_err(|error| anyhow!("missing form field schema: {error}"))?,
+            revisions,
+        )?);
     }
     Ok(RecordBatch::try_new(schema, arrays)?)
 }
 
-fn field_array(field: &FormField, revisions: &[EntryRevision]) -> Result<ArrayRef> {
+fn field_array(
+    field: &FormField,
+    arrow_field: &arrow_schema::Field,
+    revisions: &[EntryRevision],
+) -> Result<ArrayRef> {
     let values = revisions
         .iter()
         .map(|revision| revision.values.get(&field.id))
@@ -862,7 +878,11 @@ fn field_array(field: &FormField, revisions: &[EntryRevision]) -> Result<ArrayRe
                 .collect::<Vec<_>>(),
         ))),
         FieldType::List => {
-            let mut builder = ListBuilder::new(StringBuilder::new());
+            let element_field = match arrow_field.data_type() {
+                arrow_schema::DataType::List(element) => element.clone(),
+                other => return Err(anyhow!("list field has invalid Arrow type: {other:?}")),
+            };
+            let mut builder = ListBuilder::new(StringBuilder::new()).with_field(element_field);
             for value in values {
                 if let Some(FieldValue::List(items)) = value {
                     for item in items {
@@ -878,12 +898,20 @@ fn field_array(field: &FormField, revisions: &[EntryRevision]) -> Result<ArrayRe
             Ok(Arc::new(builder.finish()))
         }
         FieldType::ObjectList => {
-            let fields = vec![
-                arrow_schema::Field::new("type", arrow_schema::DataType::Utf8, true),
-                arrow_schema::Field::new("name", arrow_schema::DataType::Utf8, true),
-                arrow_schema::Field::new("description", arrow_schema::DataType::Utf8, true),
-            ];
-            let mut builder = ListBuilder::new(StructBuilder::from_fields(fields, revisions.len()));
+            let element_field = match arrow_field.data_type() {
+                arrow_schema::DataType::List(element) => element.clone(),
+                other => return Err(anyhow!("object list has invalid Arrow type: {other:?}")),
+            };
+            let fields = match element_field.data_type() {
+                arrow_schema::DataType::Struct(fields) => fields.clone(),
+                other => {
+                    return Err(anyhow!(
+                        "object list element has invalid Arrow type: {other:?}"
+                    ))
+                }
+            };
+            let mut builder = ListBuilder::new(StructBuilder::from_fields(fields, revisions.len()))
+                .with_field(element_field);
             for value in values {
                 if let Some(FieldValue::List(items)) = value {
                     for item in items {

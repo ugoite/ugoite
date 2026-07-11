@@ -50,7 +50,7 @@ fn sql_form_definition() -> Value {
 async fn ensure_sql_form(op: &Operator, ws_path: &str) -> Result<Value> {
     let form_def = sql_form_definition();
     form::upsert_metadata_form(op, ws_path, &form_def).await?;
-    Ok(form_def)
+    form::read_form_definition(op, ws_path, SQL_FORM_NAME).await
 }
 
 fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
