@@ -8,7 +8,11 @@ mod migration;
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
 
 use anyhow::{anyhow, Context, Result};
-use arrow_array::{Array, FixedSizeBinaryArray, Int64Array, RecordBatch, StringArray};
+use arrow_array::builder::{FixedSizeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder};
+use arrow_array::{
+    Array, ArrayRef, BooleanArray, FixedSizeBinaryArray, Float32Array, Float64Array, Int32Array,
+    Int64Array, RecordBatch, StringArray, TimestampMicrosecondArray,
+};
 use datafusion::execution::context::SessionContext;
 use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
 use iceberg::spec::{
@@ -18,15 +22,15 @@ use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
 use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_catalog_rest::{
-    RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
+    CommitTableRequest, RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
 };
 use iceberg_datafusion::IcebergCatalogProvider;
 use parquet::file::properties::WriterProperties;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use ugoite_domain::entry::{EntryOperation, EntryRevision};
-use ugoite_domain::form::{Compatibility, FieldType, FormChangeSet, FormDefinition};
+use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::form::{Compatibility, FieldType, FormChangeSet, FormDefinition, FormField};
 use ugoite_domain::id::{FormId, RevisionId, SpaceId};
 use uuid::Uuid;
 
@@ -182,8 +186,8 @@ impl IcebergWorkspace {
             .get(FORM_FIELD_MAPPING_PROPERTY)
             .context("Iceberg table is missing Form field ID mapping")?;
         let mapping: HashMap<String, i32> = serde_json::from_str(mapping_raw)?;
-        for (index, field) in form.fields.iter().enumerate() {
-            if mapping.get(&field.id.get().to_string()) != Some(&physical_field_id(index)) {
+        for field in &form.fields {
+            if mapping.get(&field.id.get().to_string()) != Some(&physical_field_id(field)) {
                 return Err(anyhow!(
                     "Form field ID mapping does not match Iceberg schema"
                 ));
@@ -221,16 +225,25 @@ impl IcebergWorkspace {
             Compatibility::Compatible => {}
         }
         let evolved = current.apply(changes)?;
-        // iceberg-rust 0.8 does not expose a public schema-update transaction.
-        // Metadata-only changes are still committed atomically; schema-bearing
-        // changes are rejected instead of rebuilding or rewriting the table.
-        if form_schema(&current)? != form_schema(&evolved)? {
-            return Err(anyhow!("the configured Iceberg catalog does not expose schema evolution; no data was rewritten"));
-        }
         let table = self
             .catalog
             .load_table(&self.form_ident(current.id))
             .await?;
+        let evolved_schema = form_schema(&evolved)?;
+        if form_schema(&current)? != evolved_schema {
+            if !self.is_rest_catalog() {
+                return Err(anyhow!(
+                    "schema evolution requires a REST Catalog; no data was rewritten"
+                ));
+            }
+            rest_schema_commit(
+                &table,
+                evolved_schema,
+                form_properties(&evolved, self.write)?,
+            )
+            .await?;
+            return self.load_form(changes.form_id).await;
+        }
         let tx = Transaction::new(&table);
         let mut action = tx.update_table_properties();
         for (key, value) in form_properties(&evolved, self.write)? {
@@ -240,7 +253,7 @@ impl IcebergWorkspace {
         Ok(evolved)
     }
 
-    pub async fn append_record_batches(
+    pub(crate) async fn append_record_batches(
         &self,
         form_id: FormId,
         batches: Vec<RecordBatch>,
@@ -297,6 +310,16 @@ impl IcebergWorkspace {
             );
         }
         validate_batch_revision_metadata(&batches, revisions)?;
+        let table_arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
+            table.metadata().current_schema(),
+        )?);
+        let batches = batches
+            .into_iter()
+            .map(|batch| {
+                RecordBatch::try_new(table_arrow_schema.clone(), batch.columns().to_vec())
+                    .map_err(|error| anyhow!("record batch schema does not match table: {error}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
         let mut data_files = Vec::new();
         for group in split_batches(batches, self.write.max_rows_per_file)? {
             let output_path = format!(
@@ -359,6 +382,20 @@ impl IcebergWorkspace {
             committed_at_micros,
             data_file_count: data_files.len(),
         })
+    }
+
+    pub async fn append_revisions(
+        &self,
+        form_id: FormId,
+        revisions: Vec<EntryRevision>,
+    ) -> Result<CommitReceipt> {
+        if revisions.is_empty() {
+            return Err(anyhow!("append batch must not be empty"));
+        }
+        let form = self.load_form(form_id).await?;
+        let batch = revision_batch_from_values(&form, &revisions)?;
+        self.append_record_batches(form_id, vec![batch], &revisions)
+            .await
     }
 
     async fn latest_revisions(
@@ -462,6 +499,63 @@ impl IcebergWorkspace {
             physical_form_name(form_id)
         )
     }
+
+    fn is_rest_catalog(&self) -> bool {
+        std::env::var("UGOITE_ICEBERG_CATALOG_URI")
+            .ok()
+            .is_some_and(|uri| !uri.trim().is_empty())
+    }
+}
+
+async fn rest_schema_commit(
+    table: &iceberg::table::Table,
+    schema: Schema,
+    properties: HashMap<String, String>,
+) -> Result<()> {
+    let uri = std::env::var("UGOITE_ICEBERG_CATALOG_URI")
+        .context("REST Catalog URI is required for schema evolution")?;
+    let endpoint = format!(
+        "{}/v1/namespaces/{}/tables/{}",
+        uri.trim_end_matches('/'),
+        table.identifier().namespace().to_url_string(),
+        table.identifier().name()
+    );
+    let metadata = table.metadata();
+    let request = CommitTableRequest {
+        identifier: Some(table.identifier().clone()),
+        requirements: vec![
+            iceberg::TableRequirement::UuidMatch {
+                uuid: metadata.uuid(),
+            },
+            iceberg::TableRequirement::CurrentSchemaIdMatch {
+                current_schema_id: metadata.current_schema_id(),
+            },
+            iceberg::TableRequirement::LastAssignedFieldIdMatch {
+                last_assigned_field_id: metadata.last_column_id(),
+            },
+        ],
+        updates: vec![
+            iceberg::TableUpdate::AddSchema { schema },
+            iceberg::TableUpdate::SetCurrentSchema { schema_id: -1 },
+            iceberg::TableUpdate::SetProperties {
+                updates: properties,
+            },
+        ],
+    };
+    let client = reqwest::Client::new();
+    let mut request_builder = client.post(endpoint).json(&request);
+    if let Ok(token) = std::env::var("UGOITE_ICEBERG_CATALOG_TOKEN") {
+        request_builder = request_builder.bearer_auth(token);
+    }
+    let response = request_builder.send().await?;
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "REST Catalog schema commit failed with HTTP {}: {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -495,8 +589,8 @@ fn validate_field_ids(form: &FormDefinition) -> Result<()> {
     Ok(())
 }
 
-fn physical_field_id(index: usize) -> i32 {
-    13 + i32::try_from(index).expect("Form field count exceeds Iceberg field ID range")
+fn physical_field_id(field: &ugoite_domain::form::FormField) -> i32 {
+    field.id.get()
 }
 
 fn form_schema(form: &FormDefinition) -> Result<Schema> {
@@ -514,11 +608,11 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
         optional(11, "extension_metadata", PrimitiveType::String),
         optional(12, "extra_attributes", PrimitiveType::String),
     ];
-    for (index, field) in form.fields.iter().enumerate() {
+    for field in &form.fields {
         fields.push(Arc::new(NestedField::new(
-            physical_field_id(index),
+            physical_field_id(field),
             field.name.clone(),
-            iceberg_type(&field.field_type, physical_field_id(index)),
+            iceberg_type(&field.field_type, physical_field_id(field)),
             field.required,
         )));
     }
@@ -596,8 +690,7 @@ fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<
     let field_mapping = form
         .fields
         .iter()
-        .enumerate()
-        .map(|(index, field)| (field.id.get().to_string(), physical_field_id(index)))
+        .map(|field| (field.id.get().to_string(), physical_field_id(field)))
         .collect::<HashMap<_, _>>();
     Ok(HashMap::from([
         (
@@ -616,6 +709,215 @@ fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<
             write.target_file_size_bytes.to_string(),
         ),
     ]))
+}
+
+fn revision_batch_from_values(
+    form: &FormDefinition,
+    revisions: &[EntryRevision],
+) -> Result<RecordBatch> {
+    let schema = Arc::new(arrow_schema_for_form(form)?);
+    let mut entry_ids = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
+    let mut revision_ids = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
+    let mut parents = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
+    for revision in revisions {
+        entry_ids.append_value(revision.entry_id.as_uuid().as_bytes())?;
+        revision_ids.append_value(revision.revision_id.as_uuid().as_bytes())?;
+        match revision.parent_revision_id {
+            Some(parent) => parents.append_value(parent.as_uuid().as_bytes())?,
+            None => parents.append_null(),
+        }
+    }
+    let mut arrays: Vec<ArrayRef> = vec![
+        Arc::new(entry_ids.finish()),
+        Arc::new(revision_ids.finish()),
+        Arc::new(parents.finish()),
+        Arc::new(Int64Array::from(
+            revisions
+                .iter()
+                .map(|revision| i64::try_from(revision.entry_version))
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| match revision.operation {
+                    EntryOperation::Upsert => "upsert",
+                    EntryOperation::Delete => "delete",
+                    EntryOperation::Restore => "restore",
+                })
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(
+            TimestampMicrosecondArray::from(
+                revisions
+                    .iter()
+                    .map(|revision| revision.committed_at_micros)
+                    .collect::<Vec<_>>(),
+            )
+            .with_timezone("+00:00"),
+        ),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.author_id.as_str())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(Int32Array::from(
+            revisions
+                .iter()
+                .map(|revision| i32::try_from(revision.form_version.get()))
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.source_kind.as_str())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.source_id.as_deref())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| serde_json::to_string(&revision.extension_metadata))
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| serde_json::to_string(&revision.extra_attributes))
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        )),
+    ];
+    for field in &form.fields {
+        arrays.push(field_array(field, revisions)?);
+    }
+    Ok(RecordBatch::try_new(schema, arrays)?)
+}
+
+fn field_array(field: &FormField, revisions: &[EntryRevision]) -> Result<ArrayRef> {
+    let values = revisions
+        .iter()
+        .map(|revision| revision.values.get(&field.id))
+        .collect::<Vec<_>>();
+    match &field.field_type {
+        FieldType::Boolean => Ok(Arc::new(BooleanArray::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(FieldValue::Boolean(value)) => Some(*value),
+                    Some(FieldValue::Null) | None => None,
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        ))),
+        FieldType::Integer => Ok(Arc::new(Int32Array::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(FieldValue::Integer(value)) => i32::try_from(*value).ok(),
+                    Some(FieldValue::Null) | None => None,
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        ))),
+        FieldType::Long => Ok(Arc::new(Int64Array::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(FieldValue::Integer(value)) => Some(*value),
+                    Some(FieldValue::Null) | None => None,
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        ))),
+        FieldType::Float => Ok(Arc::new(Float32Array::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(FieldValue::Integer(value)) => Some(*value as f32),
+                    Some(FieldValue::Number(value)) => Some(*value as f32),
+                    Some(FieldValue::Null) | None => None,
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        ))),
+        FieldType::Double => Ok(Arc::new(Float64Array::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(FieldValue::Integer(value)) => Some(*value as f64),
+                    Some(FieldValue::Number(value)) => Some(*value),
+                    Some(FieldValue::Null) | None => None,
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        ))),
+        FieldType::List => {
+            let mut builder = ListBuilder::new(StringBuilder::new());
+            for value in values {
+                if let Some(FieldValue::List(items)) = value {
+                    for item in items {
+                        if let FieldValue::String(item) = item {
+                            builder.values().append_value(item);
+                        }
+                    }
+                    builder.append(true);
+                } else {
+                    builder.append(false);
+                }
+            }
+            Ok(Arc::new(builder.finish()))
+        }
+        FieldType::ObjectList => {
+            let fields = vec![
+                arrow_schema::Field::new("type", arrow_schema::DataType::Utf8, true),
+                arrow_schema::Field::new("name", arrow_schema::DataType::Utf8, true),
+                arrow_schema::Field::new("description", arrow_schema::DataType::Utf8, true),
+            ];
+            let mut builder = ListBuilder::new(StructBuilder::from_fields(fields, revisions.len()));
+            for value in values {
+                if let Some(FieldValue::List(items)) = value {
+                    for item in items {
+                        let object = match item {
+                            FieldValue::Object(object) => object,
+                            _ => continue,
+                        };
+                        for (index, key) in ["type", "name", "description"].iter().enumerate() {
+                            builder
+                                .values()
+                                .field_builder::<StringBuilder>(index)
+                                .context("invalid object list field builder")?
+                                .append_option(object.get(*key).and_then(|value| match value {
+                                    FieldValue::String(value) => Some(value.as_str()),
+                                    _ => None,
+                                }));
+                        }
+                        builder.values().append(true);
+                    }
+                    builder.append(true);
+                } else {
+                    builder.append(false);
+                }
+            }
+            Ok(Arc::new(builder.finish()))
+        }
+        _ => Ok(Arc::new(StringArray::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(FieldValue::String(value)) => Some(value.clone()),
+                    Some(FieldValue::Integer(value)) => Some(value.to_string()),
+                    Some(FieldValue::Null) | None => None,
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        ))),
+    }
 }
 
 fn split_batches(batches: Vec<RecordBatch>, max_rows: usize) -> Result<Vec<Vec<RecordBatch>>> {

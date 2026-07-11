@@ -14,6 +14,7 @@ iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs
 iceberg-catalog-rest = "0.8.0"
 iceberg-datafusion = "0.8.0"
 parquet = { version = "57.3", default-features = false, features = ["arrow", "async"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros"] }

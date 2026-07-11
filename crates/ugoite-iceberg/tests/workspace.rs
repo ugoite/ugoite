@@ -1,10 +1,5 @@
-use arrow_array::{
-    builder::FixedSizeBinaryBuilder, ArrayRef, Int32Array, Int64Array, RecordBatch, StringArray,
-    TimestampMicrosecondArray,
-};
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use ugoite_domain::entry::{EntryOperation, EntryRevision};
+use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
 };
@@ -13,44 +8,6 @@ use ugoite_iceberg::{
     physical_form_name, IcebergWorkspace, MigrationFormReport, MigrationManifest, MigrationReport,
 };
 use uuid::Uuid;
-
-fn revision_batch(
-    form: &FormDefinition,
-    entry_id: Uuid,
-    revision_id: Uuid,
-    parent_revision_id: Option<Uuid>,
-    entry_version: i64,
-) -> RecordBatch {
-    let table_schema = ugoite_iceberg::arrow_schema_for_form(form).unwrap();
-    let mut entry_ids = FixedSizeBinaryBuilder::with_capacity(1, 16);
-    entry_ids.append_value(entry_id.as_bytes()).unwrap();
-    let mut revision_ids = FixedSizeBinaryBuilder::with_capacity(1, 16);
-    revision_ids.append_value(revision_id.as_bytes()).unwrap();
-    let mut parents = FixedSizeBinaryBuilder::with_capacity(1, 16);
-    match parent_revision_id {
-        Some(value) => parents.append_value(value.as_bytes()).unwrap(),
-        None => parents.append_null(),
-    }
-    RecordBatch::try_new(
-        Arc::new(table_schema),
-        vec![
-            Arc::new(entry_ids.finish()) as ArrayRef,
-            Arc::new(revision_ids.finish()),
-            Arc::new(parents.finish()),
-            Arc::new(Int64Array::from(vec![entry_version])),
-            Arc::new(StringArray::from(vec!["upsert"])),
-            Arc::new(TimestampMicrosecondArray::from(vec![1_i64]).with_timezone("+00:00")),
-            Arc::new(StringArray::from(vec!["human:owner"])),
-            Arc::new(Int32Array::from(vec![1_i32])),
-            Arc::new(StringArray::from(vec!["test"])),
-            Arc::new(StringArray::from(vec![None::<&str>])),
-            Arc::new(StringArray::from(vec![None::<&str>])),
-            Arc::new(StringArray::from(vec![None::<&str>])),
-            Arc::new(StringArray::from(vec!["title"])),
-        ],
-    )
-    .unwrap()
-}
 
 fn form() -> FormDefinition {
     FormDefinition {
@@ -108,7 +65,7 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
             .metadata()
             .properties()
             .get("ugoite.form.field-id-map.v1"),
-        Some(&r#"{"100":13}"#.to_string())
+        Some(&r#"{"100":100}"#.to_string())
     );
     assert_eq!(
         physical_form_name(form.id),
@@ -247,27 +204,13 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     };
-    let identity_error = workspace
-        .append_record_batches(
-            form.id,
-            vec![revision_batch(
-                &form,
-                Uuid::from_u128(99),
-                revision_id,
-                None,
-                1,
-            )],
-            std::slice::from_ref(&revision),
-        )
-        .await
-        .unwrap_err();
-    assert!(identity_error.to_string().contains("metadata"));
+    let mut revision = revision;
+    revision.values.insert(
+        FieldId::new(100).unwrap(),
+        FieldValue::String("title from revision".into()),
+    );
     workspace
-        .append_record_batches(
-            form.id,
-            vec![revision_batch(&form, entry_id, revision_id, None, 1)],
-            std::slice::from_ref(&revision),
-        )
+        .append_revisions(form.id, vec![revision.clone()])
         .await?;
 
     let conflicting = EntryRevision {
@@ -275,17 +218,7 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         ..revision
     };
     let error = workspace
-        .append_record_batches(
-            form.id,
-            vec![revision_batch(
-                &form,
-                entry_id,
-                Uuid::from_u128(33),
-                None,
-                1,
-            )],
-            std::slice::from_ref(&conflicting),
-        )
+        .append_revisions(form.id, vec![conflicting])
         .await
         .unwrap_err();
     assert!(error.to_string().contains("conflict"));
