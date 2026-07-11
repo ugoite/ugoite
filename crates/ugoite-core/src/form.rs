@@ -6,13 +6,15 @@ use crate::metadata;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
 };
 use ugoite_domain::id::validate_form_name;
 use ugoite_domain::id::{FieldId, FormId};
 use uuid::Uuid;
+
+const EXTRA_ATTRIBUTES_POLICY_METADATA: &str = "ugoite.extra_attributes_policy";
 
 pub async fn list_forms(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     let mut forms = Vec::new();
@@ -196,7 +198,7 @@ pub async fn migrate_form<I: IntegrityProvider>(
     if let Some(existing_def) = existing_def {
         let fields_changed = existing_def.get("fields") != normalized.get("fields");
         if fields_changed {
-            return Err(anyhow!("Form schema changes require an explicit migration plan; destructive table rebuild is disabled"));
+            return Err(anyhow!("FormChangeSet schema changes require an explicit migration plan; destructive table rebuild is disabled"));
         } else {
             upsert_form(op, ws_path, &normalized).await?;
         }
@@ -412,6 +414,16 @@ pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
             });
         }
     }
+    let mut extension_metadata = BTreeMap::new();
+    if let Some(policy) = form_def
+        .get("allow_extra_attributes")
+        .and_then(Value::as_str)
+    {
+        extension_metadata.insert(
+            EXTRA_ATTRIBUTES_POLICY_METADATA.to_string(),
+            Value::String(policy.to_string()),
+        );
+    }
     let form = FormDefinition {
         id,
         version,
@@ -425,7 +437,7 @@ pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
             .get("allow_extra_attributes")
             .and_then(Value::as_str)
             .is_some_and(|value| value != "deny"),
-        extension_metadata: Default::default(),
+        extension_metadata,
     };
     form.validate()?;
     Ok(form)
@@ -433,6 +445,7 @@ pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
 
 fn domain_field_type(value: &str) -> Result<FieldType> {
     Ok(match value {
+        "text" => FieldType::String,
         "string" => FieldType::String,
         "markdown" => FieldType::Markdown,
         "sql" => FieldType::Sql,
@@ -478,7 +491,12 @@ pub(crate) fn from_domain_form(form: &FormDefinition) -> Value {
         "version": form.version.get(),
         "description": form.description,
         "fields": fields,
-        "allow_extra_attributes": if form.allow_extra_attributes { "allow_json" } else { "deny" },
+        "allow_extra_attributes": form
+            .extension_metadata
+            .get(EXTRA_ATTRIBUTES_POLICY_METADATA)
+            .and_then(Value::as_str)
+            .filter(|value| matches!(*value, "allow_json" | "allow_columns" | "deny"))
+            .unwrap_or(if form.allow_extra_attributes { "allow_json" } else { "deny" }),
     })
 }
 

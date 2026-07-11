@@ -233,7 +233,7 @@ impl IcebergWorkspace {
         if form_schema(&current)? != evolved_schema {
             if !self.is_rest_catalog() {
                 return Err(anyhow!(
-                    "schema evolution requires a REST Catalog; no data was rewritten"
+                    "FormChangeSet schema evolution requires a REST Catalog; no data was rewritten"
                 ));
             }
             rest_schema_commit(
