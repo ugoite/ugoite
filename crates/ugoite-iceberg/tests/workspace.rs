@@ -114,6 +114,9 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
         physical_form_name(form.id),
         "form_00000000000000000000000000000002"
     );
+    assert!(table.metadata().location().ends_with(
+        "/space_00000000000000000000000000000001/form_00000000000000000000000000000002"
+    ));
     assert_eq!(
         workspace
             .catalog()

@@ -43,6 +43,7 @@ const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
 pub struct IcebergWorkspace {
     catalog: Arc<dyn Catalog>,
     namespace: NamespaceIdent,
+    space_id: SpaceId,
     warehouse: String,
     write: WriteConfig,
 }
@@ -95,6 +96,7 @@ impl IcebergWorkspace {
         Ok(Self {
             catalog,
             namespace,
+            space_id,
             warehouse: warehouse.into(),
             write,
         })
@@ -370,7 +372,8 @@ impl IcebergWorkspace {
         let tasks = scan.plan_files().await?;
         let reader = iceberg::arrow::ArrowReaderBuilder::new(table.file_io().clone()).build();
         let mut stream = reader.read(tasks)?;
-        let mut latest = std::collections::HashMap::new();
+        let mut latest: std::collections::HashMap<ugoite_domain::id::EntryId, LatestRevision> =
+            std::collections::HashMap::new();
         while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
             let entry_ids = batch
                 .column_by_name("entry_id")
@@ -388,10 +391,17 @@ impl IcebergWorkspace {
                     ugoite_domain::id::RevisionId::from_uuid(uuid_at(revision_ids, row)?.as_uuid());
                 let version = u64::try_from(versions.value(row))
                     .map_err(|_| anyhow!("entry_version must be non-negative"))?;
-                let replace = latest
+                if let Some(known) = latest.get(&entry_id) {
+                    if version == known.entry_version && revision_id != known.revision_id {
+                        return Err(anyhow!(
+                            "entry revision conflict: entry {entry_id} has multiple revisions at version {version}"
+                        ));
+                    }
+                }
+                if latest
                     .get(&entry_id)
-                    .is_none_or(|known: &LatestRevision| version > known.entry_version);
-                if replace {
+                    .is_none_or(|known: &LatestRevision| version > known.entry_version)
+                {
                     latest.insert(
                         entry_id,
                         LatestRevision {
@@ -446,8 +456,9 @@ impl IcebergWorkspace {
     }
     fn form_location(&self, form_id: FormId) -> String {
         format!(
-            "{}/{}",
+            "{}/space_{}/{}",
             self.warehouse.trim_end_matches('/'),
+            self.space_id.as_uuid().simple(),
             physical_form_name(form_id)
         )
     }
