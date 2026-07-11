@@ -145,6 +145,41 @@ pub fn uses_rest_catalog() -> bool {
         .is_some_and(|uri| !uri.trim().is_empty())
 }
 
+async fn stable_space_id(op: &Operator, ws_path: &str) -> Result<ugoite_domain::id::SpaceId> {
+    let meta_path = format!("{}/meta.json", ws_path.trim_end_matches('/'));
+    if op.exists(&meta_path).await? {
+        let metadata: Value = serde_json::from_slice(&op.read(&meta_path).await?.to_vec())?;
+        if let Some(raw) = metadata
+            .get("space_uid")
+            .or_else(|| metadata.get("space_id"))
+            .and_then(Value::as_str)
+        {
+            if let Ok(uuid) = Uuid::parse_str(raw) {
+                return Ok(ugoite_domain::id::SpaceId::from(uuid));
+            }
+        }
+    }
+    Ok(ugoite_domain::id::SpaceId::from(Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        ws_path.as_bytes(),
+    )))
+}
+
+pub async fn native_workspace(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<ugoite_iceberg::IcebergWorkspace> {
+    let catalog = catalog_for_space(op, ws_path).await?;
+    let space_id = stable_space_id(op, ws_path).await?;
+    ugoite_iceberg::IcebergWorkspace::new(
+        catalog,
+        space_id,
+        warehouse_uri(op, ws_path)?,
+        ugoite_iceberg::WriteConfig::default(),
+    )
+    .await
+}
+
 pub async fn persist_catalog_pointer(
     op: &Operator,
     ws_path: &str,

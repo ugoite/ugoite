@@ -93,7 +93,7 @@ impl IcebergWorkspace {
         warehouse: impl Into<String>,
         write: WriteConfig,
     ) -> Result<Self> {
-        let namespace = NamespaceIdent::new(format!("space_{}", space_id.as_uuid().simple()));
+        let namespace = namespace_for_space(space_id);
         if !catalog.namespace_exists(&namespace).await? {
             catalog.create_namespace(&namespace, HashMap::new()).await?;
         }
@@ -566,6 +566,10 @@ struct LatestRevision {
 
 pub fn physical_form_name(form_id: FormId) -> String {
     format!("form_{}", form_id.as_uuid().simple())
+}
+
+pub fn namespace_for_space(space_id: SpaceId) -> NamespaceIdent {
+    NamespaceIdent::new(format!("space_{}", space_id.as_uuid().simple()))
 }
 
 /// Returns the Arrow schema used by the revision table. This is also the
