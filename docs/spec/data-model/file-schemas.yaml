@@ -255,7 +255,7 @@ schemas:
         count:
           type: object
   entry_revision:
-    description: Target authoritative append-only Entry revision for one stable Form ID; the Core adapter migration remains in progress.
+    description: Authoritative append-only Entry revision for one stable Form ID. Core writes this schema through ugoite-iceberg.
     path: iceberg://spaces/{space_id}/form_{form_id}
     schema:
       type: object

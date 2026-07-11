@@ -61,8 +61,10 @@ two-table commit.
 
 ## ADR-010 — Catalog and DataFusion are explicit
 
-**Accepted.** Production writes require an injected Iceberg Catalog. Object
-listing must not infer a metadata pointer. MemoryCatalog is test-only.
+**Accepted.** REST Catalog is the multi-writer production Catalog. Local
+single-process CLI mode uses the explicitly scoped MemoryCatalog plus its
+portable pointer manifest; object listing must not infer metadata pointers.
+MemoryCatalog is not used for shared production deployments.
 DataFusion is the standard structured query engine and receives projection,
 predicate, limit, join, and snapshot work through Iceberg providers.
 

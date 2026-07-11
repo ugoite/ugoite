@@ -225,6 +225,68 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
     Ok(())
 }
 
+#[tokio::test]
+async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyhow::Result<()> {
+    let first = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(50)),
+        "memory://iceberg-concurrent-writers",
+    )
+    .await?;
+    let second = IcebergWorkspace::new(
+        first.catalog(),
+        SpaceId::from(Uuid::from_u128(50)),
+        "memory://iceberg-concurrent-writers",
+        Default::default(),
+    )
+    .await?;
+    let form = form();
+    first.create_form(&form).await?;
+    let entry_id = Uuid::from_u128(51).into();
+    let mut left = EntryRevision {
+        form_id: form.id,
+        entry_id,
+        revision_id: Uuid::from_u128(52).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "left".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        values: BTreeMap::new(),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    left.values.insert(
+        FieldId::new(100).unwrap(),
+        FieldValue::String("left".into()),
+    );
+    let mut right = left.clone();
+    right.revision_id = Uuid::from_u128(53).into();
+    right.author_id = "right".into();
+    right.values.insert(
+        FieldId::new(100).unwrap(),
+        FieldValue::String("right".into()),
+    );
+    let (left_result, right_result) = tokio::join!(
+        first.append_revisions(form.id, vec![left]),
+        second.append_revisions(form.id, vec![right.clone()]),
+    );
+    left_result.or(right_result)?;
+    let probe = EntryRevision {
+        revision_id: Uuid::from_u128(54).into(),
+        ..right
+    };
+    let conflict = first
+        .append_revisions(form.id, vec![probe])
+        .await
+        .unwrap_err();
+    assert!(conflict.to_string().contains("conflict"));
+    Ok(())
+}
+
 #[test]
 fn migration_report_rejects_count_or_mapping_drift() {
     let report = MigrationReport::verify(
