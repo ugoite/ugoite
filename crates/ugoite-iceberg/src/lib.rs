@@ -37,6 +37,7 @@ const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
 const FORM_FIELD_MAPPING_PROPERTY: &str = "ugoite.form.field-id-map.v1";
 const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
+const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
 
 #[derive(Debug, Clone)]
 pub struct IcebergWorkspace {
@@ -506,7 +507,7 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
         fields.push(Arc::new(NestedField::new(
             physical_field_id(index),
             field.name.clone(),
-            iceberg_type(&field.field_type),
+            iceberg_type(&field.field_type, physical_field_id(index)),
             field.required,
         )));
     }
@@ -520,7 +521,7 @@ fn optional(id: i32, name: &str, kind: PrimitiveType) -> Arc<NestedField> {
     Arc::new(NestedField::new(id, name, Type::Primitive(kind), false))
 }
 
-fn iceberg_type(kind: &FieldType) -> Type {
+fn iceberg_type(kind: &FieldType, parent_id: i32) -> Type {
     match kind {
         FieldType::Boolean => Type::Primitive(PrimitiveType::Boolean),
         FieldType::Integer => Type::Primitive(PrimitiveType::Int),
@@ -540,7 +541,7 @@ fn iceberg_type(kind: &FieldType) -> Type {
         | FieldType::Sql
         | FieldType::RowReference => Type::Primitive(PrimitiveType::String),
         FieldType::List => Type::List(ListType::new(Arc::new(NestedField::new(
-            1_000_000,
+            nested_field_id(parent_id, 0),
             "element",
             Type::Primitive(PrimitiveType::String),
             false,
@@ -548,32 +549,36 @@ fn iceberg_type(kind: &FieldType) -> Type {
         FieldType::ObjectList => {
             let fields = vec![
                 Arc::new(NestedField::new(
-                    1_000_001,
+                    nested_field_id(parent_id, 1),
                     "type",
                     Type::Primitive(PrimitiveType::String),
                     false,
                 )),
                 Arc::new(NestedField::new(
-                    1_000_002,
+                    nested_field_id(parent_id, 2),
                     "name",
                     Type::Primitive(PrimitiveType::String),
                     false,
                 )),
                 Arc::new(NestedField::new(
-                    1_000_003,
+                    nested_field_id(parent_id, 3),
                     "description",
                     Type::Primitive(PrimitiveType::String),
                     false,
                 )),
             ];
             Type::List(ListType::new(Arc::new(NestedField::new(
-                1_000_000,
+                nested_field_id(parent_id, 0),
                 "element",
                 Type::Struct(StructType::new(fields)),
                 false,
             ))))
         }
     }
+}
+
+fn nested_field_id(parent_id: i32, offset: i32) -> i32 {
+    NESTED_FIELD_ID_BASE + parent_id * 10 + offset
 }
 
 fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<String, String>> {

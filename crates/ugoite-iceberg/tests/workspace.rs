@@ -136,6 +136,56 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn nested_fields_have_unique_iceberg_ids_across_form_columns() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(40)),
+        "memory://iceberg-nested-field-ids",
+    )
+    .await?;
+    let mut form = form();
+    form.fields[0].field_type = FieldType::List;
+    form.fields.push(FormField {
+        id: FieldId::new(101).unwrap(),
+        name: "assignees".into(),
+        field_type: FieldType::ObjectList,
+        required: false,
+        label: None,
+        description: None,
+        semantic_role: None,
+        reference_form: None,
+        validation: None,
+        enum_values: Vec::new(),
+        deprecated: false,
+    });
+    workspace.create_form(&form).await?;
+    let table = workspace
+        .catalog()
+        .load_table(&iceberg::TableIdent::new(
+            workspace.namespace().clone(),
+            physical_form_name(form.id),
+        ))
+        .await?;
+    let title = table
+        .metadata()
+        .current_schema()
+        .field_by_name("title")
+        .unwrap();
+    let assignees = table
+        .metadata()
+        .current_schema()
+        .field_by_name("assignees")
+        .unwrap();
+    let iceberg::spec::Type::List(title_list) = title.field_type.as_ref() else {
+        panic!("title must remain a list");
+    };
+    let iceberg::spec::Type::List(assignees_list) = assignees.field_type.as_ref() else {
+        panic!("assignees must remain a list");
+    };
+    assert_ne!(title_list.element_field.id, assignees_list.element_field.id);
+    Ok(())
+}
+
+#[tokio::test]
 async fn metadata_evolution_keeps_physical_identity() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(3)),
