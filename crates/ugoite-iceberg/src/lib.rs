@@ -8,10 +8,12 @@ mod migration;
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
 
 use anyhow::{anyhow, Context, Result};
-use arrow_array::RecordBatch;
+use arrow_array::{Array, FixedSizeBinaryArray, Int64Array, RecordBatch, StringArray};
 use datafusion::execution::context::SessionContext;
 use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
-use iceberg::spec::{NestedField, PrimitiveType, Schema, SortOrder, Type, UnboundPartitionSpec};
+use iceberg::spec::{
+    ListType, NestedField, PrimitiveType, Schema, SortOrder, StructType, Type, UnboundPartitionSpec,
+};
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
 use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
@@ -23,7 +25,7 @@ use parquet::file::properties::WriterProperties;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use ugoite_domain::entry::EntryRevision;
+use ugoite_domain::entry::{EntryOperation, EntryRevision};
 use ugoite_domain::form::{Compatibility, FieldType, FormChangeSet, FormDefinition};
 use ugoite_domain::id::{FormId, RevisionId, SpaceId};
 use uuid::Uuid;
@@ -32,6 +34,7 @@ const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
 const FORM_ID_PROPERTY: &str = "ugoite.form.id";
 const FORM_NAME_PROPERTY: &str = "ugoite.form.name";
 const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
+const FORM_FIELD_MAPPING_PROPERTY: &str = "ugoite.form.field-id-map.v1";
 const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
 
@@ -170,6 +173,19 @@ impl IcebergWorkspace {
                 "Form ID property does not match physical table identity"
             ));
         }
+        let mapping_raw = table
+            .metadata()
+            .properties()
+            .get(FORM_FIELD_MAPPING_PROPERTY)
+            .context("Iceberg table is missing Form field ID mapping")?;
+        let mapping: HashMap<String, i32> = serde_json::from_str(mapping_raw)?;
+        for (index, field) in form.fields.iter().enumerate() {
+            if mapping.get(&field.id.get().to_string()) != Some(&physical_field_id(index)) {
+                return Err(anyhow!(
+                    "Form field ID mapping does not match Iceberg schema"
+                ));
+            }
+        }
         Ok(form)
     }
 
@@ -187,6 +203,9 @@ impl IcebergWorkspace {
 
     pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
         let current = self.load_form(changes.form_id).await?;
+        if changes.expected_version != Some(current.version) {
+            return Err(anyhow!("Form version conflict"));
+        }
         match changes.compatibility(&current)? {
             Compatibility::Breaking => {
                 return Err(anyhow!(
@@ -227,19 +246,56 @@ impl IcebergWorkspace {
         if batches.is_empty() || revisions.is_empty() {
             return Err(anyhow!("append batch must not be empty"));
         }
-        let form = self.load_form(form_id).await?;
-        for revision in revisions {
-            revision.validate(&form, None).or_else(|error| {
-                if matches!(error, ugoite_domain::entry::RevisionError::VersionConflict) {
-                    Ok(())
-                } else {
-                    Err(error)
-                }
-            })?;
+        let row_count: usize = batches.iter().map(RecordBatch::num_rows).sum();
+        if row_count != revisions.len() {
+            return Err(anyhow!(
+                "record batch row count ({row_count}) does not match revisions ({})",
+                revisions.len()
+            ));
         }
+        let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let mut current = self.latest_revisions(&table).await?;
+        let mut seen = std::collections::HashSet::new();
+        for revision in revisions {
+            if revision.form_id != form.id || revision.form_version != form.version {
+                return Err(anyhow!(
+                    "revision does not belong to the current Form version"
+                ));
+            }
+            if !seen.insert(revision.revision_id) {
+                return Err(anyhow!("duplicate revision ID in append batch"));
+            }
+            let previous = current.get(&revision.entry_id);
+            if let Some(previous) = previous {
+                if revision.expected_version != Some(previous.entry_version)
+                    || revision.parent_revision_id != Some(previous.revision_id)
+                    || revision.entry_version
+                        != previous
+                            .entry_version
+                            .checked_add(1)
+                            .ok_or_else(|| anyhow!("entry version overflow"))?
+                {
+                    return Err(anyhow!("entry revision conflict"));
+                }
+            } else if revision.expected_version.is_some()
+                || revision.parent_revision_id.is_some()
+                || revision.entry_version != 1
+            {
+                return Err(anyhow!("entry revision conflict"));
+            }
+            revision.validate_payload(&form)?;
+            current.insert(
+                revision.entry_id,
+                LatestRevision {
+                    revision_id: revision.revision_id,
+                    entry_version: revision.entry_version,
+                },
+            );
+        }
+        validate_batch_revision_metadata(&batches, revisions)?;
         let mut data_files = Vec::new();
-        for group in split_batches(batches, self.write.max_rows_per_file) {
+        for group in split_batches(batches, self.write.max_rows_per_file)? {
             let output_path = format!(
                 "{}/data/{}.parquet",
                 table.metadata().location(),
@@ -302,6 +358,52 @@ impl IcebergWorkspace {
         })
     }
 
+    async fn latest_revisions(
+        &self,
+        table: &iceberg::table::Table,
+    ) -> Result<std::collections::HashMap<ugoite_domain::id::EntryId, LatestRevision>> {
+        let scan = table
+            .scan()
+            .select(vec!["entry_id", "revision_id", "entry_version"])
+            .build()?;
+        let tasks = scan.plan_files().await?;
+        let reader = iceberg::arrow::ArrowReaderBuilder::new(table.file_io().clone()).build();
+        let mut stream = reader.read(tasks)?;
+        let mut latest = std::collections::HashMap::new();
+        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
+            let entry_ids = batch
+                .column_by_name("entry_id")
+                .context("Iceberg table is missing entry_id")?;
+            let revision_ids = batch
+                .column_by_name("revision_id")
+                .context("Iceberg table is missing revision_id")?;
+            let versions = batch
+                .column_by_name("entry_version")
+                .and_then(|array| array.as_any().downcast_ref::<Int64Array>())
+                .context("entry_version must be an int64 column")?;
+            for row in 0..batch.num_rows() {
+                let entry_id = uuid_at(entry_ids, row)?;
+                let revision_id =
+                    ugoite_domain::id::RevisionId::from_uuid(uuid_at(revision_ids, row)?.as_uuid());
+                let version = u64::try_from(versions.value(row))
+                    .map_err(|_| anyhow!("entry_version must be non-negative"))?;
+                let replace = latest
+                    .get(&entry_id)
+                    .is_none_or(|known: &LatestRevision| version > known.entry_version);
+                if replace {
+                    latest.insert(
+                        entry_id,
+                        LatestRevision {
+                            revision_id,
+                            entry_version: version,
+                        },
+                    );
+                }
+            }
+        }
+        Ok(latest)
+    }
+
     pub async fn query(&self, sql: &str) -> Result<Vec<RecordBatch>> {
         let context = SessionContext::new();
         let provider = IcebergCatalogProvider::try_new(self.catalog.clone()).await?;
@@ -350,8 +452,20 @@ impl IcebergWorkspace {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct LatestRevision {
+    revision_id: ugoite_domain::id::RevisionId,
+    entry_version: u64,
+}
+
 pub fn physical_form_name(form_id: FormId) -> String {
     format!("form_{}", form_id.as_uuid().simple())
+}
+
+/// Returns the Arrow schema used by the revision table. This is also the
+/// canonical schema callers must use when constructing append batches.
+pub fn arrow_schema_for_form(form: &FormDefinition) -> Result<arrow_schema::Schema> {
+    Ok(iceberg::arrow::schema_to_arrow_schema(&form_schema(form)?)?)
 }
 
 fn validate_field_ids(form: &FormDefinition) -> Result<()> {
@@ -369,6 +483,10 @@ fn validate_field_ids(form: &FormDefinition) -> Result<()> {
     Ok(())
 }
 
+fn physical_field_id(index: usize) -> i32 {
+    13 + i32::try_from(index).expect("Form field count exceeds Iceberg field ID range")
+}
+
 fn form_schema(form: &FormDefinition) -> Result<Schema> {
     let mut fields = vec![
         required(1, "entry_id", PrimitiveType::Uuid),
@@ -382,10 +500,11 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
         required(9, "source_kind", PrimitiveType::String),
         optional(10, "source_id", PrimitiveType::String),
         optional(11, "extension_metadata", PrimitiveType::String),
+        optional(12, "extra_attributes", PrimitiveType::String),
     ];
-    for field in &form.fields {
+    for (index, field) in form.fields.iter().enumerate() {
         fields.push(Arc::new(NestedField::new(
-            field.id.get(),
+            physical_field_id(index),
             field.name.clone(),
             iceberg_type(&field.field_type),
             field.required,
@@ -402,30 +521,68 @@ fn optional(id: i32, name: &str, kind: PrimitiveType) -> Arc<NestedField> {
 }
 
 fn iceberg_type(kind: &FieldType) -> Type {
-    Type::Primitive(match kind {
-        FieldType::Boolean => PrimitiveType::Boolean,
-        FieldType::Integer => PrimitiveType::Int,
-        FieldType::Long => PrimitiveType::Long,
-        FieldType::Float => PrimitiveType::Float,
-        FieldType::Double => PrimitiveType::Double,
-        FieldType::Date => PrimitiveType::Date,
-        FieldType::Time => PrimitiveType::Time,
-        FieldType::Timestamp => PrimitiveType::Timestamp,
-        FieldType::TimestampTz => PrimitiveType::Timestamptz,
-        FieldType::TimestampNs => PrimitiveType::TimestampNs,
-        FieldType::TimestampTzNs => PrimitiveType::TimestamptzNs,
-        FieldType::Uuid => PrimitiveType::Uuid,
-        FieldType::Binary => PrimitiveType::Binary,
-        FieldType::String
+    match kind {
+        FieldType::Boolean => Type::Primitive(PrimitiveType::Boolean),
+        FieldType::Integer => Type::Primitive(PrimitiveType::Int),
+        FieldType::Long => Type::Primitive(PrimitiveType::Long),
+        FieldType::Float => Type::Primitive(PrimitiveType::Float),
+        FieldType::Double => Type::Primitive(PrimitiveType::Double),
+        FieldType::Date
+        | FieldType::Time
+        | FieldType::Timestamp
+        | FieldType::TimestampTz
+        | FieldType::TimestampNs
+        | FieldType::TimestampTzNs
+        | FieldType::Uuid
+        | FieldType::Binary
+        | FieldType::String
         | FieldType::Markdown
         | FieldType::Sql
-        | FieldType::List
-        | FieldType::ObjectList
-        | FieldType::RowReference => PrimitiveType::String,
-    })
+        | FieldType::RowReference => Type::Primitive(PrimitiveType::String),
+        FieldType::List => Type::List(ListType::new(Arc::new(NestedField::new(
+            1_000_000,
+            "element",
+            Type::Primitive(PrimitiveType::String),
+            false,
+        )))),
+        FieldType::ObjectList => {
+            let fields = vec![
+                Arc::new(NestedField::new(
+                    1_000_001,
+                    "type",
+                    Type::Primitive(PrimitiveType::String),
+                    false,
+                )),
+                Arc::new(NestedField::new(
+                    1_000_002,
+                    "name",
+                    Type::Primitive(PrimitiveType::String),
+                    false,
+                )),
+                Arc::new(NestedField::new(
+                    1_000_003,
+                    "description",
+                    Type::Primitive(PrimitiveType::String),
+                    false,
+                )),
+            ];
+            Type::List(ListType::new(Arc::new(NestedField::new(
+                1_000_000,
+                "element",
+                Type::Struct(StructType::new(fields)),
+                false,
+            ))))
+        }
+    }
 }
 
 fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<String, String>> {
+    let field_mapping = form
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| (field.id.get().to_string(), physical_field_id(index)))
+        .collect::<HashMap<_, _>>();
     Ok(HashMap::from([
         (
             FORM_DEFINITION_PROPERTY.into(),
@@ -435,26 +592,128 @@ fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<
         (FORM_NAME_PROPERTY.into(), form.name.clone()),
         (FORM_VERSION_PROPERTY.into(), form.version.get().to_string()),
         (
+            FORM_FIELD_MAPPING_PROPERTY.into(),
+            serde_json::to_string(&field_mapping)?,
+        ),
+        (
             TARGET_FILE_SIZE_PROPERTY.into(),
             write.target_file_size_bytes.to_string(),
         ),
     ]))
 }
 
-fn split_batches(batches: Vec<RecordBatch>, max_rows: usize) -> Vec<Vec<RecordBatch>> {
+fn split_batches(batches: Vec<RecordBatch>, max_rows: usize) -> Result<Vec<Vec<RecordBatch>>> {
+    if max_rows == 0 {
+        return Err(anyhow!("max_rows_per_file must be greater than zero"));
+    }
     let mut groups = Vec::new();
     let mut current = Vec::new();
     let mut rows = 0;
     for batch in batches {
-        if !current.is_empty() && rows + batch.num_rows() > max_rows {
-            groups.push(std::mem::take(&mut current));
-            rows = 0;
+        let mut offset = 0;
+        while offset < batch.num_rows() {
+            if rows == max_rows {
+                groups.push(std::mem::take(&mut current));
+                rows = 0;
+            }
+            let count = (batch.num_rows() - offset).min(max_rows - rows);
+            current.push(batch.slice(offset, count));
+            rows += count;
+            offset += count;
         }
-        rows += batch.num_rows();
-        current.push(batch);
     }
     if !current.is_empty() {
         groups.push(current);
     }
-    groups
+    Ok(groups)
+}
+
+fn uuid_value_at(array: &dyn Array, row: usize) -> Result<Uuid> {
+    if array.is_null(row) {
+        return Err(anyhow!("UUID column contains a null value"));
+    }
+    if let Some(values) = array.as_any().downcast_ref::<FixedSizeBinaryArray>() {
+        return Ok(Uuid::from_slice(values.value(row))?);
+    }
+    if let Some(values) = array.as_any().downcast_ref::<StringArray>() {
+        return Ok(Uuid::parse_str(values.value(row))?);
+    }
+    Err(anyhow!("UUID column has unsupported Arrow type"))
+}
+
+fn uuid_at(array: &dyn Array, row: usize) -> Result<ugoite_domain::id::EntryId> {
+    Ok(ugoite_domain::id::EntryId::from_uuid(uuid_value_at(
+        array, row,
+    )?))
+}
+
+fn validate_batch_revision_metadata(
+    batches: &[RecordBatch],
+    revisions: &[EntryRevision],
+) -> Result<()> {
+    let mut row_index = 0;
+    for batch in batches {
+        let entry_ids = batch
+            .column_by_name("entry_id")
+            .context("record batch is missing entry_id")?;
+        let revision_ids = batch
+            .column_by_name("revision_id")
+            .context("record batch is missing revision_id")?;
+        let parents = batch
+            .column_by_name("parent_revision_id")
+            .context("record batch is missing parent_revision_id")?;
+        let entry_versions = batch
+            .column_by_name("entry_version")
+            .and_then(|array| array.as_any().downcast_ref::<Int64Array>())
+            .context("entry_version must be an int64 column")?;
+        let form_versions = batch
+            .column_by_name("form_version")
+            .and_then(|array| array.as_any().downcast_ref::<arrow_array::Int32Array>())
+            .context("form_version must be an int32 column")?;
+        let operations = batch
+            .column_by_name("operation")
+            .and_then(|array| array.as_any().downcast_ref::<StringArray>())
+            .context("operation must be a string column")?;
+        for row in 0..batch.num_rows() {
+            let revision = revisions
+                .get(row_index)
+                .context("record batch has more rows than revision metadata")?;
+            let parent = if parents.is_null(row) {
+                None
+            } else {
+                Some(ugoite_domain::id::RevisionId::from_uuid(uuid_value_at(
+                    parents.as_ref(),
+                    row,
+                )?))
+            };
+            let entry_version = u64::try_from(entry_versions.value(row))
+                .map_err(|_| anyhow!("entry_version must be non-negative"))?;
+            let form_version = u32::try_from(form_versions.value(row))
+                .map_err(|_| anyhow!("form_version must be positive"))?;
+            let operation = match revision.operation {
+                EntryOperation::Upsert => "upsert",
+                EntryOperation::Delete => "delete",
+                EntryOperation::Restore => "restore",
+            };
+            if uuid_value_at(entry_ids.as_ref(), row)? != revision.entry_id.as_uuid()
+                || uuid_value_at(revision_ids.as_ref(), row)? != revision.revision_id.as_uuid()
+                || parent != revision.parent_revision_id
+                || entry_version != revision.entry_version
+                || form_version != revision.form_version.get()
+                || operations.is_null(row)
+                || operations.value(row) != operation
+            {
+                return Err(anyhow!(
+                    "record batch revision metadata does not match revision metadata"
+                ));
+            }
+            row_index += 1;
+        }
+    }
+    if row_index != revisions.len() {
+        return Err(anyhow!(
+            "record batch has fewer rows than revision metadata"
+        ));
+    }
+    Ok(())
 }

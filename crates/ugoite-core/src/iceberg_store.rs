@@ -3,7 +3,7 @@ use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
 use iceberg::spec::{ListType, NestedField, Schema, StructType, Type, UnboundPartitionSpec};
 use iceberg::spec::{PrimitiveType, SortOrder};
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
-use iceberg::{Catalog, CatalogBuilder, MemoryCatalog, NamespaceIdent, TableCreation, TableIdent};
+use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use uuid::Uuid;
 
-const REVISIONS_TABLE_NAME: &str = "revisions";
 const FORM_DEF_PROP: &str = "ugoite.form_definition";
 const FORM_VERSION_PROP: &str = "ugoite.form_version";
 const CATALOG_POINTERS_FILE: &str = "forms/catalog-pointers.v1.json";
@@ -28,11 +27,15 @@ struct CatalogTablePointer {
     namespace: Vec<String>,
     table: String,
     metadata_location: String,
+    #[serde(default)]
+    form_id: Option<String>,
+    #[serde(default)]
+    form_name: Option<String>,
 }
 
-static CATALOG_CACHE: OnceLock<Mutex<HashMap<String, Arc<MemoryCatalog>>>> = OnceLock::new();
+static CATALOG_CACHE: OnceLock<Mutex<HashMap<String, Arc<dyn Catalog>>>> = OnceLock::new();
 
-fn catalog_cache() -> &'static Mutex<HashMap<String, Arc<MemoryCatalog>>> {
+fn catalog_cache() -> &'static Mutex<HashMap<String, Arc<dyn Catalog>>> {
     CATALOG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -66,21 +69,28 @@ fn warehouse_uri(op: &Operator, ws_path: &str) -> Result<String> {
     Ok(format!("{}{}{}", prefix, warehouse_path, "/forms"))
 }
 
-async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<MemoryCatalog>> {
+async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<dyn Catalog>> {
     let warehouse = warehouse_uri(op, ws_path)?;
-    let instance_path = format!(
-        "{}/{}",
-        ws_path.trim_end_matches('/'),
-        CATALOG_INSTANCE_FILE
-    );
-    let instance_id = if op.exists(&instance_path).await? {
-        String::from_utf8(op.read(&instance_path).await?.to_vec())?
+    let rest_catalog_uri = std::env::var("UGOITE_ICEBERG_CATALOG_URI")
+        .ok()
+        .filter(|uri| !uri.trim().is_empty());
+    let cache_key = if let Some(uri) = &rest_catalog_uri {
+        format!("rest:{uri}#{warehouse}")
     } else {
-        let value = Uuid::new_v4().to_string();
-        op.write(&instance_path, value.as_bytes().to_vec()).await?;
-        value
+        let instance_path = format!(
+            "{}/{}",
+            ws_path.trim_end_matches('/'),
+            CATALOG_INSTANCE_FILE
+        );
+        let instance_id = if op.exists(&instance_path).await? {
+            String::from_utf8(op.read(&instance_path).await?.to_vec())?
+        } else {
+            let value = Uuid::new_v4().to_string();
+            op.write(&instance_path, value.as_bytes().to_vec()).await?;
+            value
+        };
+        format!("{warehouse}#{instance_id}")
     };
-    let cache_key = format!("{warehouse}#{instance_id}");
     if let Some(catalog) = catalog_cache()
         .lock()
         .map_err(|_| anyhow!("catalog cache lock poisoned"))?
@@ -89,17 +99,24 @@ async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<MemoryCat
     {
         return Ok(catalog);
     }
-    let mut props = HashMap::new();
-    props.insert(MEMORY_CATALOG_WAREHOUSE.to_string(), warehouse.clone());
-    let catalog: MemoryCatalog = MemoryCatalogBuilder::default()
-        .load("ugoite", props)
-        .await?;
+    let use_rest_catalog = rest_catalog_uri.is_some();
+    let catalog: Arc<dyn Catalog> = if let Some(uri) = rest_catalog_uri {
+        ugoite_iceberg::IcebergWorkspace::rest_catalog(&uri, &warehouse, []).await?
+    } else {
+        let mut props = HashMap::new();
+        props.insert(MEMORY_CATALOG_WAREHOUSE.to_string(), warehouse.clone());
+        Arc::new(
+            MemoryCatalogBuilder::default()
+                .load("ugoite", props)
+                .await?,
+        )
+    };
     let pointer_path = format!(
         "{}/{}",
         ws_path.trim_end_matches('/'),
         CATALOG_POINTERS_FILE
     );
-    if op.exists(&pointer_path).await? {
+    if !use_rest_catalog && op.exists(&pointer_path).await? {
         let bytes = op.read(&pointer_path).await?;
         let pointers: CatalogPointers = serde_json::from_slice(&bytes.to_vec())?;
         for pointer in pointers.tables {
@@ -115,12 +132,17 @@ async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<MemoryCat
             }
         }
     }
-    let catalog = Arc::new(catalog);
     catalog_cache()
         .lock()
         .map_err(|_| anyhow!("catalog cache lock poisoned"))?
         .insert(cache_key, catalog.clone());
     Ok(catalog)
+}
+
+pub fn uses_rest_catalog() -> bool {
+    std::env::var("UGOITE_ICEBERG_CATALOG_URI")
+        .ok()
+        .is_some_and(|uri| !uri.trim().is_empty())
 }
 
 pub async fn persist_catalog_pointer(
@@ -146,6 +168,18 @@ pub async fn persist_catalog_pointer(
         namespace: ident.namespace().as_ref().clone(),
         table: ident.name().to_string(),
         metadata_location: table.metadata_location_result()?.to_string(),
+        form_id: table.metadata().properties().get("ugoite.form_id").cloned(),
+        form_name: table
+            .metadata()
+            .properties()
+            .get(FORM_DEF_PROP)
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+            .and_then(|definition| {
+                definition
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            }),
     };
     pointers.tables.retain(|existing| {
         existing.namespace != pointer.namespace || existing.table != pointer.table
@@ -162,35 +196,61 @@ pub async fn persist_catalog_pointer(
 }
 
 fn form_namespace(form_def: &Value) -> Result<NamespaceIdent> {
+    form_def
+        .get("id")
+        .and_then(Value::as_str)
+        .context("Form definition missing stable 'id'")?;
+    // The warehouse is already scoped to one Space. Forms therefore share a
+    // namespace and use their stable UUID as the physical table identity.
+    Ok(NamespaceIdent::new("space".to_string()))
+}
+
+fn physical_form_table_name(form_def: &Value) -> Result<String> {
     let form_id = form_def
         .get("id")
         .and_then(Value::as_str)
         .context("Form definition missing stable 'id'")?;
-    Ok(NamespaceIdent::new(format!(
-        "form_{}",
-        form_id.replace('-', "")
-    )))
+    Ok(format!("form_{}", form_id.replace('-', "")))
 }
 
-async fn resolve_form_namespace(
-    catalog: &MemoryCatalog,
+async fn resolve_form_table_ident(
+    op: &Operator,
+    ws_path: &str,
     form_name: &str,
-) -> Result<NamespaceIdent> {
-    for namespace in catalog.list_namespaces(None).await? {
-        let ident = TableIdent::new(namespace.clone(), REVISIONS_TABLE_NAME.to_string());
-        if !catalog.table_exists(&ident).await? {
-            continue;
+) -> Result<TableIdent> {
+    if uses_rest_catalog() {
+        let catalog = catalog_for_space(op, ws_path).await?;
+        let namespace = NamespaceIdent::new("space".to_string());
+        for ident in catalog.list_tables(&namespace).await? {
+            let table = catalog.load_table(&ident).await?;
+            if let Some(raw) = table.metadata().properties().get(FORM_DEF_PROP) {
+                let definition: Value = serde_json::from_str(raw)?;
+                if definition.get("name").and_then(Value::as_str) == Some(form_name) {
+                    return Ok(ident);
+                }
+            }
         }
-        let table = catalog.load_table(&ident).await?;
-        let Some(raw) = table.metadata().properties().get(FORM_DEF_PROP) else {
-            continue;
-        };
-        let definition: Value = serde_json::from_str(raw)?;
-        if definition.get("name").and_then(Value::as_str) == Some(form_name) {
-            return Ok(namespace);
-        }
+        return Err(anyhow!("Form {form_name} not found in REST Catalog"));
     }
-    Err(anyhow!("Form {form_name} not found in Catalog"))
+    let pointer_path = format!(
+        "{}/{}",
+        ws_path.trim_end_matches('/'),
+        CATALOG_POINTERS_FILE
+    );
+    let bytes = op
+        .read(&pointer_path)
+        .await
+        .with_context(|| format!("Catalog pointer manifest missing: {pointer_path}"))?;
+    let pointers: CatalogPointers = serde_json::from_slice(&bytes.to_vec())?;
+    let pointer = pointers
+        .tables
+        .into_iter()
+        .find(|pointer| pointer.form_name.as_deref() == Some(form_name))
+        .context("Form is not registered in the Catalog pointer manifest")?;
+    Ok(TableIdent::new(
+        NamespaceIdent::from_vec(pointer.namespace)?,
+        pointer.table,
+    ))
 }
 
 fn form_field_defs(form_def: &Value) -> Result<Vec<(i32, String, String, bool)>> {
@@ -617,7 +677,8 @@ fn table_properties(form_def: &Value) -> Result<HashMap<String, String>> {
 }
 
 pub async fn ensure_form_tables(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
+    let use_rest_catalog = uses_rest_catalog();
+    let catalog = catalog_for_space(op, ws_path).await?;
     let namespace = form_namespace(form_def)?;
 
     if !catalog.namespace_exists(&namespace).await? {
@@ -631,12 +692,12 @@ pub async fn ensure_form_tables(op: &Operator, ws_path: &str, form_def: &Value) 
         }
     }
 
-    let revisions_ident = TableIdent::new(namespace.clone(), REVISIONS_TABLE_NAME.to_string());
+    let revisions_ident = TableIdent::new(namespace.clone(), physical_form_table_name(form_def)?);
     if !catalog.table_exists(&revisions_ident).await? {
         let schema = build_revisions_schema(form_def)?;
         let props = table_properties(form_def)?;
         let creation = TableCreation::builder()
-            .name(REVISIONS_TABLE_NAME.to_string())
+            .name(physical_form_table_name(form_def)?)
             .schema(schema)
             .partition_spec(UnboundPartitionSpec::default())
             .sort_order(SortOrder::unsorted_order())
@@ -671,7 +732,9 @@ pub async fn ensure_form_tables(op: &Operator, ws_path: &str, form_def: &Value) 
     }
 
     let table = catalog.load_table(&revisions_ident).await?;
-    persist_catalog_pointer(op, ws_path, &table).await?;
+    if !use_rest_catalog {
+        persist_catalog_pointer(op, ws_path, &table).await?;
+    }
 
     Ok(())
 }
@@ -680,10 +743,9 @@ pub async fn load_entries_table(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
-) -> Result<(Arc<MemoryCatalog>, iceberg::table::Table)> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
-    let namespace = resolve_form_namespace(catalog.as_ref(), form_name).await?;
-    let table_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
+) -> Result<(Arc<dyn Catalog>, iceberg::table::Table)> {
+    let catalog = catalog_for_space(op, ws_path).await?;
+    let table_ident = resolve_form_table_ident(op, ws_path, form_name).await?;
     let table = catalog.load_table(&table_ident).await?;
     Ok((catalog, table))
 }
@@ -692,10 +754,9 @@ pub async fn load_revisions_table(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
-) -> Result<(Arc<MemoryCatalog>, iceberg::table::Table)> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
-    let namespace = resolve_form_namespace(catalog.as_ref(), form_name).await?;
-    let revisions_ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
+) -> Result<(Arc<dyn Catalog>, iceberg::table::Table)> {
+    let catalog = catalog_for_space(op, ws_path).await?;
+    let revisions_ident = resolve_form_table_ident(op, ws_path, form_name).await?;
     let revisions = catalog.load_table(&revisions_ident).await?;
     Ok((catalog, revisions))
 }
@@ -722,30 +783,43 @@ pub async fn load_form_schema_fields(
 }
 
 pub async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let catalog: Arc<MemoryCatalog> = catalog_for_space(op, ws_path).await?;
-    let namespaces = catalog.list_namespaces(None).await?;
-    let mut names = Vec::new();
-    for namespace in namespaces {
-        let ident = TableIdent::new(namespace, REVISIONS_TABLE_NAME.to_string());
-        if !catalog.table_exists(&ident).await? {
-            continue;
+    if uses_rest_catalog() {
+        let catalog = catalog_for_space(op, ws_path).await?;
+        let namespace = NamespaceIdent::new("space".to_string());
+        let mut names = Vec::new();
+        for ident in catalog.list_tables(&namespace).await? {
+            let table = catalog.load_table(&ident).await?;
+            if let Some(raw) = table.metadata().properties().get(FORM_DEF_PROP) {
+                let definition: Value = serde_json::from_str(raw)?;
+                if let Some(name) = definition.get("name").and_then(Value::as_str) {
+                    names.push(name.to_string());
+                }
+            }
         }
-        let table = catalog.load_table(&ident).await?;
-        let Some(raw) = table.metadata().properties().get(FORM_DEF_PROP) else {
-            continue;
-        };
-        let definition: Value = serde_json::from_str(raw)?;
-        if let Some(name) = definition.get("name").and_then(Value::as_str) {
-            names.push(name.to_string());
-        }
+        names.sort();
+        return Ok(names);
     }
+    let pointer_path = format!(
+        "{}/{}",
+        ws_path.trim_end_matches('/'),
+        CATALOG_POINTERS_FILE
+    );
+    if !op.exists(&pointer_path).await? {
+        return Ok(Vec::new());
+    }
+    let bytes = op.read(&pointer_path).await?;
+    let pointers: CatalogPointers = serde_json::from_slice(&bytes.to_vec())?;
+    let mut names: Vec<String> = pointers
+        .tables
+        .into_iter()
+        .filter_map(|pointer| pointer.form_name)
+        .collect();
     names.sort();
     Ok(names)
 }
 
 pub async fn load_form_definition(op: &Operator, ws_path: &str, form_name: &str) -> Result<Value> {
-    let (_, entries): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        load_entries_table(op, ws_path, form_name).await?;
+    let (_, entries) = load_entries_table(op, ws_path, form_name).await?;
     let props = entries.metadata().properties();
     let Some(definition) = props.get(FORM_DEF_PROP) else {
         return Err(anyhow!("Form definition missing in Iceberg metadata"));

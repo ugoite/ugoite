@@ -41,6 +41,8 @@ pub struct EntryRevision {
     pub source_id: Option<String>,
     pub values: BTreeMap<FieldId, FieldValue>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub extra_attributes: BTreeMap<String, Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extension_metadata: BTreeMap<String, Value>,
 }
 
@@ -56,6 +58,8 @@ pub struct EntryRevisionDraft {
     pub source_kind: String,
     pub source_id: Option<String>,
     pub values: BTreeMap<FieldId, FieldValue>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub extra_attributes: BTreeMap<String, Value>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extension_metadata: BTreeMap<String, Value>,
 }
@@ -88,6 +92,7 @@ impl EntryRevisionDraft {
             source_kind: self.source_kind,
             source_id: self.source_id,
             values: self.values,
+            extra_attributes: self.extra_attributes,
             extension_metadata: self.extension_metadata,
         };
         revision.validate(form, current)?;
@@ -96,13 +101,12 @@ impl EntryRevisionDraft {
 }
 
 impl EntryRevision {
-    pub fn validate(
-        &self,
-        form: &FormDefinition,
-        current: Option<&Self>,
-    ) -> Result<(), RevisionError> {
+    pub fn validate_payload(&self, form: &FormDefinition) -> Result<(), RevisionError> {
         if self.form_id != form.id {
             return Err(RevisionError::WrongForm);
+        }
+        if self.form_version != form.version {
+            return Err(RevisionError::WrongFormVersion);
         }
         if self.entry_version == 0
             || self.author_id.trim().is_empty()
@@ -110,24 +114,11 @@ impl EntryRevision {
         {
             return Err(RevisionError::MissingProvenance);
         }
-        match current {
-            None if self.expected_version.is_some()
-                || self.parent_revision_id.is_some()
-                || self.entry_version != 1 =>
-            {
-                return Err(RevisionError::VersionConflict)
-            }
-            Some(previous)
-                if self.expected_version != Some(previous.entry_version)
-                    || self.parent_revision_id != Some(previous.revision_id)
-                    || self.entry_version != previous.entry_version + 1 =>
-            {
-                return Err(RevisionError::VersionConflict)
-            }
-            _ => {}
-        }
         if self.operation == EntryOperation::Delete && !self.values.is_empty() {
             return Err(RevisionError::TombstoneHasValues);
+        }
+        if !form.allow_extra_attributes && !self.extra_attributes.is_empty() {
+            return Err(RevisionError::ExtraAttributesNotAllowed);
         }
         if self.operation != EntryOperation::Delete {
             for field in form
@@ -152,42 +143,81 @@ impl EntryRevision {
         }
         Ok(())
     }
+
+    pub fn validate(
+        &self,
+        form: &FormDefinition,
+        current: Option<&Self>,
+    ) -> Result<(), RevisionError> {
+        self.validate_payload(form)?;
+        match current {
+            None if self.expected_version.is_some()
+                || self.parent_revision_id.is_some()
+                || self.entry_version != 1 =>
+            {
+                return Err(RevisionError::VersionConflict)
+            }
+            Some(previous)
+                if self.expected_version != Some(previous.entry_version)
+                    || self.parent_revision_id != Some(previous.revision_id)
+                    || self.entry_version
+                        != previous
+                            .entry_version
+                            .checked_add(1)
+                            .ok_or(RevisionError::VersionConflict)? =>
+            {
+                return Err(RevisionError::VersionConflict)
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 fn value_matches_type(value: &FieldValue, field_type: &FieldType) -> bool {
-    matches!(value, FieldValue::Null)
-        || matches!(
-            (value, field_type),
-            (
-                FieldValue::String(_),
-                FieldType::String
-                    | FieldType::Markdown
-                    | FieldType::Sql
-                    | FieldType::Date
-                    | FieldType::Time
-                    | FieldType::Timestamp
-                    | FieldType::TimestampTz
-                    | FieldType::TimestampNs
-                    | FieldType::TimestampTzNs
-                    | FieldType::Uuid
-                    | FieldType::Binary
-                    | FieldType::RowReference
-            ) | (FieldValue::Boolean(_), FieldType::Boolean)
-                | (
-                    FieldValue::Integer(_),
-                    FieldType::Integer | FieldType::Long | FieldType::Float | FieldType::Double
-                )
-                | (FieldValue::Number(_), FieldType::Float | FieldType::Double)
-                | (FieldValue::List(_), FieldType::List | FieldType::ObjectList)
+    if matches!(value, FieldValue::Null) {
+        return true;
+    }
+    match (value, field_type) {
+        (
+            FieldValue::String(_),
+            FieldType::String
+            | FieldType::Markdown
+            | FieldType::Sql
+            | FieldType::Date
+            | FieldType::Time
+            | FieldType::Timestamp
+            | FieldType::TimestampTz
+            | FieldType::TimestampNs
+            | FieldType::TimestampTzNs
+            | FieldType::Uuid
+            | FieldType::Binary
+            | FieldType::RowReference,
         )
+        | (FieldValue::Boolean(_), FieldType::Boolean)
+        | (
+            FieldValue::Integer(_),
+            FieldType::Integer | FieldType::Long | FieldType::Float | FieldType::Double,
+        )
+        | (FieldValue::Number(_), FieldType::Float | FieldType::Double) => true,
+        (FieldValue::List(values), FieldType::List) => values
+            .iter()
+            .all(|value| matches!(value, FieldValue::String(_))),
+        (FieldValue::List(values), FieldType::ObjectList) => values
+            .iter()
+            .all(|value| matches!(value, FieldValue::Object(_))),
+        _ => false,
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum RevisionError {
     WrongForm,
+    WrongFormVersion,
     MissingProvenance,
     VersionConflict,
     TombstoneHasValues,
+    ExtraAttributesNotAllowed,
     RequiredField(FieldId),
     UnknownField(FieldId),
     WrongType(FieldId),

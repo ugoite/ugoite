@@ -46,6 +46,7 @@ fn fixture(entry_count: usize, revisions_per_entry: usize) -> (FormDefinition, V
                 source_kind: "benchmark".into(),
                 source_id: None,
                 values: BTreeMap::from([(field_id, FieldValue::String("value".into()))]),
+                extra_attributes: BTreeMap::new(),
                 extension_metadata: BTreeMap::new(),
             });
         }

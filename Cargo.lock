@@ -6320,8 +6320,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrow-array",
+ "arrow-schema",
  "criterion",
  "datafusion",
+ "futures",
  "iceberg",
  "iceberg-catalog-rest",
  "iceberg-datafusion",

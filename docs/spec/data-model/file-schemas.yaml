@@ -255,7 +255,7 @@ schemas:
         count:
           type: object
   entry_revision:
-    description: Authoritative append-only Entry revision for one stable Form ID.
+    description: Target authoritative append-only Entry revision for one stable Form ID; the Core adapter migration remains in progress.
     path: iceberg://spaces/{space_id}/form_{form_id}
     schema:
       type: object
@@ -280,4 +280,5 @@ schemas:
         form_version: {}
         source_kind: {}
         source_id: {}
+        extra_attributes: {}
         extension_metadata: {}

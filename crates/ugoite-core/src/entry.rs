@@ -22,7 +22,7 @@ use iceberg::spec::DataFile;
 use iceberg::transaction::ApplyTransactionAction;
 use iceberg::transaction::Transaction;
 use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
-use iceberg::{Catalog, MemoryCatalog};
+use iceberg::Catalog;
 use opendal::Operator;
 use parquet::file::properties::WriterProperties;
 use regex::Regex;
@@ -1739,7 +1739,7 @@ async fn write_record_batch(table: &iceberg::table::Table, batch: RecordBatch) -
 
 #[allow(dead_code)] // retained only for migration fixture generation
 async fn append_entry_row_to_table(
-    catalog: &MemoryCatalog,
+    catalog: &dyn Catalog,
     table: &iceberg::table::Table,
     row: &EntryRow,
     form_def: &Value,
@@ -1754,7 +1754,7 @@ async fn append_entry_row_to_table(
 }
 
 async fn append_revision_row_to_table(
-    catalog: &MemoryCatalog,
+    catalog: &dyn Catalog,
     table: &iceberg::table::Table,
     row: &RevisionRow,
     form_def: &Value,
@@ -1763,7 +1763,7 @@ async fn append_revision_row_to_table(
 }
 
 async fn append_revision_rows_to_table(
-    catalog: &MemoryCatalog,
+    catalog: &dyn Catalog,
     table: &iceberg::table::Table,
     rows: &[RevisionRow],
     form_def: &Value,
@@ -1976,11 +1976,14 @@ pub(crate) async fn append_revision_row_for_form(
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
-    let (catalog, table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
+    let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
     append_revision_row_to_table(catalog.as_ref(), &table, row, form_def).await?;
     let refreshed = catalog.load_table(table.identifier()).await?;
-    iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
+    if iceberg_store::uses_rest_catalog() {
+        Ok(())
+    } else {
+        iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
+    }
 }
 
 pub async fn append_revision_batch_for_form(
@@ -1993,7 +1996,11 @@ pub async fn append_revision_batch_for_form(
     let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
     append_revision_rows_to_table(catalog.as_ref(), &table, rows, &form_def).await?;
     let refreshed = catalog.load_table(table.identifier()).await?;
-    iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
+    if iceberg_store::uses_rest_catalog() {
+        Ok(())
+    } else {
+        iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
+    }
 }
 
 fn extract_tags(frontmatter: &Value) -> Vec<String> {

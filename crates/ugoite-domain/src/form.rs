@@ -108,6 +108,9 @@ impl FormDefinition {
             if !ids.insert(field.id) {
                 return Err(DomainError::DuplicateFieldId(field.id));
             }
+            if field.id.get() < 100 {
+                return Err(DomainError::ReservedFieldId(field.id));
+            }
             if !names.insert(field.name.as_str()) {
                 return Err(DomainError::DuplicateFieldName(field.name.clone()));
             }
@@ -118,6 +121,11 @@ impl FormDefinition {
     pub fn apply(&self, changes: &FormChangeSet) -> Result<Self, DomainError> {
         if changes.form_id != self.id {
             return Err(DomainError::FormIdChanged);
+        }
+        if let Some(expected_version) = changes.expected_version {
+            if expected_version != self.version {
+                return Err(DomainError::VersionConflict);
+            }
         }
         let mut next = self.clone();
         for change in &changes.changes {
@@ -187,6 +195,8 @@ impl FormDefinition {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FormChangeSet {
     pub form_id: FormId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_version: Option<FormVersion>,
     pub changes: Vec<FormChange>,
 }
 
@@ -288,6 +298,8 @@ pub enum DomainError {
     DuplicateFieldId(FieldId),
     DuplicateFieldName(String),
     UnknownField(FieldId),
+    ReservedFieldId(FieldId),
+    VersionConflict,
 }
 
 impl fmt::Display for DomainError {

@@ -41,6 +41,7 @@ fn field_rename_preserves_stable_id_and_is_compatible() {
     let original = form();
     let changes = FormChangeSet {
         form_id: original.id,
+        expected_version: Some(original.version),
         changes: vec![FormChange::RenameField {
             field_id: field_id(100),
             name: "summary".into(),
@@ -61,6 +62,7 @@ fn required_addition_needs_migration_and_narrowing_is_breaking() {
     let original = form();
     let required = FormChangeSet {
         form_id: original.id,
+        expected_version: Some(original.version),
         changes: vec![FormChange::AddField(FormField {
             id: field_id(101),
             name: "done".into(),
@@ -81,6 +83,7 @@ fn required_addition_needs_migration_and_narrowing_is_breaking() {
     );
     let narrowing = FormChangeSet {
         form_id: original.id,
+        expected_version: Some(original.version),
         changes: vec![FormChange::ChangeFieldType {
             field_id: field_id(100),
             field_type: FieldType::Boolean,
@@ -109,6 +112,7 @@ fn revision_validation_enforces_versions_parent_and_tombstones() {
         source_kind: "api".into(),
         source_id: None,
         values: BTreeMap::from([(field_id(100), FieldValue::String("hello".into()))]),
+        extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     };
     first.validate(&form, None).unwrap();
@@ -139,6 +143,7 @@ fn revision_draft_derives_parent_and_expected_version() {
         source_kind: "wasm".into(),
         source_id: None,
         values: BTreeMap::from([(field_id(100), FieldValue::String("first".into()))]),
+        extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     }
     .build(&form, None)
@@ -154,6 +159,7 @@ fn revision_draft_derives_parent_and_expected_version() {
         source_kind: "wasm".into(),
         source_id: None,
         values: BTreeMap::from([(field_id(100), FieldValue::String("second".into()))]),
+        extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     }
     .build(&form, Some(&first))
@@ -161,4 +167,32 @@ fn revision_draft_derives_parent_and_expected_version() {
     assert_eq!(second.parent_revision_id, Some(first.revision_id));
     assert_eq!(second.expected_version, Some(1));
     assert_eq!(second.entry_version, 2);
+}
+
+#[test]
+fn extra_attributes_follow_form_policy() {
+    let mut form = form();
+    let revision = EntryRevision {
+        form_id: form.id,
+        entry_id: EntryId::from(Uuid::from_u128(20)),
+        revision_id: RevisionId::from(Uuid::from_u128(21)),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:alice".into(),
+        form_version: form.version,
+        source_kind: "api".into(),
+        source_id: None,
+        values: BTreeMap::from([(field_id(100), FieldValue::String("body".into()))]),
+        extra_attributes: BTreeMap::from([(String::from("priority"), serde_json::json!("high"))]),
+        extension_metadata: BTreeMap::new(),
+    };
+    assert_eq!(
+        revision.validate(&form, None),
+        Err(RevisionError::ExtraAttributesNotAllowed)
+    );
+    form.allow_extra_attributes = true;
+    revision.validate(&form, None).unwrap();
 }
