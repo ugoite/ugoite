@@ -29,10 +29,14 @@ revision-row writer remains only as migration-reader code and is not a
 production write path.
 
 Logical Form field IDs are sent as Iceberg field IDs and retained in Form
-metadata. Schema-bearing changes use the REST Catalog commit request with
-`UuidMatch`, current-schema, and last-assigned-field requirements; schema and
-Form properties are changed atomically. The local MemoryCatalog fallback is
-kept for offline single-process CLI/test operation because a durable local
-Catalog is not part of Iceberg Rust 0.8.
+metadata. Schema-bearing changes use an explicitly injected REST schema
+committer built from the same typed configuration as the Catalog. It resolves
+the Catalog config response (including endpoint prefix), carries configured
+headers and authentication, and sends `UuidMatch`, current-schema, and
+last-assigned-field requirements together with the schema and Form properties
+in one atomic commit. The local MemoryCatalog fallback is kept for offline
+single-process CLI/test operation because a durable local Catalog is not part
+of Iceberg Rust 0.8; it reports schema evolution as unavailable rather than
+rewriting data.
 
 The current browser is server-backed. The target architecture adds a browser-local runtime and optional synchronization without making the server the mandatory owner of data.

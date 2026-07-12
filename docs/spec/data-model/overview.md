@@ -58,6 +58,11 @@ followed by Form fields. Delete is a tombstone and restore is another revision.
 Current state is derived from the unique greatest version and is never a second
 source-of-truth table.
 
+Date, time, timestamp, UUID, and binary Form fields use their corresponding
+Iceberg primitive types. Markdown, SQL, row references, and ordinary strings
+remain Iceberg strings; binary entry values are base64 text at the domain
+boundary and binary data in the table.
+
 ## Markdown mapping
 
 The global template is:

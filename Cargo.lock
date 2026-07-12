@@ -6327,6 +6327,8 @@ dependencies = [
  "anyhow",
  "arrow-array",
  "arrow-schema",
+ "base64 0.22.1",
+ "chrono",
  "criterion",
  "datafusion",
  "futures",

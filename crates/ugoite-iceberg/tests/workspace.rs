@@ -51,15 +51,14 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
             physical_form_name(form.id),
         ))
         .await?;
-    assert_eq!(
-        table
-            .metadata()
-            .current_schema()
-            .field_by_name("title")
-            .unwrap()
-            .id,
-        13
-    );
+    let arrow_schema = ugoite_iceberg::arrow_schema_for_form(&form)?;
+    for field in &form.fields {
+        let physical = arrow_schema.field_with_name(&field.name)?;
+        assert_eq!(
+            physical.metadata().get("PARQUET:field_id"),
+            Some(&field.id.get().to_string())
+        );
+    }
     assert_eq!(
         table
             .metadata()
@@ -146,6 +145,69 @@ async fn nested_fields_have_unique_iceberg_ids_across_form_columns() -> anyhow::
 }
 
 #[tokio::test]
+async fn native_form_types_are_preserved_in_iceberg_schema() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(41)),
+        "memory://iceberg-native-types",
+    )
+    .await?;
+    let mut form = form();
+    form.fields = [
+        (100, "date", FieldType::Date),
+        (101, "time", FieldType::Time),
+        (102, "timestamp", FieldType::Timestamp),
+        (103, "timestamp_tz", FieldType::TimestampTz),
+        (104, "timestamp_ns", FieldType::TimestampNs),
+        (105, "timestamp_tz_ns", FieldType::TimestampTzNs),
+        (106, "uuid", FieldType::Uuid),
+        (107, "binary", FieldType::Binary),
+    ]
+    .into_iter()
+    .map(|(id, name, field_type)| FormField {
+        id: FieldId::new(id).unwrap(),
+        name: name.into(),
+        field_type,
+        required: false,
+        label: None,
+        description: None,
+        semantic_role: None,
+        reference_form: None,
+        validation: None,
+        enum_values: Vec::new(),
+        deprecated: false,
+    })
+    .collect();
+    workspace.create_form(&form).await?;
+    let table = workspace
+        .catalog()
+        .load_table(&iceberg::TableIdent::new(
+            workspace.namespace().clone(),
+            physical_form_name(form.id),
+        ))
+        .await?;
+    let schema = table.metadata().current_schema();
+    for (name, expected) in [
+        ("date", iceberg::spec::PrimitiveType::Date),
+        ("time", iceberg::spec::PrimitiveType::Time),
+        ("timestamp", iceberg::spec::PrimitiveType::Timestamp),
+        ("timestamp_tz", iceberg::spec::PrimitiveType::Timestamptz),
+        ("timestamp_ns", iceberg::spec::PrimitiveType::TimestampNs),
+        (
+            "timestamp_tz_ns",
+            iceberg::spec::PrimitiveType::TimestamptzNs,
+        ),
+        ("uuid", iceberg::spec::PrimitiveType::Uuid),
+        ("binary", iceberg::spec::PrimitiveType::Binary),
+    ] {
+        assert_eq!(
+            schema.field_by_name(name).unwrap().field_type.as_ref(),
+            &iceberg::spec::Type::Primitive(expected)
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn metadata_evolution_keeps_physical_identity() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(3)),
@@ -173,6 +235,43 @@ async fn metadata_evolution_keeps_physical_identity() -> anyhow::Result<()> {
             .len(),
         1
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_catalog_rejects_schema_bearing_changes_without_rewrite() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(4)),
+        "memory://iceberg-schema-capability",
+    )
+    .await?;
+    assert_eq!(
+        workspace.schema_commit_capability(),
+        ugoite_iceberg::SchemaCommitCapability::MetadataOnly
+    );
+    let form = form();
+    workspace.create_form(&form).await?;
+    let error = workspace
+        .evolve_form(&FormChangeSet {
+            form_id: form.id,
+            expected_version: Some(form.version),
+            changes: vec![FormChange::AddField(FormField {
+                id: FieldId::new(101).unwrap(),
+                name: "due_at".into(),
+                field_type: FieldType::Date,
+                required: false,
+                label: None,
+                description: None,
+                semantic_role: None,
+                reference_form: None,
+                validation: None,
+                enum_values: Vec::new(),
+                deprecated: false,
+            })],
+        })
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("schema evolution"));
     Ok(())
 }
 

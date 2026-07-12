@@ -7,9 +7,9 @@ use crate::link::Link;
 use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{FixedSizeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array, Float64Array,
-    Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray, StructArray,
-    Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
+    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array,
+    Float64Array, Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray,
+    StructArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use arrow_schema::{DataType, Fields};
 use base64::Engine as _;
@@ -1496,7 +1496,7 @@ fn revision_rows_from_batches(
         .and_then(|column| column.as_any().downcast_ref::<FixedSizeBinaryArray>())
         .is_some()
     {
-        return native_revision_rows_from_batches(batches);
+        return native_revision_rows_from_batches(batches, form_def);
     }
     let mut rows = Vec::new();
     for batch in batches {
@@ -1607,7 +1607,130 @@ fn revision_rows_from_batches(
     Ok(rows)
 }
 
-fn native_revision_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<RevisionRow>> {
+fn native_fields_from_batch(
+    batch: &RecordBatch,
+    row: usize,
+    form_def: &Value,
+) -> Result<Map<String, Value>> {
+    let mut fields = Map::new();
+    let Some(definitions) = form_def.get("fields").and_then(Value::as_object) else {
+        return Ok(fields);
+    };
+    for (name, definition) in definitions {
+        let Some(column) = batch.column_by_name(name) else {
+            continue;
+        };
+        let field_type = definition
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("string");
+        if let Some(value) = native_field_value(column.as_ref(), row, field_type) {
+            fields.insert(name.clone(), value);
+        }
+    }
+    Ok(fields)
+}
+
+fn native_field_value(column: &dyn Array, row: usize, field_type: &str) -> Option<Value> {
+    match field_type {
+        "number" | "double" => column
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| array.value(row)))
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number),
+        "float" => column
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| f64::from(array.value(row))))
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number),
+        "integer" => column
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| Value::from(array.value(row)))),
+        "long" => column
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| Value::from(array.value(row)))),
+        "boolean" => column
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .and_then(|array| (!array.is_null(row)).then(|| Value::Bool(array.value(row)))),
+        "date" => column
+            .as_any()
+            .downcast_ref::<Date32Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| days_to_date(array.value(row))))
+            .flatten()
+            .map(Value::String),
+        "time" => column
+            .as_any()
+            .downcast_ref::<Time64MicrosecondArray>()
+            .and_then(|array| {
+                (!array.is_null(row)).then(|| time_micros_to_string(array.value(row)))
+            })
+            .flatten()
+            .map(Value::String),
+        "timestamp" | "timestamp_tz" => column
+            .as_any()
+            .downcast_ref::<TimestampMicrosecondArray>()
+            .and_then(|array| {
+                (!array.is_null(row)).then(|| timestamp_micros_to_string(array.value(row)))
+            })
+            .flatten()
+            .map(Value::String),
+        "timestamp_ns" | "timestamp_tz_ns" => column
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .and_then(|array| {
+                (!array.is_null(row)).then(|| timestamp_nanos_to_string(array.value(row)))
+            })
+            .flatten()
+            .map(Value::String),
+        "uuid" => column
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .and_then(|array| {
+                (!array.is_null(row))
+                    .then(|| Uuid::from_slice(array.value(row)).ok())
+                    .flatten()
+            })
+            .map(|value| Value::String(value.to_string())),
+        "binary" => column
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .and_then(|array| (!array.is_null(row)).then(|| binary_to_base64(array.value(row))))
+            .map(Value::String),
+        "list" => column
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .and_then(|array| {
+                if array.is_null(row) {
+                    return None;
+                }
+                let values = array.value(row);
+                let values = values.as_any().downcast_ref::<StringArray>()?;
+                Some(Value::Array(
+                    (0..values.len())
+                        .filter(|&index| !values.is_null(index))
+                        .map(|index| Value::String(values.value(index).into()))
+                        .collect(),
+                ))
+            }),
+        "string" | "text" | "markdown" | "sql" | "row_reference" => column
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .and_then(|array| {
+                (!array.is_null(row)).then(|| Value::String(array.value(row).into()))
+            }),
+        _ => None,
+    }
+}
+
+fn native_revision_rows_from_batches(
+    batches: &[RecordBatch],
+    form_def: &Value,
+) -> Result<Vec<RevisionRow>> {
     let mut rows = Vec::new();
     for batch in batches {
         let revision_ids = column_as::<FixedSizeBinaryArray>(batch, "revision_id")?;
@@ -1635,10 +1758,13 @@ fn native_revision_rows_from_batches(batches: &[RecordBatch]) -> Result<Vec<Revi
                 .filter(|value| !value.is_null())
                 .map(serde_json::from_value)
                 .transpose()?;
-            let fields = state
+            let mut fields = state
                 .as_ref()
                 .map(|state: &EntryRow| state.fields.clone())
                 .unwrap_or_else(|| Value::Object(Map::new()));
+            if let Some(fields_object) = fields.as_object_mut() {
+                fields_object.extend(native_fields_from_batch(batch, row_idx, form_def)?);
+            }
             let integrity = extension
                 .get("ugoite.legacy.integrity")
                 .cloned()

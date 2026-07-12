@@ -101,7 +101,20 @@ async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<dyn Catal
     }
     let use_rest_catalog = rest_catalog_uri.is_some();
     let catalog: Arc<dyn Catalog> = if let Some(uri) = rest_catalog_uri {
-        ugoite_iceberg::IcebergWorkspace::rest_catalog(&uri, &warehouse, []).await?
+        let space_id = stable_space_id(op, ws_path).await?;
+        let mut config = ugoite_iceberg::RestCatalogConfig::new(uri, warehouse.clone());
+        if let Ok(token) = std::env::var("UGOITE_ICEBERG_CATALOG_TOKEN") {
+            if !token.trim().is_empty() {
+                config.properties.insert("token".to_string(), token);
+            }
+        }
+        ugoite_iceberg::IcebergWorkspace::rest_workspace(
+            config,
+            space_id,
+            ugoite_iceberg::WriteConfig::default(),
+        )
+        .await?
+        .catalog()
     } else {
         let mut props = HashMap::new();
         props.insert(MEMORY_CATALOG_WAREHOUSE.to_string(), warehouse.clone());
@@ -169,12 +182,30 @@ pub async fn native_workspace(
     op: &Operator,
     ws_path: &str,
 ) -> Result<ugoite_iceberg::IcebergWorkspace> {
-    let catalog = catalog_for_space(op, ws_path).await?;
     let space_id = stable_space_id(op, ws_path).await?;
+    let warehouse = warehouse_uri(op, ws_path)?;
+    if let Some(uri) = std::env::var("UGOITE_ICEBERG_CATALOG_URI")
+        .ok()
+        .filter(|uri| !uri.trim().is_empty())
+    {
+        let mut config = ugoite_iceberg::RestCatalogConfig::new(uri, warehouse.clone());
+        if let Ok(token) = std::env::var("UGOITE_ICEBERG_CATALOG_TOKEN") {
+            if !token.trim().is_empty() {
+                config.properties.insert("token".to_string(), token);
+            }
+        }
+        return ugoite_iceberg::IcebergWorkspace::rest_workspace(
+            config,
+            space_id,
+            ugoite_iceberg::WriteConfig::default(),
+        )
+        .await;
+    }
+    let catalog = catalog_for_space(op, ws_path).await?;
     ugoite_iceberg::IcebergWorkspace::new(
         catalog,
         space_id,
-        warehouse_uri(op, ws_path)?,
+        warehouse,
         ugoite_iceberg::WriteConfig::default(),
     )
     .await
@@ -258,7 +289,7 @@ async fn resolve_form_table_ident(
 ) -> Result<TableIdent> {
     if uses_rest_catalog() {
         let catalog = catalog_for_space(op, ws_path).await?;
-        let namespace = NamespaceIdent::new("space".to_string());
+        let namespace = ugoite_iceberg::namespace_for_space(stable_space_id(op, ws_path).await?);
         for ident in catalog.list_tables(&namespace).await? {
             let table = catalog.load_table(&ident).await?;
             if let Some(raw) = table
@@ -795,7 +826,7 @@ pub async fn load_form_schema_fields(
 pub async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
     if uses_rest_catalog() {
         let catalog = catalog_for_space(op, ws_path).await?;
-        let namespace = NamespaceIdent::new("space".to_string());
+        let namespace = ugoite_iceberg::namespace_for_space(stable_space_id(op, ws_path).await?);
         let mut names = Vec::new();
         for ident in catalog.list_tables(&namespace).await? {
             let table = catalog.load_table(&ident).await?;

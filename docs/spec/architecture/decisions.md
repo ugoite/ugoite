@@ -68,6 +68,13 @@ MemoryCatalog is not used for shared production deployments.
 DataFusion is the standard structured query engine and receives projection,
 predicate, limit, join, and snapshot work through Iceberg providers.
 
+Schema evolution receives a REST committer from the same typed configuration
+used to construct the REST Catalog. The committer does not re-read a global
+environment variable or construct a second endpoint configuration; Catalog
+config response prefixes, headers, static credentials, and OAuth credential
+exchange are applied to the atomic commit request. Iceberg Rust 0.8 is not
+forked.
+
 ## ADR-011 — Portable logic is not a storage adapter
 
 **Accepted.** `ugoite-domain` owns stable IDs, Form changes, compatibility,
