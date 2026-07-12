@@ -23,7 +23,6 @@ export default function SpaceFormsIndexPane() {
   const ctx = useEntriesRouteContext();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  let formSelectEl: HTMLSelectElement | undefined;
   const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
   const sessionId = createMemo(
     () => (searchParams.session ? String(searchParams.session) : ""),
@@ -58,26 +57,6 @@ export default function SpaceFormsIndexPane() {
   const selectableForms = createMemo(() =>
     filterCreatableEntryForms(ctx.forms())
   );
-
-  const handleFormSelection = (value: string) => {
-    if (!value) return;
-    setSearchParams({ form: value });
-  };
-
-	createEffect(() => {
-		const select = formSelectEl;
-		if (!select) return;
-		const interval = setInterval(() => {
-			const currentSelect = formSelectEl;
-			if (!currentSelect) return;
-			const selected = currentSelect.value?.trim() ?? "";
-			if (!selected) return;
-			if (selected !== selectedFormName().trim()) {
-				setSearchParams({ form: selected });
-			}
-		}, 200);
-		onCleanup(() => clearInterval(interval));
-	});
 
   createEffect(() => {
     if (sessionId().trim()) {
@@ -129,13 +108,43 @@ export default function SpaceFormsIndexPane() {
   return (
     <SpaceShell
       spaceId={ctx.spaceId()}
-      showBottomTabs
       activeBottomTab="grid"
-      bottomTabHrefSuffix={sessionId().trim()
-        ? `?session=${encodeURIComponent(sessionId())}`
-        : ""}
     >
-      <div class="mx-auto max-w-6xl">
+      <div class="mx-auto max-w-7xl">
+        <div class="ui-forms-workspace">
+          <aside class="ui-form-list" aria-label="Forms">
+            <div class="ui-form-list-heading">
+              <span>Forms</span>
+              <button
+                type="button"
+                class="ui-button ui-button-primary text-xs"
+                onClick={() => setShowCreateFormDialog(true)}
+              >
+                New
+              </button>
+            </div>
+            <select class="ui-sr-only" aria-label={t("formsPage.selectPlaceholder")}>
+              <For each={selectableForms()}>
+                {(form) => <option value={form.name}>{form.name}</option>}
+              </For>
+            </select>
+            <For each={selectableForms()}>
+              {(form) => (
+                <a
+                  href={`/spaces/${ctx.spaceId()}/forms?form=${encodeURIComponent(form.name)}`}
+                  class="ui-form-list-item"
+                  classList={{ "ui-form-list-item-active": selectedFormValue() === form.name }}
+                >
+                  {form.name}
+                </a>
+              )}
+            </For>
+            <Show when={!ctx.loadingForms() && selectableForms().length === 0}>
+              <p class="px-2 py-3 text-sm ui-muted">Create a form to start adding entries.</p>
+            </Show>
+          </aside>
+
+          <section>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 class="ui-page-title">
@@ -151,20 +160,6 @@ export default function SpaceFormsIndexPane() {
           </div>
           <div class="flex items-center gap-2">
             <Show when={!sessionId().trim()}>
-              <select
-                class="ui-input"
-                ref={formSelectEl}
-                value={selectedFormValue()}
-                onInput={(e) => handleFormSelection(e.currentTarget.value)}
-                onChange={(e) => handleFormSelection(e.currentTarget.value)}
-              >
-                <option value="" disabled>
-                  {t("formsPage.selectPlaceholder")}
-                </option>
-                {selectableForms().map((entry) => (
-                  <option value={entry.name}>{entry.name}</option>
-                ))}
-              </select>
               <button
                 type="button"
                 class="ui-button ui-button-primary text-sm"
@@ -307,11 +302,17 @@ export default function SpaceFormsIndexPane() {
             >
               {(form) => (
                 <>
-                  <div class="mb-4">
-                    <h2 class="text-xl font-semibold">{form().name}</h2>
-                    <p class="text-sm ui-muted">
-                      {t("formsPage.selectedDescription")}
-                    </p>
+                  <div class="ui-form-context mb-4">
+                    <div>
+                      <small>Forms / {form().name} / Entries</small>
+                      <h2 class="text-xl font-semibold">{form().name}</h2>
+                    </div>
+                    <div class="flex gap-1 text-sm">
+                      <span class="ui-pill">Entries</span>
+                      <a class="ui-button ui-button-secondary text-xs" href={`/spaces/${ctx.spaceId()}/forms/${encodeURIComponent(form().name)}`}>Fields</a>
+                      <a class="ui-button ui-button-secondary text-xs" href={`/spaces/${ctx.spaceId()}/assets`}>Assets</a>
+                      <a class="ui-button ui-button-secondary text-xs" href={`/spaces/${ctx.spaceId()}/query`}>Views</a>
+                    </div>
                   </div>
                   <FormTable
                     spaceId={ctx.spaceId()}
@@ -327,6 +328,8 @@ export default function SpaceFormsIndexPane() {
               )}
             </Show>
           </Show>
+        </div>
+          </section>
         </div>
       </div>
 

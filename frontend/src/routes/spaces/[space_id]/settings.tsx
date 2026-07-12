@@ -1,7 +1,10 @@
-import { A, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { SpaceSettings } from "~/components/SpaceSettings";
+import { ThemeMenu } from "~/components/ThemeMenu";
+import { locale, type Locale } from "~/lib/i18n";
+import { setLocalePreference } from "~/lib/preferences-store";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { spaceApi } from "~/lib/ugoite-client";
 import type {
@@ -190,8 +193,17 @@ export default function SpaceSettingsRoute() {
   });
 
   return (
-    <SpaceShell spaceId={spaceId()}>
-      <div class="mx-auto max-w-5xl ui-stack">
+    <SpaceShell spaceId={spaceId()} activeNavigation="settings">
+      <div class="mx-auto max-w-6xl ui-settings-workspace">
+        <aside class="ui-settings-nav" aria-label="Settings sections">
+          <a href="#general">General</a>
+          <a href="#members">Members</a>
+          <a href="#agents">Agents</a>
+          <a href="/settings/security">Credentials</a>
+          <a href="#storage">Storage</a>
+          <a href="#appearance">Appearance</a>
+        </aside>
+        <div class="ui-stack">
         <div>
           <h1 class="ui-page-title">Space Settings</h1>
           <p class="ui-page-subtitle mt-1">Space ID: {spaceId()}</p>
@@ -214,7 +226,7 @@ export default function SpaceSettingsRoute() {
           </p>
         </div>
 
-        <div class="mt-2">
+        <div class="mt-2" id="general">
           <Show when={space.loading}>
             <p class="text-sm ui-muted">Loading space...</p>
           </Show>
@@ -240,16 +252,18 @@ export default function SpaceSettingsRoute() {
           </Show>
           <Show when={space()}>
             {(ws) => (
-              <SpaceSettings
-                space={ws()}
-                onSave={handleSave}
-                onTestConnection={handleTestConnection}
-              />
+              <section id="storage">
+                <SpaceSettings
+                  space={ws()}
+                  onSave={handleSave}
+                  onTestConnection={handleTestConnection}
+                />
+              </section>
             )}
           </Show>
         </div>
 
-        <section class="ui-card ui-stack-sm">
+        <section class="ui-card ui-stack-sm" id="members">
           <h2 class="text-lg font-semibold">Members</h2>
           <p class="text-sm ui-muted">
             Invite members, update roles, and revoke access in this space.
@@ -382,7 +396,7 @@ export default function SpaceSettingsRoute() {
             </For>
           </div>
         </section>
-        <section class="ui-card ui-stack-sm">
+        <section class="ui-card ui-stack-sm" id="agents">
           <h2 class="text-lg font-semibold">Agents</h2>
           <p class="text-sm ui-muted">
             Register an independent public key, bounded actions, mode, sponsor,
@@ -468,6 +482,25 @@ export default function SpaceSettingsRoute() {
             )}
           </For>
         </section>
+        <section class="ui-card ui-stack-sm" id="appearance">
+          <div>
+            <h2 class="text-lg font-semibold">Appearance</h2>
+            <p class="text-sm ui-muted">Choose the language, theme, color mode, and accent for this browser.</p>
+          </div>
+          <label class="ui-stack-sm max-w-sm">
+            <span class="text-sm font-medium">Language</span>
+            <select
+              class="ui-select"
+              value={locale()}
+              onChange={(event) => void setLocalePreference(event.currentTarget.value as Locale)}
+            >
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+            </select>
+          </label>
+          <ThemeMenu spaceId={spaceId()} />
+        </section>
+        </div>
       </div>
     </SpaceShell>
   );

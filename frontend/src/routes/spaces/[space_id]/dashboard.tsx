@@ -140,7 +140,7 @@ export default function SpaceDashboardRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeTopTab="dashboard">
+    <SpaceShell spaceId={spaceId()} activeNavigation="home">
       <div class="mx-auto max-w-5xl ui-stack">
         <div>
           <h1 class="ui-page-title text-3xl sm:text-4xl">
