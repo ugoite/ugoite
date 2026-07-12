@@ -6,9 +6,15 @@ use crate::metadata;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
+use ugoite_domain::form::{
+    FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
+};
 use ugoite_domain::id::validate_form_name;
+use ugoite_domain::id::{FieldId, FormId};
 use uuid::Uuid;
+
+const EXTRA_ATTRIBUTES_POLICY_METADATA: &str = "ugoite.extra_attributes_policy";
 
 pub async fn list_forms(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     let mut forms = Vec::new();
@@ -52,44 +58,108 @@ pub async fn get_form(op: &Operator, ws_path: &str, form_name: &str) -> Result<V
 }
 
 pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
-    let normalized = normalize_form_definition(form_def)?;
+    let mut normalized = normalize_form_definition(form_def)?;
     let form_name = normalized
         .get("name")
         .and_then(|v| v.as_str())
-        .context("Form definition missing 'name' field")?;
-    validate_row_reference_targets(op, ws_path, form_name, &normalized).await?;
-    let existing = match iceberg_store::load_form_definition(op, ws_path, form_name).await {
-        Ok(def) => Some(def),
-        Err(_) => iceberg_store::load_form_definition_from_metadata(op, ws_path, form_name)
-            .await
-            .ok()
-            .flatten(),
-    };
+        .context("Form definition missing 'name' field")?
+        .to_string();
+    validate_row_reference_targets(op, ws_path, &form_name, &normalized).await?;
+    let existing = iceberg_store::load_form_definition(op, ws_path, &form_name)
+        .await
+        .ok();
     if let Some(existing_def) = existing {
-        let fields_changed = existing_def.get("fields") != normalized.get("fields");
-        let def_changed =
-            serde_json::to_string(&existing_def)? != serde_json::to_string(&normalized)?;
-        let normalized_fields: HashSet<String> = normalized
-            .get("fields")
-            .and_then(|v| v.as_object())
-            .map(|map| map.keys().cloned().collect())
-            .unwrap_or_default();
-        let schema_fields = iceberg_store::load_form_schema_fields(op, ws_path, form_name)
-            .await
-            .ok()
-            .flatten();
-        let schema_mismatch = match schema_fields {
-            Some(schema_fields) => schema_fields != normalized_fields,
-            None => false,
-        };
-        if fields_changed || def_changed || schema_mismatch {
-            rebuild_form_tables(op, ws_path, form_name, &existing_def, &normalized).await?;
-            return Ok(());
+        preserve_stable_identities(&mut normalized, &existing_def)?;
+        let current_domain = to_domain_form(&existing_def)?;
+        let desired_domain = to_domain_form(&normalized)?;
+        let changes = form_changes(&current_domain, &desired_domain)?;
+        if !changes.is_empty() {
+            let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+            workspace
+                .evolve_form(&FormChangeSet {
+                    form_id: current_domain.id,
+                    expected_version: Some(current_domain.version),
+                    changes,
+                })
+                .await?;
         }
+        return Ok(());
     }
 
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
     Ok(())
+}
+
+fn form_changes(current: &FormDefinition, desired: &FormDefinition) -> Result<Vec<FormChange>> {
+    let mut changes = Vec::new();
+    if current.name != desired.name {
+        changes.push(FormChange::RenameForm {
+            name: desired.name.clone(),
+        });
+    }
+    if current.description != desired.description
+        || current.allow_extra_attributes != desired.allow_extra_attributes
+    {
+        changes.push(FormChange::UpdateFormMetadata {
+            description: desired.description.clone(),
+            allow_extra_attributes: desired.allow_extra_attributes,
+            extension_metadata: desired.extension_metadata.clone(),
+        });
+    }
+    for field in &desired.fields {
+        let Some(previous) = current.fields.iter().find(|value| value.id == field.id) else {
+            changes.push(FormChange::AddField(field.clone()));
+            continue;
+        };
+        if previous.name != field.name {
+            changes.push(FormChange::RenameField {
+                field_id: field.id,
+                name: field.name.clone(),
+            });
+        }
+        if previous.field_type != field.field_type {
+            changes.push(FormChange::ChangeFieldType {
+                field_id: field.id,
+                field_type: field.field_type.clone(),
+            });
+        }
+        if previous.required != field.required {
+            changes.push(FormChange::ChangeRequired {
+                field_id: field.id,
+                required: field.required,
+            });
+        }
+        if previous.deprecated != field.deprecated {
+            changes.push(if field.deprecated {
+                FormChange::DeprecateField { field_id: field.id }
+            } else {
+                FormChange::RestoreField { field_id: field.id }
+            });
+        }
+        if previous.label != field.label
+            || previous.description != field.description
+            || previous.semantic_role != field.semantic_role
+            || previous.validation != field.validation
+            || previous.enum_values != field.enum_values
+        {
+            changes.push(FormChange::UpdateFieldMetadata {
+                field_id: field.id,
+                label: field.label.clone(),
+                description: field.description.clone(),
+                semantic_role: field.semantic_role.clone(),
+                validation: field.validation.clone(),
+                enum_values: field.enum_values.clone(),
+            });
+        }
+    }
+    if current
+        .fields
+        .iter()
+        .any(|field| !desired.fields.iter().any(|value| value.id == field.id))
+    {
+        return Err(anyhow!("physical Form field removal is not supported"));
+    }
+    Ok(changes)
 }
 
 pub(crate) async fn upsert_metadata_form(
@@ -97,7 +167,16 @@ pub(crate) async fn upsert_metadata_form(
     ws_path: &str,
     form_def: &Value,
 ) -> Result<()> {
-    let normalized = normalize_form_definition_with_options(form_def, true)?;
+    let mut normalized = normalize_form_definition_with_options(form_def, true)?;
+    if let Some(form_name) = normalized
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    {
+        if let Ok(existing) = iceberg_store::load_form_definition(op, ws_path, &form_name).await {
+            preserve_stable_identities(&mut normalized, &existing)?;
+        }
+    }
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
     Ok(())
 }
@@ -112,18 +191,14 @@ pub async fn migrate_form<I: IntegrityProvider>(
     let normalized = normalize_form_definition(form_def)?;
     let form_name = normalized["name"].as_str().context("Form name required")?;
     validate_row_reference_targets(op, ws_path, form_name, &normalized).await?;
-    let existing_def = match iceberg_store::load_form_definition(op, ws_path, form_name).await {
-        Ok(def) => Some(def),
-        Err(_) => iceberg_store::load_form_definition_from_metadata(op, ws_path, form_name)
-            .await
-            .ok()
-            .flatten(),
-    };
+    let existing_def = iceberg_store::load_form_definition(op, ws_path, form_name)
+        .await
+        .ok();
 
     if let Some(existing_def) = existing_def {
         let fields_changed = existing_def.get("fields") != normalized.get("fields");
         if fields_changed {
-            rebuild_form_tables(op, ws_path, form_name, &existing_def, &normalized).await?;
+            return Err(anyhow!("FormChangeSet schema changes require an explicit migration plan; destructive table rebuild is disabled"));
         } else {
             upsert_form(op, ws_path, &normalized).await?;
         }
@@ -202,6 +277,7 @@ pub async fn migrate_form<I: IntegrityProvider>(
 
         row.parent_revision_id = Some(row.revision_id.clone());
         row.revision_id = new_rev_id.clone();
+        row.entry_version = row.entry_version.saturating_add(1);
         row.updated_at = timestamp;
         row.fields = Value::Object(fields);
         row.author = "system-migration".to_string();
@@ -221,8 +297,6 @@ pub async fn migrate_form<I: IntegrityProvider>(
             signature: signature.clone(),
         };
 
-        entry::write_entry_row(op, ws_path, form_name, &entry_id, &row).await?;
-
         let revision = entry::RevisionRow {
             revision_id: new_rev_id.clone(),
             entry_id: entry_id.to_string(),
@@ -234,6 +308,11 @@ pub async fn migrate_form<I: IntegrityProvider>(
             markdown_checksum: checksum,
             integrity: row.integrity.clone(),
             restored_from: None,
+            state: Some(row.clone()),
+            entry_version: row.entry_version,
+            operation: "upsert".to_string(),
+            source_kind: "migration".to_string(),
+            source_id: None,
         };
         entry::append_revision_row_for_form(op, ws_path, form_name, &revision, &normalized).await?;
 
@@ -261,6 +340,190 @@ fn normalize_form_definition(form_def: &Value) -> Result<Value> {
     normalize_form_definition_with_options(form_def, false)
 }
 
+pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
+    let id = FormId::from(Uuid::parse_str(
+        form_def
+            .get("id")
+            .and_then(Value::as_str)
+            .context("Form definition missing stable id")?,
+    )?);
+    let version =
+        FormVersion::new(form_def.get("version").and_then(Value::as_u64).unwrap_or(1) as u32)?;
+    let name = form_def
+        .get("name")
+        .and_then(Value::as_str)
+        .context("Form definition missing name")?
+        .to_string();
+    let mut fields = Vec::new();
+    if let Some(field_map) = form_def.get("fields").and_then(Value::as_object) {
+        for (name, definition) in field_map {
+            let field_id = FieldId::new(
+                definition
+                    .get("id")
+                    .and_then(Value::as_i64)
+                    .and_then(|value| i32::try_from(value).ok())
+                    .context("Form field missing stable id")?,
+            )?;
+            let field_type = domain_field_type(
+                definition
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("string"),
+            )?;
+            fields.push(FormField {
+                id: field_id,
+                name: name.clone(),
+                field_type,
+                required: definition
+                    .get("required")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                label: definition
+                    .get("label")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                description: definition
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                semantic_role: definition
+                    .get("semantic_role")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                reference_form: definition
+                    .get("target_form")
+                    .and_then(Value::as_str)
+                    .and_then(|value| Uuid::parse_str(value).ok())
+                    .map(FormId::from),
+                validation: definition.get("validation").cloned(),
+                enum_values: definition
+                    .get("enum_values")
+                    .and_then(Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                deprecated: definition
+                    .get("deprecated")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            });
+        }
+    }
+    let mut extension_metadata = BTreeMap::new();
+    if let Some(policy) = form_def
+        .get("allow_extra_attributes")
+        .and_then(Value::as_str)
+    {
+        extension_metadata.insert(
+            EXTRA_ATTRIBUTES_POLICY_METADATA.to_string(),
+            Value::String(policy.to_string()),
+        );
+    }
+    let form = FormDefinition {
+        id,
+        version,
+        name,
+        description: form_def
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        fields,
+        allow_extra_attributes: form_def
+            .get("allow_extra_attributes")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value != "deny"),
+        extension_metadata,
+    };
+    form.validate()?;
+    Ok(form)
+}
+
+fn domain_field_type(value: &str) -> Result<FieldType> {
+    Ok(match value {
+        "text" => FieldType::String,
+        "string" => FieldType::String,
+        "markdown" => FieldType::Markdown,
+        "sql" => FieldType::Sql,
+        "boolean" => FieldType::Boolean,
+        "integer" => FieldType::Integer,
+        "long" => FieldType::Long,
+        "float" => FieldType::Float,
+        "number" | "double" => FieldType::Double,
+        "date" => FieldType::Date,
+        "time" => FieldType::Time,
+        "timestamp" => FieldType::Timestamp,
+        "timestamp_tz" => FieldType::TimestampTz,
+        "timestamp_ns" => FieldType::TimestampNs,
+        "timestamp_tz_ns" => FieldType::TimestampTzNs,
+        "uuid" => FieldType::Uuid,
+        "binary" => FieldType::Binary,
+        "list" => FieldType::List,
+        "object_list" => FieldType::ObjectList,
+        "row_reference" => FieldType::RowReference,
+        other => return Err(anyhow!("unsupported Form field type: {other}")),
+    })
+}
+
+pub(crate) fn from_domain_form(form: &FormDefinition) -> Value {
+    let mut fields = Map::new();
+    for field in &form.fields {
+        fields.insert(
+            field.name.clone(),
+            serde_json::json!({
+                "id": field.id.get(),
+                "type": domain_field_type_name(&field.field_type),
+                "required": field.required,
+                "label": field.label,
+                "description": field.description,
+                "semantic_role": field.semantic_role,
+                "deprecated": field.deprecated,
+            }),
+        );
+    }
+    serde_json::json!({
+        "id": form.id.to_string(),
+        "name": form.name,
+        "version": form.version.get(),
+        "description": form.description,
+        "fields": fields,
+        "allow_extra_attributes": form
+            .extension_metadata
+            .get(EXTRA_ATTRIBUTES_POLICY_METADATA)
+            .and_then(Value::as_str)
+            .filter(|value| matches!(*value, "allow_json" | "allow_columns" | "deny"))
+            .unwrap_or(if form.allow_extra_attributes { "allow_json" } else { "deny" }),
+    })
+}
+
+fn domain_field_type_name(field_type: &FieldType) -> &'static str {
+    match field_type {
+        FieldType::String => "string",
+        FieldType::Markdown => "markdown",
+        FieldType::Sql => "sql",
+        FieldType::Boolean => "boolean",
+        FieldType::Integer => "integer",
+        FieldType::Long => "long",
+        FieldType::Float => "float",
+        FieldType::Double => "double",
+        FieldType::Date => "date",
+        FieldType::Time => "time",
+        FieldType::Timestamp => "timestamp",
+        FieldType::TimestampTz => "timestamp_tz",
+        FieldType::TimestampNs => "timestamp_ns",
+        FieldType::TimestampTzNs => "timestamp_tz_ns",
+        FieldType::Uuid => "uuid",
+        FieldType::Binary => "binary",
+        FieldType::List => "list",
+        FieldType::ObjectList => "object_list",
+        FieldType::RowReference => "row_reference",
+    }
+}
+
 fn normalize_form_definition_with_options(
     form_def: &Value,
     allow_reserved_metadata_form: bool,
@@ -281,6 +544,11 @@ fn normalize_form_definition_with_options(
         .and_then(|v| v.as_i64())
         .unwrap_or(1);
     let fields = normalize_form_fields(form_def.get("fields"));
+    let form_id = form_def
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| Uuid::now_v7().to_string());
     if let Some(field_map) = fields.as_object() {
         for name in field_map.keys() {
             if is_reserved_metadata_column(name) {
@@ -307,6 +575,7 @@ fn normalize_form_definition_with_options(
     }
 
     Ok(serde_json::json!({
+        "id": form_id,
         "name": name,
         "version": version,
         "fields": fields,
@@ -396,18 +665,36 @@ fn normalize_form_fields(fields: Option<&Value>) -> Value {
 
     match fields {
         Some(Value::Object(map)) => {
-            for (name, def) in map {
-                normalized.insert(name.clone(), def.clone());
+            for (index, (name, def)) in map.iter().enumerate() {
+                let mut def = def.clone();
+                if let Some(object) = def.as_object_mut() {
+                    // `required: false` is the default schema meaning. Do not
+                    // let an explicit default in an API payload look like a
+                    // Form evolution when the persisted definition omitted it.
+                    if object.get("required").and_then(Value::as_bool) == Some(false) {
+                        object.remove("required");
+                    }
+                    object.entry("id".to_string()).or_insert_with(|| {
+                        Value::from(100 + i64::try_from(index).unwrap_or_default())
+                    });
+                }
+                normalized.insert(name.clone(), def);
             }
         }
         Some(Value::Array(items)) => {
-            for item in items {
+            for (index, item) in items.iter().enumerate() {
                 let Some(name) = item.get("name").and_then(|v| v.as_str()) else {
                     continue;
                 };
                 let mut def = item.clone();
                 if let Some(obj) = def.as_object_mut() {
                     obj.remove("name");
+                    if obj.get("required").and_then(Value::as_bool) == Some(false) {
+                        obj.remove("required");
+                    }
+                    obj.entry("id".to_string()).or_insert_with(|| {
+                        Value::from(100 + i64::try_from(index).unwrap_or_default())
+                    });
                 }
                 normalized.insert(name.to_string(), def);
             }
@@ -416,6 +703,35 @@ fn normalize_form_fields(fields: Option<&Value>) -> Value {
     }
 
     Value::Object(normalized)
+}
+
+fn preserve_stable_identities(normalized: &mut Value, existing: &Value) -> Result<()> {
+    let existing_id = existing
+        .get("id")
+        .and_then(Value::as_str)
+        .context("stored Form is missing stable id")?;
+    normalized
+        .as_object_mut()
+        .context("normalized Form must be an object")?
+        .insert("id".to_string(), Value::String(existing_id.to_string()));
+    let existing_fields = existing.get("fields").and_then(Value::as_object);
+    if let (Some(fields), Some(existing_fields)) = (
+        normalized.get_mut("fields").and_then(Value::as_object_mut),
+        existing_fields,
+    ) {
+        for (name, field) in fields {
+            if let Some(id) = existing_fields
+                .get(name)
+                .and_then(|value| value.get("id"))
+                .cloned()
+            {
+                if let Some(object) = field.as_object_mut() {
+                    object.insert("id".to_string(), id);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn enrich_form_definition(form_def: &Value) -> Result<Value> {
@@ -443,30 +759,3 @@ fn form_template_from_fields(form_name: &str, fields: Option<&Value>) -> String 
     }
     template
 }
-
-async fn rebuild_form_tables(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-    existing_def: &Value,
-    new_def: &Value,
-) -> Result<()> {
-    let entry_rows = entry::list_form_entry_rows(op, ws_path, form_name, existing_def).await?;
-    let revision_rows =
-        entry::list_form_revision_rows(op, ws_path, form_name, existing_def).await?;
-
-    iceberg_store::drop_form_tables(op, ws_path, form_name).await?;
-    iceberg_store::ensure_form_tables(op, ws_path, new_def).await?;
-
-    for row in entry_rows {
-        entry::write_entry_row(op, ws_path, form_name, &row.entry_id, &row).await?;
-    }
-
-    for rev in revision_rows {
-        entry::append_revision_row_for_form(op, ws_path, form_name, &rev, new_def).await?;
-    }
-
-    Ok(())
-}
-
-// Migration logic handled via Iceberg row updates.

@@ -4,31 +4,26 @@ use crate::iceberg_store;
 use crate::index;
 use crate::integrity::IntegrityProvider;
 use crate::link::Link;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{FixedSizeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array, Float64Array,
-    Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray, StructArray,
-    Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
+    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array,
+    Float64Array, Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray,
+    StructArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use arrow_schema::{DataType, Fields};
 use base64::Engine as _;
 use chrono::{DateTime, NaiveTime, SecondsFormat, Timelike, Utc};
 use futures::TryStreamExt;
-use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::arrow::ArrowReaderBuilder;
-use iceberg::spec::DataFile;
-use iceberg::transaction::ApplyTransactionAction;
-use iceberg::transaction::Transaction;
-use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
-use iceberg::MemoryCatalog;
 use opendal::Operator;
-use parquet::file::properties::WriterProperties;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::sync::Arc;
+use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::id::{FieldId, RevisionId};
 use url::Url;
 use uuid::Uuid;
 
@@ -132,6 +127,8 @@ pub struct EntryRow {
     pub deleted_at: Option<f64>,
     #[serde(default)]
     pub author: String,
+    #[serde(default = "initial_entry_version")]
+    pub entry_version: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -150,6 +147,26 @@ pub struct RevisionRow {
     pub integrity: IntegrityPayload,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restored_from: Option<String>,
+    #[serde(default)]
+    pub state: Option<EntryRow>,
+    #[serde(default = "initial_entry_version")]
+    pub entry_version: u64,
+    #[serde(default = "default_operation")]
+    pub operation: String,
+    #[serde(default = "default_source_kind")]
+    pub source_kind: String,
+    #[serde(default)]
+    pub source_id: Option<String>,
+}
+
+const fn initial_entry_version() -> u64 {
+    1
+}
+fn default_operation() -> String {
+    "upsert".to_string()
+}
+fn default_source_kind() -> String {
+    "api".to_string()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -590,6 +607,7 @@ fn list_element_field(list_field: &arrow_schema::Field) -> Result<arrow_schema::
     }
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_array_from_strings(
     values: &[String],
     list_field: &arrow_schema::Field,
@@ -681,6 +699,7 @@ fn struct_fields_from_field(field: &arrow_schema::Field) -> Result<Fields> {
     }
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_links_array_from_links(
     links: &[Link],
     list_field: &arrow_schema::Field,
@@ -712,6 +731,7 @@ fn list_links_array_from_links(
     Ok(Arc::new(list_builder.finish()))
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_assets_array_from_values(
     assets: &[Value],
     list_field: &arrow_schema::Field,
@@ -792,6 +812,7 @@ fn extra_attributes_from_string(raw: Option<&str>) -> Value {
     }
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
     if list_array.is_null(row) {
         return Vec::new();
@@ -809,6 +830,7 @@ fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
     values.unwrap_or_default()
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Result<Vec<Link>> {
     if list_array.is_null(row) {
         return Ok(Vec::new());
@@ -872,6 +894,7 @@ fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Re
     Ok(links)
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn list_assets_from_array(list_array: &ListArray, row: usize) -> Result<Vec<Value>> {
     if list_array.is_null(row) {
         return Ok(Vec::new());
@@ -1087,6 +1110,7 @@ async fn scan_table_batches(table: &iceberg::table::Table) -> Result<Vec<RecordB
     Ok(batches)
 }
 
+#[allow(dead_code)] // used by migration verification against legacy histories
 async fn latest_revision_for_entry(
     op: &Operator,
     ws_path: &str,
@@ -1371,6 +1395,7 @@ fn value_from_struct_array(struct_array: &StructArray, row: usize, form_def: &Va
     Value::Object(map)
 }
 
+#[allow(dead_code)] // retained for the explicit legacy-table migration reader
 fn entry_rows_from_batches(
     batches: &[RecordBatch],
     form_def: &Value,
@@ -1454,6 +1479,7 @@ fn entry_rows_from_batches(
                 deleted: !deleted.is_null(row_idx) && deleted.value(row_idx),
                 deleted_at: deleted_at_value,
                 author: "".to_string(),
+                entry_version: 1,
             });
         }
     }
@@ -1464,6 +1490,14 @@ fn revision_rows_from_batches(
     batches: &[RecordBatch],
     form_def: &Value,
 ) -> Result<Vec<RevisionRow>> {
+    if batches
+        .first()
+        .and_then(|batch| batch.column_by_name("revision_id"))
+        .and_then(|column| column.as_any().downcast_ref::<FixedSizeBinaryArray>())
+        .is_some()
+    {
+        return native_revision_rows_from_batches(batches, form_def);
+    }
     let mut rows = Vec::new();
     for batch in batches {
         let revision_ids = column_as::<StringArray>(batch, "revision_id")?;
@@ -1478,6 +1512,11 @@ fn revision_rows_from_batches(
         let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
         let integrity = column_as::<StructArray>(batch, "integrity")?;
         let restored_from = column_as::<StringArray>(batch, "restored_from")?;
+        let state_json = column_as::<StringArray>(batch, "state_json")?;
+        let entry_versions = column_as::<Int64Array>(batch, "entry_version")?;
+        let operations = column_as::<StringArray>(batch, "operation")?;
+        let source_kinds = column_as::<StringArray>(batch, "source_kind")?;
+        let source_ids = column_as::<StringArray>(batch, "source_id")?;
 
         for row_idx in 0..batch.num_rows() {
             if revision_ids.is_null(row_idx) {
@@ -1537,160 +1576,399 @@ fn revision_rows_from_batches(
                 } else {
                     Some(restored_from.value(row_idx).to_string())
                 },
+                state: if state_json.is_null(row_idx) {
+                    None
+                } else {
+                    Some(serde_json::from_str(state_json.value(row_idx))?)
+                },
+                entry_version: if entry_versions.is_null(row_idx) {
+                    1
+                } else {
+                    entry_versions.value(row_idx).try_into().unwrap_or(1)
+                },
+                operation: if operations.is_null(row_idx) {
+                    default_operation()
+                } else {
+                    operations.value(row_idx).to_string()
+                },
+                source_kind: if source_kinds.is_null(row_idx) {
+                    default_source_kind()
+                } else {
+                    source_kinds.value(row_idx).to_string()
+                },
+                source_id: if source_ids.is_null(row_idx) {
+                    None
+                } else {
+                    Some(source_ids.value(row_idx).to_string())
+                },
             });
         }
     }
     Ok(rows)
 }
 
-fn entry_row_to_record_batch(
-    row: &EntryRow,
+fn native_fields_from_batch(
+    batch: &RecordBatch,
+    row: usize,
     form_def: &Value,
-    table_schema: &iceberg::spec::Schema,
-) -> Result<RecordBatch> {
-    let arrow_schema = Arc::new(schema_to_arrow_schema(table_schema)?);
-
-    let mut arrays = Vec::new();
-    for field in arrow_schema.fields() {
-        let array: ArrayRef = match field.name().as_str() {
-            "entry_id" => Arc::new(StringArray::from(vec![Some(row.entry_id.clone())])),
-            "title" => Arc::new(StringArray::from(vec![Some(row.title.clone())])),
-            "tags" => list_array_from_strings(&row.tags, field.as_ref())?,
-            "links" => list_links_array_from_links(&row.links, field.as_ref())?,
-            "created_at" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
-                to_timestamp_micros(row.created_at),
-            )])),
-            "updated_at" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
-                to_timestamp_micros(row.updated_at),
-            )])),
-            "fields" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_fields(form_def, &row.fields, &struct_fields)?
-            }
-            "extra_attributes" => {
-                let json_value = extra_attributes_to_string(&row.extra_attributes);
-                Arc::new(StringArray::from(vec![json_value]))
-            }
-            "assets" => list_assets_array_from_values(&row.assets, field.as_ref())?,
-            "integrity" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_integrity(&row.integrity, &struct_fields)?
-            }
-            "deleted" => Arc::new(BooleanArray::from(vec![Some(row.deleted)])),
-            "deleted_at" => Arc::new(TimestampMicrosecondArray::from(vec![row
-                .deleted_at
-                .map(to_timestamp_micros)])),
-            other => {
-                return Err(anyhow!("Unexpected column in entries schema: {}", other));
-            }
+) -> Result<Map<String, Value>> {
+    let mut fields = Map::new();
+    let Some(definitions) = form_def.get("fields").and_then(Value::as_object) else {
+        return Ok(fields);
+    };
+    for (name, definition) in definitions {
+        let Some(column) = batch.column_by_name(name) else {
+            continue;
         };
-        arrays.push(array);
+        let field_type = definition
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("string");
+        if let Some(value) = native_field_value(column.as_ref(), row, field_type) {
+            fields.insert(name.clone(), value);
+        }
     }
-
-    RecordBatch::try_new(arrow_schema, arrays).map_err(|e| anyhow!("Record batch error: {}", e))
+    Ok(fields)
 }
 
-fn revision_row_to_record_batch(
-    row: &RevisionRow,
+fn native_field_value(column: &dyn Array, row: usize, field_type: &str) -> Option<Value> {
+    match field_type {
+        "number" | "double" => column
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| array.value(row)))
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number),
+        "float" => column
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| f64::from(array.value(row))))
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number),
+        "integer" => column
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| Value::from(array.value(row)))),
+        "long" => column
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| Value::from(array.value(row)))),
+        "boolean" => column
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .and_then(|array| (!array.is_null(row)).then(|| Value::Bool(array.value(row)))),
+        "date" => column
+            .as_any()
+            .downcast_ref::<Date32Array>()
+            .and_then(|array| (!array.is_null(row)).then(|| days_to_date(array.value(row))))
+            .flatten()
+            .map(Value::String),
+        "time" => column
+            .as_any()
+            .downcast_ref::<Time64MicrosecondArray>()
+            .and_then(|array| {
+                (!array.is_null(row)).then(|| time_micros_to_string(array.value(row)))
+            })
+            .flatten()
+            .map(Value::String),
+        "timestamp" | "timestamp_tz" => column
+            .as_any()
+            .downcast_ref::<TimestampMicrosecondArray>()
+            .and_then(|array| {
+                (!array.is_null(row)).then(|| timestamp_micros_to_string(array.value(row)))
+            })
+            .flatten()
+            .map(Value::String),
+        "timestamp_ns" | "timestamp_tz_ns" => column
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .and_then(|array| {
+                (!array.is_null(row)).then(|| timestamp_nanos_to_string(array.value(row)))
+            })
+            .flatten()
+            .map(Value::String),
+        "uuid" => column
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .and_then(|array| {
+                (!array.is_null(row))
+                    .then(|| Uuid::from_slice(array.value(row)).ok())
+                    .flatten()
+            })
+            .map(|value| Value::String(value.to_string())),
+        "binary" => column
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .and_then(|array| (!array.is_null(row)).then(|| binary_to_base64(array.value(row))))
+            .map(Value::String),
+        "list" => column
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .and_then(|array| {
+                if array.is_null(row) {
+                    return None;
+                }
+                let values = array.value(row);
+                let values = values.as_any().downcast_ref::<StringArray>()?;
+                Some(Value::Array(
+                    (0..values.len())
+                        .filter(|&index| !values.is_null(index))
+                        .map(|index| Value::String(values.value(index).into()))
+                        .collect(),
+                ))
+            }),
+        "string" | "text" | "markdown" | "sql" | "row_reference" => column
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .and_then(|array| {
+                (!array.is_null(row)).then(|| Value::String(array.value(row).into()))
+            }),
+        _ => None,
+    }
+}
+
+fn native_revision_rows_from_batches(
+    batches: &[RecordBatch],
     form_def: &Value,
-    table_schema: &iceberg::spec::Schema,
-) -> Result<RecordBatch> {
-    let arrow_schema = Arc::new(schema_to_arrow_schema(table_schema)?);
-
-    let mut arrays = Vec::new();
-    for field in arrow_schema.fields() {
-        let array: ArrayRef = match field.name().as_str() {
-            "revision_id" => Arc::new(StringArray::from(vec![Some(row.revision_id.clone())])),
-            "entry_id" => Arc::new(StringArray::from(vec![Some(row.entry_id.clone())])),
-            "parent_revision_id" => {
-                Arc::new(StringArray::from(vec![row.parent_revision_id.clone()]))
+) -> Result<Vec<RevisionRow>> {
+    let mut rows = Vec::new();
+    for batch in batches {
+        let revision_ids = column_as::<FixedSizeBinaryArray>(batch, "revision_id")?;
+        let entry_ids = column_as::<FixedSizeBinaryArray>(batch, "entry_id")?;
+        let parents = batch
+            .column_by_name("parent_revision_id")
+            .context("Missing parent_revision_id")?;
+        let versions = column_as::<Int64Array>(batch, "entry_version")?;
+        let timestamps = column_as::<TimestampMicrosecondArray>(batch, "committed_at")?;
+        let authors = column_as::<StringArray>(batch, "author_id")?;
+        let operations = column_as::<StringArray>(batch, "operation")?;
+        let source_kinds = column_as::<StringArray>(batch, "source_kind")?;
+        let source_ids = column_as::<StringArray>(batch, "source_id")?;
+        let extensions = column_as::<StringArray>(batch, "extension_metadata")?;
+        let extra_attributes = column_as::<StringArray>(batch, "extra_attributes")?;
+        for row_idx in 0..batch.num_rows() {
+            let extension: serde_json::Map<String, Value> = if extensions.is_null(row_idx) {
+                Map::new()
+            } else {
+                serde_json::from_str(extensions.value(row_idx))?
+            };
+            let state = extension
+                .get("ugoite.legacy.state")
+                .cloned()
+                .filter(|value| !value.is_null())
+                .map(serde_json::from_value)
+                .transpose()?;
+            let mut fields = state
+                .as_ref()
+                .map(|state: &EntryRow| state.fields.clone())
+                .unwrap_or_else(|| Value::Object(Map::new()));
+            if let Some(fields_object) = fields.as_object_mut() {
+                fields_object.extend(native_fields_from_batch(batch, row_idx, form_def)?);
             }
-            "timestamp" => Arc::new(TimestampMicrosecondArray::from(vec![Some(
-                to_timestamp_micros(row.timestamp),
-            )])),
-            "author" => Arc::new(StringArray::from(vec![Some(row.author.clone())])),
-            "fields" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_fields(form_def, &row.fields, &struct_fields)?
-            }
-            "extra_attributes" => {
-                let json_value = extra_attributes_to_string(&row.extra_attributes);
-                Arc::new(StringArray::from(vec![json_value]))
-            }
-            "markdown_checksum" => {
-                Arc::new(StringArray::from(vec![Some(row.markdown_checksum.clone())]))
-            }
-            "integrity" => {
-                let struct_fields = struct_fields_from_field(field.as_ref())?;
-                struct_array_from_integrity(&row.integrity, &struct_fields)?
-            }
-            "restored_from" => Arc::new(StringArray::from(vec![row.restored_from.clone()])),
-            other => {
-                return Err(anyhow!("Unexpected column in revisions schema: {}", other));
-            }
-        };
-        arrays.push(array);
+            let integrity = extension
+                .get("ugoite.legacy.integrity")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()?
+                .unwrap_or_default();
+            let restored_from = extension
+                .get("ugoite.legacy.restored_from")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let legacy_entry_id = state
+                .as_ref()
+                .map(|state: &EntryRow| state.entry_id.clone())
+                .unwrap_or_else(|| {
+                    Uuid::from_slice(entry_ids.value(row_idx))
+                        .map(|value| value.to_string())
+                        .unwrap_or_default()
+                });
+            let physical_parent = if parents.is_null(row_idx) {
+                None
+            } else {
+                Some(
+                    Uuid::from_slice(
+                        parents
+                            .as_any()
+                            .downcast_ref::<FixedSizeBinaryArray>()
+                            .context("parent_revision_id must be UUID")?
+                            .value(row_idx),
+                    )?
+                    .to_string(),
+                )
+            };
+            rows.push(RevisionRow {
+                revision_id: state
+                    .as_ref()
+                    .filter(|state| !state.revision_id.is_empty())
+                    .map(|state| state.revision_id.clone())
+                    .unwrap_or(Uuid::from_slice(revision_ids.value(row_idx))?.to_string()),
+                entry_id: legacy_entry_id,
+                parent_revision_id: state
+                    .as_ref()
+                    .and_then(|state| state.parent_revision_id.clone())
+                    .or(physical_parent),
+                timestamp: from_timestamp_micros(timestamps.value(row_idx)),
+                author: authors.value(row_idx).to_string(),
+                fields,
+                extra_attributes: if extra_attributes.is_null(row_idx) {
+                    Value::Object(Map::new())
+                } else {
+                    serde_json::from_str(extra_attributes.value(row_idx))?
+                },
+                markdown_checksum: extension
+                    .get("ugoite.legacy.markdown_checksum")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                integrity,
+                restored_from,
+                state,
+                entry_version: u64::try_from(versions.value(row_idx))?,
+                operation: operations.value(row_idx).to_string(),
+                source_kind: source_kinds.value(row_idx).to_string(),
+                source_id: if source_ids.is_null(row_idx) {
+                    None
+                } else {
+                    Some(source_ids.value(row_idx).to_string())
+                },
+            });
+        }
     }
-
-    RecordBatch::try_new(arrow_schema, arrays).map_err(|e| anyhow!("Record batch error: {}", e))
-}
-
-async fn write_record_batch(table: &iceberg::table::Table, batch: RecordBatch) -> Result<DataFile> {
-    let schema = table.metadata().current_schema();
-    let props = WriterProperties::builder().build();
-    let output_path = format!(
-        "{}/data/{}.parquet",
-        table.metadata().location(),
-        Uuid::new_v4()
-    );
-    let output_file = table.file_io().new_output(&output_path)?;
-    let mut writer = ParquetWriterBuilder::new(props, schema.clone())
-        .build(output_file)
-        .await?;
-    writer.write(&batch).await?;
-    let builders = writer.close().await?;
-    let mut data_files = Vec::new();
-    for builder in builders {
-        data_files.push(
-            builder
-                .build()
-                .map_err(|e| anyhow!("Data file build error: {}", e))?,
-        );
-    }
-    data_files
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow!("No data files produced by writer"))
-}
-
-async fn append_entry_row_to_table(
-    catalog: &MemoryCatalog,
-    table: &iceberg::table::Table,
-    row: &EntryRow,
-    form_def: &Value,
-) -> Result<()> {
-    let batch = entry_row_to_record_batch(row, form_def, table.metadata().current_schema())?;
-    let data_file = write_record_batch(table, batch).await?;
-    let tx = Transaction::new(table);
-    let action = tx.fast_append().add_data_files(vec![data_file]);
-    let tx = action.apply(tx)?;
-    tx.commit(catalog).await?;
-    Ok(())
+    Ok(rows)
 }
 
 async fn append_revision_row_to_table(
-    catalog: &MemoryCatalog,
-    table: &iceberg::table::Table,
+    op: &Operator,
+    ws_path: &str,
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
-    let batch = revision_row_to_record_batch(row, form_def, table.metadata().current_schema())?;
-    let data_file = write_record_batch(table, batch).await?;
-    let tx = Transaction::new(table);
-    let action = tx.fast_append().add_data_files(vec![data_file]);
-    let tx = action.apply(tx)?;
-    tx.commit(catalog).await?;
+    append_revision_rows_to_workspace(op, ws_path, std::slice::from_ref(row), form_def).await
+}
+
+async fn append_revision_rows_to_workspace(
+    op: &Operator,
+    ws_path: &str,
+    rows: &[RevisionRow],
+    form_def: &Value,
+) -> Result<()> {
+    if rows.is_empty() {
+        return Err(anyhow!("revision batch must not be empty"));
+    }
+    let domain_form = form::to_domain_form(form_def)?;
+    let revisions = rows
+        .iter()
+        .map(|row| revision_row_to_domain(row, &domain_form))
+        .collect::<Result<Vec<_>>>()?;
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    workspace
+        .append_revisions(domain_form.id, revisions)
+        .await?;
     Ok(())
+}
+
+fn revision_row_to_domain(
+    row: &RevisionRow,
+    form: &ugoite_domain::form::FormDefinition,
+) -> Result<EntryRevision> {
+    let entry_id = Uuid::parse_str(&row.entry_id)
+        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, row.entry_id.as_bytes()));
+    let revision_id = Uuid::parse_str(&row.revision_id)?;
+    let parent_revision_id = row
+        .parent_revision_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()?;
+    let mut extension_metadata = std::collections::BTreeMap::new();
+    extension_metadata.insert(
+        "ugoite.legacy.state".to_string(),
+        serde_json::to_value(&row.state)?,
+    );
+    extension_metadata.insert(
+        "ugoite.legacy.markdown_checksum".to_string(),
+        Value::String(row.markdown_checksum.clone()),
+    );
+    extension_metadata.insert(
+        "ugoite.legacy.integrity".to_string(),
+        serde_json::to_value(&row.integrity)?,
+    );
+    if let Some(restored_from) = &row.restored_from {
+        extension_metadata.insert(
+            "ugoite.legacy.restored_from".to_string(),
+            Value::String(restored_from.clone()),
+        );
+    }
+    let operation = match row.operation.as_str() {
+        "upsert" => EntryOperation::Upsert,
+        "delete" => EntryOperation::Delete,
+        "restore" => EntryOperation::Restore,
+        other => return Err(anyhow!("unsupported revision operation: {other}")),
+    };
+    let values = if operation == EntryOperation::Delete {
+        Default::default()
+    } else {
+        form_values_to_domain(&row.fields, form)?
+    };
+    let extra_attributes = row
+        .extra_attributes
+        .as_object()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    Ok(EntryRevision {
+        form_id: form.id,
+        entry_id: entry_id.into(),
+        revision_id: revision_id.into(),
+        parent_revision_id: parent_revision_id.map(RevisionId::from),
+        entry_version: row.entry_version,
+        expected_version: parent_revision_id.map(|_| row.entry_version.saturating_sub(1)),
+        operation,
+        committed_at_micros: to_timestamp_micros(row.timestamp),
+        author_id: row.author.clone(),
+        form_version: form.version,
+        source_kind: row.source_kind.clone(),
+        source_id: row.source_id.clone(),
+        values,
+        extra_attributes,
+        extension_metadata,
+    })
+}
+
+fn form_values_to_domain(
+    fields: &Value,
+    form: &ugoite_domain::form::FormDefinition,
+) -> Result<std::collections::BTreeMap<FieldId, FieldValue>> {
+    let object = fields.as_object().cloned().unwrap_or_default();
+    let mut values = std::collections::BTreeMap::new();
+    for field in &form.fields {
+        if let Some(value) = object.get(&field.name) {
+            values.insert(field.id, json_to_field_value(value)?);
+        }
+    }
+    Ok(values)
+}
+
+fn json_to_field_value(value: &Value) -> Result<FieldValue> {
+    Ok(match value {
+        Value::Null => FieldValue::Null,
+        Value::Bool(value) => FieldValue::Boolean(*value),
+        Value::String(value) => FieldValue::String(value.clone()),
+        Value::Number(value) => FieldValue::Number(value.as_f64().context("invalid number")?),
+        Value::Array(values) => FieldValue::List(
+            values
+                .iter()
+                .map(json_to_field_value)
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        Value::Object(values) => FieldValue::Object(
+            values
+                .iter()
+                .map(|(key, value)| Ok((key.clone(), json_to_field_value(value)?)))
+                .collect::<Result<_>>()?,
+        ),
+    })
 }
 
 pub(crate) async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
@@ -1716,35 +1994,42 @@ pub(crate) async fn read_entry_row(
     entry_id: &str,
 ) -> Result<EntryRow> {
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
-    let (_, table) = iceberg_store::load_entries_table(op, ws_path, form_name).await?;
+    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
     let batches = scan_table_batches(&table).await?;
-    let rows = entry_rows_from_batches(&batches, &form_def, form_name)?;
-    let mut selected: Option<EntryRow> = None;
-    for row in rows {
-        if row.entry_id != entry_id {
+    let rows = revision_rows_from_batches(&batches, &form_def)?;
+    let mut selected: Option<RevisionRow> = None;
+    for revision in rows {
+        if revision.entry_id != entry_id || revision.state.is_none() {
             continue;
         }
         let replace = match &selected {
-            Some(existing) => row.updated_at >= existing.updated_at,
+            Some(existing) => revision.entry_version > existing.entry_version,
             None => true,
         };
         if replace {
-            selected = Some(row);
+            selected = Some(revision);
         }
     }
-    let mut selected = selected.ok_or_else(|| entry_not_found(entry_id))?;
-    if let Some(latest) =
-        latest_revision_for_entry(op, ws_path, form_name, &form_def, entry_id).await?
-    {
-        selected.revision_id = latest.revision_id;
-        selected.parent_revision_id = latest.parent_revision_id;
-        selected.author = latest.author;
-        if selected.integrity.checksum.is_empty() {
-            selected.integrity = latest.integrity;
-        }
+    let selected = selected.ok_or_else(|| entry_not_found(entry_id))?;
+    let conflicts = revision_rows_from_batches(&batches, &form_def)?
+        .into_iter()
+        .filter(|revision| {
+            revision.entry_id == entry_id && revision.entry_version == selected.entry_version
+        })
+        .count();
+    if conflicts > 1 {
+        return Err(AppError::conflict(
+            ErrorCode::RevisionConflict,
+            format!(
+                "multiple revisions exist for entry {entry_id} at version {}",
+                selected.entry_version
+            ),
+        )
+        .into());
     }
-
-    Ok(selected)
+    selected
+        .state
+        .ok_or_else(|| entry_not_found(entry_id).into())
 }
 
 pub(crate) async fn write_entry_row(
@@ -1754,36 +2039,71 @@ pub(crate) async fn write_entry_row(
     entry_id: &str,
     row: &EntryRow,
 ) -> Result<()> {
-    let _ = entry_id;
-    let (catalog, table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_entries_table(op, ws_path, form_name).await?;
+    let mut state = row.clone();
+    state.parent_revision_id = Some(row.revision_id.clone());
+    state.revision_id = Uuid::new_v4().to_string();
+    state.entry_version = row.entry_version.saturating_add(1);
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
-    append_entry_row_to_table(catalog.as_ref(), &table, row, &form_def).await
+    let revision = RevisionRow {
+        revision_id: state.revision_id.clone(),
+        entry_id: entry_id.to_string(),
+        parent_revision_id: state.parent_revision_id.clone(),
+        timestamp: state.updated_at,
+        author: state.author.clone(),
+        fields: state.fields.clone(),
+        extra_attributes: state.extra_attributes.clone(),
+        markdown_checksum: state.integrity.checksum.clone(),
+        integrity: state.integrity.clone(),
+        restored_from: None,
+        state: Some(state.clone()),
+        entry_version: state.entry_version,
+        operation: if state.deleted { "delete" } else { "upsert" }.to_string(),
+        source_kind: "application".to_string(),
+        source_id: None,
+    };
+    append_revision_row_for_form(op, ws_path, form_name, &revision, &form_def).await
 }
 
 pub(crate) async fn list_entry_rows(
     op: &Operator,
     ws_path: &str,
 ) -> Result<Vec<(String, EntryRow)>> {
-    let mut latest: std::collections::HashMap<String, (String, EntryRow)> =
+    let mut latest: std::collections::HashMap<String, (String, RevisionRow)> =
         std::collections::HashMap::new();
     for form_name in list_form_names(op, ws_path).await? {
         let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-        let (_, table) = iceberg_store::load_entries_table(op, ws_path, &form_name).await?;
+        let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
         let batches = scan_table_batches(&table).await?;
-        let rows = entry_rows_from_batches(&batches, &form_def, &form_name)?;
-        for row in rows {
+        let rows = revision_rows_from_batches(&batches, &form_def)?;
+        for revision in rows {
+            let Some(row) = revision.state.as_ref() else {
+                continue;
+            };
             let entry = latest.get(&row.entry_id);
+            if let Some((_, existing)) = entry {
+                if revision.entry_version == existing.entry_version
+                    && revision.revision_id != existing.revision_id
+                {
+                    return Err(anyhow!(
+                        "multiple revisions exist for entry {} at version {}",
+                        row.entry_id,
+                        revision.entry_version
+                    ));
+                }
+            }
             let should_replace = match entry {
-                Some((_, existing)) => row.updated_at >= existing.updated_at,
+                Some((_, existing)) => revision.entry_version > existing.entry_version,
                 None => true,
             };
             if should_replace {
-                latest.insert(row.entry_id.clone(), (form_name.clone(), row));
+                latest.insert(row.entry_id.clone(), (form_name.clone(), revision));
             }
         }
     }
-    Ok(latest.into_values().collect())
+    Ok(latest
+        .into_values()
+        .filter_map(|(form_name, revision)| revision.state.map(|row| (form_name, row)))
+        .collect())
 }
 
 pub(crate) async fn list_form_entry_rows(
@@ -1792,23 +2112,41 @@ pub(crate) async fn list_form_entry_rows(
     form_name: &str,
     form_def: &Value,
 ) -> Result<Vec<EntryRow>> {
-    let (_, table) = iceberg_store::load_entries_table(op, ws_path, form_name).await?;
+    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
     let batches = scan_table_batches(&table).await?;
-    let rows = entry_rows_from_batches(&batches, form_def, form_name)?;
-    let mut latest: std::collections::HashMap<String, EntryRow> = std::collections::HashMap::new();
-    for row in rows {
+    let mut latest: std::collections::HashMap<String, RevisionRow> =
+        std::collections::HashMap::new();
+    for revision in revision_rows_from_batches(&batches, form_def)? {
+        let Some(row) = revision.state.as_ref() else {
+            continue;
+        };
         let entry = latest.get(&row.entry_id);
+        if let Some(existing) = entry {
+            if revision.entry_version == existing.entry_version
+                && revision.revision_id != existing.revision_id
+            {
+                return Err(anyhow!(
+                    "multiple revisions exist for entry {} at version {}",
+                    row.entry_id,
+                    revision.entry_version
+                ));
+            }
+        }
         let should_replace = match entry {
-            Some(existing) => row.updated_at >= existing.updated_at,
+            Some(existing) => revision.entry_version > existing.entry_version,
             None => true,
         };
         if should_replace {
-            latest.insert(row.entry_id.clone(), row);
+            latest.insert(row.entry_id.clone(), revision);
         }
     }
-    Ok(latest.into_values().collect())
+    Ok(latest
+        .into_values()
+        .filter_map(|revision| revision.state)
+        .collect())
 }
 
+#[allow(dead_code)] // used by migration verification tooling
 pub(crate) async fn list_form_revision_rows(
     op: &Operator,
     ws_path: &str,
@@ -1827,9 +2165,31 @@ pub(crate) async fn append_revision_row_for_form(
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
-    let (catalog, table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    append_revision_row_to_table(catalog.as_ref(), &table, row, form_def).await
+    append_revision_row_to_table(op, ws_path, row, form_def).await?;
+    let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
+    let refreshed = catalog.load_table(table.identifier()).await?;
+    if iceberg_store::uses_rest_catalog() {
+        Ok(())
+    } else {
+        iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
+    }
+}
+
+pub async fn append_revision_batch_for_form(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    rows: &[RevisionRow],
+) -> Result<()> {
+    let form_def = form::read_form_definition(op, ws_path, form_name).await?;
+    append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await?;
+    let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
+    let refreshed = catalog.load_table(table.identifier()).await?;
+    if iceberg_store::uses_rest_catalog() {
+        Ok(())
+    } else {
+        iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
+    }
 }
 
 fn extract_tags(frontmatter: &Value) -> Vec<String> {
@@ -1928,9 +2288,8 @@ pub async fn create_entry<I: IntegrityProvider>(
         deleted: false,
         deleted_at: None,
         author: author.to_string(),
+        entry_version: 1,
     };
-
-    write_entry_row(op, ws_path, &form_name, entry_id, &entry_row).await?;
 
     let revision = RevisionRow {
         revision_id: revision_id.clone(),
@@ -1946,10 +2305,13 @@ pub async fn create_entry<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: None,
+        state: Some(entry_row.clone()),
+        entry_version: entry_row.entry_version,
+        operation: "upsert".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
     };
-    let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &revision, &form_def).await?;
+    append_revision_row_for_form(op, ws_path, &form_name, &revision, &form_def).await?;
 
     let ws_id = ws_path
         .trim_end_matches('/')
@@ -2265,14 +2627,13 @@ pub async fn update_entry<I: IntegrityProvider>(
     row.extra_attributes = extra_attributes.clone();
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();
+    row.entry_version = row.entry_version.saturating_add(1);
     row.author = author.to_string();
     row.integrity = IntegrityPayload {
         checksum: checksum.clone(),
         signature: signature.clone(),
     };
     row.assets = assets.unwrap_or_else(|| row.assets.clone());
-
-    write_entry_row(op, ws_path, &form_name, entry_id, &row).await?;
 
     let revision = RevisionRow {
         revision_id: revision_id.clone(),
@@ -2288,10 +2649,13 @@ pub async fn update_entry<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: None,
+        state: Some(row.clone()),
+        entry_version: row.entry_version,
+        operation: "upsert".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
     };
-    let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    append_revision_row_to_table(rev_catalog.as_ref(), &rev_table, &revision, &form_def).await?;
+    append_revision_row_for_form(op, ws_path, &form_name, &revision, &form_def).await?;
 
     get_entry(op, ws_path, entry_id).await
 }
@@ -2311,18 +2675,33 @@ pub async fn delete_entry(
     if delete_ts <= row.updated_at {
         delete_ts = row.updated_at + 0.001;
     }
-    if hard_delete {
-        row.deleted = true;
-        row.deleted_at = Some(delete_ts);
-        row.updated_at = delete_ts;
-        write_entry_row(op, ws_path, &form_name, entry_id, &row).await?;
-        return Ok(());
-    }
-
+    let _ = hard_delete;
+    let previous_revision_id = row.revision_id.clone();
     row.deleted = true;
     row.deleted_at = Some(delete_ts);
     row.updated_at = delete_ts;
-    write_entry_row(op, ws_path, &form_name, entry_id, &row).await?;
+    row.parent_revision_id = Some(previous_revision_id);
+    row.revision_id = Uuid::new_v4().to_string();
+    row.entry_version = row.entry_version.saturating_add(1);
+    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
+    let tombstone = RevisionRow {
+        revision_id: row.revision_id.clone(),
+        entry_id: entry_id.to_string(),
+        parent_revision_id: row.parent_revision_id.clone(),
+        timestamp: delete_ts,
+        author: row.author.clone(),
+        fields: Value::Object(Map::new()),
+        extra_attributes: Value::Object(Map::new()),
+        markdown_checksum: row.integrity.checksum.clone(),
+        integrity: row.integrity.clone(),
+        restored_from: None,
+        state: Some(row.clone()),
+        entry_version: row.entry_version,
+        operation: "delete".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
+    };
+    append_revision_row_for_form(op, ws_path, &form_name, &tombstone, &form_def).await?;
     Ok(())
 }
 
@@ -2422,6 +2801,7 @@ pub async fn restore_entry<I: IntegrityProvider>(
 
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = new_rev_id.clone();
+    row.entry_version = row.entry_version.saturating_add(1);
     row.updated_at = timestamp;
     row.fields = revision.fields.clone();
     row.extra_attributes = revision.extra_attributes.clone();
@@ -2430,8 +2810,6 @@ pub async fn restore_entry<I: IntegrityProvider>(
         signature: signature.clone(),
     };
     row.author = author.to_string();
-    write_entry_row(op, ws_path, &form_name, entry_id, &row).await?;
-
     let restore_revision = RevisionRow {
         revision_id: new_rev_id.clone(),
         entry_id: entry_id.to_string(),
@@ -2446,16 +2824,13 @@ pub async fn restore_entry<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: Some(revision_id.to_string()),
+        state: Some(row.clone()),
+        entry_version: row.entry_version,
+        operation: "restore".to_string(),
+        source_kind: "api".to_string(),
+        source_id: Some(revision_id.to_string()),
     };
-    let (rev_catalog, rev_table): (Arc<MemoryCatalog>, iceberg::table::Table) =
-        iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    append_revision_row_to_table(
-        rev_catalog.as_ref(),
-        &rev_table,
-        &restore_revision,
-        &form_def,
-    )
-    .await?;
+    append_revision_row_for_form(op, ws_path, &form_name, &restore_revision, &form_def).await?;
 
     Ok(serde_json::json!({
         "revision_id": new_rev_id,

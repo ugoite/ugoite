@@ -44,3 +44,40 @@ runs as non-root, and mounts `/data`.
 
 **Accepted.** The current MCP surface is one authenticated, read-only Entry-list
 resource. Tools and prompts remain future work.
+
+## ADR-008 — Iceberg-native workspace model
+
+**Accepted.** A Space maps to one Iceberg namespace. A stable Form ID maps to
+one physical `form_<uuid>` table; display-name changes never rename the table.
+The Iceberg schema owns field IDs, types, and nullability. Versioned Ugoite
+labels, validation, references, and semantic metadata live in table properties.
+
+## ADR-009 — Entry history is the authority
+
+**Accepted.** Create, update, delete, and restore append revision rows to the
+Form table. Current state is the unique greatest `entry_version`; equal maximum
+versions are a conflict. There is no authoritative current-entry table and no
+two-table commit.
+
+## ADR-010 — Catalog and DataFusion are explicit
+
+**Accepted.** REST Catalog is the multi-writer production Catalog. Local
+single-process CLI mode uses the explicitly scoped MemoryCatalog plus its
+portable pointer manifest; object listing must not infer metadata pointers.
+MemoryCatalog is not used for shared production deployments.
+DataFusion is the standard structured query engine and receives projection,
+predicate, limit, join, and snapshot work through Iceberg providers.
+
+Schema evolution receives a REST committer from the same typed configuration
+used to construct the REST Catalog. The committer does not re-read a global
+environment variable or construct a second endpoint configuration; Catalog
+config response prefixes, headers, static credentials, and OAuth credential
+exchange are applied to the atomic commit request. Iceberg Rust 0.8 is not
+forked.
+
+## ADR-011 — Portable logic is not a storage adapter
+
+**Accepted.** `ugoite-domain` owns stable IDs, Form changes, compatibility,
+revision construction, and I/O-free validation. WASM exposes that logic and the
+portable API protocol; it never depends on Iceberg, Arrow, Parquet, OpenDAL, or
+a native repository interface.

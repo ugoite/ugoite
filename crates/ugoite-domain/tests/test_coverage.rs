@@ -1,8 +1,3 @@
-use anyhow::{anyhow, Result};
-use async_trait::async_trait;
-use serde_json::json;
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
 use ugoite_domain::integrity::{
     checksum_hex, FakeIntegrityProvider, HmacIntegrityProvider, IntegrityProvider,
 };
@@ -11,73 +6,7 @@ use ugoite_domain::metadata::{
     register_metadata_columns, register_metadata_forms,
 };
 use ugoite_domain::space::storage_type_and_root;
-use ugoite_domain::storage::{StorageBackend, StorageEntry};
 use ugoite_domain::text::compute_word_count;
-
-#[derive(Clone, Default)]
-struct MockStorage {
-    files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-    dirs: Arc<Mutex<HashSet<String>>>,
-}
-
-#[async_trait]
-impl StorageBackend for MockStorage {
-    async fn exists(&self, path: &str) -> Result<bool> {
-        let has_file = self
-            .files
-            .lock()
-            .map_err(|_| anyhow!("files store lock poisoned"))?
-            .contains_key(path);
-        let has_dir = self
-            .dirs
-            .lock()
-            .map_err(|_| anyhow!("dirs store lock poisoned"))?
-            .contains(path);
-        Ok(has_file || has_dir)
-    }
-
-    async fn read(&self, path: &str) -> Result<Vec<u8>> {
-        self.files
-            .lock()
-            .map_err(|_| anyhow!("files store lock poisoned"))?
-            .get(path)
-            .cloned()
-            .ok_or_else(|| anyhow!("missing file: {path}"))
-    }
-
-    async fn write(&self, path: &str, data: Vec<u8>) -> Result<()> {
-        self.files
-            .lock()
-            .map_err(|_| anyhow!("files store lock poisoned"))?
-            .insert(path.to_string(), data);
-        Ok(())
-    }
-
-    async fn create_dir(&self, path: &str) -> Result<()> {
-        self.dirs
-            .lock()
-            .map_err(|_| anyhow!("dirs store lock poisoned"))?
-            .insert(path.to_string());
-        Ok(())
-    }
-
-    async fn list_dir(&self, path: &str) -> Result<Vec<StorageEntry>> {
-        let dirs = self
-            .dirs
-            .lock()
-            .map_err(|_| anyhow!("dirs store lock poisoned"))?;
-        let mut entries = dirs
-            .iter()
-            .filter(|dir| dir.starts_with(path) && dir.as_str() != path)
-            .map(|dir| StorageEntry {
-                name: dir.trim_start_matches(path).to_string(),
-                is_dir: true,
-            })
-            .collect::<Vec<_>>();
-        entries.sort_by(|left, right| left.name.cmp(&right.name));
-        Ok(entries)
-    }
-}
 
 #[test]
 /// REQ-INT-001
@@ -144,36 +73,6 @@ fn test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensiti
     let registered = metadata_forms();
     assert!(registered.contains("issue777_custom_form"));
     assert!(is_reserved_metadata_form("ISSUE777_CUSTOM_FORM"));
-}
-
-#[tokio::test]
-/// REQ-STO-001
-async fn test_storage_req_sto_001_json_helpers_use_storage_abstraction() -> Result<()> {
-    let storage = MockStorage::default();
-    storage.create_dir("spaces/").await?;
-    storage.create_dir("spaces/demo/").await?;
-    storage
-        .write_json(
-            "spaces/demo/meta.json",
-            &json!({"id": "demo", "storage": {"type": "local"}}),
-        )
-        .await?;
-
-    let meta: serde_json::Value = storage.read_json("spaces/demo/meta.json").await?;
-
-    assert!(storage.exists("spaces/demo/meta.json").await?);
-    assert!(storage.exists("spaces/demo/").await?);
-    assert!(!storage.exists("spaces/missing/").await?);
-    assert_eq!(meta["id"], "demo");
-    assert_eq!(
-        storage.list_dir("spaces/").await?,
-        vec![StorageEntry {
-            name: "demo/".to_string(),
-            is_dir: true,
-        }]
-    );
-
-    Ok(())
 }
 
 #[test]

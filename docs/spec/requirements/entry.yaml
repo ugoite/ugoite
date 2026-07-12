@@ -15,9 +15,9 @@ requirements:
   - SPEC-API-REST
   id: REQ-ENTRY-001
   title: Entry Creation
-  description: 'Create entry from Markdown content by writing a row to the Form `entries`
+  description: 'Create entry from Markdown content by appending one immutable
 
-    table and appending a row to the Form `revisions` table in Iceberg.
+    revision row to the stable Form ID''s Iceberg table.
 
     '
   related_spec:

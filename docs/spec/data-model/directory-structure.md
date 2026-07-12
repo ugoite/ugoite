@@ -61,11 +61,19 @@ Membership operations add `members`, `member_invitations`, and `membership_versi
 
 ## Iceberg-managed Form storage
 
-A Form definition and its logical `entries` and `revisions` tables are stored through the Rust Iceberg/OpenDAL layer. The repository specifies their logical schema but intentionally leaves physical Iceberg metadata and data filenames unspecified.
+A Form definition and its single append-only revision table are stored through
+the Catalog-backed Rust Iceberg layer. The table identity is derived from the
+stable Form UUID, not its display name. The repository specifies logical schema
+and table-property keys but leaves Iceberg metadata/data filenames unspecified.
 
-Current Entry rows contain `entry_id`, `title`, `form`, `tags`, `links`, `created_at`, `updated_at`, `fields`, `extra_attributes`, `revision_id`, `parent_revision_id`, `assets`, `integrity`, `deleted`, `deleted_at`, and `author`.
+Portable local Spaces keep `forms/catalog-pointers.v1.json` as the explicit
+Catalog pointer manifest. A new process registers tables from this file; it
+never scans metadata filenames or selects the numerically greatest file.
 
-Current revision rows contain `revision_id`, `entry_id`, `parent_revision_id`, `timestamp`, `author`, `fields`, `extra_attributes`, `markdown_checksum`, `integrity`, and optional `restored_from`.
+Revision rows contain stable entry/revision identity, optimistic version and
+parent lineage, operation/tombstone state, commit time, author and provenance,
+Form version, typed Form columns, and extension metadata. A projection of the
+latest non-conflicting revision provides current Entry responses.
 
 ## Portability
 

@@ -1,4 +1,70 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
+use uuid::Uuid;
+
+macro_rules! uuid_id {
+    ($name:ident) => {
+        #[derive(
+            Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize,
+        )]
+        #[serde(transparent)]
+        pub struct $name(Uuid);
+
+        impl $name {
+            pub const fn from_uuid(value: Uuid) -> Self {
+                Self(value)
+            }
+            pub const fn as_uuid(self) -> Uuid {
+                self.0
+            }
+        }
+
+        impl From<Uuid> for $name {
+            fn from(value: Uuid) -> Self {
+                Self(value)
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.0.fmt(formatter)
+            }
+        }
+    };
+}
+
+uuid_id!(SpaceId);
+uuid_id!(FormId);
+uuid_id!(EntryId);
+uuid_id!(RevisionId);
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct FieldId(i32);
+
+impl FieldId {
+    pub fn new(value: i32) -> Result<Self, FieldIdError> {
+        if value < 100 {
+            return Err(FieldIdError);
+        }
+        Ok(Self(value))
+    }
+
+    pub const fn get(self) -> i32 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct FieldIdError;
+
+impl fmt::Display for FieldIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("field ID must be at least 100; lower IDs are reserved")
+    }
+}
+
+impl std::error::Error for FieldIdError {}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum IdentifierKind {

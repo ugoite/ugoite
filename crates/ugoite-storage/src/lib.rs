@@ -5,11 +5,40 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use opendal::services::{Fs, Memory, S3};
 use opendal::{EntryMode, Operator};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 pub use ugoite_domain as domain;
-pub use ugoite_domain::storage::{StorageBackend, StorageEntry};
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+#[async_trait]
+pub trait StorageBackend: Send + Sync {
+    async fn exists(&self, path: &str) -> Result<bool>;
+    async fn read(&self, path: &str) -> Result<Vec<u8>>;
+    async fn write(&self, path: &str, data: Vec<u8>) -> Result<()>;
+    async fn create_dir(&self, path: &str) -> Result<()>;
+    async fn list_dir(&self, path: &str) -> Result<Vec<StorageEntry>>;
+
+    async fn read_json<T>(&self, path: &str) -> Result<T>
+    where
+        T: DeserializeOwned + Send,
+    {
+        Ok(serde_json::from_slice(&self.read(path).await?)?)
+    }
+
+    async fn write_json<T>(&self, path: &str, value: &T) -> Result<()>
+    where
+        T: Serialize + Sync,
+    {
+        self.write(path, serde_json::to_vec_pretty(value)?).await
+    }
+}
 
 static MEMORY_OPERATORS: OnceLock<Mutex<HashMap<String, Operator>>> = OnceLock::new();
 
@@ -144,7 +173,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn opendal_storage_implements_storage_backend_contract() -> Result<()> {
+    /// REQ-STO-001: JSON helpers remain part of the storage boundary after
+    /// I/O is moved out of the portable domain crate.
+    async fn test_storage_req_sto_001_json_helpers_use_storage_abstraction() -> Result<()> {
         let op = operator_from_uri("memory://storage-contract")?;
         let storage = OpendalStorage::from_operator(&op);
         storage.create_dir("spaces/demo/").await?;
@@ -153,11 +184,26 @@ mod tests {
             .await?;
 
         assert!(storage.exists("spaces/demo/readme.md").await?);
+        assert!(storage.exists("spaces/demo/").await?);
+        assert!(!storage.exists("spaces/missing/").await?);
         assert_eq!(storage.read("spaces/demo/readme.md").await?, b"hello");
         let entries = storage.list_dir("spaces/demo/").await?;
         assert!(entries
             .iter()
             .any(|entry| entry.name.ends_with("readme.md") && !entry.is_dir));
+
+        storage
+            .write_json("spaces/demo/meta.json", &serde_json::json!({"id": "demo"}))
+            .await?;
+        let metadata: serde_json::Value = storage.read_json("spaces/demo/meta.json").await?;
+        assert_eq!(metadata["id"], "demo");
+        assert_eq!(
+            storage.list_dir("spaces/").await?,
+            vec![super::StorageEntry {
+                name: "demo/".to_string(),
+                is_dir: true,
+            }]
+        );
 
         Ok(())
     }

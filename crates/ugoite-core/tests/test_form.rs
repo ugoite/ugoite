@@ -31,6 +31,36 @@ async fn test_form_req_form_002_upsert_and_list_forms() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn idempotent_form_upsert_accepts_explicit_default_requiredness() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "idempotent-form", "/tmp").await?;
+    let ws_path = "spaces/idempotent-form";
+
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {"Body": {"type": "markdown"}},
+        }),
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "version": 1,
+            "template": "# Entry\\n\\n## Body\\n",
+            "fields": {"Body": {"type": "markdown", "required": false}},
+        }),
+    )
+    .await?;
+
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-FORM-001
 async fn test_form_req_form_001_list_column_types() -> anyhow::Result<()> {
     let types = form::list_column_types().await?;

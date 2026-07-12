@@ -221,6 +221,11 @@ fn architecture_check() -> Result<()> {
         "ugoite-core",
         "ugoite-domain",
         "ugoite-storage",
+        "ugoite-iceberg",
+        "iceberg",
+        "arrow-array",
+        "arrow-schema",
+        "parquet",
         "opendal",
     ] {
         if api_client_manifest
@@ -257,6 +262,11 @@ fn architecture_check() -> Result<()> {
     for forbidden in [
         "ugoite-core",
         "ugoite-storage",
+        "ugoite-iceberg",
+        "iceberg",
+        "arrow-array",
+        "arrow-schema",
+        "parquet",
         "opendal",
         "tokio",
         "reqwest",
@@ -288,7 +298,16 @@ fn architecture_check() -> Result<()> {
         .split("[dev-dependencies]")
         .next()
         .unwrap_or(&domain_manifest);
-    for forbidden in ["tokio", "opendal", "axum"] {
+    for forbidden in [
+        "tokio",
+        "opendal",
+        "axum",
+        "iceberg",
+        "arrow-array",
+        "arrow-schema",
+        "parquet",
+        "datafusion",
+    ] {
         if domain_dependencies
             .lines()
             .any(|line| line.trim_start().starts_with(forbidden))

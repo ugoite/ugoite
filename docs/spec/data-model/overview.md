@@ -2,7 +2,7 @@
 title: 'Data model overview'
 ---
 
-Ugoite treats operator-controlled files as the persistence boundary. A **Space** is a self-contained directory below the configured storage root, while Apache Iceberg owns the physical table layout used for Forms, Entries, and revisions.
+Ugoite treats operator-controlled files as the persistence boundary. A **Space** is a portable ownership boundary below the configured storage root and an Iceberg namespace. Apache Iceberg owns one append-only table per stable Form ID.
 
 ## Authority layers
 
@@ -46,7 +46,22 @@ A Form currently persists only:
 
 Form-level ACL fields are not persisted or enforced in this release. Field names cannot collide with reserved metadata columns. A `row_reference` field must name an existing, non-reserved target Form.
 
-Each Form has logical `entries` and `revisions` Iceberg tables. Current Entry rows include identifiers, title, Form, tags, links, timestamps, typed fields, extra attributes, revision lineage, assets, integrity data, deletion state, and author. Each save appends a revision row; restore creates another revision rather than rewriting history.
+Each Form has an immutable UUID and one physical `form_<uuid>` Iceberg table.
+The display name is mutable metadata. Field IDs are stable Iceberg field IDs;
+rename keeps the ID, optional additions do not rewrite data, and destructive
+changes require an explicit migration.
+
+The table is an append-only revision log. Common columns include `entry_id`,
+`revision_id`, `parent_revision_id`, `entry_version`, `operation`,
+`committed_at`, `author_id`, `form_version`, `source_kind`, and `source_id`,
+followed by Form fields. Delete is a tombstone and restore is another revision.
+Current state is derived from the unique greatest version and is never a second
+source-of-truth table.
+
+Date, time, timestamp, UUID, and binary Form fields use their corresponding
+Iceberg primitive types. Markdown, SQL, row references, and ordinary strings
+remain Iceberg strings; binary entry values are base64 text at the domain
+boundary and binary data in the table.
 
 ## Markdown mapping
 

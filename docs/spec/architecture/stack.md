@@ -7,8 +7,8 @@ title: 'Technology stack'
 | Domain/core/storage/server/CLI/WASM | Rust 1.93 workspace |
 | HTTP server | Axum |
 | Storage abstraction | OpenDAL |
-| Structured entry/revision tables | Apache Iceberg Rust integration |
-| Local derived query/index work | SQLite-compatible query layer |
+| Structured Form/revision tables | Apache Iceberg Rust integration with an explicit Catalog |
+| Structured query | DataFusion through `iceberg-datafusion` |
 | Browser | SolidStart / TypeScript |
 | Documentation site | Astro |
 | JS/TS tooling | Deno 2.8 workspace |
