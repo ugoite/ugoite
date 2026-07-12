@@ -33,7 +33,7 @@ use iceberg_catalog_rest::{
 };
 use iceberg_datafusion::IcebergCatalogProvider;
 use parquet::file::properties::WriterProperties;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -186,6 +186,7 @@ impl IcebergWorkspace {
         space_id: SpaceId,
         write: WriteConfig,
     ) -> Result<Self> {
+        validate_rest_catalog_auth(&config.properties)?;
         let catalog = build_rest_catalog(&config).await?;
         let warehouse = config.warehouse.clone();
         let schema_committer = SchemaCommitter::Rest(Arc::new(RestSchemaCommitter {
@@ -613,6 +614,15 @@ async fn build_rest_catalog(config: &RestCatalogConfig) -> Result<Arc<dyn Catalo
     Ok(Arc::new(builder.load("ugoite", properties).await?))
 }
 
+fn validate_rest_catalog_auth(properties: &HashMap<String, String>) -> Result<()> {
+    if properties.contains_key("token") && properties.contains_key("credential") {
+        return Err(anyhow!(
+            "REST Catalog configuration cannot specify both token and credential"
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 struct RestConfigResponse {
     #[serde(default)]
@@ -622,23 +632,27 @@ struct RestConfigResponse {
 }
 
 impl RestSchemaCommitter {
-    fn headers_for(&self, properties: &HashMap<String, String>) -> Result<HeaderMap> {
+    fn common_headers_for(&self, properties: &HashMap<String, String>) -> Result<HeaderMap> {
         let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         for (key, value) in properties
             .iter()
             .filter_map(|(key, value)| key.strip_prefix("header.").map(|key| (key, value)))
         {
+            let name = HeaderName::try_from(key).context("invalid REST Catalog header name")?;
+            // Authentication and request media type are determined by the request itself.
+            if name == CONTENT_TYPE || name == AUTHORIZATION {
+                continue;
+            }
             headers.insert(
-                HeaderName::try_from(key).context("invalid REST Catalog header name")?,
+                name,
                 HeaderValue::try_from(value).context("invalid REST Catalog header value")?,
             );
         }
         Ok(headers)
     }
 
-    fn headers(&self) -> Result<HeaderMap> {
-        self.headers_for(&self.config.properties)
+    fn common_headers(&self) -> Result<HeaderMap> {
+        self.common_headers_for(&self.config.properties)
     }
 
     async fn refresh_token(&self) -> Result<Option<String>> {
@@ -671,7 +685,7 @@ impl RestSchemaCommitter {
         let client = self.config.client.clone().unwrap_or_default();
         let response = client
             .post(endpoint)
-            .headers(self.headers()?)
+            .headers(self.common_headers()?)
             .form(&form)
             .send()
             .await?;
@@ -700,7 +714,7 @@ impl RestSchemaCommitter {
         let client = self.config.client.clone().unwrap_or_default();
         let mut request = client
             .request(method, endpoint)
-            .headers(self.headers_for(properties)?);
+            .headers(self.common_headers_for(properties)?);
         let token = self
             .token
             .lock()
@@ -752,6 +766,7 @@ impl RestSchemaCommitter {
         let mut properties = response.defaults;
         properties.extend(self.config.properties.clone());
         properties.extend(response.overrides);
+        validate_rest_catalog_auth(&properties)?;
         let uri = properties
             .remove(REST_CATALOG_PROP_URI)
             .unwrap_or_else(|| self.config.uri.clone());
@@ -967,6 +982,78 @@ mod tests {
         assert_eq!(commit.updates.len(), 3);
         server.await.unwrap();
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn rest_schema_committer_credential_exchange_uses_form_content_type() -> Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(1);
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_request(&mut stream).await;
+            request_tx.send(request).await.unwrap();
+            let body = r#"{"access_token":"refreshed-token"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+        let committer = RestSchemaCommitter {
+            config: RestCatalogConfig {
+                uri: format!("http://{address}"),
+                warehouse: "warehouse".to_string(),
+                properties: HashMap::from([
+                    ("credential".to_string(), "client:secret".to_string()),
+                    (
+                        "oauth2-server-uri".to_string(),
+                        format!("http://{address}/oauth/token"),
+                    ),
+                    (
+                        "header.content-type".to_string(),
+                        "application/json".to_string(),
+                    ),
+                ]),
+                client: None,
+            },
+            token: Mutex::new(None),
+        };
+
+        assert_eq!(
+            committer.refresh_token().await?,
+            Some("refreshed-token".to_string())
+        );
+        let token_request = request_rx.recv().await.unwrap().to_ascii_lowercase();
+        assert!(token_request.contains("content-type: application/x-www-form-urlencoded"));
+        assert!(!token_request.contains("content-type: application/json"));
+        server.await.unwrap();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rest_workspace_rejects_token_and_credential_together() {
+        let config = RestCatalogConfig {
+            uri: "http://127.0.0.1:1".to_string(),
+            warehouse: "warehouse".to_string(),
+            properties: HashMap::from([
+                ("token".to_string(), "static-token".to_string()),
+                ("credential".to_string(), "client:secret".to_string()),
+            ]),
+            client: None,
+        };
+
+        let error = IcebergWorkspace::rest_workspace(
+            config,
+            SpaceId::from(Uuid::from_u128(702)),
+            WriteConfig::default(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("cannot specify both token and credential"));
     }
 }
 
