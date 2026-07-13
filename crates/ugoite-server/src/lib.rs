@@ -1124,11 +1124,20 @@ async fn finish_totp_enrollment(
     Json(payload): Json<TotpFinishRequest>,
 ) -> ApiResult<Json<Value>> {
     require_recent_passkey(&identity)?;
-    state
+    if state
         .identity
         .finish_totp_enrollment(identity.account_id, &payload.code)
         .await
-        .map_err(auth_error)?;
+        .is_err()
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            json!({
+                "code": "INVALID_TOTP",
+                "message": "invalid or expired TOTP enrollment code"
+            }),
+        ));
+    }
     state
         .identity
         .append_node_audit(NodeAuditInput {

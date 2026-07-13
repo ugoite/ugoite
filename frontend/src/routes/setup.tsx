@@ -126,9 +126,17 @@ export default function SetupRoute() {
                     <Show when={totp()}>
                       {(enrollment) => (
                         <div class="ui-stack-sm">
+                          <p>
+                            Add this URI to your authenticator. It specifies
+                            SHA-256, six digits, and a 30-second period.
+                          </p>
                           <code class="ui-card break-all">
-                            {enrollment().secret}
+                            {enrollment().otpauth_uri}
                           </code>
+                          <p class="ui-muted">
+                            If entering the secret manually, select SHA-256 (not
+                            SHA-1).
+                          </p>
                           <label class="ui-stack-sm">
                             <span>Current six-digit TOTP</span>
                             <input

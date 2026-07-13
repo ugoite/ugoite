@@ -953,17 +953,11 @@ impl NodeIdentityService {
             .filter(|account| matches!(account.status, AccountStatus::Active))
             .cloned()
             .ok_or_else(|| anyhow!("account is not active"))?;
-        let excludes = state
-            .passkeys
-            .values()
-            .filter(|credential| credential.account_id == account_id)
-            .map(|credential| credential.passkey.cred_id().clone())
-            .collect::<Vec<_>>();
         let (mut public_key, registration) = self.webauthn.start_passkey_registration(
             account_id,
             &account_id.to_string(),
             &account.display_name,
-            Some(excludes),
+            None,
         )?;
         if let Some(selection) = public_key.public_key.authenticator_selection.as_mut() {
             selection.resident_key = Some(serde_json::from_value(serde_json::json!("required"))?);
@@ -1206,17 +1200,11 @@ impl NodeIdentityService {
             .code_hashes
             .remove(code_index.expect("validated above"));
 
-        let excludes = state
-            .passkeys
-            .values()
-            .filter(|credential| credential.account_id == account_id)
-            .map(|credential| credential.passkey.cred_id().clone())
-            .collect::<Vec<_>>();
         let (mut public_key, registration) = self.webauthn.start_passkey_registration(
             account_id,
             &account_id.to_string(),
             &account.display_name,
-            Some(excludes),
+            None,
         )?;
         if let Some(selection) = public_key.public_key.authenticator_selection.as_mut() {
             selection.resident_key = Some(serde_json::from_value(serde_json::json!("required"))?);
