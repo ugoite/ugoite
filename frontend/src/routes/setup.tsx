@@ -22,6 +22,7 @@ export default function SetupRoute() {
   const [totpCode, setTotpCode] = createSignal("");
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  const [strengthening, setStrengthening] = createSignal(false);
 
   onMount(async () => {
     const config = await authApi.getConfig().catch(() => undefined);
@@ -86,18 +87,39 @@ export default function SetupRoute() {
                     <button
                       type="button"
                       class="ui-button ui-button-primary"
+                      disabled={strengthening()}
                       onClick={async () => {
-                        await authApi.addPasskey();
-                        setStrengthComplete(true);
+                        setStrengthening(true);
+                        setError("");
+                        try {
+                          await authApi.addPasskey();
+                          setStrengthComplete(true);
+                        } catch (cause) {
+                          setError(message(cause));
+                        } finally {
+                          setStrengthening(false);
+                        }
                       }}
                     >
-                      Register second Passkey
+                      {strengthening()
+                        ? "Waiting for passkey…"
+                        : "Register second Passkey"}
                     </button>
                     <button
                       type="button"
                       class="ui-button ui-button-secondary"
-                      onClick={async () =>
-                        setTotp(await authApi.startTotpEnrollment())}
+                      disabled={strengthening()}
+                      onClick={async () => {
+                        setStrengthening(true);
+                        setError("");
+                        try {
+                          setTotp(await authApi.startTotpEnrollment());
+                        } catch (cause) {
+                          setError(message(cause));
+                        } finally {
+                          setStrengthening(false);
+                        }
+                      }}
                     >
                       Configure TOTP instead
                     </button>
@@ -121,12 +143,21 @@ export default function SetupRoute() {
                           <button
                             type="button"
                             class="ui-button ui-button-primary"
+                            disabled={strengthening()}
                             onClick={async () => {
-                              await authApi.finishTotpEnrollment(totpCode());
-                              setStrengthComplete(true);
+                              setStrengthening(true);
+                              setError("");
+                              try {
+                                await authApi.finishTotpEnrollment(totpCode());
+                                setStrengthComplete(true);
+                              } catch (cause) {
+                                setError(message(cause));
+                              } finally {
+                                setStrengthening(false);
+                              }
                             }}
                           >
-                            Confirm TOTP
+                            {strengthening() ? "Confirming…" : "Confirm TOTP"}
                           </button>
                         </div>
                       )}

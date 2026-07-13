@@ -1115,13 +1115,15 @@ impl NodeIdentityService {
         let mut state = self.read_state().await?;
         let pending = state
             .pending_totp_enrollments
-            .remove(&account_id)
+            .get(&account_id)
+            .cloned()
             .ok_or_else(|| anyhow!("TOTP enrollment is not pending"))?;
         validate_expiry(&pending.expires_at, "TOTP enrollment")?;
         let secret = decrypt_recovery_secret(&self.encryption_key, &pending.encrypted_secret)?;
         if !verify_totp(&secret, code, Utc::now().timestamp())? {
             bail!("invalid TOTP code");
         }
+        state.pending_totp_enrollments.remove(&account_id);
         let recovery = state
             .recovery
             .get_mut(&account_id)
