@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createResource, createSignal, For, Show } from "solid-js";
 import { entryApi } from "~/lib/ugoite-client";
+import { SpaceShell } from "~/components/SpaceShell";
 
 export default function SpaceEntryRestoreRoute() {
   const navigate = useNavigate();
@@ -36,33 +37,34 @@ export default function SpaceEntryRestoreRoute() {
   };
 
   return (
-    <main class="ui-page">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h1 class="ui-page-title">Restore Entry</h1>
-          <p class="text-sm ui-muted">Select a revision to restore.</p>
+    <SpaceShell spaceId={spaceId()} activeNavigation="forms" title="Restore">
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">{entryId()} / History</div>
+          <h1>Restore Entry</h1>
         </div>
         <A
           href={`/spaces/${spaceId()}/entries/${encodedEntryId()}`}
-          class="text-sm ui-link"
+          class="btn"
         >
           Back to Entry
         </A>
       </div>
 
       <Show when={history.loading}>
-        <p class="text-sm ui-muted">Loading revisions...</p>
+        <p class="ui-muted">Loading revisions...</p>
       </Show>
       <Show when={history.error}>
-        <p class="text-sm ui-text-danger">Failed to load history.</p>
+        <p class="ui-alert ui-alert-error">Failed to load history.</p>
       </Show>
       <Show when={history()}>
         {(data) => (
-          <div class="ui-stack-sm">
-            <ul class="space-y-2">
+          <div class="settingsMain surface">
+            <p class="ui-muted">Select a revision to restore.</p>
+            <ul class="rowStack">
               <For each={data().revisions}>
                 {(revision) => (
-                  <li class="flex items-center gap-2">
+                  <li class="rowBtn">
                     <input
                       type="radio"
                       name="revision"
@@ -70,26 +72,28 @@ export default function SpaceEntryRestoreRoute() {
                       checked={selectedRevision() === revision.revision_id}
                       onChange={() => setSelectedRevision(revision.revision_id)}
                     />
-                    <span class="text-sm">{revision.revision_id}</span>
-                    <span class="text-xs ui-muted">{revision.created_at}</span>
+                    <span>
+                      <b>{revision.revision_id}</b>
+                      <small>{revision.created_at}</small>
+                    </span>
                   </li>
                 )}
               </For>
             </ul>
             <button
               type="button"
-              class="ui-button ui-button-primary"
+              class="btn primary"
               onClick={handleRestore}
               disabled={!selectedRevision() || isRestoring()}
             >
               {isRestoring() ? "Restoring..." : "Restore Selected Revision"}
             </button>
             <Show when={restoreError()}>
-              <p class="text-sm ui-text-danger">{restoreError()}</p>
+              <p class="ui-alert ui-alert-error">{restoreError()}</p>
             </Show>
           </div>
         )}
       </Show>
-    </main>
+    </SpaceShell>
   );
 }

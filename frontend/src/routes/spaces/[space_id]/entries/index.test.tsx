@@ -140,8 +140,10 @@ describe("/spaces/:space_id/entries", () => {
   it("selecting an entry form navigates correctly", async () => {
     renderEntriesRoute();
 
-    const formsTab = await screen.findByRole("link", { name: "Forms" });
-    expect(formsTab).toHaveAttribute("href", "/spaces/default/forms");
+    const formsTabs = await screen.findAllByRole("link", { name: "Forms" });
+    for (const formsTab of formsTabs) {
+      expect(formsTab).toHaveAttribute("href", "/spaces/default/forms");
+    }
   });
 
   it("REQ-FE-037: entries route disables entry creation when only reserved metadata forms exist", async () => {

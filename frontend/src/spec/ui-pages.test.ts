@@ -47,6 +47,7 @@ const allowedComponentTypes = new Set([
   "search-panel",
   "structured-search-form",
   "entry-card-grid",
+  "sidebar",
 ]);
 
 const collectYamlFiles = (dir: string): string[] => {
@@ -142,9 +143,6 @@ const collectTargets = (value: unknown, targets: string[]) => {
     collectTargets(entry, targets);
   }
 };
-
-const findSharedComponent = (components: PageSpec["components"], id: string) =>
-  components?.shared?.find((component) => component.id === id);
 
 const findBottomTabs = (components: PageSpec["components"]) =>
   components?.body?.find(
@@ -270,22 +268,37 @@ describe("UI spec YAML registry", () => {
   });
 
   it("REQ-FE-040: validates shared space chrome", () => {
-    const pages = loadPages();
-    for (const { spec, filePath } of pages) {
-      const topTabs = findSharedComponent(spec.components, "top-tabs");
-      expect(topTabs, `${filePath} missing top-tabs`).toBeTruthy();
-      expect(topTabs?.type).toBe("tab-bar");
-      expect(topTabs?.position).toBe("top-center-floating");
+    const shellPath = path.join(
+      repoRoot,
+      "docs/spec/ui/components/space-shell.yaml",
+    );
+    const shell = parse(readFileSync(shellPath, "utf8")) as {
+      components?: Array<Record<string, unknown>>;
+    };
+    const components = shell.components ?? [];
+    const sidebar = components.find((component) =>
+      component.id === "global-sidebar"
+    );
+    const topbar = components.find((component) =>
+      component.id === "workspace-topbar"
+    );
+    const mobileNavigation = components.find((component) =>
+      component.id === "mobile-bottom-navigation"
+    );
 
-      const settingsButton = findSharedComponent(
-        spec.components,
-        "settings-button",
-      );
-      expect(settingsButton, `${filePath} missing settings-button`)
-        .toBeTruthy();
-      expect(settingsButton?.type).toBe("floating-icon-button");
-      expect(settingsButton?.icon).toBe("settings");
-    }
+    expect(sidebar).toMatchObject({
+      type: "sidebar",
+      position: "left-fixed",
+      width: "218px",
+      items: ["Home", "Forms", "Search", "Settings"],
+    });
+    expect(topbar).toMatchObject({ type: "top-bar", height: "58px" });
+    expect(mobileNavigation).toMatchObject({
+      type: "bottom-navigation",
+      height: "66px",
+      breakpoint: "900px",
+      items: ["Home", "Forms", "Search", "Settings"],
+    });
   });
 
   it("REQ-FE-040: validates entries/forms bottom tabs use product labels", () => {

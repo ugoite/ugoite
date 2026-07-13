@@ -1,6 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
+import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
@@ -423,15 +424,12 @@ export default function SpaceSearchRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeTopTab="search">
-      <div class="mx-auto max-w-5xl">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 class="ui-page-title">Search</h1>
-            <p class="mt-2 text-sm ui-muted">
-              Start with keywords, then switch to structured filters only when
-              you need them.
-            </p>
+    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="Search">
+      <div>
+        <div class="screenHead">
+          <div class="screenTitle">
+            <div class="eyebrow">{spaceId()}</div>
+            <h1>Search</h1>
           </div>
           <A
             href={`/spaces/${spaceId()}/queries/new`}
@@ -441,7 +439,15 @@ export default function SpaceSearchRoute() {
           </A>
         </div>
 
-        <div class="mt-6 ui-card p-5">
+        <div class="searchPage">
+          <aside class="facet surface">
+            <button type="button" classList={{ active: mode() === "keyword" }} onClick={() => setMode("keyword")}><UiIcon name="entry" /> Entries</button>
+            <button type="button" onClick={() => setMode("advanced")} classList={{ active: mode() === "advanced" }}><UiIcon name="forms" /> Forms</button>
+            <button type="button"><UiIcon name="asset" /> Assets</button>
+            <A href={`/spaces/${spaceId()}/sql`}><UiIcon name="sql" /> Saved SQL</A>
+          </aside>
+          <main>
+        <div class="ui-card p-5">
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -475,15 +481,17 @@ export default function SpaceSearchRoute() {
                 <label class="ui-label" for="search-keywords">
                   Search keywords
                 </label>
+                <div class="searchBox">
+                  <UiIcon name="search" />
                 <input
                   id="search-keywords"
                   type="text"
-                  class="ui-input mt-2 w-full"
+                  class=""
                   placeholder="Search entries by title, fields, tags, or content"
                   value={keywordQuery()}
                   onInput={(event) =>
                     setKeywordQuery(event.currentTarget.value)}
-                />
+                /></div>
               </div>
               <div class="sm:self-end">
                 <button
@@ -835,6 +843,8 @@ export default function SpaceSearchRoute() {
               </For>
             </div>
           </aside>
+        </div>
+          </main>
         </div>
       </div>
     </SpaceShell>

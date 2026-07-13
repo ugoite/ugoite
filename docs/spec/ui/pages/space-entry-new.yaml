@@ -1,0 +1,20 @@
+version: "0.1"
+updated: "2026-07-13"
+page:
+  id: space-entry-new
+  title: New Entry
+  route: /spaces/{space_id}/entries/new
+  implementation: implemented
+components:
+  shared:
+    - id: global-sidebar
+      type: sidebar
+      target_component: space-shell-shared
+  body:
+    - id: form-picker
+      type: list
+      required: true
+    - id: entry-composer
+      type: form
+      modes: [Form, Markdown, Focus]
+      visibility: selected-form-only

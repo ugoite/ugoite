@@ -1,131 +1,42 @@
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@solidjs/testing-library";
-import { createMemo, createSignal } from "solid-js";
-import SpaceFormsIndexPane from "./index";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
-import { createEntryStore } from "~/lib/entry-store";
 import { setLocale } from "~/lib/i18n";
-import { createSpaceStore } from "~/lib/space-store";
 import type { Form } from "~/lib/types";
+import SpaceFormsIndexPane from "./index";
 
-const navigateMock = vi.fn();
-const searchParamsMock: Record<string, string> = {};
-const setSearchParamsMock = vi.fn();
+const search: Record<string,string> = {};
+const setSearch = vi.fn();
+vi.mock("@solidjs/router", () => ({ useNavigate: () => vi.fn(), useSearchParams: () => [search, setSearch] }));
+vi.mock("~/components/SpaceShell", () => ({ SpaceShell: (props: { children: unknown }) => <div>{props.children}</div> }));
+vi.mock("~/components/FormTable", () => ({ FormTable: (props: { entryForm: Form }) => <div>Entries table for {props.entryForm.name}</div> }));
+vi.mock("~/components/create-dialogs", () => ({ CreateFormDialog: () => null }));
+vi.mock("~/lib/ugoite-client", () => ({ assetApi: { list: vi.fn().mockResolvedValue([]) }, formApi: { create: vi.fn() } }));
 
-vi.mock("@solidjs/router", () => ({
-  useNavigate: () => navigateMock,
-  useSearchParams: () => [searchParamsMock, setSearchParamsMock],
-}));
-
-vi.mock("~/components/SpaceShell", () => ({
-  SpaceShell: (props: { children: unknown }) => <div>{props.children}</div>,
-}));
-
-vi.mock("~/components/FormTable", () => ({
-  FormTable: (props: { entryForm: { name: string } }) => (
-    <div>Form table: {props.entryForm.name}</div>
-  ),
-}));
-
-vi.mock("~/components/create-dialogs", () => ({
-  CreateFormDialog: () => <div>Create form dialog</div>,
-}));
-
-vi.mock("~/lib/ugoite-client", () => ({
-  sqlSessionApi: {
-    get: vi.fn(),
-    rows: vi.fn(),
-  },
-}));
-
-describe("/spaces/:space_id/forms", () => {
-  const assetsForm: Form = {
-    name: "Assets",
-    version: 1,
-    template: "",
-    fields: {
-      link: { type: "string", required: true },
-      name: { type: "string", required: true },
-      uploaded_at: { type: "timestamp", required: true },
-    },
-  };
-  const meetingForm: Form = {
-    name: "Meeting",
-    version: 1,
-    template: "",
-    fields: { Date: { type: "date", required: true } },
-  };
-
-  beforeEach(() => {
-    navigateMock.mockReset();
-    setLocale("en");
-    setSearchParamsMock.mockReset();
-    for (const key of Object.keys(searchParamsMock)) {
-      delete searchParamsMock[key];
-    }
+const noteForm: Form = { name: "Notes", version: 1, template: "", fields: { title: { type: "string", required: true }, body: { type: "markdown", required: false } } };
+function renderPage(forms: Form[]) {
+  const [list] = createSignal(forms);
+  render(() => <EntriesRouteContext.Provider value={{ spaceId: () => "default", forms: list, loadingForms: () => false, columnTypes: () => [], refetchForms: vi.fn(), entryStore: {} as never, spaceStore: {} as never }}><SpaceFormsIndexPane /></EntriesRouteContext.Provider>);
+}
+describe("v5 Forms workspace", () => {
+  beforeEach(() => { setLocale("en"); setSearch.mockReset(); for (const key of Object.keys(search)) delete search[key]; });
+  it("defaults to the first creatable Form", async () => {
+    renderPage([noteForm]);
+    await waitFor(() => expect(setSearch).toHaveBeenCalledWith({ form: "Notes", tab: "entries" }, { replace: true }));
   });
-
-  function renderPane(forms: Form[]) {
-    render(() => {
-      const entryStore = createEntryStore(() => "default");
-      const spaceStore = createSpaceStore();
-      const [formList] = createSignal(forms);
-      const [loadingForms] = createSignal(false);
-      const [columnTypes] = createSignal<string[]>([]);
-      return (
-        <EntriesRouteContext.Provider
-          value={{
-            spaceStore,
-            spaceId: () => "default",
-            entryStore,
-            forms: createMemo(() => formList()),
-            loadingForms,
-            columnTypes,
-            refetchForms: () => undefined,
-          }}
-        >
-          <SpaceFormsIndexPane />
-        </EntriesRouteContext.Provider>
-      );
-    });
-  }
-
-  it("REQ-FE-037: form grid defaults to the first creatable form", async () => {
-    renderPane([assetsForm, meetingForm]);
-
-    await waitFor(() => {
-      expect(setSearchParamsMock).toHaveBeenCalledWith({ form: "Meeting" }, {
-        replace: true,
-      });
-    });
-    expect(screen.queryByRole("option", { name: "Assets" })).not
-      .toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
+  it("renders split Form list, context and tabs", () => {
+    search.form = "Notes"; search.tab = "entries"; renderPage([noteForm]);
+    expect(screen.getByPlaceholderText("Find a Form")).toBeInTheDocument();
+    expect(screen.getByText("Forms / Notes / Entries")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Entries" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Fields" })).toBeInTheDocument();
+    expect(screen.getByText("Entries table for Notes")).toBeInTheDocument();
   });
-
-  it("REQ-FE-037: form grid shows empty state when only reserved metadata forms exist", async () => {
-    renderPane([assetsForm]);
-
-    await waitFor(() => {
-      expect(screen.getByText("Create a form to get started."))
-        .toBeInTheDocument();
-    });
-    expect(setSearchParamsMock).not.toHaveBeenCalled();
-    expect(screen.queryByRole("option", { name: "Assets" })).not
-      .toBeInTheDocument();
-  });
-
-  it("REQ-FE-044: localizes forms route CTA copy in Japanese", async () => {
-    setLocale("ja");
-    renderPane([meetingForm]);
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "フォームグリッド" }))
-        .toBeInTheDocument();
-    });
-    expect(screen.getByRole("button", { name: "新しいフォーム" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
+  it("shows the v5 empty state and Japanese copy", () => {
+    setLocale("ja"); renderPage([]);
+    expect(screen.getByRole("heading", { name: "フォーム" })).toBeInTheDocument();
+    expect(screen.getByText("フォームがありません")).toBeInTheDocument();
   });
 });

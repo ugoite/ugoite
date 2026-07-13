@@ -353,7 +353,7 @@ requirements:
   - file: frontend/src/components/AssetUploader.test.tsx
   - file: frontend/src/components/ListPanel.test.tsx
   - file: frontend/src/components/SearchBar.test.tsx
-  - file: frontend/src/components/ThemeMenu.test.tsx
+  - file: frontend/src/themes/registry.test.ts
   - file: frontend/src/components/create-dialogs.test.tsx
   - file: frontend/src/lib/i18n.test.ts
   - file: frontend/src/lib/preferences-api.test.ts
@@ -1363,7 +1363,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: frontend/src/components/ThemeMenu.test.tsx
+  - file: frontend/src/themes/registry.test.ts
   - file: frontend/src/lib/preferences-api.test.ts
   - file: frontend/src/lib/preferences-local.test.ts
   - file: frontend/src/lib/preferences-store.test.ts

@@ -44,8 +44,8 @@ export default function LoginRoute() {
   };
 
   return (
-    <main class="ui-page mx-auto max-w-xl ui-stack">
-      <section class="ui-card ui-stack">
+    <main class="publicShell">
+      <section class="publicCard ui-stack">
         <div>
           <h1 class="ui-page-title">Sign in to Ugoite</h1>
           <p class="ui-page-subtitle mt-2">

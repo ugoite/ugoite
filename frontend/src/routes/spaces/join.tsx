@@ -1,6 +1,7 @@
 import { A, useNavigate } from "@solidjs/router";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { authApi, type OidcProvider } from "~/lib/auth-api";
+import { GlobalShell } from "~/components/GlobalShell";
 
 export default function SpaceInvitationJoinRoute() {
   const navigate = useNavigate();
@@ -38,18 +39,24 @@ export default function SpaceInvitationJoinRoute() {
     }
   };
   return (
-    <main class="mx-auto max-w-xl ui-page ui-stack">
-      <section class="ui-card ui-stack">
-        <h1 class="ui-page-title">Join a Space</h1>
+    <GlobalShell title="Join a Space" active="spaces">
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">Spaces</div>
+          <h1>Join</h1>
+        </div>
+      </div>
+      <section class="settingsMain surface">
+        <h2>Join a Space</h2>
         <p class="ui-muted">
-          Signed-in accounts can accept this one-use invitation directly. If
-          you are not signed in, Ugoite registers a new Passkey first.
+          Signed-in accounts can accept this one-use invitation directly. If you
+          are not signed in, Ugoite registers a new Passkey first.
         </p>
         <form class="ui-stack-sm" onSubmit={submit}>
-          <label class="ui-stack-sm">
+          <label>
             <span>Invitation token</span>
             <textarea
-              class="ui-input font-mono"
+              class="mono"
               value={token()}
               onInput={(event) => setToken(event.currentTarget.value)}
               required
@@ -57,7 +64,7 @@ export default function SpaceInvitationJoinRoute() {
           </label>
           <button
             type="submit"
-            class="ui-button ui-button-primary"
+            class="btn primary"
             disabled={busy()}
           >
             {busy() ? "Joining…" : "Accept invitation"}
@@ -67,7 +74,7 @@ export default function SpaceInvitationJoinRoute() {
           {(provider) => (
             <button
               type="button"
-              class="ui-button ui-button-secondary"
+              class="btn"
               disabled={!token().trim()}
               onClick={() =>
                 authApi.loginWithOidc(provider.provider_id, token().trim())}
@@ -79,10 +86,10 @@ export default function SpaceInvitationJoinRoute() {
         <Show when={error()}>
           <p class="ui-alert ui-alert-error">{error()}</p>
         </Show>
-        <A href="/login" class="ui-button ui-button-secondary">
+        <A href="/login" class="btn">
           Already registered? Sign in
         </A>
       </section>
-    </main>
+    </GlobalShell>
   );
 }

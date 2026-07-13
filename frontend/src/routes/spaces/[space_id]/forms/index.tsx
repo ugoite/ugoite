@@ -1,342 +1,77 @@
-import { A, useNavigate, useSearchParams } from "@solidjs/router";
-import {
-  createEffect,
-  createMemo,
-  createResource,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
-import { FormTable } from "~/components/FormTable";
+import { useNavigate, useSearchParams } from "@solidjs/router";
+import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
+import { FormTable } from "~/components/FormTable";
 import { SpaceShell } from "~/components/SpaceShell";
-import { formatDateLabel } from "~/lib/date-format";
+import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
-import { formApi } from "~/lib/ugoite-client";
-import { t } from "~/lib/i18n";
+import { locale } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { sqlSessionApi } from "~/lib/ugoite-client";
+import { assetApi, formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
+
+type FormTab = "entries" | "fields" | "assets" | "views";
+const tabLabels: Record<FormTab, { en: string; ja: string }> = {
+  entries: { en: "Entries", ja: "エントリー" }, fields: { en: "Fields", ja: "フィールド" }, assets: { en: "Assets", ja: "アセット" }, views: { en: "Views", ja: "ビュー" },
+};
+const copy = {
+  en: { forms: "Forms", newForm: "Form", find: "Find a Form", noForms: "No Forms yet", select: "Select a Form", edit: "Edit Form", newEntry: "Entry", linkedAssets: "Assets linked to entries in this Form", viewsText: "Saved views for this Form will appear here." },
+  ja: { forms: "フォーム", newForm: "フォーム", find: "フォームを探す", noForms: "フォームがありません", select: "フォームを選択", edit: "フォームを編集", newEntry: "エントリー", linkedAssets: "このフォームのエントリーに紐づくアセット", viewsText: "このフォームの保存済みビューがここに表示されます。" },
+} as const;
 
 export default function SpaceFormsIndexPane() {
   const ctx = useEntriesRouteContext();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  let formSelectEl: HTMLSelectElement | undefined;
-  const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
-  const sessionId = createMemo(
-    () => (searchParams.session ? String(searchParams.session) : ""),
-  );
-  const [page, setPage] = createSignal(1);
-  const [pageSize] = createSignal(25);
-  const selectedFormName = createMemo(
-    () => (searchParams.form ? String(searchParams.form) : ""),
-  );
-  const handleCreateForm = async (payload: FormCreatePayload) => {
-    await formApi.create(ctx.spaceId(), payload);
-    setShowCreateFormDialog(false);
-    ctx.refetchForms();
-  };
-
-  const [session, { refetch: refetchSession }] = createResource(
-    () => sessionId().trim() || null,
-    async (id) => sqlSessionApi.get(ctx.spaceId(), id),
-  );
-
-  const [sessionRows] = createResource(
-    () => {
-      const id = sessionId().trim();
-      if (!id || session()?.status !== "ready") return null;
-      return { id, offset: (page() - 1) * pageSize(), limit: pageSize() };
-    },
-    async ({ id, offset, limit }) =>
-      sqlSessionApi.rows(ctx.spaceId(), id, offset, limit),
-  );
-
-  const selectedFormValue = createMemo(() => selectedFormName().trim());
-  const selectableForms = createMemo(() =>
-    filterCreatableEntryForms(ctx.forms())
-  );
-
-  const handleFormSelection = (value: string) => {
-    if (!value) return;
-    setSearchParams({ form: value });
-  };
-
-	createEffect(() => {
-		const select = formSelectEl;
-		if (!select) return;
-		const interval = setInterval(() => {
-			const currentSelect = formSelectEl;
-			if (!currentSelect) return;
-			const selected = currentSelect.value?.trim() ?? "";
-			if (!selected) return;
-			if (selected !== selectedFormName().trim()) {
-				setSearchParams({ form: selected });
-			}
-		}, 200);
-		onCleanup(() => clearInterval(interval));
-	});
+  const [params, setParams] = useSearchParams();
+  const [query, setQuery] = createSignal("");
+  const [showFormDialog, setShowFormDialog] = createSignal(false);
+  const c = () => copy[locale() === "ja" ? "ja" : "en"];
+  const activeTab = createMemo<FormTab>(() => ["fields", "assets", "views"].includes(String(params.tab)) ? String(params.tab) as FormTab : "entries");
+  const forms = createMemo(() => filterCreatableEntryForms(ctx.forms()));
+  const selectedName = createMemo(() => String(params.form || ""));
+  const selectedForm = createMemo(() => forms().find((form) => form.name === selectedName()));
+  const filteredForms = createMemo(() => forms().filter((form) => form.name.toLowerCase().includes(query().trim().toLowerCase())));
+  const [assets] = createResource(() => activeTab() === "assets" ? ctx.spaceId() : null, async (spaceId) => spaceId ? assetApi.list(spaceId) : []);
 
   createEffect(() => {
-    if (sessionId().trim()) {
-      setPage(1);
-      return;
-    }
-    const selected = selectedFormValue().trim();
-    if (selectableForms().some((form) => form.name === selected)) return;
-    const first = selectableForms()[0];
-    if (first?.name) {
-      setSearchParams({ form: first.name }, { replace: true });
-    }
+    if (!selectedForm() && forms()[0]) setParams({ form: forms()[0].name, tab: activeTab() }, { replace: true });
   });
 
-  createEffect(() => {
-    const id = sessionId().trim();
-    if (!id) return;
-    const interval = setInterval(() => {
-      if (session()?.status === "running") {
-        refetchSession();
-      }
-    }, 1000);
-    onCleanup(() => clearInterval(interval));
-  });
-
-  const selectedForm = createMemo(() =>
-    selectableForms().find((entry) => entry.name === selectedFormValue())
-  );
-
-  const sessionEntries = createMemo(() => sessionRows()?.rows || []);
-  const sessionFields = createMemo(() => {
-    const fields = new Set<string>();
-    for (const entry of sessionEntries()) {
-      const props = entry.properties || {};
-      for (const key of Object.keys(props)) {
-        fields.add(key);
-      }
-    }
-    return Array.from(fields);
-  });
-
-  const totalCount = createMemo(() =>
-    sessionRows()?.totalCount ?? sessionEntries().length
-  );
-  const totalPages = createMemo(() =>
-    Math.max(1, Math.ceil(totalCount() / pageSize()))
-  );
+  const createForm = async (payload: FormCreatePayload) => {
+    await formApi.create(ctx.spaceId(), payload); setShowFormDialog(false); ctx.refetchForms(); setParams({ form: payload.name, tab: "entries" });
+  };
 
   return (
-    <SpaceShell
-      spaceId={ctx.spaceId()}
-      showBottomTabs
-      activeBottomTab="grid"
-      bottomTabHrefSuffix={sessionId().trim()
-        ? `?session=${encodeURIComponent(sessionId())}`
-        : ""}
-    >
-      <div class="mx-auto max-w-6xl">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 class="ui-page-title">
-              {sessionId().trim()
-                ? t("querySession.heading")
-                : t("formsPage.heading")}
-            </h1>
-            <p class="text-sm ui-muted">
-              {sessionId().trim()
-                ? t("querySession.formsDescription")
-                : t("formsPage.description")}
-            </p>
-          </div>
-          <div class="flex items-center gap-2">
-            <Show when={!sessionId().trim()}>
-              <select
-                class="ui-input"
-                ref={formSelectEl}
-                value={selectedFormValue()}
-                onInput={(e) => handleFormSelection(e.currentTarget.value)}
-                onChange={(e) => handleFormSelection(e.currentTarget.value)}
-              >
-                <option value="" disabled>
-                  {t("formsPage.selectPlaceholder")}
-                </option>
-                {selectableForms().map((entry) => (
-                  <option value={entry.name}>{entry.name}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                class="ui-button ui-button-primary text-sm"
-                onClick={() => setShowCreateFormDialog(true)}
-              >
-                {t("formsPage.newButton")}
-              </button>
-            </Show>
-            <Show when={sessionId().trim()}>
-              <button
-                type="button"
-                class="ui-button ui-button-secondary text-sm"
-                onClick={() => navigate(`/spaces/${ctx.spaceId()}/forms`)}
-              >
-                {t("querySession.clear")}
-              </button>
-            </Show>
-          </div>
-        </div>
-
-        <div class="mt-6">
-          <Show when={sessionId().trim()}>
-            <div class="ui-stack-sm">
-              <Show when={session()?.status === "running"}>
-                <p class="text-sm ui-muted">{t("querySession.preparing")}</p>
-              </Show>
-              <Show when={session()?.status === "failed"}>
-                <p class="text-sm ui-text-danger">
-                  {session()?.error || t("querySession.failed")}
-                </p>
-              </Show>
-              <Show when={session()?.status === "expired"}>
-                <p class="text-sm ui-text-danger">
-                  {t("querySession.expired")}
-                </p>
-              </Show>
-              <Show when={sessionRows.loading}>
-                <p class="text-sm ui-muted">
-                  {t("querySession.loadingResults")}
-                </p>
-              </Show>
-              <Show
-                when={!sessionRows.loading && sessionEntries().length === 0}
-              >
-                <p class="text-sm ui-muted">{t("querySession.noResults")}</p>
-              </Show>
-              <Show when={sessionEntries().length > 0}>
-                <div class="ui-table-wrapper overflow-x-auto">
-                  <table class="ui-table text-sm min-w-full">
-                    <thead class="ui-table-head">
-                      <tr>
-                        <th class="ui-table-header-cell">
-                          {t("common.title")}
-                        </th>
-                        <th class="ui-table-header-cell">{t("common.form")}</th>
-                        <th class="ui-table-header-cell">
-                          {t("common.updated")}
-                        </th>
-                        <For each={sessionFields()}>
-                          {(field) => (
-                            <th class="ui-table-header-cell">{field}</th>
-                          )}
-                        </For>
-                      </tr>
-                    </thead>
-                    <tbody class="ui-table-body">
-                      <For each={sessionEntries()}>
-                        {(entry) => (
-                          <tr class="ui-table-row">
-                            <td class="ui-table-cell">
-                              <button
-                                type="button"
-                                class="text-left hover:underline"
-                                onClick={() =>
-                                  navigate(
-                                    `/spaces/${ctx.spaceId()}/entries/${
-                                      encodeURIComponent(entry.id)
-                                    }`,
-                                  )}
-                              >
-                                {entry.title || t("common.untitled")}
-                              </button>
-                            </td>
-                            <td class="ui-table-cell ui-table-cell-muted">
-                              {entry.form || "-"}
-                            </td>
-                            <td class="ui-table-cell ui-table-cell-muted">
-                              {formatDateLabel(entry.updated_at)}
-                            </td>
-                            <For each={sessionFields()}>
-                              {(field) => (
-                                <td class="ui-table-cell ui-table-cell-muted">
-                                  {String(entry.properties?.[field] ?? "")}
-                                </td>
-                              )}
-                            </For>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                </div>
-              </Show>
-              <Show when={totalCount() > 0}>
-                <div class="flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
-                  <div>
-                    {t("querySession.pagination", {
-                      page: page(),
-                      totalPages: totalPages(),
-                      resultCount: totalCount(),
-                    })}
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <button
-                      type="button"
-                      class="ui-button ui-button-secondary text-sm"
-                      disabled={page() <= 1}
-                      onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      {t("common.previous")}
-                    </button>
-                    <button
-                      type="button"
-                      class="ui-button ui-button-secondary text-sm"
-                      disabled={page() >= totalPages()}
-                      onClick={() =>
-                        setPage((prev) => Math.min(totalPages(), prev + 1))}
-                    >
-                      {t("common.next")}
-                    </button>
-                  </div>
-                </div>
-              </Show>
-            </div>
-          </Show>
-          <Show when={!sessionId().trim()}>
-            <Show
-              when={selectedForm()}
-              fallback={<p class="text-sm ui-muted">{t("formsPage.empty")}</p>}
-            >
-              {(form) => (
-                <>
-                  <div class="mb-4">
-                    <h2 class="text-xl font-semibold">{form().name}</h2>
-                    <p class="text-sm ui-muted">
-                      {t("formsPage.selectedDescription")}
-                    </p>
-                  </div>
-                  <FormTable
-                    spaceId={ctx.spaceId()}
-                    entryForm={form()}
-                    onEntryClick={(entryId) =>
-                      navigate(
-                        `/spaces/${ctx.spaceId()}/entries/${
-                          encodeURIComponent(entryId)
-                        }`,
-                      )}
-                  />
-                </>
-              )}
-            </Show>
-          </Show>
-        </div>
+    <SpaceShell spaceId={ctx.spaceId()} activeNavigation="forms" title={c().forms}>
+      <div class="screenHead">
+        <div class="screenTitle"><div class="eyebrow">{ctx.spaceId()}</div><h1>{c().forms}</h1></div>
+        <button class="btn" type="button" onClick={() => setShowFormDialog(true)}><UiIcon name="plus" /> {c().newForm}</button>
       </div>
-
-      <CreateFormDialog
-        open={showCreateFormDialog()}
-        columnTypes={ctx.columnTypes()}
-        formNames={ctx.forms().map((form) => form.name)}
-        onClose={() => setShowCreateFormDialog(false)}
-        onSubmit={handleCreateForm}
-      />
+      <div class="split">
+        <aside class="listPane surface">
+          <div class="paneHead"><b>{c().forms}</b><button class="btn iconBtn" type="button" aria-label={c().newForm} onClick={() => setShowFormDialog(true)}><UiIcon name="plus" /></button></div>
+          <label class="miniSearch"><UiIcon name="search" /><input value={query()} onInput={(event) => setQuery(event.currentTarget.value)} placeholder={c().find} /></label>
+          <For each={filteredForms()} fallback={<div class="ui-muted p-3">{c().noForms}</div>}>
+            {(form) => <button class="formItem" classList={{ active: selectedName() === form.name }} type="button" onClick={() => setParams({ form: form.name, tab: activeTab() })}>
+              <span class="glyph" classList={{ active: selectedName() === form.name }}>{form.name.slice(0,1).toUpperCase()}</span>
+              <span><b>{form.name}</b><small>{Object.keys(form.fields).join(" · ") || "—"}</small><span class="miniFields"><For each={Object.values(form.fields).slice(0,3)}>{(field) => <span>{field.type}</span>}</For></span></span><span class="chev">›</span>
+            </button>}
+          </For>
+        </aside>
+        <main class="detailPane">
+          <Show when={selectedForm()} fallback={<div class="surface settingsMain ui-muted">{c().select}</div>}>
+            {(form) => <>
+              <div class="contextBar"><div class="contextLeft"><span class="glyph active">{form().name.slice(0,1).toUpperCase()}</span><span><b>{form().name}</b><small>{c().forms} / {form().name}</small></span></div><button class="btn iconBtn" type="button" aria-label={c().edit}>⚙</button></div>
+              <div class="tabs" role="tablist"><For each={["entries","fields","assets","views"] as FormTab[]}>{(tab) => <button class="tab" classList={{ active: activeTab() === tab }} type="button" role="tab" aria-selected={activeTab() === tab} onClick={() => setParams({ form: form().name, tab })}>{tabLabels[tab][locale() === "ja" ? "ja" : "en"]}</button>}</For></div>
+              <Show when={activeTab() === "entries"}><div class="toolbar"><div class="toolbarLeft"><span class="ui-muted">Forms / {form().name} / Entries</span></div><div class="toolbarRight"><button class="btn primary" type="button" onClick={() => navigate(`/spaces/${ctx.spaceId()}/entries/new?form=${encodeURIComponent(form().name)}`)}><UiIcon name="plus" /> {c().newEntry}</button></div></div><FormTable spaceId={ctx.spaceId()} entryForm={form()} onEntryClick={(id) => navigate(`/spaces/${ctx.spaceId()}/entries/${encodeURIComponent(id)}`)} /></Show>
+              <Show when={activeTab() === "fields"}><div class="rowStack"><For each={Object.entries(form().fields)} fallback={<div class="surface settingsMain ui-muted">No fields</div>}>{([name, field]) => <div class="rowBtn"><span class="glyph">#</span><span><b>{name}</b><small>{field.type}{field.required ? " · required" : ""}</small></span><span class="pill">{field.type}</span></div>}</For></div></Show>
+              <Show when={activeTab() === "assets"}><p class="ui-muted mb-3">{c().linkedAssets}</p><div class="assetList"><For each={assets() ?? []} fallback={<div class="surface settingsMain ui-muted">No linked assets</div>}>{(asset) => <a class="assetRow" href={`/spaces/${ctx.spaceId()}/assets/${encodeURIComponent(asset.id)}`}><span class="fileIcon">{asset.name?.split(".").pop()?.toUpperCase() || "FILE"}</span><span><b>{asset.name || asset.id}</b><small>{asset.path || "Asset"}</small></span><span>›</span></a>}</For></div></Show>
+              <Show when={activeTab() === "views"}><div class="surface settingsMain ui-muted">{c().viewsText}</div></Show>
+            </>}
+          </Show>
+        </main>
+      </div>
+      <CreateFormDialog open={showFormDialog()} columnTypes={ctx.columnTypes()} formNames={ctx.forms().map((form) => form.name)} onClose={() => setShowFormDialog(false)} onSubmit={createForm} />
     </SpaceShell>
   );
 }

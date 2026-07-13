@@ -30,8 +30,8 @@ export default function RecoverRoute() {
   };
 
   return (
-    <main class="ui-page mx-auto max-w-xl ui-stack">
-      <section class="ui-card ui-stack">
+    <main class="publicShell">
+      <section class="publicCard ui-stack">
         <h1 class="ui-page-title">Recover a Passkey</h1>
         <p class="ui-muted">
           Recovery requires both an unused recovery code and your recovery TOTP.

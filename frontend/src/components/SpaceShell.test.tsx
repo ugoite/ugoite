@@ -1,131 +1,33 @@
-// REQ-FE-010: SpaceShell layout component
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@solidjs/testing-library";
-import { SpaceShell } from "./SpaceShell";
+import { beforeEach, describe, expect, it } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
+import { SpaceShell } from "./SpaceShell";
 
-vi.mock("@solidjs/router", () => ({
-  A: (props: {
-    href: string;
-    class?: string;
-    classList?: Record<string, boolean>;
-    children: unknown;
-  }) => {
-    const classes = [
-      props.class,
-      ...(props.classList
-        ? Object.keys(props.classList).filter((k) => props.classList?.[k])
-        : []),
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return (
-      <a href={props.href} class={classes}>
-        {props.children}
-      </a>
-    );
-  },
-}));
-
-describe("SpaceShell", () => {
-  beforeEach(() => {
-    setLocale("en");
+describe("v5 SpaceShell", () => {
+  beforeEach(() => setLocale("en"));
+  it("renders the four persistent navigation destinations and children", () => {
+    render(() => <SpaceShell spaceId="my-space" activeNavigation="home"><p>Content</p></SpaceShell>);
+    expect(screen.getByText("Content")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Home" })[0]).toHaveAttribute("href", "/spaces/my-space/dashboard");
+    expect(screen.getAllByRole("link", { name: "Forms" })[0]).toHaveAttribute("href", "/spaces/my-space/forms");
+    expect(screen.getAllByRole("link", { name: "Search" })[0]).toHaveAttribute("href", "/spaces/my-space/search");
+    expect(screen.getAllByRole("link", { name: "Settings" })[0]).toHaveAttribute("href", "/spaces/my-space/settings");
   });
-
-  it("renders children", () => {
-    render(() => (
-      <SpaceShell spaceId="my-space">
-        <div>Child content</div>
-      </SpaceShell>
-    ));
-    expect(screen.getByText("Child content")).toBeInTheDocument();
+  it("marks the selected destination in desktop and mobile navigation", () => {
+    render(() => <SpaceShell spaceId="my-space" activeNavigation="forms"><p>Content</p></SpaceShell>);
+    for (const link of screen.getAllByRole("link", { name: "Forms" })) expect(link).toHaveClass("active");
   });
-
-  it("renders top navigation tabs", () => {
-    render(() => (
-      <SpaceShell spaceId="my-space">
-        <div>Content</div>
-      </SpaceShell>
-    ));
-    const dashboardLink = screen.getByRole("link", { name: /dashboard/i });
-    expect(dashboardLink).toHaveAttribute("href", "/spaces/my-space/dashboard");
+  it("localizes navigation", () => {
+    setLocale("ja");
+    render(() => <SpaceShell spaceId="my-space"><p>Content</p></SpaceShell>);
+    expect(screen.getAllByRole("link", { name: "ホーム" }).length).toBeGreaterThan(0);
   });
-
-  it("applies active class to active top tab", () => {
-    render(() => (
-      <SpaceShell spaceId="my-space" activeTopTab="dashboard">
-        <div>Content</div>
-      </SpaceShell>
-    ));
-    const dashboardLink = screen.getByRole("link", { name: /dashboard/i });
-    expect(dashboardLink).toHaveClass("ui-tab-active");
-  });
-
-  it("renders bottom tabs when showBottomTabs is true", () => {
-    render(() => (
-      <SpaceShell
-        spaceId="my-space"
-        showBottomTabs={true}
-        activeBottomTab="object"
-      >
-        <div>Content</div>
-      </SpaceShell>
-    ));
-    expect(screen.getByRole("link", { name: "Entries" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Forms" })).toBeInTheDocument();
-  });
-
-  it("does not render bottom tabs when showBottomTabs is false", () => {
-    render(() => (
-      <SpaceShell spaceId="my-space" showBottomTabs={false}>
-        <div>Content</div>
-      </SpaceShell>
-    ));
-    expect(screen.queryByRole("link", { name: "Entries" })).not
-      .toBeInTheDocument();
-  });
-
-  it("applies bottomTabHrefSuffix to tab links", () => {
-    render(() => (
-      <SpaceShell
-        spaceId="my-space"
-        showBottomTabs={true}
-        bottomTabHrefSuffix="?mode=grid"
-      >
-        <div>Content</div>
-      </SpaceShell>
-    ));
-    const entriesLink = screen.getByRole("link", { name: "Entries" });
-    expect(entriesLink).toHaveAttribute(
-      "href",
-      "/spaces/my-space/entries?mode=grid",
-    );
-  });
-
-  it("REQ-FE-040: renders entries/forms bottom tabs with product labels", () => {
-    render(() => (
-      <SpaceShell
-        spaceId="my-space"
-        showBottomTabs={true}
-        activeBottomTab="grid"
-      >
-        <div>Content</div>
-      </SpaceShell>
-    ));
-    const formsLink = screen.getByRole("link", { name: "Forms" });
-    expect(formsLink).toHaveClass("ui-tab-active");
-  });
-
-  it("shows loading bar when loading", () => {
+  it("shows the v5 loading indicator", () => {
     loadingState.start();
-    render(() => (
-      <SpaceShell spaceId="my-space">
-        <div>Content</div>
-      </SpaceShell>
-    ));
-    expect(document.querySelector(".ui-loading-bar")).toBeInTheDocument();
+    const { container } = render(() => <SpaceShell spaceId="my-space"><p>Content</p></SpaceShell>);
+    expect(container.querySelector(".loadingBar")).toBeInTheDocument();
     loadingState.stop();
   });
 });
