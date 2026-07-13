@@ -13,7 +13,7 @@ chrono = "0.4.44"
 datafusion = "51.0"
 futures = "0.3"
 iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs", "storage-memory", "storage-s3", "storage-gcs", "storage-azdls", "storage-oss"] }
-iceberg-catalog-rest = "0.8.0"
+iceberg-catalog-rest = "0.9.1"
 iceberg-datafusion = "0.8.0"
 parquet = { version = "57.3", default-features = false, features = ["arrow", "async"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
@@ -24,7 +24,7 @@ ugoite-domain = { path = "../ugoite-domain" }
 uuid = { version = "1.23.2", features = ["v4", "serde"] }
 
 [dev-dependencies]
-criterion = "0.7"
+criterion = "0.8"
 tempfile = "3"
 
 [[bench]]
