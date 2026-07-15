@@ -632,14 +632,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setIsSaving(true);
     setConflictMessage(null);
     setValidationError(null);
+    const contentToSave = editorContent();
     try {
       const result = await entryApi.update(context.wsId, context.entryId, {
-        markdown: editorContent(),
+        markdown: contentToSave,
         parent_revision_id: context.revisionId,
       });
       setCurrentRevisionId(result.revision_id);
-      setLastSavedContent(editorContent());
-      setIsDirty(false);
+      setLastSavedContent(contentToSave);
+      setIsDirty(editorContent() !== contentToSave);
       props.onAfterSave?.();
     } catch (error) {
       handleSaveError(error);

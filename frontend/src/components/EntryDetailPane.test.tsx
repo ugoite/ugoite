@@ -403,6 +403,55 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("keeps edits made during a save marked as unsaved", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Test Entry",
+      form: null,
+      content: "# Test Entry",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    let finishSave: ((value: { revision_id: string }) => void) | undefined;
+    (entryApi.update as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const textarea = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    fireEvent.input(textarea, { target: { value: "First edit" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(entryApi.update).toHaveBeenCalledWith("default", "entry-1", {
+        markdown: "First edit",
+        parent_revision_id: "rev-1",
+      });
+    });
+
+    fireEvent.input(textarea, { target: { value: "Second edit" } });
+    finishSave?.({ revision_id: "rev-2" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    });
+  });
+
   it("shows unknown fields warning from save error", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",

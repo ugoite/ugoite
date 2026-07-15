@@ -1,9 +1,10 @@
 import type { JSX } from "solid-js";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { locale } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { authApi } from "~/lib/ugoite-client";
+import { createSpaceStore } from "~/lib/space-store";
 
 export type SpaceTopTab = "dashboard" | "search";
 export type SpaceBottomTab = "object" | "grid";
@@ -54,11 +55,15 @@ const labels = {
 } as const;
 
 export function SpaceShell(props: SpaceShellProps) {
+  const spaceStore = createSpaceStore();
   const signOut = async () => {
     await authApi.clearSession();
     if (typeof window !== "undefined") window.location.assign("/login");
   };
   const [drawerOpen, setDrawerOpen] = createSignal(false);
+  onMount(() => {
+    void spaceStore.loadSpaces().catch(() => undefined);
+  });
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
   const active = createMemo<SpaceNavigation>(() => {
     if (props.activeNavigation) return props.activeNavigation;
@@ -80,6 +85,17 @@ export function SpaceShell(props: SpaceShellProps) {
     return "home";
   });
   const crumb = createMemo(() => props.title ?? copy()[active()]);
+  const activePath = createMemo(() =>
+    navItems.find((item) => item.id === active())?.path ?? "dashboard"
+  );
+
+  const switchSpace = (spaceId: string) => {
+    if (!spaceId || spaceId === props.spaceId) return;
+    spaceStore.selectSpace(spaceId);
+    if (typeof window !== "undefined") {
+      window.location.assign(`/spaces/${spaceId}/${activePath()}`);
+    }
+  };
 
   const navigation = (mobile = false) => (
     <nav
@@ -130,15 +146,20 @@ export function SpaceShell(props: SpaceShellProps) {
             class="spaceSelect"
             aria-label="Space"
             value={props.spaceId}
-            onChange={() => {
-              if (typeof window !== "undefined") {
-                window.location.assign(
-                  "/spaces",
-                );
-              }
-            }}
+            onChange={(event) => switchSpace(event.currentTarget.value)}
           >
-            <option value={props.spaceId}>{props.spaceId}</option>
+            <Show
+              when={!spaceStore.spaces().some((space) =>
+                space.id === props.spaceId
+              )}
+            >
+              <option value={props.spaceId}>{props.spaceId}</option>
+            </Show>
+            <For each={spaceStore.spaces()}>
+              {(space) => (
+                <option value={space.id}>{space.name || space.id}</option>
+              )}
+            </For>
           </select>
           <div class="crumbTop">{crumb()}</div>
           <button
