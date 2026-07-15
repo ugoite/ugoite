@@ -71,7 +71,7 @@ export default function SpaceDashboardRoute() {
         <div class="sectionHead"><h2>{c().pinned}</h2></div>
         <div class="grid4">
           <For each={entryForms().slice(0, 2)}>{(form) => <A class="tile" href={`/spaces/${spaceId()}/forms?form=${encodeURIComponent(form.name)}`}><span class="glyph">{form.name.slice(0,1).toUpperCase()}</span><span><b>{form.name}</b><small>{c().form}</small></span></A>}</For>
-          <A class="tile" href={`/spaces/${spaceId()}/search?facet=assets`}><span class="glyph"><UiIcon name="asset" /></span><span><b>{c().assets}</b><small>{c().search}</small></span></A>
+          <A class="tile" href={`/spaces/${spaceId()}/assets`}><span class="glyph"><UiIcon name="asset" /></span><span><b>{c().assets}</b><small>{c().search}</small></span></A>
           <A class="tile" href={`/spaces/${spaceId()}/sql`}><span class="glyph"><UiIcon name="sql" /></span><span><b>{c().savedSql}</b><small>Saved</small></span></A>
         </div>
       </section>

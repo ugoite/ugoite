@@ -271,4 +271,13 @@ describe("/spaces/:space_id/search", () => {
       "/spaces/default/queries/saved-vars/variables",
     );
   });
+
+  it("links the Assets facet to the Space asset workspace", () => {
+    render(() => <SpaceSearchRoute />);
+
+    expect(screen.getByRole("link", { name: /Assets/ })).toHaveAttribute(
+      "href",
+      "/spaces/default/assets",
+    );
+  });
 });

@@ -443,7 +443,9 @@ export default function SpaceSearchRoute() {
           <aside class="facet surface">
             <button type="button" classList={{ active: mode() === "keyword" }} onClick={() => setMode("keyword")}><UiIcon name="entry" /> Entries</button>
             <button type="button" onClick={() => setMode("advanced")} classList={{ active: mode() === "advanced" }}><UiIcon name="forms" /> Forms</button>
-            <button type="button"><UiIcon name="asset" /> Assets</button>
+            <A href={`/spaces/${spaceId()}/assets`}>
+              <UiIcon name="asset" /> Assets
+            </A>
             <A href={`/spaces/${spaceId()}/sql`}><UiIcon name="sql" /> Saved SQL</A>
           </aside>
           <main>

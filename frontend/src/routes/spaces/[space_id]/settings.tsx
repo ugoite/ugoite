@@ -73,6 +73,7 @@ export default function SpaceSettingsRoute() {
   const [agentExpiresAt, setAgentExpiresAt] = createSignal("");
   const [agentPublicKey, setAgentPublicKey] = createSignal("");
   const [agentError, setAgentError] = createSignal("");
+  const [agentCredential, setAgentCredential] = createSignal("");
 
   const saveSpace = async (payload: SpacePatchPayload) => {
     await spaceApi.patch(spaceId(), payload);
@@ -115,6 +116,8 @@ export default function SpaceSettingsRoute() {
     }
   };
   const createAgent = async () => {
+    setAgentError("");
+    setAgentCredential("");
     try {
       const actions = agentActions().split(",").map((value) => value.trim())
         .filter((value) =>
@@ -123,7 +126,7 @@ export default function SpaceSettingsRoute() {
       if (!agentName().trim() || !agentExpiresAt() || !actions.length) {
         throw new Error("Name, expiry, and at least one action are required.");
       }
-      await spaceApi.createAgent(spaceId(), {
+      const result = await spaceApi.createAgent(spaceId(), {
         display_name: agentName().trim(),
         description: agentDescription().trim(),
         mode: agentMode(),
@@ -131,10 +134,10 @@ export default function SpaceSettingsRoute() {
         granted_actions: actions,
         expires_at: new Date(agentExpiresAt()).toISOString(),
       });
+      setAgentCredential(String(result.credential.credential_id ?? ""));
       setAgentName("");
       setAgentDescription("");
       setAgentPublicKey("");
-      setAgentError("");
       await refetchAgents();
     } catch (error) {
       setAgentError(message(error, "Failed to create agent."));
@@ -264,10 +267,22 @@ export default function SpaceSettingsRoute() {
               <Show when={memberError()}>
                 <p class="ui-alert ui-alert-error">{memberError()}</p>
               </Show>
+              <Show when={members.loading}>
+                <p class="ui-muted">Loading members...</p>
+              </Show>
+              <Show when={members.error}>
+                <p class="ui-alert ui-alert-error">
+                  Failed to load members: {message(members.error, "Unknown error")}
+                </p>
+              </Show>
               <div class="rowStack">
                 <For
                   each={members() ?? []}
-                  fallback={<p class="ui-muted">No members found.</p>}
+                  fallback={
+                    <Show when={!members.loading && !members.error}>
+                      <p class="ui-muted">No members found.</p>
+                    </Show>
+                  }
                 >
                   {(member: SpaceMember) => (
                     <div class="rowBtn">
@@ -367,10 +382,27 @@ export default function SpaceSettingsRoute() {
               <Show when={agentError()}>
                 <p class="ui-alert ui-alert-error">{agentError()}</p>
               </Show>
+              <Show when={agentCredential()}>
+                <p class="ui-alert ui-alert-success">
+                  Credential registered: <code>{agentCredential()}</code>
+                </p>
+              </Show>
+              <Show when={agents.loading}>
+                <p class="ui-muted">Loading agents...</p>
+              </Show>
+              <Show when={agents.error}>
+                <p class="ui-alert ui-alert-error">
+                  Failed to load agents: {message(agents.error, "Unknown error")}
+                </p>
+              </Show>
               <div class="rowStack">
                 <For
                   each={agents() ?? []}
-                  fallback={<p class="ui-muted">No agents found.</p>}
+                  fallback={
+                    <Show when={!agents.loading && !agents.error}>
+                      <p class="ui-muted">No agents found.</p>
+                    </Show>
+                  }
                 >
                   {(agent: AgentPrincipal) => (
                     <div class="rowBtn">

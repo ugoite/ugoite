@@ -38,6 +38,7 @@ const labels = {
     about: "About",
     menu: "Menu",
     account: "Account",
+    signOut: "Sign out",
   },
   ja: {
     home: "ホーム",
@@ -48,6 +49,7 @@ const labels = {
     about: "Ugoiteについて",
     menu: "メニュー",
     account: "アカウント",
+    signOut: "ログアウト",
   },
 } as const;
 
@@ -143,7 +145,7 @@ export function SpaceShell(props: SpaceShellProps) {
             class="avatar"
             type="button"
             onClick={() => void signOut()}
-            aria-label={copy().account}
+            aria-label={copy().signOut}
           >
             S
           </button>
