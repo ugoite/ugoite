@@ -3,6 +3,7 @@ import { createMemo, createSignal, Show } from "solid-js";
 import { locale } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
+import { authApi } from "~/lib/ugoite-client";
 
 export type SpaceTopTab = "dashboard" | "search";
 export type SpaceBottomTab = "object" | "grid";
@@ -51,6 +52,10 @@ const labels = {
 } as const;
 
 export function SpaceShell(props: SpaceShellProps) {
+  const signOut = async () => {
+    await authApi.clearSession();
+    if (typeof window !== "undefined") window.location.assign("/login");
+  };
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
   const active = createMemo<SpaceNavigation>(() => {
@@ -134,13 +139,14 @@ export function SpaceShell(props: SpaceShellProps) {
             <option value={props.spaceId}>{props.spaceId}</option>
           </select>
           <div class="crumbTop">{crumb()}</div>
-          <a
+          <button
             class="avatar"
-            href="/settings/security"
+            type="button"
+            onClick={() => void signOut()}
             aria-label={copy().account}
           >
             S
-          </a>
+          </button>
         </header>
         <div class="content">{props.children}</div>
       </section>

@@ -1,9 +1,14 @@
 import type { JSX } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
+import { authApi } from "~/lib/ugoite-client";
 
 export function GlobalShell(
   props: { title: string; children: JSX.Element; active?: "spaces" | "about" },
 ) {
+  const signOut = async () => {
+    await authApi.clearSession();
+    if (typeof window !== "undefined") window.location.assign("/login");
+  };
   return (
     <main class="app workspaceApp">
       <div class="desktopSidebar">
@@ -59,7 +64,14 @@ export function GlobalShell(
             <option>Ugoite</option>
           </select>
           <div class="crumbTop">{props.title}</div>
-          <a class="avatar" href="/settings/security" aria-label="Account">S</a>
+          <button
+            class="avatar"
+            type="button"
+            onClick={() => void signOut()}
+            aria-label="Sign out"
+          >
+            S
+          </button>
         </header>
         <div class="content">{props.children}</div>
       </section>
