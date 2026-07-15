@@ -1,4 +1,5 @@
-import { createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
+import { summarizeSpaceStorage } from "~/lib/storage-topology";
 import type {
   Space,
   SpacePatchPayload,
@@ -16,6 +17,11 @@ export interface SpaceSettingsProps {
 
 export function SpaceSettings(props: SpaceSettingsProps) {
   const [name, setName] = createSignal(props.space.name);
+  const [defaultForm, setDefaultForm] = createSignal(
+    typeof props.space.settings?.default_form === "string"
+      ? props.space.settings.default_form
+      : "Entry",
+  );
   const [uri, setUri] = createSignal(props.space.storage_config?.uri || "");
   const [endpoint, setEndpoint] = createSignal(
     props.space.storage_config?.endpoint || "",
@@ -23,6 +29,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
   const [pending, setPending] = createSignal(false);
   const [message, setMessage] = createSignal("");
   const section = () => props.section ?? "general";
+  const storageSummary = createMemo(() => summarizeSpaceStorage(props.space));
   const config = (): StorageConnectionConfig => {
     const next: StorageConnectionConfig = {
       ...(props.space.storage_config ?? {}),
@@ -39,7 +46,10 @@ export function SpaceSettings(props: SpaceSettingsProps) {
     try {
       await props.onSave(
         section() === "general"
-          ? { name: name() }
+          ? {
+            name: name(),
+            settings: { default_form: defaultForm().trim() },
+          }
           : { storage_config: config() },
       );
       setMessage("Saved");
@@ -71,6 +81,19 @@ export function SpaceSettings(props: SpaceSettingsProps) {
         fallback={
           <div class="settingsSection">
             <h2>Storage</h2>
+            <section class="ui-card ui-stack-sm">
+              <h3>Storage topology</h3>
+              <p class="ui-muted">{storageSummary().description}</p>
+              <span class="ui-pill">{storageSummary().label}</span>
+              <Show when={storageSummary().uri}>
+                <code>{storageSummary().uri}</code>
+              </Show>
+            </section>
+            <p class="ui-alert ui-alert-warning">
+              The saved URI below is migration metadata only. Updating it does
+              not move existing data or change the backend's current storage
+              root.
+            </p>
             <div class="settingsGrid">
               <label>
                 URI<input
@@ -88,13 +111,6 @@ export function SpaceSettings(props: SpaceSettingsProps) {
                   onInput={(e) => setEndpoint(e.currentTarget.value)}
                   placeholder="https://s3.example.com"
                 />
-              </label>
-              <label>
-                Provider<select>
-                  <option>S3 compatible</option>
-                  <option>Local FS</option>
-                  <option>GCS</option>
-                </select>
               </label>
               <label>
                 Status<input value="configured" readOnly />
@@ -128,15 +144,11 @@ export function SpaceSettings(props: SpaceSettingsProps) {
               />
             </label>
             <label>
-              Default Form<select>
-                <option>First available Form</option>
-              </select>
-            </label>
-            <label>
-              Timezone<select>
-                <option>Asia/Tokyo</option>
-                <option>UTC</option>
-              </select>
+              Default Form<input
+                value={defaultForm()}
+                onInput={(event) => setDefaultForm(event.currentTarget.value)}
+                required
+              />
             </label>
           </div>
           <button class="btn primary" type="submit" disabled={pending()}>

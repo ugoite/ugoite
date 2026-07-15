@@ -28,6 +28,9 @@ vi.mock("~/lib/ugoite-client", () => {
       update: vi.fn(),
       delete: vi.fn(),
     },
+    searchApi: {
+      rowReferenceOptions: vi.fn(),
+    },
     RevisionConflictError,
   };
 });
@@ -39,7 +42,7 @@ describe("EntryDetailPane", () => {
     (assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   });
 
-  it("REQ-FE-052: shows form-aware markdown H2 guidance and inserts missing required sections", async () => {
+  it("REQ-FE-052: edits form fields without requiring Markdown knowledge", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",
@@ -70,28 +73,23 @@ describe("EntryDetailPane", () => {
     ));
 
     await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    const guidanceText = await screen.findByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.match(/Form:\s*Meeting\s*\/\s*Example:/)),
-    );
-    expect(guidanceText).toHaveTextContent(/Form:\s*Meeting/);
-    expect(guidanceText).toHaveTextContent(/Example:\s*##\s*Date/);
-    expect(screen.queryByText("## status")).not.toBeInTheDocument();
-    expect(await screen.findByText(/Missing required sections: Date/))
-      .toBeInTheDocument();
+    const dateInput = await screen.findByLabelText("Date");
+    expect(dateInput).toHaveValue("");
+    expect(screen.getByText("This field is required.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Notes")).toHaveValue("hello");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Insert missing H2 headings" }),
-    );
+    fireEvent.input(dateInput, { target: { value: "2026-07-16" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
 
-    const textarea = await screen.findByPlaceholderText(
+    const source = await screen.findByPlaceholderText(
       "Start writing in Markdown...",
     );
-    expect((textarea as HTMLTextAreaElement).value).toContain("## Date");
+    expect((source as HTMLTextAreaElement).value).toContain(
+      "## Date\n2026-07-16",
+    );
   });
 
-  it("REQ-FE-052: omits example heading when form has no fields", async () => {
+  it("REQ-FE-052: explains forms that have no structured fields", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-2",
       title: "Scratch Note",
@@ -118,20 +116,14 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(screen.getAllByText("Scratch Note")).toHaveLength(2)
-    );
-    const guidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.match(/Form:\s*Empty/)),
-    );
-    expect(guidanceText).not.toHaveTextContent(/Example:/);
-    expect(screen.queryByText("## status")).not.toBeInTheDocument();
+    expect(await screen.findByText("This form has no structured fields."))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("Scratch Note");
+    expect(screen.getByRole("button", { name: "Open source editor" }))
+      .toBeInTheDocument();
   });
 
-  it("REQ-FE-052: omits example heading when form data lacks a fields map", async () => {
+  it("REQ-FE-052: tolerates form data without a fields map", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-3",
       title: "Broken Note",
@@ -157,20 +149,12 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(screen.getAllByText("Broken Note")).toHaveLength(2)
-    );
-    const guidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.match(/Form:\s*Broken/)),
-    );
-    expect(guidanceText).not.toHaveTextContent(/Example:/);
-    expect(screen.queryByText("## status")).not.toBeInTheDocument();
+    expect(await screen.findByText("This form has no structured fields."))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("Broken Note");
   });
 
-  it("REQ-FE-053: renders English editor guidance and type warnings", async () => {
+  it("REQ-FE-053: keeps type and additional-content warnings next to the form", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-4",
       title: "Task Entry",
@@ -201,37 +185,18 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(screen.getAllByText("Task Entry")).toHaveLength(2)
-    );
-    expect(await screen.findByText(/Enter attributes under/i))
-      .toBeInTheDocument();
-    const guidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        (element.textContent?.includes(
-          "Enter attributes under ## field name headings.",
-        ) ?? false),
-    );
-    expect(guidanceText).toBeInTheDocument();
-    const formGuidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.match(/Form:\s*Task\s*\/\s*Example:/)),
-    );
-    expect(formGuidanceText).toHaveTextContent(
-      /Form:\s*Task\s*\/\s*Example:\s*##\s*Summary/,
-    );
-    expect(screen.getByText(/Unknown sections: Extra/)).toBeInTheDocument();
+    expect(await screen.findByLabelText("Summary")).toHaveValue("hello");
+    expect(screen.getByLabelText("Done")).toHaveValue("maybe");
     expect(
       screen.getByText(
         "Done: Use true/false, yes/no, on/off, or 1/0 for boolean fields.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText("Additional Markdown content")).toBeInTheDocument();
+    expect(screen.getByText("Extra")).toBeInTheDocument();
   });
 
-  it("REQ-FE-053: renders Japanese editor guidance without mixed-language examples", async () => {
+  it("REQ-FE-053: renders the form-first editor in Japanese", async () => {
     setLocale("ja");
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-ja",
@@ -261,26 +226,15 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getAllByText("タスク")).toHaveLength(2));
-    expect(
-      screen.getByText(
-        (_, element) =>
-          element?.tagName === "P" &&
-          (element.textContent?.includes(
-            "属性は ## フィールド名 見出しで入力します。",
-          ) ?? false),
-      ),
-    ).toBeInTheDocument();
-    const guidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.includes("フォーム: Task")),
+    expect(await screen.findByRole("tab", { name: "項目" })).toHaveAttribute(
+      "aria-selected",
+      "true",
     );
-    expect(guidanceText).toHaveTextContent(
-      /フォーム:\s*Task\s*\/\s*例:\s*##\s*Summary/,
-    );
-    expect(guidanceText).not.toHaveTextContent(/Example:/);
+    expect(screen.getByText("見慣れたフォーム項目からエントリを編集します。"))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Summary")).toHaveValue("hello");
+    expect(screen.queryByRole("tab", { name: "Fields" })).not
+      .toBeInTheDocument();
   });
 
   it("REQ-FE-033: entry detail success path shows a visible route back to Entries", async () => {
@@ -616,9 +570,9 @@ describe("EntryDetailPane", () => {
     ));
 
     // Wait for entry header to appear (entry is loaded)
-    await waitFor(() => screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => screen.getByRole("button", { name: "Delete entry" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));
 
     await waitFor(() => {
       expect(entryApi.delete).toHaveBeenCalledWith("default", "entry-1");

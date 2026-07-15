@@ -40,7 +40,9 @@ use ugoite_domain::identity::{
     RequestAuthenticationMethod, RequestIdentity, SpacePrincipal, SpaceRole,
 };
 use ugoite_identity::{
-    node_identity::{AccountInvitation, NodeAuditInput, NodeIdentityService},
+    node_identity::{
+        AccountInvitation, NodeAuditInput, NodeIdentityService, TotpEnrollmentFinishError,
+    },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
 use uuid::Uuid;
@@ -1124,19 +1126,30 @@ async fn finish_totp_enrollment(
     Json(payload): Json<TotpFinishRequest>,
 ) -> ApiResult<Json<Value>> {
     require_recent_passkey(&identity)?;
-    if state
+    match state
         .identity
         .finish_totp_enrollment(identity.account_id, &payload.code)
         .await
-        .is_err()
     {
-        return Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
-            json!({
-                "code": "INVALID_TOTP",
-                "message": "invalid or expired TOTP enrollment code"
-            }),
-        ));
+        Ok(()) => {}
+        Err(TotpEnrollmentFinishError::InvalidOrExpired) => {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                json!({
+                    "code": "INVALID_TOTP",
+                    "message": "invalid or expired TOTP enrollment code"
+                }),
+            ));
+        }
+        Err(TotpEnrollmentFinishError::Internal(_error)) => {
+            return Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({
+                    "code": "TOTP_ENROLLMENT_FAILED",
+                    "message": "TOTP enrollment failed"
+                }),
+            ));
+        }
     }
     state
         .identity

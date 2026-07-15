@@ -185,6 +185,32 @@ struct PendingTotpEnrollment {
     expires_at: String,
 }
 
+#[derive(Debug)]
+pub enum TotpEnrollmentFinishError {
+    InvalidOrExpired,
+    Internal(anyhow::Error),
+}
+
+impl std::fmt::Display for TotpEnrollmentFinishError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidOrExpired => {
+                formatter.write_str("invalid or expired TOTP enrollment code")
+            }
+            Self::Internal(error) => write!(formatter, "finish TOTP enrollment: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for TotpEnrollmentFinishError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidOrExpired => None,
+            Self::Internal(error) => Some(error.as_ref()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DeviceCredential {
     pub credential_id: Uuid,
@@ -1104,24 +1130,37 @@ impl NodeIdentityService {
         Ok(serde_json::json!({"secret": encoded, "otpauth_uri": uri}))
     }
 
-    pub async fn finish_totp_enrollment(&self, account_id: Uuid, code: &str) -> Result<()> {
+    pub async fn finish_totp_enrollment(
+        &self,
+        account_id: Uuid,
+        code: &str,
+    ) -> std::result::Result<(), TotpEnrollmentFinishError> {
         let _guard = self.state_lock.lock().await;
-        let mut state = self.read_state().await?;
+        let mut state = self
+            .read_state()
+            .await
+            .map_err(TotpEnrollmentFinishError::Internal)?;
         let pending = state
             .pending_totp_enrollments
             .get(&account_id)
             .cloned()
-            .ok_or_else(|| anyhow!("TOTP enrollment is not pending"))?;
-        validate_expiry(&pending.expires_at, "TOTP enrollment")?;
-        let secret = decrypt_recovery_secret(&self.encryption_key, &pending.encrypted_secret)?;
-        if !verify_totp(&secret, code, Utc::now().timestamp())? {
-            bail!("invalid TOTP code");
+            .ok_or(TotpEnrollmentFinishError::InvalidOrExpired)?;
+        let expires_at =
+            parse_timestamp(&pending.expires_at).map_err(TotpEnrollmentFinishError::Internal)?;
+        if expires_at <= Utc::now() {
+            return Err(TotpEnrollmentFinishError::InvalidOrExpired);
+        }
+        let secret = decrypt_recovery_secret(&self.encryption_key, &pending.encrypted_secret)
+            .map_err(TotpEnrollmentFinishError::Internal)?;
+        if !verify_totp(&secret, code, Utc::now().timestamp())
+            .map_err(TotpEnrollmentFinishError::Internal)?
+        {
+            return Err(TotpEnrollmentFinishError::InvalidOrExpired);
         }
         state.pending_totp_enrollments.remove(&account_id);
-        let recovery = state
-            .recovery
-            .get_mut(&account_id)
-            .ok_or_else(|| anyhow!("recovery record not found"))?;
+        let recovery = state.recovery.get_mut(&account_id).ok_or_else(|| {
+            TotpEnrollmentFinishError::Internal(anyhow!("recovery record not found"))
+        })?;
         recovery.totp_secret_encrypted = Some(pending.encrypted_secret);
         if !matches!(state.lifecycle, NodeLifecycle::Active)
             && state
@@ -1132,7 +1171,9 @@ impl NodeIdentityService {
         {
             state.lifecycle = NodeLifecycle::Active;
         }
-        self.write_state(&state).await
+        self.write_state(&state)
+            .await
+            .map_err(TotpEnrollmentFinishError::Internal)
     }
 
     pub async fn start_recovery_registration(
@@ -2826,6 +2867,55 @@ mod tests {
         assert!(verify_totp(secret, "119246", 59)?);
         assert!(!verify_totp(secret, "119247", 59)?);
         assert!(!verify_totp(secret, "", 59)?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn totp_enrollment_distinguishes_invalid_codes_from_internal_state_errors() -> Result<()>
+    {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.recovery.insert(
+            account_id,
+            RecoveryRecord {
+                account_id,
+                code_hashes: Vec::new(),
+                totp_secret_encrypted: None,
+                created_at: timestamp(Utc::now()),
+                failed_attempts: 0,
+                locked_until: None,
+            },
+        );
+        state.pending_totp_enrollments.insert(
+            account_id,
+            PendingTotpEnrollment {
+                encrypted_secret: encrypt_recovery_secret(
+                    &service.encryption_key,
+                    b"12345678901234567890123456789012",
+                )?,
+                expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            },
+        );
+        service.write_state(&state).await?;
+
+        assert!(matches!(
+            service.finish_totp_enrollment(account_id, "").await,
+            Err(TotpEnrollmentFinishError::InvalidOrExpired)
+        ));
+
+        let mut state = service.read_state().await?;
+        state
+            .pending_totp_enrollments
+            .get_mut(&account_id)
+            .expect("pending enrollment")
+            .encrypted_secret = "corrupt".to_string();
+        service.write_state(&state).await?;
+        assert!(matches!(
+            service.finish_totp_enrollment(account_id, "000000").await,
+            Err(TotpEnrollmentFinishError::Internal(_))
+        ));
         Ok(())
     }
 

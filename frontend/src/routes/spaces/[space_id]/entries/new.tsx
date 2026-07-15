@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createResource } from "solid-js";
 import { CreateEntryDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
@@ -13,11 +13,23 @@ import { formApi, spaceApi } from "~/lib/ugoite-client";
 export default function NewEntryRoute() {
   const params = useParams<{ space_id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const spaceId = () => params.space_id;
   const store = createEntryStore(spaceId);
   const [space] = createResource(spaceId, spaceApi.get);
   const [forms] = createResource(spaceId, formApi.list);
   const available = createMemo(() => filterCreatableEntryForms(forms() ?? []));
+  const defaultForm = createMemo(() => {
+    const requested = typeof searchParams.form === "string"
+      ? searchParams.form
+      : "";
+    const configured = typeof space()?.settings?.default_form === "string"
+      ? space()?.settings?.default_form as string
+      : "";
+    return available().find((form) => form.name === requested)?.name ??
+      available().find((form) => form.name === configured)?.name ??
+      available()[0]?.name;
+  });
 
   const createEntry = async (
     title: string,
@@ -44,9 +56,7 @@ export default function NewEntryRoute() {
       <CreateEntryDialog
         open
         forms={available()}
-        defaultForm={typeof space()?.settings?.default_form === "string"
-          ? space()?.settings?.default_form
-          : available()[0]?.name}
+        defaultForm={defaultForm()}
         spaceId={spaceId()}
         onClose={() =>
           navigate(-1)}

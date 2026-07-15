@@ -48,6 +48,9 @@ const allowedComponentTypes = new Set([
   "structured-search-form",
   "entry-card-grid",
   "sidebar",
+  "persistent-workspace-navigation",
+  "page-header",
+  "two-column-workspace",
 ]);
 
 const collectYamlFiles = (dir: string): string[] => {

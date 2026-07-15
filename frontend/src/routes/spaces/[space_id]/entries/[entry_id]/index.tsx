@@ -13,7 +13,7 @@ export default function SpaceEntryDetailRoute() {
 
   return (
     <SpaceShell spaceId={spaceId()}>
-      <div class="mx-auto max-w-6xl h-[calc(100vh-8rem)]">
+      <div class="mx-auto max-w-6xl">
         <EntryDetailPane
           spaceId={spaceId}
           entryId={entryId}
