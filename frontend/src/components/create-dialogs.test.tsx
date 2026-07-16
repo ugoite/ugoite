@@ -59,6 +59,30 @@ describe("CreateFormDialog", () => {
     expect(document.activeElement).toBe(columnInput);
   });
 
+  it("REQ-FE-066: explains selected field types and connects the guidance to the control", async () => {
+    render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={["string", "markdown", "row_reference"]}
+        formNames={["Project"]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    fireEvent.click(screen.getByText("+ Add Column"));
+    const type = screen.getByRole("combobox", { name: "Field type" });
+    expect(type).toHaveAttribute("aria-describedby", "create-form-field-type-0-description");
+    expect(screen.getByText("Short text such as a name or status.")).toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "markdown" } });
+    expect(screen.getByText("Long-form text with Markdown formatting.")).toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "row_reference" } });
+    expect(screen.getByText("An entry ID from the selected target Form.")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g. Project")).toBeInTheDocument();
+  });
+
   it("REQ-FE-039: blocks reserved metadata column names", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();

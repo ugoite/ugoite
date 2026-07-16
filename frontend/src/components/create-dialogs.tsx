@@ -34,6 +34,26 @@ const numericFieldTypes = new Set([
   "float",
 ]);
 
+const fieldTypeDescriptionKey = (type: string) => {
+  if (type === "string") return "createDialog.form.fieldType.string";
+  if (type === "sql") return "createDialog.form.fieldType.sql";
+  if (type === "markdown") return "createDialog.form.fieldType.markdown";
+  if (numericFieldTypes.has(type)) return "createDialog.form.fieldType.number";
+  if (type === "boolean") return "createDialog.form.fieldType.boolean";
+  if (["date", "time", "timestamp", "timestamp_tz", "timestamp_ns", "timestamp_tz_ns"].includes(type)) {
+    return "createDialog.form.fieldType.temporal";
+  }
+  if (type === "uuid") return "createDialog.form.fieldType.uuid";
+  if (type === "row_reference") return "createDialog.form.fieldType.rowReference";
+  if (type === "binary") return "createDialog.form.fieldType.binary";
+  if (type === "list") return "createDialog.form.fieldType.list";
+  if (type === "object_list") return "createDialog.form.fieldType.objectList";
+  return "createDialog.form.fieldType.unknown";
+};
+
+const fieldTypeDescription = (type: string) =>
+  t(fieldTypeDescriptionKey(type));
+
 const formatDatetimeLocal = (date: Date) => {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${
@@ -1434,10 +1454,12 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                       />
                       <div class={columnEditorControlsClass}>
                         <select
+                          aria-label={t("createDialog.form.fieldTypeLabel")}
                           value={field().type}
                           onChange={(e) =>
                             updateField(i, "type", e.currentTarget.value)}
                           class={columnTypeSelectClass}
+                          aria-describedby={`create-form-field-type-${i}-description`}
                         >
                           <For each={props.columnTypes}>
                             {(type) => <option value={type}>{type}</option>}
@@ -1453,6 +1475,12 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                         </button>
                       </div>
                     </div>
+                    <p
+                      id={`create-form-field-type-${i}-description`}
+                      class="ml-1 text-xs ui-muted"
+                    >
+                      {fieldTypeDescription(field().type)}
+                    </p>
                     <Show when={field().type === "row_reference"}>
                       <div class={columnAuxRowClass}>
                         <span class="text-xs ui-muted">
@@ -1461,6 +1489,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                         <input
                           type="text"
                           list={`row-ref-targets-${i}`}
+                          aria-label={t("createDialog.form.targetFormLabel")}
                           placeholder={t(
                             "createDialog.form.targetFormPlaceholder",
                           )}
@@ -1816,10 +1845,12 @@ export function EditFormDialog(props: EditFormDialogProps) {
                       />
                       <div class={columnEditorControlsClass}>
                         <select
+                          aria-label={t("createDialog.form.fieldTypeLabel")}
                           value={field().type}
                           onChange={(e) =>
                             updateField(i, "type", e.currentTarget.value)}
                           class={columnTypeSelectClass}
+                          aria-describedby={`edit-form-field-type-${i}-description`}
                         >
                           <For each={props.columnTypes}>
                             {(type) => <option value={type}>{type}</option>}
@@ -1835,6 +1866,12 @@ export function EditFormDialog(props: EditFormDialogProps) {
                         </button>
                       </div>
                     </div>
+                    <p
+                      id={`edit-form-field-type-${i}-description`}
+                      class="ml-1 text-xs ui-muted"
+                    >
+                      {fieldTypeDescription(field().type)}
+                    </p>
                     <Show when={field().type === "row_reference"}>
                       <div class={columnAuxRowClass}>
                         <span class="text-xs ui-muted">
@@ -1843,6 +1880,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
                         <input
                           type="text"
                           list={`row-ref-targets-edit-${i}`}
+                          aria-label={t("createDialog.form.targetFormLabel")}
                           placeholder={t(
                             "createDialog.form.targetFormPlaceholder",
                           )}
