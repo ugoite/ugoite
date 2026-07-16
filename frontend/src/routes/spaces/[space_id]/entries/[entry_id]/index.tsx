@@ -19,7 +19,7 @@ export default function SpaceEntryDetailRoute() {
           entryId={entryId}
           forms={ctx.forms}
           onDeleted={() => {
-            navigate(`/spaces/${spaceId()}/entries`, { replace: true });
+            navigate(`/spaces/${spaceId()}/forms`, { replace: true });
           }}
         />
       </div>

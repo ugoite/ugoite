@@ -237,11 +237,11 @@ describe("EntryDetailPane", () => {
       .toBeInTheDocument();
   });
 
-  it("REQ-FE-033: entry detail success path shows a visible route back to Entries", async () => {
+  it("REQ-FE-033: entry detail returns to its Form workspace", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",
-      form: null,
+      form: "Notes",
       content: "# Test Entry",
       revision_id: "rev-1",
       created_at: "2026-01-01T00:00:00Z",
@@ -257,10 +257,13 @@ describe("EntryDetailPane", () => {
     ));
 
     const backLink = await screen.findByRole("link", {
-      name: "Back to Entries",
+      name: "Back to Form",
     });
 
-    expect(backLink).toHaveAttribute("href", "/spaces/default/entries");
+    expect(backLink).toHaveAttribute(
+      "href",
+      "/spaces/default/forms?form=Notes",
+    );
   });
   it("REQ-FE-038: renders form validation warnings", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({

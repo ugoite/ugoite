@@ -6,6 +6,7 @@ const LOCALE_STORAGE_KEY = "ugoite-locale";
 const THEME_STORAGE_KEY = "ugoite-ui-theme";
 const MODE_STORAGE_KEY = "ugoite-color-mode";
 const PRIMARY_COLOR_STORAGE_KEY = "ugoite-primary-color";
+const CONTENT_WIDTH_STORAGE_KEY = "ugoite-content-width";
 
 export const LOCAL_PREFERENCE_KEYS = {
   selectedSpaceId: SELECTED_SPACE_STORAGE_KEY,
@@ -13,6 +14,7 @@ export const LOCAL_PREFERENCE_KEYS = {
   uiTheme: THEME_STORAGE_KEY,
   colorMode: MODE_STORAGE_KEY,
   primaryColor: PRIMARY_COLOR_STORAGE_KEY,
+  contentWidth: CONTENT_WIDTH_STORAGE_KEY,
 } as const;
 
 const safeStorage = () => {
@@ -73,6 +75,7 @@ export const emptyUserPreferences = (): UserPreferences => {
   preferences.ui_theme = null;
   preferences.color_mode = null;
   preferences.primary_color = null;
+  preferences.content_width = null;
   return preferences;
 };
 
@@ -95,6 +98,10 @@ export const readLocalPreferences = (): UserPreferences => {
     "emerald",
     "amber",
   ]);
+  preferences.content_width = readAllowedValue(CONTENT_WIDTH_STORAGE_KEY, [
+    "standard",
+    "wide",
+  ]);
   return preferences;
 };
 
@@ -106,4 +113,5 @@ export const writeLocalPreferences = (
   writeStoredValue(THEME_STORAGE_KEY, patch.ui_theme);
   writeStoredValue(MODE_STORAGE_KEY, patch.color_mode);
   writeStoredValue(PRIMARY_COLOR_STORAGE_KEY, patch.primary_color);
+  writeStoredValue(CONTENT_WIDTH_STORAGE_KEY, patch.content_width);
 };

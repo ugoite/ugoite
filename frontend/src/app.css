@@ -299,6 +299,9 @@ code {
   margin: 0 auto;
   padding: 32px 42px 110px;
 }
+.content.contentWide {
+  max-width: 1600px;
+}
 .bottomNav {
   display: none;
 }
@@ -696,6 +699,14 @@ code {
   padding: 12px 13px;
   margin-bottom: 11px;
 }
+.formWorkspaceHead {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
 .contextLeft {
   display: flex;
   align-items: center;
@@ -1019,6 +1030,12 @@ code {
   border-radius: 20px;
   box-shadow: var(--shadow);
   padding: 20px;
+}
+.ui-dialog.ui-dialog-form {
+  width: min(880px, calc(100vw - 32px));
+  min-height: min(620px, calc(100vh - 48px));
+  max-height: calc(100vh - 32px);
+  padding: 24px;
 }
 .ui-dialog-header {
   display: flex;

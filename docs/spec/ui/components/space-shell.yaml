@@ -1,5 +1,5 @@
-version: "0.1"
-updated: "2026-07-13"
+version: "0.2"
+updated: "2026-07-17"
 component_group:
   id: space-shell-shared
   title: Space Shell Shared Components
@@ -19,3 +19,10 @@ components:
     height: 66px
     breakpoint: 900px
     items: [Home, Forms, Search, Settings]
+  - id: desktop-content-width
+    type: responsive-content-container
+    breakpoint: 900px
+    options:
+      standard: 1180px
+      wide: 1600px
+    persist: portable-user-preferences

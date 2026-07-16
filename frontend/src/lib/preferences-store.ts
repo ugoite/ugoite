@@ -26,6 +26,8 @@ const mergePreferences = (
   preferences.color_mode = primary?.color_mode ?? fallback?.color_mode ?? null;
   preferences.primary_color = primary?.primary_color ??
     fallback?.primary_color ?? null;
+  preferences.content_width = primary?.content_width ??
+    fallback?.content_width ?? null;
   return preferences;
 };
 
@@ -49,6 +51,9 @@ const applyPatch = (
   preferences.primary_color = patch.primary_color !== undefined
     ? patch.primary_color
     : current.primary_color;
+  preferences.content_width = patch.content_width !== undefined
+    ? patch.content_width
+    : current.content_width;
   return preferences;
 };
 
@@ -71,6 +76,9 @@ const missingPortableFields = (
   }
   if (portable.primary_color === null && local.primary_color !== null) {
     patch.primary_color = local.primary_color;
+  }
+  if (portable.content_width === null && local.content_width !== null) {
+    patch.content_width = local.content_width;
   }
   return patch;
 };
@@ -266,6 +274,13 @@ const preferencesStore = createRoot(() => {
       patch.primary_color = primaryColor;
       return patchPortablePreferences(patch);
     },
+    setContentWidthPreference: (
+      contentWidth: UserPreferences["content_width"],
+    ) => {
+      const patch = {} as UserPreferencesPatchPayload;
+      patch.content_width = contentWidth;
+      return patchPortablePreferences(patch);
+    },
   };
 });
 
@@ -289,4 +304,6 @@ export const setUiThemePreference = preferencesStore.setUiThemePreference;
 export const setColorModePreference = preferencesStore.setColorModePreference;
 export const setPrimaryColorPreference =
   preferencesStore.setPrimaryColorPreference;
+export const setContentWidthPreference =
+  preferencesStore.setContentWidthPreference;
 export const isPublicPortablePreferencesRoute = isPublicPortablePreferencesPath;

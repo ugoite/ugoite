@@ -861,7 +861,7 @@ requirements:
   tests:
   - file: e2e/entries.test.ts
   - file: frontend/src/components/EntryDetailPane.test.tsx
-  - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
   - file: frontend/src/routes/spaces/[space_id]/forms/form-detail.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
@@ -1345,8 +1345,8 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-059
-  title: Portable Theme Preferences
-  description: 'Frontend theme, color mode, and primary color selections MUST persist
+  title: Portable Appearance Preferences
+  description: 'Frontend theme, color mode, primary color, and desktop content-width selections MUST persist
 
     in portable user preferences loaded from `/preferences/me`.
 
@@ -1367,6 +1367,7 @@ requirements:
   - file: frontend/src/lib/preferences-api.test.ts
   - file: frontend/src/lib/preferences-local.test.ts
   - file: frontend/src/lib/preferences-store.test.ts
+  - file: frontend/src/components/SpaceShell.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1587,3 +1588,39 @@ requirements:
   - file: frontend/src/lib/auth-api.ts
   - file: frontend/src/routes/api/[...path].test.ts
   - file: frontend/src/routes/login.tsx
+- set_id: REQCAT-FRONTEND
+  source_file: requirements/frontend.yaml
+  scope: Frontend route, component, and interaction requirements.
+  linked_policies:
+  - POL-006
+  - POL-009
+  - POL-013
+  - POL-014
+  linked_specifications:
+  - SPEC-UI-OVERVIEW
+  - SPEC-UI-PAGES
+  - SPEC-ARCH-INTERFACE
+  id: REQ-FE-067
+  title: Unified Form and Entry Workspace
+  description: 'The Forms route MUST be the single ordinary Entry-list workspace.
+
+    It MUST present one Form selector and the selected Form Entry grid without
+
+    duplicate Entries screens, nested view tabs, or repeated page context. The
+
+    plain Space Entries route MUST redirect to Forms while preserving the dedicated
+
+    SQL-session result surface. Form creation and editing dialogs MUST provide a
+
+    usable desktop workspace, and icon-only actions MUST render visible icons.
+
+    '
+  related_spec:
+  - ui/pages/space-form-grid.yaml
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/entries/index.test.tsx
+  - file: frontend/src/components/create-dialogs.test.tsx

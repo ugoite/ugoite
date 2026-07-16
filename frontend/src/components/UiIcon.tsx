@@ -20,15 +20,15 @@ export type UiIconName =
   | "history"
   | "close";
 
-const paths: Record<UiIconName, JSX.Element> = {
-  home: (
+const paths: Record<UiIconName, () => JSX.Element> = {
+  home: () => (
     <>
       <path d="M3 10.5 12 3l9 7.5" />
       <path d="M5 10v10h14V10" />
       <path d="M9 20v-6h6v6" />
     </>
   ),
-  forms: (
+  forms: () => (
     <>
       <path d="M4 5h16" />
       <path d="M4 12h16" />
@@ -36,13 +36,13 @@ const paths: Record<UiIconName, JSX.Element> = {
       <path d="M7 5v14" />
     </>
   ),
-  search: (
+  search: () => (
     <>
       <circle cx="10.5" cy="10.5" r="6.5" />
       <path d="m16 16 5 5" />
     </>
   ),
-  settings: (
+  settings: () => (
     <>
       <circle cx="12" cy="12" r="3" />
       <path
@@ -51,7 +51,7 @@ const paths: Record<UiIconName, JSX.Element> = {
       />
     </>
   ),
-  spaces: (
+  spaces: () => (
     <>
       <path d="M4 5h16" />
       <path d="M4 12h16" />
@@ -59,68 +59,68 @@ const paths: Record<UiIconName, JSX.Element> = {
       <path d="M7 5v14" />
     </>
   ),
-  about: (
+  about: () => (
     <>
       <path d="M6 4h12v16H6z" />
       <path d="M9 8h6M9 12h6M9 16h4" />
     </>
   ),
-  menu: (
+  menu: () => (
     <>
       <path d="M4 5h16" />
       <path d="M4 12h16" />
       <path d="M4 19h16" />
     </>
   ),
-  plus: (
+  plus: () => (
     <>
       <path d="M12 5v14" />
       <path d="M5 12h14" />
     </>
   ),
-  entry: (
+  entry: () => (
     <>
       <path d="m12 3 7 7-7 11-7-11Z" />
     </>
   ),
-  asset: (
+  asset: () => (
     <>
       <rect x="4" y="4" width="16" height="16" rx="3" />
       <path d="m7 16 4-4 3 3 3-3" />
     </>
   ),
-  sql: (
+  sql: () => (
     <>
       <path d="M8 4 5 20M16 4l-3 16M3 9h17M2 15h17" />
     </>
   ),
-  members: (
+  members: () => (
     <>
       <circle cx="12" cy="8" r="4" />
       <path d="M4 21c1.8-4 14.2-4 16 0" />
     </>
   ),
-  agent: (
+  agent: () => (
     <>
       <path d="M12 3v4" />
       <rect x="5" y="7" width="14" height="11" rx="4" />
       <path d="M9 12h.01M15 12h.01M9 16h6" />
     </>
   ),
-  credential: (
+  credential: () => (
     <>
       <circle cx="8" cy="12" r="4" />
       <path d="M12 12h8M17 12v3M20 12v3" />
     </>
   ),
-  storage: (
+  storage: () => (
     <>
       <ellipse cx="12" cy="6" rx="7" ry="3" />
       <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
       <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
     </>
   ),
-  appearance: (
+  appearance: () => (
     <>
       <path d="M4 5h16" />
       <path d="M4 12h16" />
@@ -128,13 +128,13 @@ const paths: Record<UiIconName, JSX.Element> = {
       <path d="M7 5v14" />
     </>
   ),
-  history: (
+  history: () => (
     <>
       <path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5" />
       <path d="M4 4v4.5h4.5M12 8v5l3 2" />
     </>
   ),
-  close: (
+  close: () => (
     <>
       <path d="m6 6 12 12M18 6 6 18" />
     </>
@@ -143,8 +143,17 @@ const paths: Record<UiIconName, JSX.Element> = {
 
 export function UiIcon(props: { name: UiIconName; class?: string }) {
   return (
-    <svg class={props.class ?? "icon"} viewBox="0 0 24 24" aria-hidden="true">
-      {paths[props.name]}
+    <svg
+      class={props.class ?? "icon"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      {paths[props.name]()}
     </svg>
   );
 }

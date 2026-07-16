@@ -29,6 +29,7 @@ describe("preferences-local", () => {
         ui_theme: "classic",
         color_mode: "dark",
         primary_color: "blue",
+        content_width: "wide",
       })
     ).not.toThrow();
   });

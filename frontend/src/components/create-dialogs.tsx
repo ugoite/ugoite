@@ -1366,7 +1366,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
         }}
       >
         <div
-          class="ui-dialog w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
+          class="ui-dialog ui-dialog-form flex flex-col"
           role="document"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
@@ -1755,7 +1755,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
         }}
       >
         <div
-          class="ui-dialog w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
+          class="ui-dialog ui-dialog-form flex flex-col"
           role="document"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}

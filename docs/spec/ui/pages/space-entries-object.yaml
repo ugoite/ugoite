@@ -1,53 +1,17 @@
-version: "0.1"
-updated: "2026-02-02"
+version: "0.2"
+updated: "2026-07-17"
 page:
   id: space-entries-object
-  title: Entries Object View
+  title: Entries Compatibility Route
   route: /spaces/{space_id}/entries
   implementation: implemented
 components:
-  shared:
-    - id: top-tabs
-      type: tab-bar
-      position: top-center-floating
-      tabs:
-        - id: dashboard
-          label: dashboard
-          target_page: space-dashboard
-        - id: search
-          label: search
-          target_page: space-search
-    - id: settings-button
-      type: floating-icon-button
-      position: top-right-floating
-      icon: settings
-      menu:
-        id: ui-theme-menu
-        theme_options:
-          - materialize
-          - classic
-          - pop
-        color_modes:
-          - light
-          - dark
-        persist: localStorage
-        actions:
-          - id: open-space-settings
-            label: Space settings
-            target_page: space-settings
   body:
-    - id: entries-view-tabs
-      type: tab-bar
-      position: bottom-center-floating
-      tabs:
-        - id: object
-          label: Entries
-          target_page: space-entries-object
-        - id: grid
-          label: Forms
-          target_page: space-form-grid
-    - id: entries-grid-list
-      type: grid-list
-      item_type: entry
-      selection:
-        target_page: space-entry-detail
+    - id: plain-entry-list-redirect
+      type: redirect
+      target_page: space-form-grid
+      description: Plain Entry listing is integrated into the Forms workspace to avoid duplicate list screens.
+    - id: sql-session-results
+      type: query-results
+      condition: session query parameter is present
+      description: Cross-Form SQL session results remain available at this route.

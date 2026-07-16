@@ -96,27 +96,23 @@ describe("v5 Forms workspace", () => {
     renderPage([noteForm]);
     await waitFor(() =>
       expect(setSearch).toHaveBeenCalledWith(
-        { form: "Notes", tab: "entries" },
+        { form: "Notes", tab: undefined },
         { replace: true },
       )
     );
   });
-  it("renders split Form list, context and tabs", () => {
+  it("renders one Form workspace without duplicate view tabs", () => {
     search.form = "Notes";
-    search.tab = "entries";
     renderPage([noteForm]);
     expect(screen.getByPlaceholderText("Find a Form")).toBeInTheDocument();
-    expect(screen.getByText("Forms / Notes / Entries")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Entries" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(screen.getByRole("tab", { name: "Fields" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Notes")).toHaveLength(1);
     expect(screen.getByText("Entries table for Notes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Form" }).querySelector("svg"))
+      .toBeInTheDocument();
   });
   it("opens and submits the edit Form dialog", async () => {
     search.form = "Notes";
-    search.tab = "entries";
     vi.mocked(formApi.create).mockResolvedValue(noteForm);
     renderPage([noteForm]);
 
@@ -129,8 +125,7 @@ describe("v5 Forms workspace", () => {
   it("shows the v5 empty state and Japanese copy", () => {
     setLocale("ja");
     renderPage([]);
-    expect(screen.getByRole("heading", { name: "フォーム" }))
-      .toBeInTheDocument();
+    expect(screen.getByText("フォーム")).toBeInTheDocument();
     expect(screen.getByText("フォームがありません")).toBeInTheDocument();
   });
 });

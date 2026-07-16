@@ -35,6 +35,7 @@ let mockPreferences: UserPreferences = {
   ui_theme: null,
   color_mode: null,
   primary_color: null,
+  content_width: null,
 };
 let preferencePatches: UserPreferencesPatchPayload[] = [];
 let revisionCounter = 0;

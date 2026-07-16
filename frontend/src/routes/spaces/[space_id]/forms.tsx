@@ -19,7 +19,11 @@ export default function SpaceFormsRoute(props: RouteSectionProps) {
     },
     async (wsId) => {
       if (!wsId) return [];
-      return await formApi.list(wsId);
+      try {
+        return await formApi.list(wsId);
+      } catch {
+        return [];
+      }
     },
   );
 
@@ -27,7 +31,11 @@ export default function SpaceFormsRoute(props: RouteSectionProps) {
     () => spaceId(),
     async (wsId) => {
       if (!wsId) return [];
-      return await formApi.listTypes(wsId);
+      try {
+        return await formApi.listTypes(wsId);
+      } catch {
+        return [];
+      }
     },
   );
 

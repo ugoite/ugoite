@@ -485,6 +485,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       availableForms.find((candidate) => candidate.name === formName) ?? null
     );
   });
+  const formWorkspaceHref = createMemo(() => {
+    const formName = entry()?.form?.trim();
+    const base = `/spaces/${props.spaceId()}/forms`;
+    return formName ? `${base}?form=${encodeURIComponent(formName)}` : base;
+  });
 
   const parsedSections = createMemo(() => {
     const map = new Map<string, string>();
@@ -826,7 +831,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             <header class="ui-entry-header">
               <div class="min-w-0">
                 <A
-                  href={`/spaces/${props.spaceId()}/entries`}
+                  href={formWorkspaceHref()}
                   class="text-sm ui-link"
                 >
                   {t("entryDetail.back")}

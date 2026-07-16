@@ -2,7 +2,6 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   Show,
@@ -14,16 +13,9 @@ import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { locale } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { assetApi, formApi } from "~/lib/ugoite-client";
+import { formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 
-type FormTab = "entries" | "fields" | "assets" | "views";
-const tabLabels: Record<FormTab, { en: string; ja: string }> = {
-  entries: { en: "Entries", ja: "エントリー" },
-  fields: { en: "Fields", ja: "フィールド" },
-  assets: { en: "Assets", ja: "アセット" },
-  views: { en: "Views", ja: "ビュー" },
-};
 const copy = {
   en: {
     forms: "Forms",
@@ -33,8 +25,6 @@ const copy = {
     select: "Select a Form",
     edit: "Edit Form",
     newEntry: "Entry",
-    spaceAssets: "Assets in this Space",
-    viewsText: "Saved views for this Form will appear here.",
   },
   ja: {
     forms: "フォーム",
@@ -44,8 +34,6 @@ const copy = {
     select: "フォームを選択",
     edit: "フォームを編集",
     newEntry: "エントリー",
-    spaceAssets: "このスペースのアセット",
-    viewsText: "このフォームの保存済みビューがここに表示されます。",
   },
 } as const;
 
@@ -57,11 +45,6 @@ export default function SpaceFormsIndexPane() {
   const [showFormDialog, setShowFormDialog] = createSignal(false);
   const [showEditDialog, setShowEditDialog] = createSignal(false);
   const c = () => copy[locale() === "ja" ? "ja" : "en"];
-  const activeTab = createMemo<FormTab>(() =>
-    ["fields", "assets", "views"].includes(String(params.tab))
-      ? String(params.tab) as FormTab
-      : "entries"
-  );
   const forms = createMemo(() => filterCreatableEntryForms(ctx.forms()));
   const selectedName = createMemo(() => String(params.form || ""));
   const selectedForm = createMemo(() =>
@@ -72,14 +55,9 @@ export default function SpaceFormsIndexPane() {
       form.name.toLowerCase().includes(query().trim().toLowerCase())
     )
   );
-  const [assets] = createResource(
-    () => activeTab() === "assets" ? ctx.spaceId() : null,
-    async (spaceId) => spaceId ? assetApi.list(spaceId) : [],
-  );
-
   createEffect(() => {
     if (!selectedForm() && forms()[0]) {
-      setParams({ form: forms()[0].name, tab: activeTab() }, { replace: true });
+      setParams({ form: forms()[0].name, tab: undefined }, { replace: true });
     }
   });
 
@@ -87,7 +65,7 @@ export default function SpaceFormsIndexPane() {
     await formApi.create(ctx.spaceId(), payload);
     setShowFormDialog(false);
     await ctx.refetchForms();
-    setParams({ form: payload.name, tab: "entries" });
+    setParams({ form: payload.name, tab: undefined });
   };
   const updateForm = async (payload: FormCreatePayload) => {
     await formApi.create(ctx.spaceId(), payload);
@@ -101,19 +79,6 @@ export default function SpaceFormsIndexPane() {
       activeNavigation="forms"
       title={c().forms}
     >
-      <div class="screenHead">
-        <div class="screenTitle">
-          <div class="eyebrow">{ctx.spaceId()}</div>
-          <h1>{c().forms}</h1>
-        </div>
-        <button
-          class="btn"
-          type="button"
-          onClick={() => setShowFormDialog(true)}
-        >
-          <UiIcon name="plus" /> {c().newForm}
-        </button>
-      </div>
       <div class="split">
         <aside class="listPane surface">
           <div class="paneHead">
@@ -144,7 +109,7 @@ export default function SpaceFormsIndexPane() {
                 class="formItem"
                 classList={{ active: selectedName() === form.name }}
                 type="button"
-                onClick={() => setParams({ form: form.name, tab: activeTab() })}
+                onClick={() => setParams({ form: form.name, tab: undefined })}
               >
                 <span
                   class="glyph"
@@ -154,12 +119,6 @@ export default function SpaceFormsIndexPane() {
                 </span>
                 <span>
                   <b>{form.name}</b>
-                  <small>{Object.keys(form.fields).join(" · ") || "—"}</small>
-                  <span class="miniFields">
-                    <For each={Object.values(form.fields).slice(0, 3)}>
-                      {(field) => <span>{field.type}</span>}
-                    </For>
-                  </span>
                 </span>
                 <span class="chev">›</span>
               </button>
@@ -175,51 +134,15 @@ export default function SpaceFormsIndexPane() {
           >
             {(form) => (
               <>
-                <div class="contextBar">
-                  <div class="contextLeft">
-                    <span class="glyph active">
-                      {form().name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span>
-                      <b>{form().name}</b>
-                      <small>{c().forms} / {form().name}</small>
-                    </span>
-                  </div>
-                  <button
-                    class="btn iconBtn"
-                    type="button"
-                    aria-label={c().edit}
-                    onClick={() => setShowEditDialog(true)}
-                  >
-                    ⚙
-                  </button>
-                </div>
-                <div class="tabs" role="tablist">
-                  <For
-                    each={["entries", "fields", "assets", "views"] as FormTab[]}
-                  >
-                    {(tab) => (
-                      <button
-                        class="tab"
-                        classList={{ active: activeTab() === tab }}
-                        type="button"
-                        role="tab"
-                        aria-selected={activeTab() === tab}
-                        onClick={() => setParams({ form: form().name, tab })}
-                      >
-                        {tabLabels[tab][locale() === "ja" ? "ja" : "en"]}
-                      </button>
-                    )}
-                  </For>
-                </div>
-                <Show when={activeTab() === "entries"}>
-                  <div class="toolbar">
-                    <div class="toolbarLeft">
-                      <span class="ui-muted">
-                        Forms / {form().name} / Entries
-                      </span>
-                    </div>
-                    <div class="toolbarRight">
+                <div class="formWorkspaceHead surface">
+                  <div class="actions">
+                    <button
+                      class="btn"
+                      type="button"
+                      onClick={() => setShowEditDialog(true)}
+                    >
+                      <UiIcon name="settings" /> {c().edit}
+                    </button>
                       <button
                         class="btn primary"
                         type="button"
@@ -232,82 +155,18 @@ export default function SpaceFormsIndexPane() {
                       >
                         <UiIcon name="plus" /> {c().newEntry}
                       </button>
-                    </div>
                   </div>
-                  <FormTable
-                    spaceId={ctx.spaceId()}
-                    entryForm={form()}
-                    onEntryClick={(id) =>
-                      navigate(
-                        `/spaces/${ctx.spaceId()}/entries/${
-                          encodeURIComponent(id)
-                        }`,
-                      )}
-                  />
-                </Show>
-                <Show when={activeTab() === "fields"}>
-                  <div class="rowStack">
-                    <For
-                      each={Object.entries(form().fields)}
-                      fallback={
-                        <div class="surface settingsMain ui-muted">
-                          No fields
-                        </div>
-                      }
-                    >
-                      {([name, field]) => (
-                        <div class="rowBtn">
-                          <span class="glyph">#</span>
-                          <span>
-                            <b>{name}</b>
-                            <small>
-                              {field.type}
-                              {field.required ? " · required" : ""}
-                            </small>
-                          </span>
-                          <span class="pill">{field.type}</span>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={activeTab() === "assets"}>
-                  <p class="ui-muted mb-3">{c().spaceAssets}</p>
-                  <div class="assetList">
-                    <For
-                      each={assets() ?? []}
-                      fallback={
-                        <div class="surface settingsMain ui-muted">
-                          No assets in this Space
-                        </div>
-                      }
-                    >
-                      {(asset) => (
-                        <a
-                          class="assetRow"
-                          href={`/spaces/${ctx.spaceId()}/assets/${
-                            encodeURIComponent(asset.id)
-                          }`}
-                        >
-                          <span class="fileIcon">
-                            {asset.name?.split(".").pop()?.toUpperCase() ||
-                              "FILE"}
-                          </span>
-                          <span>
-                            <b>{asset.name || asset.id}</b>
-                            <small>{asset.path || "Asset"}</small>
-                          </span>
-                          <span>›</span>
-                        </a>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={activeTab() === "views"}>
-                  <div class="surface settingsMain ui-muted">
-                    {c().viewsText}
-                  </div>
-                </Show>
+                </div>
+                <FormTable
+                  spaceId={ctx.spaceId()}
+                  entryForm={form()}
+                  onEntryClick={(id) =>
+                    navigate(
+                      `/spaces/${ctx.spaceId()}/entries/${
+                        encodeURIComponent(id)
+                      }`,
+                    )}
+                />
                 <EditFormDialog
                   open={showEditDialog()}
                   entryForm={form()}

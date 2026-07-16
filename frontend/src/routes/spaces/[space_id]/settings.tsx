@@ -7,6 +7,7 @@ import { locale } from "~/lib/i18n";
 import {
   portablePreferences,
   setColorModePreference,
+  setContentWidthPreference,
   setLocalePreference,
   setPrimaryColorPreference,
   setUiThemePreference,
@@ -504,6 +505,22 @@ export default function SpaceSettingsRoute() {
                     <option value="emerald">Emerald</option>
                     <option value="amber">Amber</option>
                   </select>
+                </label>
+                <label>
+                  Content width<select
+                    aria-label="Content width"
+                    value={portablePreferences().content_width ?? "standard"}
+                    onChange={(e) =>
+                      void setContentWidthPreference(
+                        e.currentTarget.value as "standard" | "wide",
+                      )}
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="wide">Wide</option>
+                  </select>
+                  <small class="ui-muted">
+                    Wide uses more horizontal space on desktop for tables and editors.
+                  </small>
                 </label>
               </div>
             </section>

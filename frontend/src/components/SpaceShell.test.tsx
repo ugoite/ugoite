@@ -5,6 +5,14 @@ import { setLocale } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { SpaceShell } from "./SpaceShell";
 
+const preferenceState = vi.hoisted(() => ({ contentWidth: "standard" }));
+
+vi.mock("~/lib/preferences-store", () => ({
+  portablePreferences: () => ({
+    content_width: preferenceState.contentWidth,
+  }),
+}));
+
 vi.mock("~/lib/space-store", () => ({
   createSpaceStore: () => ({
     spaces: () => [
@@ -17,7 +25,10 @@ vi.mock("~/lib/space-store", () => ({
 }));
 
 describe("v5 SpaceShell", () => {
-  beforeEach(() => setLocale("en"));
+  beforeEach(() => {
+    setLocale("en");
+    preferenceState.contentWidth = "standard";
+  });
   it("renders the four persistent navigation destinations and children", () => {
     render(() => (
       <SpaceShell spaceId="my-space" activeNavigation="home">
@@ -82,5 +93,12 @@ describe("v5 SpaceShell", () => {
     ));
     expect(container.querySelector(".loadingBar")).toBeInTheDocument();
     loadingState.stop();
+  });
+  it("applies the portable wide desktop layout preference", () => {
+    preferenceState.contentWidth = "wide";
+    const { container } = render(() => (
+      <SpaceShell spaceId="my-space"><p>Wide content</p></SpaceShell>
+    ));
+    expect(container.querySelector(".content")).toHaveClass("contentWide");
   });
 });

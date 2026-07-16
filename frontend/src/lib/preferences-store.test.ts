@@ -116,6 +116,18 @@ describe("preferencesStore", () => {
     );
   });
 
+  it("persists the desktop content width locally and remotely", async () => {
+    const { setContentWidthPreference, portablePreferences } = await import(
+      "./preferences-store"
+    );
+
+    await setContentWidthPreference("wide");
+
+    expect(portablePreferences().content_width).toBe("wide");
+    expect(localStorage.getItem("ugoite-content-width")).toBe("wide");
+    expect(getPreferencePatches()).toContainEqual({ content_width: "wide" });
+  });
+
   it("REQ-FE-059: migrates missing locale and theme fields from local fallback", async () => {
     localStorage.setItem("ugoite-locale", "ja");
     localStorage.setItem("ugoite-ui-theme", "classic");

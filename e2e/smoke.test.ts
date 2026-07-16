@@ -61,10 +61,28 @@ test.describe("Smoke Tests", () => {
     await page.waitForLoadState("networkidle");
     const body = await page.content();
     expect(body.toLowerCase()).toContain("<!doctype html>");
+    await expect(page.getByRole("heading", { name: "E2E Detail Route Entry" }))
+      .toBeVisible();
+    await expect(page.getByRole("link", { name: "Back to Form" }))
+      .toHaveAttribute(
+        "href",
+        `/spaces/${spaceId}/forms?form=Entry`,
+      );
 
     await request.delete(
       getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
     );
+  });
+
+  test("plain Entries list is integrated into the Forms workspace", async ({ page, request }) => {
+    const spaceId = await getDefaultSpaceId(request);
+    await page.goto(`/spaces/${spaceId}/entries`);
+    await expect(page).toHaveURL(`/spaces/${spaceId}/forms?form=Entry`);
+    await expect(page.getByRole("tab")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Form", exact: true }).locator("svg path"),
+    )
+      .toHaveCount(2);
   });
 
   test("GET /about returns HTML", async ({ page }) => {

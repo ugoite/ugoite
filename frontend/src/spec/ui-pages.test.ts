@@ -51,6 +51,10 @@ const allowedComponentTypes = new Set([
   "persistent-workspace-navigation",
   "page-header",
   "two-column-workspace",
+  "searchable-master-list",
+  "redirect",
+  "query-results",
+  "select",
 ]);
 
 const collectYamlFiles = (dir: string): string[] => {
@@ -146,13 +150,6 @@ const collectTargets = (value: unknown, targets: string[]) => {
     collectTargets(entry, targets);
   }
 };
-
-const findBottomTabs = (components: PageSpec["components"]) =>
-  components?.body?.find(
-    (component) =>
-      component.type === "tab-bar" &&
-      component.position === "bottom-center-floating",
-  );
 
 describe("UI spec YAML registry", () => {
   it("REQ-FE-040: loads UI page specs", () => {
@@ -304,32 +301,20 @@ describe("UI spec YAML registry", () => {
     });
   });
 
-  it("REQ-FE-040: validates entries/forms bottom tabs use product labels", () => {
+  it("REQ-FE-067: keeps one ordinary Form and Entry workspace", () => {
     const pages = loadPages();
-    const targetPages = new Set(["space-entries-object", "space-form-grid"]);
-    for (const { spec, filePath } of pages) {
-      if (!spec.page?.id || !targetPages.has(spec.page.id)) {
-        continue;
-      }
-      const bottomTabs = findBottomTabs(spec.components);
-      expect(bottomTabs, `${filePath} missing bottom view tabs`).toBeTruthy();
-      const tabs = Array.isArray(bottomTabs?.tabs) ? bottomTabs?.tabs : [];
-      const tabIds = tabs.map((tab: { id?: string }) => tab.id);
-      expect(tabIds).toContain("object");
-      expect(tabIds).toContain("grid");
-      const labelsById = new Map(
-        tabs.map((tab: { id?: string; label?: string }) => [tab.id, tab.label]),
-      );
-      expect(
-        labelsById.get("object"),
-        `${filePath} should label object tab as Entries`,
-      ).toBe(
-        "Entries",
-      );
-      expect(
-        labelsById.get("grid"),
-        `${filePath} should label grid tab as Forms`,
-      ).toBe("Forms");
-    }
+    const forms = pages.find(({ spec }) => spec.page?.id === "space-form-grid");
+    const entries = pages.find(({ spec }) =>
+      spec.page?.id === "space-entries-object"
+    );
+    expect(forms?.spec.components?.body?.some((component) =>
+      component.type === "tab-bar"
+    )).toBe(false);
+    expect(entries?.spec.components?.body?.find((component) =>
+      component.id === "plain-entry-list-redirect"
+    )).toMatchObject({
+      type: "redirect",
+      target_page: "space-form-grid",
+    });
   });
 });

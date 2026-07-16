@@ -44,6 +44,7 @@ export interface UserPreferences {
   ui_theme: "materialize" | "classic" | "pop" | null;
   color_mode: "light" | "dark" | null;
   primary_color: "violet" | "blue" | "emerald" | "amber" | null;
+  content_width: "standard" | "wide" | null;
 }
 
 export type UserPreferencesPatchPayload = Partial<UserPreferences>;

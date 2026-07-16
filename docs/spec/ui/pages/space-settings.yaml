@@ -1,5 +1,5 @@
-version: "0.1"
-updated: "2026-02-02"
+version: "0.2"
+updated: "2026-07-17"
 page:
   id: space-settings
   title: Space Settings
@@ -36,6 +36,13 @@ components:
             label: Space settings
             target_page: space-settings
   body:
+    - id: appearance-content-width
+      type: select
+      section: appearance
+      options:
+        - standard
+        - wide
+      persist: portable-user-preferences
     - id: settings-panel
       type: settings-panel
       sections:

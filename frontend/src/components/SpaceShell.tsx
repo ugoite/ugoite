@@ -5,6 +5,7 @@ import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { authApi } from "~/lib/ugoite-client";
 import { createSpaceStore } from "~/lib/space-store";
+import { portablePreferences } from "~/lib/preferences-store";
 
 export type SpaceTopTab = "dashboard" | "search";
 export type SpaceBottomTab = "object" | "grid";
@@ -171,7 +172,14 @@ export function SpaceShell(props: SpaceShellProps) {
             S
           </button>
         </header>
-        <div class="content">{props.children}</div>
+        <div
+          class="content"
+          classList={{
+            "contentWide": portablePreferences().content_width === "wide",
+          }}
+        >
+          {props.children}
+        </div>
       </section>
       {navigation(true)}
     </main>
