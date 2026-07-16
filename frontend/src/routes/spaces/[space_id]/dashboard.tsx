@@ -4,15 +4,21 @@ import { CreateFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { createEntryStore } from "~/lib/entry-store";
+import { getDocsiteHref } from "~/lib/docsite-links";
 import { locale } from "~/lib/i18n";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 
 const copy = {
-  en: { home: "Home", newEntry: "Entry", continue: "Continue", pinned: "Pinned", recent: "Recent", forms: "Forms", search: "Search", assets: "Assets", savedSql: "SQL", noRecent: "Create an entry to start building this Space.", form: "Form", entry: "Entry", searchMeta: "Entries · Forms · Assets" },
-  ja: { home: "ホーム", newEntry: "エントリー", continue: "続きから", pinned: "ピン留め", recent: "最近", forms: "フォーム", search: "検索", assets: "アセット", savedSql: "SQL", noRecent: "エントリーを作成して、このスペースを育てましょう。", form: "フォーム", entry: "エントリー", searchMeta: "エントリー · フォーム · アセット" },
+  en: { home: "Home", newEntry: "Entry", continue: "Continue", pinned: "Pinned", recent: "Recent", forms: "Forms", search: "Search", assets: "Assets", savedSql: "SQL", noRecent: "Create an entry to start building this Space.", walkthrough: "Read the browser-first walkthrough", form: "Form", entry: "Entry", searchMeta: "Entries · Forms · Assets" },
+  ja: { home: "ホーム", newEntry: "エントリー", continue: "続きから", pinned: "ピン留め", recent: "最近", forms: "フォーム", search: "検索", assets: "アセット", savedSql: "SQL", noRecent: "エントリーを作成して、このスペースを育てましょう。", walkthrough: "ブラウザの使い方を見る", form: "フォーム", entry: "エントリー", searchMeta: "エントリー · フォーム · アセット" },
 } as const;
+
+const browserWalkthroughUrl = getDocsiteHref(
+  "/docs/guide/browser-first-entry",
+  "docs/guide/browser-first-entry.md",
+);
 
 export default function SpaceDashboardRoute() {
   const params = useParams<{ space_id: string }>();
@@ -56,9 +62,12 @@ export default function SpaceDashboardRoute() {
         <div class="sectionHead"><h2>{c().continue}</h2></div>
         <div class="grid3">
           <Show when={recentEntries()[0]} fallback={
-            <button class="card cardBtn" type="button" onClick={() => entryForms().length ? navigate(`/spaces/${spaceId()}/entries/new`) : setShowFormDialog(true)}>
-              <span class="glyph active"><UiIcon name="entry" /></span><span><b>{c().newEntry}</b><small>{c().noRecent}</small></span><span class="chev">›</span>
-            </button>
+            <div class="card ui-stack-sm">
+              <button class="cardBtn" type="button" onClick={() => entryForms().length ? navigate(`/spaces/${spaceId()}/entries/new`) : setShowFormDialog(true)}>
+                <span class="glyph active"><UiIcon name="entry" /></span><span><b>{c().newEntry}</b><small>{c().noRecent}</small></span><span class="chev">›</span>
+              </button>
+              <a class="ui-muted text-sm hover:underline" href={browserWalkthroughUrl} target="_blank" rel="noopener">{c().walkthrough}</a>
+            </div>
           }>
             {(entry) => <A class="card cardBtn" href={`/spaces/${spaceId()}/entries/${encodeURIComponent(entry().id)}`}><span class="glyph active"><UiIcon name="entry" /></span><span><b>{entry().title || "Untitled"}</b><small>{entry().form || c().entry}</small></span><span class="chev">›</span></A>}
           </Show>

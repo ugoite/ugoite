@@ -10,7 +10,7 @@ const navigate = vi.fn();
 vi.mock("@solidjs/router", () => ({ useNavigate: () => navigate, useParams: () => ({ space_id: "default" }), A: (props: { href: string; class?: string; children: unknown }) => <a href={props.href} class={props.class}>{props.children}</a> }));
 vi.mock("~/components/SpaceShell", () => ({ SpaceShell: (props: { children: unknown }) => <div>{props.children}</div> }));
 vi.mock("~/components/create-dialogs", () => ({ CreateFormDialog: (props: { open: boolean }) => <Show when={props.open}><div>Create Form Dialog</div></Show> }));
-vi.mock("~/lib/entry-store", () => ({ createEntryStore: () => ({ entries: () => [{ id: "entry-1", title: "API memo", form: "Notes", updated_at: "2026-01-01", properties: {}, tags: [], links: [] }], loadEntries: vi.fn() }) }));
+vi.mock("~/lib/entry-store", () => ({ createEntryStore: () => ({ entries: () => [], loadEntries: vi.fn() }) }));
 vi.mock("~/lib/ugoite-client", () => ({ formApi: { list: vi.fn(), listTypes: vi.fn(), create: vi.fn() }, spaceApi: { get: vi.fn() } }));
 
 describe("v5 space Home", () => {
@@ -27,15 +27,20 @@ describe("v5 space Home", () => {
   it("starts the dedicated New Entry route when a creatable Form exists", async () => {
     vi.mocked(formApi.list).mockResolvedValue([{ name: "Notes", version: 1, template: "", fields: {} }]);
     render(() => <SpaceDashboardRoute />);
-    const button = await screen.findByRole("button", { name: /Entry/ });
+    const button = (await screen.findAllByRole("button", { name: /Entry/ }))[0];
     fireEvent.click(button);
     expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/new");
   });
   it("opens Form creation when the Space has no creatable Forms", async () => {
     vi.mocked(formApi.list).mockResolvedValue([]);
     render(() => <SpaceDashboardRoute />);
-    fireEvent.click(await screen.findByRole("button", { name: /Entry/ }));
+    fireEvent.click((await screen.findAllByRole("button", { name: /Entry/ }))[0]);
     expect(screen.getByText("Create Form Dialog")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Read the browser-first walkthrough" }))
+      .toHaveAttribute(
+        "href",
+        "https://ugoite.github.io/ugoite/docs/guide/browser-first-entry",
+      );
   });
   it("uses the Japanese v5 copy", async () => {
     setLocale("ja"); vi.mocked(formApi.list).mockResolvedValue([]);

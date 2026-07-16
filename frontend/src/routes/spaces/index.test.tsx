@@ -12,6 +12,8 @@ import { spaceApi } from "~/lib/ugoite-client";
 
 const localDevAuthGuideUrl =
   "https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
+const browserWalkthroughUrl =
+  "https://ugoite.github.io/ugoite/docs/guide/browser-first-entry";
 
 const navigateMock = vi.fn();
 
@@ -52,6 +54,9 @@ describe("/spaces", () => {
         "href",
         "/spaces/join",
       );
+    expect(
+      screen.getByRole("link", { name: "Read the browser-first walkthrough" }),
+    ).toHaveAttribute("href", browserWalkthroughUrl);
     expect(spaceApi.create).not.toHaveBeenCalled();
   });
 
