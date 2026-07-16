@@ -18,10 +18,12 @@ describe("concept public pages", () => {
     expect(screen.getByRole("heading", { name: "About Ugoite" }))
       .toBeInTheDocument();
     expect(screen.getAllByText("Ugoite").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Home").length).toBeGreaterThan(0);
     setLocale("ja");
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Ugoite について" }))
         .toBeInTheDocument()
     );
+    expect(screen.getAllByText("ホーム").length).toBeGreaterThan(0);
   });
 });

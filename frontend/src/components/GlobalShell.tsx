@@ -1,10 +1,35 @@
 import type { JSX } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
+import { locale } from "~/lib/i18n";
 import { authApi } from "~/lib/ugoite-client";
+
+const labels = {
+  en: {
+    home: "Home",
+    forms: "Forms",
+    search: "Search",
+    settings: "Settings",
+    spaces: "Spaces",
+    about: "About",
+    menu: "Menu",
+    signOut: "Sign out",
+  },
+  ja: {
+    home: "ホーム",
+    forms: "フォーム",
+    search: "検索",
+    settings: "設定",
+    spaces: "スペース",
+    about: "Ugoiteについて",
+    menu: "メニュー",
+    signOut: "ログアウト",
+  },
+} as const;
 
 export function GlobalShell(
   props: { title: string; children: JSX.Element; active?: "spaces" | "about" },
 ) {
+  const copy = () => labels[locale() === "ja" ? "ja" : "en"];
   const signOut = async () => {
     await authApi.clearSession();
     if (typeof window !== "undefined") window.location.assign("/login");
@@ -20,19 +45,19 @@ export function GlobalShell(
           <nav class="navGroup">
             <a class="navItem" href="/spaces">
               <UiIcon name="home" />
-              <span>Home</span>
+              <span>{copy().home}</span>
             </a>
             <a class="navItem" href="/spaces">
               <UiIcon name="forms" />
-              <span>Forms</span>
+              <span>{copy().forms}</span>
             </a>
             <a class="navItem" href="/spaces">
               <UiIcon name="search" />
-              <span>Search</span>
+              <span>{copy().search}</span>
             </a>
             <a class="navItem" href="/spaces">
               <UiIcon name="settings" />
-              <span>Settings</span>
+              <span>{copy().settings}</span>
             </a>
           </nav>
           <div class="sideFoot">
@@ -42,7 +67,7 @@ export function GlobalShell(
               href="/spaces"
             >
               <UiIcon name="spaces" />
-              <span>Spaces</span>
+              <span>{copy().spaces}</span>
             </a>
             <a
               class="navItem"
@@ -50,14 +75,18 @@ export function GlobalShell(
               href="/about"
             >
               <UiIcon name="about" />
-              <span>About</span>
+              <span>{copy().about}</span>
             </a>
           </div>
         </aside>
       </div>
       <section class="main">
         <header class="topbar">
-          <a class="btn iconBtn mobileMenu" href="/spaces" aria-label="Menu">
+          <a
+            class="btn iconBtn mobileMenu"
+            href="/spaces"
+            aria-label={copy().menu}
+          >
             <UiIcon name="menu" />
           </a>
           <select class="spaceSelect" aria-label="Space">
@@ -68,7 +97,7 @@ export function GlobalShell(
             class="avatar"
             type="button"
             onClick={() => void signOut()}
-            aria-label="Sign out"
+            aria-label={copy().signOut}
           >
             S
           </button>
@@ -78,19 +107,19 @@ export function GlobalShell(
       <nav class="bottomNav">
         <a class="active" href="/spaces">
           <UiIcon name="home" />
-          <span>Home</span>
+          <span>{copy().home}</span>
         </a>
         <a href="/spaces">
           <UiIcon name="forms" />
-          <span>Forms</span>
+          <span>{copy().forms}</span>
         </a>
         <a href="/spaces">
           <UiIcon name="search" />
-          <span>Search</span>
+          <span>{copy().search}</span>
         </a>
         <a href="/spaces">
           <UiIcon name="settings" />
-          <span>Settings</span>
+          <span>{copy().settings}</span>
         </a>
       </nav>
     </main>

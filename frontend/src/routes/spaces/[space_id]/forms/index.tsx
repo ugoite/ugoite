@@ -33,7 +33,7 @@ const copy = {
     select: "Select a Form",
     edit: "Edit Form",
     newEntry: "Entry",
-    linkedAssets: "Assets linked to entries in this Form",
+    spaceAssets: "Assets in this Space",
     viewsText: "Saved views for this Form will appear here.",
   },
   ja: {
@@ -44,7 +44,7 @@ const copy = {
     select: "フォームを選択",
     edit: "フォームを編集",
     newEntry: "エントリー",
-    linkedAssets: "このフォームのエントリーに紐づくアセット",
+    spaceAssets: "このスペースのアセット",
     viewsText: "このフォームの保存済みビューがここに表示されます。",
   },
 } as const;
@@ -86,7 +86,7 @@ export default function SpaceFormsIndexPane() {
   const createForm = async (payload: FormCreatePayload) => {
     await formApi.create(ctx.spaceId(), payload);
     setShowFormDialog(false);
-    ctx.refetchForms();
+    await ctx.refetchForms();
     setParams({ form: payload.name, tab: "entries" });
   };
   const updateForm = async (payload: FormCreatePayload) => {
@@ -272,13 +272,13 @@ export default function SpaceFormsIndexPane() {
                   </div>
                 </Show>
                 <Show when={activeTab() === "assets"}>
-                  <p class="ui-muted mb-3">{c().linkedAssets}</p>
+                  <p class="ui-muted mb-3">{c().spaceAssets}</p>
                   <div class="assetList">
                     <For
                       each={assets() ?? []}
                       fallback={
                         <div class="surface settingsMain ui-muted">
-                          No linked assets
+                          No assets in this Space
                         </div>
                       }
                     >
