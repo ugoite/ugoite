@@ -2179,6 +2179,8 @@ describe("EditFormDialog", () => {
 
     expect(screen.getByRole("button", { name: "Save Changes" }).parentElement)
       .toHaveClass("ui-dialog-actions");
+    expect(screen.getByRole("button", { name: "Save Changes" }).closest("form"))
+      .toHaveClass("min-w-0");
   });
 
   it("REQ-FE-039: shows default value input for new fields", async () => {

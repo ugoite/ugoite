@@ -1377,7 +1377,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 
           <form
             onSubmit={handleSubmit}
-            class="ui-stack-sm flex-1 overflow-auto"
+            class="ui-stack-sm flex-1 min-w-0 overflow-auto"
           >
             <div class="ui-field">
               <label class="ui-label" for="form-name">
@@ -1774,7 +1774,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 
           <form
             onSubmit={handleSubmit}
-            class="ui-stack-sm flex-1 overflow-auto"
+            class="ui-stack-sm flex-1 min-w-0 overflow-auto"
           >
             <div class="ui-stack-sm">
               <div class="flex justify-between items-center">
