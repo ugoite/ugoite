@@ -2165,6 +2165,22 @@ describe("EditFormDialog", () => {
     expect(controls).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
   });
 
+  it("keeps edit-form actions at their intrinsic button height", () => {
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={mockForm}
+        columnTypes={columnTypes}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("button", { name: "Save Changes" }).parentElement)
+      .toHaveClass("ui-dialog-actions");
+  });
+
   it("REQ-FE-039: shows default value input for new fields", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();

@@ -1173,7 +1173,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-2">
+            <div class="ui-dialog-actions pt-2">
               <button
                 type="button"
                 onClick={props.onClose}
@@ -1512,7 +1512,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-4">
+            <div class="ui-dialog-actions pt-4">
               <button
                 type="button"
                 onClick={props.onClose}
@@ -1920,7 +1920,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-4">
+            <div class="ui-dialog-actions pt-4">
               <button
                 type="button"
                 onClick={props.onClose}
