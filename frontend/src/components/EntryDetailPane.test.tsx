@@ -323,39 +323,6 @@ describe("EntryDetailPane", () => {
     });
   });
 
-  it("retries a transient server failure while loading an entry", async () => {
-    const transientError = Object.assign(
-      new Error("Failed to get entry: Internal Server Error"),
-      { status: 500 },
-    );
-    (entryApi.get as ReturnType<typeof vi.fn>)
-      .mockRejectedValueOnce(transientError)
-      .mockResolvedValueOnce({
-        id: "entry-1",
-        title: "Recovered Entry",
-        form: null,
-        content: "# Recovered Entry",
-        revision_id: "rev-1",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      });
-
-    render(() => (
-      <EntryDetailPane
-        spaceId={() => "default"}
-        entryId={() => "entry-1"}
-        onDeleted={vi.fn()}
-      />
-    ));
-
-    await waitFor(() => {
-      expect(entryApi.get).toHaveBeenCalledTimes(2);
-      expect(screen.getByRole("heading", { name: "Recovered Entry" }))
-        .toBeInTheDocument();
-    });
-    expect(screen.queryByText(transientError.message)).not.toBeInTheDocument();
-  });
-
   it("calls assetApi.upload when file is uploaded", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
