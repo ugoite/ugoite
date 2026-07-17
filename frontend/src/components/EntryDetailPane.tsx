@@ -252,6 +252,28 @@ async function fetchWithTimeout<T>(
   }
 }
 
+function isTransientEntryLoadError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" && status >= 500;
+}
+
+async function loadEntryWithTransientRetry(
+  spaceId: string,
+  entryId: string,
+) {
+  try {
+    return await entryApi.get(spaceId, entryId);
+  } catch (error) {
+    // The forms workspace and the detail route can issue their first requests
+    // at the same time. Retry a server-side failure once so that a transient
+    // backend startup/storage race does not leave the detail screen stuck.
+    if (!isTransientEntryLoadError(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return await entryApi.get(spaceId, entryId);
+  }
+}
+
 function EntryRowReferenceField(props: {
   spaceId: string;
   fieldId: string;
@@ -462,7 +484,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       try {
         setEntryError(null);
         return await fetchWithTimeout(
-          entryApi.get(parameters.wsId, parameters.entryId),
+          loadEntryWithTransientRetry(parameters.wsId, parameters.entryId),
           10000,
           "Loading entry timed out",
         );
