@@ -26,8 +26,8 @@ const collectFiles = (dir: string): string[] => {
   return files;
 };
 
-describe("Theme usage", () => {
-  it("REQ-FE-042: avoids raw color utilities in themed components", () => {
+describe("Surface usage", () => {
+  it("REQ-FE-042: avoids raw color utilities in surface-aware components", () => {
     const targetDirs = ["components", "routes"].map((dir) =>
       path.join(SRC_ROOT, dir)
     );
@@ -50,7 +50,7 @@ describe("Theme usage", () => {
     );
   });
 
-  it("REQ-FE-042: avoids inline color styles in themed components", () => {
+  it("REQ-FE-042: avoids inline color styles in surface-aware components", () => {
     const targetDirs = ["components", "routes"].map((dir) =>
       path.join(SRC_ROOT, dir)
     );

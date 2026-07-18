@@ -1173,7 +1173,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-2">
+            <div class="ui-dialog-actions pt-2">
               <button
                 type="button"
                 onClick={props.onClose}
@@ -1377,7 +1377,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 
           <form
             onSubmit={handleSubmit}
-            class="ui-stack-sm flex-1 overflow-auto"
+            class="ui-dialog-form-content"
           >
             <div class="ui-field">
               <label class="ui-label" for="form-name">
@@ -1512,7 +1512,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-4">
+            <div class="ui-dialog-actions pt-4">
               <button
                 type="button"
                 onClick={props.onClose}
@@ -1774,7 +1774,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 
           <form
             onSubmit={handleSubmit}
-            class="ui-stack-sm flex-1 overflow-auto"
+            class="ui-dialog-form-content"
           >
             <div class="ui-stack-sm">
               <div class="flex justify-between items-center">
@@ -1920,7 +1920,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-4">
+            <div class="ui-dialog-actions pt-4">
               <button
                 type="button"
                 onClick={props.onClose}

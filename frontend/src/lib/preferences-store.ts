@@ -6,12 +6,7 @@ import {
   readLocalPreferences,
   writeLocalPreferences,
 } from "./preferences-local";
-import {
-  initializeUiTheme,
-  setColorMode,
-  setPrimaryColor,
-  setUiTheme,
-} from "~/lib/ui-theme";
+import { initializeColorMode } from "~/lib/color-mode";
 import type { UserPreferences, UserPreferencesPatchPayload } from "./types";
 
 const mergePreferences = (
@@ -22,12 +17,6 @@ const mergePreferences = (
   preferences.selected_space_id = primary?.selected_space_id ??
     fallback?.selected_space_id ?? null;
   preferences.locale = primary?.locale ?? fallback?.locale ?? null;
-  preferences.ui_theme = primary?.ui_theme ?? fallback?.ui_theme ?? null;
-  preferences.color_mode = primary?.color_mode ?? fallback?.color_mode ?? null;
-  preferences.primary_color = primary?.primary_color ??
-    fallback?.primary_color ?? null;
-  preferences.content_width = primary?.content_width ??
-    fallback?.content_width ?? null;
   return preferences;
 };
 
@@ -42,18 +31,6 @@ const applyPatch = (
   preferences.locale = patch.locale !== undefined
     ? patch.locale
     : current.locale;
-  preferences.ui_theme = patch.ui_theme !== undefined
-    ? patch.ui_theme
-    : current.ui_theme;
-  preferences.color_mode = patch.color_mode !== undefined
-    ? patch.color_mode
-    : current.color_mode;
-  preferences.primary_color = patch.primary_color !== undefined
-    ? patch.primary_color
-    : current.primary_color;
-  preferences.content_width = patch.content_width !== undefined
-    ? patch.content_width
-    : current.content_width;
   return preferences;
 };
 
@@ -67,18 +44,6 @@ const missingPortableFields = (
   }
   if (portable.locale === null && local.locale !== null) {
     patch.locale = local.locale;
-  }
-  if (portable.ui_theme === null && local.ui_theme !== null) {
-    patch.ui_theme = local.ui_theme;
-  }
-  if (portable.color_mode === null && local.color_mode !== null) {
-    patch.color_mode = local.color_mode;
-  }
-  if (portable.primary_color === null && local.primary_color !== null) {
-    patch.primary_color = local.primary_color;
-  }
-  if (portable.content_width === null && local.content_width !== null) {
-    patch.content_width = local.content_width;
   }
   return patch;
 };
@@ -112,16 +77,7 @@ const applyUiPreferences = (preferences: UserPreferences): void => {
   } else {
     initializeLocale();
   }
-  if (preferences.ui_theme) {
-    setUiTheme(preferences.ui_theme);
-  }
-  if (preferences.color_mode) {
-    setColorMode(preferences.color_mode);
-  }
-  if (preferences.primary_color) {
-    setPrimaryColor(preferences.primary_color);
-  }
-  initializeUiTheme();
+  initializeColorMode();
 };
 
 const preferencesStore = createRoot(() => {
@@ -257,30 +213,6 @@ const preferencesStore = createRoot(() => {
       patch.locale = locale;
       return patchPortablePreferences(patch);
     },
-    setUiThemePreference: (uiTheme: UserPreferences["ui_theme"]) => {
-      const patch = {} as UserPreferencesPatchPayload;
-      patch.ui_theme = uiTheme;
-      return patchPortablePreferences(patch);
-    },
-    setColorModePreference: (colorMode: UserPreferences["color_mode"]) => {
-      const patch = {} as UserPreferencesPatchPayload;
-      patch.color_mode = colorMode;
-      return patchPortablePreferences(patch);
-    },
-    setPrimaryColorPreference: (
-      primaryColor: UserPreferences["primary_color"],
-    ) => {
-      const patch = {} as UserPreferencesPatchPayload;
-      patch.primary_color = primaryColor;
-      return patchPortablePreferences(patch);
-    },
-    setContentWidthPreference: (
-      contentWidth: UserPreferences["content_width"],
-    ) => {
-      const patch = {} as UserPreferencesPatchPayload;
-      patch.content_width = contentWidth;
-      return patchPortablePreferences(patch);
-    },
   };
 });
 
@@ -300,10 +232,4 @@ export const patchPortablePreferences =
 export const setSelectedSpacePreference =
   preferencesStore.setSelectedSpacePreference;
 export const setLocalePreference = preferencesStore.setLocalePreference;
-export const setUiThemePreference = preferencesStore.setUiThemePreference;
-export const setColorModePreference = preferencesStore.setColorModePreference;
-export const setPrimaryColorPreference =
-  preferencesStore.setPrimaryColorPreference;
-export const setContentWidthPreference =
-  preferencesStore.setContentWidthPreference;
 export const isPublicPortablePreferencesRoute = isPublicPortablePreferencesPath;

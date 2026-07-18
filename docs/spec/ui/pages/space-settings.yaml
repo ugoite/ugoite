@@ -17,32 +17,7 @@ components:
         - id: search
           label: search
           target_page: space-search
-    - id: settings-button
-      type: floating-icon-button
-      position: top-right-floating
-      icon: settings
-      menu:
-        id: ui-theme-menu
-        theme_options:
-          - materialize
-          - classic
-          - pop
-        color_modes:
-          - light
-          - dark
-        persist: localStorage
-        actions:
-          - id: open-space-settings
-            label: Space settings
-            target_page: space-settings
   body:
-    - id: appearance-content-width
-      type: select
-      section: appearance
-      options:
-        - standard
-        - wide
-      persist: portable-user-preferences
     - id: settings-panel
       type: settings-panel
       sections:

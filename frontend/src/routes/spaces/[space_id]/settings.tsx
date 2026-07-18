@@ -4,14 +4,7 @@ import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { locale } from "~/lib/i18n";
-import {
-  portablePreferences,
-  setColorModePreference,
-  setContentWidthPreference,
-  setLocalePreference,
-  setPrimaryColorPreference,
-  setUiThemePreference,
-} from "~/lib/preferences-store";
+import { setLocalePreference } from "~/lib/preferences-store";
 import { spaceApi } from "~/lib/ugoite-client";
 import type {
   AgentPrincipal,
@@ -25,8 +18,7 @@ type Section =
   | "members"
   | "agents"
   | "credentials"
-  | "storage"
-  | "appearance";
+  | "storage";
 const sections: Array<
   { id: Section; icon: UiIconName; en: string; ja: string }
 > = [
@@ -35,7 +27,6 @@ const sections: Array<
   { id: "agents", icon: "agent", en: "Agents", ja: "エージェント" },
   { id: "credentials", icon: "credential", en: "Credentials", ja: "認証情報" },
   { id: "storage", icon: "storage", en: "Storage", ja: "ストレージ" },
-  { id: "appearance", icon: "appearance", en: "Appearance", ja: "外観" },
 ];
 const managedRoles = ["owner", "editor", "viewer"] as const;
 type ManagedRole = typeof managedRoles[number];
@@ -273,7 +264,8 @@ export default function SpaceSettingsRoute() {
               </Show>
               <Show when={members.error}>
                 <p class="ui-alert ui-alert-error">
-                  Failed to load members: {message(members.error, "Unknown error")}
+                  Failed to load members:{" "}
+                  {message(members.error, "Unknown error")}
                 </p>
               </Show>
               <div class="rowStack">
@@ -393,7 +385,8 @@ export default function SpaceSettingsRoute() {
               </Show>
               <Show when={agents.error}>
                 <p class="ui-alert ui-alert-error">
-                  Failed to load agents: {message(agents.error, "Unknown error")}
+                  Failed to load agents:{" "}
+                  {message(agents.error, "Unknown error")}
                 </p>
               </Show>
               <div class="rowStack">
@@ -456,75 +449,6 @@ export default function SpaceSettingsRoute() {
             </section>
           </Show>
 
-          <Show when={active() === "appearance"}>
-            <section class="settingsMain surface">
-              <h2>Appearance</h2>
-              <div class="settingsGrid">
-                <label>
-                  Theme<select
-                    value={portablePreferences().ui_theme ?? "classic"}
-                    onChange={(e) =>
-                      void setUiThemePreference(
-                        e.currentTarget.value as
-                          | "classic"
-                          | "materialize"
-                          | "pop",
-                      )}
-                  >
-                    <option value="classic">Classic</option>
-                    <option value="materialize">Materialize</option>
-                    <option value="pop">Pop</option>
-                  </select>
-                </label>
-                <label>
-                  Mode<select
-                    value={portablePreferences().color_mode ?? "light"}
-                    onChange={(e) =>
-                      void setColorModePreference(
-                        e.currentTarget.value as "light" | "dark",
-                      )}
-                  >
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                  </select>
-                </label>
-                <label>
-                  Accent<select
-                    value={portablePreferences().primary_color ?? "violet"}
-                    onChange={(e) =>
-                      void setPrimaryColorPreference(
-                        e.currentTarget.value as
-                          | "violet"
-                          | "blue"
-                          | "emerald"
-                          | "amber",
-                      )}
-                  >
-                    <option value="violet">Violet</option>
-                    <option value="blue">Blue</option>
-                    <option value="emerald">Emerald</option>
-                    <option value="amber">Amber</option>
-                  </select>
-                </label>
-                <label>
-                  Content width<select
-                    aria-label="Content width"
-                    value={portablePreferences().content_width ?? "standard"}
-                    onChange={(e) =>
-                      void setContentWidthPreference(
-                        e.currentTarget.value as "standard" | "wide",
-                      )}
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="wide">Wide</option>
-                  </select>
-                  <small class="ui-muted">
-                    Wide uses more horizontal space on desktop for tables and editors.
-                  </small>
-                </label>
-              </div>
-            </section>
-          </Show>
         </main>
       </div>
     </SpaceShell>

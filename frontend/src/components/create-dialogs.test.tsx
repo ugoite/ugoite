@@ -18,6 +18,21 @@ beforeEach(() => {
 describe("CreateFormDialog", () => {
   const columnTypes = ["string", "number", "boolean"];
 
+  it("keeps form dialog actions at their intrinsic height", () => {
+    const { container } = render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={columnTypes}
+        formNames={[]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+    expect(container.querySelector("form")).toHaveClass(
+      "ui-dialog-form-content",
+    );
+  });
+
   it("REQ-FE-032: maintains focus on column name input when typing", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
@@ -2163,6 +2178,24 @@ describe("EditFormDialog", () => {
     const controls = newInput.nextElementSibling;
     expect(controls).toHaveClass("grid");
     expect(controls).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
+  });
+
+  it("keeps edit-form actions at their intrinsic button height", () => {
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={mockForm}
+        columnTypes={columnTypes}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("button", { name: "Save Changes" }).parentElement)
+      .toHaveClass("ui-dialog-actions");
+    expect(screen.getByRole("button", { name: "Save Changes" }).closest("form"))
+      .toHaveClass("ui-dialog-form-content");
   });
 
   it("REQ-FE-039: shows default value input for new fields", async () => {

@@ -11,7 +11,7 @@
   --soft2: #fbfaf7;
   --black: #111;
   --white: #fff;
-  --accent: #5657e8;
+  --focus: #5657e8;
   --danger: #b3261e;
   --success: #226b3a;
   --shadow: 0 18px 56px rgba(0, 0, 0, 0.07);
@@ -23,9 +23,7 @@
   --ui-foreground: var(--ink);
   --ui-foreground-muted: var(--muted);
   --ui-border: var(--line);
-  --ui-accent: var(--accent);
-  --ui-accent-strong: var(--black);
-  --ui-accent-foreground: var(--white);
+  --ui-focus: var(--focus);
   --ui-danger: var(--danger);
   --ui-success: var(--success);
   --ui-warning: #8b5d00;
@@ -49,43 +47,19 @@
 }
 
 :root[data-color-mode="dark"] {
-  --bg: #18191d;
-  --panel: #22242a;
+  --bg: #101114;
+  --panel: #1b1d22;
   --ink: #f0f1f5;
-  --muted: #a7aab4;
+  --muted: #b8bbc4;
   --line: #3a3d46;
-  --line2: #4a4e59;
+  --line2: #50545f;
   --soft: #292c33;
-  --soft2: #202228;
+  --soft2: #22252b;
   --black: #f0f1f5;
   --white: #18191d;
+  --focus: #9bb6ff;
   --shadow: 0 18px 56px rgba(0, 0, 0, 0.3);
   color-scheme: dark;
-}
-
-:root[data-primary-color="blue"] {
-  --accent: #4d8dff;
-}
-:root[data-primary-color="emerald"] {
-  --accent: #35a875;
-}
-:root[data-primary-color="amber"] {
-  --accent: #d49a28;
-}
-
-:root[data-ui-theme="classic"] {
-  --ui-radius-sm: 2px;
-  --ui-radius-md: 3px;
-  --ui-radius-lg: 5px;
-  --ui-radius-xl: 7px;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-:root[data-ui-theme="pop"] {
-  --ui-radius-sm: 12px;
-  --ui-radius-md: 16px;
-  --ui-radius-lg: 22px;
-  --ui-radius-xl: 28px;
-  --shadow: 0 18px 56px rgba(86, 87, 232, 0.16);
 }
 
 * {
@@ -160,6 +134,9 @@ code {
 }
 .ui-text-success {
   color: var(--success);
+}
+.ui-focus-text {
+  color: var(--focus);
 }
 .ui-sr-only {
   position: absolute;
@@ -294,6 +271,54 @@ code {
   display: grid;
   place-items: center;
 }
+.accountMenu {
+  position: relative;
+  margin-left: auto;
+}
+.accountMenu .avatar {
+  margin-left: 0;
+}
+.accountMenuPanel {
+  position: absolute;
+  top: 44px;
+  right: 0;
+  z-index: 60;
+  min-width: 190px;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.accountMenuTitle {
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.accountMenuPanel a,
+.accountMenuPanel button {
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  font: inherit;
+}
+.accountMenuPanel a:hover,
+.accountMenuPanel button:hover {
+  background: var(--soft);
+}
 .content, .ui-content {
   max-width: 1180px;
   margin: 0 auto;
@@ -313,7 +338,7 @@ code {
   z-index: 90;
   inset: 0 0 auto;
   height: 3px;
-  background: var(--accent);
+  background: var(--focus);
   animation: loading 1.1s ease-in-out infinite;
   transform-origin: left;
 }
@@ -450,11 +475,6 @@ code {
   background: #111 !important;
   color: #fff !important;
   border-color: #111 !important;
-}
-.accent {
-  background: var(--accent) !important;
-  color: #fff !important;
-  border-color: var(--accent) !important;
 }
 .ghost {
   background: transparent !important;
@@ -1037,6 +1057,24 @@ code {
   max-height: calc(100vh - 32px);
   padding: 24px;
 }
+.ui-dialog-form-content {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+.ui-dialog-form-content > .ui-dialog-actions {
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+.ui-dialog-form-content > .ui-dialog-actions > .ui-button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  height: 38px;
+}
 .ui-dialog-header {
   display: flex;
   justify-content: space-between;
@@ -1051,7 +1089,109 @@ code {
 .ui-dialog-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+}
+
+/* The v5 surface palette is fixed; dark mode swaps surfaces and foregrounds
+ * rather than applying the retired theme/accent variants. */
+:root[data-color-mode="dark"] .topbar {
+  background: rgba(16, 17, 20, 0.88);
+}
+:root[data-color-mode="dark"] .surface,
+:root[data-color-mode="dark"] .ui-card,
+:root[data-color-mode="dark"] .card,
+:root[data-color-mode="dark"] .rowBtn,
+:root[data-color-mode="dark"] .tile,
+:root[data-color-mode="dark"] .btn,
+:root[data-color-mode="dark"] .ui-button,
+:root[data-color-mode="dark"] .ui-button-secondary,
+:root[data-color-mode="dark"] .pill,
+:root[data-color-mode="dark"] .ui-pill,
+:root[data-color-mode="dark"] .ui-input,
+:root[data-color-mode="dark"] .ui-select,
+:root[data-color-mode="dark"] .settingsMain input,
+:root[data-color-mode="dark"] .settingsMain textarea,
+:root[data-color-mode="dark"] .settingsMain select,
+:root[data-color-mode="dark"] .fieldCard input,
+:root[data-color-mode="dark"] .fieldCard textarea,
+:root[data-color-mode="dark"] .fieldCard select,
+:root[data-color-mode="dark"] .tableBox,
+:root[data-color-mode="dark"] .ui-table-wrapper,
+:root[data-color-mode="dark"] .ui-table-cell-input,
+:root[data-color-mode="dark"] .ui-table-filter,
+:root[data-color-mode="dark"] .filterStrip select,
+:root[data-color-mode="dark"] .filterStrip input,
+:root[data-color-mode="dark"] .formSelect,
+:root[data-color-mode="dark"] .contextBar,
+:root[data-color-mode="dark"] .searchBox,
+:root[data-color-mode="dark"] .modeBar,
+:root[data-color-mode="dark"] .assetRow,
+:root[data-color-mode="dark"] .ui-dialog,
+:root[data-color-mode="dark"] .publicCard,
+:root[data-color-mode="dark"] .publicCard input,
+:root[data-color-mode="dark"] .publicCard select,
+:root[data-color-mode="dark"] .miniSearch,
+:root[data-color-mode="dark"] .ui-menu-panel {
+  background: var(--panel);
+  color: var(--ink);
+}
+:root[data-color-mode="dark"] .fieldCard {
+  background: var(--soft2);
+}
+:root[data-color-mode="dark"] .formItem:hover,
+:root[data-color-mode="dark"] .formItem.active,
+:root[data-color-mode="dark"] .ui-card-interactive:hover,
+:root[data-color-mode="dark"] .ui-card-hover:hover {
+  background: var(--soft);
+}
+:root[data-color-mode="dark"] .tab.active,
+:root[data-color-mode="dark"] .ui-tab-active {
+  background: var(--panel);
+  color: var(--ink);
+  border-bottom-color: var(--panel);
+}
+:root[data-color-mode="dark"] .dataTable th,
+:root[data-color-mode="dark"] .ui-table-header-cell {
+  color: var(--muted);
+}
+:root[data-color-mode="dark"] .ui-alert-error {
+  border-color: #70403d;
+  color: #ffaaa4;
+  background: #351d1d;
+}
+:root[data-color-mode="dark"] .ui-alert-success {
+  border-color: #3d684b;
+  color: #a6e0b6;
+  background: #1d3224;
+}
+:root[data-color-mode="dark"] .ui-alert-warning {
+  border-color: #705c2c;
+  color: #f1cf7d;
+  background: #342b17;
+}
+:root[data-color-mode="dark"] .ui-alert-info {
+  background: #20283a;
+}
+:root[data-color-mode="dark"] .fileIcon {
+  background: var(--soft);
+}
+:root[data-color-mode="dark"] .bottomNav {
+  background: rgba(27, 29, 34, 0.94);
+}
+:root[data-color-mode="dark"] .bottomNav a {
+  color: var(--muted);
+}
+:root[data-color-mode="dark"] .bottomNav a.active {
+  color: var(--ink);
+}
+:root[data-color-mode="dark"] .ui-nav {
+  background: rgba(16, 17, 20, 0.92);
+}
+:root[data-color-mode="dark"] .ui-nav-link:hover,
+:root[data-color-mode="dark"] .ui-nav-link-active {
+  background: var(--panel);
+  color: var(--ink);
 }
 .publicShell {
   min-height: 100vh;
@@ -1428,7 +1568,7 @@ code {
   border-bottom: 1px solid var(--ui-border);
 }
 .ui-entry-title-field {
-  background: color-mix(in oklch, var(--ui-accent) 5%, var(--ui-surface-2) 95%);
+  background: color-mix(in oklch, var(--ui-focus) 5%, var(--ui-surface-2) 95%);
 }
 .ui-entry-title-input {
   font-size: 1.15rem;

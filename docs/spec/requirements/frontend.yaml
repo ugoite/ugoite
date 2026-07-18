@@ -335,7 +335,7 @@ requirements:
 
     the shared workspace dictionary, with at least English and Japanese.
 
-    Users MUST be able to switch language from the theme/settings menu and
+    Users MUST be able to switch language from the appearance/settings menu and
 
     the selected locale MUST persist in portable user preferences loaded from
 
@@ -409,10 +409,12 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-041
-  title: Theme Registry Validation
-  description: 'The frontend MUST externalize theme definitions into per-theme files and
+  title: Fixed Surface Palette Validation
+  description: 'The frontend MUST use the single approved v5 surface palette and
 
-    validate them at test time. Theme labels MUST be English-only.
+    validate its dark-mode contrast and responsive shell tokens at test time.
+
+    User-selectable theme variants are retired.
 
     '
   related_spec:
@@ -435,8 +437,8 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-042
-  title: Theme Coverage Enforcement
-  description: 'Theme-aware components MUST avoid raw Tailwind color utilities in favor
+  title: Surface Token Coverage Enforcement
+  description: 'Surface-aware components MUST avoid raw Tailwind color utilities in favor
 
     of shared UI tokens, ensuring consistent theming across the UI.
 
@@ -1345,16 +1347,12 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-059
-  title: Portable Appearance Preferences
-  description: 'Frontend theme, color mode, primary color, and desktop content-width selections MUST persist
+  title: System Appearance
+  description: 'The frontend MUST use the operating system color preference for its
 
-    in portable user preferences loaded from `/preferences/me`.
+    fixed surface palette. It MUST NOT expose product-specific appearance, theme,
 
-    Theme interactions MUST continue to maintain localStorage only as a fallback
-
-    and migration layer so the UI remains stable before portable preferences finish
-
-    loading or when the backend is temporarily unavailable.
+    accent, or content-width controls.
 
     '
   related_spec:
@@ -1363,10 +1361,6 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: frontend/src/themes/registry.test.ts
-  - file: frontend/src/lib/preferences-api.test.ts
-  - file: frontend/src/lib/preferences-local.test.ts
-  - file: frontend/src/lib/preferences-store.test.ts
   - file: frontend/src/components/SpaceShell.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml

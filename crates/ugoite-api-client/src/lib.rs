@@ -807,6 +807,15 @@ pub fn decode_response(operation: &str, response: ApiResponse) -> Result<Value, 
         .as_ref()
         .and_then(|detail| read_detail_message(detail.as_ref()))
         .or_else(|| {
+            parsed.as_ref().and_then(|payload| {
+                payload
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .filter(|message| !message.trim().is_empty())
+                    .map(str::to_owned)
+            })
+        })
+        .or_else(|| {
             parsed.as_ref().and_then(|payload| match payload {
                 Value::String(message) if !message.trim().is_empty() => Some(message.clone()),
                 _ => None,
@@ -1238,6 +1247,11 @@ fn read_detail_message(value: &Value) -> Option<String> {
                     return Some(message.clone());
                 }
             }
+            if let Some(Value::String(message)) = object.get("message") {
+                if !message.trim().is_empty() {
+                    return Some(message.clone());
+                }
+            }
             serde_json::to_string(value).ok()
         }
         Value::Number(_) | Value::Bool(_) => None,
@@ -1332,6 +1346,29 @@ mod tests {
             .message
             .contains("Input should be at least 1 character"));
         assert!(!error.message.contains("[object Object]"));
+    }
+
+    #[test]
+    fn test_api_req_api_001_decodes_top_level_error_messages() {
+        let error = decode_response(
+            "space.create",
+            ApiResponse {
+                status: 403,
+                status_text: "Forbidden".into(),
+                headers: vec![],
+                body: json!({
+                    "code": "RECENT_PASSKEY_REQUIRED",
+                    "message": "repeat Passkey authentication within five minutes"
+                })
+                .to_string(),
+            },
+        )
+        .expect_err("must fail");
+
+        assert_eq!(
+            error.message,
+            "Failed to create space: repeat Passkey authentication within five minutes"
+        );
     }
 
     #[test]

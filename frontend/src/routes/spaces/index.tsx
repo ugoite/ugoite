@@ -9,7 +9,7 @@ import {
   Show,
 } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
-import { spaceApi } from "~/lib/ugoite-client";
+import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { sortSpaces } from "~/lib/space-list";
 import type { Space } from "~/lib/types";
 
@@ -83,6 +83,7 @@ export default function SpacesIndexRoute() {
   const [showCreateForm, setShowCreateForm] = createSignal(false);
   const [newSpaceId, setNewSpaceId] = createSignal("");
   const [createError, setCreateError] = createSignal<string | null>(null);
+  const [requiresPasskey, setRequiresPasskey] = createSignal(false);
   const [isCreating, setIsCreating] = createSignal(false);
   const listedSpaces = createMemo(() => sortSpaces(spaces() || []));
 
@@ -121,6 +122,7 @@ export default function SpacesIndexRoute() {
 
   const openCreateForm = () => {
     setCreateError(null);
+    setRequiresPasskey(false);
     setShowCreateForm(true);
   };
 
@@ -128,6 +130,14 @@ export default function SpacesIndexRoute() {
     setShowCreateForm(false);
     setNewSpaceId("");
     setCreateError(null);
+    setRequiresPasskey(false);
+  };
+
+  const createSpace = async (spaceId: string) => {
+    const created = await spaceApi.create(spaceId);
+    await refetchSpaces();
+    closeCreateForm();
+    navigate(`/spaces/${created.id}/dashboard`);
   };
 
   const handleCreateSpace = async (event: Event) => {
@@ -139,11 +149,28 @@ export default function SpacesIndexRoute() {
     }
     setIsCreating(true);
     setCreateError(null);
+    setRequiresPasskey(false);
     try {
-      const created = await spaceApi.create(spaceId);
-      await refetchSpaces();
-      closeCreateForm();
-      navigate(`/spaces/${created.id}/dashboard`);
+      await createSpace(spaceId);
+    } catch (error) {
+      setRequiresPasskey(
+        typeof error === "object" && error !== null &&
+          (error as { code?: unknown }).code === "RECENT_PASSKEY_REQUIRED",
+      );
+      setCreateError(normalizeCreateError(error));
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const reauthenticateAndCreate = async () => {
+    const spaceId = newSpaceId().trim();
+    if (!spaceId) return;
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      await authApi.loginWithPasskey();
+      await createSpace(spaceId);
     } catch (error) {
       setCreateError(normalizeCreateError(error));
     } finally {
@@ -225,7 +252,19 @@ export default function SpacesIndexRoute() {
                 </p>
               </div>
               <Show when={createError()}>
-                <p class="ui-alert ui-alert-error text-sm">{createError()}</p>
+                <div class="ui-alert ui-alert-error text-sm" role="alert">
+                  <p>{createError()}</p>
+                  <Show when={requiresPasskey()}>
+                    <button
+                      type="button"
+                      class="ui-button ui-button-secondary ui-button-sm mt-2"
+                      onClick={() => void reauthenticateAndCreate()}
+                      disabled={isCreating()}
+                    >
+                      Authenticate with Passkey
+                    </button>
+                  </Show>
+                </div>
               </Show>
               <div class="flex flex-wrap justify-end gap-2">
                 <button

@@ -130,7 +130,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
   if (props.direction === "asc") {
     return (
       <svg
-        class="w-4 h-4 ui-accent-text"
+        class="w-4 h-4 ui-focus-text"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -147,7 +147,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
   }
   return (
     <svg
-      class="w-4 h-4 ui-accent-text"
+      class="w-4 h-4 ui-focus-text"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
