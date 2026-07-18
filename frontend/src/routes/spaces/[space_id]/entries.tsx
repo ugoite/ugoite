@@ -12,35 +12,25 @@ export default function SpaceEntriesRoute(props: RouteSectionProps) {
   const spaceId = () => params.space_id || "";
   const entryStore = createEntryStore(spaceId);
 
-  const [forms, { refetch: refetchForms }] = createResource(
+  const [metadata, { refetch: refetchMetadata }] = createResource(
     () => {
       const wsId = spaceId();
       return wsId ? wsId : null;
     },
     async (wsId) => {
       if (!wsId) return [];
-      try {
-        return await formApi.list(wsId);
-      } catch {
-        return [];
-      }
+      const forms = await formApi.list(wsId).catch(() => []);
+      // The filesystem-backed catalog initializes lazily. Read its metadata
+      // before mounting an entry detail request so a page reload never races
+      // the same catalog initialization from two endpoints.
+      const columnTypes = await formApi.listTypes(wsId).catch(() => []);
+      return { forms, columnTypes };
     },
   );
 
-  const [columnTypes] = createResource(
-    () => spaceId(),
-    async (wsId) => {
-      if (!wsId) return [];
-      try {
-        return await formApi.listTypes(wsId);
-      } catch {
-        return [];
-      }
-    },
-  );
-
-  const safeForms = createMemo(() => forms() || []);
-  const loadingForms = createMemo(() => forms.loading);
+  const safeForms = createMemo(() => metadata()?.forms || []);
+  const safeColumnTypes = createMemo(() => metadata()?.columnTypes || []);
+  const loadingForms = createMemo(() => metadata.loading);
 
   return (
     <EntriesRouteContext.Provider
@@ -50,8 +40,8 @@ export default function SpaceEntriesRoute(props: RouteSectionProps) {
         entryStore,
         forms: safeForms,
         loadingForms,
-        columnTypes: () => columnTypes() || [],
-        refetchForms,
+        columnTypes: safeColumnTypes,
+        refetchForms: refetchMetadata,
       }}
     >
       {props.children}

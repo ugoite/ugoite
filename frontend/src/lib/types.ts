@@ -41,8 +41,6 @@ export interface SpacePatchPayload {
 export interface UserPreferences {
   selected_space_id: string | null;
   locale: "en" | "ja" | null;
-  color_mode: "light" | "dark" | null;
-  content_width: "standard" | "wide" | null;
 }
 
 export type UserPreferencesPatchPayload = Partial<UserPreferences>;

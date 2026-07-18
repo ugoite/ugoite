@@ -26,8 +26,6 @@ describe("preferences-local", () => {
       writeLocalPreferences({
         selected_space_id: "space-a",
         locale: "ja",
-        color_mode: "dark",
-        content_width: "wide",
       })
     ).not.toThrow();
   });

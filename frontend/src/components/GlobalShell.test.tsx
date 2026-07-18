@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GlobalShell } from "./GlobalShell";
 import { authApi } from "~/lib/ugoite-client";
+import { setLocale } from "~/lib/i18n";
 
 vi.mock("~/lib/ugoite-client", () => ({
   authApi: {
@@ -12,6 +13,7 @@ vi.mock("~/lib/ugoite-client", () => ({
 
 describe("GlobalShell account menu", () => {
   beforeEach(() => {
+    setLocale("en");
     vi.mocked(authApi.clearSession).mockReset();
   });
 

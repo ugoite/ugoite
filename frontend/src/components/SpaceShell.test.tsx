@@ -1,17 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { SpaceShell } from "./SpaceShell";
-
-const preferenceState = vi.hoisted(() => ({ contentWidth: "standard" }));
-
-vi.mock("~/lib/preferences-store", () => ({
-  portablePreferences: () => ({
-    content_width: preferenceState.contentWidth,
-  }),
-}));
 
 vi.mock("~/lib/space-store", () => ({
   createSpaceStore: () => ({
@@ -27,7 +20,6 @@ vi.mock("~/lib/space-store", () => ({
 describe("v5 SpaceShell", () => {
   beforeEach(() => {
     setLocale("en");
-    preferenceState.contentWidth = "standard";
   });
   it("renders the four persistent navigation destinations and children", () => {
     render(() => (
@@ -73,6 +65,9 @@ describe("v5 SpaceShell", () => {
     expect(screen.getByRole("option", { name: "Other Space" })).toHaveValue(
       "other-space",
     );
+    expect(screen.getByRole("combobox", { name: "Space" })).toHaveValue(
+      "my-space",
+    );
   });
   it("localizes navigation", () => {
     setLocale("ja");
@@ -94,11 +89,14 @@ describe("v5 SpaceShell", () => {
     expect(container.querySelector(".loadingBar")).toBeInTheDocument();
     loadingState.stop();
   });
-  it("applies the portable wide desktop layout preference", () => {
-    preferenceState.contentWidth = "wide";
-    const { container } = render(() => (
-      <SpaceShell spaceId="my-space"><p>Wide content</p></SpaceShell>
+  it("keeps the route space selected when the route changes", () => {
+    const [spaceId, setSpaceId] = createSignal("my-space");
+    render(() => (
+      <SpaceShell spaceId={spaceId()}><p>Space content</p></SpaceShell>
     ));
-    expect(container.querySelector(".content")).toHaveClass("contentWide");
+    setSpaceId("other-space");
+    expect(screen.getByRole("combobox", { name: "Space" })).toHaveValue(
+      "other-space",
+    );
   });
 });

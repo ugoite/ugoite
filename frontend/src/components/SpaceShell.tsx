@@ -5,7 +5,6 @@ import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
 import { createSpaceStore } from "~/lib/space-store";
-import { portablePreferences } from "~/lib/preferences-store";
 
 export type SpaceTopTab = "dashboard" | "search";
 export type SpaceBottomTab = "object" | "grid";
@@ -152,21 +151,19 @@ export function SpaceShell(props: SpaceShellProps) {
             </Show>
             <For each={spaceStore.spaces()}>
               {(space) => (
-                <option value={space.id}>{space.name || space.id}</option>
+                <option
+                  value={space.id}
+                  selected={space.id === props.spaceId}
+                >
+                  {space.name || space.id}
+                </option>
               )}
             </For>
           </select>
           <div class="crumbTop">{crumb()}</div>
           <AccountMenu />
         </header>
-        <div
-          class="content"
-          classList={{
-            "contentWide": portablePreferences().content_width === "wide",
-          }}
-        >
-          {props.children}
-        </div>
+        <div class="content">{props.children}</div>
       </section>
       {navigation(true)}
     </main>

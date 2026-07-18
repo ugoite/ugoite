@@ -4,12 +4,7 @@ import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { locale } from "~/lib/i18n";
-import {
-  portablePreferences,
-  setColorModePreference,
-  setContentWidthPreference,
-  setLocalePreference,
-} from "~/lib/preferences-store";
+import { setLocalePreference } from "~/lib/preferences-store";
 import { spaceApi } from "~/lib/ugoite-client";
 import type {
   AgentPrincipal,
@@ -23,8 +18,7 @@ type Section =
   | "members"
   | "agents"
   | "credentials"
-  | "storage"
-  | "appearance";
+  | "storage";
 const sections: Array<
   { id: Section; icon: UiIconName; en: string; ja: string }
 > = [
@@ -33,7 +27,6 @@ const sections: Array<
   { id: "agents", icon: "agent", en: "Agents", ja: "エージェント" },
   { id: "credentials", icon: "credential", en: "Credentials", ja: "認証情報" },
   { id: "storage", icon: "storage", en: "Storage", ja: "ストレージ" },
-  { id: "appearance", icon: "appearance", en: "Appearance", ja: "外観" },
 ];
 const managedRoles = ["owner", "editor", "viewer"] as const;
 type ManagedRole = typeof managedRoles[number];
@@ -456,42 +449,6 @@ export default function SpaceSettingsRoute() {
             </section>
           </Show>
 
-          <Show when={active() === "appearance"}>
-            <section class="settingsMain surface">
-              <h2>Appearance</h2>
-              <div class="settingsGrid">
-                <label>
-                  Mode<select
-                    value={portablePreferences().color_mode ?? "light"}
-                    onChange={(e) =>
-                      void setColorModePreference(
-                        e.currentTarget.value as "light" | "dark",
-                      )}
-                  >
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                  </select>
-                </label>
-                <label>
-                  Content width<select
-                    aria-label="Content width"
-                    value={portablePreferences().content_width ?? "standard"}
-                    onChange={(e) =>
-                      void setContentWidthPreference(
-                        e.currentTarget.value as "standard" | "wide",
-                      )}
-                  >
-                    <option value="standard">Standard</option>
-                    <option value="wide">Wide</option>
-                  </select>
-                  <small class="ui-muted">
-                    Wide uses more horizontal space on desktop for tables and
-                    editors.
-                  </small>
-                </label>
-              </div>
-            </section>
-          </Show>
         </main>
       </div>
     </SpaceShell>

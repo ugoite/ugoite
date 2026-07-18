@@ -3,14 +3,10 @@ import type { UserPreferences, UserPreferencesPatchPayload } from "./types";
 
 const SELECTED_SPACE_STORAGE_KEY = "ugoite-selected-space";
 const LOCALE_STORAGE_KEY = "ugoite-locale";
-const MODE_STORAGE_KEY = "ugoite-color-mode";
-const CONTENT_WIDTH_STORAGE_KEY = "ugoite-content-width";
 
 export const LOCAL_PREFERENCE_KEYS = {
   selectedSpaceId: SELECTED_SPACE_STORAGE_KEY,
   locale: LOCALE_STORAGE_KEY,
-  colorMode: MODE_STORAGE_KEY,
-  contentWidth: CONTENT_WIDTH_STORAGE_KEY,
 } as const;
 
 const safeStorage = () => {
@@ -68,8 +64,6 @@ export const emptyUserPreferences = (): UserPreferences => {
   const preferences = {} as UserPreferences;
   preferences.selected_space_id = null;
   preferences.locale = null;
-  preferences.color_mode = null;
-  preferences.content_width = null;
   return preferences;
 };
 
@@ -77,14 +71,6 @@ export const readLocalPreferences = (): UserPreferences => {
   const preferences = emptyUserPreferences();
   preferences.selected_space_id = readStringValue(SELECTED_SPACE_STORAGE_KEY);
   preferences.locale = readAllowedValue(LOCALE_STORAGE_KEY, ["en", "ja"]);
-  preferences.color_mode = readAllowedValue(MODE_STORAGE_KEY, [
-    "light",
-    "dark",
-  ]);
-  preferences.content_width = readAllowedValue(CONTENT_WIDTH_STORAGE_KEY, [
-    "standard",
-    "wide",
-  ]);
   return preferences;
 };
 
@@ -93,6 +79,4 @@ export const writeLocalPreferences = (
 ): void => {
   writeStoredValue(SELECTED_SPACE_STORAGE_KEY, patch.selected_space_id);
   writeStoredValue(LOCALE_STORAGE_KEY, patch.locale);
-  writeStoredValue(MODE_STORAGE_KEY, patch.color_mode);
-  writeStoredValue(CONTENT_WIDTH_STORAGE_KEY, patch.content_width);
 };

@@ -6,7 +6,7 @@ import {
   readLocalPreferences,
   writeLocalPreferences,
 } from "./preferences-local";
-import { initializeColorMode, setColorMode } from "~/lib/color-mode";
+import { initializeColorMode } from "~/lib/color-mode";
 import type { UserPreferences, UserPreferencesPatchPayload } from "./types";
 
 const mergePreferences = (
@@ -17,9 +17,6 @@ const mergePreferences = (
   preferences.selected_space_id = primary?.selected_space_id ??
     fallback?.selected_space_id ?? null;
   preferences.locale = primary?.locale ?? fallback?.locale ?? null;
-  preferences.color_mode = primary?.color_mode ?? fallback?.color_mode ?? null;
-  preferences.content_width = primary?.content_width ??
-    fallback?.content_width ?? null;
   return preferences;
 };
 
@@ -34,12 +31,6 @@ const applyPatch = (
   preferences.locale = patch.locale !== undefined
     ? patch.locale
     : current.locale;
-  preferences.color_mode = patch.color_mode !== undefined
-    ? patch.color_mode
-    : current.color_mode;
-  preferences.content_width = patch.content_width !== undefined
-    ? patch.content_width
-    : current.content_width;
   return preferences;
 };
 
@@ -53,12 +44,6 @@ const missingPortableFields = (
   }
   if (portable.locale === null && local.locale !== null) {
     patch.locale = local.locale;
-  }
-  if (portable.color_mode === null && local.color_mode !== null) {
-    patch.color_mode = local.color_mode;
-  }
-  if (portable.content_width === null && local.content_width !== null) {
-    patch.content_width = local.content_width;
   }
   return patch;
 };
@@ -91,9 +76,6 @@ const applyUiPreferences = (preferences: UserPreferences): void => {
     setLocale(preferences.locale);
   } else {
     initializeLocale();
-  }
-  if (preferences.color_mode) {
-    setColorMode(preferences.color_mode);
   }
   initializeColorMode();
 };
@@ -231,18 +213,6 @@ const preferencesStore = createRoot(() => {
       patch.locale = locale;
       return patchPortablePreferences(patch);
     },
-    setColorModePreference: (colorMode: UserPreferences["color_mode"]) => {
-      const patch = {} as UserPreferencesPatchPayload;
-      patch.color_mode = colorMode;
-      return patchPortablePreferences(patch);
-    },
-    setContentWidthPreference: (
-      contentWidth: UserPreferences["content_width"],
-    ) => {
-      const patch = {} as UserPreferencesPatchPayload;
-      patch.content_width = contentWidth;
-      return patchPortablePreferences(patch);
-    },
   };
 });
 
@@ -262,7 +232,4 @@ export const patchPortablePreferences =
 export const setSelectedSpacePreference =
   preferencesStore.setSelectedSpacePreference;
 export const setLocalePreference = preferencesStore.setLocalePreference;
-export const setColorModePreference = preferencesStore.setColorModePreference;
-export const setContentWidthPreference =
-  preferencesStore.setContentWidthPreference;
 export const isPublicPortablePreferencesRoute = isPublicPortablePreferencesPath;
