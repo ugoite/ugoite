@@ -10,6 +10,19 @@ use ugoite_core::asset;
 use ugoite_core::entry;
 use ugoite_core::space;
 
+async fn asset_metadata_location(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<String> {
+    let manifest = op
+        .read(&format!("{ws_path}/forms/catalog-pointers.v1.json"))
+        .await?;
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest.to_vec())?;
+    manifest["tables"]
+        .as_array()
+        .and_then(|tables| tables.iter().find(|table| table["form_name"] == "Assets"))
+        .and_then(|table| table["metadata_location"].as_str())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("Assets metadata pointer is missing"))
+}
+
 #[tokio::test]
 /// REQ-ASSET-001
 async fn test_asset_req_asset_001_create_asset() -> anyhow::Result<()> {
@@ -27,6 +40,23 @@ async fn test_asset_req_asset_001_create_asset() -> anyhow::Result<()> {
     assert_eq!(listed[0].id, info.id);
     assert_eq!(listed[0].name, "image.png");
 
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-ASSET-001
+async fn test_asset_req_asset_001_list_does_not_rewrite_form_metadata() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-list-space", "/tmp").await?;
+    let ws_path = "spaces/asset-list-space";
+
+    assert!(asset::list_assets(&op, ws_path).await?.is_empty());
+    let metadata_before = asset_metadata_location(&op, ws_path).await?;
+
+    assert!(asset::list_assets(&op, ws_path).await?.is_empty());
+    let metadata_after = asset_metadata_location(&op, ws_path).await?;
+
+    assert_eq!(metadata_after, metadata_before);
     Ok(())
 }
 

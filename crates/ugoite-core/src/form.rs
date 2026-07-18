@@ -175,6 +175,11 @@ pub(crate) async fn upsert_metadata_form(
     {
         if let Ok(existing) = iceberg_store::load_form_definition(op, ws_path, &form_name).await {
             preserve_stable_identities(&mut normalized, &existing)?;
+            let current_domain = to_domain_form(&existing)?;
+            let desired_domain = to_domain_form(&normalized)?;
+            if form_changes(&current_domain, &desired_domain)?.is_empty() {
+                return Ok(());
+            }
         }
     }
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
