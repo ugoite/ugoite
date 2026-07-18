@@ -89,6 +89,52 @@ describe("EntryDetailPane", () => {
     );
   });
 
+  it("REQ-FE-052: preserves timestamp values in form-first controls", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-timestamps",
+      title: "Timestamp Entry",
+      form: "Event",
+      content:
+        "---\nform: Event\n---\n\n# Timestamp Entry\n\n## Started\n2026-07-18T12:34:56Z\n\n## Observed\n2026-07-18T21:34:56+09:00\n\n## Precise\n2026-07-18T12:34:56.123456789Z",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-timestamps"}
+        forms={() => [
+          {
+            name: "Event",
+            version: 1,
+            template: "# Event\n",
+            fields: {
+              Started: { type: "timestamp", required: false },
+              Observed: { type: "timestamp_tz", required: false },
+              Precise: { type: "timestamp_ns", required: false },
+            },
+          },
+        ]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const started = await screen.findByLabelText("Started");
+    expect(started).toHaveAttribute("type", "datetime-local");
+    expect(started).toHaveValue("2026-07-18T12:34:56.000");
+    expect(started).toHaveAttribute("step", "any");
+
+    const observed = screen.getByLabelText("Observed");
+    expect(observed).toHaveAttribute("type", "text");
+    expect(observed).toHaveValue("2026-07-18T21:34:56+09:00");
+
+    const precise = screen.getByLabelText("Precise");
+    expect(precise).toHaveAttribute("type", "text");
+    expect(precise).toHaveValue("2026-07-18T12:34:56.123456789Z");
+  });
+
   it("REQ-FE-052: explains forms that have no structured fields", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-2",

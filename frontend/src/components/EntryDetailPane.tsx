@@ -209,8 +209,16 @@ function resolveInputType(field: FormField) {
   if (NUMERIC_FIELD_TYPES.has(field.type)) return "number";
   if (field.type === "date") return "date";
   if (field.type === "time") return "time";
-  if (field.type.startsWith("timestamp")) return "datetime-local";
+  if (field.type === "timestamp") return "datetime-local";
   return "text";
+}
+
+function resolveInputValue(field: FormField, value: string) {
+  if (field.type !== "timestamp") return value;
+  const match =
+    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(?:Z|[+-]\d{2}:\d{2})$/
+      .exec(value);
+  return match?.[1] ?? value;
 }
 
 function createFieldInputId(fieldName: string, index: number) {
@@ -768,7 +776,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         id={fieldId}
         class="ui-input"
         type={resolveInputType(fieldDef)}
-        value={value()}
+        value={resolveInputValue(fieldDef, value())}
+        step={fieldDef.type === "timestamp" ? "any" : undefined}
         placeholder={t("entryDetail.fieldPlaceholder")}
         onInput={(event) =>
           handleFieldChange(fieldName, event.currentTarget.value)}

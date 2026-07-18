@@ -1,11 +1,5 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { CreateFormDialog, EditFormDialog } from "~/components/create-dialogs";
 import { FormTable } from "~/components/FormTable";
 import { SpaceShell } from "~/components/SpaceShell";
@@ -22,6 +16,8 @@ const copy = {
     newForm: "Form",
     find: "Find a Form",
     noForms: "No Forms yet",
+    failedLoad: "Failed to load Forms.",
+    retry: "Retry",
     select: "Select a Form",
     edit: "Edit Form",
     newEntry: "Entry",
@@ -31,6 +27,8 @@ const copy = {
     newForm: "フォーム",
     find: "フォームを探す",
     noForms: "フォームがありません",
+    failedLoad: "フォームを読み込めませんでした。",
+    retry: "再試行",
     select: "フォームを選択",
     edit: "フォームを編集",
     newEntry: "エントリー",
@@ -79,70 +77,85 @@ export default function SpaceFormsIndexPane() {
       activeNavigation="forms"
       title={c().forms}
     >
-      <div class="split">
-        <aside class="listPane surface">
-          <div class="paneHead">
-            <b>{c().forms}</b>
+      <Show
+        when={!ctx.formsError?.()}
+        fallback={
+          <div class="settingsMain surface ui-stack-sm">
+            <p class="ui-alert ui-alert-error">{c().failedLoad}</p>
             <button
-              class="btn iconBtn"
+              class="btn"
               type="button"
-              aria-label={c().newForm}
-              onClick={() => setShowFormDialog(true)}
+              onClick={() => ctx.refetchForms()}
             >
-              <UiIcon name="plus" />
+              {c().retry}
             </button>
           </div>
-          <label class="miniSearch">
-            <UiIcon name="search" />
-            <input
-              value={query()}
-              onInput={(event) => setQuery(event.currentTarget.value)}
-              placeholder={c().find}
-            />
-          </label>
-          <For
-            each={filteredForms()}
-            fallback={<div class="ui-muted p-3">{c().noForms}</div>}
-          >
-            {(form) => (
+        }
+      >
+        <div class="split">
+          <aside class="listPane surface">
+            <div class="paneHead">
+              <b>{c().forms}</b>
               <button
-                class="formItem"
-                classList={{ active: selectedName() === form.name }}
+                class="btn iconBtn"
                 type="button"
-                onClick={() => setParams({ form: form.name, tab: undefined })}
+                aria-label={c().newForm}
+                onClick={() => setShowFormDialog(true)}
               >
-                <span
-                  class="glyph"
-                  classList={{ active: selectedName() === form.name }}
-                >
-                  {form.name.slice(0, 1).toUpperCase()}
-                </span>
-                <span>
-                  <b>{form.name}</b>
-                </span>
-                <span class="chev">›</span>
+                <UiIcon name="plus" />
               </button>
-            )}
-          </For>
-        </aside>
-        <main class="detailPane">
-          <Show
-            when={selectedForm()}
-            fallback={
-              <div class="surface settingsMain ui-muted">{c().select}</div>
-            }
-          >
-            {(form) => (
-              <>
-                <div class="formWorkspaceHead surface">
-                  <div class="actions">
-                    <button
-                      class="btn"
-                      type="button"
-                      onClick={() => setShowEditDialog(true)}
-                    >
-                      <UiIcon name="settings" /> {c().edit}
-                    </button>
+            </div>
+            <label class="miniSearch">
+              <UiIcon name="search" />
+              <input
+                value={query()}
+                onInput={(event) => setQuery(event.currentTarget.value)}
+                placeholder={c().find}
+              />
+            </label>
+            <For
+              each={filteredForms()}
+              fallback={<div class="ui-muted p-3">{c().noForms}</div>}
+            >
+              {(form) => (
+                <button
+                  class="formItem"
+                  classList={{ active: selectedName() === form.name }}
+                  type="button"
+                  onClick={() => setParams({ form: form.name, tab: undefined })}
+                >
+                  <span
+                    class="glyph"
+                    classList={{ active: selectedName() === form.name }}
+                  >
+                    {form.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span>
+                    <b>{form.name}</b>
+                  </span>
+                  <span class="chev">›</span>
+                </button>
+              )}
+            </For>
+          </aside>
+          <main class="detailPane">
+            <Show
+              when={selectedForm()}
+              fallback={
+                <div class="surface settingsMain ui-muted">{c().select}</div>
+              }
+            >
+              {(form) => (
+                <>
+                  <div class="formWorkspaceHead surface">
+                    <div class="actions">
+                      <button
+                        class="btn"
+                        type="button"
+                        onClick={() => setShowEditDialog(true)}
+                      >
+                        <UiIcon name="settings" /> {c().edit}
+                      </button>
                       <button
                         class="btn primary"
                         type="button"
@@ -155,38 +168,39 @@ export default function SpaceFormsIndexPane() {
                       >
                         <UiIcon name="plus" /> {c().newEntry}
                       </button>
+                    </div>
                   </div>
-                </div>
-                <FormTable
-                  spaceId={ctx.spaceId()}
-                  entryForm={form()}
-                  onEntryClick={(id) =>
-                    navigate(
-                      `/spaces/${ctx.spaceId()}/entries/${
-                        encodeURIComponent(id)
-                      }`,
-                    )}
-                />
-                <EditFormDialog
-                  open={showEditDialog()}
-                  entryForm={form()}
-                  columnTypes={ctx.columnTypes()}
-                  formNames={ctx.forms().map((candidate) => candidate.name)}
-                  onClose={() => setShowEditDialog(false)}
-                  onSubmit={updateForm}
-                />
-              </>
-            )}
-          </Show>
-        </main>
-      </div>
-      <CreateFormDialog
-        open={showFormDialog()}
-        columnTypes={ctx.columnTypes()}
-        formNames={ctx.forms().map((form) => form.name)}
-        onClose={() => setShowFormDialog(false)}
-        onSubmit={createForm}
-      />
+                  <FormTable
+                    spaceId={ctx.spaceId()}
+                    entryForm={form()}
+                    onEntryClick={(id) =>
+                      navigate(
+                        `/spaces/${ctx.spaceId()}/entries/${
+                          encodeURIComponent(id)
+                        }`,
+                      )}
+                  />
+                  <EditFormDialog
+                    open={showEditDialog()}
+                    entryForm={form()}
+                    columnTypes={ctx.columnTypes()}
+                    formNames={ctx.forms().map((candidate) => candidate.name)}
+                    onClose={() => setShowEditDialog(false)}
+                    onSubmit={updateForm}
+                  />
+                </>
+              )}
+            </Show>
+          </main>
+        </div>
+        <CreateFormDialog
+          open={showFormDialog()}
+          columnTypes={ctx.columnTypes()}
+          formNames={ctx.forms().map((form) => form.name)}
+          onClose={() => setShowFormDialog(false)}
+          onSubmit={createForm}
+        />
+      </Show>
     </SpaceShell>
   );
 }

@@ -66,7 +66,7 @@ const noteForm: Form = {
     body: { type: "markdown", required: false },
   },
 };
-function renderPage(forms: Form[]) {
+function renderPage(forms: Form[], formsError?: unknown) {
   const [list] = createSignal(forms);
   render(() => (
     <EntriesRouteContext.Provider
@@ -74,6 +74,7 @@ function renderPage(forms: Form[]) {
         spaceId: () => "default",
         forms: list,
         loadingForms: () => false,
+        formsError: () => formsError,
         columnTypes: () => [],
         refetchForms,
         entryStore: {} as never,
@@ -127,5 +128,13 @@ describe("v5 Forms workspace", () => {
     renderPage([]);
     expect(screen.getByText("フォーム")).toBeInTheDocument();
     expect(screen.getByText("フォームがありません")).toBeInTheDocument();
+  });
+  it("shows API failures instead of an empty Forms state", () => {
+    renderPage([], new Error("Forbidden"));
+    expect(screen.getByText("Failed to load Forms.")).toBeInTheDocument();
+    expect(screen.queryByText("No Forms yet")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetchForms).toHaveBeenCalled();
   });
 });
