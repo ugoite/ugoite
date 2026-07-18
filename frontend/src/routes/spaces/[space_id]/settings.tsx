@@ -9,8 +9,6 @@ import {
   setColorModePreference,
   setContentWidthPreference,
   setLocalePreference,
-  setPrimaryColorPreference,
-  setUiThemePreference,
 } from "~/lib/preferences-store";
 import { spaceApi } from "~/lib/ugoite-client";
 import type {
@@ -273,7 +271,8 @@ export default function SpaceSettingsRoute() {
               </Show>
               <Show when={members.error}>
                 <p class="ui-alert ui-alert-error">
-                  Failed to load members: {message(members.error, "Unknown error")}
+                  Failed to load members:{" "}
+                  {message(members.error, "Unknown error")}
                 </p>
               </Show>
               <div class="rowStack">
@@ -393,7 +392,8 @@ export default function SpaceSettingsRoute() {
               </Show>
               <Show when={agents.error}>
                 <p class="ui-alert ui-alert-error">
-                  Failed to load agents: {message(agents.error, "Unknown error")}
+                  Failed to load agents:{" "}
+                  {message(agents.error, "Unknown error")}
                 </p>
               </Show>
               <div class="rowStack">
@@ -461,22 +461,6 @@ export default function SpaceSettingsRoute() {
               <h2>Appearance</h2>
               <div class="settingsGrid">
                 <label>
-                  Theme<select
-                    value={portablePreferences().ui_theme ?? "classic"}
-                    onChange={(e) =>
-                      void setUiThemePreference(
-                        e.currentTarget.value as
-                          | "classic"
-                          | "materialize"
-                          | "pop",
-                      )}
-                  >
-                    <option value="classic">Classic</option>
-                    <option value="materialize">Materialize</option>
-                    <option value="pop">Pop</option>
-                  </select>
-                </label>
-                <label>
                   Mode<select
                     value={portablePreferences().color_mode ?? "light"}
                     onChange={(e) =>
@@ -486,24 +470,6 @@ export default function SpaceSettingsRoute() {
                   >
                     <option value="light">Light</option>
                     <option value="dark">Dark</option>
-                  </select>
-                </label>
-                <label>
-                  Accent<select
-                    value={portablePreferences().primary_color ?? "violet"}
-                    onChange={(e) =>
-                      void setPrimaryColorPreference(
-                        e.currentTarget.value as
-                          | "violet"
-                          | "blue"
-                          | "emerald"
-                          | "amber",
-                      )}
-                  >
-                    <option value="violet">Violet</option>
-                    <option value="blue">Blue</option>
-                    <option value="emerald">Emerald</option>
-                    <option value="amber">Amber</option>
                   </select>
                 </label>
                 <label>
@@ -519,7 +485,8 @@ export default function SpaceSettingsRoute() {
                     <option value="wide">Wide</option>
                   </select>
                   <small class="ui-muted">
-                    Wide uses more horizontal space on desktop for tables and editors.
+                    Wide uses more horizontal space on desktop for tables and
+                    editors.
                   </small>
                 </label>
               </div>

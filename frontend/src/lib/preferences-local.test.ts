@@ -1,6 +1,6 @@
 // REQ-FE-003: Portable selected space preferences with local fallback
 // REQ-FE-044: Portable locale preferences with local fallback
-// REQ-FE-059: Portable theme preferences with local fallback
+// REQ-FE-059: Portable color mode preferences with local fallback
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("preferences-local", () => {
@@ -26,9 +26,7 @@ describe("preferences-local", () => {
       writeLocalPreferences({
         selected_space_id: "space-a",
         locale: "ja",
-        ui_theme: "classic",
         color_mode: "dark",
-        primary_color: "blue",
         content_width: "wide",
       })
     ).not.toThrow();

@@ -38,7 +38,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
     >
       {/* Info Banner */}
       <div class="sticky top-0 left-0 right-0 ui-alert ui-alert-warning p-3 z-10">
-        <div class="flex items-center gap-2 ui-accent-text">
+        <div class="flex items-center gap-2 ui-focus-text">
           <svg
             class="w-5 h-5"
             fill="none"
@@ -157,7 +157,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
 
                     {/* Links indicator */}
                     <Show when={entry.links.length > 0}>
-                      <div class="mt-2 flex items-center gap-1 text-xs ui-accent-text">
+                      <div class="mt-2 flex items-center gap-1 text-xs ui-focus-text">
                         <svg
                           class="w-3 h-3"
                           fill="none"

@@ -3,17 +3,13 @@ import type { UserPreferences, UserPreferencesPatchPayload } from "./types";
 
 const SELECTED_SPACE_STORAGE_KEY = "ugoite-selected-space";
 const LOCALE_STORAGE_KEY = "ugoite-locale";
-const THEME_STORAGE_KEY = "ugoite-ui-theme";
 const MODE_STORAGE_KEY = "ugoite-color-mode";
-const PRIMARY_COLOR_STORAGE_KEY = "ugoite-primary-color";
 const CONTENT_WIDTH_STORAGE_KEY = "ugoite-content-width";
 
 export const LOCAL_PREFERENCE_KEYS = {
   selectedSpaceId: SELECTED_SPACE_STORAGE_KEY,
   locale: LOCALE_STORAGE_KEY,
-  uiTheme: THEME_STORAGE_KEY,
   colorMode: MODE_STORAGE_KEY,
-  primaryColor: PRIMARY_COLOR_STORAGE_KEY,
   contentWidth: CONTENT_WIDTH_STORAGE_KEY,
 } as const;
 
@@ -72,9 +68,7 @@ export const emptyUserPreferences = (): UserPreferences => {
   const preferences = {} as UserPreferences;
   preferences.selected_space_id = null;
   preferences.locale = null;
-  preferences.ui_theme = null;
   preferences.color_mode = null;
-  preferences.primary_color = null;
   preferences.content_width = null;
   return preferences;
 };
@@ -83,20 +77,9 @@ export const readLocalPreferences = (): UserPreferences => {
   const preferences = emptyUserPreferences();
   preferences.selected_space_id = readStringValue(SELECTED_SPACE_STORAGE_KEY);
   preferences.locale = readAllowedValue(LOCALE_STORAGE_KEY, ["en", "ja"]);
-  preferences.ui_theme = readAllowedValue(THEME_STORAGE_KEY, [
-    "materialize",
-    "classic",
-    "pop",
-  ]);
   preferences.color_mode = readAllowedValue(MODE_STORAGE_KEY, [
     "light",
     "dark",
-  ]);
-  preferences.primary_color = readAllowedValue(PRIMARY_COLOR_STORAGE_KEY, [
-    "violet",
-    "blue",
-    "emerald",
-    "amber",
   ]);
   preferences.content_width = readAllowedValue(CONTENT_WIDTH_STORAGE_KEY, [
     "standard",
@@ -110,8 +93,6 @@ export const writeLocalPreferences = (
 ): void => {
   writeStoredValue(SELECTED_SPACE_STORAGE_KEY, patch.selected_space_id);
   writeStoredValue(LOCALE_STORAGE_KEY, patch.locale);
-  writeStoredValue(THEME_STORAGE_KEY, patch.ui_theme);
   writeStoredValue(MODE_STORAGE_KEY, patch.color_mode);
-  writeStoredValue(PRIMARY_COLOR_STORAGE_KEY, patch.primary_color);
   writeStoredValue(CONTENT_WIDTH_STORAGE_KEY, patch.content_width);
 };

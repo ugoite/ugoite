@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
+import { AccountMenu } from "~/components/AccountMenu";
 import { locale } from "~/lib/i18n";
-import { authApi } from "~/lib/ugoite-client";
 
 const labels = {
   en: {
@@ -12,7 +12,6 @@ const labels = {
     spaces: "Spaces",
     about: "About",
     menu: "Menu",
-    signOut: "Sign out",
   },
   ja: {
     home: "ホーム",
@@ -22,7 +21,6 @@ const labels = {
     spaces: "スペース",
     about: "Ugoiteについて",
     menu: "メニュー",
-    signOut: "ログアウト",
   },
 } as const;
 
@@ -30,10 +28,6 @@ export function GlobalShell(
   props: { title: string; children: JSX.Element; active?: "spaces" | "about" },
 ) {
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
-  const signOut = async () => {
-    await authApi.clearSession();
-    if (typeof window !== "undefined") window.location.assign("/login");
-  };
   return (
     <main class="app workspaceApp">
       <div class="desktopSidebar">
@@ -93,14 +87,7 @@ export function GlobalShell(
             <option>Ugoite</option>
           </select>
           <div class="crumbTop">{props.title}</div>
-          <button
-            class="avatar"
-            type="button"
-            onClick={() => void signOut()}
-            aria-label={copy().signOut}
-          >
-            S
-          </button>
+          <AccountMenu />
         </header>
         <div class="content">{props.children}</div>
       </section>

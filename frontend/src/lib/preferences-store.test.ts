@@ -1,6 +1,6 @@
 // REQ-FE-003: Portable selected space preferences with local fallback
 // REQ-FE-044: Portable locale preferences with local fallback
-// REQ-FE-059: Portable theme preferences with local fallback
+// REQ-FE-059: Portable color mode preferences with local fallback
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   getPreferencePatches,
@@ -11,21 +11,15 @@ import { testApiUrl } from "~/test/http-origin";
 
 const resetUiState = async () => {
   const { setLocale } = await import("./i18n");
-  const { setColorMode, setPrimaryColor, setUiTheme } = await import(
-    "./ui-theme"
-  );
+  const { setColorMode } = await import("./color-mode");
   const { resetPortablePreferencesState } = await import("./preferences-store");
   setLocale("en");
-  setUiTheme("materialize");
   setColorMode("light");
-  setPrimaryColor("violet");
   localStorage.clear();
   resetPortablePreferencesState();
   document.documentElement.lang = "";
   document.documentElement.dataset.locale = "";
-  delete document.documentElement.dataset.uiTheme;
   delete document.documentElement.dataset.colorMode;
-  delete document.documentElement.dataset.primaryColor;
 };
 
 describe("preferencesStore", () => {
@@ -67,41 +61,27 @@ describe("preferencesStore", () => {
     expect(localStorage.getItem("ugoite-locale")).toBe("ja");
   });
 
-  it("REQ-FE-059: initializes theme preferences from portable storage and updates local fallback", async () => {
-    localStorage.setItem("ugoite-ui-theme", "pop");
+  it("REQ-FE-059: initializes color mode from portable storage and updates local fallback", async () => {
     localStorage.setItem("ugoite-color-mode", "light");
-    localStorage.setItem("ugoite-primary-color", "amber");
     seedPreferences({
-      ui_theme: "classic",
       color_mode: "dark",
-      primary_color: "blue",
     });
 
     const { initializePortablePreferences } = await import(
       "./preferences-store"
     );
-    const { colorMode, primaryColor, uiTheme } = await import("./ui-theme");
+    const { colorMode } = await import("./color-mode");
     await initializePortablePreferences();
 
-    expect(uiTheme()).toBe("classic");
     expect(colorMode()).toBe("dark");
-    expect(primaryColor()).toBe("blue");
-    expect(document.documentElement.dataset.uiTheme).toBe("classic");
     expect(document.documentElement.dataset.colorMode).toBe("dark");
-    expect(document.documentElement.dataset.primaryColor).toBe("blue");
-    expect(localStorage.getItem("ugoite-ui-theme")).toBe("classic");
     expect(localStorage.getItem("ugoite-color-mode")).toBe("dark");
-    expect(localStorage.getItem("ugoite-primary-color")).toBe("blue");
   });
 
-  it("REQ-FE-059: migrates missing primary color from local fallback", async () => {
-    localStorage.setItem("ugoite-ui-theme", "classic");
+  it("REQ-FE-059: migrates missing color mode from local fallback", async () => {
     localStorage.setItem("ugoite-color-mode", "dark");
-    localStorage.setItem("ugoite-primary-color", "amber");
     seedPreferences({
-      ui_theme: "classic",
-      color_mode: "dark",
-      primary_color: null,
+      color_mode: null,
     });
 
     const { initializePortablePreferences } = await import(
@@ -110,7 +90,7 @@ describe("preferencesStore", () => {
     await initializePortablePreferences();
 
     const expectedPatch = {} as import("./types").UserPreferencesPatchPayload;
-    expectedPatch.primary_color = "amber";
+    expectedPatch.color_mode = "dark";
     expect(getPreferencePatches()).toContainEqual(
       expect.objectContaining(expectedPatch),
     );
@@ -128,13 +108,11 @@ describe("preferencesStore", () => {
     expect(getPreferencePatches()).toContainEqual({ content_width: "wide" });
   });
 
-  it("REQ-FE-059: migrates missing locale and theme fields from local fallback", async () => {
+  it("REQ-FE-059: migrates missing locale and color mode from local fallback", async () => {
     localStorage.setItem("ugoite-locale", "ja");
-    localStorage.setItem("ugoite-ui-theme", "classic");
     localStorage.setItem("ugoite-color-mode", "dark");
     seedPreferences({
       locale: null,
-      ui_theme: null,
       color_mode: null,
     });
 
@@ -145,7 +123,6 @@ describe("preferencesStore", () => {
 
     const expectedPatch = {} as import("./types").UserPreferencesPatchPayload;
     expectedPatch.locale = "ja";
-    expectedPatch.ui_theme = "classic";
     expectedPatch.color_mode = "dark";
     expect(getPreferencePatches()).toContainEqual(
       expect.objectContaining(expectedPatch),
@@ -176,7 +153,7 @@ describe("preferencesStore", () => {
     expect(document.documentElement.lang).toBe("ja");
   });
 
-  it("REQ-FE-059: public routes apply local theme preferences without remote fetch", async () => {
+  it("REQ-FE-059: public routes apply local color mode without remote fetch", async () => {
     let requestCount = 0;
     const { server } = await import("~/test/mocks/server");
     const { http, HttpResponse } = await import("msw");
@@ -184,31 +161,23 @@ describe("preferencesStore", () => {
       http.get(testApiUrl("/preferences/me"), () => {
         requestCount += 1;
         return HttpResponse.json({
-          ui_theme: "classic",
           color_mode: "dark",
-          primary_color: "blue",
         });
       }),
     );
-    localStorage.setItem("ugoite-ui-theme", "pop");
     localStorage.setItem("ugoite-color-mode", "dark");
-    localStorage.setItem("ugoite-primary-color", "amber");
 
     const { initializePortablePreferencesForPath } = await import(
       "./preferences-store"
     );
-    const { colorMode, primaryColor, uiTheme } = await import("./ui-theme");
+    const { colorMode } = await import("./color-mode");
     for (const pathname of ["/about/", "/does-not-exist"]) {
       await initializePortablePreferencesForPath(pathname);
     }
 
     expect(requestCount).toBe(0);
-    expect(uiTheme()).toBe("pop");
     expect(colorMode()).toBe("dark");
-    expect(primaryColor()).toBe("amber");
-    expect(document.documentElement.dataset.uiTheme).toBe("pop");
     expect(document.documentElement.dataset.colorMode).toBe("dark");
-    expect(document.documentElement.dataset.primaryColor).toBe("amber");
   });
 
   it("REQ-FE-003: authenticated routes hydrate portable preferences through route-aware initialization", async () => {

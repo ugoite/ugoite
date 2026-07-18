@@ -3,7 +3,7 @@ import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { locale } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
-import { authApi } from "~/lib/ugoite-client";
+import { AccountMenu } from "~/components/AccountMenu";
 import { createSpaceStore } from "~/lib/space-store";
 import { portablePreferences } from "~/lib/preferences-store";
 
@@ -40,7 +40,6 @@ const labels = {
     about: "About",
     menu: "Menu",
     account: "Account",
-    signOut: "Sign out",
   },
   ja: {
     home: "ホーム",
@@ -51,16 +50,11 @@ const labels = {
     about: "Ugoiteについて",
     menu: "メニュー",
     account: "アカウント",
-    signOut: "ログアウト",
   },
 } as const;
 
 export function SpaceShell(props: SpaceShellProps) {
   const spaceStore = createSpaceStore();
-  const signOut = async () => {
-    await authApi.clearSession();
-    if (typeof window !== "undefined") window.location.assign("/login");
-  };
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   onMount(() => {
     void spaceStore.loadSpaces().catch(() => undefined);
@@ -163,14 +157,7 @@ export function SpaceShell(props: SpaceShellProps) {
             </For>
           </select>
           <div class="crumbTop">{crumb()}</div>
-          <button
-            class="avatar"
-            type="button"
-            onClick={() => void signOut()}
-            aria-label={copy().signOut}
-          >
-            S
-          </button>
+          <AccountMenu />
         </header>
         <div
           class="content"

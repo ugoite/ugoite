@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 describe("v5 design system", () => {
-  const css = fs.readFileSync(path.resolve(process.cwd(), "src/app.css"), "utf8");
+  const css = fs.readFileSync(
+    path.resolve(process.cwd(), "src/app.css"),
+    "utf8",
+  );
   it("uses the approved concept palette", () => {
     expect(css).toContain("--bg: #f7f7f4");
     expect(css).toContain("--ink: #151515");
@@ -21,5 +24,12 @@ describe("v5 design system", () => {
     expect(css).not.toContain("themes/classic.css");
     expect(css).not.toContain("themes/materialize.css");
     expect(css).not.toContain("themes/pop.css");
+  });
+  it("keeps dark-mode surfaces readable without theme or accent variants", () => {
+    expect(css).toContain(':root[data-color-mode="dark"]');
+    expect(css).toContain("--panel: #1b1d22");
+    expect(css).toContain("--muted: #b8bbc4");
+    expect(css).not.toContain("data-ui-theme");
+    expect(css).not.toContain("data-primary-color");
   });
 });
