@@ -1,5 +1,5 @@
 import { A, useNavigate } from "@solidjs/router";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createResource, createSignal, For, onMount, Show } from "solid-js";
 import { authApi, type OidcProvider } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
 
@@ -12,6 +12,9 @@ export default function SpaceInvitationJoinRoute() {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
   const [oidcProviders, setOidcProviders] = createSignal<OidcProvider[]>([]);
+  const [session] = createResource(async () =>
+    await authApi.getSession().catch(() => ({ authenticated: false }))
+  );
   onMount(async () => {
     setOidcProviders(await authApi.listOidcProviders().catch(() => []));
   });
@@ -39,7 +42,11 @@ export default function SpaceInvitationJoinRoute() {
     }
   };
   return (
-    <GlobalShell title="Join a Space" active="spaces">
+    <GlobalShell
+      title="Join a Space"
+      active="spaces"
+      authenticated={session()?.authenticated ?? false}
+    >
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Spaces</div>

@@ -35,8 +35,13 @@ export function SpaceSettings(props: SpaceSettingsProps) {
       ...(props.space.storage_config ?? {}),
       uri: uri().trim(),
     };
-    if (endpoint().trim()) next.endpoint = endpoint().trim();
-    else delete next.endpoint;
+    const storageUri = uri().trim().toLowerCase();
+    const storageEndpoint = endpoint().trim();
+    if (storageUri.startsWith("s3://") && storageEndpoint) {
+      next.endpoint = storageEndpoint;
+    } else {
+      delete next.endpoint;
+    }
     return next;
   };
   const save = async (event: Event) => {

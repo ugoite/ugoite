@@ -81,4 +81,25 @@ describe("v5 SpaceSettings", () => {
       expect(screen.getByText("Connection successful (ok)")).toBeInTheDocument()
     );
   });
+  it("clears an S3 endpoint when changing to local storage metadata", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(() => (
+      <SpaceSettings
+        space={space}
+        section="storage"
+        onSave={save}
+      />
+    ));
+
+    fireEvent.input(screen.getByDisplayValue("s3://bucket/demo"), {
+      target: { value: "file:///data/demo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith({
+        storage_config: { uri: "file:///data/demo" },
+      })
+    );
+  });
 });
