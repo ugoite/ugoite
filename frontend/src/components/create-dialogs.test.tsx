@@ -103,6 +103,32 @@ describe("CreateFormDialog", () => {
       .toBeInTheDocument();
   });
 
+  it("explains the accepted formats for complex field types", async () => {
+    render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={["binary", "object_list"]}
+        formNames={[]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    fireEvent.click(screen.getByText("+ Add Column"));
+    const type = screen.getByRole("combobox", { name: "Field type" });
+    fireEvent.change(type, { target: { value: "binary" } });
+    expect(
+      screen.getByText("Binary data entered as base64 or hexadecimal text."),
+    ).toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "object_list" } });
+    expect(
+      screen.getByText(
+        "A JSON list of objects with type, name, and description.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("REQ-FE-039: blocks reserved metadata column names", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
