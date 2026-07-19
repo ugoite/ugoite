@@ -19,19 +19,25 @@ import {
   replaceFirstH1,
   updateH2Section,
 } from "~/lib/markdown";
+import { buildEntryMarkdownFromFields } from "~/lib/entry-input";
 import {
   assetApi,
   entryApi,
   RevisionConflictError,
   searchApi,
 } from "~/lib/ugoite-client";
-import type { Asset, Form, FormField } from "~/lib/types";
+import type { Asset, Entry, Form, FormField } from "~/lib/types";
 
 export interface EntryDetailPaneProps {
   spaceId: Accessor<string>;
-  entryId: Accessor<string>;
+  entryId?: Accessor<string>;
   forms?: Accessor<Form[]>;
+  /** A form turns the pane into the new-entry editor without creating a server record first. */
+  createForm?: Accessor<Form | undefined>;
+  onCreateFormChange?: (formName: string) => void;
   onDeleted: () => void;
+  onCancel?: () => void;
+  onCreated?: (entryId: string) => void;
   onAfterSave?: () => void;
 }
 
@@ -464,10 +470,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [entryError, setEntryError] = createSignal<string | null>(null);
   const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
 
-  const [entry, { refetch: refetchEntry }] = createResource(
+  const [remoteEntry, { refetch: refetchEntry }] = createResource(
     () => {
       const wsId = props.spaceId();
-      const entryId = props.entryId();
+      const entryId = props.entryId?.() ?? "";
       /* v8 ignore start */
       return wsId && entryId ? { wsId, entryId } : null;
       /* v8 ignore stop */
@@ -492,6 +498,25 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         return null;
       }
     },
+  );
+
+  const isCreateMode = createMemo(() => Boolean(props.createForm?.()));
+  const draftEntry = createMemo<Entry | null>(() => {
+    const form = props.createForm?.();
+    if (!form) return null;
+    return {
+      id: "__new__",
+      title: form.name,
+      form: form.name,
+      content: buildEntryMarkdownFromFields(form, form.name, {}),
+      revision_id: `draft:${form.name}`,
+      created_at: "",
+      updated_at: "",
+    };
+  });
+  const entry = createMemo(() => isCreateMode() ? draftEntry() : remoteEntry());
+  const entryLoading = createMemo(() =>
+    isCreateMode() ? false : remoteEntry.loading
   );
 
   const currentForm = createMemo(() => {
@@ -568,10 +593,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const content = loadedEntry.content ?? "";
     setLastLoadedEntryId(loadedEntry.id);
     setLastLoadedResourceRevisionId(loadedEntry.revision_id);
-    setCurrentRevisionId(loadedEntry.revision_id);
+    setCurrentRevisionId(isCreateMode() ? null : loadedEntry.revision_id);
     setEditorContent(content);
-    setLastSavedContent(content);
-    setIsDirty(false);
+    setLastSavedContent(isCreateMode() ? "" : content);
+    setIsDirty(isCreateMode());
     setConflictMessage(null);
     setValidationError(null);
     setDefaultedViewEntryId(null);
@@ -608,12 +633,24 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   };
 
   type SaveContext =
-    | { ok: true; wsId: string; entryId: string; revisionId: string }
+    | {
+      ok: true;
+      wsId: string;
+      create: boolean;
+      entryId?: string;
+      revisionId?: string;
+    }
     | { ok: false; reason: string };
 
   const resolveSaveContext = (): SaveContext => {
     const wsId = props.spaceId();
-    const entryId = props.entryId();
+    const entryId = props.entryId?.() ?? "";
+    if (isCreateMode()) {
+      if (!wsId) {
+        return { ok: false, reason: "Cannot save: Space is not selected." };
+      }
+      return { ok: true, wsId, create: true };
+    }
     /* v8 ignore start */
     const revisionId = currentRevisionId() || entry()?.revision_id;
     if (!wsId || !entryId || !revisionId) {
@@ -624,7 +661,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       };
     }
     /* v8 ignore stop */
-    return { ok: true, wsId, entryId, revisionId };
+    return { ok: true, wsId, entryId, revisionId, create: false };
   };
 
   const handleSaveError = (error: unknown) => {
@@ -656,14 +693,17 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setValidationError(null);
     const contentToSave = editorContent();
     try {
-      const result = await entryApi.update(context.wsId, context.entryId, {
-        markdown: contentToSave,
-        parent_revision_id: context.revisionId,
-      });
+      const result = context.create
+        ? await entryApi.create(context.wsId, { markdown: contentToSave })
+        : await entryApi.update(context.wsId, context.entryId!, {
+          markdown: contentToSave,
+          parent_revision_id: context.revisionId!,
+        });
       setCurrentRevisionId(result.revision_id);
       setLastSavedContent(contentToSave);
       setIsDirty(editorContent() !== contentToSave);
       props.onAfterSave?.();
+      if (context.create) props.onCreated?.(result.id);
     } catch (error) {
       handleSaveError(error);
     } finally {
@@ -692,7 +732,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const handleDelete = async () => {
     const wsId = props.spaceId();
-    const entryId = props.entryId();
+    const entryId = props.entryId?.() ?? "";
     /* v8 ignore start */
     if (!wsId || !entryId) return;
     if (!confirm(t("entryDetail.confirmDelete"))) return;
@@ -706,6 +746,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       alert(error instanceof Error ? error.message : "Failed to delete entry");
       /* v8 ignore stop */
     }
+  };
+
+  const handleCancel = () => {
+    /* v8 ignore start */
+    if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
+    /* v8 ignore stop */
+    (props.onCancel ?? props.onDeleted)();
   };
 
   const handleAssetUpload = async (file: File): Promise<Asset> => {
@@ -797,7 +844,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   /* v8 ignore start */
   return (
     <div class="ui-entry-page">
-      <Show when={entry.loading}>
+      <Show when={entryLoading()}>
         <div class="absolute inset-0 ui-backdrop z-50 flex items-center justify-center">
           <div class="ui-card text-center">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-current mx-auto mb-2" />
@@ -813,7 +860,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             <Show
               when={entryError()}
               fallback={
-                <Show when={!entry.loading} fallback={<div />}>
+                <Show when={!entryLoading()} fallback={<div />}>
                   <p class="ui-muted">{t("entryDetail.notFound")}</p>
                 </Show>
               }
@@ -821,7 +868,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               <div class="text-center space-y-3">
                 <p class="ui-alert ui-alert-error text-sm">{entryError()}</p>
                 <p class="text-xs ui-muted">
-                  Space: {props.spaceId()} / Entry: {props.entryId()}
+                  Space: {props.spaceId()} / Entry: {props.entryId?.() ?? ""}
                 </p>
                 <div class="flex justify-center gap-2">
                   <button
@@ -860,6 +907,27 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                   </h1>
                   <Show when={currentEntry().form}>
                     <span class="ui-pill">{currentEntry().form}</span>
+                  </Show>
+                  <Show
+                    when={isCreateMode() && props.forms &&
+                      props.onCreateFormChange}
+                  >
+                    <label class="sr-only" for="entry-form-selector">
+                      {t("common.form")}
+                    </label>
+                    <select
+                      id="entry-form-selector"
+                      class="ui-input ui-input-sm"
+                      value={currentEntry().form || ""}
+                      onChange={(event) =>
+                        props.onCreateFormChange?.(event.currentTarget.value)}
+                    >
+                      <For each={props.forms?.() ?? []}>
+                        {(form) => (
+                          <option value={form.name}>{form.name}</option>
+                        )}
+                      </For>
+                    </select>
                   </Show>
                 </div>
                 <p class="ui-page-subtitle mt-1">
@@ -1149,14 +1217,18 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                         </dd>
                       </div>
                     </Show>
-                    <div>
-                      <dt>{t("common.updated")}</dt>
-                      <dd>{formatEntryDate(currentEntry().updated_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>{t("entryDetail.entryId")}</dt>
-                      <dd class="font-mono break-all">{currentEntry().id}</dd>
-                    </div>
+                    <Show when={!isCreateMode()}>
+                      <div>
+                        <dt>{t("common.updated")}</dt>
+                        <dd>{formatEntryDate(currentEntry().updated_at)}</dd>
+                      </div>
+                    </Show>
+                    <Show when={!isCreateMode()}>
+                      <div>
+                        <dt>{t("entryDetail.entryId")}</dt>
+                        <dd class="font-mono break-all">{currentEntry().id}</dd>
+                      </div>
+                    </Show>
                   </dl>
                 </section>
 
@@ -1180,56 +1252,72 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                     {t("entryDetail.actionsHeading")}
                   </h2>
                   <div class="ui-entry-action-list">
-                    <A
-                      href={`/spaces/${props.spaceId()}/entries/${
-                        encodeURIComponent(
-                          props.entryId(),
-                        )
-                      }/history`}
-                      class="ui-entry-action"
-                    >
-                      <span>{t("entryDetail.history")}</span>
-                      <span aria-hidden="true">›</span>
-                    </A>
-                    <button
-                      type="button"
-                      class="ui-entry-action"
-                      onClick={() => void handleRefresh()}
-                    >
-                      <span>{t("entryDetail.refresh")}</span>
-                      <span aria-hidden="true">↻</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="ui-entry-action"
-                      onClick={handleDiscard}
-                      disabled={!isDirty()}
-                    >
-                      <span>{t("entryDetail.discard")}</span>
-                      <span aria-hidden="true">×</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="ui-entry-action"
-                      onClick={() => setShowAccessPolicy((value) => !value)}
-                    >
-                      <span>
-                        {showAccessPolicy()
-                          ? t("entryDetail.closeSharing")
-                          : t("entryDetail.sharing")}
-                      </span>
-                      <span aria-hidden="true">›</span>
-                    </button>
+                    <Show when={!isCreateMode()}>
+                      <A
+                        href={`/spaces/${props.spaceId()}/entries/${
+                          encodeURIComponent(props.entryId?.() ?? "")
+                        }/history`}
+                        class="ui-entry-action"
+                      >
+                        <span>{t("entryDetail.history")}</span>
+                        <span aria-hidden="true">›</span>
+                      </A>
+                      <button
+                        type="button"
+                        class="ui-entry-action"
+                        onClick={() => void handleRefresh()}
+                      >
+                        <span>{t("entryDetail.refresh")}</span>
+                        <span aria-hidden="true">↻</span>
+                      </button>
+                    </Show>
+                    <Show when={!isCreateMode()}>
+                      <button
+                        type="button"
+                        class="ui-entry-action"
+                        onClick={handleDiscard}
+                        disabled={!isDirty()}
+                      >
+                        <span>{t("entryDetail.discard")}</span>
+                        <span aria-hidden="true">×</span>
+                      </button>
+                    </Show>
+                    <Show when={!isCreateMode()}>
+                      <button
+                        type="button"
+                        class="ui-entry-action"
+                        onClick={() => setShowAccessPolicy((value) => !value)}
+                      >
+                        <span>
+                          {showAccessPolicy()
+                            ? t("entryDetail.closeSharing")
+                            : t("entryDetail.sharing")}
+                        </span>
+                        <span aria-hidden="true">›</span>
+                      </button>
+                    </Show>
+                    <Show when={isCreateMode()}>
+                      <button
+                        type="button"
+                        class="ui-entry-action"
+                        onClick={handleCancel}
+                      >
+                        <span>{t("entryDetail.back")}</span>
+                        <span aria-hidden="true">×</span>
+                      </button>
+                    </Show>
                   </div>
-                  <div class="ui-entry-danger-zone">
-                    <button
-                      type="button"
-                      onClick={handleDelete}
-                      class="ui-button ui-button-danger ui-button-sm w-full"
-                    >
-                      {t("entryDetail.delete")}
-                    </button>
-                  </div>
+                  <Show when={!isCreateMode()}>
+                    <div class="ui-entry-danger-zone">
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        class="ui-button ui-button-danger ui-button-sm w-full"
+                      >
+                        {t("entryDetail.delete")}
+                      </button>
+                    </div>
+                  </Show>
                 </section>
               </aside>
             </div>
@@ -1239,7 +1327,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 <AccessPolicyEditor
                   spaceId={props.spaceId()}
                   kind="entry"
-                  resourceId={props.entryId()}
+                  resourceId={props.entryId?.() ?? ""}
                 />
               </div>
             </Show>

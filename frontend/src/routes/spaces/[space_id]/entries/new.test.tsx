@@ -16,16 +16,27 @@ vi.mock("@solidjs/router", () => ({
 vi.mock("~/components/SpaceShell", () => ({
   SpaceShell: (props: { children: unknown }) => <div>{props.children}</div>,
 }));
-vi.mock("~/components/create-dialogs", () => ({
-  CreateEntryDialog: (props: { defaultForm?: string; onClose: () => void }) => (
+vi.mock("~/components/EntryDetailPane", () => ({
+  EntryDetailPane: (props: {
+    createForm?: () => Form | undefined;
+    onCreateFormChange?: (name: string) => void;
+    onCreated?: (id: string) => void;
+    onDeleted: () => void;
+  }) => (
     <div>
-      Default form: {props.defaultForm}
-      <button type="button" onClick={props.onClose}>Cancel</button>
+      <p>Shared entry editor: {props.createForm?.()?.name}</p>
+      <button
+        type="button"
+        onClick={() => props.onCreateFormChange?.("Meeting")}
+      >
+        Select Meeting
+      </button>
+      <button type="button" onClick={() => props.onCreated?.("entry-1")}>
+        Save entry
+      </button>
+      <button type="button" onClick={props.onDeleted}>Cancel</button>
     </div>
   ),
-}));
-vi.mock("~/lib/entry-store", () => ({
-  createEntryStore: () => ({ createEntry: vi.fn() }),
 }));
 vi.mock("~/lib/ugoite-client", () => ({
   formApi: { list: vi.fn() },
@@ -51,11 +62,12 @@ describe("NewEntryRoute", () => {
     vi.mocked(spaceApi.get).mockResolvedValue(space);
   });
 
-  it("prefers the Form requested by the route", async () => {
+  it("reuses the shared editor and prefers the Form requested by the route", async () => {
     searchParams.form = "Meeting";
     render(() => <NewEntryRoute />);
     await waitFor(() =>
-      expect(screen.getByText("Default form: Meeting")).toBeInTheDocument()
+      expect(screen.getByText("Shared entry editor: Meeting"))
+        .toBeInTheDocument()
     );
   });
 
@@ -63,19 +75,23 @@ describe("NewEntryRoute", () => {
     searchParams.form = "Missing";
     render(() => <NewEntryRoute />);
     await waitFor(() =>
-      expect(screen.getByText("Default form: Notes")).toBeInTheDocument()
+      expect(screen.getByText("Shared entry editor: Notes")).toBeInTheDocument()
     );
   });
 
-  it("waits for both route resources before opening the dialog", async () => {
+  it("waits for both route resources before opening the editor", async () => {
     let resolveForms: (forms: Form[]) => void;
     let resolveSpace: (space: Space) => void;
-    vi.mocked(formApi.list).mockReturnValue(new Promise<Form[]>((resolve) => {
-      resolveForms = resolve;
-    }));
-    vi.mocked(spaceApi.get).mockReturnValue(new Promise<Space>((resolve) => {
-      resolveSpace = resolve;
-    }));
+    vi.mocked(formApi.list).mockReturnValue(
+      new Promise<Form[]>((resolve) => {
+        resolveForms = resolve;
+      }),
+    );
+    vi.mocked(spaceApi.get).mockReturnValue(
+      new Promise<Space>((resolve) => {
+        resolveSpace = resolve;
+      }),
+    );
 
     render(() => <NewEntryRoute />);
     expect(screen.getByRole("status")).toHaveTextContent("Loading entry form");
@@ -83,13 +99,18 @@ describe("NewEntryRoute", () => {
     await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
     resolveSpace!(space);
     await waitFor(() =>
-      expect(screen.getByText("Default form: Notes")).toBeInTheDocument()
+      expect(screen.getByText("Shared entry editor: Notes")).toBeInTheDocument()
     );
   });
 
-  it("returns to the Form workspace when cancelled", async () => {
+  it("navigates to the created entry and returns to Forms on cancel", async () => {
     render(() => <NewEntryRoute />);
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save entry" }));
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/default/entries/entry-1",
+      { replace: true },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(navigate).toHaveBeenCalledWith("/spaces/default/forms");
   });
 });

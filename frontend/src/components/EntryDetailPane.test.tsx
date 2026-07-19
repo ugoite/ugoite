@@ -25,6 +25,7 @@ vi.mock("~/lib/ugoite-client", () => {
     },
     entryApi: {
       get: vi.fn(),
+      create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
     },
@@ -87,6 +88,43 @@ describe("EntryDetailPane", () => {
     expect((source as HTMLTextAreaElement).value).toContain(
       "## Date\n2026-07-16",
     );
+  });
+
+  it("uses the shared form-first editor to create a new entry", async () => {
+    const onCreated = vi.fn();
+    (entryApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Meeting",
+      version: 1,
+      template: "# Meeting\n\n## Notes\n",
+      fields: {
+        Notes: { type: "markdown", required: false },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={onCreated}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const title = await screen.findByLabelText("Title");
+    expect(title).toHaveValue("Meeting");
+    fireEvent.input(title, { target: { value: "Planning" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown: expect.stringContaining("# Planning"),
+    });
+    expect(onCreated).toHaveBeenCalledWith("created-entry");
   });
 
   it("keeps nested Markdown headings out of form field values", async () => {

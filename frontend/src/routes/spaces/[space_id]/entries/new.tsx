@@ -1,12 +1,13 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { createMemo, createResource, Show } from "solid-js";
-import { CreateEntryDialog } from "~/components/create-dialogs";
-import { SpaceShell } from "~/components/SpaceShell";
 import {
-  buildEntryMarkdownByMode,
-  type EntryInputMode,
-} from "~/lib/entry-input";
-import { createEntryStore } from "~/lib/entry-store";
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  Show,
+} from "solid-js";
+import { EntryDetailPane } from "~/components/EntryDetailPane";
+import { SpaceShell } from "~/components/SpaceShell";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 
@@ -15,47 +16,53 @@ export default function NewEntryRoute() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const spaceId = () => params.space_id;
-  const store = createEntryStore(spaceId);
-  const [space, { refetch: refetchSpace }] = createResource(spaceId, spaceApi.get);
-  const [forms, { refetch: refetchForms }] = createResource(spaceId, formApi.list);
+  const [space, { refetch: refetchSpace }] = createResource(
+    spaceId,
+    spaceApi.get,
+  );
+  const [forms, { refetch: refetchForms }] = createResource(
+    spaceId,
+    formApi.list,
+  );
   const available = createMemo(() => filterCreatableEntryForms(forms() ?? []));
-  const defaultForm = createMemo(() => {
-    const requested = typeof searchParams.form === "string"
-      ? searchParams.form
-      : "";
-    const configured = typeof space()?.settings?.default_form === "string"
+  const requestedForm = () =>
+    typeof searchParams.form === "string" ? searchParams.form : "";
+  const configuredDefault = () =>
+    typeof space()?.settings?.default_form === "string"
       ? space()?.settings?.default_form as string
       : "";
-    return available().find((form) => form.name === requested)?.name ??
-      available().find((form) => form.name === configured)?.name ??
+  const defaultForm = createMemo(() => {
+    return available().find((form) => form.name === requestedForm())?.name ??
+      available().find((form) => form.name === configuredDefault())?.name ??
       available()[0]?.name;
   });
-
-  const createEntry = async (
-    title: string,
-    formName: string,
-    values: Record<string, string>,
-    mode: EntryInputMode = "webform",
-  ) => {
-    const form = available().find((candidate) => candidate.name === formName);
-    if (!form) throw new Error("Select a Form before entering content.");
-    const result = await store.createEntry(
-      buildEntryMarkdownByMode(form, title, values, mode),
-    );
-    navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
-  };
+  const [selectedFormName, setSelectedFormName] = createSignal<
+    string | undefined
+  >();
+  createEffect(() => {
+    const fallback = defaultForm();
+    if (!fallback) {
+      setSelectedFormName(undefined);
+      return;
+    }
+    if (!available().some((form) => form.name === selectedFormName())) {
+      setSelectedFormName(fallback);
+    }
+  });
+  const selectedForm = createMemo(() =>
+    available().find((form) => form.name === selectedFormName()) ??
+      available().find((form) => form.name === defaultForm())
+  );
 
   return (
     <SpaceShell spaceId={spaceId()} activeNavigation="forms" title="New Entry">
-      <div class="screenHead">
-        <div class="screenTitle">
-          <div class="eyebrow">{space()?.name || spaceId()}</div>
-          <h1>New Entry</h1>
-        </div>
-      </div>
       <Show
         when={!space.loading && !forms.loading}
-        fallback={<div class="surface emptyState" role="status">Loading entry form…</div>}
+        fallback={
+          <div class="surface emptyState" role="status">
+            Loading entry form…
+          </div>
+        }
       >
         <Show
           when={!space.error && !forms.error}
@@ -75,14 +82,39 @@ export default function NewEntryRoute() {
             </section>
           }
         >
-          <CreateEntryDialog
-            open
-            forms={available()}
-            defaultForm={defaultForm()}
-            spaceId={spaceId()}
-            onClose={() => navigate(`/spaces/${spaceId()}/forms`)}
-            onSubmit={createEntry}
-          />
+          <Show
+            when={selectedForm()}
+            fallback={
+              <section class="surface emptyState" role="alert">
+                <p>No creatable Forms are available in this Space.</p>
+                <button
+                  class="btn"
+                  type="button"
+                  onClick={() => navigate(`/spaces/${spaceId()}/forms`)}
+                >
+                  Back to Forms
+                </button>
+              </section>
+            }
+          >
+            {(form) => (
+              <EntryDetailPane
+                spaceId={spaceId}
+                forms={available}
+                createForm={() => form()}
+                onCreateFormChange={setSelectedFormName}
+                onDeleted={() =>
+                  navigate(`/spaces/${spaceId()}/forms`)}
+                onCreated={(entryId) =>
+                  navigate(
+                    `/spaces/${spaceId()}/entries/${
+                      encodeURIComponent(entryId)
+                    }`,
+                    { replace: true },
+                  )}
+              />
+            )}
+          </Show>
         </Show>
       </Show>
     </SpaceShell>
