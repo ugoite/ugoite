@@ -89,6 +89,55 @@ describe("EntryDetailPane", () => {
     );
   });
 
+  it("keeps nested Markdown headings out of form field values", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-nested-heading",
+      title: "Nested Markdown",
+      form: "Notes",
+      content:
+        "---\nform: Notes\n---\n\n# Nested Markdown\n\n## Notes\nhello\n\n### Details\nkeep this\n\n## Status\nopen",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-nested-heading"}
+        forms={() => [
+          {
+            name: "Notes",
+            version: 1,
+            template: "# Notes\n\n## Notes\n",
+            fields: {
+              Notes: { type: "markdown", required: false },
+              Status: { type: "string", required: false },
+            },
+          },
+        ]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const notes = await screen.findByLabelText("Notes");
+    expect(notes).toHaveValue("hello");
+
+    fireEvent.input(notes, { target: { value: "updated" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+
+    const source = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    expect((source as HTMLTextAreaElement).value).toContain(
+      "## Notes\nupdated\n### Details\nkeep this",
+    );
+    expect(
+      ((source as HTMLTextAreaElement).value.match(/### Details/g) || [])
+        .length,
+    ).toBe(1);
+  });
+
   it("REQ-FE-052: preserves timestamp values in form-first controls", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-timestamps",

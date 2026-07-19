@@ -130,6 +130,15 @@ function parseMarkdownH2Sections(markdown: string) {
       buffer = [];
       continue;
     }
+    // The server-side Markdown mapping treats every heading as the end of an
+    // H2 field section. Keep the form editor aligned so nested document
+    // headings remain source content instead of becoming field values.
+    if (line.startsWith("#")) {
+      pushActive();
+      activeTitle = null;
+      buffer = [];
+      continue;
+    }
     if (activeTitle) buffer.push(line);
   }
 

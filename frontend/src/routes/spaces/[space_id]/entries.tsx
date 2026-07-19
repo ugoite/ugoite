@@ -18,12 +18,12 @@ export default function SpaceEntriesRoute(props: RouteSectionProps) {
       return wsId ? wsId : null;
     },
     async (wsId) => {
-      if (!wsId) return [];
-      const forms = await formApi.list(wsId).catch(() => []);
+      if (!wsId) return { forms: [], columnTypes: [] };
+      const forms = await formApi.list(wsId);
       // The filesystem-backed catalog initializes lazily. Read its metadata
       // before mounting an entry detail request so a page reload never races
       // the same catalog initialization from two endpoints.
-      const columnTypes = await formApi.listTypes(wsId).catch(() => []);
+      const columnTypes = await formApi.listTypes(wsId);
       return { forms, columnTypes };
     },
   );
@@ -31,6 +31,7 @@ export default function SpaceEntriesRoute(props: RouteSectionProps) {
   const safeForms = createMemo(() => metadata()?.forms || []);
   const safeColumnTypes = createMemo(() => metadata()?.columnTypes || []);
   const loadingForms = createMemo(() => metadata.loading);
+  const formsError = () => metadata.error;
 
   return (
     <EntriesRouteContext.Provider
@@ -40,6 +41,7 @@ export default function SpaceEntriesRoute(props: RouteSectionProps) {
         entryStore,
         forms: safeForms,
         loadingForms,
+        formsError,
         columnTypes: safeColumnTypes,
         refetchForms: refetchMetadata,
       }}

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createMemo, createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
@@ -12,9 +12,10 @@ import { testApiUrl } from "~/test/http-origin";
 import SpaceEntriesIndexPane from "./index";
 
 const searchParams: Record<string, string> = {};
+const navigate = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
   useSearchParams: () => [searchParams, vi.fn()],
   Navigate: (props: { href: string }) => (
     <a data-testid="redirect" href={props.href}>Redirect</a>
@@ -48,6 +49,7 @@ function renderRoute() {
 describe("/spaces/:space_id/entries", () => {
   beforeEach(() => {
     setLocale("en");
+    navigate.mockReset();
     for (const key of Object.keys(searchParams)) delete searchParams[key];
   });
 
@@ -98,5 +100,37 @@ describe("/spaces/:space_id/entries", () => {
     expect(await screen.findByText("Query Entry")).toBeInTheDocument();
     expect(await screen.findByText(`Updated ${expectedDate}`))
       .toBeInTheDocument();
+  });
+
+  it("returns to the Forms workspace when clearing SQL results", async () => {
+    searchParams.session = "session-1";
+    server.use(
+      http.get(testApiUrl("/spaces/default/sql-sessions/session-1"), () =>
+        HttpResponse.json({
+          id: "session-1",
+          space_id: "default",
+          sql_id: "query-1",
+          sql: "SELECT 1",
+          status: "ready",
+          created_at: "2026-03-01T00:00:00Z",
+          expires_at: "2026-03-01T01:00:00Z",
+        })),
+      http.get(
+        testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
+        () =>
+          HttpResponse.json({
+            rows: [],
+            offset: 0,
+            limit: 24,
+            total_count: 0,
+          }),
+      ),
+    );
+    renderRoute();
+    expect(await screen.findByText("No entries found.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear query" }));
+
+    expect(navigate).toHaveBeenCalledWith("/spaces/default/forms");
   });
 });

@@ -190,7 +190,7 @@ export default function SpaceEntriesIndexPane() {
               <button
                 type="button"
                 class="ui-button ui-button-secondary text-sm"
-                onClick={() => navigate(`/spaces/${spaceId()}/entries`)}
+                onClick={() => navigate(`/spaces/${spaceId()}/forms`)}
               >
                 {t("querySession.clear")}
               </button>

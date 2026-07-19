@@ -17,12 +17,30 @@ export default function SpaceEntryDetailRoute() {
     <SpaceShell spaceId={spaceId()}>
       <div class="mx-auto max-w-6xl">
         <Show
-          when={!ctx.loadingForms()}
+          when={!ctx.loadingForms() && !ctx.formsError?.()}
           fallback={
             <div class="ui-entry-page">
-              <div class="ui-card text-center">
-                <p class="ui-muted text-sm">{t("entryDetail.loading")}</p>
-              </div>
+              <Show
+                when={ctx.formsError?.()}
+                fallback={
+                  <div class="ui-card text-center">
+                    <p class="ui-muted text-sm">{t("entryDetail.loading")}</p>
+                  </div>
+                }
+              >
+                <div class="ui-card text-center space-y-3">
+                  <p class="ui-alert ui-alert-error">
+                    {t("formsPage.failedLoad")}
+                  </p>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary"
+                    onClick={() => void ctx.refetchForms()}
+                  >
+                    {t("formsPage.retry")}
+                  </button>
+                </div>
+              </Show>
             </div>
           }
         >
