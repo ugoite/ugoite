@@ -80,8 +80,9 @@ ugoite entry create /path/to/workspace/spaces/team-notes meeting-2026-07-17 \
 
 Use `entry update`, `entry history`, `entry revision`, and `entry restore` for
 revisions. Updates can include `--parent-revision-id` to enforce optimistic
-conflict checks. `entry delete` is soft-delete by default; pass `--hard-delete`
-only when permanent removal is intended.
+conflict checks. `entry delete` appends a deletion tombstone to the revision
+history. The currently accepted `--hard-delete` flag also writes a tombstone;
+permanent removal is not available in this release.
 
 ## Forms
 
@@ -130,14 +131,17 @@ ugoite index stats /path/to/workspace/spaces/team-notes
 ugoite index run /path/to/workspace/spaces/team-notes
 ```
 
-The CLI reports that these commands are unavailable in backend/API mode. Asset
-commands use the same Space path/ID rules:
+The CLI reports that these commands are unavailable in backend/API mode. In core
+mode, asset list, upload, and delete take a local Space path:
 
 ```bash
 ugoite asset list /path/to/workspace/spaces/team-notes
 ugoite asset upload /path/to/workspace/spaces/team-notes ./diagram.png
 ugoite asset delete /path/to/workspace/spaces/team-notes asset-id
 ```
+
+In backend/API mode, `asset list` and `asset delete` accept a bare Space ID.
+Remote CLI asset upload is not available in this release.
 
 Every command has exhaustive, version-specific help. Use
 `ugoite <command> --help` or `ugoite <command> <subcommand> --help` before
