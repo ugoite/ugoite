@@ -1,4 +1,5 @@
-import { createResource, createSignal, For, Show } from "solid-js";
+import { useSearchParams } from "@solidjs/router";
+import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
 
@@ -12,14 +13,27 @@ const credentialTabs = [
 
 type CredentialTab = typeof credentialTabs[number][0];
 
+const credentialTabFromSearch = (value: unknown): CredentialTab =>
+  credentialTabs.some(([id]) => id === value)
+    ? value as CredentialTab
+    : "passkeys";
+
 export default function SecuritySettingsRoute() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [totp, setTotp] = createSignal<{
     secret: string;
     otpauth_uri: string;
   }>();
   const [totpCode, setTotpCode] = createSignal("");
   const [totpConfigured, setTotpConfigured] = createSignal(false);
-  const [activeTab, setActiveTab] = createSignal<CredentialTab>("passkeys");
+  const [activeTab, setActiveTab] = createSignal<CredentialTab>(
+    credentialTabFromSearch(searchParams.tab),
+  );
+  createEffect(() => setActiveTab(credentialTabFromSearch(searchParams.tab)));
+  const selectTab = (tab: CredentialTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
   const [credentials, { refetch }] = createResource(async () => ({
     passkeys: await authApi.listPasskeys(),
     sessions: await authApi.listSessions(),
@@ -47,7 +61,7 @@ export default function SecuritySettingsRoute() {
                 aria-controls={`credential-panel-${id}`}
                 class="tab"
                 classList={{ active: activeTab() === id }}
-                onClick={() => setActiveTab(id)}
+                onClick={() => selectTab(id)}
               >
                 {label}
               </button>

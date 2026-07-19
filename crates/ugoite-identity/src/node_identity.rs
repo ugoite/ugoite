@@ -980,7 +980,10 @@ impl NodeIdentityService {
             .cloned()
             .ok_or_else(|| anyhow!("account is not active"))?;
         let (mut public_key, registration) = self.webauthn.start_passkey_registration(
-            account_id,
+            // Discoverable credentials are keyed by the RP and user handle. A fresh handle
+            // keeps an additional passkey on the same authenticator from replacing an
+            // existing credential for this account.
+            Uuid::now_v7(),
             &account_id.to_string(),
             &account.display_name,
             None,
@@ -1242,7 +1245,9 @@ impl NodeIdentityService {
             .remove(code_index.expect("validated above"));
 
         let (mut public_key, registration) = self.webauthn.start_passkey_registration(
-            account_id,
+            // Recovery must add a credential without overwriting a surviving passkey on the
+            // same authenticator. The account association remains in RegistrationChallenge.
+            Uuid::now_v7(),
             &account_id.to_string(),
             &account.display_name,
             None,
@@ -2998,6 +3003,37 @@ mod tests {
         let session_id = Uuid::parse_str(sessions[0]["session_id"].as_str().unwrap())?;
         service.revoke_session_by_id(account_id, session_id).await?;
         assert!(service.authenticate_session(&token).await.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn added_passkeys_use_distinct_discoverable_user_handles() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Passkey user".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+            },
+        );
+        service.write_state(&state).await?;
+
+        let first = service.start_add_passkey(account_id).await?;
+        let second = service.start_add_passkey(account_id).await?;
+        let first_handle = serde_json::to_value(first.public_key.public_key.user.id)?;
+        let second_handle = serde_json::to_value(second.public_key.public_key.user.id)?;
+
+        assert_ne!(first_handle, second_handle);
+        assert_ne!(
+            first_handle,
+            serde_json::Value::String(URL_SAFE_NO_PAD.encode(account_id.as_bytes()))
+        );
         Ok(())
     }
 

@@ -1,14 +1,15 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Form, Space } from "~/lib/types";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import NewEntryRoute from "./new";
 
 const searchParams: Record<string, string> = {};
+const navigate = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
   useParams: () => ({ space_id: "default" }),
   useSearchParams: () => [searchParams, vi.fn()],
 }));
@@ -16,8 +17,11 @@ vi.mock("~/components/SpaceShell", () => ({
   SpaceShell: (props: { children: unknown }) => <div>{props.children}</div>,
 }));
 vi.mock("~/components/create-dialogs", () => ({
-  CreateEntryDialog: (props: { defaultForm?: string }) => (
-    <div>Default form: {props.defaultForm}</div>
+  CreateEntryDialog: (props: { defaultForm?: string; onClose: () => void }) => (
+    <div>
+      Default form: {props.defaultForm}
+      <button type="button" onClick={props.onClose}>Cancel</button>
+    </div>
   ),
 }));
 vi.mock("~/lib/entry-store", () => ({
@@ -41,6 +45,7 @@ const space: Space = {
 
 describe("NewEntryRoute", () => {
   beforeEach(() => {
+    navigate.mockReset();
     for (const key of Object.keys(searchParams)) delete searchParams[key];
     vi.mocked(formApi.list).mockResolvedValue(forms);
     vi.mocked(spaceApi.get).mockResolvedValue(space);
@@ -60,5 +65,31 @@ describe("NewEntryRoute", () => {
     await waitFor(() =>
       expect(screen.getByText("Default form: Notes")).toBeInTheDocument()
     );
+  });
+
+  it("waits for both route resources before opening the dialog", async () => {
+    let resolveForms: (forms: Form[]) => void;
+    let resolveSpace: (space: Space) => void;
+    vi.mocked(formApi.list).mockReturnValue(new Promise<Form[]>((resolve) => {
+      resolveForms = resolve;
+    }));
+    vi.mocked(spaceApi.get).mockReturnValue(new Promise<Space>((resolve) => {
+      resolveSpace = resolve;
+    }));
+
+    render(() => <NewEntryRoute />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading entry form");
+    resolveForms!(forms);
+    await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    resolveSpace!(space);
+    await waitFor(() =>
+      expect(screen.getByText("Default form: Notes")).toBeInTheDocument()
+    );
+  });
+
+  it("returns to the Form workspace when cancelled", async () => {
+    render(() => <NewEntryRoute />);
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(navigate).toHaveBeenCalledWith("/spaces/default/forms");
   });
 });

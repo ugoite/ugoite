@@ -753,6 +753,7 @@ code {
   border: 0;
   background: transparent;
   color: var(--muted);
+  text-decoration: none;
   padding: 10px 12px;
   border-radius: 10px 10px 0 0;
   white-space: nowrap;

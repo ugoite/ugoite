@@ -1,5 +1,5 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { createMemo, createResource } from "solid-js";
+import { createMemo, createResource, Show } from "solid-js";
 import { CreateEntryDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import {
@@ -16,8 +16,8 @@ export default function NewEntryRoute() {
   const [searchParams] = useSearchParams();
   const spaceId = () => params.space_id;
   const store = createEntryStore(spaceId);
-  const [space] = createResource(spaceId, spaceApi.get);
-  const [forms] = createResource(spaceId, formApi.list);
+  const [space, { refetch: refetchSpace }] = createResource(spaceId, spaceApi.get);
+  const [forms, { refetch: refetchForms }] = createResource(spaceId, formApi.list);
   const available = createMemo(() => filterCreatableEntryForms(forms() ?? []));
   const defaultForm = createMemo(() => {
     const requested = typeof searchParams.form === "string"
@@ -53,15 +53,38 @@ export default function NewEntryRoute() {
           <h1>New Entry</h1>
         </div>
       </div>
-      <CreateEntryDialog
-        open
-        forms={available()}
-        defaultForm={defaultForm()}
-        spaceId={spaceId()}
-        onClose={() =>
-          navigate(-1)}
-        onSubmit={createEntry}
-      />
+      <Show
+        when={!space.loading && !forms.loading}
+        fallback={<div class="surface emptyState" role="status">Loading entry form…</div>}
+      >
+        <Show
+          when={!space.error && !forms.error}
+          fallback={
+            <section class="surface emptyState" role="alert">
+              <p>Could not load the Space or its Forms.</p>
+              <button
+                class="btn"
+                type="button"
+                onClick={() => {
+                  void refetchSpace();
+                  void refetchForms();
+                }}
+              >
+                Retry
+              </button>
+            </section>
+          }
+        >
+          <CreateEntryDialog
+            open
+            forms={available()}
+            defaultForm={defaultForm()}
+            spaceId={spaceId()}
+            onClose={() => navigate(`/spaces/${spaceId()}/forms`)}
+            onSubmit={createEntry}
+          />
+        </Show>
+      </Show>
     </SpaceShell>
   );
 }

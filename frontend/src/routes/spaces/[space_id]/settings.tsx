@@ -426,14 +426,14 @@ export default function SpaceSettingsRoute() {
             <section class="settingsMain surface">
               <h2>Credentials</h2>
               <div class="tabs">
-                <button type="button" class="tab active">Passkeys</button>
-                <button type="button" class="tab">OIDC</button>
-                <button type="button" class="tab">Sessions</button>
-                <button type="button" class="tab">Recovery TOTP</button>
-                <button type="button" class="tab">CLI / MCP</button>
+                <A class="tab active" href="/settings/security?tab=passkeys">Passkeys</A>
+                <A class="tab" href="/settings/security?tab=oidc">OIDC</A>
+                <A class="tab" href="/settings/security?tab=sessions">Sessions</A>
+                <A class="tab" href="/settings/security?tab=totp">Recovery TOTP</A>
+                <A class="tab" href="/settings/security?tab=devices">CLI / MCP</A>
               </div>
               <div class="rowStack">
-                <A class="rowBtn" href="/settings/security">
+                <A class="rowBtn" href="/settings/security?tab=passkeys">
                   <span class="glyph active">
                     <UiIcon name="credential" />
                   </span>
