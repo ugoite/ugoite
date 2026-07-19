@@ -66,12 +66,13 @@ The smallest complete first-entry workflow is:
 
 ```bash
 ugoite entry create /path/to/workspace/spaces/team-notes first-note \
-  --content '# First note'
+  --content $'---\nform: Entry\n---\n# First note\n\n## Body\n\nHello from Ugoite.'
 ugoite entry get /path/to/workspace/spaces/team-notes first-note
 ugoite entry list /path/to/workspace/spaces/team-notes
 ```
 
-Add Form-backed metadata by including form frontmatter in the Markdown:
+After creating a `Meeting` Form as described below, add Form-backed metadata by
+including its name in the frontmatter:
 
 ```bash
 ugoite entry create /path/to/workspace/spaces/team-notes meeting-2026-07-17 \
