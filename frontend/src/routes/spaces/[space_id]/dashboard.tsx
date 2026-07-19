@@ -33,6 +33,7 @@ export default function SpaceDashboardRoute() {
   const [forms, { refetch: refetchForms }] = createResource(spaceId, formApi.list);
   const [columnTypes] = createResource(spaceId, formApi.listTypes);
   const entryForms = createMemo(() => filterCreatableEntryForms(forms() ?? []));
+  const formsAvailable = () => !forms.loading && !forms.error;
   const spaceName = () => space()?.name || spaceId();
   const storeEntries = () => {
     const value = entryStore.entries as unknown;
@@ -52,22 +53,37 @@ export default function SpaceDashboardRoute() {
     setShowFormDialog(false);
     await refetchForms();
   };
+  const startNewEntry = () => {
+    if (!formsAvailable()) return;
+    if (entryForms().length) {
+      navigate(`/spaces/${spaceId()}/entries/new`);
+    } else {
+      setShowFormDialog(true);
+    }
+  };
 
   return (
     <SpaceShell spaceId={spaceId()} activeNavigation="home" title={c().home}>
       <div class="screenHead">
         <div class="screenTitle"><div class="eyebrow">{spaceName()}</div><h1>{c().home}</h1></div>
-        <button class="btn primary" type="button" onClick={() => entryForms().length ? navigate(`/spaces/${spaceId()}/entries/new`) : setShowFormDialog(true)}>
+        <button class="btn primary" type="button" disabled={!formsAvailable()} onClick={startNewEntry}>
           <UiIcon name="plus" /> {c().newEntry}
         </button>
       </div>
+
+      <Show when={forms.error}>
+        <section class="surface emptyState" role="alert">
+          <p>Could not load Forms. Entry creation is unavailable until they load.</p>
+          <button class="btn" type="button" onClick={() => void refetchForms()}>Retry</button>
+        </section>
+      </Show>
 
       <section class="section">
         <div class="sectionHead"><h2>{c().continue}</h2></div>
         <div class="grid3">
           <Show when={recentEntries()[0]} fallback={
             <div class="card ui-stack-sm">
-              <button class="cardBtn" type="button" onClick={() => entryForms().length ? navigate(`/spaces/${spaceId()}/entries/new`) : setShowFormDialog(true)}>
+              <button class="cardBtn" type="button" disabled={!formsAvailable()} onClick={startNewEntry}>
                 <span class="glyph active"><UiIcon name="entry" /></span><span><b>{c().newEntry}</b><small>{c().noRecent}</small></span><span class="chev">›</span>
               </button>
               <Show when={isFreshSpace()}>
