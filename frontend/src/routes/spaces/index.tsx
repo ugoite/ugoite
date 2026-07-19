@@ -17,6 +17,10 @@ const localDevAuthGuideUrl = getDocsiteHref(
   "/docs/guide/local-dev-auth-login",
   "docs/guide/local-dev-auth-login.md",
 );
+const browserWalkthroughUrl = getDocsiteHref(
+  "/docs/guide/browser-first-entry",
+  "docs/guide/browser-first-entry.md",
+);
 
 const toMessage = (value: unknown): string => {
   if (value instanceof Error && value.message.trim()) {
@@ -322,6 +326,14 @@ export default function SpacesIndexRoute() {
                   Create space
                 </button>
               </div>
+              <a
+                href={browserWalkthroughUrl}
+                target="_blank"
+                rel="noopener"
+                class="ui-muted text-sm hover:underline"
+              >
+                Learn how to create your first entry in the browser
+              </a>
             </div>
           </Show>
           <Show when={listedSpaces().length > 0}>
