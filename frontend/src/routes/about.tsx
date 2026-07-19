@@ -54,7 +54,11 @@ export default function About() {
   );
 
   return (
-    <GlobalShell title="About" active="about">
+    <GlobalShell
+      title="About"
+      active="about"
+      authenticated={authSession().authenticated}
+    >
       <div>
         <div class="screenHead">
           <div class="screenTitle">

@@ -2,7 +2,7 @@ import { GlobalShell } from "~/components/GlobalShell";
 
 export default function NotFound() {
   return (
-    <GlobalShell title="404">
+    <GlobalShell title="404" authenticated={false}>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">404</div>

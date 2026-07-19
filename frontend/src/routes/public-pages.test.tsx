@@ -19,6 +19,10 @@ describe("concept public pages", () => {
       .toBeInTheDocument();
     expect(screen.getAllByText("Ugoite").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Home").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+      "href",
+      "/login",
+    );
     setLocale("ja");
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Ugoite について" }))

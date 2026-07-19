@@ -45,4 +45,18 @@ describe("GlobalShell account menu", () => {
 
     expect(authApi.clearSession).toHaveBeenCalledOnce();
   });
+
+  it("shows a sign-in link when used for a public route", () => {
+    render(() => (
+      <GlobalShell title="About" authenticated={false}>
+        <p>Content</p>
+      </GlobalShell>
+    ));
+
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+      "href",
+      "/login",
+    );
+    expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
+  });
 });

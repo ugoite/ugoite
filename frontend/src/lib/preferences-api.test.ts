@@ -28,15 +28,15 @@ describe("preferencesApi", () => {
       http.patch(
         testApiUrl("/preferences/me"),
         () =>
-          HttpResponse.json({ detail: { field: "color_mode" } }, {
+          HttpResponse.json({ detail: { field: "locale" } }, {
             status: 422,
           }),
       ),
     );
 
-    await expect(preferencesApi.patchMe({ color_mode: "dark" })).rejects
+    await expect(preferencesApi.patchMe({ locale: "ja" })).rejects
       .toThrow(
-        JSON.stringify({ field: "color_mode" }),
+        JSON.stringify({ field: "locale" }),
       );
   });
 
@@ -49,7 +49,7 @@ describe("preferencesApi", () => {
       ),
     );
 
-    await expect(preferencesApi.patchMe({ color_mode: "dark" })).rejects
+    await expect(preferencesApi.patchMe({ locale: "ja" })).rejects
       .toThrow(
         "Failed to update preferences: Server Error",
       );
@@ -67,7 +67,7 @@ describe("preferencesApi", () => {
       ),
     );
 
-    await expect(preferencesApi.patchMe({ color_mode: "dark" })).rejects
+    await expect(preferencesApi.patchMe({ locale: "ja" })).rejects
       .toThrow(
         "Failed to update preferences: Server Error",
       );

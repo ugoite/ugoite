@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import { Show, type JSX } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
 import { locale } from "~/lib/i18n";
@@ -12,6 +12,7 @@ const labels = {
     spaces: "Spaces",
     about: "About",
     menu: "Menu",
+    signIn: "Sign in",
   },
   ja: {
     home: "ホーム",
@@ -21,11 +22,17 @@ const labels = {
     spaces: "スペース",
     about: "Ugoiteについて",
     menu: "メニュー",
+    signIn: "ログイン",
   },
 } as const;
 
 export function GlobalShell(
-  props: { title: string; children: JSX.Element; active?: "spaces" | "about" },
+  props: {
+    title: string;
+    children: JSX.Element;
+    active?: "spaces" | "about";
+    authenticated?: boolean;
+  },
 ) {
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
   return (
@@ -87,7 +94,12 @@ export function GlobalShell(
             <option>Ugoite</option>
           </select>
           <div class="crumbTop">{props.title}</div>
-          <AccountMenu />
+          <Show
+            when={props.authenticated !== false}
+            fallback={<a class="btn" href="/login">{copy().signIn}</a>}
+          >
+            <AccountMenu />
+          </Show>
         </header>
         <div class="content">{props.children}</div>
       </section>

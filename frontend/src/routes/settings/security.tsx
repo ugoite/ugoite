@@ -1,7 +1,16 @@
 import { createResource, createSignal, For, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
-import { UiIcon } from "~/components/UiIcon";
+
+const credentialTabs = [
+  ["passkeys", "Passkeys"],
+  ["oidc", "OIDC"],
+  ["sessions", "Sessions"],
+  ["totp", "Recovery TOTP"],
+  ["devices", "CLI / MCP"],
+] as const;
+
+type CredentialTab = typeof credentialTabs[number][0];
 
 export default function SecuritySettingsRoute() {
   const [totp, setTotp] = createSignal<{
@@ -10,6 +19,7 @@ export default function SecuritySettingsRoute() {
   }>();
   const [totpCode, setTotpCode] = createSignal("");
   const [totpConfigured, setTotpConfigured] = createSignal(false);
+  const [activeTab, setActiveTab] = createSignal<CredentialTab>("passkeys");
   const [credentials, { refetch }] = createResource(async () => ({
     passkeys: await authApi.listPasskeys(),
     sessions: await authApi.listSessions(),
@@ -24,37 +34,33 @@ export default function SecuritySettingsRoute() {
           <h1>Settings</h1>
         </div>
       </div>
-      <div class="settingsLayout">
-        <aside class="settingsNav surface">
-          <a href="/spaces">
-            <UiIcon name="settings" /> General
-          </a>
-          <a href="/spaces">
-            <UiIcon name="members" /> Members
-          </a>
-          <a href="/spaces">
-            <UiIcon name="agent" /> Agents
-          </a>
-          <a class="active" href="/settings/security">
-            <UiIcon name="credential" /> Credentials
-          </a>
-          <a href="/spaces">
-            <UiIcon name="storage" /> Storage
-          </a>
-          <a href="/spaces">
-            <UiIcon name="appearance" /> Appearance
-          </a>
-        </aside>
-        <main class="settingsMain surface">
-          <h2>Credentials</h2>
-          <div class="tabs">
-            <button type="button" class="tab active">Passkeys</button>
-            <button type="button" class="tab">OIDC</button>
-            <button type="button" class="tab">Sessions</button>
-            <button type="button" class="tab">Recovery TOTP</button>
-            <button type="button" class="tab">CLI / MCP</button>
-          </div>
-          <section class="ui-card ui-stack-sm">
+      <main class="settingsMain surface">
+        <h2>Credentials</h2>
+        <div class="tabs" role="tablist" aria-label="Credential settings">
+          <For each={credentialTabs}>
+            {([id, label]) => (
+              <button
+                type="button"
+                role="tab"
+                id={`credential-tab-${id}`}
+                aria-selected={activeTab() === id}
+                aria-controls={`credential-panel-${id}`}
+                class="tab"
+                classList={{ active: activeTab() === id }}
+                onClick={() => setActiveTab(id)}
+              >
+                {label}
+              </button>
+            )}
+          </For>
+        </div>
+        <Show when={activeTab() === "passkeys"}>
+          <section
+            id="credential-panel-passkeys"
+            role="tabpanel"
+            aria-labelledby="credential-tab-passkeys"
+            class="ui-card ui-stack-sm"
+          >
             <div class="flex items-center justify-between">
               <h2 class="text-lg font-semibold">Passkeys</h2>
               <button
@@ -95,7 +101,14 @@ export default function SecuritySettingsRoute() {
               )}
             </Show>
           </section>
-          <section class="ui-card ui-stack-sm">
+        </Show>
+        <Show when={activeTab() === "oidc"}>
+          <section
+            id="credential-panel-oidc"
+            role="tabpanel"
+            aria-labelledby="credential-tab-oidc"
+            class="ui-card ui-stack-sm"
+          >
             <h2 class="text-lg font-semibold">OIDC login methods</h2>
             <p class="ui-muted">
               Link an optional provider to this account. Linking requires a
@@ -118,7 +131,14 @@ export default function SecuritySettingsRoute() {
               )}
             </Show>
           </section>
-          <section class="ui-card ui-stack-sm">
+        </Show>
+        <Show when={activeTab() === "sessions"}>
+          <section
+            id="credential-panel-sessions"
+            role="tabpanel"
+            aria-labelledby="credential-tab-sessions"
+            class="ui-card ui-stack-sm"
+          >
             <h2 class="text-lg font-semibold">Browser sessions</h2>
             <Show when={credentials()}>
               {(value) => (
@@ -150,7 +170,14 @@ export default function SecuritySettingsRoute() {
               )}
             </Show>
           </section>
-          <section class="ui-card ui-stack-sm">
+        </Show>
+        <Show when={activeTab() === "totp"}>
+          <section
+            id="credential-panel-totp"
+            role="tabpanel"
+            aria-labelledby="credential-tab-totp"
+            class="ui-card ui-stack-sm"
+          >
             <h2 class="text-lg font-semibold">Recovery TOTP</h2>
             <p class="ui-muted">
               TOTP is usable only together with one of your one-use recovery
@@ -202,7 +229,14 @@ export default function SecuritySettingsRoute() {
               <p class="ui-alert ui-alert-success">Recovery TOTP configured.</p>
             </Show>
           </section>
-          <section class="ui-card ui-stack-sm">
+        </Show>
+        <Show when={activeTab() === "devices"}>
+          <section
+            id="credential-panel-devices"
+            role="tabpanel"
+            aria-labelledby="credential-tab-devices"
+            class="ui-card ui-stack-sm"
+          >
             <h2 class="text-lg font-semibold">CLI and MCP devices</h2>
             <Show when={credentials()}>
               {(value) => (
@@ -231,8 +265,8 @@ export default function SecuritySettingsRoute() {
               )}
             </Show>
           </section>
-        </main>
-      </div>
+        </Show>
+      </main>
     </GlobalShell>
   );
 }

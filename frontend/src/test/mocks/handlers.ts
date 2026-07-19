@@ -32,8 +32,6 @@ let mockSqlSessions: Map<string, Map<string, Record<string, unknown>>> =
 let mockPreferences: UserPreferences = {
   selected_space_id: null,
   locale: null,
-  color_mode: null,
-  content_width: null,
 };
 let preferencePatches: UserPreferencesPatchPayload[] = [];
 let revisionCounter = 0;
@@ -99,7 +97,6 @@ export const resetMockData = () => {
   mockPreferences = {
     selected_space_id: null,
     locale: null,
-    color_mode: null,
   };
   preferencePatches = [];
   revisionCounter = 0;
