@@ -55,7 +55,9 @@ describe("/spaces", () => {
         "/spaces/join",
       );
     expect(
-      screen.getByRole("link", { name: "Read the browser-first walkthrough" }),
+      screen.getByRole("link", {
+        name: "Learn how to create your first entry in the browser",
+      }),
     ).toHaveAttribute("href", browserWalkthroughUrl);
     expect(spaceApi.create).not.toHaveBeenCalled();
   });

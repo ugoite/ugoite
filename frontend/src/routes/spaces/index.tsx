@@ -293,7 +293,7 @@ export default function SpacesIndexRoute() {
                 rel="noopener"
                 class="ui-muted text-sm hover:underline"
               >
-                Read the browser-first walkthrough
+                Learn how to create your first entry in the browser
               </a>
             </div>
           </Show>
