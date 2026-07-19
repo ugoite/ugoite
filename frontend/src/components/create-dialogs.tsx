@@ -38,21 +38,31 @@ const fieldTypeDescriptionKey = (type: string) => {
   if (type === "string") return "createDialog.form.fieldType.string";
   if (type === "sql") return "createDialog.form.fieldType.sql";
   if (type === "markdown") return "createDialog.form.fieldType.markdown";
-  if (numericFieldTypes.has(type)) return "createDialog.form.fieldType.number";
+  if (type === "number") return "createDialog.form.fieldType.number";
+  if (type === "double") return "createDialog.form.fieldType.double";
+  if (type === "float") return "createDialog.form.fieldType.float";
+  if (type === "integer") return "createDialog.form.fieldType.integer";
+  if (type === "long") return "createDialog.form.fieldType.long";
   if (type === "boolean") return "createDialog.form.fieldType.boolean";
-  if (["date", "time", "timestamp", "timestamp_tz", "timestamp_ns", "timestamp_tz_ns"].includes(type)) {
-    return "createDialog.form.fieldType.temporal";
+  if (type === "date") return "createDialog.form.fieldType.date";
+  if (type === "time") return "createDialog.form.fieldType.time";
+  if (type === "timestamp") return "createDialog.form.fieldType.timestamp";
+  if (type === "timestamp_tz") return "createDialog.form.fieldType.timestampTz";
+  if (type === "timestamp_ns") return "createDialog.form.fieldType.timestampNs";
+  if (type === "timestamp_tz_ns") {
+    return "createDialog.form.fieldType.timestampTzNs";
   }
   if (type === "uuid") return "createDialog.form.fieldType.uuid";
-  if (type === "row_reference") return "createDialog.form.fieldType.rowReference";
+  if (type === "row_reference") {
+    return "createDialog.form.fieldType.rowReference";
+  }
   if (type === "binary") return "createDialog.form.fieldType.binary";
   if (type === "list") return "createDialog.form.fieldType.list";
   if (type === "object_list") return "createDialog.form.fieldType.objectList";
   return "createDialog.form.fieldType.unknown";
 };
 
-const fieldTypeDescription = (type: string) =>
-  t(fieldTypeDescriptionKey(type));
+const fieldTypeDescription = (type: string) => t(fieldTypeDescriptionKey(type));
 
 const formatDatetimeLocal = (date: Date) => {
   const pad = (value: number) => String(value).padStart(2, "0");
