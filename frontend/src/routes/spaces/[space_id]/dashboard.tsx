@@ -11,8 +11,8 @@ import { formApi, spaceApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 
 const copy = {
-  en: { home: "Home", newEntry: "Entry", continue: "Continue", pinned: "Pinned", recent: "Recent", forms: "Forms", search: "Search", assets: "Assets", savedSql: "SQL", noRecent: "Create an entry to start building this Space.", walkthrough: "Read the browser-first walkthrough", form: "Form", entry: "Entry", searchMeta: "Entries · Forms · Assets" },
-  ja: { home: "ホーム", newEntry: "エントリー", continue: "続きから", pinned: "ピン留め", recent: "最近", forms: "フォーム", search: "検索", assets: "アセット", savedSql: "SQL", noRecent: "エントリーを作成して、このスペースを育てましょう。", walkthrough: "ブラウザの使い方を見る", form: "フォーム", entry: "エントリー", searchMeta: "エントリー · フォーム · アセット" },
+  en: { home: "Home", newEntry: "Entry", continue: "Continue", pinned: "Pinned", recent: "Recent", forms: "Forms", search: "Search", assets: "Assets", savedSql: "SQL", noRecent: "Create an entry to start building this Space.", walkthrough: "Create your first entry with the browser walkthrough", form: "Form", entry: "Entry", searchMeta: "Entries · Forms · Assets" },
+  ja: { home: "ホーム", newEntry: "エントリー", continue: "続きから", pinned: "ピン留め", recent: "最近", forms: "フォーム", search: "検索", assets: "アセット", savedSql: "SQL", noRecent: "エントリーを作成して、このスペースを育てましょう。", walkthrough: "ブラウザの使い方で最初のエントリーを作成する", form: "フォーム", entry: "エントリー", searchMeta: "エントリー · フォーム · アセット" },
 } as const;
 
 const browserWalkthroughUrl = getDocsiteHref(
@@ -26,6 +26,7 @@ export default function SpaceDashboardRoute() {
   const spaceId = () => params.space_id;
   const entryStore = createEntryStore(spaceId);
   const [showFormDialog, setShowFormDialog] = createSignal(false);
+  const [entriesLoaded, setEntriesLoaded] = createSignal(false);
   const c = () => copy[locale() === "ja" ? "ja" : "en"];
 
   const [space] = createResource(spaceId, spaceApi.get);
@@ -40,8 +41,11 @@ export default function SpaceDashboardRoute() {
       : (value as ReturnType<typeof entryStore.entries>);
   };
   const recentEntries = createMemo(() => [...storeEntries()].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 4));
+  const isFreshSpace = createMemo(() => entriesLoaded() && !entryStore.error() && recentEntries().length === 0);
 
-  onMount(() => void entryStore.loadEntries());
+  onMount(() => {
+    void entryStore.loadEntries().then(() => setEntriesLoaded(true));
+  });
 
   const createForm = async (payload: FormCreatePayload) => {
     await formApi.create(spaceId(), payload);
@@ -66,7 +70,9 @@ export default function SpaceDashboardRoute() {
               <button class="cardBtn" type="button" onClick={() => entryForms().length ? navigate(`/spaces/${spaceId()}/entries/new`) : setShowFormDialog(true)}>
                 <span class="glyph active"><UiIcon name="entry" /></span><span><b>{c().newEntry}</b><small>{c().noRecent}</small></span><span class="chev">›</span>
               </button>
-              <a class="ui-muted text-sm hover:underline" href={browserWalkthroughUrl} target="_blank" rel="noopener">{c().walkthrough}</a>
+              <Show when={isFreshSpace()}>
+                <a class="ui-muted text-sm hover:underline" href={browserWalkthroughUrl} target="_blank" rel="noopener">{c().walkthrough}</a>
+              </Show>
             </div>
           }>
             {(entry) => <A class="card cardBtn" href={`/spaces/${spaceId()}/entries/${encodeURIComponent(entry().id)}`}><span class="glyph active"><UiIcon name="entry" /></span><span><b>{entry().title || "Untitled"}</b><small>{entry().form || c().entry}</small></span><span class="chev">›</span></A>}
