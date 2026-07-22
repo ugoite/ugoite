@@ -44,12 +44,12 @@ export default function SpaceEntryRevisionRoute() {
             <div class="contextBar">
               <div class="contextLeft">
                 <span>
-                  <b>{entry().title}</b>
+                  <b>{entryId()}</b>
                   <small>Revision {revisionId()}</small>
                 </span>
               </div>
             </div>
-            <pre class="code">{entry().content}</pre>
+            <pre class="code">{entry().markdown}</pre>
           </div>
         )}
       </Show>

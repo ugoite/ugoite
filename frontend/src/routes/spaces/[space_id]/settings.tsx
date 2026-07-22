@@ -1,8 +1,9 @@
-import { A, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
+import { CredentialSettings } from "~/routes/settings/security";
 import { locale } from "~/lib/i18n";
 import { setLocalePreference } from "~/lib/preferences-store";
 import { spaceApi } from "~/lib/ugoite-client";
@@ -424,28 +425,7 @@ export default function SpaceSettingsRoute() {
 
           <Show when={active() === "credentials"}>
             <section class="settingsMain surface">
-              <h2>Credentials</h2>
-              <div class="tabs">
-                <A class="tab active" href="/settings/security?tab=passkeys">Passkeys</A>
-                <A class="tab" href="/settings/security?tab=oidc">OIDC</A>
-                <A class="tab" href="/settings/security?tab=sessions">Sessions</A>
-                <A class="tab" href="/settings/security?tab=totp">Recovery TOTP</A>
-                <A class="tab" href="/settings/security?tab=devices">CLI / MCP</A>
-              </div>
-              <div class="rowStack">
-                <A class="rowBtn" href="/settings/security?tab=passkeys">
-                  <span class="glyph active">
-                    <UiIcon name="credential" />
-                  </span>
-                  <span>
-                    <b>Manage credentials</b>
-                    <small>
-                      Passkeys, browser sessions, recovery and devices
-                    </small>
-                  </span>
-                  <span>›</span>
-                </A>
-              </div>
+              <CredentialSettings />
             </section>
           </Show>
 

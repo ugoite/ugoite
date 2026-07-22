@@ -154,6 +154,16 @@ export interface Entry {
   updated_at: string;
 }
 
+/** Rendered content captured for an entry revision. */
+export interface EntryRevisionContent {
+  revision_id: string;
+  parent_revision_id?: string | null;
+  author?: string;
+  markdown: string;
+  frontmatter?: Record<string, unknown>;
+  sections?: Record<string, string>;
+}
+
 /** Entry history entry */
 export interface EntryRevision {
   revision_id: string;

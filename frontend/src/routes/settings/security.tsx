@@ -19,6 +19,22 @@ const credentialTabFromSearch = (value: unknown): CredentialTab =>
     : "passkeys";
 
 export default function SecuritySettingsRoute() {
+  return (
+    <GlobalShell title="Settings / Credentials">
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">Ugoite</div>
+          <h1>Settings</h1>
+        </div>
+      </div>
+      <main class="settingsMain surface">
+        <CredentialSettings />
+      </main>
+    </GlobalShell>
+  );
+}
+
+export function CredentialSettings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [totp, setTotp] = createSignal<{
     secret: string;
@@ -41,14 +57,7 @@ export default function SecuritySettingsRoute() {
     oidcProviders: await authApi.listOidcProviders(),
   }));
   return (
-    <GlobalShell title="Settings / Credentials">
-      <div class="screenHead">
-        <div class="screenTitle">
-          <div class="eyebrow">Ugoite</div>
-          <h1>Settings</h1>
-        </div>
-      </div>
-      <main class="settingsMain surface">
+      <>
         <h2>Credentials</h2>
         <div class="tabs" role="tablist" aria-label="Credential settings">
           <For each={credentialTabs}>
@@ -280,7 +289,6 @@ export default function SecuritySettingsRoute() {
             </Show>
           </section>
         </Show>
-      </main>
-    </GlobalShell>
+      </>
   );
 }

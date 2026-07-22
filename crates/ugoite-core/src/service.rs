@@ -260,13 +260,15 @@ impl UgoiteService {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
-        entry::get_entry_revision(
-            &self.operator,
-            &self.workspace_path(space_id),
-            entry_id,
-            revision_id,
-        )
-        .await
+        Ok(serde_json::to_value(
+            entry::get_entry_revision_content(
+                &self.operator,
+                &self.workspace_path(space_id),
+                entry_id,
+                revision_id,
+            )
+            .await?,
+        )?)
     }
 
     pub async fn restore_entry(
