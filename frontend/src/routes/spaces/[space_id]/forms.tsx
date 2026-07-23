@@ -27,10 +27,17 @@ export default function SpaceFormsRoute(props: RouteSectionProps) {
     },
   );
 
-  const safeForms = createMemo(() => metadata()?.forms || []);
+  // Reading a rejected resource throws. Check its error first so child routes
+  // can render their recovery UI instead of falling through to Solid's error
+  // boundary.
+  const safeForms = createMemo(() =>
+    metadata.error ? [] : metadata()?.forms || []
+  );
   const loadingForms = createMemo(() => metadata.loading);
   const formsError = () => metadata.error;
-  const columnTypes = createMemo(() => metadata()?.columnTypes || []);
+  const columnTypes = createMemo(() =>
+    metadata.error ? [] : metadata()?.columnTypes || []
+  );
 
   return (
     <EntriesRouteContext.Provider

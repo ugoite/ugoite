@@ -28,8 +28,15 @@ export default function SpaceEntriesRoute(props: RouteSectionProps) {
     },
   );
 
-  const safeForms = createMemo(() => metadata()?.forms || []);
-  const safeColumnTypes = createMemo(() => metadata()?.columnTypes || []);
+  // Reading a rejected resource throws. Check its error first so child routes
+  // can render their recovery UI instead of falling through to Solid's error
+  // boundary.
+  const safeForms = createMemo(() =>
+    metadata.error ? [] : metadata()?.forms || []
+  );
+  const safeColumnTypes = createMemo(() =>
+    metadata.error ? [] : metadata()?.columnTypes || []
+  );
   const loadingForms = createMemo(() => metadata.loading);
   const formsError = () => metadata.error;
 
