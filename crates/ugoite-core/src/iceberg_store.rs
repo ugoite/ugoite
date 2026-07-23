@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
+use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
 const FORM_DEF_PROP: &str = "ugoite.form_definition";
@@ -34,9 +35,23 @@ struct CatalogTablePointer {
 }
 
 static CATALOG_CACHE: OnceLock<Mutex<HashMap<String, Arc<dyn Catalog>>>> = OnceLock::new();
+static CATALOG_INIT_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+// Local catalogs persist their latest metadata locations in one shared JSON
+// pointer file. Several API requests can read/write that file concurrently
+// while a page is loading, so protect the read-modify-write and registration
+// sequence as one operation.
+static CATALOG_POINTER_LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
 
 fn catalog_cache() -> &'static Mutex<HashMap<String, Arc<dyn Catalog>>> {
     CATALOG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn catalog_pointer_lock() -> &'static AsyncMutex<()> {
+    CATALOG_POINTER_LOCK.get_or_init(|| AsyncMutex::new(()))
+}
+
+fn catalog_init_lock() -> &'static AsyncMutex<()> {
+    CATALOG_INIT_LOCK.get_or_init(|| AsyncMutex::new(()))
 }
 
 fn scheme_to_uri_prefix(scheme: &str) -> &'static str {
@@ -70,6 +85,10 @@ fn warehouse_uri(op: &Operator, ws_path: &str) -> Result<String> {
 }
 
 async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<dyn Catalog>> {
+    // Initialize and cache one catalog instance at a time. Without this,
+    // simultaneous page requests can each construct a MemoryCatalog and race
+    // to register the same persisted tables before either is cached.
+    let _init_guard = catalog_init_lock().lock().await;
     let warehouse = warehouse_uri(op, ws_path)?;
     let rest_catalog_uri = std::env::var("UGOITE_ICEBERG_CATALOG_URI")
         .ok()
@@ -129,19 +148,22 @@ async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<dyn Catal
         ws_path.trim_end_matches('/'),
         CATALOG_POINTERS_FILE
     );
-    if !use_rest_catalog && op.exists(&pointer_path).await? {
-        let bytes = op.read(&pointer_path).await?;
-        let pointers: CatalogPointers = serde_json::from_slice(&bytes.to_vec())?;
-        for pointer in pointers.tables {
-            let namespace = NamespaceIdent::from_vec(pointer.namespace)?;
-            if !catalog.namespace_exists(&namespace).await? {
-                catalog.create_namespace(&namespace, HashMap::new()).await?;
-            }
-            let ident = TableIdent::new(namespace, pointer.table);
-            if !catalog.table_exists(&ident).await? {
-                catalog
-                    .register_table(&ident, pointer.metadata_location)
-                    .await?;
+    if !use_rest_catalog {
+        let _guard = catalog_pointer_lock().lock().await;
+        if op.exists(&pointer_path).await? {
+            let bytes = op.read(&pointer_path).await?;
+            let pointers: CatalogPointers = serde_json::from_slice(&bytes.to_vec())?;
+            for pointer in pointers.tables {
+                let namespace = NamespaceIdent::from_vec(pointer.namespace)?;
+                if !catalog.namespace_exists(&namespace).await? {
+                    catalog.create_namespace(&namespace, HashMap::new()).await?;
+                }
+                let ident = TableIdent::new(namespace, pointer.table);
+                if !catalog.table_exists(&ident).await? {
+                    catalog
+                        .register_table(&ident, pointer.metadata_location)
+                        .await?;
+                }
             }
         }
     }
@@ -216,6 +238,7 @@ pub async fn persist_catalog_pointer(
     ws_path: &str,
     table: &iceberg::table::Table,
 ) -> Result<()> {
+    let _guard = catalog_pointer_lock().lock().await;
     let pointer_path = format!(
         "{}/{}",
         ws_path.trim_end_matches('/'),
