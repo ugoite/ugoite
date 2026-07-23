@@ -20,6 +20,9 @@ type EntryResponse = Omit<Entry, "content"> & {
 
 const normalizeEntryRecord = (entry: EntryRecord): EntryRecord => ({
   ...entry,
+  ...(entry.created_at === undefined
+    ? {}
+    : { created_at: normalizeTimestamp(entry.created_at) }),
   updated_at: normalizeTimestamp(entry.updated_at),
 });
 

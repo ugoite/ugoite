@@ -159,6 +159,7 @@ describe("entryApi", () => {
               {
                 id: "entry-1",
                 title: "Test Entry",
+                created_at: 1772960822.056,
                 updated_at: 1772960822.056,
                 properties: {},
                 tags: [],
@@ -169,6 +170,9 @@ describe("entryApi", () => {
       );
 
       const entries = await entryApi.list("test-ws");
+      expect(entries[0].created_at).toBe(
+        new Date(1772960822.056 * 1000).toISOString(),
+      );
       expect(entries[0].updated_at).toBe(
         new Date(1772960822.056 * 1000).toISOString(),
       );
