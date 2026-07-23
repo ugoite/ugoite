@@ -48,11 +48,11 @@ export default function SpaceSettingsRoute() {
     section[locale() === "ja" ? "ja" : "en"];
   const [space, { refetch }] = createResource(spaceId, spaceApi.get);
   const [members, { refetch: refetchMembers }] = createResource(
-    spaceId,
+    () => active() === "members" ? spaceId() : null,
     spaceApi.listMembers,
   );
   const [agents, { refetch: refetchAgents }] = createResource(
-    spaceId,
+    () => active() === "agents" ? spaceId() : null,
     spaceApi.listAgents,
   );
   const [inviteLabel, setInviteLabel] = createSignal("");

@@ -239,7 +239,7 @@ async fn metadata_evolution_keeps_physical_identity() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn local_catalog_rejects_schema_bearing_changes_without_rewrite() -> anyhow::Result<()> {
+async fn local_catalog_evolves_schema_bearing_changes() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(4)),
         "memory://iceberg-schema-capability",
@@ -247,11 +247,11 @@ async fn local_catalog_rejects_schema_bearing_changes_without_rewrite() -> anyho
     .await?;
     assert_eq!(
         workspace.schema_commit_capability(),
-        ugoite_iceberg::SchemaCommitCapability::MetadataOnly
+        ugoite_iceberg::SchemaCommitCapability::AtomicSchemaEvolution
     );
     let form = form();
     workspace.create_form(&form).await?;
-    let error = workspace
+    let evolved = workspace
         .evolve_form(&FormChangeSet {
             form_id: form.id,
             expected_version: Some(form.version),
@@ -269,9 +269,25 @@ async fn local_catalog_rejects_schema_bearing_changes_without_rewrite() -> anyho
                 deprecated: false,
             })],
         })
-        .await
-        .unwrap_err();
-    assert!(error.to_string().contains("schema evolution"));
+        .await?;
+    assert!(evolved.fields.iter().any(|field| field.name == "due_at"));
+    let table = workspace
+        .catalog()
+        .load_table(&iceberg::TableIdent::new(
+            workspace.namespace().clone(),
+            physical_form_name(form.id),
+        ))
+        .await?;
+    assert_eq!(
+        table
+            .metadata()
+            .current_schema()
+            .field_by_name("due_at")
+            .unwrap()
+            .field_type
+            .as_ref(),
+        &iceberg::spec::Type::Primitive(iceberg::spec::PrimitiveType::Date),
+    );
     Ok(())
 }
 

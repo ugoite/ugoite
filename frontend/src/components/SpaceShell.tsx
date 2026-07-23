@@ -136,30 +136,6 @@ export function SpaceShell(props: SpaceShellProps) {
           >
             <UiIcon name="menu" />
           </button>
-          <select
-            class="spaceSelect"
-            aria-label="Space"
-            value={props.spaceId}
-            onChange={(event) => switchSpace(event.currentTarget.value)}
-          >
-            <Show
-              when={!spaceStore.spaces().some((space) =>
-                space.id === props.spaceId
-              )}
-            >
-              <option value={props.spaceId}>{props.spaceId}</option>
-            </Show>
-            <For each={spaceStore.spaces()}>
-              {(space) => (
-                <option
-                  value={space.id}
-                  selected={space.id === props.spaceId}
-                >
-                  {space.name || space.id}
-                </option>
-              )}
-            </For>
-          </select>
           <div class="crumbTop">{crumb()}</div>
           <AccountMenu />
         </header>
@@ -176,6 +152,25 @@ export function SpaceShell(props: SpaceShellProps) {
           <span class="brandMark">U</span>
           <span>Ugoite</span>
         </a>
+        <label class="sidebarSpaceSelect">
+          <span class="ui-sr-only">Space</span>
+          <select
+            aria-label="Space"
+            value={props.spaceId}
+            onChange={(event) => switchSpace(event.currentTarget.value)}
+          >
+            <Show when={!spaceStore.spaces().some((space) => space.id === props.spaceId)}>
+              <option value={props.spaceId}>{props.spaceId}</option>
+            </Show>
+            <For each={spaceStore.spaces()}>
+              {(space) => (
+                <option value={space.id} selected={space.id === props.spaceId}>
+                  {space.name || space.id}
+                </option>
+              )}
+            </For>
+          </select>
+        </label>
         {navigation()}
         <div class="sideFoot">
           <a class="navItem" href="/spaces">

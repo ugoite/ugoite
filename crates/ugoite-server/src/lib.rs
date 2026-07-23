@@ -2397,7 +2397,10 @@ async fn list_agents(
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
+    // Reading the agent inventory is navigation, not a privileged mutation.
+    // Keep the recent-passkey requirement on create/revoke/token issuance, but
+    // do not make opening the settings page spuriously require a fresh passkey.
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let authorization = Authorizer::new(state.service.operator().clone())
         .state(&space_id)
         .await

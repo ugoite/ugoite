@@ -6,7 +6,10 @@ import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { locale } from "~/lib/i18n";
-import { filterCreatableEntryForms } from "~/lib/metadata-forms";
+import {
+  filterCreatableEntryForms,
+  isReservedMetadataForm,
+} from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
 
@@ -21,6 +24,7 @@ const copy = {
     select: "Select a Form",
     edit: "Edit Form",
     newEntry: "Entry",
+    showMetadata: "Show system forms",
   },
   ja: {
     forms: "フォーム",
@@ -32,6 +36,7 @@ const copy = {
     select: "フォームを選択",
     edit: "フォームを編集",
     newEntry: "エントリー",
+    showMetadata: "システムフォームを表示",
   },
 } as const;
 
@@ -42,8 +47,13 @@ export default function SpaceFormsIndexPane() {
   const [query, setQuery] = createSignal("");
   const [showFormDialog, setShowFormDialog] = createSignal(false);
   const [showEditDialog, setShowEditDialog] = createSignal(false);
+  const [showMetadata, setShowMetadata] = createSignal(false);
   const c = () => copy[locale() === "ja" ? "ja" : "en"];
-  const forms = createMemo(() => filterCreatableEntryForms(ctx.forms()));
+  const forms = createMemo(() =>
+    showMetadata()
+      ? ctx.forms()
+      : filterCreatableEntryForms(ctx.forms())
+  );
   const selectedName = createMemo(() => String(params.form || ""));
   const selectedForm = createMemo(() =>
     forms().find((form) => form.name === selectedName())
@@ -105,6 +115,15 @@ export default function SpaceFormsIndexPane() {
                 <UiIcon name="plus" />
               </button>
             </div>
+            <label class="formVisibilityToggle">
+              <span>{c().showMetadata}</span>
+              <input
+                type="checkbox"
+                checked={showMetadata()}
+                onChange={(event) => setShowMetadata(event.currentTarget.checked)}
+              />
+              <span class="formVisibilityTrack" aria-hidden="true" />
+            </label>
             <label class="miniSearch">
               <UiIcon name="search" />
               <input
@@ -132,6 +151,9 @@ export default function SpaceFormsIndexPane() {
                   </span>
                   <span>
                     <b>{form.name}</b>
+                    <Show when={isReservedMetadataForm(form.name)}>
+                      <small>System</small>
+                    </Show>
                   </span>
                   <span class="chev">›</span>
                 </button>

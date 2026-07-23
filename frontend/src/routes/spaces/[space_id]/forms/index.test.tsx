@@ -66,6 +66,12 @@ const noteForm: Form = {
     body: { type: "markdown", required: false },
   },
 };
+const metadataForm: Form = {
+  name: "SQL",
+  version: 1,
+  template: "",
+  fields: {},
+};
 function renderPage(forms: Form[], formsError?: unknown) {
   const [list] = createSignal(forms);
   render(() => (
@@ -128,6 +134,14 @@ describe("v5 Forms workspace", () => {
     renderPage([]);
     expect(screen.getByText("フォーム")).toBeInTheDocument();
     expect(screen.getByText("フォームがありません")).toBeInTheDocument();
+  });
+  it("keeps system Forms hidden until the visibility toggle is enabled", () => {
+    search.form = "Notes";
+    renderPage([noteForm, metadataForm]);
+
+    expect(screen.queryByText("SQL")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show system forms" }));
+    expect(screen.getByText("SQL")).toBeInTheDocument();
   });
   it("shows API failures instead of an empty Forms state", () => {
     renderPage([], new Error("Forbidden"));
