@@ -1591,7 +1591,9 @@ fn parse_date(value: &str) -> Result<Option<i32>> {
 
 fn parse_time_micros(value: &str) -> Result<Option<i64>> {
     let time = NaiveTime::parse_from_str(value, "%H:%M:%S%.f")
-        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M:%S"))?;
+        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M:%S"))
+        // HTML time inputs omit seconds when the value is minute-precise.
+        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M"))?;
     Ok(Some(
         i64::from(time.num_seconds_from_midnight()) * 1_000_000
             + i64::from(time.nanosecond() / 1_000),

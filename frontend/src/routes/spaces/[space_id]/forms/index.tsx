@@ -152,7 +152,13 @@ export default function SpaceFormsIndexPane() {
                   <span>
                     <b>{form.name}</b>
                     <Show when={isReservedMetadataForm(form.name)}>
-                      <small>System</small>
+                      <span
+                        class="systemFormIcon"
+                        aria-label="System form"
+                        title="System form"
+                      >
+                        <UiIcon name="storage" />
+                      </span>
                     </Show>
                   </span>
                   <span class="chev">›</span>

@@ -1,5 +1,5 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createMemo, createResource, createSignal, For, Index, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
@@ -586,25 +586,25 @@ export default function SpaceSearchRoute() {
                   </button>
                 </div>
 
-                <For each={fieldConditions()}>
+                <Index each={fieldConditions()}>
                   {(condition) => (
                     <div class="ui-card grid gap-3 p-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto]">
                       <div>
-                        <label class="ui-label" for={`field-${condition.id}`}>
+                        <label class="ui-label" for={`field-${condition().id}`}>
                           Field
                         </label>
                         <Show
                           when={availableFields().length > 0}
                           fallback={
                             <input
-                              id={`field-${condition.id}`}
+                              id={`field-${condition().id}`}
                               type="text"
                               class="ui-input mt-2 w-full"
                               placeholder="Owner"
-                              value={condition.field}
+                              value={condition().field}
                               onInput={(event) =>
                                 updateFieldCondition(
-                                  condition.id,
+                                  condition().id,
                                   "field",
                                   event.currentTarget.value,
                                 )}
@@ -612,12 +612,12 @@ export default function SpaceSearchRoute() {
                           }
                         >
                           <select
-                            id={`field-${condition.id}`}
+                            id={`field-${condition().id}`}
                             class="ui-input mt-2 w-full"
-                            value={condition.field}
+                            value={condition().field}
                             onChange={(event) =>
                               updateFieldCondition(
-                                condition.id,
+                                condition().id,
                                 "field",
                                 event.currentTarget.value,
                               )}
@@ -634,17 +634,17 @@ export default function SpaceSearchRoute() {
                       <div>
                         <label
                           class="ui-label"
-                          for={`operator-${condition.id}`}
+                          for={`operator-${condition().id}`}
                         >
                           Match
                         </label>
                         <select
-                          id={`operator-${condition.id}`}
+                          id={`operator-${condition().id}`}
                           class="ui-input mt-2 w-full"
-                          value={condition.operator}
+                          value={condition().operator}
                           onChange={(event) =>
                             updateFieldCondition(
-                              condition.id,
+                              condition().id,
                               "operator",
                               event.currentTarget.value,
                             )}
@@ -654,18 +654,18 @@ export default function SpaceSearchRoute() {
                         </select>
                       </div>
                       <div>
-                        <label class="ui-label" for={`value-${condition.id}`}>
+                        <label class="ui-label" for={`value-${condition().id}`}>
                           Value
                         </label>
                         <input
-                          id={`value-${condition.id}`}
+                          id={`value-${condition().id}`}
                           type="text"
                           class="ui-input mt-2 w-full"
                           placeholder="alice"
-                          value={condition.value}
+                          value={condition().value}
                           onInput={(event) =>
                             updateFieldCondition(
-                              condition.id,
+                              condition().id,
                               "value",
                               event.currentTarget.value,
                             )}
@@ -681,7 +681,7 @@ export default function SpaceSearchRoute() {
                                 return [createFieldCondition()];
                               }
                               return current.filter((item) =>
-                                item.id !== condition.id
+                                item.id !== condition().id
                               );
                             })}
                         >
@@ -690,7 +690,7 @@ export default function SpaceSearchRoute() {
                       </div>
                     </div>
                   )}
-                </For>
+                </Index>
               </div>
 
               <div class="mt-6 flex flex-wrap items-center justify-between gap-3">

@@ -142,6 +142,8 @@ describe("v5 Forms workspace", () => {
     expect(screen.queryByText("SQL")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: "Show system forms" }));
     expect(screen.getByText("SQL")).toBeInTheDocument();
+    expect(screen.getByLabelText("System form")).toBeInTheDocument();
+    expect(screen.queryByText("System")).not.toBeInTheDocument();
   });
   it("shows API failures instead of an empty Forms state", () => {
     renderPage([], new Error("Forbidden"));

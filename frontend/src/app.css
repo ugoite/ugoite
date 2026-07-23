@@ -307,6 +307,13 @@ code {
 .formVisibilityToggle input:checked + .formVisibilityTrack { background: #181818; }
 .formVisibilityToggle input:checked + .formVisibilityTrack::after { transform: translateX(12px); }
 .formVisibilityToggle input:focus-visible + .formVisibilityTrack { outline: 2px solid var(--ink); outline-offset: 2px; }
+.systemFormIcon {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-left: 6px;
+  color: var(--muted);
+}
+.systemFormIcon svg { width: 13px; height: 13px; }
 .crumbTop {
   color: var(--muted);
   font-size: 13px;

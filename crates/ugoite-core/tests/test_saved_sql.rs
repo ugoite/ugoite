@@ -76,6 +76,31 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "advanced-search", "/tmp").await?;
+    let ws_path = "spaces/advanced-search";
+    let integrity = FakeIntegrityProvider;
+    let payload = SqlPayload {
+        name: "Advanced search - form: Meeting - memo=s".to_string(),
+        sql: "SELECT * FROM entries WHERE form = 'Meeting' AND properties.\"memo\" = 's' ORDER BY updated_at DESC LIMIT 50".to_string(),
+        variables: json!([]),
+    };
+
+    let saved = saved_sql::create_sql(
+        &op,
+        ws_path,
+        "advanced-search-1",
+        &payload,
+        "author",
+        &integrity,
+    )
+    .await?;
+    assert_eq!(saved["name"], payload.name);
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-API-007
 async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     let op = setup_operator()?;
