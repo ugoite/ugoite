@@ -116,6 +116,7 @@ export interface EntryRecord {
   id: string;
   title: string;
   form?: string;
+  created_at?: string;
   updated_at: string;
   properties: Record<string, unknown>;
   tags: string[];
