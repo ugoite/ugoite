@@ -1,7 +1,8 @@
 import { A, useParams } from "@solidjs/router";
-import { createResource, For, Show } from "solid-js";
+import { For, Show } from "solid-js";
 import { formApi } from "~/lib/ugoite-client";
 import { SpaceShell } from "~/components/SpaceShell";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceFormTypesRoute() {
   const params = useParams<{ space_id: string }>();

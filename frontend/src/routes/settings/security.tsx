@@ -1,7 +1,8 @@
 import { useSearchParams } from "@solidjs/router";
-import { createEffect, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
+import { createResource } from "~/lib/recoverable-resource";
 
 const credentialTabs = [
   ["passkeys", "Passkeys"],

@@ -3,7 +3,6 @@ import { GlobalShell } from "~/components/GlobalShell";
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   Show,
@@ -12,6 +11,7 @@ import { getDocsiteHref } from "~/lib/docsite-links";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { sortSpaces } from "~/lib/space-list";
 import type { Space } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 
 const localDevAuthGuideUrl = getDocsiteHref(
   "/docs/guide/local-dev-auth-login",

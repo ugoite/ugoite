@@ -1,7 +1,8 @@
 import { A, useNavigate } from "@solidjs/router";
-import { createResource, createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
 import { authApi, type OidcProvider } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceInvitationJoinRoute() {
   const navigate = useNavigate();

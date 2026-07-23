@@ -1,5 +1,5 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createResource, createSignal, For, Index, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
@@ -8,6 +8,7 @@ import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { EntryRecord, SearchResult, SqlEntry } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 
 type SearchMode = "keyword" | "advanced";
 type FieldMatchOperator = "equals" | "contains";

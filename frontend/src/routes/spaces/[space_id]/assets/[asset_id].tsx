@@ -1,9 +1,10 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createResource, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { assetApi } from "~/lib/ugoite-client";
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { SpaceShell } from "~/components/SpaceShell";
 import { t } from "~/lib/i18n";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceAssetDetailRoute() {
   const navigate = useNavigate();

@@ -1,10 +1,11 @@
 import { A, useParams } from "@solidjs/router";
 import type { RouteSectionProps } from "@solidjs/router";
-import { createMemo, createResource } from "solid-js";
+import { createMemo } from "solid-js";
 import { formApi } from "~/lib/ugoite-client";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
 import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceFormsRoute(props: RouteSectionProps) {
   const params = useParams<{ space_id: string }>();

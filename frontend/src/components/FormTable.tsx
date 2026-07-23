@@ -1,6 +1,5 @@
 import {
   createMemo,
-  createResource,
   createSignal,
   For,
   onCleanup,
@@ -9,6 +8,7 @@ import {
   untrack,
 } from "solid-js";
 import type { EntryRecord, Form } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 import { entryApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import {

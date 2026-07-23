@@ -2,7 +2,6 @@ import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   Show,
 } from "solid-js";
@@ -10,6 +9,7 @@ import { EntryDetailPane } from "~/components/EntryDetailPane";
 import { SpaceShell } from "~/components/SpaceShell";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function NewEntryRoute() {
   const params = useParams<{ space_id: string }>();

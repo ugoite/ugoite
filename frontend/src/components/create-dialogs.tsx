@@ -1,7 +1,6 @@
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   Index,
@@ -14,6 +13,7 @@ import {
   type EntryInputMode,
 } from "~/lib/entry-input";
 import { t } from "~/lib/i18n";
+import { createResource } from "~/lib/recoverable-resource";
 import { searchApi } from "~/lib/ugoite-client";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import {

@@ -1,5 +1,5 @@
 import { useParams, useSearchParams } from "@solidjs/router";
-import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
@@ -13,6 +13,7 @@ import type {
   SpacePatchPayload,
   StorageConnectionConfig,
 } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 
 type Section =
   | "general"

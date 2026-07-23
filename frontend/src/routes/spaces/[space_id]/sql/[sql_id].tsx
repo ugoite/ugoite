@@ -1,7 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   createMemo,
-  createResource,
   createSignal,
   For,
   Match,
@@ -14,6 +13,7 @@ import { formatDateLabel } from "~/lib/date-format";
 import { buildSqlSchema } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
+import { createResource } from "~/lib/recoverable-resource";
 
 const READ_ONLY_SQL_SCHEMA = buildSqlSchema([]);
 

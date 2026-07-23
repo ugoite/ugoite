@@ -1,8 +1,9 @@
 import { A, useParams } from "@solidjs/router";
-import { createResource, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { spaceApi } from "~/lib/ugoite-client";
 import type { StorageConnectionConfig } from "~/lib/types";
 import { SpaceShell } from "~/components/SpaceShell";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceTestConnectionRoute() {
   const params = useParams<{ space_id: string }>();

@@ -1,5 +1,6 @@
-import { createEffect, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { accessApi, type AccessPolicy, type ResourceKind } from "~/lib/access-api";
+import { createResource } from "~/lib/recoverable-resource";
 
 export function AccessPolicyEditor(props: {
   spaceId: string;

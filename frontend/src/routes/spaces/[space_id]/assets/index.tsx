@@ -1,9 +1,10 @@
 import { A, useParams } from "@solidjs/router";
-import { createResource, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { AssetUploader } from "~/components/AssetUploader";
 import { SpaceShell } from "~/components/SpaceShell";
 import { assetApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
+import { createResource } from "~/lib/recoverable-resource";
 import type { Asset } from "~/lib/types";
 
 export default function SpaceAssetsRoute() {

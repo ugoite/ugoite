@@ -2,7 +2,6 @@ import { A } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   onCleanup,
@@ -14,6 +13,7 @@ import { isServer } from "solid-js/web";
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { AssetUploader } from "~/components/AssetUploader";
 import { locale, t } from "~/lib/i18n";
+import { createResource } from "~/lib/recoverable-resource";
 import {
   renderMarkdownPreview,
   replaceFirstH1,

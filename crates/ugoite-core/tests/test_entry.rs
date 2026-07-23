@@ -80,6 +80,43 @@ async fn entry_update_accepts_minute_precision_time_values() -> anyhow::Result<(
 }
 
 #[tokio::test]
+async fn querying_entries_survives_adding_a_time_column() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "evolved-time-entry", "/tmp").await?;
+    let ws_path = "spaces/evolved-time-entry";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "entry-before-time",
+        "---\nform: Entry\n---\n# Before time\n\n## Body\nExisting row",
+        "author",
+        &integrity,
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {
+                "Body": {"type": "markdown"},
+                "time": {"type": "time"},
+            },
+        }),
+    )
+    .await?;
+
+    let results = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["id"], "entry-before-time");
+    assert_eq!(results[0]["properties"]["Body"], "Existing row");
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-ENTRY-003
 async fn test_entry_req_entry_003_update_entry_success() -> anyhow::Result<()> {
     let op = setup_operator()?;
