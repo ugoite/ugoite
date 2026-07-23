@@ -536,7 +536,9 @@ export function FormTable(props: FormTableProps) {
         <div class="mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
           <div>
             <p class="ui-muted text-sm">
-              {entries.loading && !entries()
+              {entries.error
+                ? "Could not load records."
+                : entries.loading && !entries()
                 ? "Loading..."
                 : `${processedEntries().length} records found`}
             </p>
@@ -630,6 +632,15 @@ export function FormTable(props: FormTableProps) {
             </Show>
           </div>
         </div>
+
+        <Show when={entries.error}>
+          <div class="ui-alert ui-alert-error flex flex-wrap items-center justify-between gap-3" role="alert">
+            <span>Could not load records for this Form.</span>
+            <button class="btn" type="button" onClick={() => void refetch()}>
+              Retry
+            </button>
+          </div>
+        </Show>
 
         <div class="mb-4 ui-card ui-stack-sm">
           <div class="flex flex-wrap items-center gap-2 justify-between">
