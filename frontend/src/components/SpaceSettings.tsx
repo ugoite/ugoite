@@ -1,6 +1,4 @@
 import { createMemo, createSignal, Show } from "solid-js";
-import { getDocsiteHref } from "~/lib/docsite-links";
-import { t } from "~/lib/i18n";
 import { summarizeSpaceStorage } from "~/lib/storage-topology";
 import type {
   Space,
@@ -8,285 +6,174 @@ import type {
   StorageConnectionConfig,
 } from "~/lib/types";
 
-const storageMigrationGuideUrl = getDocsiteHref(
-  "/docs/guide/storage-migration",
-  "docs/guide/storage-migration.md",
-);
-
 export interface SpaceSettingsProps {
   space: Space;
+  section?: "general" | "storage";
   onSave: (payload: SpacePatchPayload) => Promise<void>;
   onTestConnection?: (
     config: StorageConnectionConfig,
   ) => Promise<{ status: string }>;
 }
 
-/**
- * SpaceSettings component for configuring space storage and settings.
- * Implements Story 3: "Bring Your Own Cloud"
- */
 export function SpaceSettings(props: SpaceSettingsProps) {
   const [name, setName] = createSignal(props.space.name);
-  const [storageUri, setStorageUri] = createSignal(
-    props.space.storage_config?.uri || "",
+  const [defaultForm, setDefaultForm] = createSignal(
+    typeof props.space.settings?.default_form === "string"
+      ? props.space.settings.default_form
+      : "Entry",
   );
-  const [storageEndpoint, setStorageEndpoint] = createSignal(
+  const [uri, setUri] = createSignal(props.space.storage_config?.uri || "");
+  const [endpoint, setEndpoint] = createSignal(
     props.space.storage_config?.endpoint || "",
   );
-  const [isSaving, setIsSaving] = createSignal(false);
-  const [isTesting, setIsTesting] = createSignal(false);
-  const [testStatus, setTestStatus] = createSignal<"success" | "error" | null>(
-    null,
-  );
-  const [testMessage, setTestMessage] = createSignal<string>("");
-  const [saveError, setSaveError] = createSignal<string | null>(null);
+  const [pending, setPending] = createSignal(false);
+  const [message, setMessage] = createSignal("");
+  const section = () => props.section ?? "general";
   const storageSummary = createMemo(() => summarizeSpaceStorage(props.space));
-
-  const buildStorageConfig = (): StorageConnectionConfig => {
-    const uri = storageUri().trim();
-    const storage_config: StorageConnectionConfig = {
+  const config = (): StorageConnectionConfig => {
+    const next: StorageConnectionConfig = {
       ...(props.space.storage_config ?? {}),
-      uri,
+      uri: uri().trim(),
     };
-    const endpoint = storageEndpoint().trim();
-    if (uri.toLowerCase().startsWith("s3://")) {
-      if (endpoint) {
-        storage_config.endpoint = endpoint;
-      } else {
-        delete storage_config.endpoint;
-      }
+    const storageUri = uri().trim().toLowerCase();
+    const storageEndpoint = endpoint().trim();
+    if (storageUri.startsWith("s3://") && storageEndpoint) {
+      next.endpoint = storageEndpoint;
     } else {
-      delete storage_config.endpoint;
+      delete next.endpoint;
     }
-    return storage_config;
+    return next;
   };
-
-  const handleSave = async (e: Event) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setSaveError(null);
-
+  const save = async (event: Event) => {
+    event.preventDefault();
+    setPending(true);
+    setMessage("");
     try {
-      await props.onSave({
-        name: name(),
-        storage_config: buildStorageConfig(),
-      });
-    } catch (err) {
-      /* v8 ignore start */
-      setSaveError(
-        err instanceof Error ? err.message : "Failed to save settings",
+      await props.onSave(
+        section() === "general"
+          ? {
+            name: name(),
+            settings: { default_form: defaultForm().trim() },
+          }
+          : { storage_config: config() },
       );
-      /* v8 ignore stop */
+      setMessage("Saved");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Failed to save settings",
+      );
     } finally {
-      setIsSaving(false);
+      setPending(false);
     }
   };
-
-  const handleTestConnection = async () => {
-    /* v8 ignore start */
+  const test = async () => {
     if (!props.onTestConnection) return;
-    /* v8 ignore stop */
-
-    setIsTesting(true);
-    setTestStatus(null);
-    setTestMessage("");
-
+    setPending(true);
+    setMessage("");
     try {
-      const result = await props.onTestConnection(buildStorageConfig());
-      setTestStatus("success");
-      setTestMessage(`Connection successful (${result.status})`);
-    } catch (err) {
-      setTestStatus("error");
-      /* v8 ignore start */
-      setTestMessage(err instanceof Error ? err.message : "Connection failed");
-      /* v8 ignore stop */
+      const result = await props.onTestConnection(config());
+      setMessage(`Connection successful (${result.status})`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Connection failed");
     } finally {
-      setIsTesting(false);
+      setPending(false);
     }
   };
-
   return (
-    <div class="space-settings max-w-2xl mx-auto ui-card">
-      <h2 class="text-xl font-semibold mb-6">Space Settings</h2>
-
-      <form onSubmit={handleSave} class="space-y-6">
-        {/* Space Name */}
-        <div class="ui-field">
-          <label for="space-name" class="ui-label">
-            Space Name
-          </label>
-          <input
-            id="space-name"
-            type="text"
-            value={name()}
-            onInput={(e) => setName(e.currentTarget.value)}
-            class="ui-input"
-            required
-          />
-        </div>
-
-        {/* Storage Configuration */}
-        <div class="border-t pt-6">
-          <h3 class="text-lg font-semibold mb-4">Storage Configuration</h3>
-          <p class="text-sm ui-muted">
-            See where this space currently writes data. The saved URI below is
-            migration metadata: today the backend still writes through the
-            deployment-wide storage root, so updating it does not reroute writes
-            until per-space routing or migration support lands.
-          </p>
-
-          <div class="space-y-4">
+    <form class="settingsMain surface" onSubmit={save}>
+      <Show
+        when={section() === "general"}
+        fallback={
+          <div class="settingsSection">
+            <h2>Storage</h2>
             <section class="ui-card ui-stack-sm">
-              <div class="ui-stack-sm">
-                <h4 class="text-lg font-semibold">
-                  {t("storageSummary.heading")}
-                </h4>
-                <p class="text-sm ui-muted">{storageSummary().description}</p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="ui-pill">{storageSummary().label}</span>
-              </div>
-              {storageSummary().uri
-                ? (
-                  <div class="ui-stack-sm">
-                    <p class="text-xs ui-muted">
-                      {t("storageSummary.uriLabel")}
-                    </p>
-                    <p class="font-mono text-xs break-all">
-                      {storageSummary().uri}
-                    </p>
-                  </div>
-                )
-                : null}
+              <h3>Storage topology</h3>
+              <p class="ui-muted">{storageSummary().description}</p>
+              <span class="ui-pill">{storageSummary().label}</span>
+              <Show when={storageSummary().uri}>
+                <code>{storageSummary().uri}</code>
+              </Show>
             </section>
-            <div class="ui-field">
-              <label for="storage-uri" class="ui-label">
-                Saved Storage URI (metadata only)
+            <p class="ui-alert ui-alert-warning">
+              The saved URI below is migration metadata only. Updating it does
+              not move existing data or change the backend's current storage
+              root.
+            </p>
+            <div class="settingsGrid">
+              <label>
+                URI<input
+                  id="storage-uri"
+                  value={uri()}
+                  onInput={(e) => setUri(e.currentTarget.value)}
+                  placeholder="s3://ugoite-space/main"
+                  required
+                />
               </label>
-              <input
-                id="storage-uri"
-                type="text"
-                value={storageUri()}
-                onInput={(e) => setStorageUri(e.currentTarget.value)}
-                placeholder="file:///local/path or s3://bucket/path"
-                class="ui-input"
+              <label>
+                Endpoint<input
+                  id="storage-endpoint"
+                  value={endpoint()}
+                  onInput={(e) => setEndpoint(e.currentTarget.value)}
+                  placeholder="https://s3.example.com"
+                />
+              </label>
+              <label>
+                Status<input value="configured" readOnly />
+              </label>
+            </div>
+            <div class="actions">
+              <button
+                class="btn"
+                type="button"
+                onClick={() => void test()}
+                disabled={pending() || !uri().trim()}
+              >
+                Test Connection
+              </button>
+              <button class="btn primary" type="submit" disabled={pending()}>
+                Save
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <div class="settingsSection">
+          <h2>General</h2>
+          <div class="settingsGrid">
+            <label>
+              Space Name<input
+                id="space-name"
+                value={name()}
+                onInput={(e) => setName(e.currentTarget.value)}
                 required
               />
-              <p class="text-sm ui-muted">
-                Supported planning targets: <code>file://</code> (local),{" "}
-                <code>s3://</code> (S3 bucket)
-              </p>
-              <div class="ui-field">
-                <label for="storage-endpoint" class="ui-label">
-                  Storage Endpoint (optional)
-                </label>
-                <input
-                  id="storage-endpoint"
-                  type="url"
-                  value={storageEndpoint()}
-                  onInput={(e) => setStorageEndpoint(e.currentTarget.value)}
-                  placeholder="https://s3.example.com"
-                  class="ui-input"
-                />
-                <p class="text-sm ui-muted">
-                  Use this for remote storage services that need an explicit
-                  HTTP or HTTPS endpoint. Leave it blank for local paths and
-                  memory-backed test targets.
-                </p>
-              </div>
-              <div class="ui-card mt-3 space-y-3">
-                <div>
-                  <h4 class="text-sm font-semibold">
-                    Plan connector metadata deliberately
-                  </h4>
-                  <ul class="mt-2 list-disc pl-5 text-sm ui-muted space-y-1">
-                    <li>
-                      <code>file://</code>{" "}
-                      records a local path you may want to migrate this space to
-                      later, so local paths keep control and offline access on
-                      this machine.
-                    </li>
-                    <li>
-                      <code>s3://</code>{" "}
-                      records an object-storage target you may want to validate
-                      or migrate to later. It can support team access and
-                      backups, but it adds cloud credentials and usage costs.
-                    </li>
-                  </ul>
-                </div>
-                <p class="text-sm ui-muted">
-                  Changing the saved storage URI only updates this space&apos;s
-                  metadata. It does not migrate existing entries or assets to
-                  the new location, and Ugoite keeps writing through the storage
-                  root shown above until per-space routing or migration support
-                  lands.
-                </p>
-                <p class="text-sm ui-muted">
-                  Before saving a new URI, review the{" "}
-                  <a
-                    href={storageMigrationGuideUrl}
-                    target="_blank"
-                    rel="noopener"
-                    class="hover:underline"
-                  >
-                    storage migration guide
-                  </a>{" "}
-                  and use Test Connection to probe the configured target before
-                  you plan a manual migration.
-                </p>
-              </div>
-            </div>
-
-            {/* Test Connection Button */}
-            <Show when={props.onTestConnection}>
-              <button
-                type="button"
-                onClick={handleTestConnection}
-                disabled={isTesting() || !storageUri().trim()}
-                class="ui-button ui-button-secondary"
-              >
-                <Show when={isTesting()} fallback="Test Connection">
-                  Testing...
-                </Show>
-              </button>
-            </Show>
-
-            {/* Test Status */}
-            <Show when={testStatus()}>
-              <div
-                class="ui-alert"
-                classList={{
-                  "ui-alert-success": testStatus() === "success",
-                  "ui-alert-error": testStatus() === "error",
-                }}
-              >
-                {testMessage()}
-              </div>
-            </Show>
+            </label>
+            <label>
+              Default Form<input
+                value={defaultForm()}
+                onInput={(event) => setDefaultForm(event.currentTarget.value)}
+                required
+              />
+            </label>
           </div>
-        </div>
-
-        {/* Save Error */}
-        <Show when={saveError()}>
-          <div class="ui-alert ui-alert-error">{saveError()}</div>
-        </Show>
-
-        {/* Actions */}
-        <div class="flex gap-4 border-t pt-6">
-          <button
-            type="submit"
-            disabled={isSaving()}
-            class="ui-button ui-button-primary"
-          >
-            <Show when={isSaving()} fallback="Save Settings">
-              Saving...
-            </Show>
+          <button class="btn primary" type="submit" disabled={pending()}>
+            Save
           </button>
         </div>
-      </form>
-    </div>
+      </Show>
+      <Show when={message()}>
+        <p
+          class="ui-alert"
+          classList={{
+            "ui-alert-success": message() === "Saved" ||
+              message().startsWith("Connection successful"),
+            "ui-alert-error": message() !== "Saved" &&
+              !message().startsWith("Connection successful"),
+          }}
+        >
+          {message()}
+        </p>
+      </Show>
+    </form>
   );
-
-  /* v8 ignore start */
 }
-/* v8 ignore stop */

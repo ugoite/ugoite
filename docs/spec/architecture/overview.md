@@ -35,8 +35,8 @@ the Catalog config response (including endpoint prefix), carries configured
 headers and authentication, and sends `UuidMatch`, current-schema, and
 last-assigned-field requirements together with the schema and Form properties
 in one atomic commit. The local MemoryCatalog fallback is kept for offline
-single-process CLI/test operation because a durable local Catalog is not part
-of Iceberg Rust 0.8; it reports schema evolution as unavailable rather than
-rewriting data.
+single-process CLI/test operation. It writes a next Iceberg metadata version
+and then swaps the local catalog pointer, preserving existing data files and
+snapshots while making newly added nullable fields available.
 
 The current browser is server-backed. The target architecture adds a browser-local runtime and optional synchronization without making the server the mandatory owner of data.

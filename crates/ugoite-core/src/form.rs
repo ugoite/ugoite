@@ -82,6 +82,16 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
                     changes,
                 })
                 .await?;
+            if !iceberg_store::uses_rest_catalog() {
+                let table = workspace
+                    .catalog()
+                    .load_table(&iceberg::TableIdent::new(
+                        workspace.namespace().clone(),
+                        ugoite_iceberg::physical_form_name(current_domain.id),
+                    ))
+                    .await?;
+                iceberg_store::persist_catalog_pointer(op, ws_path, &table).await?;
+            }
         }
         return Ok(());
     }
@@ -175,6 +185,11 @@ pub(crate) async fn upsert_metadata_form(
     {
         if let Ok(existing) = iceberg_store::load_form_definition(op, ws_path, &form_name).await {
             preserve_stable_identities(&mut normalized, &existing)?;
+            let current_domain = to_domain_form(&existing)?;
+            let desired_domain = to_domain_form(&normalized)?;
+            if form_changes(&current_domain, &desired_domain)?.is_empty() {
+                return Ok(());
+            }
         }
     }
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;

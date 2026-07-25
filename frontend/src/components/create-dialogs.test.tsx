@@ -18,6 +18,21 @@ beforeEach(() => {
 describe("CreateFormDialog", () => {
   const columnTypes = ["string", "number", "boolean"];
 
+  it("keeps form dialog actions at their intrinsic height", () => {
+    const { container } = render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={columnTypes}
+        formNames={[]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+    expect(container.querySelector("form")).toHaveClass(
+      "ui-dialog-form-content",
+    );
+  });
+
   it("REQ-FE-032: maintains focus on column name input when typing", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
@@ -57,6 +72,76 @@ describe("CreateFormDialog", () => {
     // Type the second character
     fireEvent.input(columnInput, { target: { value: "fi" } });
     expect(document.activeElement).toBe(columnInput);
+  });
+
+  it("explains selected field types and connects the guidance to the control", async () => {
+    render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={[
+          "string",
+          "markdown",
+          "row_reference",
+          "date",
+          "timestamp_tz",
+        ]}
+        formNames={["Project"]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    fireEvent.click(screen.getByText("+ Add Column"));
+    const type = screen.getByRole("combobox", { name: "Field type" });
+    expect(type).toHaveAttribute(
+      "aria-describedby",
+      "create-form-field-type-0-description",
+    );
+    expect(screen.getByText("Short text such as a name or status."))
+      .toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "markdown" } });
+    expect(screen.getByText("Long-form text with Markdown formatting."))
+      .toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "row_reference" } });
+    expect(screen.getByText("An entry ID from the selected target Form."))
+      .toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g. Project")).toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "date" } });
+    expect(screen.getByText("A calendar date without a time."))
+      .toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "timestamp_tz" } });
+    expect(screen.getByText("A date and time with timezone information."))
+      .toBeInTheDocument();
+  });
+
+  it("explains the accepted formats for complex field types", async () => {
+    render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={["binary", "object_list"]}
+        formNames={[]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    fireEvent.click(screen.getByText("+ Add Column"));
+    const type = screen.getByRole("combobox", { name: "Field type" });
+    fireEvent.change(type, { target: { value: "binary" } });
+    expect(
+      screen.getByText("Binary data entered as base64 or hexadecimal text."),
+    ).toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "object_list" } });
+    expect(
+      screen.getByText(
+        "A JSON list of objects with type, name, and description.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("REQ-FE-039: blocks reserved metadata column names", async () => {
@@ -2163,6 +2248,24 @@ describe("EditFormDialog", () => {
     const controls = newInput.nextElementSibling;
     expect(controls).toHaveClass("grid");
     expect(controls).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
+  });
+
+  it("keeps edit-form actions at their intrinsic button height", () => {
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={mockForm}
+        columnTypes={columnTypes}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("button", { name: "Save Changes" }).parentElement)
+      .toHaveClass("ui-dialog-actions");
+    expect(screen.getByRole("button", { name: "Save Changes" }).closest("form"))
+      .toHaveClass("ui-dialog-form-content");
   });
 
   it("REQ-FE-039: shows default value input for new fields", async () => {

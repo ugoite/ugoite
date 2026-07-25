@@ -10,6 +10,7 @@ export interface EntriesRouteContextValue {
   entryStore: EntryStore;
   forms: Accessor<Form[]>;
   loadingForms: Accessor<boolean>;
+  formsError?: Accessor<unknown>;
   columnTypes: Accessor<string[]>;
   refetchForms: () => void;
 }

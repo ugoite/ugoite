@@ -3,6 +3,7 @@ use common::setup_operator;
 use ugoite_core::asset;
 use ugoite_core::entry;
 use ugoite_core::form;
+use ugoite_core::index;
 use ugoite_core::integrity::FakeIntegrityProvider;
 use ugoite_core::space;
 
@@ -38,6 +39,80 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
     let revisions = history.get("revisions").and_then(|v| v.as_array()).unwrap();
     assert_eq!(revisions.len(), 1);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn entry_update_accepts_minute_precision_time_values() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "time-entry", "/tmp").await?;
+    let ws_path = "spaces/time-entry";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {
+                "Body": {"type": "markdown"},
+                "time": {"type": "time"},
+            },
+        }),
+    )
+    .await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "time-entry-1",
+        "---\nform: Entry\n---\n# Time entry\n\n## Body\nNotes\n\n## time\n22:02",
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let content = entry::get_entry_content(&op, ws_path, "time-entry-1").await?;
+    assert!(content.markdown.contains("## time\n22:02"));
+    let results = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["properties"]["time"], "22:02:00");
+    Ok(())
+}
+
+#[tokio::test]
+async fn querying_entries_survives_adding_a_time_column() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "evolved-time-entry", "/tmp").await?;
+    let ws_path = "spaces/evolved-time-entry";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "entry-before-time",
+        "---\nform: Entry\n---\n# Before time\n\n## Body\nExisting row",
+        "author",
+        &integrity,
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {
+                "Body": {"type": "markdown"},
+                "time": {"type": "time"},
+            },
+        }),
+    )
+    .await?;
+
+    let results = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["id"], "entry-before-time");
+    assert_eq!(results[0]["properties"]["Body"], "Existing row");
     Ok(())
 }
 

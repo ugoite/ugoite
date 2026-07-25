@@ -1,26 +1,19 @@
-import { A, useNavigate, useSearchParams } from "@solidjs/router";
+import { A, Navigate, useNavigate, useSearchParams } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   onCleanup,
   Show,
 } from "solid-js";
-import {
-  CreateEntryDialog,
-  CreateFormDialog,
-} from "~/components/create-dialogs";
+import { CreateFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
-import {
-  buildEntryMarkdownByMode,
-  type EntryInputMode,
-} from "~/lib/entry-input";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { formApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
+import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
@@ -30,7 +23,9 @@ export default function SpaceEntriesIndexPane() {
   const [searchParams] = useSearchParams();
   const ctx = useEntriesRouteContext();
   const spaceId = () => ctx.spaceId();
-  const [showCreateEntryDialog, setShowCreateEntryDialog] = createSignal(false);
+  if (!searchParams.session) {
+    return <Navigate href={`/spaces/${spaceId()}/forms`} />;
+  }
   const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
   const creatableForms = createMemo(() =>
     filterCreatableEntryForms(ctx.forms())
@@ -135,30 +130,6 @@ export default function SpaceEntriesIndexPane() {
     void ctx.refetchForms();
   };
 
-  const handleCreateEntry = async (
-    title: string,
-    formName: string,
-    requiredValues: Record<string, string>,
-    inputMode: EntryInputMode = "webform",
-  ) => {
-    if (!formName) {
-      throw new Error(t("dashboard.error.selectFormBeforeCreate"));
-    }
-    const formDef = creatableForms().find((s) => s.name === formName);
-    if (!formDef) {
-      throw new Error(t("dashboard.error.selectedFormNotFound"));
-    }
-    const initialContent = buildEntryMarkdownByMode(
-      formDef,
-      title,
-      requiredValues,
-      inputMode,
-    );
-    const result = await ctx.entryStore.createEntry(initialContent);
-    setShowCreateEntryDialog(false);
-    navigate(`/spaces/${spaceId()}/entries/${encodeURIComponent(result.id)}`);
-  };
-
   return (
     <SpaceShell
       spaceId={spaceId()}
@@ -187,7 +158,7 @@ export default function SpaceEntriesIndexPane() {
               <button
                 type="button"
                 class="ui-button ui-button-secondary text-sm"
-                onClick={() => navigate(`/spaces/${spaceId()}/entries`)}
+                onClick={() => navigate(`/spaces/${spaceId()}/forms`)}
               >
                 {t("querySession.clear")}
               </button>
@@ -200,7 +171,7 @@ export default function SpaceEntriesIndexPane() {
                 "ui-button-secondary": !hasCreatableForms(),
               }}
               disabled={!hasCreatableForms()}
-              onClick={() => setShowCreateEntryDialog(true)}
+              onClick={() => navigate(`/spaces/${spaceId()}/entries/new`)}
             >
               {t("entriesPage.newButton")}
             </button>
@@ -310,14 +281,6 @@ export default function SpaceEntriesIndexPane() {
         </div>
       </div>
 
-      <CreateEntryDialog
-        open={showCreateEntryDialog()}
-        forms={creatableForms()}
-        defaultForm={creatableForms()[0]?.name}
-        spaceId={spaceId()}
-        onClose={() => setShowCreateEntryDialog(false)}
-        onSubmit={handleCreateEntry}
-      />
       <CreateFormDialog
         open={showCreateFormDialog()}
         columnTypes={ctx.columnTypes()}

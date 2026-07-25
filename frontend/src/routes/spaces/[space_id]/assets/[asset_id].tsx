@@ -1,8 +1,10 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createResource, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { assetApi } from "~/lib/ugoite-client";
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
+import { SpaceShell } from "~/components/SpaceShell";
 import { t } from "~/lib/i18n";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceAssetDetailRoute() {
   const navigate = useNavigate();
@@ -36,36 +38,39 @@ export default function SpaceAssetDetailRoute() {
   };
 
   return (
-    <main class="ui-shell ui-page">
-      <div class="max-w-3xl mx-auto p-6">
-        <div class="flex items-center justify-between mb-6">
-          <h1 class="ui-page-title">{t("assetDetail.heading")}</h1>
-          <A href={`/spaces/${spaceId()}/assets`} class="text-sm">
-            {t("assetDetail.backToAssets")}
-          </A>
+    <SpaceShell spaceId={spaceId()} activeNavigation="forms" title="Asset">
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">Forms / Assets</div>
+          <h1>{t("assetDetail.heading")}</h1>
         </div>
+        <A href={`/spaces/${spaceId()}/assets`} class="btn">
+          {t("assetDetail.backToAssets")}
+        </A>
+      </div>
 
+      <div class="settingsMain surface">
         <Show when={assets.loading}>
-          <p class="text-sm ui-muted">{t("assetDetail.loading")}</p>
+          <p class="ui-muted">{t("assetDetail.loading")}</p>
         </Show>
         <Show when={assets.error}>
-          <p class="ui-alert ui-alert-error text-sm">
-            {t("assetDetail.failedLoad")}
-          </p>
+          <p class="ui-alert ui-alert-error">{t("assetDetail.failedLoad")}</p>
         </Show>
         <Show when={asset()}>
           {(item) => (
-            <div class="ui-card">
-              <p class="text-sm">
-                {t("assetDetail.name", { name: item().name })}
-              </p>
-              <p class="text-sm ui-muted">
-                {t("assetDetail.id", { id: item().id })}
-              </p>
-              <p class="text-sm ui-muted">
-                {t("assetDetail.path", { path: item().path })}
-              </p>
-              <div class="mt-4">
+            <div class="entryGrid">
+              <div class="fieldCard wide">
+                <p class="text-sm">
+                  {t("assetDetail.name", { name: item().name })}
+                </p>
+                <p class="text-sm ui-muted">
+                  {t("assetDetail.id", { id: item().id })}
+                </p>
+                <p class="text-sm ui-muted">
+                  {t("assetDetail.path", { path: item().path })}
+                </p>
+              </div>
+              <div class="fieldCard wide">
                 <AccessPolicyEditor
                   spaceId={spaceId()}
                   kind="asset"
@@ -74,7 +79,7 @@ export default function SpaceAssetDetailRoute() {
               </div>
               <button
                 type="button"
-                class="ui-button ui-button-danger mt-4"
+                class="btn danger"
                 onClick={handleDelete}
                 disabled={isDeleting()}
               >
@@ -83,14 +88,12 @@ export default function SpaceAssetDetailRoute() {
                   : t("assetDetail.delete")}
               </button>
               <Show when={deleteError()}>
-                <p class="ui-alert ui-alert-error text-sm mt-2">
-                  {deleteError()}
-                </p>
+                <p class="ui-alert ui-alert-error">{deleteError()}</p>
               </Show>
             </div>
           )}
         </Show>
       </div>
-    </main>
+    </SpaceShell>
   );
 }

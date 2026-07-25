@@ -1,0 +1,33 @@
+version: "0.2"
+updated: "2026-07-19"
+page:
+  id: space-entry-new
+  title: New Entry
+  route: /spaces/{space_id}/entries/new
+  implementation: implemented
+components:
+  shared:
+    - id: global-sidebar
+      type: sidebar
+      target_component: space-shell-shared
+  body:
+    - id: entry-editor
+      type: two-column-workspace
+      reference: ./space-entry-detail.yaml
+      mode: create
+      behavior:
+        - Select an available Form before editing.
+        - Start with the form-first Fields tab when structured fields exist.
+        - Allow Preview and Source editing through the same tabs as Entry Detail.
+        - Create the entry through the entry API when Save is pressed.
+        - Navigate to the created Entry Detail route after a successful save.
+      create_only_actions:
+        - cancel
+      hidden_entry_actions:
+        - history
+        - refresh
+        - sharing
+        - delete
+responsive:
+  desktop: two-column
+  mobile: stacked-primary-first

@@ -1099,7 +1099,35 @@ fn struct_array_from_fields(
 }
 
 async fn scan_table_batches(table: &iceberg::table::Table) -> Result<Vec<RecordBatch>> {
-    let scan = table.scan().build()?;
+    const NATIVE_REVISION_COLUMNS: [&str; 12] = [
+        "entry_id",
+        "revision_id",
+        "parent_revision_id",
+        "entry_version",
+        "operation",
+        "committed_at",
+        "author_id",
+        "form_version",
+        "source_kind",
+        "source_id",
+        "extension_metadata",
+        "extra_attributes",
+    ];
+
+    let mut scan = table.scan();
+    if table
+        .metadata()
+        .current_schema()
+        .field_by_name("committed_at")
+        .is_some()
+    {
+        // Application writes preserve the complete portable EntryRow in
+        // extension_metadata. Reading only the fixed revision envelope avoids
+        // asking Iceberg to synthesize newly added typed form columns for
+        // older Parquet files (not all Arrow types support that operation).
+        scan = scan.select(NATIVE_REVISION_COLUMNS);
+    }
+    let scan = scan.build()?;
     let tasks = scan.plan_files().await?;
     let reader = ArrowReaderBuilder::new(table.file_io().clone()).build();
     let mut stream = reader.read(tasks)?;

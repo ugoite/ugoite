@@ -17,6 +17,7 @@ async fn test_preferences_req_sto_011_default_values() -> anyhow::Result<()> {
     assert_eq!(preferences.ui_theme, None);
     assert_eq!(preferences.color_mode, None);
     assert_eq!(preferences.primary_color, None);
+    assert_eq!(preferences.content_width, None);
 
     Ok(())
 }
@@ -51,7 +52,8 @@ async fn test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path() ->
         user_id,
         &json!({
             "color_mode": "dark",
-            "primary_color": "blue"
+            "primary_color": "blue",
+            "content_width": "wide"
         }),
     )
     .await?;
@@ -60,6 +62,10 @@ async fn test_preferences_req_sto_011_patch_roundtrip_uses_hashed_user_path() ->
     assert_eq!(
         updated.color_mode,
         Some(preferences::ColorModePreference::Dark)
+    );
+    assert_eq!(
+        updated.content_width,
+        Some(preferences::ContentWidthPreference::Wide)
     );
     assert_eq!(
         updated.primary_color,

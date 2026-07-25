@@ -14,44 +14,36 @@ vi.mock("@solidjs/router", () => ({
 
 vi.mock("~/components/SpaceShell", () => ({
   SpaceShell: (
-    props: { children: unknown; spaceId: string; activeTopTab?: string },
+    props: { children: unknown; spaceId: string; activeNavigation?: string },
   ) => (
-    <div data-space-id={props.spaceId} data-active-top-tab={props.activeTopTab}>
+    <div
+      data-space-id={props.spaceId}
+      data-active-navigation={props.activeNavigation}
+    >
       {props.children}
     </div>
   ),
 }));
+vi.mock("~/lib/ugoite-client", () => ({
+  sqlApi: { list: vi.fn().mockResolvedValue([]) },
+}));
 
 describe("/spaces/:space_id/sql", () => {
-  it("REQ-FE-061: saved SQL route explains the missing UI and links to working recovery paths", () => {
+  it("REQ-FE-061: saved SQL route provides the v5 list and create action", async () => {
     const { container } = render(() => <SpaceSqlRoute />);
 
     expect(screen.getByRole("heading", { name: "Saved SQL" }))
       .toBeInTheDocument();
-    expect(screen.getByText(/named-query management/i)).toBeInTheDocument();
-    expect(
-      screen.queryByText("Saved SQL management is not yet in the UI."),
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open Search" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "SQL" })).toHaveAttribute(
       "href",
-      "/spaces/default/search",
+      "/spaces/default/queries/new",
     );
-    expect(screen.getByRole("link", { name: "Back to Dashboard" }))
-      .toHaveAttribute(
-        "href",
-        "/spaces/default/dashboard",
-      );
-    expect(screen.getByRole("link", { name: "Browse Entries" }))
-      .toHaveAttribute(
-        "href",
-        "/spaces/default/entries",
-      );
     expect(container.firstElementChild).toHaveAttribute(
       "data-space-id",
       "default",
     );
     expect(container.firstElementChild).toHaveAttribute(
-      "data-active-top-tab",
+      "data-active-navigation",
       "search",
     );
   });

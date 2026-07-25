@@ -1,12 +1,13 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
 import { buildSqlSchema } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { Form, SqlVariable } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 
 const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 
@@ -68,56 +69,59 @@ export default function SpaceQueryCreateRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeTopTab="search">
-      <div class="mx-auto max-w-4xl">
-        <h1 class="ui-page-title">Create query</h1>
-
-        <div class="mt-6 ui-stack-sm">
-          <label class="ui-label" for="query-title">
-            Query name
-          </label>
-          <input
-            id="query-title"
-            class="ui-input"
-            placeholder="Untitled query"
-            value={queryName()}
-            onInput={(e) => setQueryName(e.currentTarget.value)}
-          />
-
-          <div>
-            <label class="ui-label mb-2" for="query-sql">
-              SQL
-            </label>
-            <SqlQueryEditor
-              id="query-sql"
-              value={sqlInput()}
-              onChange={setSqlInput}
-              schema={schema()}
-              onDiagnostics={setDiagnostics}
-              disabled={isSaving()}
-            />
-          </div>
-
-          <Show when={diagnostics().length > 0}>
-            <ul class="text-sm ui-text-warning ui-stack-sm">
-              <For each={diagnostics()}>
-                {(diag) => <li>{diag.message}</li>}
-              </For>
-            </ul>
-          </Show>
-          <Show when={error()}>
-            <p class="text-sm ui-text-danger">{error()}</p>
-          </Show>
-
-          <button
-            type="button"
-            class="ui-button ui-button-primary text-sm"
-            onClick={handleSave}
-            disabled={isSaving()}
-          >
-            {isSaving() ? "Saving..." : "Save"}
-          </button>
+    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="SQL / New">
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">Search / Saved SQL</div>
+          <h1>New SQL</h1>
         </div>
+      </div>
+      <div class="settingsMain surface">
+        <label class="ui-label" for="query-title">
+          Query name
+        </label>
+        <input
+          id="query-title"
+          class="ui-input"
+          placeholder="Untitled query"
+          value={queryName()}
+          onInput={(e) =>
+            setQueryName(e.currentTarget.value)}
+        />
+
+        <div>
+          <label class="ui-label mb-2" for="query-sql">
+            SQL
+          </label>
+          <SqlQueryEditor
+            id="query-sql"
+            value={sqlInput()}
+            onChange={setSqlInput}
+            schema={schema()}
+            onDiagnostics={setDiagnostics}
+            disabled={isSaving()}
+          />
+        </div>
+
+        <Show when={diagnostics().length > 0}>
+          <ul class="text-sm ui-text-warning ui-stack-sm">
+            <For each={diagnostics()}>
+              {(diag) => <li>{diag.message}</li>}
+            </For>
+          </ul>
+        </Show>
+        <Show when={error()}>
+          <p class="text-sm ui-text-danger">{error()}</p>
+        </Show>
+
+        <button
+          type="button"
+          class="btn primary"
+          onClick={handleSave}
+          disabled={isSaving()}
+        >
+          {isSaving() ? "Saving..." : "Save"}
+        </button>
       </div>
     </SpaceShell>
   );

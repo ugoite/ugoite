@@ -1,342 +1,234 @@
-import { A, useNavigate, useSearchParams } from "@solidjs/router";
-import {
-  createEffect,
-  createMemo,
-  createResource,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { useNavigate, useSearchParams } from "@solidjs/router";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { CreateFormDialog, EditFormDialog } from "~/components/create-dialogs";
 import { FormTable } from "~/components/FormTable";
-import { CreateFormDialog } from "~/components/create-dialogs";
 import { SpaceShell } from "~/components/SpaceShell";
-import { formatDateLabel } from "~/lib/date-format";
+import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
+import { locale } from "~/lib/i18n";
+import {
+  filterCreatableEntryForms,
+  isReservedMetadataForm,
+} from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
-import { t } from "~/lib/i18n";
-import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { sqlSessionApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
+
+const copy = {
+  en: {
+    forms: "Forms",
+    newForm: "Form",
+    find: "Find a Form",
+    noForms: "No Forms yet",
+    failedLoad: "Failed to load Forms.",
+    retry: "Retry",
+    select: "Select a Form",
+    edit: "Edit Form",
+    newEntry: "Entry",
+    showMetadata: "Show system forms",
+  },
+  ja: {
+    forms: "フォーム",
+    newForm: "フォーム",
+    find: "フォームを探す",
+    noForms: "フォームがありません",
+    failedLoad: "フォームを読み込めませんでした。",
+    retry: "再試行",
+    select: "フォームを選択",
+    edit: "フォームを編集",
+    newEntry: "エントリー",
+    showMetadata: "システムフォームを表示",
+  },
+} as const;
 
 export default function SpaceFormsIndexPane() {
   const ctx = useEntriesRouteContext();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  let formSelectEl: HTMLSelectElement | undefined;
-  const [showCreateFormDialog, setShowCreateFormDialog] = createSignal(false);
-  const sessionId = createMemo(
-    () => (searchParams.session ? String(searchParams.session) : ""),
+  const [params, setParams] = useSearchParams();
+  const [query, setQuery] = createSignal("");
+  const [showFormDialog, setShowFormDialog] = createSignal(false);
+  const [showEditDialog, setShowEditDialog] = createSignal(false);
+  const [showMetadata, setShowMetadata] = createSignal(false);
+  const c = () => copy[locale() === "ja" ? "ja" : "en"];
+  const forms = createMemo(() =>
+    showMetadata()
+      ? ctx.forms()
+      : filterCreatableEntryForms(ctx.forms())
   );
-  const [page, setPage] = createSignal(1);
-  const [pageSize] = createSignal(25);
-  const selectedFormName = createMemo(
-    () => (searchParams.form ? String(searchParams.form) : ""),
-  );
-  const handleCreateForm = async (payload: FormCreatePayload) => {
-    await formApi.create(ctx.spaceId(), payload);
-    setShowCreateFormDialog(false);
-    ctx.refetchForms();
-  };
-
-  const [session, { refetch: refetchSession }] = createResource(
-    () => sessionId().trim() || null,
-    async (id) => sqlSessionApi.get(ctx.spaceId(), id),
-  );
-
-  const [sessionRows] = createResource(
-    () => {
-      const id = sessionId().trim();
-      if (!id || session()?.status !== "ready") return null;
-      return { id, offset: (page() - 1) * pageSize(), limit: pageSize() };
-    },
-    async ({ id, offset, limit }) =>
-      sqlSessionApi.rows(ctx.spaceId(), id, offset, limit),
-  );
-
-  const selectedFormValue = createMemo(() => selectedFormName().trim());
-  const selectableForms = createMemo(() =>
-    filterCreatableEntryForms(ctx.forms())
-  );
-
-  const handleFormSelection = (value: string) => {
-    if (!value) return;
-    setSearchParams({ form: value });
-  };
-
-	createEffect(() => {
-		const select = formSelectEl;
-		if (!select) return;
-		const interval = setInterval(() => {
-			const currentSelect = formSelectEl;
-			if (!currentSelect) return;
-			const selected = currentSelect.value?.trim() ?? "";
-			if (!selected) return;
-			if (selected !== selectedFormName().trim()) {
-				setSearchParams({ form: selected });
-			}
-		}, 200);
-		onCleanup(() => clearInterval(interval));
-	});
-
-  createEffect(() => {
-    if (sessionId().trim()) {
-      setPage(1);
-      return;
-    }
-    const selected = selectedFormValue().trim();
-    if (selectableForms().some((form) => form.name === selected)) return;
-    const first = selectableForms()[0];
-    if (first?.name) {
-      setSearchParams({ form: first.name }, { replace: true });
-    }
-  });
-
-  createEffect(() => {
-    const id = sessionId().trim();
-    if (!id) return;
-    const interval = setInterval(() => {
-      if (session()?.status === "running") {
-        refetchSession();
-      }
-    }, 1000);
-    onCleanup(() => clearInterval(interval));
-  });
-
+  const selectedName = createMemo(() => String(params.form || ""));
   const selectedForm = createMemo(() =>
-    selectableForms().find((entry) => entry.name === selectedFormValue())
+    forms().find((form) => form.name === selectedName())
   );
-
-  const sessionEntries = createMemo(() => sessionRows()?.rows || []);
-  const sessionFields = createMemo(() => {
-    const fields = new Set<string>();
-    for (const entry of sessionEntries()) {
-      const props = entry.properties || {};
-      for (const key of Object.keys(props)) {
-        fields.add(key);
-      }
+  const filteredForms = createMemo(() =>
+    forms().filter((form) =>
+      form.name.toLowerCase().includes(query().trim().toLowerCase())
+    )
+  );
+  createEffect(() => {
+    if (!selectedForm() && forms()[0]) {
+      setParams({ form: forms()[0].name, tab: undefined }, { replace: true });
     }
-    return Array.from(fields);
   });
 
-  const totalCount = createMemo(() =>
-    sessionRows()?.totalCount ?? sessionEntries().length
-  );
-  const totalPages = createMemo(() =>
-    Math.max(1, Math.ceil(totalCount() / pageSize()))
-  );
+  const createForm = async (payload: FormCreatePayload) => {
+    await formApi.create(ctx.spaceId(), payload);
+    setShowFormDialog(false);
+    await ctx.refetchForms();
+    setParams({ form: payload.name, tab: undefined });
+  };
+  const updateForm = async (payload: FormCreatePayload) => {
+    await formApi.create(ctx.spaceId(), payload);
+    setShowEditDialog(false);
+    await ctx.refetchForms();
+  };
 
   return (
     <SpaceShell
       spaceId={ctx.spaceId()}
-      showBottomTabs
-      activeBottomTab="grid"
-      bottomTabHrefSuffix={sessionId().trim()
-        ? `?session=${encodeURIComponent(sessionId())}`
-        : ""}
+      activeNavigation="forms"
+      title={c().forms}
     >
-      <div class="mx-auto max-w-6xl">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 class="ui-page-title">
-              {sessionId().trim()
-                ? t("querySession.heading")
-                : t("formsPage.heading")}
-            </h1>
-            <p class="text-sm ui-muted">
-              {sessionId().trim()
-                ? t("querySession.formsDescription")
-                : t("formsPage.description")}
-            </p>
+      <Show
+        when={!ctx.formsError?.()}
+        fallback={
+          <div class="settingsMain surface ui-stack-sm">
+            <p class="ui-alert ui-alert-error">{c().failedLoad}</p>
+            <button
+              class="btn"
+              type="button"
+              onClick={() => ctx.refetchForms()}
+            >
+              {c().retry}
+            </button>
           </div>
-          <div class="flex items-center gap-2">
-            <Show when={!sessionId().trim()}>
-              <select
-                class="ui-input"
-                ref={formSelectEl}
-                value={selectedFormValue()}
-                onInput={(e) => handleFormSelection(e.currentTarget.value)}
-                onChange={(e) => handleFormSelection(e.currentTarget.value)}
-              >
-                <option value="" disabled>
-                  {t("formsPage.selectPlaceholder")}
-                </option>
-                {selectableForms().map((entry) => (
-                  <option value={entry.name}>{entry.name}</option>
-                ))}
-              </select>
+        }
+      >
+        <div class="split">
+          <aside class="listPane surface">
+            <div class="paneHead">
+              <b>{c().forms}</b>
               <button
+                class="btn iconBtn"
                 type="button"
-                class="ui-button ui-button-primary text-sm"
-                onClick={() => setShowCreateFormDialog(true)}
+                aria-label={c().newForm}
+                onClick={() => setShowFormDialog(true)}
               >
-                {t("formsPage.newButton")}
+                <UiIcon name="plus" />
               </button>
-            </Show>
-            <Show when={sessionId().trim()}>
-              <button
-                type="button"
-                class="ui-button ui-button-secondary text-sm"
-                onClick={() => navigate(`/spaces/${ctx.spaceId()}/forms`)}
-              >
-                {t("querySession.clear")}
-              </button>
-            </Show>
-          </div>
-        </div>
-
-        <div class="mt-6">
-          <Show when={sessionId().trim()}>
-            <div class="ui-stack-sm">
-              <Show when={session()?.status === "running"}>
-                <p class="text-sm ui-muted">{t("querySession.preparing")}</p>
-              </Show>
-              <Show when={session()?.status === "failed"}>
-                <p class="text-sm ui-text-danger">
-                  {session()?.error || t("querySession.failed")}
-                </p>
-              </Show>
-              <Show when={session()?.status === "expired"}>
-                <p class="text-sm ui-text-danger">
-                  {t("querySession.expired")}
-                </p>
-              </Show>
-              <Show when={sessionRows.loading}>
-                <p class="text-sm ui-muted">
-                  {t("querySession.loadingResults")}
-                </p>
-              </Show>
-              <Show
-                when={!sessionRows.loading && sessionEntries().length === 0}
-              >
-                <p class="text-sm ui-muted">{t("querySession.noResults")}</p>
-              </Show>
-              <Show when={sessionEntries().length > 0}>
-                <div class="ui-table-wrapper overflow-x-auto">
-                  <table class="ui-table text-sm min-w-full">
-                    <thead class="ui-table-head">
-                      <tr>
-                        <th class="ui-table-header-cell">
-                          {t("common.title")}
-                        </th>
-                        <th class="ui-table-header-cell">{t("common.form")}</th>
-                        <th class="ui-table-header-cell">
-                          {t("common.updated")}
-                        </th>
-                        <For each={sessionFields()}>
-                          {(field) => (
-                            <th class="ui-table-header-cell">{field}</th>
-                          )}
-                        </For>
-                      </tr>
-                    </thead>
-                    <tbody class="ui-table-body">
-                      <For each={sessionEntries()}>
-                        {(entry) => (
-                          <tr class="ui-table-row">
-                            <td class="ui-table-cell">
-                              <button
-                                type="button"
-                                class="text-left hover:underline"
-                                onClick={() =>
-                                  navigate(
-                                    `/spaces/${ctx.spaceId()}/entries/${
-                                      encodeURIComponent(entry.id)
-                                    }`,
-                                  )}
-                              >
-                                {entry.title || t("common.untitled")}
-                              </button>
-                            </td>
-                            <td class="ui-table-cell ui-table-cell-muted">
-                              {entry.form || "-"}
-                            </td>
-                            <td class="ui-table-cell ui-table-cell-muted">
-                              {formatDateLabel(entry.updated_at)}
-                            </td>
-                            <For each={sessionFields()}>
-                              {(field) => (
-                                <td class="ui-table-cell ui-table-cell-muted">
-                                  {String(entry.properties?.[field] ?? "")}
-                                </td>
-                              )}
-                            </For>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                </div>
-              </Show>
-              <Show when={totalCount() > 0}>
-                <div class="flex flex-wrap items-center justify-between gap-3 text-sm ui-muted">
-                  <div>
-                    {t("querySession.pagination", {
-                      page: page(),
-                      totalPages: totalPages(),
-                      resultCount: totalCount(),
-                    })}
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <button
-                      type="button"
-                      class="ui-button ui-button-secondary text-sm"
-                      disabled={page() <= 1}
-                      onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                    >
-                      {t("common.previous")}
-                    </button>
-                    <button
-                      type="button"
-                      class="ui-button ui-button-secondary text-sm"
-                      disabled={page() >= totalPages()}
-                      onClick={() =>
-                        setPage((prev) => Math.min(totalPages(), prev + 1))}
-                    >
-                      {t("common.next")}
-                    </button>
-                  </div>
-                </div>
-              </Show>
             </div>
-          </Show>
-          <Show when={!sessionId().trim()}>
+            <label class="formVisibilityToggle">
+              <span>{c().showMetadata}</span>
+              <input
+                type="checkbox"
+                checked={showMetadata()}
+                onChange={(event) => setShowMetadata(event.currentTarget.checked)}
+              />
+              <span class="formVisibilityTrack" aria-hidden="true" />
+            </label>
+            <label class="miniSearch">
+              <UiIcon name="search" />
+              <input
+                value={query()}
+                onInput={(event) => setQuery(event.currentTarget.value)}
+                placeholder={c().find}
+              />
+            </label>
+            <For
+              each={filteredForms()}
+              fallback={<div class="ui-muted p-3">{c().noForms}</div>}
+            >
+              {(form) => (
+                <button
+                  class="formItem"
+                  classList={{ active: selectedName() === form.name }}
+                  type="button"
+                  onClick={() => setParams({ form: form.name, tab: undefined })}
+                >
+                  <span
+                    class="glyph"
+                    classList={{ active: selectedName() === form.name }}
+                  >
+                    {form.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span>
+                    <b>{form.name}</b>
+                    <Show when={isReservedMetadataForm(form.name)}>
+                      <span
+                        class="systemFormIcon"
+                        aria-label="System form"
+                        title="System form"
+                      >
+                        <UiIcon name="storage" />
+                      </span>
+                    </Show>
+                  </span>
+                  <span class="chev">›</span>
+                </button>
+              )}
+            </For>
+          </aside>
+          <main class="detailPane">
             <Show
               when={selectedForm()}
-              fallback={<p class="text-sm ui-muted">{t("formsPage.empty")}</p>}
+              fallback={
+                <div class="surface settingsMain ui-muted">{c().select}</div>
+              }
             >
               {(form) => (
                 <>
-                  <div class="mb-4">
-                    <h2 class="text-xl font-semibold">{form().name}</h2>
-                    <p class="text-sm ui-muted">
-                      {t("formsPage.selectedDescription")}
-                    </p>
+                  <div class="formWorkspaceHead surface">
+                    <div class="actions">
+                      <button
+                        class="btn"
+                        type="button"
+                        onClick={() => setShowEditDialog(true)}
+                      >
+                        <UiIcon name="settings" /> {c().edit}
+                      </button>
+                      <button
+                        class="btn primary"
+                        type="button"
+                        onClick={() =>
+                          navigate(
+                            `/spaces/${ctx.spaceId()}/entries/new?form=${
+                              encodeURIComponent(form().name)
+                            }`,
+                          )}
+                      >
+                        <UiIcon name="plus" /> {c().newEntry}
+                      </button>
+                    </div>
                   </div>
                   <FormTable
                     spaceId={ctx.spaceId()}
                     entryForm={form()}
-                    onEntryClick={(entryId) =>
+                    onEntryClick={(id) =>
                       navigate(
                         `/spaces/${ctx.spaceId()}/entries/${
-                          encodeURIComponent(entryId)
+                          encodeURIComponent(id)
                         }`,
                       )}
+                  />
+                  <EditFormDialog
+                    open={showEditDialog()}
+                    entryForm={form()}
+                    columnTypes={ctx.columnTypes()}
+                    formNames={ctx.forms().map((candidate) => candidate.name)}
+                    onClose={() => setShowEditDialog(false)}
+                    onSubmit={updateForm}
                   />
                 </>
               )}
             </Show>
-          </Show>
+          </main>
         </div>
-      </div>
-
-      <CreateFormDialog
-        open={showCreateFormDialog()}
-        columnTypes={ctx.columnTypes()}
-        formNames={ctx.forms().map((form) => form.name)}
-        onClose={() => setShowCreateFormDialog(false)}
-        onSubmit={handleCreateForm}
-      />
+        <CreateFormDialog
+          open={showFormDialog()}
+          columnTypes={ctx.columnTypes()}
+          formNames={ctx.forms().map((form) => form.name)}
+          onClose={() => setShowFormDialog(false)}
+          onSubmit={createForm}
+        />
+      </Show>
     </SpaceShell>
   );
 }

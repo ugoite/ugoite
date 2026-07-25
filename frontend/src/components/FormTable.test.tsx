@@ -6,6 +6,28 @@ import { entryApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 
 describe("FormTable", () => {
+  it("keeps the Form workspace available when its query fails", async () => {
+    const entryForm = { name: "Entry", fields: {} } as any;
+    const query = vi.spyOn(searchApi, "query")
+      .mockRejectedValueOnce(new Error("Internal server error"))
+      .mockResolvedValue([] as any);
+
+    const { getByRole, getByText, queryByRole } = render(() => (
+      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+    ));
+
+    await waitFor(() =>
+      expect(getByRole("alert")).toHaveTextContent(
+        "Could not load records for this Form.",
+      )
+    );
+
+    fireEvent.click(getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(query).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(queryByRole("alert")).not.toBeInTheDocument());
+    expect(getByText("0 records found")).toBeInTheDocument();
+  });
+
   it("renders '-' for missing properties and does not throw", async () => {
     const entryForm = {
       name: "Test",

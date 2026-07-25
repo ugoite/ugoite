@@ -1,6 +1,8 @@
 import { A, useParams } from "@solidjs/router";
-import { createResource, Show } from "solid-js";
+import { Show } from "solid-js";
 import { entryApi } from "~/lib/ugoite-client";
+import { SpaceShell } from "~/components/SpaceShell";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceEntryRevisionRoute() {
   const params = useParams<
@@ -15,36 +17,43 @@ export default function SpaceEntryRevisionRoute() {
   });
 
   return (
-    <main class="ui-page">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h1 class="ui-page-title">Entry Revision</h1>
-          <p class="text-sm ui-muted">Revision ID: {revisionId()}</p>
+    <SpaceShell spaceId={spaceId()} activeNavigation="forms" title="Revision">
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">{entryId()} / History</div>
+          <h1>Revision</h1>
         </div>
         <A
           href={`/spaces/${spaceId()}/entries/${
             encodeURIComponent(entryId())
           }/history`}
-          class="text-sm ui-link"
+          class="btn"
         >
           Back to History
         </A>
       </div>
 
       <Show when={revision.loading}>
-        <p class="text-sm ui-muted">Loading revision...</p>
+        <p class="ui-muted">Loading revision...</p>
       </Show>
       <Show when={revision.error}>
-        <p class="text-sm ui-text-danger">Failed to load revision.</p>
+        <p class="ui-alert ui-alert-error">Failed to load revision.</p>
       </Show>
       <Show when={revision()}>
         {(entry) => (
-          <div class="ui-card">
-            <h2 class="text-lg font-semibold mb-2">{entry().title}</h2>
-            <pre class="text-sm whitespace-pre-wrap">{entry().content}</pre>
+          <div class="settingsMain surface">
+            <div class="contextBar">
+              <div class="contextLeft">
+                <span>
+                  <b>{entryId()}</b>
+                  <small>Revision {revisionId()}</small>
+                </span>
+              </div>
+            </div>
+            <pre class="code">{entry().markdown}</pre>
           </div>
         )}
       </Show>
-    </main>
+    </SpaceShell>
   );
 }

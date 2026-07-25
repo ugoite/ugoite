@@ -22,9 +22,12 @@ vi.mock("@solidjs/router", () => ({
 
 vi.mock("~/components/SpaceShell", () => ({
   SpaceShell: (
-    props: { children: unknown; spaceId: string; activeTopTab?: string },
+    props: { children: unknown; spaceId: string; activeNavigation?: string },
   ) => (
-    <div data-space-id={props.spaceId} data-active-top-tab={props.activeTopTab}>
+    <div
+      data-space-id={props.spaceId}
+      data-active-navigation={props.activeNavigation}
+    >
       {props.children}
     </div>
   ),
@@ -73,7 +76,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
 
     expect(await screen.findByRole("heading", { name: "Recent Search" }))
       .toBeInTheDocument();
-    expect(screen.getByText("Saved query ID: saved-query")).toBeInTheDocument();
+    expect(screen.getByText("Search / Saved SQL")).toBeInTheDocument();
     expect(screen.getByTestId("sql-editor")).toHaveAttribute(
       "data-disabled",
       "true",
@@ -99,7 +102,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       "default",
     );
     expect(container.firstElementChild).toHaveAttribute(
-      "data-active-top-tab",
+      "data-active-navigation",
       "search",
     );
   });

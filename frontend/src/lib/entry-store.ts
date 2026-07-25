@@ -1,4 +1,5 @@
-import { createResource, createSignal } from "solid-js";
+import { createSignal } from "solid-js";
+import { createResource } from "./recoverable-resource";
 import type { Entry, EntryRecord, EntryUpdatePayload } from "./types";
 import { entryApi, RevisionConflictError } from "./ugoite-client";
 import { searchApi } from "./ugoite-client";

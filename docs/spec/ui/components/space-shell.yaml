@@ -1,15 +1,21 @@
-version: "0.1"
-updated: "2026-02-14"
+version: "0.2"
+updated: "2026-07-17"
 component_group:
   id: space-shell-shared
   title: Space Shell Shared Components
 components:
-  - id: top-tabs
-    type: tab-bar
-    position: top-center-floating
-    notes: Shared top navigation tabs for all space pages.
-  - id: settings-button
-    type: floating-icon-button
-    position: top-right-floating
-    icon: settings
-    notes: Shared settings entry point for theme/language/preferences.
+  - id: global-sidebar
+    type: sidebar
+    position: left-fixed
+    width: 218px
+    items: [Home, Forms, Search, Settings]
+    notes: Hidden below 900px and replaced by the bottom navigation.
+  - id: workspace-topbar
+    type: top-bar
+    height: 58px
+    notes: Contains the Space selector, route context, and account entry point.
+  - id: mobile-bottom-navigation
+    type: bottom-navigation
+    height: 66px
+    breakpoint: 900px
+    items: [Home, Forms, Search, Settings]

@@ -1,9 +1,10 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { SqlVariable } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 
 const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 
@@ -80,62 +81,69 @@ export default function SpaceQueryVariablesRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeTopTab="search">
-      <div class="mx-auto max-w-4xl">
-        <h1 class="ui-page-title">Query variables</h1>
-
-        <Show when={entry.loading}>
-          <p class="text-sm ui-muted mt-4">Loading query...</p>
-        </Show>
-        <Show when={entry.error}>
-          <p class="text-sm ui-text-danger mt-4">Failed to load query.</p>
-        </Show>
-        <Show when={entry()}>
-          {(data) => (
-            <div class="mt-6 ui-stack-sm">
-              <p class="text-sm ui-muted">{data().name}</p>
-              <div class="ui-stack-sm">
-                <For each={variables()}>
-                  {(variable, index) => {
-                    const inputId = `query-var-${variable.name}-${index()}`;
-                    return (
-                      <div>
-                        <label class="ui-label" for={inputId}>
-                          {variable.name}
-                          <span class="ml-2 text-xs ui-muted">
-                            {variable.type}
-                          </span>
-                        </label>
-                        <input
-                          id={inputId}
-                          class="ui-input"
-                          placeholder={variable.description}
-                          value={values()[variable.name] ?? ""}
-                          onInput={(e) =>
-                            handleInputChange(
-                              variable.name,
-                              e.currentTarget.value,
-                            )}
-                        />
-                      </div>
-                    );
-                  }}
-                </For>
-              </div>
-              <Show when={error()}>
-                <p class="text-sm ui-text-danger">{error()}</p>
-              </Show>
-              <button
-                type="button"
-                class="ui-button ui-button-primary text-sm"
-                onClick={handleRun}
-              >
-                Run
-              </button>
-            </div>
-          )}
-        </Show>
+    <SpaceShell
+      spaceId={spaceId()}
+      activeNavigation="search"
+      title="SQL / Variables"
+    >
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">Search / Saved SQL</div>
+          <h1>Query variables</h1>
+        </div>
       </div>
+
+      <Show when={entry.loading}>
+        <p class="text-sm ui-muted mt-4">Loading query...</p>
+      </Show>
+      <Show when={entry.error}>
+        <p class="text-sm ui-text-danger mt-4">Failed to load query.</p>
+      </Show>
+      <Show when={entry()}>
+        {(data) => (
+          <div class="settingsMain surface">
+            <p class="text-sm ui-muted">{data().name}</p>
+            <div class="ui-stack-sm">
+              <For each={variables()}>
+                {(variable, index) => {
+                  const inputId = `query-var-${variable.name}-${index()}`;
+                  return (
+                    <div>
+                      <label class="ui-label" for={inputId}>
+                        {variable.name}
+                        <span class="ml-2 text-xs ui-muted">
+                          {variable.type}
+                        </span>
+                      </label>
+                      <input
+                        id={inputId}
+                        class="ui-input"
+                        placeholder={variable.description}
+                        value={values()[variable.name] ?? ""}
+                        onInput={(e) =>
+                          handleInputChange(
+                            variable.name,
+                            e.currentTarget.value,
+                          )}
+                      />
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
+            <Show when={error()}>
+              <p class="text-sm ui-text-danger">{error()}</p>
+            </Show>
+            <button
+              type="button"
+              class="btn primary"
+              onClick={handleRun}
+            >
+              Run
+            </button>
+          </div>
+        )}
+      </Show>
     </SpaceShell>
   );
 }

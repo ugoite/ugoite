@@ -27,7 +27,10 @@ use iceberg::spec::{
 };
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
-use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
+use iceberg::{
+    Catalog, CatalogBuilder, MetadataLocation, NamespaceIdent, TableCreation, TableIdent,
+    TableUpdate,
+};
 use iceberg_catalog_rest::{
     CommitTableRequest, RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
 };
@@ -37,6 +40,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
@@ -71,15 +75,14 @@ pub enum SchemaCommitCapability {
 
 #[derive(Debug, Clone)]
 enum SchemaCommitter {
-    Unsupported,
+    Local,
     Rest(Arc<RestSchemaCommitter>),
 }
 
 impl SchemaCommitter {
     fn capability(&self) -> SchemaCommitCapability {
         match self {
-            Self::Unsupported => SchemaCommitCapability::MetadataOnly,
-            Self::Rest(_) => SchemaCommitCapability::AtomicSchemaEvolution,
+            Self::Local | Self::Rest(_) => SchemaCommitCapability::AtomicSchemaEvolution,
         }
     }
 }
@@ -156,7 +159,7 @@ impl IcebergWorkspace {
         }
         Ok(Self {
             catalog,
-            schema_committer: SchemaCommitter::Unsupported,
+            schema_committer: SchemaCommitter::Local,
             namespace,
             space_id,
             warehouse: warehouse.into(),
@@ -311,11 +314,6 @@ impl IcebergWorkspace {
             .await?;
         let evolved_schema = form_schema(&evolved)?;
         if form_schema(&current)? != evolved_schema {
-            if matches!(self.schema_committer, SchemaCommitter::Unsupported) {
-                return Err(anyhow!(
-                    "FormChangeSet schema evolution requires a REST Catalog; no data was rewritten"
-                ));
-            }
             if let SchemaCommitter::Rest(committer) = &self.schema_committer {
                 committer
                     .commit(
@@ -324,6 +322,14 @@ impl IcebergWorkspace {
                         form_properties(&evolved, self.write)?,
                     )
                     .await?;
+            } else {
+                commit_schema_locally(
+                    self.catalog.as_ref(),
+                    &table,
+                    evolved_schema,
+                    form_properties(&evolved, self.write)?,
+                )
+                .await?;
             }
             return self.load_form(changes.form_id).await;
         }
@@ -598,6 +604,50 @@ impl IcebergWorkspace {
             physical_form_name(form_id)
         )
     }
+}
+
+/// Apply an Iceberg schema change through the portable local catalog fallback.
+///
+/// Iceberg Rust 0.8 keeps `TableCommit` construction private. The local
+/// catalog writes the next metadata version before switching its pointer, so
+/// existing data files and snapshots remain intact and newly added nullable
+/// columns are projected as null for earlier files.
+async fn commit_schema_locally(
+    catalog: &dyn Catalog,
+    table: &iceberg::table::Table,
+    schema: Schema,
+    properties: HashMap<String, String>,
+) -> Result<()> {
+    let current_location = table.metadata_location_result()?.to_string();
+    let mut builder = table
+        .metadata()
+        .clone()
+        .into_builder(Some(current_location.clone()));
+    for update in [
+        TableUpdate::AddSchema { schema },
+        TableUpdate::SetCurrentSchema { schema_id: -1 },
+        TableUpdate::SetProperties {
+            updates: properties,
+        },
+    ] {
+        builder = update.apply(builder)?;
+    }
+    let next_location = MetadataLocation::from_str(&current_location)?
+        .with_next_version()
+        .to_string();
+    builder
+        .build()?
+        .metadata
+        .write_to(table.file_io(), &next_location)
+        .await?;
+
+    let ident = table.identifier();
+    catalog.drop_table(ident).await?;
+    if let Err(error) = catalog.register_table(ident, next_location).await {
+        let _ = catalog.register_table(ident, current_location).await;
+        return Err(error.into());
+    }
+    Ok(())
 }
 
 async fn build_rest_catalog(config: &RestCatalogConfig) -> Result<Arc<dyn Catalog>> {
@@ -1541,7 +1591,9 @@ fn parse_date(value: &str) -> Result<Option<i32>> {
 
 fn parse_time_micros(value: &str) -> Result<Option<i64>> {
     let time = NaiveTime::parse_from_str(value, "%H:%M:%S%.f")
-        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M:%S"))?;
+        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M:%S"))
+        // HTML time inputs omit seconds when the value is minute-precise.
+        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M"))?;
     Ok(Some(
         i64::from(time.num_seconds_from_midnight()) * 1_000_000
             + i64::from(time.nanosecond() / 1_000),

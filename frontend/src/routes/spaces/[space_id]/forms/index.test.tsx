@@ -1,131 +1,156 @@
 import "@testing-library/jest-dom/vitest";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@solidjs/testing-library";
-import { createMemo, createSignal } from "solid-js";
-import SpaceFormsIndexPane from "./index";
+import { createSignal, Show } from "solid-js";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
-import { createEntryStore } from "~/lib/entry-store";
 import { setLocale } from "~/lib/i18n";
-import { createSpaceStore } from "~/lib/space-store";
+import { formApi } from "~/lib/ugoite-client";
 import type { Form } from "~/lib/types";
+import SpaceFormsIndexPane from "./index";
 
-const navigateMock = vi.fn();
-const searchParamsMock: Record<string, string> = {};
-const setSearchParamsMock = vi.fn();
-
-vi.mock("@solidjs/router", () => ({
-  useNavigate: () => navigateMock,
-  useSearchParams: () => [searchParamsMock, setSearchParamsMock],
-}));
-
-vi.mock("~/components/SpaceShell", () => ({
-  SpaceShell: (props: { children: unknown }) => <div>{props.children}</div>,
-}));
-
-vi.mock("~/components/FormTable", () => ({
-  FormTable: (props: { entryForm: { name: string } }) => (
-    <div>Form table: {props.entryForm.name}</div>
+const search: Record<string, string> = {};
+const setSearch = vi.fn();
+const refetchForms = vi.fn();
+vi.mock(
+  "@solidjs/router",
+  () => ({
+    useNavigate: () => vi.fn(),
+    useSearchParams: () => [search, setSearch],
+  }),
+);
+vi.mock(
+  "~/components/SpaceShell",
+  () => ({
+    SpaceShell: (props: { children: unknown }) => <div>{props.children}</div>,
+  }),
+);
+vi.mock(
+  "~/components/FormTable",
+  () => ({
+    FormTable: (props: { entryForm: Form }) => (
+      <div>Entries table for {props.entryForm.name}</div>
+    ),
+  }),
+);
+vi.mock("~/components/create-dialogs", () => ({
+  CreateFormDialog: () => null,
+  EditFormDialog: (props: {
+    open: boolean;
+    entryForm: Form;
+    onSubmit: (payload: Form) => Promise<void>;
+  }) => (
+    <Show when={props.open}>
+      <button
+        type="button"
+        onClick={() => void props.onSubmit(props.entryForm)}
+      >
+        Submit form edit
+      </button>
+    </Show>
   ),
 }));
+vi.mock(
+  "~/lib/ugoite-client",
+  () => ({
+    assetApi: { list: vi.fn().mockResolvedValue([]) },
+    formApi: { create: vi.fn() },
+  }),
+);
 
-vi.mock("~/components/create-dialogs", () => ({
-  CreateFormDialog: () => <div>Create form dialog</div>,
-}));
-
-vi.mock("~/lib/ugoite-client", () => ({
-  sqlSessionApi: {
-    get: vi.fn(),
-    rows: vi.fn(),
+const noteForm: Form = {
+  name: "Notes",
+  version: 1,
+  template: "",
+  fields: {
+    title: { type: "string", required: true },
+    body: { type: "markdown", required: false },
   },
-}));
-
-describe("/spaces/:space_id/forms", () => {
-  const assetsForm: Form = {
-    name: "Assets",
-    version: 1,
-    template: "",
-    fields: {
-      link: { type: "string", required: true },
-      name: { type: "string", required: true },
-      uploaded_at: { type: "timestamp", required: true },
-    },
-  };
-  const meetingForm: Form = {
-    name: "Meeting",
-    version: 1,
-    template: "",
-    fields: { Date: { type: "date", required: true } },
-  };
-
+};
+const metadataForm: Form = {
+  name: "SQL",
+  version: 1,
+  template: "",
+  fields: {},
+};
+function renderPage(forms: Form[], formsError?: unknown) {
+  const [list] = createSignal(forms);
+  render(() => (
+    <EntriesRouteContext.Provider
+      value={{
+        spaceId: () => "default",
+        forms: list,
+        loadingForms: () => false,
+        formsError: () => formsError,
+        columnTypes: () => [],
+        refetchForms,
+        entryStore: {} as never,
+        spaceStore: {} as never,
+      }}
+    >
+      <SpaceFormsIndexPane />
+    </EntriesRouteContext.Provider>
+  ));
+}
+describe("v5 Forms workspace", () => {
   beforeEach(() => {
-    navigateMock.mockReset();
     setLocale("en");
-    setSearchParamsMock.mockReset();
-    for (const key of Object.keys(searchParamsMock)) {
-      delete searchParamsMock[key];
-    }
+    setSearch.mockReset();
+    refetchForms.mockReset();
+    vi.mocked(formApi.create).mockReset();
+    for (const key of Object.keys(search)) delete search[key];
   });
-
-  function renderPane(forms: Form[]) {
-    render(() => {
-      const entryStore = createEntryStore(() => "default");
-      const spaceStore = createSpaceStore();
-      const [formList] = createSignal(forms);
-      const [loadingForms] = createSignal(false);
-      const [columnTypes] = createSignal<string[]>([]);
-      return (
-        <EntriesRouteContext.Provider
-          value={{
-            spaceStore,
-            spaceId: () => "default",
-            entryStore,
-            forms: createMemo(() => formList()),
-            loadingForms,
-            columnTypes,
-            refetchForms: () => undefined,
-          }}
-        >
-          <SpaceFormsIndexPane />
-        </EntriesRouteContext.Provider>
-      );
-    });
-  }
-
-  it("REQ-FE-037: form grid defaults to the first creatable form", async () => {
-    renderPane([assetsForm, meetingForm]);
-
-    await waitFor(() => {
-      expect(setSearchParamsMock).toHaveBeenCalledWith({ form: "Meeting" }, {
-        replace: true,
-      });
-    });
-    expect(screen.queryByRole("option", { name: "Assets" })).not
-      .toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
+  it("defaults to the first creatable Form", async () => {
+    renderPage([noteForm]);
+    await waitFor(() =>
+      expect(setSearch).toHaveBeenCalledWith(
+        { form: "Notes", tab: undefined },
+        { replace: true },
+      )
+    );
   });
-
-  it("REQ-FE-037: form grid shows empty state when only reserved metadata forms exist", async () => {
-    renderPane([assetsForm]);
-
-    await waitFor(() => {
-      expect(screen.getByText("Create a form to get started."))
-        .toBeInTheDocument();
-    });
-    expect(setSearchParamsMock).not.toHaveBeenCalled();
-    expect(screen.queryByRole("option", { name: "Assets" })).not
+  it("renders one Form workspace without duplicate view tabs", () => {
+    search.form = "Notes";
+    renderPage([noteForm]);
+    expect(screen.getByPlaceholderText("Find a Form")).toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Notes")).toHaveLength(1);
+    expect(screen.getByText("Entries table for Notes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Form" }).querySelector("svg"))
       .toBeInTheDocument();
   });
+  it("opens and submits the edit Form dialog", async () => {
+    search.form = "Notes";
+    vi.mocked(formApi.create).mockResolvedValue(noteForm);
+    renderPage([noteForm]);
 
-  it("REQ-FE-044: localizes forms route CTA copy in Japanese", async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Edit Form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit form edit" }));
+
+    await waitFor(() => expect(formApi.create).toHaveBeenCalled());
+    expect(refetchForms).toHaveBeenCalled();
+  });
+  it("shows the v5 empty state and Japanese copy", () => {
     setLocale("ja");
-    renderPane([meetingForm]);
+    renderPage([]);
+    expect(screen.getByText("フォーム")).toBeInTheDocument();
+    expect(screen.getByText("フォームがありません")).toBeInTheDocument();
+  });
+  it("keeps system Forms hidden until the visibility toggle is enabled", () => {
+    search.form = "Notes";
+    renderPage([noteForm, metadataForm]);
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "フォームグリッド" }))
-        .toBeInTheDocument();
-    });
-    expect(screen.getByRole("button", { name: "新しいフォーム" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
+    expect(screen.queryByText("SQL")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show system forms" }));
+    expect(screen.getByText("SQL")).toBeInTheDocument();
+    expect(screen.getByLabelText("System form")).toBeInTheDocument();
+    expect(screen.queryByText("System")).not.toBeInTheDocument();
+  });
+  it("shows API failures instead of an empty Forms state", () => {
+    renderPage([], new Error("Forbidden"));
+    expect(screen.getByText("Failed to load Forms.")).toBeInTheDocument();
+    expect(screen.queryByText("No Forms yet")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetchForms).toHaveBeenCalled();
   });
 });

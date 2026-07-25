@@ -1,7 +1,9 @@
 import { A, useParams } from "@solidjs/router";
-import { createResource, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { spaceApi } from "~/lib/ugoite-client";
 import type { StorageConnectionConfig } from "~/lib/types";
+import { SpaceShell } from "~/components/SpaceShell";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceTestConnectionRoute() {
   const params = useParams<{ space_id: string }>();
@@ -48,70 +50,70 @@ export default function SpaceTestConnectionRoute() {
   };
 
   return (
-    <main class="ui-shell ui-page">
-      <div class="max-w-3xl mx-auto p-6">
-        <div class="flex items-center justify-between mb-6">
-          <div>
-            <h1 class="ui-page-title">Test Connection</h1>
-            <p class="text-sm ui-muted">Space ID: {spaceId()}</p>
-          </div>
-          <A href={`/spaces/${spaceId()}`} class="text-sm">
-            Back to Settings
-          </A>
+    <SpaceShell
+      spaceId={spaceId()}
+      activeNavigation="settings"
+      title="Settings / Storage"
+    >
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">Settings / Storage</div>
+          <h1>Test Connection</h1>
         </div>
+        <A href={`/spaces/${spaceId()}/settings?section=storage`} class="btn">
+          Back to Settings
+        </A>
+      </div>
 
-        <Show when={space.loading}>
-          <p class="text-sm ui-muted">Loading space...</p>
-        </Show>
-        <Show when={space.error}>
-          <p class="ui-alert ui-alert-error text-sm">Failed to load space.</p>
-        </Show>
+      <Show when={space.loading}>
+        <p class="text-sm ui-muted">Loading space...</p>
+      </Show>
+      <Show when={space.error}>
+        <p class="ui-alert ui-alert-error text-sm">Failed to load space.</p>
+      </Show>
 
-        <div class="ui-card">
-          <label class="ui-label text-sm mb-2" for="storage-uri">
-            Storage URI
-          </label>
+      <div class="settingsMain surface">
+        <label for="storage-uri">
+          Storage URI
           <input
             id="storage-uri"
             type="text"
-            class="ui-input w-full"
             value={uri()}
-            onInput={(e) => setUri(e.currentTarget.value)}
+            onInput={(event) => setUri(event.currentTarget.value)}
             placeholder="file:///local/path or s3://bucket/path"
           />
-          <label class="ui-label text-sm mt-3 mb-2" for="storage-endpoint">
-            Storage Endpoint (optional)
-          </label>
+        </label>
+        <label for="storage-endpoint">
+          Storage Endpoint (optional)
           <input
             id="storage-endpoint"
             type="url"
-            class="ui-input w-full"
             value={endpoint()}
-            onInput={(e) => setEndpoint(e.currentTarget.value)}
+            onInput={(event) => setEndpoint(event.currentTarget.value)}
             placeholder="https://s3.example.com"
           />
-          <p class="text-sm ui-muted mt-2">
-            Use this for remote storage services that need an explicit HTTP or
-            HTTPS endpoint.
+        </label>
+        <p class="ui-muted">
+          Use this for remote storage services that need an explicit HTTP or
+          HTTPS endpoint.
+        </p>
+        <button
+          type="button"
+          class="btn primary"
+          onClick={handleTest}
+          disabled={isTesting() || !uri().trim()}
+        >
+          {isTesting() ? "Testing..." : "Test Connection"}
+        </button>
+        <Show when={status()}>
+          <p class="ui-alert ui-alert-success">
+            Connection successful ({status()})
           </p>
-          <button
-            type="button"
-            class="ui-button ui-button-primary mt-3"
-            onClick={handleTest}
-            disabled={isTesting() || !uri().trim()}
-          >
-            {isTesting() ? "Testing..." : "Test Connection"}
-          </button>
-          <Show when={status()}>
-            <p class="ui-alert ui-alert-success text-sm mt-2">
-              Connection successful ({status()})
-            </p>
-          </Show>
-          <Show when={error()}>
-            <p class="ui-alert ui-alert-error text-sm mt-2">{error()}</p>
-          </Show>
-        </div>
+        </Show>
+        <Show when={error()}>
+          <p class="ui-alert ui-alert-error">{error()}</p>
+        </Show>
       </div>
-    </main>
+    </SpaceShell>
   );
 }

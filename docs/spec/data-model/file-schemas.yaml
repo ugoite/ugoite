@@ -104,6 +104,14 @@ schemas:
           - emerald
           - amber
           - null
+        content_width:
+          type:
+          - string
+          - 'null'
+          enum:
+          - standard
+          - wide
+          - null
   response_hmac:
     description: Lazily created response-signing material.
     path: spaces/{id}/hmac.json

@@ -22,16 +22,7 @@ components:
       position: top-right-floating
       icon: settings
       menu:
-        id: ui-theme-menu
-        theme_options:
-          - materialize
-          - classic
-          - pop
-        primary_colors:
-          - violet
-          - blue
-          - emerald
-          - amber
+        id: ui-appearance-menu
         color_modes:
           - light
           - dark

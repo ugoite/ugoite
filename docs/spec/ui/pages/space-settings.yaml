@@ -1,5 +1,5 @@
-version: "0.1"
-updated: "2026-02-02"
+version: "0.2"
+updated: "2026-07-17"
 page:
   id: space-settings
   title: Space Settings
@@ -17,24 +17,6 @@ components:
         - id: search
           label: search
           target_page: space-search
-    - id: settings-button
-      type: floating-icon-button
-      position: top-right-floating
-      icon: settings
-      menu:
-        id: ui-theme-menu
-        theme_options:
-          - materialize
-          - classic
-          - pop
-        color_modes:
-          - light
-          - dark
-        persist: localStorage
-        actions:
-          - id: open-space-settings
-            label: Space settings
-            target_page: space-settings
   body:
     - id: settings-panel
       type: settings-panel

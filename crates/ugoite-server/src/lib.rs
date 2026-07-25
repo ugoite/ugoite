@@ -40,7 +40,9 @@ use ugoite_domain::identity::{
     RequestAuthenticationMethod, RequestIdentity, SpacePrincipal, SpaceRole,
 };
 use ugoite_identity::{
-    node_identity::{AccountInvitation, NodeAuditInput, NodeIdentityService},
+    node_identity::{
+        AccountInvitation, NodeAuditInput, NodeIdentityService, TotpEnrollmentFinishError,
+    },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
 use uuid::Uuid;
@@ -1124,11 +1126,31 @@ async fn finish_totp_enrollment(
     Json(payload): Json<TotpFinishRequest>,
 ) -> ApiResult<Json<Value>> {
     require_recent_passkey(&identity)?;
-    state
+    match state
         .identity
         .finish_totp_enrollment(identity.account_id, &payload.code)
         .await
-        .map_err(auth_error)?;
+    {
+        Ok(()) => {}
+        Err(TotpEnrollmentFinishError::InvalidOrExpired) => {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                json!({
+                    "code": "INVALID_TOTP",
+                    "message": "invalid or expired TOTP enrollment code"
+                }),
+            ));
+        }
+        Err(TotpEnrollmentFinishError::Internal(_error)) => {
+            return Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({
+                    "code": "TOTP_ENROLLMENT_FAILED",
+                    "message": "TOTP enrollment failed"
+                }),
+            ));
+        }
+    }
     state
         .identity
         .append_node_audit(NodeAuditInput {
@@ -2375,7 +2397,10 @@ async fn list_agents(
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
+    // Reading the agent inventory is navigation, not a privileged mutation.
+    // Keep the recent-passkey requirement on create/revoke/token issuance, but
+    // do not make opening the settings page spuriously require a fresh passkey.
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let authorization = Authorizer::new(state.service.operator().clone())
         .state(&space_id)
         .await

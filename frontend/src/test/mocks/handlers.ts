@@ -32,9 +32,6 @@ let mockSqlSessions: Map<string, Map<string, Record<string, unknown>>> =
 let mockPreferences: UserPreferences = {
   selected_space_id: null,
   locale: null,
-  ui_theme: null,
-  color_mode: null,
-  primary_color: null,
 };
 let preferencePatches: UserPreferencesPatchPayload[] = [];
 let revisionCounter = 0;
@@ -100,9 +97,6 @@ export const resetMockData = () => {
   mockPreferences = {
     selected_space_id: null,
     locale: null,
-    ui_theme: null,
-    color_mode: null,
-    primary_color: null,
   };
   preferencePatches = [];
   revisionCounter = 0;
@@ -758,7 +752,9 @@ export const handlers = [
         {
           invitation_id: "01900000-0000-7000-8000-000000000001",
           expires_at: "2026-07-01T00:00:00Z",
-          invitation_url: `http://localhost/invitations/test-token?label=${encodeURIComponent(body.label)}`,
+          invitation_url: `http://localhost/invitations/test-token?label=${
+            encodeURIComponent(body.label)
+          }`,
         },
         { status: 201 },
       );

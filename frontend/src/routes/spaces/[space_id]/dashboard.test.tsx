@@ -1,255 +1,68 @@
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import SpaceDashboardRoute from "./dashboard";
-import { spaceApi } from "~/lib/ugoite-client";
-import { formApi } from "~/lib/ugoite-client";
-import { assetApi } from "~/lib/ugoite-client";
+import { createSignal, Show } from "solid-js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
-import type { Form } from "~/lib/types";
+import { formApi, spaceApi } from "~/lib/ugoite-client";
+import SpaceDashboardRoute from "./dashboard";
 
-const navigateMock = vi.fn();
+const navigate = vi.fn();
+const { entryStoreMock } = vi.hoisted(() => ({ entryStoreMock: { entries: vi.fn(), loadEntries: vi.fn(), error: vi.fn() } }));
+vi.mock("@solidjs/router", () => ({ useNavigate: () => navigate, useParams: () => ({ space_id: "default" }), A: (props: { href: string; class?: string; children: unknown }) => <a href={props.href} class={props.class}>{props.children}</a> }));
+vi.mock("~/components/SpaceShell", () => ({ SpaceShell: (props: { children: unknown }) => <div>{props.children}</div> }));
+vi.mock("~/components/create-dialogs", () => ({ CreateFormDialog: (props: { open: boolean }) => <Show when={props.open}><div>Create Form Dialog</div></Show> }));
+vi.mock("~/lib/entry-store", () => ({ createEntryStore: () => entryStoreMock }));
+vi.mock("~/lib/ugoite-client", () => ({ formApi: { list: vi.fn(), listTypes: vi.fn(), create: vi.fn() }, spaceApi: { get: vi.fn() } }));
 
-vi.mock("@solidjs/router", () => ({
-  useNavigate: () => navigateMock,
-  useParams: () => ({ space_id: "default" }),
-  A: (props: { href: string; class?: string; children: unknown }) => (
-    <a href={props.href} class={props.class}>
-      {props.children}
-    </a>
-  ),
-}));
-
-vi.mock("~/components/SpaceShell", () => ({
-  SpaceShell: (props: { children: unknown }) => <div>{props.children}</div>,
-}));
-
-vi.mock("~/components/AssetUploader", () => ({
-  AssetUploader: () => <div>Asset uploader</div>,
-}));
-
-vi.mock("~/lib/entry-store", () => ({
-  createEntryStore: () => ({
-    createEntry: vi.fn(),
-  }),
-}));
-
-vi.mock("~/lib/ugoite-client", () => ({
-  assetApi: {
-    list: vi.fn(),
-    upload: vi.fn(),
-    delete: vi.fn(),
-  },
-  formApi: {
-    list: vi.fn(),
-    listTypes: vi.fn(),
-    create: vi.fn(),
-  },
-  spaceApi: {
-    get: vi.fn(),
-  },
-}));
-
-describe("/spaces/:space_id/dashboard", () => {
-  const meetingForm: Form = {
-    name: "Meeting",
-    version: 1,
-    template: "",
-    fields: { Date: { type: "date", required: true } },
-  };
-  const starterForm: Form = {
-    name: "Entry",
-    version: 1,
-    template: "",
-    fields: { Body: { type: "markdown", required: false } },
-  };
-  const assetsForm: Form = {
-    name: "Assets",
-    version: 1,
-    template: "",
-    fields: {
-      link: { type: "string", required: true },
-      name: { type: "string", required: true },
-      uploaded_at: { type: "timestamp", required: true },
-    },
-  };
-
-  beforeEach(() => {
-    navigateMock.mockReset();
-    setLocale("en");
-    (spaceApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: "default",
-      name: "Default Space",
-      created_at: "2025-01-01T00:00:00Z",
-      settings: { default_form: "Entry" },
-      storage: { type: "local", root: "/var/lib/ugoite/default" },
-      storage_config: { uri: "s3://planned-bucket/default" },
-    });
-    (formApi.listTypes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-  });
-
-  it("REQ-FE-037: dashboard ignores reserved metadata forms in the entry count", async () => {
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([
-      assetsForm,
-      meetingForm,
-    ]);
-
+describe("v5 space Home", () => {
+  beforeEach(() => { navigate.mockReset(); setLocale("en"); entryStoreMock.entries.mockReturnValue([]); entryStoreMock.loadEntries.mockResolvedValue(undefined); entryStoreMock.error.mockReturnValue(null); vi.mocked(spaceApi.get).mockResolvedValue({ id: "default", name: "Local Knowledge", created_at: "2026-01-01" }); vi.mocked(formApi.listTypes).mockResolvedValue([]); });
+  it("renders Continue, Pinned and Recent without metric cards", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([{ name: "Notes", version: 1, template: "", fields: { body: { type: "markdown", required: false } } }]);
     render(() => <SpaceDashboardRoute />);
-
-    await waitFor(() => {
-      expect(screen.getByText("1 forms available")).toBeInTheDocument();
-    });
-    expect(screen.queryByText("2 forms available")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Home" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Continue" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pinned" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent" })).toBeInTheDocument();
+    expect(screen.queryByText(/forms available/i)).not.toBeInTheDocument();
   });
-
-  it("REQ-FE-037: dashboard opens the starter entry flow for a new space", async () => {
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([starterForm]);
-
+  it("starts the dedicated New Entry route when a creatable Form exists", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([{ name: "Notes", version: 1, template: "", fields: {} }]);
     render(() => <SpaceDashboardRoute />);
-
-    const newEntryButton = await screen.findByRole("button", {
-      name: "New entry",
-    });
-    await waitFor(() => {
-      expect(newEntryButton).toBeEnabled();
-    });
-    expect(screen.queryByText("Start by creating your first form.")).not
-      .toBeInTheDocument();
-
-    fireEvent.click(newEntryButton);
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Create New Entry" }))
-        .toBeInTheDocument();
-    });
-    expect(screen.getByDisplayValue("Entry")).toBeInTheDocument();
+    const button = (await screen.findAllByRole("button", { name: /Entry/ }))[0];
+    fireEvent.click(button);
+    expect(navigate).toHaveBeenCalledWith("/spaces/default/entries/new");
   });
-
-  it("REQ-FE-037: dashboard disables entry creation when only reserved metadata forms exist", async () => {
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([assetsForm]);
-
+  it("opens Form creation and shows the walkthrough for a fresh Space", async () => {
+    vi.mocked(formApi.list).mockResolvedValue([]);
     render(() => <SpaceDashboardRoute />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Start by creating your first form."))
-        .toBeInTheDocument();
-    });
-    expect(screen.getByRole("button", { name: "New entry" })).toBeDisabled();
+    fireEvent.click((await screen.findAllByRole("button", { name: /Entry/ }))[0]);
+    expect(screen.getByText("Create Form Dialog")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Create your first entry with the browser walkthrough" }))
+      .toHaveAttribute("href", "https://ugoite.github.io/ugoite/docs/guide/browser-first-entry");
   });
-
-  it("REQ-FE-037: dashboard promotes form creation when a space has no creatable forms", async () => {
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-
+  it("does not show walkthrough guidance while existing entries are loading", async () => {
+    const [mockEntries, setMockEntries] = createSignal<Array<{ id: string; title: string; form: string; updated_at: string; properties: Record<string, never>; tags: never[]; links: never[] }>>([]);
+    let resolveLoad: () => void;
+    entryStoreMock.entries.mockImplementation(mockEntries);
+    entryStoreMock.loadEntries.mockReturnValue(new Promise<void>((resolve) => { resolveLoad = resolve; }));
+    vi.mocked(formApi.list).mockResolvedValue([]);
     render(() => <SpaceDashboardRoute />);
+    expect(screen.queryByRole("link", { name: /browser walkthrough/ })).not.toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(screen.getByText("Start by creating your first form."))
-        .toBeInTheDocument();
-    });
-    expect(
-      screen.getByText(
-        "Entries depend on form templates and fields. Create one form first, then come back to add entries.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Recommended first step")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New entry" })).toBeDisabled();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create your first form" }),
-    );
-
-    expect(screen.getByRole("heading", { name: "Create New Form" }))
-      .toBeInTheDocument();
+    setMockEntries([{ id: "entry-1", title: "API memo", form: "Notes", updated_at: "2026-01-01", properties: {}, tags: [], links: [] }]);
+    resolveLoad!();
+    await waitFor(() => expect(entryStoreMock.loadEntries).toHaveBeenCalled());
+    expect(screen.queryByRole("link", { name: /browser walkthrough/ })).not.toBeInTheDocument();
   });
-
-  it("REQ-FE-058: dashboard avoids a persistent top-level loading banner during routine navigation", () => {
-    (spaceApi.get as ReturnType<typeof vi.fn>).mockImplementation(
-      () => new Promise(() => undefined) as Promise<never>,
-    );
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
-
+  it("does not show walkthrough guidance when the entry load fails", async () => {
+    entryStoreMock.error.mockReturnValue("Failed to load entries");
     render(() => <SpaceDashboardRoute />);
-
-    expect(screen.getByRole("heading", { name: "default" }))
-      .toBeInTheDocument();
-    expect(screen.queryByText("Loading space...")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("link", { name: /browser walkthrough/ })).not.toBeInTheDocument());
   });
-
-  it("REQ-FE-058: dashboard replaces the fallback title when space metadata loads", async () => {
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
-
+  it("uses the Japanese v5 copy", async () => {
+    setLocale("ja"); vi.mocked(formApi.list).mockResolvedValue([]);
     render(() => <SpaceDashboardRoute />);
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Default Space" }))
-        .toBeInTheDocument();
-    });
-    expect(screen.queryByRole("heading", { name: "default" })).not
-      .toBeInTheDocument();
-  });
-
-  it("REQ-FE-044: dashboard localizes main workflow copy in Japanese", async () => {
-    setLocale("ja");
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
-
-    render(() => <SpaceDashboardRoute />);
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "エントリを作成" }))
-        .toBeInTheDocument();
-    });
-    expect(screen.getByRole("button", { name: "新しいエントリ" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "フォームを作成" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新しいフォーム" }))
-      .toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "アセット" }))
-      .toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "ファイルをアップロードし、カタログのメタデータを同期します。",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("REQ-FE-044: dashboard localizes first-run onboarding copy in Japanese", async () => {
-    setLocale("ja");
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-
-    render(() => <SpaceDashboardRoute />);
-
-    await waitFor(() => {
-      expect(screen.getByText("最初のフォームを作成して始めましょう。"))
-        .toBeInTheDocument();
-    });
-    expect(
-      screen.getByText(
-        "エントリはフォームのテンプレートとフィールドをもとに作成します。先に1つフォームを作成してからエントリ作成に戻ってください。",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("最初のおすすめステップ")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "最初のフォームを作成" }))
-      .toBeInTheDocument();
-  });
-
-  it("REQ-FE-060: dashboard surfaces the active storage topology with a settings link", async () => {
-    (formApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([meetingForm]);
-
-    render(() => <SpaceDashboardRoute />);
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Storage topology" }))
-        .toBeInTheDocument();
-    });
-    expect(screen.getByText("Local filesystem")).toBeInTheDocument();
-    expect(screen.getByText("file:///var/lib/ugoite/default"))
-      .toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open space settings" }))
-      .toHaveAttribute(
-        "href",
-        "/spaces/default/settings",
-      );
+    expect(await screen.findByRole("heading", { name: "ホーム" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "続きから" })).toBeInTheDocument();
   });
 });

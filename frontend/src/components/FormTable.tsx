@@ -1,6 +1,5 @@
 import {
   createMemo,
-  createResource,
   createSignal,
   For,
   onCleanup,
@@ -9,6 +8,7 @@ import {
   untrack,
 } from "solid-js";
 import type { EntryRecord, Form } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 import { entryApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import {
@@ -130,7 +130,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
   if (props.direction === "asc") {
     return (
       <svg
-        class="w-4 h-4 ui-accent-text"
+        class="w-4 h-4 ui-focus-text"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -147,7 +147,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
   }
   return (
     <svg
-      class="w-4 h-4 ui-accent-text"
+      class="w-4 h-4 ui-focus-text"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -536,7 +536,9 @@ export function FormTable(props: FormTableProps) {
         <div class="mb-4 sm:mb-6 flex flex-wrap justify-between items-start gap-3">
           <div>
             <p class="ui-muted text-sm">
-              {entries.loading && !entries()
+              {entries.error
+                ? "Could not load records."
+                : entries.loading && !entries()
                 ? "Loading..."
                 : `${processedEntries().length} records found`}
             </p>
@@ -630,6 +632,15 @@ export function FormTable(props: FormTableProps) {
             </Show>
           </div>
         </div>
+
+        <Show when={entries.error}>
+          <div class="ui-alert ui-alert-error flex flex-wrap items-center justify-between gap-3" role="alert">
+            <span>Could not load records for this Form.</span>
+            <button class="btn" type="button" onClick={() => void refetch()}>
+              Retry
+            </button>
+          </div>
+        </Show>
 
         <div class="mb-4 ui-card ui-stack-sm">
           <div class="flex flex-wrap items-center gap-2 justify-between">

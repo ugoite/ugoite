@@ -1,5 +1,5 @@
 // REQ-FE-044: Portable locale preferences surface explicit API errors
-// REQ-FE-059: Portable theme preferences surface explicit API errors
+// REQ-FE-059: Portable color mode preferences surface explicit API errors
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { preferencesApi } from "./ugoite-client";
@@ -28,13 +28,15 @@ describe("preferencesApi", () => {
       http.patch(
         testApiUrl("/preferences/me"),
         () =>
-          HttpResponse.json({ detail: { field: "ui_theme" } }, { status: 422 }),
+          HttpResponse.json({ detail: { field: "locale" } }, {
+            status: 422,
+          }),
       ),
     );
 
-    await expect(preferencesApi.patchMe({ ui_theme: "classic" })).rejects
+    await expect(preferencesApi.patchMe({ locale: "ja" })).rejects
       .toThrow(
-        JSON.stringify({ field: "ui_theme" }),
+        JSON.stringify({ field: "locale" }),
       );
   });
 
@@ -47,7 +49,7 @@ describe("preferencesApi", () => {
       ),
     );
 
-    await expect(preferencesApi.patchMe({ color_mode: "dark" })).rejects
+    await expect(preferencesApi.patchMe({ locale: "ja" })).rejects
       .toThrow(
         "Failed to update preferences: Server Error",
       );
@@ -65,8 +67,9 @@ describe("preferencesApi", () => {
       ),
     );
 
-    await expect(preferencesApi.patchMe({ ui_theme: "pop" })).rejects.toThrow(
-      "Failed to update preferences: Server Error",
-    );
+    await expect(preferencesApi.patchMe({ locale: "ja" })).rejects
+      .toThrow(
+        "Failed to update preferences: Server Error",
+      );
   });
 });

@@ -1,6 +1,7 @@
 import { createMemo, createSignal, onMount } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
+import { GlobalShell } from "~/components/GlobalShell";
 
 export default function About() {
   const [authSession, setAuthSession] = createSignal({
@@ -53,82 +54,92 @@ export default function About() {
   );
 
   return (
-    <main class="ui-page mx-auto">
-      <section class="text-center">
-        <h1 class="max-w-5xl text-4xl sm:text-6xl font-thin uppercase my-10 sm:my-16 mx-auto">
-          {copy().title}
-        </h1>
-        <p class="text-base sm:text-xl ui-muted max-w-3xl mx-auto">
-          {copy().subtitle}
-        </p>
-        <div class="mt-8 flex justify-center gap-3 flex-wrap">
-          <a href={openSpacesHref()} class="ui-button ui-button-primary">
-            {copy().openSpaces}
-          </a>
-          <a href="/" class="ui-button ui-button-secondary">
-            {copy().backHome}
-          </a>
-        </div>
-      </section>
-      <h2 class="sr-only">{copy().whatMakesDifferent}</h2>
-      <section class="mt-12 sm:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-5xl mx-auto">
-        <div class="ui-card">
-          <h3 class="text-lg font-semibold mb-2">{copy().localFirstTitle}</h3>
-          <p class="ui-muted text-sm">{copy().localFirstDescription}</p>
-        </div>
-        <div class="ui-card">
-          <h3 class="text-lg font-semibold mb-2">{copy().markdownTitle}</h3>
-          <p class="ui-muted text-sm">{copy().markdownDescription}</p>
-        </div>
-        <div class="ui-card">
-          <h3 class="text-lg font-semibold mb-2">{copy().aiTitle}</h3>
-          <p class="ui-muted text-sm">{copy().aiDescription}</p>
-        </div>
-      </section>
-      <section class="mt-12 sm:mt-16 max-w-5xl mx-auto">
-        <h2 class="text-2xl font-semibold mb-4">{copy().howItWorks}</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="ui-card">
-            <h3 class="text-lg font-semibold mb-2">{copy().formsTitle}</h3>
-            <p class="ui-muted text-sm">{copy().formsDescription}</p>
+    <GlobalShell
+      title="About"
+      active="about"
+      authenticated={authSession().authenticated}
+    >
+      <div>
+        <div class="screenHead">
+          <div class="screenTitle">
+            <div class="eyebrow">Ugoite</div>
+            <h1>{copy().title}</h1>
+            <p class="ui-muted">{copy().subtitle}</p>
           </div>
-          <div class="ui-card">
-            <h3 class="text-lg font-semibold mb-2">{copy().entriesTitle}</h3>
-            <p class="ui-muted text-sm">{copy().entriesDescription}</p>
-          </div>
-          <div class="ui-card">
-            <h3 class="text-lg font-semibold mb-2">{copy().storageTitle}</h3>
-            <p class="ui-muted text-sm">{copy().storageDescription}</p>
-          </div>
-          <div class="ui-card">
-            <h3 class="text-lg font-semibold mb-2">{copy().automationTitle}</h3>
-            <p class="ui-muted text-sm">{copy().automationDescription}</p>
+          <div class="actions">
+            <a href={openSpacesHref()} class="btn primary">
+              {copy().openSpaces}
+            </a>
+            <a href="/" class="btn">
+              {copy().backHome}
+            </a>
           </div>
         </div>
-      </section>
-      <section class="mt-12 sm:mt-16 max-w-5xl mx-auto ui-card">
-        <h2 class="text-2xl font-semibold mb-3">{copy().stack}</h2>
-        <ul class="ui-muted text-sm space-y-2">
-          <li>
-            <strong>{copy().stackFrontendLabel}:</strong>{" "}
-            {copy().stackFrontendValue}
-          </li>
-          <li>
-            <strong>{copy().stackBackendLabel}:</strong>{" "}
-            {copy().stackBackendValue}
-          </li>
-          <li>
-            <strong>{copy().stackCoreLabel}:</strong> {copy().stackCoreValue}
-          </li>
-          <li>
-            <strong>{copy().stackStorageLabel}:</strong>{" "}
-            {copy().stackStorageValue}
-          </li>
-          <li>
-            <strong>{copy().stackAiLabel}:</strong> {copy().stackAiValue}
-          </li>
-        </ul>
-      </section>
-    </main>
+        <h2 class="sr-only">{copy().whatMakesDifferent}</h2>
+        <section class="section grid3">
+          <div class="card">
+            <span class="glyph">F</span>
+            <h3 class="text-lg font-semibold mb-2">{copy().localFirstTitle}</h3>
+            <p class="ui-muted text-sm">{copy().localFirstDescription}</p>
+          </div>
+          <div class="card">
+            <span class="glyph">E</span>
+            <h3 class="text-lg font-semibold mb-2">{copy().markdownTitle}</h3>
+            <p class="ui-muted text-sm">{copy().markdownDescription}</p>
+          </div>
+          <div class="card">
+            <span class="glyph">A</span>
+            <h3 class="text-lg font-semibold mb-2">{copy().aiTitle}</h3>
+            <p class="ui-muted text-sm">{copy().aiDescription}</p>
+          </div>
+        </section>
+        <section class="mt-12 sm:mt-16 max-w-5xl mx-auto">
+          <h2 class="text-2xl font-semibold mb-4">{copy().howItWorks}</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="ui-card">
+              <h3 class="text-lg font-semibold mb-2">{copy().formsTitle}</h3>
+              <p class="ui-muted text-sm">{copy().formsDescription}</p>
+            </div>
+            <div class="ui-card">
+              <h3 class="text-lg font-semibold mb-2">{copy().entriesTitle}</h3>
+              <p class="ui-muted text-sm">{copy().entriesDescription}</p>
+            </div>
+            <div class="ui-card">
+              <h3 class="text-lg font-semibold mb-2">{copy().storageTitle}</h3>
+              <p class="ui-muted text-sm">{copy().storageDescription}</p>
+            </div>
+            <div class="ui-card">
+              <h3 class="text-lg font-semibold mb-2">
+                {copy().automationTitle}
+              </h3>
+              <p class="ui-muted text-sm">{copy().automationDescription}</p>
+            </div>
+          </div>
+        </section>
+        <section class="mt-12 sm:mt-16 max-w-5xl mx-auto ui-card">
+          <h2 class="text-2xl font-semibold mb-3">{copy().stack}</h2>
+          <ul class="ui-muted text-sm space-y-2">
+            <li>
+              <strong>{copy().stackFrontendLabel}:</strong>{" "}
+              {copy().stackFrontendValue}
+            </li>
+            <li>
+              <strong>{copy().stackBackendLabel}:</strong>{" "}
+              {copy().stackBackendValue}
+            </li>
+            <li>
+              <strong>{copy().stackCoreLabel}:</strong> {copy().stackCoreValue}
+            </li>
+            <li>
+              <strong>{copy().stackStorageLabel}:</strong>{" "}
+              {copy().stackStorageValue}
+            </li>
+            <li>
+              <strong>{copy().stackAiLabel}:</strong> {copy().stackAiValue}
+            </li>
+          </ul>
+        </section>
+      </div>
+    </GlobalShell>
   );
 }

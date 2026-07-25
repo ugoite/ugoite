@@ -1,60 +1,63 @@
 import { A, useParams } from "@solidjs/router";
+import { For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
+import { UiIcon } from "~/components/UiIcon";
+import { sqlApi } from "~/lib/ugoite-client";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceSqlIndexRoute() {
-  const params = useParams();
+  const params = useParams<{ space_id: string }>();
   const spaceId = () => params.space_id;
+  const [queries] = createResource(spaceId, sqlApi.list);
+
   return (
-    <SpaceShell spaceId={spaceId()} activeTopTab="search">
-      <div class="mx-auto max-w-4xl ui-stack">
-        <section class="ui-card ui-stack">
-          <div class="ui-stack-sm">
-            <p class="text-sm ui-muted">Space: {spaceId()}</p>
-            <h1 class="ui-page-title">Saved SQL</h1>
-            <p class="ui-page-subtitle max-w-2xl">
-              This route is reserved for named-query management, but that
-              dedicated UI is not shipped yet. You can still run and revisit
-              queries from Search today, then return here once saved-query
-              management lands.
-            </p>
-          </div>
-
-          <div class="ui-stack-sm">
-            <h2 class="text-lg font-semibold">What works today</h2>
-            <ul class="list-disc space-y-2 pl-5 text-sm ui-muted">
-              <li>Run keyword and advanced searches from the Search tab.</li>
-              <li>
-                Reuse the current space dashboard when you need to switch back
-                to entries or forms.
-              </li>
-              <li>
-                Keep working in this space without guessing which route is
-                actually supported.
-              </li>
-            </ul>
-          </div>
-
-          <div class="flex flex-wrap gap-3">
+    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="Saved SQL">
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">Search</div>
+          <h1>Saved SQL</h1>
+        </div>
+        <A class="btn primary" href={`/spaces/${spaceId()}/queries/new`}>
+          <UiIcon name="plus" /> SQL
+        </A>
+      </div>
+      <Show when={queries.loading}>
+        <p class="ui-muted">Loading saved SQL...</p>
+      </Show>
+      <Show when={queries.error}>
+        <p class="ui-alert ui-alert-error">Failed to load saved SQL.</p>
+      </Show>
+      <div class="rowStack">
+        <For
+          each={queries() ?? []}
+          fallback={
+            <div class="rowBtn">
+              <span class="glyph">
+                <UiIcon name="sql" />
+              </span>
+              <span>
+                <b>No saved SQL</b>
+                <small>Create a query to reuse it here.</small>
+              </span>
+            </div>
+          }
+        >
+          {(query) => (
             <A
-              href={`/spaces/${spaceId()}/search`}
-              class="ui-button ui-button-primary"
+              class="rowBtn"
+              href={`/spaces/${spaceId()}/sql/${encodeURIComponent(query.id)}`}
             >
-              Open Search
+              <span class="glyph active">
+                <UiIcon name="sql" />
+              </span>
+              <span>
+                <b>{query.name}</b>
+                <small>{query.updated_at}</small>
+              </span>
+              <span>›</span>
             </A>
-            <A
-              href={`/spaces/${spaceId()}/dashboard`}
-              class="ui-button ui-button-secondary"
-            >
-              Back to Dashboard
-            </A>
-            <A
-              href={`/spaces/${spaceId()}/entries`}
-              class="ui-button ui-button-secondary"
-            >
-              Browse Entries
-            </A>
-          </div>
-        </section>
+          )}
+        </For>
       </div>
     </SpaceShell>
   );

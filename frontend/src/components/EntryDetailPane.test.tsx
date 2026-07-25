@@ -25,8 +25,12 @@ vi.mock("~/lib/ugoite-client", () => {
     },
     entryApi: {
       get: vi.fn(),
+      create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+    },
+    searchApi: {
+      rowReferenceOptions: vi.fn(),
     },
     RevisionConflictError,
   };
@@ -39,7 +43,7 @@ describe("EntryDetailPane", () => {
     (assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   });
 
-  it("REQ-FE-052: shows form-aware markdown H2 guidance and inserts missing required sections", async () => {
+  it("REQ-FE-052: edits form fields without requiring Markdown knowledge", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",
@@ -70,28 +74,155 @@ describe("EntryDetailPane", () => {
     ));
 
     await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    const guidanceText = await screen.findByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.match(/Form:\s*Meeting\s*\/\s*Example:/)),
-    );
-    expect(guidanceText).toHaveTextContent(/Form:\s*Meeting/);
-    expect(guidanceText).toHaveTextContent(/Example:\s*##\s*Date/);
-    expect(screen.queryByText("## status")).not.toBeInTheDocument();
-    expect(await screen.findByText(/Missing required sections: Date/))
-      .toBeInTheDocument();
+    const dateInput = await screen.findByLabelText("Date");
+    expect(dateInput).toHaveValue("");
+    expect(screen.getByText("This field is required.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Notes")).toHaveValue("hello");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Insert missing H2 headings" }),
-    );
+    fireEvent.input(dateInput, { target: { value: "2026-07-16" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
 
-    const textarea = await screen.findByPlaceholderText(
+    const source = await screen.findByPlaceholderText(
       "Start writing in Markdown...",
     );
-    expect((textarea as HTMLTextAreaElement).value).toContain("## Date");
+    expect((source as HTMLTextAreaElement).value).toContain(
+      "## Date\n2026-07-16",
+    );
   });
 
-  it("REQ-FE-052: omits example heading when form has no fields", async () => {
+  it("uses the shared form-first editor to create a new entry", async () => {
+    const onCreated = vi.fn();
+    (entryApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Meeting",
+      version: 1,
+      template: "# Meeting\n\n## Notes\n",
+      fields: {
+        Notes: { type: "markdown", required: false },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={onCreated}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const title = await screen.findByLabelText("Title");
+    expect(title).toHaveValue("Meeting");
+    fireEvent.input(title, { target: { value: "Planning" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown: expect.stringContaining("# Planning"),
+    });
+    expect(onCreated).toHaveBeenCalledWith("created-entry");
+  });
+
+  it("keeps nested Markdown headings out of form field values", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-nested-heading",
+      title: "Nested Markdown",
+      form: "Notes",
+      content:
+        "---\nform: Notes\n---\n\n# Nested Markdown\n\n## Notes\nhello\n\n### Details\nkeep this\n\n## Status\nopen",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-nested-heading"}
+        forms={() => [
+          {
+            name: "Notes",
+            version: 1,
+            template: "# Notes\n\n## Notes\n",
+            fields: {
+              Notes: { type: "markdown", required: false },
+              Status: { type: "string", required: false },
+            },
+          },
+        ]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const notes = await screen.findByLabelText("Notes");
+    expect(notes).toHaveValue("hello");
+
+    fireEvent.input(notes, { target: { value: "updated" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+
+    const source = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    expect((source as HTMLTextAreaElement).value).toContain(
+      "## Notes\nupdated\n### Details\nkeep this",
+    );
+    expect(
+      ((source as HTMLTextAreaElement).value.match(/### Details/g) || [])
+        .length,
+    ).toBe(1);
+  });
+
+  it("REQ-FE-052: preserves timestamp values in form-first controls", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-timestamps",
+      title: "Timestamp Entry",
+      form: "Event",
+      content:
+        "---\nform: Event\n---\n\n# Timestamp Entry\n\n## Started\n2026-07-18T12:34:56Z\n\n## Observed\n2026-07-18T21:34:56+09:00\n\n## Precise\n2026-07-18T12:34:56.123456789Z",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-timestamps"}
+        forms={() => [
+          {
+            name: "Event",
+            version: 1,
+            template: "# Event\n",
+            fields: {
+              Started: { type: "timestamp", required: false },
+              Observed: { type: "timestamp_tz", required: false },
+              Precise: { type: "timestamp_ns", required: false },
+            },
+          },
+        ]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const started = await screen.findByLabelText("Started");
+    expect(started).toHaveAttribute("type", "datetime-local");
+    expect(started).toHaveValue("2026-07-18T12:34:56.000");
+    expect(started).toHaveAttribute("step", "any");
+
+    const observed = screen.getByLabelText("Observed");
+    expect(observed).toHaveAttribute("type", "text");
+    expect(observed).toHaveValue("2026-07-18T21:34:56+09:00");
+
+    const precise = screen.getByLabelText("Precise");
+    expect(precise).toHaveAttribute("type", "text");
+    expect(precise).toHaveValue("2026-07-18T12:34:56.123456789Z");
+  });
+
+  it("REQ-FE-052: explains forms that have no structured fields", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-2",
       title: "Scratch Note",
@@ -118,20 +249,14 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(screen.getAllByText("Scratch Note")).toHaveLength(2)
-    );
-    const guidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.match(/Form:\s*Empty/)),
-    );
-    expect(guidanceText).not.toHaveTextContent(/Example:/);
-    expect(screen.queryByText("## status")).not.toBeInTheDocument();
+    expect(await screen.findByText("This form has no structured fields."))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("Scratch Note");
+    expect(screen.getByRole("button", { name: "Open source editor" }))
+      .toBeInTheDocument();
   });
 
-  it("REQ-FE-052: omits example heading when form data lacks a fields map", async () => {
+  it("REQ-FE-052: tolerates form data without a fields map", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-3",
       title: "Broken Note",
@@ -157,20 +282,12 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(screen.getAllByText("Broken Note")).toHaveLength(2)
-    );
-    const guidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.match(/Form:\s*Broken/)),
-    );
-    expect(guidanceText).not.toHaveTextContent(/Example:/);
-    expect(screen.queryByText("## status")).not.toBeInTheDocument();
+    expect(await screen.findByText("This form has no structured fields."))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("Broken Note");
   });
 
-  it("REQ-FE-053: renders English editor guidance and type warnings", async () => {
+  it("REQ-FE-053: keeps type and additional-content warnings next to the form", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-4",
       title: "Task Entry",
@@ -201,37 +318,18 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(screen.getAllByText("Task Entry")).toHaveLength(2)
-    );
-    expect(await screen.findByText(/Enter attributes under/i))
-      .toBeInTheDocument();
-    const guidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        (element.textContent?.includes(
-          "Enter attributes under ## field name headings.",
-        ) ?? false),
-    );
-    expect(guidanceText).toBeInTheDocument();
-    const formGuidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.match(/Form:\s*Task\s*\/\s*Example:/)),
-    );
-    expect(formGuidanceText).toHaveTextContent(
-      /Form:\s*Task\s*\/\s*Example:\s*##\s*Summary/,
-    );
-    expect(screen.getByText(/Unknown sections: Extra/)).toBeInTheDocument();
+    expect(await screen.findByLabelText("Summary")).toHaveValue("hello");
+    expect(screen.getByLabelText("Done")).toHaveValue("maybe");
     expect(
       screen.getByText(
         "Done: Use true/false, yes/no, on/off, or 1/0 for boolean fields.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText("Additional Markdown content")).toBeInTheDocument();
+    expect(screen.getByText("Extra")).toBeInTheDocument();
   });
 
-  it("REQ-FE-053: renders Japanese editor guidance without mixed-language examples", async () => {
+  it("REQ-FE-053: renders the form-first editor in Japanese", async () => {
     setLocale("ja");
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-ja",
@@ -261,33 +359,22 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getAllByText("タスク")).toHaveLength(2));
-    expect(
-      screen.getByText(
-        (_, element) =>
-          element?.tagName === "P" &&
-          (element.textContent?.includes(
-            "属性は ## フィールド名 見出しで入力します。",
-          ) ?? false),
-      ),
-    ).toBeInTheDocument();
-    const guidanceText = screen.getByText(
-      (_, element) =>
-        element?.tagName === "P" &&
-        Boolean(element.textContent?.includes("フォーム: Task")),
+    expect(await screen.findByRole("tab", { name: "項目" })).toHaveAttribute(
+      "aria-selected",
+      "true",
     );
-    expect(guidanceText).toHaveTextContent(
-      /フォーム:\s*Task\s*\/\s*例:\s*##\s*Summary/,
-    );
-    expect(guidanceText).not.toHaveTextContent(/Example:/);
+    expect(screen.getByText("見慣れたフォーム項目からエントリを編集します。"))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Summary")).toHaveValue("hello");
+    expect(screen.queryByRole("tab", { name: "Fields" })).not
+      .toBeInTheDocument();
   });
 
-  it("REQ-FE-033: entry detail success path shows a visible route back to Entries", async () => {
+  it("REQ-FE-033: entry detail returns to its Form workspace", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",
-      form: null,
+      form: "Notes",
       content: "# Test Entry",
       revision_id: "rev-1",
       created_at: "2026-01-01T00:00:00Z",
@@ -303,10 +390,13 @@ describe("EntryDetailPane", () => {
     ));
 
     const backLink = await screen.findByRole("link", {
-      name: "Back to Entries",
+      name: "Back to Form",
     });
 
-    expect(backLink).toHaveAttribute("href", "/spaces/default/entries");
+    expect(backLink).toHaveAttribute(
+      "href",
+      "/spaces/default/forms?form=Notes",
+    );
   });
   it("REQ-FE-038: renders form validation warnings", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -446,6 +536,55 @@ describe("EntryDetailPane", () => {
     await waitFor(() => {
       expect(entryApi.update).toHaveBeenCalled();
       expect(onAfterSave).toHaveBeenCalled();
+    });
+  });
+
+  it("keeps edits made during a save marked as unsaved", async () => {
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Test Entry",
+      form: null,
+      content: "# Test Entry",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    let finishSave: ((value: { revision_id: string }) => void) | undefined;
+    (entryApi.update as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const textarea = await screen.findByPlaceholderText(
+      "Start writing in Markdown...",
+    );
+    fireEvent.input(textarea, { target: { value: "First edit" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(entryApi.update).toHaveBeenCalledWith("default", "entry-1", {
+        markdown: "First edit",
+        parent_revision_id: "rev-1",
+      });
+    });
+
+    fireEvent.input(textarea, { target: { value: "Second edit" } });
+    finishSave?.({ revision_id: "rev-2" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     });
   });
 
@@ -616,9 +755,9 @@ describe("EntryDetailPane", () => {
     ));
 
     // Wait for entry header to appear (entry is loaded)
-    await waitFor(() => screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => screen.getByRole("button", { name: "Delete entry" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));
 
     await waitFor(() => {
       expect(entryApi.delete).toHaveBeenCalledWith("default", "entry-1");

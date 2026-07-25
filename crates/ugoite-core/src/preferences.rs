@@ -38,6 +38,13 @@ pub enum PrimaryColorPreference {
     Amber,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContentWidthPreference {
+    Standard,
+    Wide,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct UserPreferences {
@@ -46,6 +53,7 @@ pub struct UserPreferences {
     pub ui_theme: Option<UiThemePreference>,
     pub color_mode: Option<ColorModePreference>,
     pub primary_color: Option<PrimaryColorPreference>,
+    pub content_width: Option<ContentWidthPreference>,
 }
 
 const USER_PREFERENCE_FIELDS: &[&str] = &[
@@ -54,6 +62,7 @@ const USER_PREFERENCE_FIELDS: &[&str] = &[
     "ui_theme",
     "color_mode",
     "primary_color",
+    "content_width",
 ];
 
 fn hashed_user_segment(user_id: &str) -> String {

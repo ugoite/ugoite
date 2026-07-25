@@ -8,10 +8,12 @@ import {
   within,
 } from "@solidjs/testing-library";
 import SpacesIndexRoute from "./index";
-import { spaceApi } from "~/lib/ugoite-client";
+import { authApi, spaceApi } from "~/lib/ugoite-client";
 
 const localDevAuthGuideUrl =
   "https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
+const browserWalkthroughUrl =
+  "https://ugoite.github.io/ugoite/docs/guide/browser-first-entry";
 
 const navigateMock = vi.fn();
 
@@ -25,6 +27,9 @@ vi.mock("@solidjs/router", () => ({
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({
+  authApi: {
+    loginWithPasskey: vi.fn(),
+  },
   spaceApi: {
     list: vi.fn(),
     create: vi.fn(),
@@ -36,6 +41,7 @@ describe("/spaces", () => {
     navigateMock.mockReset();
     (spaceApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (spaceApi.create as ReturnType<typeof vi.fn>).mockReset();
+    (authApi.loginWithPasskey as ReturnType<typeof vi.fn>).mockReset();
   });
 
   it("REQ-FE-002: shows a create-space action when no spaces exist", async () => {
@@ -52,6 +58,11 @@ describe("/spaces", () => {
         "href",
         "/spaces/join",
       );
+    expect(
+      screen.getByRole("link", {
+        name: "Learn how to create your first entry in the browser",
+      }),
+    ).toHaveAttribute("href", browserWalkthroughUrl);
     expect(spaceApi.create).not.toHaveBeenCalled();
   });
 
@@ -122,6 +133,47 @@ describe("/spaces", () => {
           "Space IDs can use only letters, numbers, hyphens, and underscores.",
         ),
       ).toBeInTheDocument();
+    });
+  });
+
+  it("reauthenticates with Passkey when Space creation needs recent assurance", async () => {
+    (spaceApi.create as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("Failed to create space: repeat Passkey authentication"),
+          { code: "RECENT_PASSKEY_REQUIRED" },
+        ),
+      )
+      .mockResolvedValueOnce({ id: "my-space", name: "my-space" });
+    (authApi.loginWithPasskey as ReturnType<typeof vi.fn>).mockResolvedValue(
+      undefined,
+    );
+
+    render(() => <SpacesIndexRoute />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No spaces available.")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+    fireEvent.input(screen.getByLabelText("Space ID"), {
+      target: { value: "my-space" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create space" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Authenticate with Passkey" }))
+        .toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Authenticate with Passkey" }),
+    );
+
+    await waitFor(() => {
+      expect(authApi.loginWithPasskey).toHaveBeenCalledOnce();
+      expect(spaceApi.create).toHaveBeenCalledTimes(2);
+      expect(navigateMock).toHaveBeenCalledWith("/spaces/my-space/dashboard");
     });
   });
 

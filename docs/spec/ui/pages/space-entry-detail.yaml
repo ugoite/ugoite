@@ -1,5 +1,5 @@
-version: "0.1"
-updated: "2026-02-02"
+version: "0.2"
+updated: "2026-07-17"
 page:
   id: space-entry-detail
   title: Entry Detail
@@ -7,39 +7,78 @@ page:
   implementation: implemented
 components:
   shared:
-    - id: top-tabs
-      type: tab-bar
-      position: top-center-floating
-      tabs:
-        - id: dashboard
-          label: dashboard
-          target_page: space-dashboard
-        - id: search
-          label: search
-          target_page: space-search
-    - id: settings-button
-      type: floating-icon-button
-      position: top-right-floating
-      icon: settings
-      menu:
-        id: ui-theme-menu
-        theme_options:
-          - materialize
-          - classic
-          - pop
-        color_modes:
-          - light
-          - dark
-        persist: localStorage
-        actions:
-          - id: open-space-settings
-            label: Space settings
-            target_page: space-settings
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
   body:
-    - id: entry-title
-      type: heading
-      level: 2
-      text: "{entry_title}"
-    - id: entry-editor
-      type: markdown-editor
-      mode: split
+    - id: entry-header
+      type: page-header
+      items:
+        - id: back-to-form
+          type: link
+          target_page: space-form-grid
+        - id: entry-title
+          type: heading
+          text: "{entry_title}"
+        - id: save-status
+          type: status
+          values:
+            - saved
+            - unsaved
+            - saving
+        - id: save-entry
+          type: primary-button
+    - id: entry-workspace
+      type: two-column-workspace
+      primary:
+        - id: entry-edit-modes
+          type: tab-bar
+          default: fields-when-form-exists
+          tabs:
+            - id: fields
+              label: Fields
+              visibility: form-defined-entry
+              description: Form-first editing for non-technical users.
+            - id: preview
+              label: Preview
+              description: Rendered read-only entry preview.
+            - id: source
+              label: Source
+              description: Full Markdown editing for advanced changes.
+        - id: entry-fields-editor
+          type: form-editor
+          items:
+            - title
+            - typed-form-fields
+          field_controls:
+            boolean: select
+            list: multiline-input
+            markdown: multiline-input
+            row_reference: searchable-entry-picker
+            scalar: typed-input
+          validation: inline
+        - id: entry-preview
+          type: markdown-preview
+        - id: entry-source-editor
+          type: markdown-editor
+          mode: edit
+      secondary:
+        - id: entry-details
+          type: metadata-card
+          items:
+            - form
+            - updated_at
+            - entry_id
+        - id: entry-assets
+          type: asset-uploader
+        - id: entry-management
+          type: action-card
+          actions:
+            - history
+            - refresh
+            - discard-draft
+            - sharing
+            - delete
+responsive:
+  desktop: two-column
+  mobile: stacked-primary-first

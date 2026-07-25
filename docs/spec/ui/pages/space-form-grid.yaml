@@ -1,67 +1,30 @@
-version: "0.1"
-updated: "2026-02-02"
+version: "0.2"
+updated: "2026-07-17"
 page:
   id: space-form-grid
-  title: Form Grid View
+  title: Forms Workspace
   route: /spaces/{space_id}/forms
   implementation: implemented
 components:
   shared:
-    - id: top-tabs
-      type: tab-bar
-      position: top-center-floating
-      tabs:
-        - id: dashboard
-          label: dashboard
-          target_page: space-dashboard
-        - id: search
-          label: search
-          target_page: space-search
-    - id: settings-button
-      type: floating-icon-button
-      position: top-right-floating
-      icon: settings
-      menu:
-        id: ui-theme-menu
-        theme_options:
-          - materialize
-          - classic
-          - pop
-        color_modes:
-          - light
-          - dark
-        persist: localStorage
-        actions:
-          - id: open-space-settings
-            label: Space settings
-            target_page: space-settings
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
   body:
-    - id: form-toolbar
-      type: toolbar
+    - id: form-picker
+      type: searchable-master-list
       items:
-        - id: form-search-bar
-          type: search-bar
-          placeholder: "Search"
-        - id: form-sort-button
-          type: sort-button
-          icon: sort
-        - id: form-filter-button
-          type: filter-button
-          icon: filter
-    - id: form-grid
+        - form-name
+      actions:
+        - create-form
+    - id: selected-form-entries
       type: data-grid
-      clipboard: enabled
-    - id: form-download-button
-      type: csv-download-button
-      position: bottom-right-floating
-      format: csv
-    - id: form-view-tabs
-      type: tab-bar
-      position: bottom-center-floating
-      tabs:
-        - id: object
-          label: Entries
-          target_page: space-entries-object
-        - id: grid
-          label: Forms
-          target_page: space-form-grid
+      description: The selected Form's Entries are shown directly without a second Entries view or nested view tabs.
+      actions:
+        - edit-form
+        - create-entry
+        - open-entry
+        - export-csv
+responsive:
+  desktop: split-master-detail
+  mobile: stacked

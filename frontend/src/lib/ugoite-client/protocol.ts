@@ -72,6 +72,7 @@ type PreparedRequest = {
 type ProtocolErrorPayload = {
   kind: string;
   message: string;
+  code?: string;
   operation?: string;
   status?: number;
   detail?: unknown;
@@ -158,6 +159,7 @@ export const getWasmSupportedOperations = async (): Promise<
 
 export class UgoiteApiError extends Error {
   readonly kind: string;
+  readonly code?: string;
   readonly operation?: string;
   readonly status?: number;
   readonly detail?: unknown;
@@ -167,12 +169,20 @@ export class UgoiteApiError extends Error {
     super(error.message);
     this.name = "UgoiteApiError";
     this.kind = error.kind;
+    this.code = error.code ?? readErrorCode(error.detail) ??
+      readErrorCode(error.payload);
     this.operation = error.operation;
     this.status = error.status;
     this.detail = error.detail;
     this.payload = error.payload;
   }
 }
+
+const readErrorCode = (value: unknown): string | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const code = (value as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+};
 
 export const prepareApiRequest = async (
   operation: UgoiteApiOperation,

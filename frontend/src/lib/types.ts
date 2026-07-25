@@ -41,9 +41,6 @@ export interface SpacePatchPayload {
 export interface UserPreferences {
   selected_space_id: string | null;
   locale: "en" | "ja" | null;
-  ui_theme: "materialize" | "classic" | "pop" | null;
-  color_mode: "light" | "dark" | null;
-  primary_color: "violet" | "blue" | "emerald" | "amber" | null;
 }
 
 export type UserPreferencesPatchPayload = Partial<UserPreferences>;
@@ -156,6 +153,16 @@ export interface Entry {
   revision_id: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Rendered content captured for an entry revision. */
+export interface EntryRevisionContent {
+  revision_id: string;
+  parent_revision_id?: string | null;
+  author?: string;
+  markdown: string;
+  frontmatter?: Record<string, unknown>;
+  sections?: Record<string, string>;
 }
 
 /** Entry history entry */

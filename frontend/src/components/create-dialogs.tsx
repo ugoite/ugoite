@@ -1,7 +1,6 @@
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   Index,
@@ -14,6 +13,7 @@ import {
   type EntryInputMode,
 } from "~/lib/entry-input";
 import { t } from "~/lib/i18n";
+import { createResource } from "~/lib/recoverable-resource";
 import { searchApi } from "~/lib/ugoite-client";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import {
@@ -33,6 +33,36 @@ const numericFieldTypes = new Set([
   "double",
   "float",
 ]);
+
+const fieldTypeDescriptionKey = (type: string) => {
+  if (type === "string") return "createDialog.form.fieldType.string";
+  if (type === "sql") return "createDialog.form.fieldType.sql";
+  if (type === "markdown") return "createDialog.form.fieldType.markdown";
+  if (type === "number") return "createDialog.form.fieldType.number";
+  if (type === "double") return "createDialog.form.fieldType.double";
+  if (type === "float") return "createDialog.form.fieldType.float";
+  if (type === "integer") return "createDialog.form.fieldType.integer";
+  if (type === "long") return "createDialog.form.fieldType.long";
+  if (type === "boolean") return "createDialog.form.fieldType.boolean";
+  if (type === "date") return "createDialog.form.fieldType.date";
+  if (type === "time") return "createDialog.form.fieldType.time";
+  if (type === "timestamp") return "createDialog.form.fieldType.timestamp";
+  if (type === "timestamp_tz") return "createDialog.form.fieldType.timestampTz";
+  if (type === "timestamp_ns") return "createDialog.form.fieldType.timestampNs";
+  if (type === "timestamp_tz_ns") {
+    return "createDialog.form.fieldType.timestampTzNs";
+  }
+  if (type === "uuid") return "createDialog.form.fieldType.uuid";
+  if (type === "row_reference") {
+    return "createDialog.form.fieldType.rowReference";
+  }
+  if (type === "binary") return "createDialog.form.fieldType.binary";
+  if (type === "list") return "createDialog.form.fieldType.list";
+  if (type === "object_list") return "createDialog.form.fieldType.objectList";
+  return "createDialog.form.fieldType.unknown";
+};
+
+const fieldTypeDescription = (type: string) => t(fieldTypeDescriptionKey(type));
 
 const formatDatetimeLocal = (date: Date) => {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -1173,7 +1203,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-2">
+            <div class="ui-dialog-actions pt-2">
               <button
                 type="button"
                 onClick={props.onClose}
@@ -1366,7 +1396,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
         }}
       >
         <div
-          class="ui-dialog w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
+          class="ui-dialog ui-dialog-form flex flex-col"
           role="document"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
@@ -1377,7 +1407,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 
           <form
             onSubmit={handleSubmit}
-            class="ui-stack-sm flex-1 overflow-auto"
+            class="ui-dialog-form-content"
           >
             <div class="ui-field">
               <label class="ui-label" for="form-name">
@@ -1434,10 +1464,12 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                       />
                       <div class={columnEditorControlsClass}>
                         <select
+                          aria-label={t("createDialog.form.fieldTypeLabel")}
                           value={field().type}
                           onChange={(e) =>
                             updateField(i, "type", e.currentTarget.value)}
                           class={columnTypeSelectClass}
+                          aria-describedby={`create-form-field-type-${i}-description`}
                         >
                           <For each={props.columnTypes}>
                             {(type) => <option value={type}>{type}</option>}
@@ -1453,6 +1485,12 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                         </button>
                       </div>
                     </div>
+                    <p
+                      id={`create-form-field-type-${i}-description`}
+                      class="ml-1 text-xs ui-muted"
+                    >
+                      {fieldTypeDescription(field().type)}
+                    </p>
                     <Show when={field().type === "row_reference"}>
                       <div class={columnAuxRowClass}>
                         <span class="text-xs ui-muted">
@@ -1461,6 +1499,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                         <input
                           type="text"
                           list={`row-ref-targets-${i}`}
+                          aria-label={t("createDialog.form.targetFormLabel")}
                           placeholder={t(
                             "createDialog.form.targetFormPlaceholder",
                           )}
@@ -1512,7 +1551,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-4">
+            <div class="ui-dialog-actions pt-4">
               <button
                 type="button"
                 onClick={props.onClose}
@@ -1755,7 +1794,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
         }}
       >
         <div
-          class="ui-dialog w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
+          class="ui-dialog ui-dialog-form flex flex-col"
           role="document"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
@@ -1774,7 +1813,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
 
           <form
             onSubmit={handleSubmit}
-            class="ui-stack-sm flex-1 overflow-auto"
+            class="ui-dialog-form-content"
           >
             <div class="ui-stack-sm">
               <div class="flex justify-between items-center">
@@ -1816,10 +1855,12 @@ export function EditFormDialog(props: EditFormDialogProps) {
                       />
                       <div class={columnEditorControlsClass}>
                         <select
+                          aria-label={t("createDialog.form.fieldTypeLabel")}
                           value={field().type}
                           onChange={(e) =>
                             updateField(i, "type", e.currentTarget.value)}
                           class={columnTypeSelectClass}
+                          aria-describedby={`edit-form-field-type-${i}-description`}
                         >
                           <For each={props.columnTypes}>
                             {(type) => <option value={type}>{type}</option>}
@@ -1835,6 +1876,12 @@ export function EditFormDialog(props: EditFormDialogProps) {
                         </button>
                       </div>
                     </div>
+                    <p
+                      id={`edit-form-field-type-${i}-description`}
+                      class="ml-1 text-xs ui-muted"
+                    >
+                      {fieldTypeDescription(field().type)}
+                    </p>
                     <Show when={field().type === "row_reference"}>
                       <div class={columnAuxRowClass}>
                         <span class="text-xs ui-muted">
@@ -1843,6 +1890,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
                         <input
                           type="text"
                           list={`row-ref-targets-edit-${i}`}
+                          aria-label={t("createDialog.form.targetFormLabel")}
                           placeholder={t(
                             "createDialog.form.targetFormPlaceholder",
                           )}
@@ -1920,7 +1968,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
               </div>
             </Show>
 
-            <div class="flex justify-end gap-3 pt-4">
+            <div class="ui-dialog-actions pt-4">
               <button
                 type="button"
                 onClick={props.onClose}

@@ -1,10 +1,11 @@
 import { A, useParams } from "@solidjs/router";
 import type { RouteSectionProps } from "@solidjs/router";
-import { createMemo, createResource } from "solid-js";
+import { createMemo } from "solid-js";
 import { formApi } from "~/lib/ugoite-client";
 import { EntriesRouteContext } from "~/lib/entries-route-context";
 import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
+import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceFormsRoute(props: RouteSectionProps) {
   const params = useParams<{ space_id: string }>();
@@ -12,27 +13,32 @@ export default function SpaceFormsRoute(props: RouteSectionProps) {
   const spaceId = () => params.space_id || "";
   const entryStore = createEntryStore(spaceId);
 
-  const [forms, { refetch: refetchForms }] = createResource(
+  const [metadata, { refetch: refetchForms }] = createResource(
     () => {
       const wsId = spaceId();
       return wsId ? wsId : null;
     },
     async (wsId) => {
-      if (!wsId) return [];
-      return await formApi.list(wsId);
+      if (!wsId) return { forms: [], columnTypes: [] };
+      const forms = await formApi.list(wsId);
+      // The filesystem-backed catalog initializes lazily. Fetch metadata in
+      // sequence so the two endpoints cannot race the same initialization.
+      const columnTypes = await formApi.listTypes(wsId);
+      return { forms, columnTypes };
     },
   );
 
-  const [columnTypes] = createResource(
-    () => spaceId(),
-    async (wsId) => {
-      if (!wsId) return [];
-      return await formApi.listTypes(wsId);
-    },
+  // Reading a rejected resource throws. Check its error first so child routes
+  // can render their recovery UI instead of falling through to Solid's error
+  // boundary.
+  const safeForms = createMemo(() =>
+    metadata.error ? [] : metadata()?.forms || []
   );
-
-  const safeForms = createMemo(() => forms() || []);
-  const loadingForms = createMemo(() => forms.loading);
+  const loadingForms = createMemo(() => metadata.loading);
+  const formsError = () => metadata.error;
+  const columnTypes = createMemo(() =>
+    metadata.error ? [] : metadata()?.columnTypes || []
+  );
 
   return (
     <EntriesRouteContext.Provider
@@ -42,7 +48,8 @@ export default function SpaceFormsRoute(props: RouteSectionProps) {
         entryStore,
         forms: safeForms,
         loadingForms,
-        columnTypes: () => columnTypes() || [],
+        formsError,
+        columnTypes,
         refetchForms,
       }}
     >

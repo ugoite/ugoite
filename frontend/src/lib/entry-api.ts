@@ -3,6 +3,7 @@ import type {
   EntryCreatePayload,
   EntryRecord,
   EntryRevision,
+  EntryRevisionContent,
   EntryUpdatePayload,
   Form,
 } from "./types";
@@ -147,13 +148,12 @@ export const entryApi = {
     spaceId: string,
     entryId: string,
     revisionId: string,
-  ): Promise<Entry> {
-    const entry = await protocolFetch<EntryResponse>("entry.revision", {
+  ): Promise<EntryRevisionContent> {
+    return await protocolFetch<EntryRevisionContent>("entry.revision", {
       space_id: spaceId,
       entry_id: entryId,
       revision_id: revisionId,
     });
-    return normalizeEntry(entry);
   },
 
   async restore(

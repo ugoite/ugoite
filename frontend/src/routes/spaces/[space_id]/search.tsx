@@ -1,12 +1,14 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
+import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { EntryRecord, SearchResult, SqlEntry } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 
 type SearchMode = "keyword" | "advanced";
 type FieldMatchOperator = "equals" | "contains";
@@ -423,15 +425,12 @@ export default function SpaceSearchRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeTopTab="search">
-      <div class="mx-auto max-w-5xl">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 class="ui-page-title">Search</h1>
-            <p class="mt-2 text-sm ui-muted">
-              Start with keywords, then switch to structured filters only when
-              you need them.
-            </p>
+    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="Search">
+      <div>
+        <div class="screenHead">
+          <div class="screenTitle">
+            <div class="eyebrow">{spaceId()}</div>
+            <h1>Search</h1>
           </div>
           <A
             href={`/spaces/${spaceId()}/queries/new`}
@@ -441,7 +440,17 @@ export default function SpaceSearchRoute() {
           </A>
         </div>
 
-        <div class="mt-6 ui-card p-5">
+        <div class="searchPage">
+          <aside class="facet surface">
+            <button type="button" classList={{ active: mode() === "keyword" }} onClick={() => setMode("keyword")}><UiIcon name="entry" /> Entries</button>
+            <button type="button" onClick={() => setMode("advanced")} classList={{ active: mode() === "advanced" }}><UiIcon name="forms" /> Forms</button>
+            <A href={`/spaces/${spaceId()}/assets`}>
+              <UiIcon name="asset" /> Assets
+            </A>
+            <A href={`/spaces/${spaceId()}/sql`}><UiIcon name="sql" /> Saved SQL</A>
+          </aside>
+          <main>
+        <div class="ui-card p-5">
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -475,15 +484,17 @@ export default function SpaceSearchRoute() {
                 <label class="ui-label" for="search-keywords">
                   Search keywords
                 </label>
+                <div class="searchBox">
+                  <UiIcon name="search" />
                 <input
                   id="search-keywords"
                   type="text"
-                  class="ui-input mt-2 w-full"
+                  class=""
                   placeholder="Search entries by title, fields, tags, or content"
                   value={keywordQuery()}
                   onInput={(event) =>
                     setKeywordQuery(event.currentTarget.value)}
-                />
+                /></div>
               </div>
               <div class="sm:self-end">
                 <button
@@ -576,25 +587,25 @@ export default function SpaceSearchRoute() {
                   </button>
                 </div>
 
-                <For each={fieldConditions()}>
+                <Index each={fieldConditions()}>
                   {(condition) => (
                     <div class="ui-card grid gap-3 p-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto]">
                       <div>
-                        <label class="ui-label" for={`field-${condition.id}`}>
+                        <label class="ui-label" for={`field-${condition().id}`}>
                           Field
                         </label>
                         <Show
                           when={availableFields().length > 0}
                           fallback={
                             <input
-                              id={`field-${condition.id}`}
+                              id={`field-${condition().id}`}
                               type="text"
                               class="ui-input mt-2 w-full"
                               placeholder="Owner"
-                              value={condition.field}
+                              value={condition().field}
                               onInput={(event) =>
                                 updateFieldCondition(
-                                  condition.id,
+                                  condition().id,
                                   "field",
                                   event.currentTarget.value,
                                 )}
@@ -602,12 +613,12 @@ export default function SpaceSearchRoute() {
                           }
                         >
                           <select
-                            id={`field-${condition.id}`}
+                            id={`field-${condition().id}`}
                             class="ui-input mt-2 w-full"
-                            value={condition.field}
+                            value={condition().field}
                             onChange={(event) =>
                               updateFieldCondition(
-                                condition.id,
+                                condition().id,
                                 "field",
                                 event.currentTarget.value,
                               )}
@@ -624,17 +635,17 @@ export default function SpaceSearchRoute() {
                       <div>
                         <label
                           class="ui-label"
-                          for={`operator-${condition.id}`}
+                          for={`operator-${condition().id}`}
                         >
                           Match
                         </label>
                         <select
-                          id={`operator-${condition.id}`}
+                          id={`operator-${condition().id}`}
                           class="ui-input mt-2 w-full"
-                          value={condition.operator}
+                          value={condition().operator}
                           onChange={(event) =>
                             updateFieldCondition(
-                              condition.id,
+                              condition().id,
                               "operator",
                               event.currentTarget.value,
                             )}
@@ -644,18 +655,18 @@ export default function SpaceSearchRoute() {
                         </select>
                       </div>
                       <div>
-                        <label class="ui-label" for={`value-${condition.id}`}>
+                        <label class="ui-label" for={`value-${condition().id}`}>
                           Value
                         </label>
                         <input
-                          id={`value-${condition.id}`}
+                          id={`value-${condition().id}`}
                           type="text"
                           class="ui-input mt-2 w-full"
                           placeholder="alice"
-                          value={condition.value}
+                          value={condition().value}
                           onInput={(event) =>
                             updateFieldCondition(
-                              condition.id,
+                              condition().id,
                               "value",
                               event.currentTarget.value,
                             )}
@@ -671,7 +682,7 @@ export default function SpaceSearchRoute() {
                                 return [createFieldCondition()];
                               }
                               return current.filter((item) =>
-                                item.id !== condition.id
+                                item.id !== condition().id
                               );
                             })}
                         >
@@ -680,7 +691,7 @@ export default function SpaceSearchRoute() {
                       </div>
                     </div>
                   )}
-                </For>
+                </Index>
               </div>
 
               <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -835,6 +846,8 @@ export default function SpaceSearchRoute() {
               </For>
             </div>
           </aside>
+        </div>
+          </main>
         </div>
       </div>
     </SpaceShell>

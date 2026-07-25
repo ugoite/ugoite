@@ -57,8 +57,8 @@ export default function DeviceApprovalRoute() {
     setDone(true);
   };
   return (
-    <main class="ui-page mx-auto max-w-xl ui-stack">
-      <section class="ui-card ui-stack">
+    <main class="publicShell">
+      <section class="publicCard ui-stack">
         <h1 class="ui-page-title">Approve a device</h1>
         <Show
           when={!done()}

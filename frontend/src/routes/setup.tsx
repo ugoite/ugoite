@@ -22,6 +22,7 @@ export default function SetupRoute() {
   const [totpCode, setTotpCode] = createSignal("");
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  const [strengthening, setStrengthening] = createSignal(false);
 
   onMount(async () => {
     const config = await authApi.getConfig().catch(() => undefined);
@@ -51,8 +52,8 @@ export default function SetupRoute() {
   };
 
   return (
-    <main class="ui-page mx-auto max-w-xl ui-stack">
-      <section class="ui-card ui-stack">
+    <main class="publicShell">
+      <section class="publicCard ui-stack">
         <h1 class="ui-page-title">Initialize this Ugoite node</h1>
         <Show
           when={!hasInitialPasskey()}
@@ -86,27 +87,56 @@ export default function SetupRoute() {
                     <button
                       type="button"
                       class="ui-button ui-button-primary"
+                      disabled={strengthening()}
                       onClick={async () => {
-                        await authApi.addPasskey();
-                        setStrengthComplete(true);
+                        setStrengthening(true);
+                        setError("");
+                        try {
+                          await authApi.addPasskey();
+                          setStrengthComplete(true);
+                        } catch (cause) {
+                          setError(message(cause));
+                        } finally {
+                          setStrengthening(false);
+                        }
                       }}
                     >
-                      Register second Passkey
+                      {strengthening()
+                        ? "Waiting for passkey…"
+                        : "Register second Passkey"}
                     </button>
                     <button
                       type="button"
                       class="ui-button ui-button-secondary"
-                      onClick={async () =>
-                        setTotp(await authApi.startTotpEnrollment())}
+                      disabled={strengthening()}
+                      onClick={async () => {
+                        setStrengthening(true);
+                        setError("");
+                        try {
+                          setTotp(await authApi.startTotpEnrollment());
+                        } catch (cause) {
+                          setError(message(cause));
+                        } finally {
+                          setStrengthening(false);
+                        }
+                      }}
                     >
                       Configure TOTP instead
                     </button>
                     <Show when={totp()}>
                       {(enrollment) => (
                         <div class="ui-stack-sm">
+                          <p>
+                            Add this URI to your authenticator. It specifies
+                            SHA-256, six digits, and a 30-second period.
+                          </p>
                           <code class="ui-card break-all">
-                            {enrollment().secret}
+                            {enrollment().otpauth_uri}
                           </code>
+                          <p class="ui-muted">
+                            If entering the secret manually, select SHA-256 (not
+                            SHA-1).
+                          </p>
                           <label class="ui-stack-sm">
                             <span>Current six-digit TOTP</span>
                             <input
@@ -121,12 +151,21 @@ export default function SetupRoute() {
                           <button
                             type="button"
                             class="ui-button ui-button-primary"
+                            disabled={strengthening()}
                             onClick={async () => {
-                              await authApi.finishTotpEnrollment(totpCode());
-                              setStrengthComplete(true);
+                              setStrengthening(true);
+                              setError("");
+                              try {
+                                await authApi.finishTotpEnrollment(totpCode());
+                                setStrengthComplete(true);
+                              } catch (cause) {
+                                setError(message(cause));
+                              } finally {
+                                setStrengthening(false);
+                              }
                             }}
                           >
-                            Confirm TOTP
+                            {strengthening() ? "Confirming…" : "Confirm TOTP"}
                           </button>
                         </div>
                       )}

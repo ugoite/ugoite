@@ -217,6 +217,32 @@ describe("/spaces/:space_id/search", () => {
     });
   });
 
+  it("keeps focus in a field-condition value while typing", async () => {
+    seedForm("default", {
+      name: "Meeting",
+      version: 1,
+      template: "",
+      fields: { memo: { type: "string", required: false } },
+    });
+    render(() => <SpaceSearchRoute />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    await screen.findByRole("option", { name: "Meeting" });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "Meeting" },
+    });
+    await screen.findByRole("option", { name: "memo" });
+    fireEvent.change(screen.getByLabelText("Field"), {
+      target: { value: "memo" },
+    });
+    const value = screen.getByLabelText("Value");
+    value.focus();
+    fireEvent.input(value, { target: { value: "se" } });
+
+    expect(value).toHaveFocus();
+    expect(value).toHaveValue("se");
+  });
+
   it("REQ-SRCH-005: saved history entries rerun directly or open variable input when needed", async () => {
     seedSqlEntry("default", {
       id: "saved-ready",
@@ -269,6 +295,15 @@ describe("/spaces/:space_id/search", () => {
     fireEvent.click(screen.getByRole("button", { name: /Needs variables/ }));
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/default/queries/saved-vars/variables",
+    );
+  });
+
+  it("links the Assets facet to the Space asset workspace", () => {
+    render(() => <SpaceSearchRoute />);
+
+    expect(screen.getByRole("link", { name: /Assets/ })).toHaveAttribute(
+      "href",
+      "/spaces/default/assets",
     );
   });
 });

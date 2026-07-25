@@ -1,8 +1,11 @@
-import { A, useParams } from "@solidjs/router";
-import { createMemo, createResource, createSignal, For, Show } from "solid-js";
-import { SpaceShell } from "~/components/SpaceShell";
+import { useParams, useSearchParams } from "@solidjs/router";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceSettings } from "~/components/SpaceSettings";
-import { getDocsiteHref } from "~/lib/docsite-links";
+import { SpaceShell } from "~/components/SpaceShell";
+import { UiIcon, type UiIconName } from "~/components/UiIcon";
+import { CredentialSettings } from "~/routes/settings/security";
+import { locale } from "~/lib/i18n";
+import { setLocalePreference } from "~/lib/preferences-store";
 import { spaceApi } from "~/lib/ugoite-client";
 import type {
   AgentPrincipal,
@@ -10,148 +13,111 @@ import type {
   SpacePatchPayload,
   StorageConnectionConfig,
 } from "~/lib/types";
+import { createResource } from "~/lib/recoverable-resource";
 
-const localDevAuthGuideUrl = getDocsiteHref(
-  "/docs/guide/local-dev-auth-login",
-  "docs/guide/local-dev-auth-login.md",
-);
-
+type Section =
+  | "general"
+  | "members"
+  | "agents"
+  | "credentials"
+  | "storage";
+const sections: Array<
+  { id: Section; icon: UiIconName; en: string; ja: string }
+> = [
+  { id: "general", icon: "settings", en: "General", ja: "一般" },
+  { id: "members", icon: "members", en: "Members", ja: "メンバー" },
+  { id: "agents", icon: "agent", en: "Agents", ja: "エージェント" },
+  { id: "credentials", icon: "credential", en: "Credentials", ja: "認証情報" },
+  { id: "storage", icon: "storage", en: "Storage", ja: "ストレージ" },
+];
 const managedRoles = ["owner", "editor", "viewer"] as const;
-type ManagedRole = (typeof managedRoles)[number];
-type ManagedAgentMode = "autonomous" | "delegated" | "both";
-
-const toMessage = (value: unknown): string => {
-  if (typeof value === "string" && value.trim()) return value;
-  if (value instanceof Error && value.message.trim()) return value.message;
-  return "";
-};
-
-const authHintFromError = (
-  value: unknown,
-): { message: string; showGuide: boolean } | null => {
-  const message = toMessage(value).toLowerCase();
-  if (
-    message.includes("401") ||
-    message.includes("authentication") ||
-    message.includes("unauthorized")
-  ) {
-    return {
-      message:
-        "Authentication required. Open /login and sign in again for this local development session.",
-      showGuide: true,
-    };
-  }
-  if (
-    message.includes("403") ||
-    message.includes("forbidden") ||
-    message.includes("not authorized")
-  ) {
-    return {
-      message:
-        "You are signed in but do not have enough permissions for this action.",
-      showGuide: false,
-    };
-  }
-  return null;
-};
+type ManagedRole = typeof managedRoles[number];
+type AgentMode = "autonomous" | "delegated" | "both";
+const message = (error: unknown, fallback: string) =>
+  error instanceof Error && error.message.trim() ? error.message : fallback;
 
 export default function SpaceSettingsRoute() {
   const params = useParams<{ space_id: string }>();
+  const [search, setSearch] = useSearchParams();
   const spaceId = () => params.space_id;
-
-  const [space, { refetch }] = createResource(async () => {
-    return await spaceApi.get(spaceId());
-  });
-  const [members, { refetch: refetchMembers }] = createResource(async () => {
-    return await spaceApi.listMembers(spaceId());
-  });
-  const [agents, { refetch: refetchAgents }] = createResource(async () => {
-    return await spaceApi.listAgents(spaceId());
-  });
-
+  const active = createMemo<Section>(() =>
+    sections.some((section) => section.id === search.section)
+      ? search.section as Section
+      : "general"
+  );
+  const label = (section: typeof sections[number]) =>
+    section[locale() === "ja" ? "ja" : "en"];
+  const [space, { refetch }] = createResource(spaceId, spaceApi.get);
+  const [members, { refetch: refetchMembers }] = createResource(
+    () => active() === "members" ? spaceId() : null,
+    spaceApi.listMembers,
+  );
+  const [agents, { refetch: refetchAgents }] = createResource(
+    () => active() === "agents" ? spaceId() : null,
+    spaceApi.listAgents,
+  );
   const [inviteLabel, setInviteLabel] = createSignal("");
   const [inviteRole, setInviteRole] = createSignal<ManagedRole>("viewer");
   const [inviteUrl, setInviteUrl] = createSignal("");
-  const [memberActionError, setMemberActionError] = createSignal("");
-  const [memberActionPending, setMemberActionPending] = createSignal(false);
+  const [memberError, setMemberError] = createSignal("");
   const [agentName, setAgentName] = createSignal("");
   const [agentDescription, setAgentDescription] = createSignal("");
-  const [agentMode, setAgentMode] = createSignal<ManagedAgentMode>("autonomous");
+  const [agentMode, setAgentMode] = createSignal<AgentMode>("autonomous");
   const [agentActions, setAgentActions] = createSignal("read");
   const [agentExpiresAt, setAgentExpiresAt] = createSignal("");
   const [agentPublicKey, setAgentPublicKey] = createSignal("");
   const [agentError, setAgentError] = createSignal("");
   const [agentCredential, setAgentCredential] = createSignal("");
 
-  const handleSave = async (payload: SpacePatchPayload) => {
+  const saveSpace = async (payload: SpacePatchPayload) => {
     await spaceApi.patch(spaceId(), payload);
     await refetch();
   };
-
-  const handleTestConnection = async (config: StorageConnectionConfig) => {
-    return await spaceApi.testConnection(spaceId(), {
-      storage_config: config,
-    });
-  };
-
-  const handleInvite = async () => {
-    const label = inviteLabel().trim();
-    if (!label) {
-      setMemberActionError("Invitation label is required.");
+  const testConnection = (config: StorageConnectionConfig) =>
+    spaceApi.testConnection(spaceId(), { storage_config: config });
+  const invite = async () => {
+    if (!inviteLabel().trim()) {
+      setMemberError("Invitation label is required.");
       return;
     }
-    setMemberActionPending(true);
-    setMemberActionError("");
-    setInviteUrl("");
     try {
-      const response = await spaceApi.inviteMember(spaceId(), {
-        label,
+      const result = await spaceApi.inviteMember(spaceId(), {
+        label: inviteLabel().trim(),
         role: inviteRole(),
       });
-      setInviteUrl(response.invitation_url);
+      setInviteUrl(result.invitation_url);
       setInviteLabel("");
+      setMemberError("");
       await refetchMembers();
     } catch (error) {
-      setMemberActionError(toMessage(error) || "Failed to invite member.");
-    } finally {
-      setMemberActionPending(false);
+      setMemberError(message(error, "Failed to invite member."));
     }
   };
-
   const updateRole = async (principalId: string, role: ManagedRole) => {
-    setMemberActionPending(true);
-    setMemberActionError("");
     try {
       await spaceApi.updateMemberRole(spaceId(), principalId, { role });
       await refetchMembers();
     } catch (error) {
-      setMemberActionError(toMessage(error) || "Failed to update role.");
-    } finally {
-      setMemberActionPending(false);
+      setMemberError(message(error, "Failed to update role."));
     }
   };
-
   const revokeMember = async (principalId: string) => {
-    setMemberActionPending(true);
-    setMemberActionError("");
     try {
       await spaceApi.revokeMember(spaceId(), principalId);
       await refetchMembers();
     } catch (error) {
-      setMemberActionError(toMessage(error) || "Failed to revoke member.");
-    } finally {
-      setMemberActionPending(false);
+      setMemberError(message(error, "Failed to revoke member."));
     }
   };
-
   const createAgent = async () => {
     setAgentError("");
     setAgentCredential("");
     try {
       const actions = agentActions().split(",").map((value) => value.trim())
-        .filter((value) => ["read", "create", "update"].includes(value)) as
-        Array<"read" | "create" | "update">;
-      if (!agentName().trim() || !agentExpiresAt() || actions.length === 0) {
+        .filter((value) =>
+          ["read", "create", "update"].includes(value)
+        ) as Array<"read" | "create" | "update">;
+      if (!agentName().trim() || !agentExpiresAt() || !actions.length) {
         throw new Error("Name, expiry, and at least one action are required.");
       }
       const result = await spaceApi.createAgent(spaceId(), {
@@ -162,312 +128,309 @@ export default function SpaceSettingsRoute() {
         granted_actions: actions,
         expires_at: new Date(agentExpiresAt()).toISOString(),
       });
-      setAgentCredential(String(result.credential.credential_id ?? "registered"));
+      setAgentCredential(String(result.credential.credential_id ?? ""));
       setAgentName("");
       setAgentDescription("");
       setAgentPublicKey("");
       await refetchAgents();
     } catch (error) {
-      setAgentError(toMessage(error) || "Failed to create agent.");
+      setAgentError(message(error, "Failed to create agent."));
     }
   };
-
-  const revokeAgent = async (agentId: string) => {
-    setAgentError("");
+  const revokeAgent = async (id: string) => {
     try {
-      await spaceApi.revokeAgent(spaceId(), agentId);
+      await spaceApi.revokeAgent(spaceId(), id);
       await refetchAgents();
     } catch (error) {
-      setAgentError(toMessage(error) || "Failed to revoke agent.");
+      setAgentError(message(error, "Failed to revoke agent."));
     }
   };
 
-  const spaceAuthHint = createMemo(() => {
-    return authHintFromError(space.error);
-  });
-  const memberAuthHint = createMemo(() => {
-    return authHintFromError(memberActionError() || members.error);
-  });
-
   return (
-    <SpaceShell spaceId={spaceId()}>
-      <div class="mx-auto max-w-5xl ui-stack">
-        <div>
-          <h1 class="ui-page-title">Space Settings</h1>
-          <p class="ui-page-subtitle mt-1">Space ID: {spaceId()}</p>
+    <SpaceShell
+      spaceId={spaceId()}
+      activeNavigation="settings"
+      title={`Settings / ${
+        sections.find((section) => section.id === active())?.en ?? "General"
+      }`}
+    >
+      <div class="screenHead">
+        <div class="screenTitle">
+          <div class="eyebrow">{space()?.name || spaceId()}</div>
+          <h1>Settings</h1>
         </div>
-
-        <div class="ui-card">
-          <p class="text-sm ui-muted">
-            Localhost and remote mode both require authenticated sessions. Start
-            the dev stack with <code>mise run dev</code>, sign in at{" "}
-            <code>/login</code> or through the CLI auth command, and follow{" "}
-            <a
-              href={localDevAuthGuideUrl}
-              target="_blank"
-              rel="noopener"
-              class="hover:underline"
-            >
-              Local Dev Auth/Login
-            </a>{" "}
-            for the canonical workflow and local auth troubleshooting steps.
-          </p>
-        </div>
-
-        <div class="mt-2">
+      </div>
+      <div class="settingsLayout">
+        <aside class="settingsNav surface">
+          <For each={sections}>
+            {(section) => (
+              <button
+                type="button"
+                classList={{ active: active() === section.id }}
+                onClick={() => setSearch({ section: section.id })}
+              >
+                <UiIcon name={section.icon} />
+                <span>{label(section)}</span>
+              </button>
+            )}
+          </For>
+        </aside>
+        <main>
           <Show when={space.loading}>
-            <p class="text-sm ui-muted">Loading space...</p>
+            <div class="settingsMain surface ui-muted">Loading space…</div>
           </Show>
           <Show when={space.error}>
-            <p class="text-sm ui-text-danger">Failed to load space.</p>
-            <Show when={spaceAuthHint()}>
-              {(hint) => (
-                <div class="ui-stack-sm mt-1">
-                  <p class="text-sm ui-muted">{hint().message}</p>
-                  <Show when={hint().showGuide}>
-                    <a
-                      href={localDevAuthGuideUrl}
-                      target="_blank"
-                      rel="noopener"
-                      class="ui-muted text-sm hover:underline"
-                    >
-                      Local Dev Auth/Login
-                    </a>
-                  </Show>
-                </div>
-              )}
-            </Show>
-          </Show>
-          <Show when={space()}>
-            {(ws) => (
-              <SpaceSettings
-                space={ws()}
-                onSave={handleSave}
-                onTestConnection={handleTestConnection}
-              />
-            )}
-          </Show>
-        </div>
-
-        <section class="ui-card ui-stack-sm">
-          <h2 class="text-lg font-semibold">Members</h2>
-          <p class="text-sm ui-muted">
-            Invite members, update roles, and revoke access in this space.
-          </p>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 items-end">
-            <label class="ui-stack-sm">
-              <span class="text-xs ui-muted">Invitation label</span>
-              <input
-                class="ui-input"
-                value={inviteLabel()}
-                onInput={(event) => setInviteLabel(event.currentTarget.value)}
-              />
-            </label>
-            <label class="ui-stack-sm">
-              <span class="text-xs ui-muted">Role</span>
-              <select
-                class="ui-select"
-                value={inviteRole()}
-                onInput={(event) =>
-                  setInviteRole(event.currentTarget.value as ManagedRole)}
-              >
-                <For each={managedRoles}>
-                  {(role) => <option value={role}>{role}</option>}
-                </For>
-              </select>
-            </label>
-          </div>
-          <button
-            type="button"
-            class="ui-button ui-button-primary w-fit"
-            onClick={handleInvite}
-            disabled={memberActionPending()}
-          >
-            Invite Member
-          </button>
-
-          <Show when={inviteUrl()}>
-            <div class="ui-alert ui-alert-info text-sm">
-              Invitation URL (share once): <code>{inviteUrl()}</code>
+            <div class="ui-alert ui-alert-error">
+              Failed to load space: {message(space.error, "Unknown error")}
             </div>
           </Show>
-          <Show when={memberActionError()}>
-            <p class="text-sm ui-text-danger">{memberActionError()}</p>
-          </Show>
-          <Show when={memberAuthHint()}>
-            {(hint) => (
-              <div class="ui-stack-sm">
-                <p class="text-sm ui-muted">{hint().message}</p>
-                <Show when={hint().showGuide}>
-                  <a
-                    href={localDevAuthGuideUrl}
-                    target="_blank"
-                    rel="noopener"
-                    class="ui-muted text-sm hover:underline"
-                  >
-                    Local Dev Auth/Login
-                  </a>
+          <Show when={space()}>
+            {(current) => (
+              <>
+                <Show when={active() === "general"}>
+                  <div class="ui-stack">
+                    <SpaceSettings
+                      space={current()}
+                      section="general"
+                      onSave={saveSpace}
+                      onTestConnection={testConnection}
+                    />
+                    <section class="settingsMain surface">
+                      <h2>Language</h2>
+                      <label>
+                        Language<select
+                          value={locale()}
+                          onChange={(event) =>
+                            void setLocalePreference(
+                              event.currentTarget.value as "en" | "ja",
+                            )}
+                        >
+                          <option value="en">English</option>
+                          <option value="ja">日本語</option>
+                        </select>
+                      </label>
+                    </section>
+                  </div>
                 </Show>
-              </div>
+                <Show when={active() === "storage"}>
+                  <SpaceSettings
+                    space={current()}
+                    section="storage"
+                    onSave={saveSpace}
+                    onTestConnection={testConnection}
+                  />
+                </Show>
+              </>
             )}
           </Show>
 
-          <Show when={members.loading}>
-            <p class="text-sm ui-muted">Loading members...</p>
-          </Show>
-          <Show when={members.error}>
-            <p class="text-sm ui-text-danger">
-              Failed to load members
-              <Show when={toMessage(members.error)}>
-                {`: ${toMessage(members.error)}`}
+          <Show when={active() === "members"}>
+            <section class="settingsMain surface">
+              <h2>Members</h2>
+              <div class="settingsGrid">
+                <label>
+                  Invitation label<input
+                    value={inviteLabel()}
+                    onInput={(e) => setInviteLabel(e.currentTarget.value)}
+                  />
+                </label>
+                <label>
+                  Role<select
+                    value={inviteRole()}
+                    onChange={(e) =>
+                      setInviteRole(e.currentTarget.value as ManagedRole)}
+                  >
+                    <For each={managedRoles}>
+                      {(role) => <option value={role}>{role}</option>}
+                    </For>
+                  </select>
+                </label>
+              </div>
+              <button
+                class="btn primary"
+                type="button"
+                onClick={() => void invite()}
+              >
+                Invite
+              </button>
+              <Show when={inviteUrl()}>
+                <p class="ui-alert ui-alert-success">
+                  Invitation URL: <code>{inviteUrl()}</code>
+                </p>
               </Show>
-            </p>
-          </Show>
-          <Show
-            when={!members.loading && !members.error &&
-              (members() || []).length === 0}
-          >
-            <p class="text-sm ui-muted">No members found.</p>
-          </Show>
-          <div class="ui-stack-sm">
-            <For each={members() || []}>
-              {(member: SpaceMember) => (
-                <div class="ui-card flex flex-col gap-2">
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p class="font-medium">
-                        {member.principal.display_name}
-                      </p>
-                      <p class="text-xs ui-muted">
-                        state: {member.principal.state}
-                      </p>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <Show
-                        when={member.role !== "owner"}
-                        fallback={<span class="text-sm ui-muted">owner</span>}
-                      >
+              <Show when={memberError()}>
+                <p class="ui-alert ui-alert-error">{memberError()}</p>
+              </Show>
+              <Show when={members.loading}>
+                <p class="ui-muted">Loading members...</p>
+              </Show>
+              <Show when={members.error}>
+                <p class="ui-alert ui-alert-error">
+                  Failed to load members:{" "}
+                  {message(members.error, "Unknown error")}
+                </p>
+              </Show>
+              <div class="rowStack">
+                <For
+                  each={members() ?? []}
+                  fallback={
+                    <Show when={!members.loading && !members.error}>
+                      <p class="ui-muted">No members found.</p>
+                    </Show>
+                  }
+                >
+                  {(member: SpaceMember) => (
+                    <div class="rowBtn">
+                      <span class="glyph">
+                        <UiIcon name="members" />
+                      </span>
+                      <span>
+                        <b>{member.principal.display_name}</b>
+                        <small>{member.principal.state}</small>
+                      </span>
+                      <span class="actions">
                         <select
-                          class="ui-select"
                           value={member.role}
-                          onInput={(event) =>
+                          disabled={member.role === "owner"}
+                          onChange={(e) =>
                             void updateRole(
                               member.principal.principal_id,
-                              event.currentTarget.value as ManagedRole,
+                              e.currentTarget.value as ManagedRole,
                             )}
-                          disabled={memberActionPending() ||
-                            member.principal.state !== "active"}
                         >
                           <For each={managedRoles}>
                             {(role) => <option value={role}>{role}</option>}
                           </For>
                         </select>
-                      </Show>
+                        <button
+                          class="btn danger"
+                          type="button"
+                          disabled={member.role === "owner"}
+                          onClick={() =>
+                            void revokeMember(member.principal.principal_id)}
+                        >
+                          Revoke
+                        </button>
+                      </span>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </section>
+          </Show>
+
+          <Show when={active() === "agents"}>
+            <section class="settingsMain surface">
+              <h2>Agents</h2>
+              <div class="settingsGrid">
+                <label>
+                  Name<input
+                    value={agentName()}
+                    onInput={(e) => setAgentName(e.currentTarget.value)}
+                  />
+                </label>
+                <label>
+                  Mode<select
+                    value={agentMode()}
+                    onChange={(e) =>
+                      setAgentMode(e.currentTarget.value as AgentMode)}
+                  >
+                    <option value="autonomous">autonomous</option>
+                    <option value="delegated">delegated</option>
+                    <option value="both">both</option>
+                  </select>
+                </label>
+                <label>
+                  Granted actions<input
+                    value={agentActions()}
+                    onInput={(e) => setAgentActions(e.currentTarget.value)}
+                  />
+                </label>
+                <label>
+                  Expiry<input
+                    type="datetime-local"
+                    value={agentExpiresAt()}
+                    onInput={(e) => setAgentExpiresAt(e.currentTarget.value)}
+                  />
+                </label>
+              </div>
+              <label>
+                Description<textarea
+                  value={agentDescription()}
+                  onInput={(e) => setAgentDescription(e.currentTarget.value)}
+                />
+              </label>
+              <label>
+                Public JWK<textarea
+                  class="mono"
+                  value={agentPublicKey()}
+                  onInput={(e) => setAgentPublicKey(e.currentTarget.value)}
+                />
+              </label>
+              <button
+                class="btn primary"
+                type="button"
+                onClick={() => void createAgent()}
+              >
+                Create Agent
+              </button>
+              <Show when={agentError()}>
+                <p class="ui-alert ui-alert-error">{agentError()}</p>
+              </Show>
+              <Show when={agentCredential()}>
+                <p class="ui-alert ui-alert-success">
+                  Credential registered: <code>{agentCredential()}</code>
+                </p>
+              </Show>
+              <Show when={agents.loading}>
+                <p class="ui-muted">Loading agents...</p>
+              </Show>
+              <Show when={agents.error}>
+                <p class="ui-alert ui-alert-error">
+                  Failed to load agents:{" "}
+                  {message(agents.error, "Unknown error")}
+                </p>
+              </Show>
+              <div class="rowStack">
+                <For
+                  each={agents() ?? []}
+                  fallback={
+                    <Show when={!agents.loading && !agents.error}>
+                      <p class="ui-muted">No agents found.</p>
+                    </Show>
+                  }
+                >
+                  {(agent: AgentPrincipal) => (
+                    <div class="rowBtn">
+                      <span class="glyph">
+                        <UiIcon name="agent" />
+                      </span>
+                      <span>
+                        <b>{agent.display_name}</b>
+                        <small>{agent.mode} · {agent.status}</small>
+                      </span>
                       <button
+                        class="btn danger"
                         type="button"
-                        class="ui-button ui-button-secondary text-sm"
-                        onClick={() =>
-                          void revokeMember(member.principal.principal_id)}
-                        disabled={memberActionPending() ||
-                          member.role === "owner" ||
-                          member.principal.state === "revoked"}
+                        disabled={agent.status === "revoked"}
+                        onClick={() => void revokeAgent(agent.agent_id)}
                       >
                         Revoke
                       </button>
                     </div>
-                  </div>
-                </div>
-              )}
-            </For>
-          </div>
-        </section>
-        <section class="ui-card ui-stack-sm">
-          <h2 class="text-lg font-semibold">Agents</h2>
-          <p class="text-sm ui-muted">
-            Register an independent public key, bounded actions, mode, sponsor,
-            and expiry. Agent delete, sharing, member, owner, and agent
-            administration remain denied.
-          </p>
-          <input
-            class="ui-input"
-            placeholder="Agent name"
-            value={agentName()}
-            onInput={(event) => setAgentName(event.currentTarget.value)}
-          />
-          <input
-            class="ui-input"
-            placeholder="Description"
-            value={agentDescription()}
-            onInput={(event) => setAgentDescription(event.currentTarget.value)}
-          />
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <select
-              class="ui-select"
-              value={agentMode()}
-              onInput={(event) =>
-                setAgentMode(event.currentTarget.value as ManagedAgentMode)}
-            >
-              <option value="autonomous">autonomous</option>
-              <option value="delegated">delegated</option>
-              <option value="both">both</option>
-            </select>
-            <input
-              class="ui-input"
-              value={agentActions()}
-              onInput={(event) => setAgentActions(event.currentTarget.value)}
-              aria-label="Agent actions"
-              placeholder="read,create,update"
-            />
-            <input
-              class="ui-input"
-              type="datetime-local"
-              value={agentExpiresAt()}
-              onInput={(event) => setAgentExpiresAt(event.currentTarget.value)}
-              aria-label="Agent expiry"
-            />
-          </div>
-          <textarea
-            class="ui-input font-mono"
-            rows="5"
-            placeholder='Public JWK, for example {"kty":"EC","crv":"P-256",...}'
-            value={agentPublicKey()}
-            onInput={(event) => setAgentPublicKey(event.currentTarget.value)}
-          />
-          <button
-            type="button"
-            class="ui-button ui-button-primary w-fit"
-            onClick={() => void createAgent()}
-          >
-            Register agent
-          </button>
-          <Show when={agentCredential()}>
-            <p class="ui-alert ui-alert-success">
-              Credential registered: <code>{agentCredential()}</code>
-            </p>
-          </Show>
-          <Show when={agentError()}>
-            <p class="ui-text-danger">{agentError()}</p>
-          </Show>
-          <For each={agents() || []}>
-            {(agent: AgentPrincipal) => (
-              <div class="ui-card flex items-center justify-between gap-2">
-                <span>
-                  {agent.display_name} · {agent.mode} · {agent.status} · expires{" "}
-                  {agent.expires_at}
-                </span>
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary"
-                  disabled={agent.status === "revoked"}
-                  onClick={() => void revokeAgent(agent.agent_id)}
-                >
-                  Revoke
-                </button>
+                  )}
+                </For>
               </div>
-            )}
-          </For>
-        </section>
+            </section>
+          </Show>
+
+          <Show when={active() === "credentials"}>
+            <section class="settingsMain surface">
+              <CredentialSettings />
+            </section>
+          </Show>
+
+        </main>
       </div>
     </SpaceShell>
   );

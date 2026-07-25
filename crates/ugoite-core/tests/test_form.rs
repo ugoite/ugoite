@@ -61,6 +61,39 @@ async fn idempotent_form_upsert_accepts_explicit_default_requiredness() -> anyho
 }
 
 #[tokio::test]
+async fn existing_form_accepts_a_time_column() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "time-form", "/tmp").await?;
+    let ws_path = "spaces/time-form";
+
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {"Body": {"type": "markdown"}},
+        }),
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {
+                "Body": {"type": "markdown"},
+                "time": {"type": "time"},
+            },
+        }),
+    )
+    .await?;
+
+    let entry = form::get_form(&op, ws_path, "Entry").await?;
+    assert_eq!(entry["fields"]["time"]["type"], "time");
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-FORM-001
 async fn test_form_req_form_001_list_column_types() -> anyhow::Result<()> {
     let types = form::list_column_types().await?;
