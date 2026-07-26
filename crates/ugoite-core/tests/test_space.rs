@@ -63,7 +63,7 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
 
     let dir = tempdir()?;
     let builder = Fs::default().root(dir.path().to_string_lossy().as_ref());
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
 
     space::create_space(&op, "private-space", dir.path().to_string_lossy().as_ref()).await?;
 

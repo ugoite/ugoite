@@ -772,7 +772,7 @@ impl Authorizer {
     async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
         let path = state_path(space_id);
         let serialized = serde_json::to_vec_pretty(state)?;
-        let capabilities = self.operator.info().full_capability();
+        let capabilities = self.operator.info().capability();
 
         if state.revision == 1 {
             if capabilities.write_with_if_not_exists {

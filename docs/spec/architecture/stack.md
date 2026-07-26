@@ -4,7 +4,7 @@ title: 'Technology stack'
 
 | Area | Current technology |
 |---|---|
-| Domain/core/storage/server/CLI/WASM | Rust 1.93 workspace |
+| Domain/core/storage/server/CLI/WASM | Rust 1.94 workspace |
 | HTTP server | Axum |
 | Storage abstraction | OpenDAL |
 | Structured Form/revision tables | Apache Iceberg Rust integration with an explicit Catalog |

@@ -26,7 +26,7 @@ regex = "1.12.3"
 sha2 = "0.11"
 hmac = "0.13"
 hex = "0.4"
-iceberg = { version = "0.8.0", default-features = false, features = ["storage-fs", "storage-memory", "storage-s3", "storage-gcs", "storage-azdls", "storage-oss"] }
+iceberg = "0.9.1"
 arrow-array = "57.3"
 arrow-schema = "57.3"
 arrow-select = "59.1"

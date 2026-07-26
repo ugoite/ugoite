@@ -3,7 +3,7 @@ import { assertEquals } from "@std/assert/equals";
 Deno.test("Phase 1 workspace has one root toolchain and Deno lockfile", async () => {
   const rootMise = await Deno.readTextFile("mise.toml");
   assertEquals(rootMise.includes('deno = "2.8.3"'), true);
-  assertEquals(rootMise.includes('rust = "1.93.0"'), true);
+  assertEquals(rootMise.includes('rust = "1.94.0"'), true);
   assertEquals(rootMise.includes("python ="), false);
   assertEquals(rootMise.includes("bun ="), false);
   assertEquals(rootMise.includes("node ="), false);
