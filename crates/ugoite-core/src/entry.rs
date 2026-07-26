@@ -15,7 +15,6 @@ use arrow_schema::{DataType, Fields};
 use base64::Engine as _;
 use chrono::{DateTime, NaiveTime, SecondsFormat, Timelike, Utc};
 use futures::TryStreamExt;
-use iceberg::arrow::ArrowReaderBuilder;
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1128,9 +1127,7 @@ async fn scan_table_batches(table: &iceberg::table::Table) -> Result<Vec<RecordB
         scan = scan.select(NATIVE_REVISION_COLUMNS);
     }
     let scan = scan.build()?;
-    let tasks = scan.plan_files().await?;
-    let reader = ArrowReaderBuilder::new(table.file_io().clone()).build();
-    let mut stream = reader.read(tasks)?;
+    let mut stream = scan.to_arrow().await?;
     let mut batches = Vec::new();
     while let Some(batch) = stream.try_next().await? {
         batches.push(batch);
@@ -2193,14 +2190,8 @@ pub(crate) async fn append_revision_row_for_form(
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
-    append_revision_row_to_table(op, ws_path, row, form_def).await?;
-    let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let refreshed = catalog.load_table(table.identifier()).await?;
-    if iceberg_store::uses_rest_catalog() {
-        Ok(())
-    } else {
-        iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
-    }
+    let _ = form_name;
+    append_revision_row_to_table(op, ws_path, row, form_def).await
 }
 
 pub async fn append_revision_batch_for_form(
@@ -2210,14 +2201,7 @@ pub async fn append_revision_batch_for_form(
     rows: &[RevisionRow],
 ) -> Result<()> {
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
-    append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await?;
-    let (catalog, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let refreshed = catalog.load_table(table.identifier()).await?;
-    if iceberg_store::uses_rest_catalog() {
-        Ok(())
-    } else {
-        iceberg_store::persist_catalog_pointer(op, ws_path, &refreshed).await
-    }
+    append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await
 }
 
 fn extract_tags(frontmatter: &Value) -> Vec<String> {

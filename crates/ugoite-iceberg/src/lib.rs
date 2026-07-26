@@ -4,8 +4,10 @@
 //! callers inject a durable Catalog; MemoryCatalog belongs in tests only.
 
 mod migration;
+mod space_catalog;
 
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
+pub use space_catalog::{PublicationContext, SpaceCatalog};
 
 use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{
@@ -21,31 +23,27 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
 use iceberg::expr::Reference;
 use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
-use iceberg::spec::Datum;
+use iceberg::spec::{DataFileFormat, Datum};
 use iceberg::spec::{
     ListType, NestedField, PrimitiveType, Schema, SortOrder, StructType, Type, UnboundPartitionSpec,
 };
-use iceberg::transaction::{ApplyTransactionAction, Transaction};
-use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
-use iceberg::{
-    Catalog, CatalogBuilder, MetadataLocation, NamespaceIdent, TableCreation, TableIdent,
-    TableUpdate,
+use iceberg::transaction::{AddColumn, ApplyTransactionAction, Transaction};
+use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
+use iceberg::writer::file_writer::location_generator::{
+    DefaultFileNameGenerator, DefaultLocationGenerator,
 };
-use iceberg_catalog_rest::{
-    CommitTableRequest, RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
-};
+use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
+use iceberg::writer::file_writer::ParquetWriterBuilder;
+use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
+use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::IcebergCatalogProvider;
-use parquet::file::properties::WriterProperties;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
-use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{Compatibility, FieldType, FormChangeSet, FormDefinition, FormField};
 use ugoite_domain::id::{FormId, RevisionId, SpaceId};
+use ugoite_storage::SpaceCatalogStore;
 use uuid::Uuid;
 
 const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
@@ -60,7 +58,6 @@ const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
 #[derive(Debug, Clone)]
 pub struct IcebergWorkspace {
     catalog: Arc<dyn Catalog>,
-    schema_committer: SchemaCommitter,
     namespace: NamespaceIdent,
     space_id: SpaceId,
     warehouse: String,
@@ -73,56 +70,15 @@ pub enum SchemaCommitCapability {
     AtomicSchemaEvolution,
 }
 
-#[derive(Debug, Clone)]
-enum SchemaCommitter {
-    Local,
-    Rest(Arc<RestSchemaCommitter>),
-}
-
-impl SchemaCommitter {
-    fn capability(&self) -> SchemaCommitCapability {
-        match self {
-            Self::Local | Self::Rest(_) => SchemaCommitCapability::AtomicSchemaEvolution,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RestCatalogConfig {
-    pub uri: String,
-    pub warehouse: String,
-    pub properties: HashMap<String, String>,
-    pub client: Option<reqwest::Client>,
-}
-
-impl RestCatalogConfig {
-    pub fn new(uri: impl Into<String>, warehouse: impl Into<String>) -> Self {
-        Self {
-            uri: uri.into(),
-            warehouse: warehouse.into(),
-            properties: HashMap::new(),
-            client: None,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct RestSchemaCommitter {
-    config: RestCatalogConfig,
-    token: Mutex<Option<String>>,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct WriteConfig {
     pub target_file_size_bytes: u64,
-    pub max_rows_per_file: usize,
 }
 
 impl Default for WriteConfig {
     fn default() -> Self {
         Self {
             target_file_size_bytes: 128 * 1024 * 1024,
-            max_rows_per_file: 100_000,
         }
     }
 }
@@ -147,6 +103,21 @@ pub struct MaintenancePlan {
 }
 
 impl IcebergWorkspace {
+    pub async fn open_space(
+        store: SpaceCatalogStore,
+        space_id: SpaceId,
+        write: WriteConfig,
+    ) -> Result<Self> {
+        let warehouse = store.warehouse_uri();
+        Self::new(
+            Arc::new(SpaceCatalog::new(store, space_id)?),
+            space_id,
+            warehouse,
+            write,
+        )
+        .await
+    }
+
     pub async fn new(
         catalog: Arc<dyn Catalog>,
         space_id: SpaceId,
@@ -159,7 +130,6 @@ impl IcebergWorkspace {
         }
         Ok(Self {
             catalog,
-            schema_committer: SchemaCommitter::Local,
             namespace,
             space_id,
             warehouse: warehouse.into(),
@@ -184,21 +154,6 @@ impl IcebergWorkspace {
         .await
     }
 
-    pub async fn rest_workspace(
-        config: RestCatalogConfig,
-        space_id: SpaceId,
-        write: WriteConfig,
-    ) -> Result<Self> {
-        validate_rest_catalog_auth(&config.properties)?;
-        let catalog = build_rest_catalog(&config).await?;
-        let warehouse = config.warehouse.clone();
-        let schema_committer = SchemaCommitter::Rest(Arc::new(RestSchemaCommitter {
-            token: Mutex::new(config.properties.get("token").cloned()),
-            config,
-        }));
-        Self::new_with_committer(catalog, schema_committer, space_id, warehouse, write).await
-    }
-
     pub fn namespace(&self) -> &NamespaceIdent {
         &self.namespace
     }
@@ -207,28 +162,7 @@ impl IcebergWorkspace {
     }
 
     pub fn schema_commit_capability(&self) -> SchemaCommitCapability {
-        self.schema_committer.capability()
-    }
-
-    async fn new_with_committer(
-        catalog: Arc<dyn Catalog>,
-        schema_committer: SchemaCommitter,
-        space_id: SpaceId,
-        warehouse: String,
-        write: WriteConfig,
-    ) -> Result<Self> {
-        let namespace = namespace_for_space(space_id);
-        if !catalog.namespace_exists(&namespace).await? {
-            catalog.create_namespace(&namespace, HashMap::new()).await?;
-        }
-        Ok(Self {
-            catalog,
-            schema_committer,
-            namespace,
-            space_id,
-            warehouse,
-            write,
-        })
+        SchemaCommitCapability::AtomicSchemaEvolution
     }
 
     pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
@@ -312,25 +246,41 @@ impl IcebergWorkspace {
             .catalog
             .load_table(&self.form_ident(current.id))
             .await?;
-        let evolved_schema = form_schema(&evolved)?;
-        if form_schema(&current)? != evolved_schema {
-            if let SchemaCommitter::Rest(committer) = &self.schema_committer {
-                committer
-                    .commit(
-                        &table,
-                        evolved_schema,
-                        form_properties(&evolved, self.write)?,
-                    )
-                    .await?;
-            } else {
-                commit_schema_locally(
-                    self.catalog.as_ref(),
-                    &table,
-                    evolved_schema,
-                    form_properties(&evolved, self.write)?,
-                )
-                .await?;
+        if form_schema(&current)? != form_schema(&evolved)? {
+            let current_fields = current
+                .fields
+                .iter()
+                .map(|field| field.id)
+                .collect::<std::collections::HashSet<_>>();
+            if evolved.fields.len() < current.fields.len()
+                || current.fields.iter().any(|field| {
+                    evolved.fields.iter().find(|next| next.id == field.id) != Some(field)
+                })
+            {
+                return Err(anyhow!(
+                    "Iceberg schema evolution supports additive Form fields only"
+                ));
             }
+            let mut schema_action = Transaction::new(&table).update_schema();
+            for field in evolved
+                .fields
+                .iter()
+                .filter(|field| !current_fields.contains(&field.id))
+            {
+                schema_action = schema_action.add_column(AddColumn::optional(
+                    &field.name,
+                    iceberg_type(&field.field_type, field.id.get()),
+                ));
+            }
+            let transaction = schema_action.apply(Transaction::new(&table))?;
+            let mut properties = transaction.update_table_properties();
+            for (key, value) in form_properties(&evolved, self.write)? {
+                properties = properties.set(key, value);
+            }
+            properties
+                .apply(transaction)?
+                .commit(self.catalog.as_ref())
+                .await?;
             return self.load_form(changes.form_id).await;
         }
         let tx = Transaction::new(&table);
@@ -413,28 +363,31 @@ impl IcebergWorkspace {
                     .map_err(|error| anyhow!("record batch schema does not match table: {error}"))
             })
             .collect::<Result<Vec<_>>>()?;
-        let mut data_files = Vec::new();
-        for group in split_batches(batches, self.write.max_rows_per_file)? {
-            let output_path = format!(
-                "{}/data/{}.parquet",
-                table.metadata().location(),
-                Uuid::new_v4()
-            );
-            let output = table.file_io().new_output(&output_path)?;
-            let props = WriterProperties::builder()
-                .set_max_row_group_size(self.write.max_rows_per_file)
-                .build();
-            let mut writer =
-                ParquetWriterBuilder::new(props, table.metadata().current_schema().clone())
-                    .build(output)
-                    .await?;
-            for batch in group {
-                writer.write(&batch).await?;
-            }
-            for builder in writer.close().await? {
-                data_files.push(builder.build()?);
-            }
+        let table_properties = table.metadata().table_properties()?;
+        let parquet_writer = ParquetWriterBuilder::from_table_properties(
+            &table_properties,
+            table.metadata().current_schema().clone(),
+        );
+        let location_generator = DefaultLocationGenerator::new(table.metadata())?;
+        let file_name_generator = DefaultFileNameGenerator::new(
+            Uuid::now_v7().to_string(),
+            None,
+            DataFileFormat::Parquet,
+        );
+        let rolling_writer = RollingFileWriterBuilder::new(
+            parquet_writer,
+            table_properties.write_target_file_size_bytes,
+            table.file_io().clone(),
+            location_generator,
+            file_name_generator,
+        );
+        let mut writer = DataFileWriterBuilder::new(rolling_writer)
+            .build(None)
+            .await?;
+        for batch in batches {
+            writer.write(batch).await?;
         }
+        let data_files = writer.close().await?;
         let committed_at_micros = revisions
             .iter()
             .map(|revision| revision.committed_at_micros)
@@ -511,9 +464,7 @@ impl IcebergWorkspace {
             );
         }
         let scan = scan.build()?;
-        let tasks = scan.plan_files().await?;
-        let reader = iceberg::arrow::ArrowReaderBuilder::new(table.file_io().clone()).build();
-        let mut stream = reader.read(tasks)?;
+        let mut stream = scan.to_arrow().await?;
         let mut latest: std::collections::HashMap<ugoite_domain::id::EntryId, LatestRevision> =
             std::collections::HashMap::new();
         while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
@@ -606,293 +557,6 @@ impl IcebergWorkspace {
     }
 }
 
-/// Apply an Iceberg schema change through the portable local catalog fallback.
-///
-/// Iceberg Rust 0.8 keeps `TableCommit` construction private. The local
-/// catalog writes the next metadata version before switching its pointer, so
-/// existing data files and snapshots remain intact and newly added nullable
-/// columns are projected as null for earlier files.
-async fn commit_schema_locally(
-    catalog: &dyn Catalog,
-    table: &iceberg::table::Table,
-    schema: Schema,
-    properties: HashMap<String, String>,
-) -> Result<()> {
-    let current_location = table.metadata_location_result()?.to_string();
-    let mut builder = table
-        .metadata()
-        .clone()
-        .into_builder(Some(current_location.clone()));
-    for update in [
-        TableUpdate::AddSchema { schema },
-        TableUpdate::SetCurrentSchema { schema_id: -1 },
-        TableUpdate::SetProperties {
-            updates: properties,
-        },
-    ] {
-        builder = update.apply(builder)?;
-    }
-    let next_location = MetadataLocation::from_str(&current_location)?
-        .with_next_version()
-        .to_string();
-    builder
-        .build()?
-        .metadata
-        .write_to(table.file_io(), &next_location)
-        .await?;
-
-    let ident = table.identifier();
-    catalog.drop_table(ident).await?;
-    if let Err(error) = catalog.register_table(ident, next_location).await {
-        let _ = catalog.register_table(ident, current_location).await;
-        return Err(error.into());
-    }
-    Ok(())
-}
-
-async fn build_rest_catalog(config: &RestCatalogConfig) -> Result<Arc<dyn Catalog>> {
-    let mut properties = config.properties.clone();
-    properties.insert(REST_CATALOG_PROP_URI.to_string(), config.uri.clone());
-    properties.insert(
-        REST_CATALOG_PROP_WAREHOUSE.to_string(),
-        config.warehouse.clone(),
-    );
-    let mut builder = RestCatalogBuilder::default();
-    if let Some(client) = &config.client {
-        builder = builder.with_client(client.clone());
-    }
-    Ok(Arc::new(builder.load("ugoite", properties).await?))
-}
-
-fn validate_rest_catalog_auth(properties: &HashMap<String, String>) -> Result<()> {
-    if properties.contains_key("token") && properties.contains_key("credential") {
-        return Err(anyhow!(
-            "REST Catalog configuration cannot specify both token and credential"
-        ));
-    }
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-struct RestConfigResponse {
-    #[serde(default)]
-    overrides: HashMap<String, String>,
-    #[serde(default)]
-    defaults: HashMap<String, String>,
-}
-
-impl RestSchemaCommitter {
-    fn common_headers_for(&self, properties: &HashMap<String, String>) -> Result<HeaderMap> {
-        let mut headers = HeaderMap::new();
-        for (key, value) in properties
-            .iter()
-            .filter_map(|(key, value)| key.strip_prefix("header.").map(|key| (key, value)))
-        {
-            let name = HeaderName::try_from(key).context("invalid REST Catalog header name")?;
-            // Authentication and request media type are determined by the request itself.
-            if name == CONTENT_TYPE || name == AUTHORIZATION {
-                continue;
-            }
-            headers.insert(
-                name,
-                HeaderValue::try_from(value).context("invalid REST Catalog header value")?,
-            );
-        }
-        Ok(headers)
-    }
-
-    fn common_headers(&self) -> Result<HeaderMap> {
-        self.common_headers_for(&self.config.properties)
-    }
-
-    async fn refresh_token(&self) -> Result<Option<String>> {
-        let Some(credential) = self.config.properties.get("credential") else {
-            return Ok(None);
-        };
-        let (client_id, client_secret) = credential
-            .split_once(':')
-            .map_or((None, credential.as_str()), |(id, secret)| {
-                (Some(id), secret)
-            });
-        let endpoint = self
-            .config
-            .properties
-            .get("oauth2-server-uri")
-            .cloned()
-            .unwrap_or_else(|| {
-                format!("{}/v1/oauth/tokens", self.config.uri.trim_end_matches('/'))
-            });
-        let mut form = HashMap::from([
-            ("grant_type", "client_credentials"),
-            ("client_secret", client_secret),
-        ]);
-        if let Some(client_id) = client_id {
-            form.insert("client_id", client_id);
-        }
-        if let Some(scope) = self.config.properties.get("scope") {
-            form.insert("scope", scope);
-        }
-        let client = self.config.client.clone().unwrap_or_default();
-        let response = client
-            .post(endpoint)
-            .headers(self.common_headers()?)
-            .form(&form)
-            .send()
-            .await?;
-        if !response.status().is_success() {
-            return Err(anyhow!(
-                "REST Catalog credential exchange failed with HTTP {}: {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
-            ));
-        }
-        #[derive(Deserialize)]
-        struct TokenResponse {
-            access_token: String,
-        }
-        let token = response.json::<TokenResponse>().await?.access_token;
-        *self.token.lock().await = Some(token.clone());
-        Ok(Some(token))
-    }
-
-    async fn request_with_properties(
-        &self,
-        method: Method,
-        endpoint: &str,
-        properties: &HashMap<String, String>,
-    ) -> Result<reqwest::RequestBuilder> {
-        let client = self.config.client.clone().unwrap_or_default();
-        let mut request = client
-            .request(method, endpoint)
-            .headers(self.common_headers_for(properties)?);
-        let token = self
-            .token
-            .lock()
-            .await
-            .clone()
-            .or_else(|| properties.get("token").cloned());
-        if let Some(token) = token {
-            request = request.bearer_auth(token);
-        } else if properties.contains_key("credential") {
-            if let Some(token) = self.refresh_token().await? {
-                request = request.bearer_auth(token);
-            }
-        }
-        Ok(request)
-    }
-
-    async fn request(&self, method: Method, endpoint: &str) -> Result<reqwest::RequestBuilder> {
-        self.request_with_properties(method, endpoint, &self.config.properties)
-            .await
-    }
-
-    async fn effective_config(&self) -> Result<(String, HashMap<String, String>)> {
-        let endpoint = format!("{}/v1/config", self.config.uri.trim_end_matches('/'));
-        let mut response = self
-            .request(Method::GET, &endpoint)
-            .await?
-            .query(&[("warehouse", &self.config.warehouse)])
-            .send()
-            .await?;
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED
-            && self.config.properties.contains_key("credential")
-        {
-            *self.token.lock().await = None;
-            response = self
-                .request(Method::GET, &endpoint)
-                .await?
-                .query(&[("warehouse", &self.config.warehouse)])
-                .send()
-                .await?;
-        }
-        if !response.status().is_success() {
-            return Err(anyhow!(
-                "REST Catalog config request failed with HTTP {}: {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
-            ));
-        }
-        let response = response.json::<RestConfigResponse>().await?;
-        let mut properties = response.defaults;
-        properties.extend(self.config.properties.clone());
-        properties.extend(response.overrides);
-        validate_rest_catalog_auth(&properties)?;
-        let uri = properties
-            .remove(REST_CATALOG_PROP_URI)
-            .unwrap_or_else(|| self.config.uri.clone());
-        Ok((uri, properties))
-    }
-
-    async fn commit(
-        &self,
-        table: &iceberg::table::Table,
-        schema: Schema,
-        properties: HashMap<String, String>,
-    ) -> Result<()> {
-        let (uri, effective_properties) = self.effective_config().await?;
-        let prefix = effective_properties
-            .get("prefix")
-            .filter(|prefix| !prefix.trim().is_empty())
-            .map(|prefix| format!("/{prefix}"))
-            .unwrap_or_default();
-        let endpoint = format!(
-            "{}{}/v1{}/namespaces/{}/tables/{}",
-            uri.trim_end_matches('/'),
-            "",
-            prefix,
-            table.identifier().namespace().to_url_string(),
-            table.identifier().name()
-        );
-        let metadata = table.metadata();
-        let request = CommitTableRequest {
-            identifier: Some(table.identifier().clone()),
-            requirements: vec![
-                iceberg::TableRequirement::UuidMatch {
-                    uuid: metadata.uuid(),
-                },
-                iceberg::TableRequirement::CurrentSchemaIdMatch {
-                    current_schema_id: metadata.current_schema_id(),
-                },
-                iceberg::TableRequirement::LastAssignedFieldIdMatch {
-                    last_assigned_field_id: metadata.last_column_id(),
-                },
-            ],
-            updates: vec![
-                iceberg::TableUpdate::AddSchema { schema },
-                iceberg::TableUpdate::SetCurrentSchema { schema_id: -1 },
-                iceberg::TableUpdate::SetProperties {
-                    updates: properties,
-                },
-            ],
-        };
-        let mut response = self
-            .request_with_properties(Method::POST, &endpoint, &effective_properties)
-            .await?
-            .json(&request)
-            .send()
-            .await?;
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED
-            && self.config.properties.contains_key("credential")
-        {
-            *self.token.lock().await = None;
-            response = self
-                .request_with_properties(Method::POST, &endpoint, &effective_properties)
-                .await?
-                .json(&request)
-                .send()
-                .await?;
-        }
-        if !response.status().is_success() {
-            return Err(anyhow!(
-                "REST Catalog schema commit failed with HTTP {}: {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
-            ));
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 struct LatestRevision {
     revision_id: ugoite_domain::id::RevisionId,
@@ -926,185 +590,6 @@ fn validate_field_ids(form: &FormDefinition) -> Result<()> {
         ));
     }
     Ok(())
-}
-
-#[cfg(test)]
-#[allow(clippy::items_after_test_module)]
-mod tests {
-    use super::*;
-    use std::collections::BTreeMap;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
-    use ugoite_domain::form::{FieldType, FormVersion};
-    use ugoite_domain::id::FieldId;
-
-    fn test_form() -> FormDefinition {
-        FormDefinition {
-            id: FormId::from(Uuid::from_u128(700)),
-            version: FormVersion::new(1).unwrap(),
-            name: "Task".into(),
-            description: None,
-            fields: vec![FormField {
-                id: FieldId::new(100).unwrap(),
-                name: "title".into(),
-                field_type: FieldType::String,
-                required: false,
-                label: None,
-                description: None,
-                semantic_role: None,
-                reference_form: None,
-                validation: None,
-                enum_values: Vec::new(),
-                deprecated: false,
-            }],
-            allow_extra_attributes: false,
-            extension_metadata: BTreeMap::new(),
-        }
-    }
-
-    async fn read_request(stream: &mut tokio::net::TcpStream) -> String {
-        let mut bytes = [0_u8; 16 * 1024];
-        let count = stream.read(&mut bytes).await.unwrap();
-        String::from_utf8_lossy(&bytes[..count]).into_owned()
-    }
-
-    #[tokio::test]
-    async fn rest_schema_committer_uses_catalog_config_prefix_and_headers() -> Result<()> {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let address = listener.local_addr()?;
-        let (requests_tx, mut requests_rx) = tokio::sync::mpsc::channel(2);
-        let server = tokio::spawn(async move {
-            for body in [
-                r#"{"defaults":{},"overrides":{"prefix":"catalog/prefix"}}"#,
-                r#"{}"#,
-            ] {
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let request = read_request(&mut stream).await;
-                requests_tx.send(request).await.unwrap();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                stream.write_all(response.as_bytes()).await.unwrap();
-            }
-        });
-
-        let form = test_form();
-        let workspace = IcebergWorkspace::memory_for_tests(
-            SpaceId::from(Uuid::from_u128(701)),
-            "memory://rest-committer-test",
-        )
-        .await?;
-        workspace.create_form(&form).await?;
-        let table = workspace
-            .catalog()
-            .load_table(&workspace.form_ident(form.id))
-            .await?;
-        let mut properties = HashMap::new();
-        properties.insert(
-            "header.x-ugoite-test".to_string(),
-            "shared-config".to_string(),
-        );
-        let committer = RestSchemaCommitter {
-            config: RestCatalogConfig {
-                uri: format!("http://{address}"),
-                warehouse: "warehouse".to_string(),
-                properties,
-                client: None,
-            },
-            token: Mutex::new(None),
-        };
-        committer
-            .commit(&table, form_schema(&form)?, HashMap::new())
-            .await?;
-        let config_request = requests_rx.recv().await.unwrap();
-        let commit_request = requests_rx.recv().await.unwrap();
-        assert!(config_request.starts_with("GET /v1/config?warehouse=warehouse HTTP/1.1"));
-        assert!(commit_request.starts_with("POST /v1/catalog/prefix/namespaces/space_"));
-        assert!(commit_request.contains("x-ugoite-test: shared-config"));
-        let commit_body = commit_request
-            .split_once("\r\n\r\n")
-            .map(|(_, body)| body)
-            .context("REST commit request has no body")?;
-        let commit: CommitTableRequest = serde_json::from_str(commit_body)?;
-        assert_eq!(commit.requirements.len(), 3);
-        assert_eq!(commit.updates.len(), 3);
-        server.await.unwrap();
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn rest_schema_committer_credential_exchange_uses_form_content_type() -> Result<()> {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let address = listener.local_addr()?;
-        let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(1);
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let request = read_request(&mut stream).await;
-            request_tx.send(request).await.unwrap();
-            let body = r#"{"access_token":"refreshed-token"}"#;
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-        });
-        let committer = RestSchemaCommitter {
-            config: RestCatalogConfig {
-                uri: format!("http://{address}"),
-                warehouse: "warehouse".to_string(),
-                properties: HashMap::from([
-                    ("credential".to_string(), "client:secret".to_string()),
-                    (
-                        "oauth2-server-uri".to_string(),
-                        format!("http://{address}/oauth/token"),
-                    ),
-                    (
-                        "header.content-type".to_string(),
-                        "application/json".to_string(),
-                    ),
-                ]),
-                client: None,
-            },
-            token: Mutex::new(None),
-        };
-
-        assert_eq!(
-            committer.refresh_token().await?,
-            Some("refreshed-token".to_string())
-        );
-        let token_request = request_rx.recv().await.unwrap().to_ascii_lowercase();
-        assert!(token_request.contains("content-type: application/x-www-form-urlencoded"));
-        assert!(!token_request.contains("content-type: application/json"));
-        server.await.unwrap();
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn rest_workspace_rejects_token_and_credential_together() {
-        let config = RestCatalogConfig {
-            uri: "http://127.0.0.1:1".to_string(),
-            warehouse: "warehouse".to_string(),
-            properties: HashMap::from([
-                ("token".to_string(), "static-token".to_string()),
-                ("credential".to_string(), "client:secret".to_string()),
-            ]),
-            client: None,
-        };
-
-        let error = IcebergWorkspace::rest_workspace(
-            config,
-            SpaceId::from(Uuid::from_u128(702)),
-            WriteConfig::default(),
-        )
-        .await
-        .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("cannot specify both token and credential"));
-    }
 }
 
 fn physical_field_id(field: &ugoite_domain::form::FormField) -> i32 {
@@ -1555,32 +1040,6 @@ fn field_array(
                 .collect::<Vec<_>>(),
         ))),
     }
-}
-
-fn split_batches(batches: Vec<RecordBatch>, max_rows: usize) -> Result<Vec<Vec<RecordBatch>>> {
-    if max_rows == 0 {
-        return Err(anyhow!("max_rows_per_file must be greater than zero"));
-    }
-    let mut groups = Vec::new();
-    let mut current = Vec::new();
-    let mut rows = 0;
-    for batch in batches {
-        let mut offset = 0;
-        while offset < batch.num_rows() {
-            if rows == max_rows {
-                groups.push(std::mem::take(&mut current));
-                rows = 0;
-            }
-            let count = (batch.num_rows() - offset).min(max_rows - rows);
-            current.push(batch.slice(offset, count));
-            rows += count;
-            offset += count;
-        }
-    }
-    if !current.is_empty() {
-        groups.push(current);
-    }
-    Ok(groups)
 }
 
 fn parse_date(value: &str) -> Result<Option<i32>> {

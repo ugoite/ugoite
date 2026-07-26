@@ -20,6 +20,3 @@ license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1.0"
-
-[patch.crates-io]
-reqsign = { path = "vendor/reqsign" }

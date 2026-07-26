@@ -1,16 +1,367 @@
 //! Persistence adapter boundary for Ugoite.
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::TryStreamExt;
+use opendal::options::{ReadOptions, WriteOptions};
 use opendal::services::{Fs, Memory, S3};
-use opendal::{EntryMode, Operator};
+use opendal::{EntryMode, ErrorKind, Operator};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
+use tokio::sync::Mutex as AsyncMutex;
+use uuid::Uuid;
 
 pub use ugoite_domain as domain;
+
+/// Normalized backend information used by the Iceberg OpenDAL adapter.
+///
+/// It deliberately contains no `Operator`: storage owns the live operator used
+/// for Catalog Head operations, while Iceberg receives only the configuration
+/// it needs to build its official OpenDAL storage factory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IcebergStorageConfig {
+    pub scheme: String,
+    pub warehouse_uri: String,
+    pub properties: HashMap<String, String>,
+}
+
+impl IcebergStorageConfig {
+    pub fn from_operator(operator: &Operator) -> Result<Self> {
+        let info = operator.info();
+        let scheme = info.scheme().to_string();
+        let operator_root = info.root();
+        let root = operator_root.trim_end_matches('/');
+        let warehouse_uri = match scheme.as_str() {
+            "fs" | "file" => format!("file://{}", if root.is_empty() { "/" } else { root }),
+            "memory" => "memory:///".to_string(),
+            "s3" => format!("s3://{}/{}", info.name(), root.trim_start_matches('/')),
+            "gcs" => format!("gs://{}/{}", info.name(), root.trim_start_matches('/')),
+            "oss" => format!("oss://{}/{}", info.name(), root.trim_start_matches('/')),
+            "azdls" => format!("abfs://{}/{}", info.name(), root.trim_start_matches('/')),
+            unsupported => {
+                return Err(anyhow!("unsupported Iceberg storage scheme: {unsupported}"))
+            }
+        };
+        Ok(Self {
+            scheme,
+            warehouse_uri: warehouse_uri.trim_end_matches('/').to_string(),
+            properties: HashMap::new(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExactCatalogHead {
+    pub bytes: Vec<u8>,
+    pub etag: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogWriteMode {
+    Shared,
+    SingleProcess,
+}
+
+/// Narrow OpenDAL boundary for the Space Catalog root and immutable
+/// publication evidence. It is intentionally not a general-purpose wrapper.
+#[derive(Clone)]
+pub struct SpaceCatalogStore {
+    operator: Operator,
+    space_root: String,
+    storage: IcebergStorageConfig,
+    write_mode: CatalogWriteMode,
+    single_process_serializer: Arc<AsyncMutex<()>>,
+}
+
+impl std::fmt::Debug for SpaceCatalogStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SpaceCatalogStore")
+            .field("space_root", &self.space_root)
+            .field("storage", &self.storage)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SpaceCatalogStore {
+    pub fn new(operator: Operator, space_root: impl Into<String>) -> Result<Self> {
+        let space_root = space_root.into().trim_matches('/').to_string();
+        let single_process_serializer = catalog_serializer(&operator, &space_root);
+        Ok(Self {
+            storage: IcebergStorageConfig::from_operator(&operator)?,
+            operator,
+            space_root,
+            // Shared mode is opt-in only after `verify_shared_writes` proves
+            // the actual backend honors every conditional operation we need.
+            write_mode: CatalogWriteMode::SingleProcess,
+            single_process_serializer,
+        })
+    }
+
+    pub fn single_process(mut self) -> Self {
+        self.write_mode = CatalogWriteMode::SingleProcess;
+        self
+    }
+
+    pub fn write_mode(&self) -> CatalogWriteMode {
+        self.write_mode
+    }
+
+    /// A process-local serializer, used only in explicit single-process mode.
+    /// It is not a cross-process lock and does not participate in shared CAS.
+    pub fn single_process_serializer(&self) -> Arc<AsyncMutex<()>> {
+        self.single_process_serializer.clone()
+    }
+
+    /// Proves the configured persistent backend supports the exact conditional
+    /// sequence required by shared Catalog Head publication, then enables
+    /// shared mode for this store value. The immutable probe is evidence only;
+    /// it is never used for recovery or coordination.
+    pub async fn verify_shared_writes(mut self) -> Result<Self> {
+        if !self.supports_shared_writes() {
+            return Err(anyhow!(
+                "shared Catalog writes require ETag-bound reads and conditional writes"
+            ));
+        }
+        let path = self.catalog_path(&format!("probes/{}.json", Uuid::now_v7()));
+        let initial = b"{\"format_version\":1,\"stage\":\"created\"}".to_vec();
+        self.operator
+            .write_options(
+                &path,
+                initial.clone(),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let first_etag = self
+            .operator
+            .stat(&path)
+            .await?
+            .etag()
+            .filter(|etag| !etag.is_empty())
+            .map(str::to_owned)
+            .context("shared Catalog probe write did not return an ETag")?;
+        let observed = self
+            .operator
+            .read_options(
+                &path,
+                ReadOptions {
+                    if_match: Some(first_etag.clone()),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .to_vec();
+        if observed != initial {
+            return Err(anyhow!(
+                "shared Catalog probe read returned different bytes"
+            ));
+        }
+        let replaced = b"{\"format_version\":1,\"stage\":\"replaced\"}".to_vec();
+        self.operator
+            .write_options(
+                &path,
+                replaced.clone(),
+                WriteOptions {
+                    if_match: Some(first_etag),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let second_etag = self
+            .operator
+            .stat(&path)
+            .await?
+            .etag()
+            .filter(|etag| !etag.is_empty())
+            .map(str::to_owned)
+            .context("shared Catalog probe replacement did not return an ETag")?;
+        let observed = self
+            .operator
+            .read_options(
+                &path,
+                ReadOptions {
+                    if_match: Some(second_etag),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .to_vec();
+        if observed != replaced {
+            return Err(anyhow!(
+                "shared Catalog probe replacement returned different bytes"
+            ));
+        }
+        self.write_mode = CatalogWriteMode::Shared;
+        Ok(self)
+    }
+
+    pub fn iceberg_storage(&self) -> &IcebergStorageConfig {
+        &self.storage
+    }
+
+    /// The authoritative operator is shared only with the physical Iceberg
+    /// adapter so its test-only memory service sees the same immutable table
+    /// metadata as Catalog Head operations. Core never receives this handle.
+    pub fn iceberg_operator(&self) -> Operator {
+        self.operator.clone()
+    }
+
+    pub fn warehouse_uri(&self) -> String {
+        if self.space_root.is_empty() {
+            format!("{}/forms", self.storage.warehouse_uri)
+        } else {
+            format!("{}/{}/forms", self.storage.warehouse_uri, self.space_root)
+        }
+    }
+
+    pub fn head_path(&self) -> String {
+        self.catalog_path("head.json")
+    }
+
+    pub fn publication_path(&self, generation: u64, command_id: &str) -> String {
+        self.catalog_path(&format!("publications/{generation}-{command_id}.json"))
+    }
+
+    pub async fn read_exact_head(&self) -> Result<Option<ExactCatalogHead>> {
+        let path = self.head_path();
+        let metadata = match self.operator.stat(&path).await {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let etag = metadata
+            .etag()
+            .filter(|etag| !etag.is_empty())
+            .map(str::to_owned);
+        let bytes = match (self.write_mode, etag.as_deref()) {
+            (CatalogWriteMode::Shared, Some(etag)) => self
+                .operator
+                .read_options(
+                    &path,
+                    ReadOptions {
+                        if_match: Some(etag.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await?
+                .to_vec(),
+            (CatalogWriteMode::Shared, None) => {
+                return Err(anyhow!("Catalog Head stat did not return an ETag"));
+            }
+            (CatalogWriteMode::SingleProcess, _) => self.operator.read(&path).await?.to_vec(),
+        };
+        Ok(Some(ExactCatalogHead { bytes, etag }))
+    }
+
+    pub async fn create_head(&self, bytes: Vec<u8>) -> Result<()> {
+        match self.write_mode {
+            CatalogWriteMode::Shared => {
+                self.operator
+                    .write_options(
+                        &self.head_path(),
+                        bytes,
+                        WriteOptions {
+                            if_not_exists: true,
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            }
+            CatalogWriteMode::SingleProcess => {
+                if self.operator.exists(&self.head_path()).await? {
+                    return Err(anyhow!("Catalog Head already exists"));
+                }
+                self.operator.write(&self.head_path(), bytes).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn replace_head(&self, etag: Option<&str>, bytes: Vec<u8>) -> Result<()> {
+        match self.write_mode {
+            CatalogWriteMode::Shared => {
+                self.operator
+                    .write_options(
+                        &self.head_path(),
+                        bytes,
+                        WriteOptions {
+                            if_match: Some(
+                                etag.context("shared Catalog Head replacement requires an ETag")?
+                                    .to_string(),
+                            ),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            }
+            CatalogWriteMode::SingleProcess => {
+                self.operator.write(&self.head_path(), bytes).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn create_publication(&self, path: &str, bytes: Vec<u8>) -> Result<()> {
+        self.operator
+            .write_options(
+                path,
+                bytes,
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn read_publication(&self, path: &str) -> Result<Vec<u8>> {
+        Ok(self.operator.read(path).await?.to_vec())
+    }
+
+    pub fn supports_shared_writes(&self) -> bool {
+        let capabilities = self.operator.info().full_capability();
+        capabilities.read_with_if_match
+            && capabilities.write_with_if_match
+            && capabilities.write_with_if_not_exists
+    }
+
+    fn catalog_path(&self, suffix: &str) -> String {
+        let prefix = if self.space_root.is_empty() {
+            "_ugoite/catalog".to_string()
+        } else {
+            format!("{}/_ugoite/catalog", self.space_root)
+        };
+        format!("{prefix}/{suffix}")
+    }
+}
+
+static CATALOG_SERIALIZERS: OnceLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> =
+    OnceLock::new();
+
+fn catalog_serializer(operator: &Operator, space_root: &str) -> Arc<AsyncMutex<()>> {
+    let key = format!(
+        "{}:{}:{}",
+        operator.info().scheme(),
+        operator.info().root(),
+        space_root
+    );
+    let serializers = CATALOG_SERIALIZERS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut serializers = serializers
+        .lock()
+        .expect("catalog serializer registry poisoned");
+    if let Some(serializer) = serializers.get(&key).and_then(Weak::upgrade) {
+        return serializer;
+    }
+    let serializer = Arc::new(AsyncMutex::new(()));
+    serializers.insert(key, Arc::downgrade(&serializer));
+    serializer
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageEntry {
     pub name: String,
@@ -51,7 +402,7 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
         .strip_prefix("fs://")
         .or_else(|| uri.strip_prefix("file://"))
         .unwrap_or(uri);
-    let op = Operator::new(Fs::default().root(root))?;
+    let op = Operator::new(Fs::default().root(root))?.finish();
     Ok(op)
 }
 
@@ -67,7 +418,7 @@ pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Res
         if let Some(op) = cache.get(uri) {
             return Ok(op.clone());
         }
-        let op = Operator::new(Memory::default())?;
+        let op = Operator::new(Memory::default())?.finish();
         cache.insert(uri.to_string(), op.clone());
         return Ok(op);
     }
@@ -90,7 +441,7 @@ pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Res
         if let Some(endpoint) = endpoint {
             builder = builder.endpoint(endpoint);
         }
-        return Ok(Operator::new(builder)?);
+        return Ok(Operator::new(builder)?.finish());
     }
 
     Ok(Operator::from_uri(uri)?)
