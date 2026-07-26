@@ -61,12 +61,18 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
             Some(&field.id.get().to_string())
         );
     }
-    assert_eq!(
-        table
+    let title = table
+        .metadata()
+        .current_schema()
+        .field_by_name("title")
+        .expect("created Form field must exist in the Iceberg schema");
+    assert_eq!(title.id, form.fields[0].id.get());
+    assert!(
+        !table
             .metadata()
             .properties()
-            .get("ugoite.form.field-id-map.v1"),
-        Some(&r#"{"100":100}"#.to_string())
+            .contains_key("ugoite.form.field-id-map.v1"),
+        "Iceberg field IDs replace the legacy Ugoite field-ID map"
     );
     assert_eq!(
         physical_form_name(form.id),
