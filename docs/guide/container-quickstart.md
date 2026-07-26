@@ -11,10 +11,8 @@ docker compose -f docker-compose.release.yaml logs ugoite
 
 Open the one-use setup URL shown in the log and register a Passkey. Complete
 setup with a second Passkey or TOTP plus the displayed recovery codes. The URL
-expires after 30 minutes and can be used once. Portable Spaces live in
-`${UGOITE_SPACES_DIR:-./spaces}`. Atomic Node control objects live separately in
-`${UGOITE_NODE_DIR:-./node}`; back up both and the separately managed encryption
-key with owner-only permissions.
+expires after 30 minutes and can be used once. The local runtime data directory
+is `${UGOITE_DATA_DIR:-./data}`.
 
 For a remote hostname, configure the WebAuthn origin before first start:
 

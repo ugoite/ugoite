@@ -9,7 +9,7 @@ KEEP_WORK_ROOT="${UGOITE_QUICKSTART_KEEP_WORKDIR:-0}"
 QUICKSTART_HOME_INPUT="${UGOITE_QUICKSTART_HOME:-}"
 INSTALL_DIR_INPUT="${UGOITE_INSTALL_DIR:-}"
 SPACE_ID="${UGOITE_SPACE_ID:-demo}"
-SPACE_ROOT="./spaces"
+SPACE_ROOT="./data/spaces"
 
 log() {
   printf '%s\n' "$*" >&2
@@ -132,7 +132,7 @@ help_output="$("$INSTALLED_BINARY" --help 2>&1)"
 assert_help_output "$help_output"
 log "Verified: ugoite --help"
 
-mkdir -p "$WORK_DIR/spaces"
+mkdir -p "$WORK_DIR/data/spaces"
 
 list_before_output="$(
   cd "$WORK_DIR" &&

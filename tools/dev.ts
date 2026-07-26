@@ -1,4 +1,5 @@
 const repoRoot = new URL("..", import.meta.url).pathname;
+const devDataRoot = `${repoRoot}data`;
 const devSecretPath = `${repoRoot}target/dev-node-secret`;
 
 await Deno.mkdir(`${repoRoot}target`, { recursive: true, mode: 0o700 });
@@ -22,7 +23,7 @@ const commands = [
   new Deno.Command("cargo", {
     cwd: repoRoot,
     env: {
-      UGOITE_ROOT: Deno.env.get("UGOITE_ROOT") ?? repoRoot,
+      UGOITE_ROOT: Deno.env.get("UGOITE_ROOT") ?? devDataRoot,
       UGOITE_PUBLIC_ORIGIN: Deno.env.get("UGOITE_PUBLIC_ORIGIN") ??
         "http://localhost:3000",
       UGOITE_API_BASE_URL: Deno.env.get("UGOITE_API_BASE_URL") ??

@@ -85,8 +85,8 @@ ASSET_BASE_URL="${ASSET_BASE_URL_INPUT:-https://github.com/ugoite/ugoite/release
 COMPOSE_PROJECT="ugoite-release-quickstart-${VERSION_INPUT//[^A-Za-z0-9]/-}-$$"
 compose_cmd=(docker compose -p "$COMPOSE_PROJECT" -f docker-compose.release.yaml)
 
-mkdir -p "$STACK_DIR/spaces" "$STACK_DIR/node" "$DOWNLOAD_DIR" "$CLI_INSTALL_DIR"
-chmod 0777 "$STACK_DIR/spaces" "$STACK_DIR/node"
+mkdir -p "$STACK_DIR/data" "$DOWNLOAD_DIR" "$CLI_INSTALL_DIR"
+chmod 0777 "$STACK_DIR/data"
 
 cleanup() {
   status=$?
@@ -125,8 +125,7 @@ gzip -dc "$DOWNLOAD_DIR/ugoite-image.tar.gz" | docker load
 
 cat >"$STACK_DIR/.env" <<EOF
 UGOITE_VERSION=${VERSION_INPUT}
-UGOITE_SPACES_DIR=./spaces
-UGOITE_NODE_DIR=./node
+UGOITE_DATA_DIR=./data
 UGOITE_PORT=8000
 UGOITE_PUBLIC_ORIGIN=http://127.0.0.1:8000
 UGOITE_API_BASE_URL=http://127.0.0.1:8000/api
