@@ -4,8 +4,7 @@ services:
     ports:
       - "127.0.0.1:${UGOITE_PORT:-8000}:8000"
     volumes:
-      - "${UGOITE_SPACES_DIR:-./spaces}:/data/spaces"
-      - "${UGOITE_NODE_DIR:-./node}:/data/_ugoite"
+      - "${UGOITE_DATA_DIR:-./data}:/data"
     environment:
       - UGOITE_ROOT=/data
       - UGOITE_SERVER_ADDRESS=0.0.0.0:8000

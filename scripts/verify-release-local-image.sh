@@ -30,7 +30,8 @@ cleanup() {
   trap - EXIT HUP INT TERM
   (
     cd "$WORK_ROOT" &&
-      docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" down --remove-orphans -v
+      UGOITE_DATA_DIR="$WORK_ROOT/data" \
+        docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" down --remove-orphans -v
   ) >/dev/null 2>&1 || true
   if [ "$KEEP_WORK_ROOT" != "1" ] && [ -z "${UGOITE_RELEASE_LOCAL_WORKDIR:-}" ]; then
     rm -rf "$WORK_ROOT"
@@ -46,8 +47,8 @@ require_command curl
 require_command deno
 require_command docker
 
-mkdir -p "$WORK_ROOT/spaces" "$WORK_ROOT/node" "$WORK_ROOT/cli-home"
-chmod 0777 "$WORK_ROOT/spaces" "$WORK_ROOT/node"
+mkdir -p "$WORK_ROOT/data" "$WORK_ROOT/cli-home"
+chmod 0777 "$WORK_ROOT/data"
 
 log "Building release CLI binary"
 (
@@ -58,12 +59,14 @@ log "Building release CLI binary"
 log "Building and starting release-like single-image container"
 (
   cd "$WORK_ROOT" &&
-    docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" up -d --build
+    UGOITE_DATA_DIR="$WORK_ROOT/data" \
+      docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" up -d --build
 )
 
 HOST_PORT="$(
   cd "$WORK_ROOT" &&
-    docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" port ugoite 8000 |
+    UGOITE_DATA_DIR="$WORK_ROOT/data" \
+      docker compose -p "$PROJECT" -f "$REPO_ROOT/docker-compose.yaml" port ugoite 8000 |
       awk -F: '{print $NF}'
 )"
 if [ -z "$HOST_PORT" ]; then

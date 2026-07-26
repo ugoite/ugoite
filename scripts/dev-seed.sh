@@ -9,7 +9,7 @@ Create local sample data with the existing ugoite-cli sample-data command and
 visible terminal progress.
 
 Defaults:
-  --root        .
+  --root        ./data
   --space-id    dev-seed
   --scenario    renewable-ops
   --entry-count 50
@@ -24,7 +24,7 @@ Environment variable overrides:
 EOF
 }
 
-ROOT_PATH="${UGOITE_SEED_ROOT:-${UGOITE_ROOT:-.}}"
+ROOT_PATH="${UGOITE_SEED_ROOT:-${UGOITE_ROOT:-./data}}"
 SPACE_ID="${UGOITE_SEED_SPACE_ID:-dev-seed}"
 SCENARIO="${UGOITE_SEED_SCENARIO:-renewable-ops}"
 ENTRY_COUNT="${UGOITE_SEED_ENTRY_COUNT:-50}"

@@ -10,9 +10,8 @@ docker compose up --build -d
 ```
 
 This builds the image, binds localhost port
-`${UGOITE_PORT:-8000}`, mounts portable Space directories from `./spaces` at
-`/data/spaces`, and keeps atomic Node control objects separately in `./node`. Read the setup URL
-with `docker compose logs ugoite`.
+`${UGOITE_PORT:-8000}`, and mounts the local runtime data directory from
+`./data` at `/data`. Read the setup URL with `docker compose logs ugoite`.
 
 Set `UGOITE_PUBLIC_ORIGIN` and `UGOITE_WEBAUTHN_RP_ID` to the externally visible
 HTTPS origin and host before registering Passkeys. Set `UGOITE_NODE_SECRET_KEY`

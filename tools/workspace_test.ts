@@ -128,6 +128,23 @@ Deno.test("release path does not reference removed runtimes", async () => {
   }
 });
 
+Deno.test("local runtime data uses one ignored repository mount", async () => {
+  const gitignore = await Deno.readTextFile(".gitignore");
+  const dev = await Deno.readTextFile("tools/dev.ts");
+  const sourceCompose = await Deno.readTextFile("docker-compose.yaml");
+  const releaseCompose = await Deno.readTextFile("docker-compose.release.yaml");
+
+  assertEquals(gitignore.includes("/data/"), true);
+  assertEquals(dev.includes("const devDataRoot = `${repoRoot}data`;"), true);
+  assertEquals(dev.includes("?? devDataRoot"), true);
+  assertEquals(sourceCompose.includes("UGOITE_DATA_DIR:-./data}:/data"), true);
+  assertEquals(releaseCompose.includes("UGOITE_DATA_DIR:-./data}:/data"), true);
+  assertEquals(sourceCompose.includes("./spaces:/data/spaces"), false);
+  assertEquals(sourceCompose.includes("./node:/data/_ugoite"), false);
+  assertEquals(releaseCompose.includes("UGOITE_SPACES_DIR"), false);
+  assertEquals(releaseCompose.includes("UGOITE_NODE_DIR"), false);
+});
+
 Deno.test("CI image and E2E tasks preserve the build-once contract", async () => {
   const rootMise = await Deno.readTextFile("mise.toml");
   const workflow = await Deno.readTextFile(".github/workflows/ci.yml");
