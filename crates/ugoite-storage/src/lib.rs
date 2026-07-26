@@ -51,7 +51,7 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
         .strip_prefix("fs://")
         .or_else(|| uri.strip_prefix("file://"))
         .unwrap_or(uri);
-    let op = Operator::new(Fs::default().root(root))?.finish();
+    let op = Operator::new(Fs::default().root(root))?;
     Ok(op)
 }
 
@@ -67,7 +67,7 @@ pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Res
         if let Some(op) = cache.get(uri) {
             return Ok(op.clone());
         }
-        let op = Operator::new(Memory::default())?.finish();
+        let op = Operator::new(Memory::default())?;
         cache.insert(uri.to_string(), op.clone());
         return Ok(op);
     }
@@ -90,7 +90,7 @@ pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Res
         if let Some(endpoint) = endpoint {
             builder = builder.endpoint(endpoint);
         }
-        return Ok(Operator::new(builder)?.finish());
+        return Ok(Operator::new(builder)?);
     }
 
     Ok(Operator::from_uri(uri)?)

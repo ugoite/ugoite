@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use iceberg::io::{LocalFsStorageFactory, MemoryStorageFactory};
 use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
 use iceberg::spec::{ListType, NestedField, PrimitiveType, Schema, StructType, Type};
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
@@ -137,11 +138,19 @@ async fn catalog_for_space(op: &Operator, ws_path: &str) -> Result<Arc<dyn Catal
     } else {
         let mut props = HashMap::new();
         props.insert(MEMORY_CATALOG_WAREHOUSE.to_string(), warehouse.clone());
-        Arc::new(
-            MemoryCatalogBuilder::default()
-                .load("ugoite", props)
-                .await?,
-        )
+        let builder = match op.info().scheme() {
+            "fs" | "file" => MemoryCatalogBuilder::default()
+                .with_storage_factory(Arc::new(LocalFsStorageFactory)),
+            "memory" => {
+                MemoryCatalogBuilder::default().with_storage_factory(Arc::new(MemoryStorageFactory))
+            }
+            scheme => {
+                return Err(anyhow!(
+                    "native Iceberg catalog does not support storage scheme: {scheme}"
+                ));
+            }
+        };
+        Arc::new(builder.load("ugoite", props).await?)
     };
     let pointer_path = format!(
         "{}/{}",

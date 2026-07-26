@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
-FROM denoland/deno:2.9.1 AS frontend-build
+FROM denoland/deno:2.9.2 AS frontend-build
 WORKDIR /repo
 ENV CARGO_TARGET_DIR=target/rust
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl build-essential nodejs \
   && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.93.0
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.94.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN rustup target add wasm32-unknown-unknown
 COPY deno.json deno.lock ./
@@ -24,7 +24,7 @@ RUN deno run -A frontend/scripts/generate-static-index.ts \
   frontend/.output/public/_build/.vite/manifest.json \
   frontend/.output/public/index.html
 
-FROM rust:1.96-bookworm AS rust-build
+FROM rust:1.97-bookworm AS rust-build
 WORKDIR /repo
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates

@@ -85,7 +85,7 @@ async fn test_asset_req_asset_001_normalizes_uploaded_filename() -> anyhow::Resu
     let dir = tempdir()?;
     let root = dir.path().to_string_lossy().to_string();
     let builder = Fs::default().root(root.as_str());
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
 
     space::create_space(&op, "source-space", root.as_str()).await?;
     space::create_space(&op, "victim-space", root.as_str()).await?;

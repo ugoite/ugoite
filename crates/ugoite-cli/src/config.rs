@@ -219,9 +219,7 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
         bail!("unsupported local path contains null byte: {path:?}");
     }
     let builder = Fs::default().root(root);
-    opendal::Operator::new(builder)
-        .map(|operator| operator.finish())
-        .map_err(Into::into)
+    opendal::Operator::new(builder).map_err(Into::into)
 }
 
 pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {
