@@ -324,9 +324,11 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         FieldId::new(100).unwrap(),
         FieldValue::String("title from revision".into()),
     );
-    workspace
+    let receipt = workspace
         .append_revisions(form.id, vec![revision.clone()])
         .await?;
+    assert_eq!(receipt.committed_revision_ids, vec![revision.revision_id]);
+    assert!(receipt.data_file_count > 0);
 
     let conflicting = EntryRevision {
         revision_id: Uuid::from_u128(33).into(),
