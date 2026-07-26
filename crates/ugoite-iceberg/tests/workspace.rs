@@ -343,6 +343,70 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
 }
 
 #[tokio::test]
+async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(35)),
+        "memory://iceberg-batched-append",
+    )
+    .await?;
+    let form = form();
+    workspace.create_form(&form).await?;
+    let revisions = [36_u128, 37]
+        .into_iter()
+        .map(|id| {
+            let mut values = BTreeMap::new();
+            values.insert(
+                FieldId::new(100).unwrap(),
+                FieldValue::String(format!("revision {id}")),
+            );
+            EntryRevision {
+                form_id: form.id,
+                entry_id: Uuid::from_u128(id).into(),
+                revision_id: Uuid::from_u128(id + 100).into(),
+                parent_revision_id: None,
+                entry_version: 1,
+                expected_version: None,
+                operation: EntryOperation::Upsert,
+                committed_at_micros: 1,
+                author_id: "human:owner".into(),
+                form_version: form.version,
+                source_kind: "test".into(),
+                source_id: None,
+                values,
+                extra_attributes: BTreeMap::new(),
+                extension_metadata: BTreeMap::new(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let receipt = workspace
+        .append_revisions(form.id, revisions.clone())
+        .await?;
+    assert_eq!(
+        receipt.committed_revision_ids,
+        revisions
+            .iter()
+            .map(|revision| revision.revision_id)
+            .collect::<Vec<_>>()
+    );
+    assert!(receipt.data_file_count > 0);
+
+    let table = workspace
+        .catalog()
+        .load_table(&iceberg::TableIdent::new(
+            workspace.namespace().clone(),
+            physical_form_name(form.id),
+        ))
+        .await?;
+    assert_eq!(table.metadata().snapshots().len(), 1);
+    assert_eq!(
+        table.metadata().current_snapshot().unwrap().snapshot_id(),
+        receipt.snapshot_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyhow::Result<()> {
     let first = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(50)),
