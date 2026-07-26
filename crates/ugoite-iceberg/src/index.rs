@@ -10,8 +10,8 @@ pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
 
 use crate::entry;
-use crate::error::{AppError, ErrorCode};
 use crate::sql;
+use ugoite_core::error::{AppError, ErrorCode};
 
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
     let forms = load_forms(op, ws_path).await?;

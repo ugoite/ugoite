@@ -2,8 +2,8 @@ mod common;
 use base64::{engine::general_purpose, Engine as _};
 use common::setup_operator;
 use serde_json::json;
-use ugoite_core::integrity::{FakeIntegrityProvider, IntegrityProvider, RealIntegrityProvider};
-use ugoite_core::space;
+use ugoite_iceberg::integrity::{FakeIntegrityProvider, IntegrityProvider, RealIntegrityProvider};
+use ugoite_iceberg::space;
 
 #[test]
 /// REQ-INT-001
@@ -54,7 +54,7 @@ async fn test_response_hmac_material_is_space_scoped() -> anyhow::Result<()> {
     let op = setup_operator()?;
 
     let (key_id, secret) =
-        ugoite_core::integrity::load_response_hmac_material(&op, "default").await?;
+        ugoite_iceberg::integrity::load_response_hmac_material(&op, "default").await?;
     let payload: serde_json::Value =
         serde_json::from_slice(&op.read("spaces/default/hmac.json").await?.to_vec())?;
 
@@ -73,7 +73,7 @@ async fn test_response_hmac_material_is_space_scoped() -> anyhow::Result<()> {
 async fn test_response_hmac_material_rejects_invalid_space_id() -> anyhow::Result<()> {
     let op = setup_operator()?;
 
-    let err = ugoite_core::integrity::load_response_hmac_material(&op, "../escape")
+    let err = ugoite_iceberg::integrity::load_response_hmac_material(&op, "../escape")
         .await
         .expect_err("invalid space id should be rejected");
 
@@ -97,7 +97,7 @@ async fn test_response_hmac_material_defaults_missing_key_id() -> anyhow::Result
     .await?;
 
     let (key_id, secret) =
-        ugoite_core::integrity::load_response_hmac_material(&op, "default").await?;
+        ugoite_iceberg::integrity::load_response_hmac_material(&op, "default").await?;
 
     assert_eq!(key_id, "default");
     assert_eq!(secret, vec![b'y'; 32]);
@@ -119,7 +119,7 @@ async fn test_response_hmac_material_rejects_missing_hmac_key() -> anyhow::Resul
     )
     .await?;
 
-    let err = ugoite_core::integrity::load_response_hmac_material(&op, "default")
+    let err = ugoite_iceberg::integrity::load_response_hmac_material(&op, "default")
         .await
         .expect_err("missing hmac_key should be rejected");
 

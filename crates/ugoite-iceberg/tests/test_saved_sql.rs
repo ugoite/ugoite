@@ -2,9 +2,9 @@ mod common;
 
 use common::setup_operator;
 use serde_json::json;
-use ugoite_core::integrity::FakeIntegrityProvider;
-use ugoite_core::saved_sql::{self, SqlPayload};
-use ugoite_core::space;
+use ugoite_iceberg::integrity::FakeIntegrityProvider;
+use ugoite_iceberg::saved_sql::{self, SqlPayload};
+use ugoite_iceberg::space;
 
 #[tokio::test]
 /// REQ-API-006

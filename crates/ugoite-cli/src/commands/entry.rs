@@ -5,7 +5,7 @@ use crate::config::{
 use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
-use ugoite_core::service::UgoiteService;
+use ugoite_iceberg::service::UgoiteService;
 
 #[derive(Args)]
 pub struct EntryCmd {

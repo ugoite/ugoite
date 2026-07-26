@@ -1,7 +1,7 @@
 //! Phase 6 service-boundary coverage for server and CLI adapters.
 
 use anyhow::Result;
-use ugoite_core::service::UgoiteService;
+use ugoite_iceberg::service::UgoiteService;
 
 #[tokio::test]
 async fn test_service_boundary_covers_primary_adapter_operations() -> Result<()> {

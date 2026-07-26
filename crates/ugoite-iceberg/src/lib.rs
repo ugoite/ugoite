@@ -6,6 +6,26 @@
 mod migration;
 mod space_catalog;
 
+pub mod asset;
+pub mod audit;
+pub mod authorization;
+pub mod entry;
+pub mod form;
+pub mod iceberg_store;
+pub mod index;
+pub mod integrity;
+pub mod link;
+pub mod materialized_view;
+pub mod preferences;
+pub mod sample_data;
+pub mod saved_sql;
+pub mod search;
+pub mod service;
+pub mod space;
+pub mod sql;
+pub mod sql_session;
+pub mod storage;
+
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
 pub use space_catalog::{PublicationContext, SpaceCatalog};
 

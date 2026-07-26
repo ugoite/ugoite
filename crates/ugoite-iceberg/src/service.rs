@@ -4,7 +4,6 @@ use serde_json::Value;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::integrity::RealIntegrityProvider;
 use crate::{
     asset,
@@ -12,6 +11,7 @@ use crate::{
     entry, form, index, preferences, saved_sql, search, space, sql_session,
     storage::operator_from_uri,
 };
+use ugoite_core::error::AppError;
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
     validate_space_id, validate_sql_id, validate_sql_session_id,
@@ -79,7 +79,7 @@ impl UgoiteService {
         validate_storage_id(validate_space_id(slug))?;
         if self.space_id_by_slug(slug).await?.is_some() {
             return Err(AppError::conflict(
-                crate::error::ErrorCode::SpaceAlreadyExists,
+                ugoite_core::error::ErrorCode::SpaceAlreadyExists,
                 format!("Space slug already exists: {slug}"),
             )
             .into());
@@ -98,7 +98,7 @@ impl UgoiteService {
         validate_storage_id(validate_space_id(slug))?;
         if self.space_id_by_slug(slug).await?.is_some() {
             return Err(AppError::conflict(
-                crate::error::ErrorCode::SpaceAlreadyExists,
+                ugoite_core::error::ErrorCode::SpaceAlreadyExists,
                 format!("Space slug already exists: {slug}"),
             )
             .into());

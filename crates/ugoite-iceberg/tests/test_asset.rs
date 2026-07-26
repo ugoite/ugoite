@@ -6,9 +6,9 @@ use opendal::services::Fs;
 use opendal::Operator;
 #[cfg(unix)]
 use tempfile::tempdir;
-use ugoite_core::asset;
-use ugoite_core::entry;
-use ugoite_core::space;
+use ugoite_iceberg::asset;
+use ugoite_iceberg::entry;
+use ugoite_iceberg::space;
 
 async fn asset_metadata_location(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<String> {
     let manifest = op

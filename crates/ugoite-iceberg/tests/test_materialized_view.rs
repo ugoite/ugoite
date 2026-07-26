@@ -2,8 +2,8 @@ mod common;
 
 use common::setup_operator;
 use serde_json::json;
-use ugoite_core::materialized_view;
-use ugoite_core::space;
+use ugoite_iceberg::materialized_view;
+use ugoite_iceberg::space;
 
 #[tokio::test]
 /// REQ-API-008

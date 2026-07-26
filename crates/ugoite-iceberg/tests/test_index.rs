@@ -1,6 +1,6 @@
 mod common;
 use common::setup_operator;
-use ugoite_core::{entry, form, index, link, space};
+use ugoite_iceberg::{entry, form, index, link, space};
 
 #[tokio::test]
 /// REQ-IDX-001
@@ -43,7 +43,7 @@ async fn test_index_req_idx_002_validate_properties() -> anyhow::Result<()> {
         ]
     }"#;
     let class_def_value = serde_json::from_str::<serde_json::Value>(class_def)?;
-    ugoite_core::form::upsert_form(&op, ws_path, &class_def_value).await?;
+    ugoite_iceberg::form::upsert_form(&op, ws_path, &class_def_value).await?;
 
     // Invalid property (wrong type/missing)
     let props = serde_json::json!({
@@ -96,7 +96,7 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
     let ws_path = "spaces/test-sql-ws";
 
     struct MockIntegrity;
-    impl ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+    impl ugoite_iceberg::integrity::IntegrityProvider for MockIntegrity {
         fn checksum(&self, data: &str) -> String {
             format!("chk-{}", data.len())
         }
@@ -148,7 +148,7 @@ async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
     let ws_path = "spaces/test-sql-join";
 
     struct MockIntegrity;
-    impl ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+    impl ugoite_iceberg::integrity::IntegrityProvider for MockIntegrity {
         fn checksum(&self, data: &str) -> String {
             format!("chk-{}", data.len())
         }
@@ -294,7 +294,7 @@ async fn test_index_req_idx_001_get_space_stats() -> anyhow::Result<()> {
     let ws_path = "spaces/stats-space";
 
     struct MockIntegrity;
-    impl ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+    impl ugoite_iceberg::integrity::IntegrityProvider for MockIntegrity {
         fn checksum(&self, data: &str) -> String {
             format!("chk-{}", data.len())
         }

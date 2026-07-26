@@ -1,11 +1,11 @@
 mod common;
 use common::setup_operator;
-use ugoite_core::asset;
-use ugoite_core::entry;
-use ugoite_core::form;
-use ugoite_core::index;
-use ugoite_core::integrity::FakeIntegrityProvider;
-use ugoite_core::space;
+use ugoite_iceberg::asset;
+use ugoite_iceberg::entry;
+use ugoite_iceberg::form;
+use ugoite_iceberg::index;
+use ugoite_iceberg::integrity::FakeIntegrityProvider;
+use ugoite_iceberg::space;
 
 async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
     let form_def = serde_json::json!({
@@ -363,7 +363,7 @@ async fn test_entry_req_entry_006_extract_h2_headers() -> anyhow::Result<()> {
     let content = "---\nform: Meeting\n---\n# Title\n\n## Date\n2025-01-01\n\n## Summary\nText";
     entry::create_entry(&op, ws_path, entry_id, content, "author", &integrity).await?;
 
-    let props = ugoite_core::index::extract_properties(content);
+    let props = ugoite_iceberg::index::extract_properties(content);
     let props = props.as_object().unwrap();
 
     assert!(props.contains_key("Date"));

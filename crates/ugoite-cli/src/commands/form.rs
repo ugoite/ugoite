@@ -5,8 +5,8 @@ use crate::config::{
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use ugoite_core::integrity::RealIntegrityProvider;
-use ugoite_core::service::UgoiteService;
+use ugoite_iceberg::integrity::RealIntegrityProvider;
+use ugoite_iceberg::service::UgoiteService;
 
 #[derive(Args)]
 pub struct FormCmd {
@@ -132,7 +132,7 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
                     let op = operator_for_path(&root)?;
                     let ws = space_ws_path(&root, &space_id);
                     let integrity = RealIntegrityProvider::from_space(&op, &space_id).await?;
-                    ugoite_core::form::migrate_form(
+                    ugoite_iceberg::form::migrate_form(
                         &op,
                         &ws,
                         &form_def,
@@ -145,7 +145,7 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
             print_json(&serde_json::json!({"updated": true}));
         }
         FormSubCmd::ListTypes => {
-            let types = ugoite_core::form::list_column_types().await?;
+            let types = ugoite_iceberg::form::list_column_types().await?;
             print_json(&types);
         }
     }

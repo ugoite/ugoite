@@ -14,6 +14,7 @@ serde_urlencoded = "0.7"
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "signal"] }
 tower-http = { version = "0.7", features = ["cors", "fs", "request-id", "trace"] }
 ugoite-core = { path = "../ugoite-core" }
+ugoite-iceberg = { path = "../ugoite-iceberg" }
 ugoite-identity = { path = "../ugoite-identity" }
 ugoite-storage = { path = "../ugoite-storage" }
 ugoite-domain = { path = "../ugoite-domain" }

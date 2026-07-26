@@ -7,7 +7,7 @@ use opendal::Operator;
 use serde_json::Value;
 #[cfg(unix)]
 use tempfile::tempdir;
-use ugoite_core::{form, space};
+use ugoite_iceberg::{form, space};
 
 #[tokio::test]
 /// REQ-STO-002, REQ-STO-004

@@ -3,7 +3,7 @@ mod common;
 use common::setup_operator;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use ugoite_core::preferences;
+use ugoite_iceberg::preferences;
 
 #[tokio::test]
 /// REQ-STO-011

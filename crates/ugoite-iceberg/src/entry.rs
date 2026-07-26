@@ -1,4 +1,3 @@
-use crate::error::{AppError, ErrorCode};
 use crate::form;
 use crate::iceberg_store;
 use crate::index;
@@ -21,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::sync::Arc;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::id::{FieldId, RevisionId};
 use url::Url;

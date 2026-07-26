@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::entry;
-use crate::error::{AppError, ErrorCode};
 use crate::form;
 use crate::integrity::RealIntegrityProvider;
+use ugoite_core::error::{AppError, ErrorCode};
 
 const ASSET_FORM_NAME: &str = "Assets";
 

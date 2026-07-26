@@ -39,15 +39,10 @@ async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<Sp
 pub async fn native_workspace(
     operator: &Operator,
     workspace_path: &str,
-) -> Result<ugoite_iceberg::IcebergWorkspace> {
+) -> Result<crate::IcebergWorkspace> {
     let space_id = stable_space_id(operator, workspace_path).await?;
     let store = SpaceCatalogStore::new(operator.clone(), workspace_path)?.single_process();
-    ugoite_iceberg::IcebergWorkspace::open_space(
-        store,
-        space_id,
-        ugoite_iceberg::WriteConfig::default(),
-    )
-    .await
+    crate::IcebergWorkspace::open_space(store, space_id, crate::WriteConfig::default()).await
 }
 
 pub async fn ensure_form_tables(
@@ -59,7 +54,7 @@ pub async fn ensure_form_tables(
     let workspace = native_workspace(operator, workspace_path).await?;
     let table = TableIdent::new(
         workspace.namespace().clone(),
-        ugoite_iceberg::physical_form_name(form.id),
+        crate::physical_form_name(form.id),
     );
     if !workspace.catalog().table_exists(&table).await? {
         workspace.create_form(&form).await?;

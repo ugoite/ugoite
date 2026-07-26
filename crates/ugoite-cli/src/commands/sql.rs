@@ -2,8 +2,8 @@ use crate::config::{load_config, print_json, resolve_space_reference, validated_
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use ugoite_core::saved_sql::SqlPayload;
-use ugoite_core::service::UgoiteService;
+use ugoite_iceberg::saved_sql::SqlPayload;
+use ugoite_iceberg::service::UgoiteService;
 
 #[derive(Args)]
 pub struct SqlCmd {

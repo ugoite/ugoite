@@ -3,9 +3,9 @@ mod common;
 use common::setup_operator;
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
-use ugoite_core::authorization::Authorizer;
-use ugoite_core::entry;
-use ugoite_core::sample_data::{
+use ugoite_iceberg::authorization::Authorizer;
+use ugoite_iceberg::entry;
+use ugoite_iceberg::sample_data::{
     create_sample_space, create_sample_space_job, get_sample_space_job, list_sample_scenarios,
     SampleDataJob, SampleDataOptions, SampleJobStatus,
 };

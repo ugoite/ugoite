@@ -1,12 +1,12 @@
 use crate::entry;
-use crate::error::AppError;
 use crate::iceberg_store;
 use crate::integrity::IntegrityProvider;
-use crate::metadata;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashSet};
+use ugoite_core::error::AppError;
+use ugoite_core::metadata;
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
 };
