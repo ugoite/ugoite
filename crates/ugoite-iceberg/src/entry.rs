@@ -26,6 +26,8 @@ use ugoite_domain::id::{FieldId, RevisionId};
 use url::Url;
 use uuid::Uuid;
 
+pub const MAX_ENTRY_CREATE_BATCH_SIZE: usize = 256;
+
 fn entry_not_found(entry_id: &str) -> AppError {
     AppError::not_found(
         ErrorCode::EntryNotFound,
@@ -1999,6 +2001,11 @@ pub async fn create_entries<I: IntegrityProvider>(
 ) -> Result<Vec<EntryMeta>> {
     if requests.is_empty() {
         return Ok(Vec::new());
+    }
+    if requests.len() > MAX_ENTRY_CREATE_BATCH_SIZE {
+        return Err(anyhow!(
+            "entry create batches are limited to {MAX_ENTRY_CREATE_BATCH_SIZE} requests"
+        ));
     }
     let mut known_entry_ids = list_entry_rows(op, ws_path)
         .await?

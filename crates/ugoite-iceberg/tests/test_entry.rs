@@ -86,6 +86,20 @@ async fn explicit_entry_batch_publishes_one_snapshot_per_form() -> anyhow::Resul
 }
 
 #[tokio::test]
+async fn explicit_entry_batch_rejects_unbounded_input() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let integrity = FakeIntegrityProvider;
+    let requests = (0..=entry::MAX_ENTRY_CREATE_BATCH_SIZE)
+        .map(|index| entry::EntryCreateRequest::new(format!("entry-{index}"), ""))
+        .collect();
+    let error = entry::create_entries(&op, "spaces/not-created", requests, "author", &integrity)
+        .await
+        .expect_err("oversized explicit batch must be rejected before I/O");
+    assert!(error.to_string().contains("limited to"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn entry_update_accepts_minute_precision_time_values() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "time-entry", "/tmp").await?;

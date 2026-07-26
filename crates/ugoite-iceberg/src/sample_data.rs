@@ -18,7 +18,6 @@ const MAX_ENTRY_COUNT: usize = 20_000;
 const SAMPLE_JOBS_DIR: &str = "sample_jobs";
 const SAMPLE_JOB_READ_RETRIES: usize = 50;
 const SAMPLE_JOB_READ_RETRY_DELAY_MS: u64 = 20;
-const SAMPLE_ENTRY_BATCH_SIZE: usize = 256;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -119,14 +118,14 @@ impl<'a> SampleEntryBatch<'a> {
             op,
             ws_path,
             integrity,
-            pending: Vec::with_capacity(SAMPLE_ENTRY_BATCH_SIZE),
+            pending: Vec::with_capacity(entry::MAX_ENTRY_CREATE_BATCH_SIZE),
         }
     }
 
     async fn push(&mut self, entry_id: impl Into<String>, content: String) -> Result<()> {
         self.pending
             .push(EntryCreateRequest::new(entry_id, content));
-        if self.pending.len() >= SAMPLE_ENTRY_BATCH_SIZE {
+        if self.pending.len() >= entry::MAX_ENTRY_CREATE_BATCH_SIZE {
             self.flush().await?;
         }
         Ok(())
