@@ -172,26 +172,56 @@ schemas:
               target_form:
                 type: string
               default: {}
-  iceberg_catalog_pointers:
-    description: Versioned Catalog pointer manifest used by portable local Spaces; it replaces metadata-directory discovery.
-    path: spaces/{id}/forms/catalog-pointers.v1.json
+  iceberg_catalog_head:
+    description: The sole mutable catalog root, conditionally read and published with an OpenDAL ETag.
+    path: spaces/{id}/_ugoite/catalog/head.json
     schema:
       type: object
-      required: [version, tables]
+      required: [format_version, space_id, namespace, generation, form_registry_generation, tables, checksum, publication]
       properties:
-        version:
-          const: 1
+        format_version: {type: integer}
+        space_id: {type: string}
+        namespace:
+          type: array
+          items: {type: string}
+        generation: {type: integer, minimum: 0}
+        form_registry_generation: {type: integer, minimum: 0}
         tables:
           type: array
           items:
             type: object
-            required: [namespace, table, metadata_location]
+            required: [form_id, table, table_uuid, metadata_location]
             properties:
-              namespace:
-                type: array
-                items: {type: string}
+              form_id: {type: string, format: uuid}
               table: {type: string}
+              table_uuid: {type: string, format: uuid}
               metadata_location: {type: string}
+        checksum: {type: string}
+        publication:
+          type: object
+          required: [location, command_id]
+          properties:
+            location: {type: string}
+            command_id: {type: string}
+  iceberg_catalog_publication:
+    description: Immutable Head-publication evidence linked from the current Catalog Head.
+    path: spaces/{id}/_ugoite/catalog/publications/{generation}-{command_id}.json
+    schema:
+      type: object
+      required: [generation, command_id, command_kind, command_digest, next_head_checksum, next_head]
+      properties:
+        generation: {type: integer, minimum: 0}
+        previous_generation: {type: [integer, 'null']}
+        previous_publication: {type: [string, 'null']}
+        previous_head_checksum: {type: [string, 'null']}
+        command_id: {type: string}
+        command_kind: {type: string}
+        command_digest: {type: string}
+        affected_table: {type: [string, 'null']}
+        base_metadata_location: {type: [string, 'null']}
+        new_metadata_location: {type: [string, 'null']}
+        next_head_checksum: {type: string}
+        next_head: {type: object}
   materialized_view_meta:
     description: Metadata-only placeholder; no result rows.
     path: spaces/{id}/materialized_views/{sql_id}/meta.json

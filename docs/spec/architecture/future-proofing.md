@@ -10,7 +10,9 @@ A future browser adapter may persist a complete Space locally and optionally syn
 
 ## Storage portability
 
-Core behavior uses OpenDAL and Space-relative paths so local files and compatible object stores share one model. Physical Iceberg internals remain owned by the storage layer.
+`ugoite-storage` uses OpenDAL and Space-relative paths so local files and
+compatible object stores share one model. Physical Iceberg internals remain in
+`ugoite-iceberg`; Core consumes domain-facing storage/query contracts only.
 
 ## AI surfaces
 
@@ -18,4 +20,7 @@ MCP may add resources, prompts, and tools only with explicit authorization and u
 
 ## Compatibility
 
-Protocol versions, OpenAPI snapshots, file-schema changes, and release migrations require tests and explicit documentation.
+Protocol versions and OpenAPI snapshots require tests and explicit documentation.
+The current internal pre-release Space format version remains unchanged during
+the destructive architecture transition: superseded layouts fail explicitly
+instead of acquiring migration readers or compatibility flags.
