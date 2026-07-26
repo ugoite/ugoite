@@ -11,7 +11,7 @@ use iceberg_storage_opendal::{OpenDalResolvingStorageFactory, OpenDalStorage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -80,6 +80,46 @@ impl PublicationContext {
 
     fn generated() -> Self {
         Self::new(Uuid::new_v4().to_string(), "iceberg-catalog")
+    }
+}
+
+/// Immutable evidence captured before an Iceberg mutation writes any durable
+/// object. The upstream `Catalog` trait supplies a `TableCommit`, but not this
+/// Ugoite-specific publication context, so it stays scoped to one Catalog
+/// method invocation rather than being kept in ambient mutable state.
+#[derive(Debug, Clone)]
+struct PublicationAttempt {
+    publication: PublicationContext,
+    expected_head: Option<CatalogHead>,
+    expected_head_etag: Option<String>,
+    expected_generation: Option<u64>,
+    expected_head_checksum: Option<String>,
+    expected_previous_publication: Option<String>,
+}
+
+impl PublicationAttempt {
+    fn from_exact(
+        publication: &PublicationContext,
+        exact: Option<(CatalogHead, ExactCatalogHead)>,
+    ) -> Self {
+        match exact {
+            Some((head, exact)) => Self {
+                publication: publication.clone(),
+                expected_generation: Some(head.generation),
+                expected_head_checksum: Some(head.checksum.clone()),
+                expected_previous_publication: head.publication_location.clone(),
+                expected_head: Some(head),
+                expected_head_etag: exact.etag,
+            },
+            None => Self {
+                publication: publication.clone(),
+                expected_head: None,
+                expected_head_etag: None,
+                expected_generation: None,
+                expected_head_checksum: None,
+                expected_previous_publication: None,
+            },
+        }
     }
 }
 
@@ -311,33 +351,40 @@ impl SpaceCatalog {
 
     async fn publish_new_head(
         &self,
-        previous: Option<(&CatalogHead, Option<&str>)>,
-        expected_etag: Option<&str>,
+        attempt: &PublicationAttempt,
         mut next: CatalogHead,
         affected_table: &TableIdent,
         base_metadata_location: Option<String>,
         new_metadata_location: String,
+        base_snapshot_id: Option<i64>,
+        base_schema_id: Option<i32>,
+        new_snapshot_id: Option<i64>,
+        new_schema_id: i32,
     ) -> Result<()> {
-        let previous_generation = previous.map(|(head, _)| head.generation);
-        let previous_publication = previous.and_then(|(head, _)| head.publication_location.clone());
-        let previous_head_checksum = previous.map(|(head, _)| head.checksum.clone());
+        let previous_generation = attempt.expected_generation;
+        let previous_publication = attempt.expected_previous_publication.clone();
+        let previous_head_checksum = attempt.expected_head_checksum.clone();
         let publication_path = self
             .store
-            .publication_path(next.generation, &self.publication.command_id);
+            .publication_path(next.generation, &attempt.publication.command_id);
         next.publication_location = Some(publication_path);
-        next.publication_command_id = Some(self.publication.command_id.clone());
+        next.publication_command_id = Some(attempt.publication.command_id.clone());
         next.checksum = head_checksum(&next)?;
         let publication = PublicationRecord {
             generation: next.generation,
             previous_generation,
             previous_publication,
             previous_head_checksum,
-            command_id: self.publication.command_id.clone(),
-            command_kind: self.publication.command_kind.clone(),
-            command_digest: self.publication.command_digest.clone(),
+            command_id: attempt.publication.command_id.clone(),
+            command_kind: attempt.publication.command_kind.clone(),
+            command_digest: attempt.publication.command_digest.clone(),
             affected_table: TableCoordinates::from(affected_table),
             base_metadata_location,
             new_metadata_location,
+            base_snapshot_id,
+            base_schema_id,
+            new_snapshot_id,
+            new_schema_id,
             next_head_checksum: next.checksum.clone(),
             next_head: next.clone(),
             checksum: String::new(),
@@ -352,19 +399,41 @@ impl SpaceCatalog {
                 "Catalog Head exceeds its 1 MiB safety limit",
             ));
         }
-        let result = match previous {
-            Some(_) => self.store.replace_head(expected_etag, bytes).await,
-            None => self.store.create_head(bytes).await,
+        let result = if attempt.expected_head.is_some() {
+            self.store
+                .replace_head(attempt.expected_head_etag.as_deref(), bytes)
+                .await
+        } else {
+            self.store.create_head(bytes).await
         };
         result.map_err(storage_error)
     }
 
-    async fn resolve_unknown_outcome(&self, base_generation: Option<u64>) -> Result<bool> {
-        let Some((head, _)) = self.exact_head().await? else {
-            return Ok(false);
+    async fn resolve_unknown_outcome(&self, attempt: &PublicationAttempt) -> Result<bool> {
+        let Some((mut head, _)) = self.exact_head().await? else {
+            return if attempt.expected_head.is_none() {
+                Ok(false)
+            } else {
+                Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head disappeared while resolving an unknown publication outcome",
+                ))
+            };
         };
-        let mut next_publication = head.publication_location.clone();
-        while let Some(path) = next_publication {
+        let mut path = head.publication_location.clone().ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head has no publication record while resolving an unknown outcome",
+            )
+        })?;
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(path.clone()) {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication chain contains a cycle",
+                ));
+            }
             let publication = decode_publication(
                 &self
                     .store
@@ -372,10 +441,22 @@ impl SpaceCatalog {
                     .await
                     .map_err(storage_error)?,
             )?;
-            if publication.command_id == self.publication.command_id {
-                if publication.command_kind == self.publication.command_kind
-                    && publication.command_digest == self.publication.command_digest
+            validate_publication_matches_head(&publication, &head)?;
+            if publication.command_id == attempt.publication.command_id {
+                if publication.command_kind == attempt.publication.command_kind
+                    && publication.command_digest == attempt.publication.command_digest
                 {
+                    if publication.previous_generation != attempt.expected_generation
+                        || publication.previous_publication.as_deref()
+                            != attempt.expected_previous_publication.as_deref()
+                        || publication.previous_head_checksum.as_deref()
+                            != attempt.expected_head_checksum.as_deref()
+                    {
+                        return Err(Error::new(
+                            ErrorKind::DataInvalid,
+                            "matching publication does not link to this attempt's exact base Head",
+                        ));
+                    }
                     return Ok(true);
                 }
                 return Err(Error::new(
@@ -383,12 +464,63 @@ impl SpaceCatalog {
                     "publication command id was reused with different command content",
                 ));
             }
-            if publication.generation == base_generation.unwrap_or_default() {
+            if Some(publication.generation) == attempt.expected_generation {
+                if Some(publication.next_head_checksum.as_str())
+                    != attempt.expected_head_checksum.as_deref()
+                    || Some(path.as_str()) != attempt.expected_previous_publication.as_deref()
+                {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog publication chain does not reach this attempt's exact base Head",
+                    ));
+                }
                 return Ok(false);
             }
-            next_publication = publication.previous_publication;
+            let (previous_generation, previous_path, previous_checksum) = match (
+                publication.previous_generation,
+                publication.previous_publication,
+                publication.previous_head_checksum,
+            ) {
+                (None, None, None) if publication.generation == 0 => {
+                    return if attempt.expected_generation.is_none() {
+                        Ok(false)
+                    } else {
+                        Err(Error::new(
+                            ErrorKind::DataInvalid,
+                            "Catalog publication chain does not reach this attempt's base generation",
+                        ))
+                    };
+                }
+                (Some(generation), Some(path), Some(checksum))
+                    if generation + 1 == publication.generation =>
+                {
+                    (generation, path, checksum)
+                }
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog publication chain is incomplete or corrupt",
+                    ));
+                }
+            };
+            let previous = decode_publication(
+                &self
+                    .store
+                    .read_publication(&previous_path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            if previous.generation != previous_generation
+                || previous.next_head_checksum != previous_checksum
+            {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication predecessor is corrupt",
+                ));
+            }
+            head = previous.next_head.clone();
+            path = previous_path;
         }
-        Ok(false)
     }
 
     /// Validates the immutable evidence directly referenced by Head. This is
@@ -410,16 +542,7 @@ impl SpaceCatalog {
                 .await
                 .map_err(storage_error)?,
         )?;
-        if publication.generation != head.generation
-            || publication.next_head_checksum != head.checksum
-            || publication.next_head != *head
-            || head.publication_command_id.as_deref() != Some(publication.command_id.as_str())
-        {
-            return Err(Error::new(
-                ErrorKind::DataInvalid,
-                "Catalog publication does not match Catalog Head",
-            ));
-        }
+        validate_publication_matches_head(&publication, head)?;
         match (
             publication.previous_generation,
             publication.previous_publication.as_deref(),
@@ -538,7 +661,8 @@ impl Catalog for SpaceCatalog {
             ));
         }
         let table = TableIdent::new(namespace.clone(), creation.name.clone());
-        if let Some((head, _)) = self.exact_head().await? {
+        let attempt = PublicationAttempt::from_exact(&self.publication, self.exact_head().await?);
+        if let Some(head) = &attempt.expected_head {
             if head.tables.contains_key(&Self::table_key(&table)) {
                 return Err(Error::new(
                     ErrorKind::DataInvalid,
@@ -574,43 +698,36 @@ impl Catalog for SpaceCatalog {
             .runtime(self.runtime.clone())
             .build()?;
 
-        let exact = self.exact_head().await?;
-        let (mut next, previous, etag) = match exact {
-            Some((head, exact)) => (head.next_generation(), Some(head), exact.etag),
-            None => (
-                CatalogHead::genesis(self.space_id, &self.namespace),
-                None,
-                None,
-            ),
-        };
+        let mut next = attempt.expected_head.as_ref().map_or_else(
+            || CatalogHead::genesis(self.space_id, &self.namespace),
+            CatalogHead::next_generation,
+        );
         next.tables.insert(
             Self::table_key(&table),
             TableReference::from_table(&created)?,
         );
         next.form_registry_generation += 1;
-        let base_metadata_location = previous
+        let base_metadata_location = attempt
+            .expected_head
             .as_ref()
             .and_then(|head| head.tables.get(&Self::table_key(&table)))
             .map(|reference| reference.metadata_location.clone());
         let publish = self
             .publish_new_head(
-                previous
-                    .as_ref()
-                    .map(|head| (head, head.publication_location.as_deref())),
-                etag.as_deref(),
+                &attempt,
                 next,
                 &table,
                 base_metadata_location,
                 metadata_location,
+                None,
+                None,
+                created.metadata().current_snapshot_id(),
+                created.metadata().current_schema_id(),
             )
             .await;
         match publish {
             Ok(()) => Ok(created),
-            Err(_error)
-                if self
-                    .resolve_unknown_outcome(previous.as_ref().map(|head| head.generation))
-                    .await? =>
-            {
+            Err(_error) if self.resolve_unknown_outcome(&attempt).await? => {
                 self.load_table(&table).await
             }
             Err(error) => Err(error),
@@ -662,12 +779,15 @@ impl Catalog for SpaceCatalog {
             None
         };
         let table = commit.identifier().clone();
-        let (head, exact) = self
-            .exact_head()
-            .await?
+        let attempt = PublicationAttempt::from_exact(&self.publication, self.exact_head().await?);
+        let head = attempt
+            .expected_head
+            .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
         let base = self.load_head_table(&table, &head).await?;
         let base_metadata_location = base.metadata_location_result()?.to_string();
+        let base_snapshot_id = base.metadata().current_snapshot_id();
+        let base_schema_id = base.metadata().current_schema_id();
         let staged = commit.apply(base)?;
         let new_metadata_location = staged.metadata_location_result()?.to_string();
         staged
@@ -684,17 +804,20 @@ impl Catalog for SpaceCatalog {
         );
         let publication = self
             .publish_new_head(
-                Some((&head, head.publication_location.as_deref())),
-                exact.etag.as_deref(),
+                &attempt,
                 next,
                 &table,
                 Some(base_metadata_location),
                 new_metadata_location,
+                base_snapshot_id,
+                Some(base_schema_id),
+                staged.metadata().current_snapshot_id(),
+                staged.metadata().current_schema_id(),
             )
             .await;
         match publication {
             Ok(()) => Ok(staged),
-            Err(_error) if self.resolve_unknown_outcome(Some(head.generation)).await? => {
+            Err(_error) if self.resolve_unknown_outcome(&attempt).await? => {
                 self.load_table(&table).await
             }
             Err(error) => Err(error),
@@ -792,6 +915,10 @@ struct PublicationRecord {
     affected_table: TableCoordinates,
     base_metadata_location: Option<String>,
     new_metadata_location: String,
+    base_snapshot_id: Option<i64>,
+    base_schema_id: Option<i32>,
+    new_snapshot_id: Option<i64>,
+    new_schema_id: i32,
     next_head_checksum: String,
     next_head: CatalogHead,
     checksum: String,
@@ -886,6 +1013,23 @@ fn preserve_schema_field_ids(
     serde_json::from_value(encoded).map_err(json_error)
 }
 
+fn validate_publication_matches_head(
+    publication: &PublicationRecord,
+    head: &CatalogHead,
+) -> Result<()> {
+    if publication.generation != head.generation
+        || publication.next_head_checksum != head.checksum
+        || publication.next_head != *head
+        || head.publication_command_id.as_deref() != Some(publication.command_id.as_str())
+    {
+        return Err(Error::new(
+            ErrorKind::DataInvalid,
+            "Catalog publication does not match Catalog Head",
+        ));
+    }
+    Ok(())
+}
+
 fn storage_error(error: impl std::fmt::Display) -> Error {
     Error::new(ErrorKind::Unexpected, error.to_string())
 }
@@ -921,6 +1065,11 @@ mod tests {
             SpaceCatalogStore::new(operator.clone(), "spaces/demo")?.single_process(),
             SpaceId::from(Uuid::from_u128(1)),
         )?;
+        // This simulates a client losing the successful Head-CAS response.
+        // The same command must remain provably successful after another
+        // writer advances the Catalog.
+        let initial_attempt =
+            PublicationAttempt::from_exact(&catalog.publication, catalog.exact_head().await?);
         let namespace = catalog.namespace().clone();
         let schema = iceberg::spec::Schema::builder()
             .with_fields(vec![])
@@ -954,8 +1103,36 @@ mod tests {
             committed.metadata().properties().get("ugoite.test.commit"),
             Some(&"published".to_string())
         );
+        let (head, _) = update_catalog.exact_head().await?.expect("Catalog Head");
+        let publication_path = head
+            .publication_location
+            .as_deref()
+            .expect("Head publication location");
+        let publication = decode_publication(
+            &update_catalog
+                .store
+                .read_publication(publication_path)
+                .await?,
+        )?;
+        assert_eq!(
+            publication.base_snapshot_id,
+            created.metadata().current_snapshot_id()
+        );
+        assert_eq!(
+            publication.base_schema_id,
+            Some(created.metadata().current_schema_id())
+        );
+        assert_eq!(
+            publication.new_snapshot_id,
+            committed.metadata().current_snapshot_id()
+        );
+        assert_eq!(
+            publication.new_schema_id,
+            committed.metadata().current_schema_id()
+        );
+        assert!(catalog.resolve_unknown_outcome(&initial_attempt).await?);
         let reopened = SpaceCatalog::new(
-            SpaceCatalogStore::new(operator, "spaces/demo")?.single_process(),
+            SpaceCatalogStore::new(operator.clone(), "spaces/demo")?.single_process(),
             SpaceId::from(Uuid::from_u128(1)),
         )?;
         assert_eq!(reopened.list_tables(&namespace).await?.len(), 1);
@@ -964,6 +1141,14 @@ mod tests {
             loaded.metadata().properties().get("ugoite.test.commit"),
             Some(&"published".to_string())
         );
+        operator
+            .write(publication_path, b"corrupt".to_vec())
+            .await?;
+        let error = reopened
+            .exact_head()
+            .await
+            .expect_err("corrupt reachable publication evidence must fail");
+        assert_eq!(error.kind(), ErrorKind::DataInvalid);
         Ok(())
     }
 
@@ -993,6 +1178,119 @@ mod tests {
             SpaceId::from(Uuid::from_u128(2)),
         )?;
         assert!(reopened.table_exists(created.identifier()).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ignores_an_interrupted_publication_before_head_cas() -> AnyResult<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let catalog = SpaceCatalog::new(
+            SpaceCatalogStore::new(operator, "spaces/interrupted")?.single_process(),
+            SpaceId::from(Uuid::from_u128(4)),
+        )?
+        .with_publication_context(PublicationContext::with_command_digest(
+            "interrupted-command",
+            "test",
+            "interrupted-digest",
+        ));
+        let attempt =
+            PublicationAttempt::from_exact(&catalog.publication, catalog.exact_head().await?);
+        let table = TableIdent::new(catalog.namespace().clone(), "form_interrupted".to_string());
+        let mut next = CatalogHead::genesis(catalog.space_id, catalog.namespace());
+        let publication_path = catalog
+            .store
+            .publication_path(next.generation, &catalog.publication.command_id);
+        next.publication_location = Some(publication_path);
+        next.publication_command_id = Some(catalog.publication.command_id.clone());
+        next.checksum = head_checksum(&next)?;
+        let mut publication = PublicationRecord {
+            generation: next.generation,
+            previous_generation: None,
+            previous_publication: None,
+            previous_head_checksum: None,
+            command_id: catalog.publication.command_id.clone(),
+            command_kind: catalog.publication.command_kind.clone(),
+            command_digest: catalog.publication.command_digest.clone(),
+            affected_table: TableCoordinates::from(&table),
+            base_metadata_location: None,
+            new_metadata_location: "memory:///spaces/interrupted/forms/form/metadata.json"
+                .to_string(),
+            base_snapshot_id: None,
+            base_schema_id: None,
+            new_snapshot_id: None,
+            new_schema_id: 0,
+            next_head_checksum: next.checksum.clone(),
+            next_head: next,
+            checksum: String::new(),
+        };
+        publication.checksum = publication_checksum(&publication)?;
+        catalog.write_publication(&publication).await?;
+
+        assert!(catalog.exact_head().await?.is_none());
+        assert!(!catalog.resolve_unknown_outcome(&attempt).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stale_initialization_does_not_replace_the_winner_head() -> AnyResult<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let winner = SpaceCatalog::new(
+            SpaceCatalogStore::new(operator.clone(), "spaces/conflict")?.single_process(),
+            SpaceId::from(Uuid::from_u128(5)),
+        )?
+        .with_publication_context(PublicationContext::with_command_digest(
+            "winner-command",
+            "test",
+            "winner-digest",
+        ));
+        let table = TableIdent::new(winner.namespace().clone(), "form_conflict".to_string());
+        let winner_attempt =
+            PublicationAttempt::from_exact(&winner.publication, winner.exact_head().await?);
+        winner
+            .publish_new_head(
+                &winner_attempt,
+                CatalogHead::genesis(winner.space_id, winner.namespace()),
+                &table,
+                None,
+                "memory:///spaces/conflict/forms/form/metadata.json".to_string(),
+                None,
+                None,
+                None,
+                0,
+            )
+            .await?;
+
+        let loser = SpaceCatalog::new(
+            SpaceCatalogStore::new(operator, "spaces/conflict")?.single_process(),
+            SpaceId::from(Uuid::from_u128(5)),
+        )?
+        .with_publication_context(PublicationContext::with_command_digest(
+            "loser-command",
+            "test",
+            "loser-digest",
+        ));
+        let stale_attempt = PublicationAttempt::from_exact(&loser.publication, None);
+        let error = loser
+            .publish_new_head(
+                &stale_attempt,
+                CatalogHead::genesis(loser.space_id, loser.namespace()),
+                &table,
+                None,
+                "memory:///spaces/conflict/forms/form/metadata.json".to_string(),
+                None,
+                None,
+                None,
+                0,
+            )
+            .await
+            .expect_err("a stale initial attempt cannot replace the winner Head");
+        assert!(error.to_string().contains("Catalog Head already exists"));
+        assert!(!loser.resolve_unknown_outcome(&stale_attempt).await?);
+        let (head, _) = winner.exact_head().await?.expect("winner Head");
+        assert_eq!(
+            head.publication_command_id.as_deref(),
+            Some("winner-command")
+        );
         Ok(())
     }
 
