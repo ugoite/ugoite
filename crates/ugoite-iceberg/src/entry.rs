@@ -18,7 +18,7 @@ use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
@@ -97,6 +97,21 @@ pub struct EntryMeta {
     pub deleted_at: Option<f64>,
     #[serde(default)]
     pub properties: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct EntryCreateRequest {
+    pub entry_id: String,
+    pub content: String,
+}
+
+impl EntryCreateRequest {
+    pub fn new(entry_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            entry_id: entry_id.into(),
+            content: content.into(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1960,10 +1975,72 @@ pub async fn create_entry<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<EntryMeta> {
-    if find_entry_form(op, ws_path, entry_id).await?.is_some() {
-        return Err(anyhow!("Entry already exists: {}", entry_id));
-    }
+    let mut entries = create_entries(
+        op,
+        ws_path,
+        vec![EntryCreateRequest::new(entry_id, content)],
+        author,
+        integrity,
+    )
+    .await?;
+    Ok(entries
+        .pop()
+        .expect("a one-entry create batch must return one entry"))
+}
 
+/// Creates one explicit batch. Each Form represented in the batch publishes
+/// one upstream Iceberg snapshot after all entries have been validated.
+pub async fn create_entries<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    requests: Vec<EntryCreateRequest>,
+    author: &str,
+    integrity: &I,
+) -> Result<Vec<EntryMeta>> {
+    if requests.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut known_entry_ids = list_entry_rows(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|(_, row)| row.entry_id)
+        .collect::<HashSet<_>>();
+    let mut batches = BTreeMap::<String, (Value, Vec<RevisionRow>)>::new();
+    let mut entries = Vec::with_capacity(requests.len());
+    for request in requests {
+        if !known_entry_ids.insert(request.entry_id.clone()) {
+            return Err(anyhow!("Entry already exists: {}", request.entry_id));
+        }
+        let (entry, form_name, form_def, revision) = prepare_entry(
+            op,
+            ws_path,
+            &request.entry_id,
+            &request.content,
+            author,
+            integrity,
+        )
+        .await?;
+        if let Some((_, revisions)) = batches.get_mut(&form_name) {
+            revisions.push(revision);
+        } else {
+            batches.insert(form_name, (form_def, vec![revision]));
+        }
+        entries.push(entry);
+    }
+    for (_, (form_def, revisions)) in batches {
+        append_revision_rows_to_workspace(op, ws_path, &revisions, &form_def).await?;
+    }
+    Ok(entries)
+}
+
+async fn prepare_entry<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    content: &str,
+    author: &str,
+    integrity: &I,
+) -> Result<(EntryMeta, String, Value, RevisionRow)> {
     let normalized_content = normalize_ugoite_links(content);
     let (frontmatter, sections) = parse_markdown(&normalized_content);
     let form_name =
@@ -2053,8 +2130,6 @@ pub async fn create_entry<I: IntegrityProvider>(
         source_kind: "api".to_string(),
         source_id: None,
     };
-    append_revision_row_for_form(op, ws_path, &form_name, &revision, &form_def).await?;
-
     let ws_id = ws_path
         .trim_end_matches('/')
         .split('/')
@@ -2062,11 +2137,11 @@ pub async fn create_entry<I: IntegrityProvider>(
         .unwrap_or(ws_path)
         .to_string();
 
-    Ok(EntryMeta {
+    let entry = EntryMeta {
         id: entry_id.to_string(),
         space_id: ws_id,
         title,
-        form: Some(form_name),
+        form: Some(form_name.clone()),
         tags: entry_row.tags.clone(),
         links: entry_row.links.clone(),
         created_at: timestamp,
@@ -2078,7 +2153,8 @@ pub async fn create_entry<I: IntegrityProvider>(
         deleted: false,
         deleted_at: None,
         properties: Value::Object(Map::new()),
-    })
+    };
+    Ok((entry, form_name, form_def, revision))
 }
 
 pub async fn list_entries(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {

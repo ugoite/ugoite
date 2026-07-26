@@ -165,7 +165,7 @@ impl SpaceCatalog {
                 "Catalog Head belongs to a different Space or namespace",
             ));
         }
-        self.validate_publication_chain(&head).await?;
+        self.validate_head_publication(&head).await?;
         Ok(Some((head, exact)))
     }
 
@@ -318,60 +318,65 @@ impl SpaceCatalog {
         Ok(false)
     }
 
-    async fn validate_publication_chain(&self, head: &CatalogHead) -> Result<()> {
-        let mut expected_generation = head.generation;
-        let mut expected_checksum = head.checksum.clone();
-        let mut publication_path = head.publication_location.clone().ok_or_else(|| {
+    /// Validates the immutable evidence directly referenced by Head. This is
+    /// deliberately constant work: opening a Space must load Head and the
+    /// metadata it references, not replay the whole publication history.
+    /// Unknown-outcome resolution traverses the chain only as far as its
+    /// exact attempt base generation.
+    async fn validate_head_publication(&self, head: &CatalogHead) -> Result<()> {
+        let publication_path = head.publication_location.as_deref().ok_or_else(|| {
             Error::new(
                 ErrorKind::DataInvalid,
                 "Catalog Head has no publication record",
             )
         })?;
-        loop {
-            let publication = decode_publication(
-                &self
-                    .store
-                    .read_publication(&publication_path)
-                    .await
-                    .map_err(storage_error)?,
-            )?;
-            if publication.generation != expected_generation
-                || publication.next_head_checksum != expected_checksum
-                || publication.next_head.checksum != expected_checksum
-                || (publication.generation == head.generation
-                    && (publication.next_head != *head
-                        || head.publication_command_id.as_deref()
-                            != Some(publication.command_id.as_str())))
+        let publication = decode_publication(
+            &self
+                .store
+                .read_publication(publication_path)
+                .await
+                .map_err(storage_error)?,
+        )?;
+        if publication.generation != head.generation
+            || publication.next_head_checksum != head.checksum
+            || publication.next_head != *head
+            || head.publication_command_id.as_deref() != Some(publication.command_id.as_str())
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog publication does not match Catalog Head",
+            ));
+        }
+        match (
+            publication.previous_generation,
+            publication.previous_publication.as_deref(),
+            publication.previous_head_checksum.as_deref(),
+        ) {
+            (None, None, None) if publication.generation == 0 => Ok(()),
+            (Some(previous_generation), Some(previous_path), Some(previous_checksum))
+                if previous_generation + 1 == publication.generation =>
             {
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "Catalog publication chain does not match Catalog Head",
-                ));
-            }
-            match (
-                publication.previous_generation,
-                publication.previous_publication,
-            ) {
-                (None, None) if publication.generation == 0 => return Ok(()),
-                (Some(previous_generation), Some(previous_path))
-                    if previous_generation + 1 == publication.generation =>
+                let previous = decode_publication(
+                    &self
+                        .store
+                        .read_publication(previous_path)
+                        .await
+                        .map_err(storage_error)?,
+                )?;
+                if previous.generation != previous_generation
+                    || previous.next_head_checksum != previous_checksum
                 {
-                    expected_generation = previous_generation;
-                    expected_checksum = publication.previous_head_checksum.ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::DataInvalid,
-                            "Catalog publication is missing its previous Head checksum",
-                        )
-                    })?;
-                    publication_path = previous_path;
-                }
-                _ => {
                     return Err(Error::new(
                         ErrorKind::DataInvalid,
-                        "Catalog publication chain is incomplete or corrupt",
+                        "Catalog publication predecessor is corrupt",
                     ));
                 }
+                Ok(())
             }
+            _ => Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog publication chain is incomplete or corrupt",
+            )),
         }
     }
 }
@@ -884,6 +889,52 @@ mod tests {
             SpaceId::from(Uuid::from_u128(2)),
         )?;
         assert!(reopened.table_exists(created.identifier()).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn opens_the_head_after_many_publications_without_replaying_history() -> AnyResult<()> {
+        let temp = tempdir()?;
+        let operator =
+            Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?.finish();
+        let store =
+            SpaceCatalogStore::new(operator.clone(), "spaces/many-publications")?.single_process();
+        let space_id = SpaceId::from(Uuid::from_u128(3));
+        let catalog = SpaceCatalog::new(store.clone(), space_id)?;
+        let namespace = catalog.namespace().clone();
+        let created = catalog
+            .create_table(
+                &namespace,
+                TableCreation::builder()
+                    .name("form_00000000000000000000000000000003".to_string())
+                    .location(format!(
+                        "file://{}/spaces/many-publications/forms/form",
+                        temp.path().display()
+                    ))
+                    .schema(
+                        iceberg::spec::Schema::builder()
+                            .with_fields(vec![])
+                            .build()?,
+                    )
+                    .build(),
+            )
+            .await?;
+        for generation in 1..=128 {
+            let attempt = SpaceCatalog::new(store.clone(), space_id)?;
+            let table = attempt.load_table(created.identifier()).await?;
+            let transaction = iceberg::transaction::Transaction::new(&table);
+            let transaction = transaction
+                .update_table_properties()
+                .set("ugoite.test.generation".to_string(), generation.to_string())
+                .apply(transaction)?;
+            transaction.commit(&attempt).await?;
+        }
+        let reopened = SpaceCatalog::new(store, space_id)?;
+        let table = reopened.load_table(created.identifier()).await?;
+        assert_eq!(
+            table.metadata().properties().get("ugoite.test.generation"),
+            Some(&"128".to_string())
+        );
         Ok(())
     }
 }

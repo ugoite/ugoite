@@ -1,4 +1,4 @@
-use crate::entry;
+use crate::entry::{self, EntryCreateRequest};
 use crate::form;
 use crate::integrity::RealIntegrityProvider;
 use crate::space;
@@ -18,6 +18,7 @@ const MAX_ENTRY_COUNT: usize = 20_000;
 const SAMPLE_JOBS_DIR: &str = "sample_jobs";
 const SAMPLE_JOB_READ_RETRIES: usize = 50;
 const SAMPLE_JOB_READ_RETRY_DELAY_MS: u64 = 20;
+const SAMPLE_ENTRY_BATCH_SIZE: usize = 256;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -103,6 +104,48 @@ struct ResolvedSampleDataPlan {
     form_defs: Vec<Value>,
     form_count: usize,
     entry_count: usize,
+}
+
+struct SampleEntryBatch<'a> {
+    op: &'a Operator,
+    ws_path: &'a str,
+    integrity: &'a RealIntegrityProvider,
+    pending: Vec<EntryCreateRequest>,
+}
+
+impl<'a> SampleEntryBatch<'a> {
+    fn new(op: &'a Operator, ws_path: &'a str, integrity: &'a RealIntegrityProvider) -> Self {
+        Self {
+            op,
+            ws_path,
+            integrity,
+            pending: Vec::with_capacity(SAMPLE_ENTRY_BATCH_SIZE),
+        }
+    }
+
+    async fn push(&mut self, entry_id: impl Into<String>, content: String) -> Result<()> {
+        self.pending
+            .push(EntryCreateRequest::new(entry_id, content));
+        if self.pending.len() >= SAMPLE_ENTRY_BATCH_SIZE {
+            self.flush().await?;
+        }
+        Ok(())
+    }
+
+    async fn flush(&mut self) -> Result<()> {
+        if self.pending.is_empty() {
+            return Ok(());
+        }
+        entry::create_entries(
+            self.op,
+            self.ws_path,
+            std::mem::take(&mut self.pending),
+            "sample-generator",
+            self.integrity,
+        )
+        .await?;
+        Ok(())
+    }
 }
 
 fn resolve_sample_data_plan(options: &SampleDataOptions) -> Result<ResolvedSampleDataPlan> {
@@ -864,6 +907,7 @@ async fn generate_renewable_ops(
     let site_id_refs: Vec<&str> = site_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -883,15 +927,7 @@ async fn generate_renewable_ops(
             .ok_or_else(|| anyhow!("Missing Site form definition"))?;
         let markdown =
             entry::render_markdown_for_form(&title, "Site", &[], &fields, &empty_extra, form_def);
-        entry::create_entry(
-            op,
-            ws_path,
-            site_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(site_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Sites").await?;
     }
@@ -916,15 +952,7 @@ async fn generate_renewable_ops(
             .ok_or_else(|| anyhow!("Missing Array form definition"))?;
         let markdown =
             entry::render_markdown_for_form(&title, "Array", &[], &fields, &empty_extra, form_def);
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Arrays").await?;
     }
@@ -958,15 +986,7 @@ async fn generate_renewable_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Inspections").await?;
     }
@@ -1005,15 +1025,7 @@ async fn generate_renewable_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Maintenance tickets")
@@ -1046,21 +1058,14 @@ async fn generate_renewable_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Energy reports")
             .await?;
     }
 
+    entries.flush().await?;
     Ok(())
 }
 
@@ -1102,6 +1107,7 @@ async fn generate_supply_chain(
     let supplier_refs: Vec<&str> = supplier_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1127,15 +1133,7 @@ async fn generate_supply_chain(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            warehouse_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(warehouse_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Warehouses").await?;
     }
@@ -1166,15 +1164,7 @@ async fn generate_supply_chain(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Shipments").await?;
     }
@@ -1204,15 +1194,7 @@ async fn generate_supply_chain(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Inventory checks")
@@ -1244,15 +1226,7 @@ async fn generate_supply_chain(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Supplier scores")
@@ -1284,21 +1258,14 @@ async fn generate_supply_chain(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Purchase orders")
             .await?;
     }
 
+    entries.flush().await?;
     Ok(())
 }
 
@@ -1335,6 +1302,7 @@ async fn generate_municipal_infra(
     let asset_refs: Vec<&str> = asset_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1354,15 +1322,7 @@ async fn generate_municipal_infra(
             .ok_or_else(|| anyhow!("Missing Asset form definition"))?;
         let markdown =
             entry::render_markdown_for_form(&title, "Asset", &[], &fields, &empty_extra, form_def);
-        entry::create_entry(
-            op,
-            ws_path,
-            asset_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(asset_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Assets").await?;
     }
@@ -1391,15 +1351,7 @@ async fn generate_municipal_infra(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Inspections").await?;
     }
@@ -1427,15 +1379,7 @@ async fn generate_municipal_infra(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Work orders").await?;
     }
@@ -1466,21 +1410,14 @@ async fn generate_municipal_infra(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Service reports")
             .await?;
     }
 
+    entries.flush().await?;
     Ok(())
 }
 
@@ -1510,6 +1447,7 @@ async fn generate_fleet_ops(
     let vehicle_refs: Vec<&str> = vehicle_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1535,15 +1473,7 @@ async fn generate_fleet_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            vehicle_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(vehicle_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Vehicles").await?;
     }
@@ -1574,15 +1504,7 @@ async fn generate_fleet_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Route logs").await?;
     }
@@ -1614,15 +1536,7 @@ async fn generate_fleet_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Service tickets")
@@ -1655,21 +1569,14 @@ async fn generate_fleet_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Fuel reports")
             .await?;
     }
 
+    entries.flush().await?;
     Ok(())
 }
 
@@ -1706,6 +1613,7 @@ async fn generate_lab_qa(
     let batch_refs: Vec<&str> = batch_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1726,15 +1634,7 @@ async fn generate_lab_qa(
             .ok_or_else(|| anyhow!("Missing Batch form definition"))?;
         let markdown =
             entry::render_markdown_for_form(&title, "Batch", &[], &fields, &empty_extra, form_def);
-        entry::create_entry(
-            op,
-            ws_path,
-            batch_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(batch_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Batches").await?;
     }
@@ -1763,15 +1663,7 @@ async fn generate_lab_qa(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Test runs").await?;
     }
@@ -1799,15 +1691,7 @@ async fn generate_lab_qa(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Nonconformance records")
@@ -1838,21 +1722,14 @@ async fn generate_lab_qa(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Calibration records")
             .await?;
     }
 
+    entries.flush().await?;
     Ok(())
 }
 
@@ -1884,6 +1761,7 @@ async fn generate_retail_ops(
     let store_refs: Vec<&str> = store_ids.iter().map(|id| id.as_str()).collect();
 
     let integrity = RealIntegrityProvider::from_space(op, space_id).await?;
+    let mut entries = SampleEntryBatch::new(op, ws_path, &integrity);
     let empty_extra = Value::Object(Map::new());
     let mut processed = 0usize;
 
@@ -1903,15 +1781,7 @@ async fn generate_retail_ops(
             .ok_or_else(|| anyhow!("Missing Store form definition"))?;
         let markdown =
             entry::render_markdown_for_form(&title, "Store", &[], &fields, &empty_extra, form_def);
-        entry::create_entry(
-            op,
-            ws_path,
-            store_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(store_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Stores").await?;
     }
@@ -1939,15 +1809,7 @@ async fn generate_retail_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Stock alerts")
@@ -1979,15 +1841,7 @@ async fn generate_retail_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Price audits")
@@ -2020,15 +1874,7 @@ async fn generate_retail_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress.report(processed, "Generating Daily sales").await?;
     }
@@ -2057,21 +1903,14 @@ async fn generate_retail_ops(
             &empty_extra,
             form_def,
         );
-        entry::create_entry(
-            op,
-            ws_path,
-            &entry_id,
-            &markdown,
-            "sample-generator",
-            &integrity,
-        )
-        .await?;
+        entries.push(entry_id, markdown).await?;
         processed += 1;
         progress
             .report(processed, "Generating Vendor deliveries")
             .await?;
     }
 
+    entries.flush().await?;
     Ok(())
 }
 

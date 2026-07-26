@@ -43,6 +43,49 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn explicit_entry_batch_publishes_one_snapshot_per_form() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "batched-entry-space", "/tmp").await?;
+    let ws_path = "spaces/batched-entry-space";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    let entries = entry::create_entries(
+        &op,
+        ws_path,
+        vec![
+            entry::EntryCreateRequest::new(
+                "batched-entry-1",
+                "---\nform: Entry\n---\n# First\n\n## Body\nOne",
+            ),
+            entry::EntryCreateRequest::new(
+                "batched-entry-2",
+                "---\nform: Entry\n---\n# Second\n\n## Body\nTwo",
+            ),
+        ],
+        "test-author",
+        &integrity,
+    )
+    .await?;
+    assert_eq!(entries.len(), 2);
+
+    let (_, table) =
+        ugoite_iceberg::iceberg_store::load_revisions_table(&op, ws_path, "Entry").await?;
+    assert_eq!(table.metadata().snapshots().len(), 1);
+    assert_eq!(
+        table
+            .metadata()
+            .current_snapshot()
+            .expect("accepted batch must publish a snapshot")
+            .summary()
+            .additional_properties
+            .get("ugoite.revision-count"),
+        Some(&"2".to_string())
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn entry_update_accepts_minute_precision_time_values() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "time-entry", "/tmp").await?;
