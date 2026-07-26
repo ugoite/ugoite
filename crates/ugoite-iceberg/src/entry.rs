@@ -4,7 +4,7 @@ use crate::index;
 use crate::integrity::IntegrityProvider;
 use crate::link::Link;
 use anyhow::{anyhow, Context, Result};
-use arrow_array::builder::{FixedSizeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder};
+use arrow_array::builder::{ListBuilder, StringBuilder, StructBuilder};
 use arrow_array::{
     Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array,
     Float64Array, Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray,
@@ -12,7 +12,7 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, Fields};
 use base64::Engine as _;
-use chrono::{DateTime, NaiveTime, SecondsFormat, Timelike, Utc};
+use chrono::{DateTime, NaiveTime, SecondsFormat, Utc};
 use futures::TryStreamExt;
 use opendal::Operator;
 use regex::Regex;
@@ -511,40 +511,14 @@ fn form_field_type_map(form_def: &Value) -> std::collections::HashMap<String, St
         .collect::<std::collections::HashMap<_, _>>()
 }
 
-fn date_to_days(value: &str) -> Option<i32> {
-    let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
-    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?;
-    let days = date.signed_duration_since(epoch).num_days();
-    i32::try_from(days).ok()
-}
-
 fn days_to_date(days: i32) -> Option<String> {
     let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?;
     let date = epoch.checked_add_signed(chrono::Duration::days(days as i64))?;
     Some(date.format("%Y-%m-%d").to_string())
 }
 
-fn parse_timestamp_to_micros(value: &str) -> Option<i64> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|dt| dt.timestamp_micros())
-}
-
 fn timestamp_micros_to_string(micros: i64) -> Option<String> {
     DateTime::<Utc>::from_timestamp_micros(micros).map(|dt| dt.to_rfc3339())
-}
-
-fn parse_time_to_micros(value: &str) -> Option<i64> {
-    let trimmed = value.trim();
-    let formats = ["%H:%M:%S%.f", "%H:%M:%S", "%H:%M"];
-    for format in formats {
-        if let Ok(time) = NaiveTime::parse_from_str(trimmed, format) {
-            let secs = i64::from(time.num_seconds_from_midnight());
-            let micros = i64::from(time.nanosecond() / 1_000);
-            return Some(secs * 1_000_000 + micros);
-        }
-    }
-    None
 }
 
 fn time_micros_to_string(micros: i64) -> Option<String> {
@@ -562,36 +536,11 @@ fn time_micros_to_string(micros: i64) -> Option<String> {
     }
 }
 
-fn parse_timestamp_to_nanos(value: &str) -> Option<i64> {
-    let dt = DateTime::parse_from_rfc3339(value).ok()?;
-    let secs = dt.timestamp();
-    let nanos = i64::from(dt.timestamp_subsec_nanos());
-    Some(secs.saturating_mul(1_000_000_000) + nanos)
-}
-
 fn timestamp_nanos_to_string(nanos: i64) -> Option<String> {
     let secs = nanos.div_euclid(1_000_000_000);
     let sub_nanos = nanos.rem_euclid(1_000_000_000) as u32;
     let dt = DateTime::<Utc>::from_timestamp(secs, sub_nanos)?;
     Some(dt.to_rfc3339_opts(SecondsFormat::Nanos, false))
-}
-
-fn parse_binary_string(value: &str) -> Option<Vec<u8>> {
-    let trimmed = value.trim();
-    if let Some(rest) = trimmed.strip_prefix("base64:") {
-        return base64::engine::general_purpose::STANDARD
-            .decode(rest.trim())
-            .ok();
-    }
-    if let Some(rest) = trimmed.strip_prefix("hex:") {
-        return hex::decode(rest.trim()).ok();
-    }
-    if let Some(rest) = trimmed.strip_prefix("0x") {
-        return hex::decode(rest.trim()).ok();
-    }
-    base64::engine::general_purpose::STANDARD
-        .decode(trimmed)
-        .ok()
 }
 
 fn binary_to_base64(value: &[u8]) -> String {
@@ -620,66 +569,6 @@ fn list_array_from_strings(
     Ok(Arc::new(builder.finish()))
 }
 
-fn list_array_from_values(
-    values: Option<&Value>,
-    list_field: &arrow_schema::Field,
-) -> Result<ArrayRef> {
-    let element_field = list_element_field(list_field)?;
-    let mut builder = ListBuilder::new(StringBuilder::new()).with_field(element_field);
-    if let Some(Value::Array(items)) = values {
-        for item in items {
-            let rendered = match item {
-                Value::String(s) => s.clone(),
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => b.to_string(),
-                _ => item.to_string(),
-            };
-            builder.values().append_value(rendered);
-        }
-        builder.append(true);
-    } else {
-        builder.append(false);
-    }
-    Ok(Arc::new(builder.finish()))
-}
-
-fn object_list_array_from_values(
-    values: Option<&Value>,
-    list_field: &arrow_schema::Field,
-) -> Result<ArrayRef> {
-    let element_field = list_element_field(list_field)?;
-    let struct_fields = list_struct_fields_from_field(list_field)?;
-    let count = values
-        .and_then(|value| value.as_array().map(|items| items.len()))
-        .unwrap_or(0);
-    let struct_builder = StructBuilder::from_fields(struct_fields.clone(), count);
-    let mut list_builder = ListBuilder::new(struct_builder).with_field(element_field);
-
-    if let Some(Value::Array(items)) = values {
-        for item in items {
-            let builder = list_builder.values();
-            let obj = item.as_object();
-            for (idx, field) in struct_fields.iter().enumerate() {
-                let value = obj
-                    .and_then(|map| map.get(field.name()))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let field_builder =
-                    builder.field_builder::<StringBuilder>(idx).ok_or_else(|| {
-                        anyhow!("Invalid object_list field builder: {}", field.name())
-                    })?;
-                field_builder.append_value(value);
-            }
-            builder.append(true);
-        }
-        list_builder.append(true);
-    } else {
-        list_builder.append(false);
-    }
-
-    Ok(Arc::new(list_builder.finish()))
-}
-
 fn list_struct_fields_from_field(list_field: &arrow_schema::Field) -> Result<Fields> {
     let element_field = list_element_field(list_field)?;
     match element_field.data_type() {
@@ -688,13 +577,6 @@ fn list_struct_fields_from_field(list_field: &arrow_schema::Field) -> Result<Fie
             "Expected list<struct> field: {}",
             list_field.name()
         )),
-    }
-}
-
-fn struct_fields_from_field(field: &arrow_schema::Field) -> Result<Fields> {
-    match field.data_type() {
-        DataType::Struct(fields) => Ok(fields.clone()),
-        _ => Err(anyhow!("Expected struct field: {}", field.name())),
     }
 }
 
@@ -757,49 +639,6 @@ fn list_assets_array_from_values(
     }
     list_builder.append(true);
     Ok(Arc::new(list_builder.finish()))
-}
-
-fn struct_array_from_integrity(
-    integrity: &IntegrityPayload,
-    struct_fields: &Fields,
-) -> Result<ArrayRef> {
-    let mut arrays = Vec::new();
-    for field in struct_fields {
-        let value = match field.name().as_str() {
-            "checksum" => integrity.checksum.as_str(),
-            "signature" => integrity.signature.as_str(),
-            other => return Err(anyhow!("Unexpected integrity field: {}", other)),
-        };
-        let array: ArrayRef = Arc::new(StringArray::from(vec![Some(value)]));
-        arrays.push(array);
-    }
-    let struct_array = StructArray::try_new(struct_fields.clone(), arrays, None)
-        .map_err(|e| anyhow!("Failed to build integrity struct array: {}", e))?;
-    Ok(Arc::new(struct_array))
-}
-
-fn normalize_extra_attributes(value: &Value) -> Value {
-    match value {
-        Value::Object(map) => {
-            let mut entries: Vec<(String, Value)> =
-                map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            entries.sort_by(|a, b| a.0.cmp(&b.0));
-            let mut normalized = Map::new();
-            for (key, value) in entries {
-                normalized.insert(key, value);
-            }
-            Value::Object(normalized)
-        }
-        _ => value.clone(),
-    }
-}
-
-fn extra_attributes_to_string(value: &Value) -> Option<String> {
-    match value {
-        Value::Null => None,
-        Value::Object(map) if map.is_empty() => None,
-        _ => serde_json::to_string(&normalize_extra_attributes(value)).ok(),
-    }
 }
 
 fn extra_attributes_from_string(raw: Option<&str>) -> Value {
@@ -986,115 +825,6 @@ fn integrity_from_struct_array(struct_array: &StructArray, row: usize) -> Integr
         checksum: checksum.to_string(),
         signature: signature.to_string(),
     }
-}
-
-fn struct_array_from_fields(
-    form_def: &Value,
-    fields_value: &Value,
-    struct_fields: &Fields,
-) -> Result<ArrayRef> {
-    let type_map = form_field_type_map(form_def);
-    let mut arrays = Vec::new();
-
-    for field in struct_fields {
-        let name = field.name();
-        let field_type = type_map.get(name).map(String::as_str).unwrap_or("string");
-        let value = fields_value.get(name);
-
-        let array: ArrayRef = match field_type {
-            "number" | "double" => {
-                let number = value.and_then(|v| v.as_f64());
-                Arc::new(Float64Array::from(vec![number]))
-            }
-            "float" => {
-                let number = value.and_then(|v| v.as_f64()).map(|n| n as f32);
-                Arc::new(Float32Array::from(vec![number]))
-            }
-            "integer" => {
-                let number = value
-                    .and_then(|v| v.as_i64())
-                    .and_then(|v| i32::try_from(v).ok());
-                Arc::new(Int32Array::from(vec![number]))
-            }
-            "long" => {
-                let number = value.and_then(|v| v.as_i64());
-                Arc::new(Int64Array::from(vec![number]))
-            }
-            "boolean" => {
-                let bool_value = value.and_then(|v| v.as_bool());
-                Arc::new(BooleanArray::from(vec![bool_value]))
-            }
-            "date" => {
-                let days = value.and_then(|v| v.as_str()).and_then(date_to_days);
-                Arc::new(Date32Array::from(vec![days]))
-            }
-            "time" => {
-                let micros = value
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_time_to_micros);
-                Arc::new(Time64MicrosecondArray::from(vec![micros]))
-            }
-            "timestamp" => {
-                let micros = value
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_timestamp_to_micros);
-                Arc::new(TimestampMicrosecondArray::from(vec![micros]))
-            }
-            "timestamp_tz" => {
-                let micros = value
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_timestamp_to_micros);
-                Arc::new(TimestampMicrosecondArray::from(vec![micros]))
-            }
-            "timestamp_ns" => {
-                let nanos = value
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_timestamp_to_nanos);
-                Arc::new(TimestampNanosecondArray::from(vec![nanos]))
-            }
-            "timestamp_tz_ns" => {
-                let nanos = value
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_timestamp_to_nanos);
-                Arc::new(TimestampNanosecondArray::from(vec![nanos]))
-            }
-            "uuid" => {
-                let bytes = value
-                    .and_then(|v| v.as_str())
-                    .and_then(|v| Uuid::parse_str(v).ok())
-                    .map(|uuid| uuid.into_bytes());
-                let mut builder = FixedSizeBinaryBuilder::with_capacity(1, 16);
-                if let Some(bytes) = bytes {
-                    builder
-                        .append_value(bytes)
-                        .map_err(|e| anyhow!("Failed to build uuid array: {}", e))?;
-                } else {
-                    builder.append_null();
-                }
-                Arc::new(builder.finish())
-            }
-            "binary" => {
-                let bytes = value.and_then(|v| v.as_str()).and_then(parse_binary_string);
-                Arc::new(LargeBinaryArray::from_opt_vec(vec![bytes.as_deref()]))
-            }
-            "list" => list_array_from_values(value, field.as_ref())?,
-            "object_list" => object_list_array_from_values(value, field.as_ref())?,
-            "sql" | "markdown" | "string" | "row_reference" => {
-                let string_value = value.and_then(|v| v.as_str()).map(|s| s.to_string());
-                Arc::new(StringArray::from(vec![string_value]))
-            }
-            _ => {
-                let string_value = value.and_then(|v| v.as_str()).map(|s| s.to_string());
-                Arc::new(StringArray::from(vec![string_value]))
-            }
-        };
-
-        arrays.push(array);
-    }
-
-    let struct_array = StructArray::try_new(struct_fields.clone(), arrays, None)
-        .map_err(|e| anyhow!("Failed to build fields struct array: {}", e))?;
-    Ok(Arc::new(struct_array))
 }
 
 async fn scan_table_batches(table: &iceberg::table::Table) -> Result<Vec<RecordBatch>> {
