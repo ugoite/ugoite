@@ -21,7 +21,9 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use ugoite_core::error::{AppError, ErrorCode};
-use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::entry::{
+    EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+};
 use ugoite_domain::id::{FieldId, RevisionId};
 use url::Url;
 use uuid::Uuid;
@@ -887,12 +889,10 @@ async fn latest_revision_for_entry(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
-    form_def: &Value,
+    _form_def: &Value,
     entry_id: &str,
 ) -> Result<Option<RevisionRow>> {
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, form_def)?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
     let mut selected: Option<RevisionRow> = None;
     for row in rows {
         if row.entry_id != entry_id {
@@ -1258,127 +1258,6 @@ fn entry_rows_from_batches(
     Ok(rows)
 }
 
-fn revision_rows_from_batches(
-    batches: &[RecordBatch],
-    form_def: &Value,
-) -> Result<Vec<RevisionRow>> {
-    if batches
-        .first()
-        .and_then(|batch| batch.column_by_name("revision_id"))
-        .and_then(|column| column.as_any().downcast_ref::<FixedSizeBinaryArray>())
-        .is_some()
-    {
-        return native_revision_rows_from_batches(batches, form_def);
-    }
-    let mut rows = Vec::new();
-    for batch in batches {
-        let revision_ids = column_as::<StringArray>(batch, "revision_id")?;
-        let entry_ids = column_as::<StringArray>(batch, "entry_id")?;
-        let parent_revision_ids = column_as::<StringArray>(batch, "parent_revision_id")?;
-        let timestamps = column_as::<TimestampMicrosecondArray>(batch, "timestamp")?;
-        let authors = column_as::<StringArray>(batch, "author")?;
-        let fields = column_as::<StructArray>(batch, "fields")?;
-        let extra_attributes = batch
-            .column_by_name("extra_attributes")
-            .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-        let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
-        let integrity = column_as::<StructArray>(batch, "integrity")?;
-        let restored_from = column_as::<StringArray>(batch, "restored_from")?;
-        let state_json = column_as::<StringArray>(batch, "state_json")?;
-        let entry_versions = column_as::<Int64Array>(batch, "entry_version")?;
-        let operations = column_as::<StringArray>(batch, "operation")?;
-        let source_kinds = column_as::<StringArray>(batch, "source_kind")?;
-        let source_ids = column_as::<StringArray>(batch, "source_id")?;
-
-        for row_idx in 0..batch.num_rows() {
-            if revision_ids.is_null(row_idx) {
-                continue;
-            }
-
-            let integrity_value = integrity_from_struct_array(integrity, row_idx);
-
-            let fields_value = if fields.is_null(row_idx) {
-                Value::Object(Map::new())
-            } else {
-                value_from_struct_array(fields, row_idx, form_def)
-            };
-            let extra_attributes_value = match extra_attributes {
-                Some(array) => {
-                    if array.is_null(row_idx) {
-                        Value::Object(Map::new())
-                    } else {
-                        extra_attributes_from_string(Some(array.value(row_idx)))
-                    }
-                }
-                None => Value::Object(Map::new()),
-            };
-
-            rows.push(RevisionRow {
-                revision_id: revision_ids.value(row_idx).to_string(),
-                entry_id: if entry_ids.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    entry_ids.value(row_idx).to_string()
-                },
-                parent_revision_id: if parent_revision_ids.is_null(row_idx) {
-                    None
-                } else {
-                    Some(parent_revision_ids.value(row_idx).to_string())
-                },
-                timestamp: if timestamps.is_null(row_idx) {
-                    0.0
-                } else {
-                    from_timestamp_micros(timestamps.value(row_idx))
-                },
-                author: if authors.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    authors.value(row_idx).to_string()
-                },
-                fields: fields_value,
-                extra_attributes: extra_attributes_value,
-                markdown_checksum: if checksums.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    checksums.value(row_idx).to_string()
-                },
-                integrity: integrity_value,
-                restored_from: if restored_from.is_null(row_idx) {
-                    None
-                } else {
-                    Some(restored_from.value(row_idx).to_string())
-                },
-                state: if state_json.is_null(row_idx) {
-                    None
-                } else {
-                    Some(serde_json::from_str(state_json.value(row_idx))?)
-                },
-                entry_version: if entry_versions.is_null(row_idx) {
-                    1
-                } else {
-                    entry_versions.value(row_idx).try_into().unwrap_or(1)
-                },
-                operation: if operations.is_null(row_idx) {
-                    default_operation()
-                } else {
-                    operations.value(row_idx).to_string()
-                },
-                source_kind: if source_kinds.is_null(row_idx) {
-                    default_source_kind()
-                } else {
-                    source_kinds.value(row_idx).to_string()
-                },
-                source_id: if source_ids.is_null(row_idx) {
-                    None
-                } else {
-                    Some(source_ids.value(row_idx).to_string())
-                },
-            });
-        }
-    }
-    Ok(rows)
-}
-
 fn native_fields_from_batch(
     batch: &RecordBatch,
     row: usize,
@@ -1499,117 +1378,6 @@ fn native_field_value(column: &dyn Array, row: usize, field_type: &str) -> Optio
     }
 }
 
-fn native_revision_rows_from_batches(
-    batches: &[RecordBatch],
-    form_def: &Value,
-) -> Result<Vec<RevisionRow>> {
-    let mut rows = Vec::new();
-    for batch in batches {
-        let revision_ids = column_as::<FixedSizeBinaryArray>(batch, "revision_id")?;
-        let entry_ids = column_as::<FixedSizeBinaryArray>(batch, "entry_id")?;
-        let parents = batch
-            .column_by_name("parent_revision_id")
-            .context("Missing parent_revision_id")?;
-        let versions = column_as::<Int64Array>(batch, "entry_version")?;
-        let timestamps = column_as::<TimestampMicrosecondArray>(batch, "committed_at")?;
-        let authors = column_as::<StringArray>(batch, "author_id")?;
-        let operations = column_as::<StringArray>(batch, "operation")?;
-        let source_kinds = column_as::<StringArray>(batch, "source_kind")?;
-        let source_ids = column_as::<StringArray>(batch, "source_id")?;
-        let extensions = column_as::<StringArray>(batch, "extension_metadata")?;
-        let extra_attributes = column_as::<StringArray>(batch, "extra_attributes")?;
-        for row_idx in 0..batch.num_rows() {
-            let extension: serde_json::Map<String, Value> = if extensions.is_null(row_idx) {
-                Map::new()
-            } else {
-                serde_json::from_str(extensions.value(row_idx))?
-            };
-            let state = extension
-                .get("ugoite.legacy.state")
-                .cloned()
-                .filter(|value| !value.is_null())
-                .map(serde_json::from_value)
-                .transpose()?;
-            let mut fields = state
-                .as_ref()
-                .map(|state: &EntryRow| state.fields.clone())
-                .unwrap_or_else(|| Value::Object(Map::new()));
-            if let Some(fields_object) = fields.as_object_mut() {
-                fields_object.extend(native_fields_from_batch(batch, row_idx, form_def)?);
-            }
-            let integrity = extension
-                .get("ugoite.legacy.integrity")
-                .cloned()
-                .map(serde_json::from_value)
-                .transpose()?
-                .unwrap_or_default();
-            let restored_from = extension
-                .get("ugoite.legacy.restored_from")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let legacy_entry_id = state
-                .as_ref()
-                .map(|state: &EntryRow| state.entry_id.clone())
-                .unwrap_or_else(|| {
-                    Uuid::from_slice(entry_ids.value(row_idx))
-                        .map(|value| value.to_string())
-                        .unwrap_or_default()
-                });
-            let physical_parent = if parents.is_null(row_idx) {
-                None
-            } else {
-                Some(
-                    Uuid::from_slice(
-                        parents
-                            .as_any()
-                            .downcast_ref::<FixedSizeBinaryArray>()
-                            .context("parent_revision_id must be UUID")?
-                            .value(row_idx),
-                    )?
-                    .to_string(),
-                )
-            };
-            rows.push(RevisionRow {
-                revision_id: state
-                    .as_ref()
-                    .filter(|state| !state.revision_id.is_empty())
-                    .map(|state| state.revision_id.clone())
-                    .unwrap_or(Uuid::from_slice(revision_ids.value(row_idx))?.to_string()),
-                entry_id: legacy_entry_id,
-                parent_revision_id: state
-                    .as_ref()
-                    .and_then(|state| state.parent_revision_id.clone())
-                    .or(physical_parent),
-                timestamp: from_timestamp_micros(timestamps.value(row_idx)),
-                author: authors.value(row_idx).to_string(),
-                fields,
-                extra_attributes: if extra_attributes.is_null(row_idx) {
-                    Value::Object(Map::new())
-                } else {
-                    serde_json::from_str(extra_attributes.value(row_idx))?
-                },
-                markdown_checksum: extension
-                    .get("ugoite.legacy.markdown_checksum")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
-                integrity,
-                restored_from,
-                state,
-                entry_version: u64::try_from(versions.value(row_idx))?,
-                operation: operations.value(row_idx).to_string(),
-                source_kind: source_kinds.value(row_idx).to_string(),
-                source_id: if source_ids.is_null(row_idx) {
-                    None
-                } else {
-                    Some(source_ids.value(row_idx).to_string())
-                },
-            });
-        }
-    }
-    Ok(rows)
-}
-
 async fn append_revision_row_to_table(
     op: &Operator,
     ws_path: &str,
@@ -1652,25 +1420,6 @@ fn revision_row_to_domain(
         .as_deref()
         .map(Uuid::parse_str)
         .transpose()?;
-    let mut extension_metadata = std::collections::BTreeMap::new();
-    extension_metadata.insert(
-        "ugoite.legacy.state".to_string(),
-        serde_json::to_value(&row.state)?,
-    );
-    extension_metadata.insert(
-        "ugoite.legacy.markdown_checksum".to_string(),
-        Value::String(row.markdown_checksum.clone()),
-    );
-    extension_metadata.insert(
-        "ugoite.legacy.integrity".to_string(),
-        serde_json::to_value(&row.integrity)?,
-    );
-    if let Some(restored_from) = &row.restored_from {
-        extension_metadata.insert(
-            "ugoite.legacy.restored_from".to_string(),
-            Value::String(restored_from.clone()),
-        );
-    }
     let operation = match row.operation.as_str() {
         "upsert" => EntryOperation::Upsert,
         "delete" => EntryOperation::Delete,
@@ -1689,6 +1438,21 @@ fn revision_row_to_domain(
         .unwrap_or_default()
         .into_iter()
         .collect();
+    let mut entry = row
+        .state
+        .as_ref()
+        .map(entry_metadata_from_row)
+        .unwrap_or_default();
+    entry.integrity = EntryIntegrity {
+        checksum: row.integrity.checksum.clone(),
+        signature: row.integrity.signature.clone(),
+    };
+    entry.restored_from = row
+        .restored_from
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()?
+        .map(RevisionId::from);
     Ok(EntryRevision {
         form_id: form.id,
         entry_id: entry_id.into(),
@@ -1702,10 +1466,49 @@ fn revision_row_to_domain(
         form_version: form.version,
         source_kind: row.source_kind.clone(),
         source_id: row.source_id.clone(),
+        entry,
         values,
         extra_attributes,
-        extension_metadata,
+        extension_metadata: Default::default(),
     })
+}
+
+fn entry_metadata_from_row(row: &EntryRow) -> EntryMetadata {
+    EntryMetadata {
+        external_id: row.entry_id.clone(),
+        title: row.title.clone(),
+        tags: row.tags.clone(),
+        links: row
+            .links
+            .iter()
+            .map(|link| EntryLink {
+                id: link.id.clone(),
+                target: link.target.clone(),
+                kind: link.kind.clone(),
+            })
+            .collect(),
+        created_at_micros: to_timestamp_micros(row.created_at),
+        updated_at_micros: to_timestamp_micros(row.updated_at),
+        assets: row
+            .assets
+            .iter()
+            .filter_map(|asset| {
+                let object = asset.as_object()?;
+                Some(EntryAsset {
+                    id: object.get("id")?.as_str()?.to_string(),
+                    name: object.get("name")?.as_str()?.to_string(),
+                    path: object.get("path")?.as_str()?.to_string(),
+                })
+            })
+            .collect(),
+        integrity: EntryIntegrity {
+            checksum: row.integrity.checksum.clone(),
+            signature: row.integrity.signature.clone(),
+        },
+        deleted: row.deleted,
+        deleted_at_micros: row.deleted_at.map(to_timestamp_micros),
+        restored_from: None,
+    }
 }
 
 fn form_values_to_domain(
@@ -1743,6 +1546,111 @@ fn json_to_field_value(value: &Value) -> Result<FieldValue> {
     })
 }
 
+fn revision_row_from_domain(
+    revision: EntryRevision,
+    form_name: &str,
+    form: &ugoite_domain::form::FormDefinition,
+) -> Result<RevisionRow> {
+    let fields = form
+        .fields
+        .iter()
+        .filter_map(|field| {
+            revision
+                .values
+                .get(&field.id)
+                .map(|value| Ok((field.name.clone(), serde_json::to_value(value)?)))
+        })
+        .collect::<Result<Map<String, Value>>>()?;
+    let links = revision
+        .entry
+        .links
+        .iter()
+        .map(|link| Link {
+            id: link.id.clone(),
+            source: if revision.entry.external_id.is_empty() {
+                revision.entry_id.to_string()
+            } else {
+                revision.entry.external_id.clone()
+            },
+            target: link.target.clone(),
+            kind: link.kind.clone(),
+        })
+        .collect::<Vec<_>>();
+    let assets = revision
+        .entry
+        .assets
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()?;
+    let integrity = IntegrityPayload {
+        checksum: revision.entry.integrity.checksum.clone(),
+        signature: revision.entry.integrity.signature.clone(),
+    };
+    let state = EntryRow {
+        entry_id: if revision.entry.external_id.is_empty() {
+            revision.entry_id.to_string()
+        } else {
+            revision.entry.external_id.clone()
+        },
+        title: revision.entry.title.clone(),
+        form: form_name.to_string(),
+        tags: revision.entry.tags.clone(),
+        links,
+        created_at: from_timestamp_micros(revision.entry.created_at_micros),
+        updated_at: from_timestamp_micros(revision.entry.updated_at_micros),
+        fields: Value::Object(fields.clone()),
+        extra_attributes: serde_json::to_value(&revision.extra_attributes)?,
+        revision_id: revision.revision_id.to_string(),
+        parent_revision_id: revision.parent_revision_id.map(|id| id.to_string()),
+        assets,
+        integrity: integrity.clone(),
+        deleted: revision.entry.deleted,
+        deleted_at: revision.entry.deleted_at_micros.map(from_timestamp_micros),
+        author: revision.author_id.clone(),
+        entry_version: revision.entry_version,
+    };
+    Ok(RevisionRow {
+        revision_id: revision.revision_id.to_string(),
+        entry_id: if revision.entry.external_id.is_empty() {
+            revision.entry_id.to_string()
+        } else {
+            revision.entry.external_id.clone()
+        },
+        parent_revision_id: revision.parent_revision_id.map(|id| id.to_string()),
+        timestamp: from_timestamp_micros(revision.committed_at_micros),
+        author: revision.author_id,
+        fields: Value::Object(fields),
+        extra_attributes: serde_json::to_value(&revision.extra_attributes)?,
+        markdown_checksum: integrity.checksum.clone(),
+        integrity,
+        restored_from: revision.entry.restored_from.map(|id| id.to_string()),
+        state: Some(state),
+        entry_version: revision.entry_version,
+        operation: match revision.operation {
+            EntryOperation::Upsert => "upsert",
+            EntryOperation::Delete => "delete",
+            EntryOperation::Restore => "restore",
+        }
+        .to_string(),
+        source_kind: revision.source_kind,
+        source_id: revision.source_id,
+    })
+}
+
+async fn revision_rows_for_form(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+) -> Result<(Value, Vec<RevisionRow>)> {
+    let (form, revisions) = iceberg_store::revisions_for_form(op, ws_path, form_name).await?;
+    let form_def = form::from_domain_form(&form);
+    let rows = revisions
+        .into_iter()
+        .map(|revision| revision_row_from_domain(revision, form_name, &form))
+        .collect::<Result<Vec<_>>>()?;
+    Ok((form_def, rows))
+}
+
 pub(crate) async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
     form::list_form_names(op, ws_path).await
 }
@@ -1765,12 +1673,9 @@ pub(crate) async fn read_entry_row(
     form_name: &str,
     entry_id: &str,
 ) -> Result<EntryRow> {
-    let form_def = form::read_form_definition(op, ws_path, form_name).await?;
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, &form_def)?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
     let mut selected: Option<RevisionRow> = None;
-    for revision in rows {
+    for revision in rows.iter().cloned() {
         if revision.entry_id != entry_id || revision.state.is_none() {
             continue;
         }
@@ -1783,8 +1688,8 @@ pub(crate) async fn read_entry_row(
         }
     }
     let selected = selected.ok_or_else(|| entry_not_found(entry_id))?;
-    let conflicts = revision_rows_from_batches(&batches, &form_def)?
-        .into_iter()
+    let conflicts = rows
+        .iter()
         .filter(|revision| {
             revision.entry_id == entry_id && revision.entry_version == selected.entry_version
         })
@@ -1843,10 +1748,7 @@ pub(crate) async fn list_entry_rows(
     let mut latest: std::collections::HashMap<String, (String, RevisionRow)> =
         std::collections::HashMap::new();
     for form_name in list_form_names(op, ws_path).await? {
-        let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-        let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-        let batches = scan_table_batches(&table).await?;
-        let rows = revision_rows_from_batches(&batches, &form_def)?;
+        let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
         for revision in rows {
             let Some(row) = revision.state.as_ref() else {
                 continue;
@@ -1882,13 +1784,12 @@ pub(crate) async fn list_form_entry_rows(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
-    form_def: &Value,
+    _form_def: &Value,
 ) -> Result<Vec<EntryRow>> {
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let batches = scan_table_batches(&table).await?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
     let mut latest: std::collections::HashMap<String, RevisionRow> =
         std::collections::HashMap::new();
-    for revision in revision_rows_from_batches(&batches, form_def)? {
+    for revision in rows {
         let Some(row) = revision.state.as_ref() else {
             continue;
         };
@@ -1923,11 +1824,10 @@ pub(crate) async fn list_form_revision_rows(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
-    form_def: &Value,
+    _form_def: &Value,
 ) -> Result<Vec<RevisionRow>> {
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    revision_rows_from_batches(&batches, form_def)
+    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
+    Ok(rows)
 }
 
 pub(crate) async fn append_revision_row_for_form(
@@ -2331,10 +2231,7 @@ pub async fn get_entry_revision_content(
         return Err(entry_content_not_found(entry_id).into());
     }
 
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let (_, revisions_table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    let batches = scan_table_batches(&revisions_table).await?;
-    let revisions = revision_rows_from_batches(&batches, &form_def)?;
+    let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
@@ -2534,10 +2431,7 @@ pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> 
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, &form_def)?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
 
     let mut revisions = rows
         .into_iter()
@@ -2573,10 +2467,7 @@ pub async fn get_entry_revision(
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, &form_def)?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = rows
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id);
@@ -2596,10 +2487,7 @@ pub async fn restore_entry<I: IntegrityProvider>(
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let (_, revisions_table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    let batches = scan_table_batches(&revisions_table).await?;
-    let revisions = revision_rows_from_batches(&batches, &form_def)?;
+    let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)

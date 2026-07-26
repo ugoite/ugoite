@@ -35,9 +35,9 @@ use arrow_array::builder::{
     BinaryBuilder, FixedSizeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder,
 };
 use arrow_array::{
-    Array, ArrayRef, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array, Float64Array,
-    Int32Array, Int64Array, RecordBatch, StringArray, Time64MicrosecondArray,
-    TimestampMicrosecondArray, TimestampNanosecondArray,
+    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array,
+    Float64Array, Int32Array, Int64Array, ListArray, RecordBatch, StringArray, StructArray,
+    Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
@@ -58,9 +58,11 @@ use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::IcebergCatalogProvider;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::entry::{
+    EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+};
 use ugoite_domain::form::{Compatibility, FieldType, FormChangeSet, FormDefinition, FormField};
 use ugoite_domain::id::{FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
@@ -70,7 +72,6 @@ const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
 const FORM_ID_PROPERTY: &str = "ugoite.form.id";
 const FORM_NAME_PROPERTY: &str = "ugoite.form.name";
 const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
-const FORM_FIELD_MAPPING_PROPERTY: &str = "ugoite.form.field-id-map.v1";
 const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
 const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
@@ -248,16 +249,21 @@ impl IcebergWorkspace {
                 "Form ID property does not match physical table identity"
             ));
         }
-        let mapping_raw = table
-            .metadata()
-            .properties()
-            .get(FORM_FIELD_MAPPING_PROPERTY)
-            .context("Iceberg table is missing Form field ID mapping")?;
-        let mapping: HashMap<String, i32> = serde_json::from_str(mapping_raw)?;
         for field in &form.fields {
-            if mapping.get(&field.id.get().to_string()) != Some(&physical_field_id(field)) {
+            let Some(physical) = table
+                .metadata()
+                .current_schema()
+                .field_by_id(field.id.get())
+            else {
                 return Err(anyhow!(
-                    "Form field ID mapping does not match Iceberg schema"
+                    "Iceberg schema is missing Form field ID {}",
+                    field.id.get()
+                ));
+            };
+            if physical.field_type.as_ref() != &iceberg_type(&field.field_type, field.id.get()) {
+                return Err(anyhow!(
+                    "Iceberg field ID {} does not match the Form field type",
+                    field.id.get()
                 ));
             }
         }
@@ -297,52 +303,101 @@ impl IcebergWorkspace {
             .catalog
             .load_table(&self.form_ident(current.id))
             .await?;
-        if form_schema(&current)? != form_schema(&evolved)? {
-            let current_fields = current
+        let current_schema = table.metadata().current_schema();
+        let additions = evolved
+            .fields
+            .iter()
+            .filter(|field| current_schema.field_by_id(field.id.get()).is_none())
+            .collect::<Vec<_>>();
+        for field in &current.fields {
+            let evolved_field = evolved
                 .fields
                 .iter()
-                .map(|field| field.id)
-                .collect::<std::collections::HashSet<_>>();
-            if evolved.fields.len() < current.fields.len()
-                || current.fields.iter().any(|field| {
-                    evolved.fields.iter().find(|next| next.id == field.id) != Some(field)
-                })
+                .find(|candidate| candidate.id == field.id)
+                .context("Form evolution removed a stable field ID")?;
+            let physical = current_schema
+                .field_by_id(field.id.get())
+                .context("Iceberg schema is missing a stable Form field ID")?;
+            if physical.field_type.as_ref()
+                != &iceberg_type(&evolved_field.field_type, field.id.get())
             {
                 return Err(anyhow!(
-                    "Iceberg schema evolution supports additive Form fields only"
+                    "Iceberg field type changes require an explicit migration"
                 ));
             }
-            let mut schema_action = Transaction::new(&table).update_schema();
-            for field in evolved
-                .fields
+        }
+        if let Some(space_catalog) = &self.space_catalog {
+            let mut fields = current_schema
+                .as_struct()
+                .fields()
                 .iter()
-                .filter(|field| !current_fields.contains(&field.id))
-            {
-                schema_action = schema_action.add_column(AddColumn::optional(
-                    &field.name,
+                .map(|field| {
+                    let mut field = (**field).clone();
+                    if let Some(evolved_field) = evolved
+                        .fields
+                        .iter()
+                        .find(|candidate| candidate.id.get() == field.id)
+                    {
+                        field.name = evolved_field.name.clone();
+                    }
+                    Arc::new(field)
+                })
+                .collect::<Vec<_>>();
+            fields.extend(additions.iter().map(|field| {
+                Arc::new(NestedField::new(
+                    field.id.get(),
+                    field.name.clone(),
                     iceberg_type(&field.field_type, field.id.get()),
-                ));
-            }
-            let transaction = schema_action.apply(Transaction::new(&table))?;
-            let mut properties = transaction.update_table_properties();
-            for (key, value) in form_properties(&evolved, self.write)? {
-                properties = properties.set(key, value);
-            }
-            let catalog = self.mutation_catalog();
-            properties
-                .apply(transaction)?
-                .commit(catalog.as_ref())
+                    false,
+                ))
+            }));
+            let schema = Schema::builder()
+                .with_fields(fields)
+                .with_identifier_field_ids(current_schema.identifier_field_ids())
+                .build()?;
+            let metadata = table
+                .metadata()
+                .clone()
+                .into_builder(Some(table.metadata_location_result()?.to_string()))
+                .add_current_schema(schema)?
+                .set_properties(form_properties(&evolved, self.write)?)?
+                .build()?
+                .metadata;
+            space_catalog
+                .new_attempt()
+                .replace_table_metadata(table.identifier(), metadata)
                 .await?;
             return self.load_form(changes.form_id).await;
         }
+        if additions.is_empty() {
+            let tx = Transaction::new(&table);
+            let mut action = tx.update_table_properties();
+            for (key, value) in form_properties(&evolved, self.write)? {
+                action = action.set(key, value);
+            }
+            let catalog = self.mutation_catalog();
+            action.apply(tx)?.commit(catalog.as_ref()).await?;
+            return Ok(evolved);
+        }
         let tx = Transaction::new(&table);
-        let mut action = tx.update_table_properties();
+        let mut schema_action = tx.update_schema();
+        for field in additions {
+            schema_action = schema_action.add_column(AddColumn::optional(
+                &field.name,
+                iceberg_type(&field.field_type, field.id.get()),
+            ));
+        }
+        let transaction = schema_action.apply(tx)?;
+        let mut properties = transaction.update_table_properties();
         for (key, value) in form_properties(&evolved, self.write)? {
-            action = action.set(key, value);
+            properties = properties.set(key, value);
         }
         let catalog = self.mutation_catalog();
-        action.apply(tx)?.commit(catalog.as_ref()).await?;
-        Ok(evolved)
+        properties
+            .apply(transaction)?
+            .commit(catalog.as_ref())
+            .await?;
+        self.load_form(changes.form_id).await
     }
 
     pub(crate) async fn append_record_batches(
@@ -498,6 +553,21 @@ impl IcebergWorkspace {
             revision_batch_from_values(&form, table.metadata().current_schema(), &revisions)?;
         self.append_record_batches(form_id, vec![batch], &revisions)
             .await
+    }
+
+    /// Reads canonical revisions through Iceberg's Arrow projection. Physical
+    /// column decoding lives in this adapter; callers receive only domain
+    /// revisions and never Arrow arrays or Iceberg tables.
+    pub async fn read_revisions(&self, form_id: FormId) -> Result<Vec<EntryRevision>> {
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let table_schema = table.metadata().current_schema().clone();
+        let mut stream = table.scan().build()?.to_arrow().await?;
+        let mut revisions = Vec::new();
+        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
+            revisions.extend(revisions_from_batch(&batch, &form, &table_schema)?);
+        }
+        Ok(revisions)
     }
 
     async fn latest_revisions(
@@ -664,6 +734,59 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
         optional(10, "source_id", PrimitiveType::String),
         optional(11, "extension_metadata", PrimitiveType::String),
         optional(12, "extra_attributes", PrimitiveType::String),
+        required(13, "ugoite_entry_title", PrimitiveType::String),
+        required_type(
+            14,
+            "ugoite_entry_tags",
+            Type::List(ListType::new(Arc::new(NestedField::new(
+                nested_field_id(14, 0),
+                "element",
+                Type::Primitive(PrimitiveType::String),
+                false,
+            )))),
+        ),
+        required_type(
+            15,
+            "ugoite_entry_links",
+            Type::List(ListType::new(Arc::new(NestedField::new(
+                nested_field_id(15, 0),
+                "element",
+                Type::Struct(StructType::new(vec![
+                    optional(nested_field_id(15, 1), "id", PrimitiveType::String),
+                    optional(nested_field_id(15, 2), "target", PrimitiveType::String),
+                    optional(nested_field_id(15, 3), "kind", PrimitiveType::String),
+                ])),
+                false,
+            )))),
+        ),
+        required(16, "ugoite_entry_created_at", PrimitiveType::Timestamptz),
+        required(17, "ugoite_entry_updated_at", PrimitiveType::Timestamptz),
+        required_type(
+            18,
+            "ugoite_entry_assets",
+            Type::List(ListType::new(Arc::new(NestedField::new(
+                nested_field_id(18, 0),
+                "element",
+                Type::Struct(StructType::new(vec![
+                    optional(nested_field_id(18, 1), "id", PrimitiveType::String),
+                    optional(nested_field_id(18, 2), "name", PrimitiveType::String),
+                    optional(nested_field_id(18, 3), "path", PrimitiveType::String),
+                ])),
+                false,
+            )))),
+        ),
+        required_type(
+            19,
+            "ugoite_entry_integrity",
+            Type::Struct(StructType::new(vec![
+                optional(nested_field_id(19, 1), "checksum", PrimitiveType::String),
+                optional(nested_field_id(19, 2), "signature", PrimitiveType::String),
+            ])),
+        ),
+        required(20, "ugoite_entry_deleted", PrimitiveType::Boolean),
+        optional(21, "ugoite_entry_deleted_at", PrimitiveType::Timestamptz),
+        optional(22, "ugoite_entry_restored_from", PrimitiveType::Uuid),
+        required(23, "ugoite_entry_external_id", PrimitiveType::String),
     ];
     for field in &form.fields {
         fields.push(Arc::new(NestedField::new(
@@ -684,6 +807,9 @@ fn required(id: i32, name: &str, kind: PrimitiveType) -> Arc<NestedField> {
 }
 fn optional(id: i32, name: &str, kind: PrimitiveType) -> Arc<NestedField> {
     Arc::new(NestedField::new(id, name, Type::Primitive(kind), false))
+}
+fn required_type(id: i32, name: &str, kind: Type) -> Arc<NestedField> {
+    Arc::new(NestedField::new(id, name, kind, true))
 }
 
 fn iceberg_type(kind: &FieldType, parent_id: i32) -> Type {
@@ -746,11 +872,6 @@ fn nested_field_id(parent_id: i32, offset: i32) -> i32 {
 }
 
 fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<String, String>> {
-    let field_mapping = form
-        .fields
-        .iter()
-        .map(|field| (field.id.get().to_string(), physical_field_id(field)))
-        .collect::<HashMap<_, _>>();
     Ok(HashMap::from([
         (
             FORM_DEFINITION_PROPERTY.into(),
@@ -759,10 +880,6 @@ fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<
         (FORM_ID_PROPERTY.into(), form.id.to_string()),
         (FORM_NAME_PROPERTY.into(), form.name.clone()),
         (FORM_VERSION_PROPERTY.into(), form.version.get().to_string()),
-        (
-            FORM_FIELD_MAPPING_PROPERTY.into(),
-            serde_json::to_string(&field_mapping)?,
-        ),
         (
             TARGET_FILE_SIZE_PROPERTY.into(),
             write.target_file_size_bytes.to_string(),
@@ -852,6 +969,82 @@ fn revision_batch_from_values(
                 .map(|revision| serde_json::to_string(&revision.extra_attributes))
                 .collect::<std::result::Result<Vec<_>, _>>()?,
         )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.entry.title.as_str())
+                .collect::<Vec<_>>(),
+        )),
+        string_list_array(
+            schema
+                .field_with_name("ugoite_entry_tags")
+                .context("missing tags metadata field")?,
+            revisions,
+            |revision| &revision.entry.tags,
+        )?,
+        link_list_array(
+            schema
+                .field_with_name("ugoite_entry_links")
+                .context("missing links metadata field")?,
+            revisions,
+        )?,
+        Arc::new(
+            TimestampMicrosecondArray::from(
+                revisions
+                    .iter()
+                    .map(|revision| revision.entry.created_at_micros)
+                    .collect::<Vec<_>>(),
+            )
+            .with_timezone("+00:00"),
+        ),
+        Arc::new(
+            TimestampMicrosecondArray::from(
+                revisions
+                    .iter()
+                    .map(|revision| revision.entry.updated_at_micros)
+                    .collect::<Vec<_>>(),
+            )
+            .with_timezone("+00:00"),
+        ),
+        asset_list_array(
+            schema
+                .field_with_name("ugoite_entry_assets")
+                .context("missing assets metadata field")?,
+            revisions,
+        )?,
+        integrity_array(
+            schema
+                .field_with_name("ugoite_entry_integrity")
+                .context("missing integrity metadata field")?,
+            revisions,
+        )?,
+        Arc::new(BooleanArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.entry.deleted)
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(
+            TimestampMicrosecondArray::from(
+                revisions
+                    .iter()
+                    .map(|revision| revision.entry.deleted_at_micros)
+                    .collect::<Vec<_>>(),
+            )
+            .with_timezone("+00:00"),
+        ),
+        revision_id_array(
+            revisions
+                .iter()
+                .map(|revision| revision.entry.restored_from)
+                .collect::<Vec<_>>(),
+        )?,
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.entry.external_id.as_str())
+                .collect::<Vec<_>>(),
+        )),
     ];
     for field in &form.fields {
         arrays.push(field_array(
@@ -863,6 +1056,120 @@ fn revision_batch_from_values(
         )?);
     }
     Ok(RecordBatch::try_new(schema, arrays)?)
+}
+
+fn string_list_array(
+    arrow_field: &arrow_schema::Field,
+    revisions: &[EntryRevision],
+    values: impl Fn(&EntryRevision) -> &Vec<String>,
+) -> Result<ArrayRef> {
+    let element_field = match arrow_field.data_type() {
+        arrow_schema::DataType::List(element) => element.clone(),
+        kind => return Err(anyhow!("metadata list has invalid Arrow type: {kind:?}")),
+    };
+    let mut builder = ListBuilder::new(StringBuilder::new()).with_field(element_field);
+    for revision in revisions {
+        for value in values(revision) {
+            builder.values().append_value(value);
+        }
+        builder.append(true);
+    }
+    Ok(Arc::new(builder.finish()))
+}
+
+fn link_list_array(
+    arrow_field: &arrow_schema::Field,
+    revisions: &[EntryRevision],
+) -> Result<ArrayRef> {
+    struct_list_array(arrow_field, revisions, |revision| {
+        revision
+            .entry
+            .links
+            .iter()
+            .map(|link| [&link.id, &link.target, &link.kind])
+            .collect()
+    })
+}
+
+fn asset_list_array(
+    arrow_field: &arrow_schema::Field,
+    revisions: &[EntryRevision],
+) -> Result<ArrayRef> {
+    struct_list_array(arrow_field, revisions, |revision| {
+        revision
+            .entry
+            .assets
+            .iter()
+            .map(|asset| [&asset.id, &asset.name, &asset.path])
+            .collect()
+    })
+}
+
+fn struct_list_array<'a>(
+    arrow_field: &arrow_schema::Field,
+    revisions: &'a [EntryRevision],
+    values: impl Fn(&'a EntryRevision) -> Vec<[&'a String; 3]>,
+) -> Result<ArrayRef> {
+    let element_field = match arrow_field.data_type() {
+        arrow_schema::DataType::List(element) => element.clone(),
+        kind => return Err(anyhow!("metadata list has invalid Arrow type: {kind:?}")),
+    };
+    let fields = match element_field.data_type() {
+        arrow_schema::DataType::Struct(fields) => fields.clone(),
+        kind => return Err(anyhow!("metadata list has invalid element type: {kind:?}")),
+    };
+    let mut builder = ListBuilder::new(StructBuilder::from_fields(fields, revisions.len()))
+        .with_field(element_field);
+    for revision in revisions {
+        for row in values(revision) {
+            for (index, value) in row.into_iter().enumerate() {
+                builder
+                    .values()
+                    .field_builder::<StringBuilder>(index)
+                    .context("invalid metadata struct field builder")?
+                    .append_value(value);
+            }
+            builder.values().append(true);
+        }
+        builder.append(true);
+    }
+    Ok(Arc::new(builder.finish()))
+}
+
+fn integrity_array(
+    arrow_field: &arrow_schema::Field,
+    revisions: &[EntryRevision],
+) -> Result<ArrayRef> {
+    let fields = match arrow_field.data_type() {
+        arrow_schema::DataType::Struct(fields) => fields.clone(),
+        kind => return Err(anyhow!("integrity has invalid Arrow type: {kind:?}")),
+    };
+    let arrays: Vec<ArrayRef> = vec![
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.entry.integrity.checksum.as_str())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.entry.integrity.signature.as_str())
+                .collect::<Vec<_>>(),
+        )),
+    ];
+    Ok(Arc::new(StructArray::try_new(fields, arrays, None)?))
+}
+
+fn revision_id_array(revisions: Vec<Option<RevisionId>>) -> Result<ArrayRef> {
+    let mut builder = FixedSizeBinaryBuilder::with_capacity(revisions.len(), 16);
+    for revision in revisions {
+        match revision {
+            Some(revision) => builder.append_value(revision.as_uuid().as_bytes())?,
+            None => builder.append_null(),
+        }
+    }
+    Ok(Arc::new(builder.finish()))
 }
 
 fn field_array(
@@ -1152,6 +1459,430 @@ fn uuid_at(array: &dyn Array, row: usize) -> Result<ugoite_domain::id::EntryId> 
     Ok(ugoite_domain::id::EntryId::from_uuid(uuid_value_at(
         array, row,
     )?))
+}
+
+fn revisions_from_batch(
+    batch: &RecordBatch,
+    form: &FormDefinition,
+    table_schema: &iceberg::spec::Schema,
+) -> Result<Vec<EntryRevision>> {
+    let entry_ids = required_column::<FixedSizeBinaryArray>(batch, "entry_id")?;
+    let revision_ids = required_column::<FixedSizeBinaryArray>(batch, "revision_id")?;
+    let parents = required_column::<FixedSizeBinaryArray>(batch, "parent_revision_id")?;
+    let versions = required_column::<Int64Array>(batch, "entry_version")?;
+    let operations = required_column::<StringArray>(batch, "operation")?;
+    let committed_at = required_column::<TimestampMicrosecondArray>(batch, "committed_at")?;
+    let authors = required_column::<StringArray>(batch, "author_id")?;
+    let form_versions = required_column::<Int32Array>(batch, "form_version")?;
+    let source_kinds = required_column::<StringArray>(batch, "source_kind")?;
+    let source_ids = required_column::<StringArray>(batch, "source_id")?;
+    let extensions = required_column::<StringArray>(batch, "extension_metadata")?;
+    let extra_attributes = required_column::<StringArray>(batch, "extra_attributes")?;
+    let titles = required_column::<StringArray>(batch, "ugoite_entry_title")?;
+    let tags = required_column::<ListArray>(batch, "ugoite_entry_tags")?;
+    let links = required_column::<ListArray>(batch, "ugoite_entry_links")?;
+    let created_at =
+        required_column::<TimestampMicrosecondArray>(batch, "ugoite_entry_created_at")?;
+    let updated_at =
+        required_column::<TimestampMicrosecondArray>(batch, "ugoite_entry_updated_at")?;
+    let assets = required_column::<ListArray>(batch, "ugoite_entry_assets")?;
+    let integrity = required_column::<StructArray>(batch, "ugoite_entry_integrity")?;
+    let deleted = required_column::<BooleanArray>(batch, "ugoite_entry_deleted")?;
+    let deleted_at =
+        required_column::<TimestampMicrosecondArray>(batch, "ugoite_entry_deleted_at")?;
+    let restored_from =
+        required_column::<FixedSizeBinaryArray>(batch, "ugoite_entry_restored_from")?;
+    let external_ids = required_column::<StringArray>(batch, "ugoite_entry_external_id")?;
+
+    let mut revisions = Vec::with_capacity(batch.num_rows());
+    for row in 0..batch.num_rows() {
+        let mut values = BTreeMap::new();
+        for field in &form.fields {
+            let physical = table_schema
+                .field_by_id(field.id.get())
+                .context("Iceberg schema is missing a Form field ID")?;
+            let Some(column) = batch.column_by_name(&physical.name) else {
+                // An older file predates this optional Form field.
+                continue;
+            };
+            if let Some(value) = field_value_at(column.as_ref(), row, &field.field_type)? {
+                values.insert(field.id, value);
+            }
+        }
+        let operation = match required_string(operations, row, "operation")? {
+            "upsert" => EntryOperation::Upsert,
+            "delete" => EntryOperation::Delete,
+            "restore" => EntryOperation::Restore,
+            other => return Err(anyhow!("unsupported revision operation: {other}")),
+        };
+        let entry_version = u64::try_from(required_i64(&versions, row, "entry_version")?)?;
+        let parent_revision_id = optional_uuid(parents, row)?.map(RevisionId::from);
+        revisions.push(EntryRevision {
+            form_id: form.id,
+            entry_id: uuid_at(entry_ids, row)?,
+            revision_id: RevisionId::from(uuid_value_at(revision_ids, row)?),
+            parent_revision_id,
+            entry_version,
+            expected_version: parent_revision_id.map(|_| entry_version.saturating_sub(1)),
+            operation,
+            committed_at_micros: required_i64(&committed_at, row, "committed_at")?,
+            author_id: required_string(authors, row, "author_id")?.to_string(),
+            form_version: ugoite_domain::form::FormVersion::new(u32::try_from(required_i32(
+                form_versions,
+                row,
+                "form_version",
+            )?)?)?,
+            source_kind: required_string(source_kinds, row, "source_kind")?.to_string(),
+            source_id: optional_string(source_ids, row),
+            entry: EntryMetadata {
+                external_id: required_string(external_ids, row, "ugoite_entry_external_id")?
+                    .to_string(),
+                title: required_string(titles, row, "ugoite_entry_title")?.to_string(),
+                tags: string_list_at(tags, row)?,
+                links: links_at(links, row)?,
+                created_at_micros: required_i64(&created_at, row, "ugoite_entry_created_at")?,
+                updated_at_micros: required_i64(&updated_at, row, "ugoite_entry_updated_at")?,
+                assets: assets_at(assets, row)?,
+                integrity: integrity_at(integrity, row)?,
+                deleted: required_bool(deleted, row, "ugoite_entry_deleted")?,
+                deleted_at_micros: optional_i64(&deleted_at, row),
+                restored_from: optional_uuid(restored_from, row)?.map(RevisionId::from),
+            },
+            values,
+            extra_attributes: json_map_at(extra_attributes, row, "extra_attributes")?,
+            extension_metadata: json_map_at(extensions, row, "extension_metadata")?,
+        });
+    }
+    Ok(revisions)
+}
+
+fn required_column<'a, T: 'static>(batch: &'a RecordBatch, name: &str) -> Result<&'a T> {
+    batch
+        .column_by_name(name)
+        .and_then(|column| column.as_any().downcast_ref::<T>())
+        .with_context(|| format!("Iceberg projection has invalid {name} column"))
+}
+
+fn required_string<'a>(array: &'a StringArray, row: usize, name: &str) -> Result<&'a str> {
+    (!array.is_null(row))
+        .then(|| array.value(row))
+        .with_context(|| format!("Iceberg {name} is null"))
+}
+
+fn optional_string(array: &StringArray, row: usize) -> Option<String> {
+    (!array.is_null(row)).then(|| array.value(row).to_string())
+}
+
+fn required_i64(
+    array: &impl arrow_array::ArrayAccessor<Item = i64>,
+    row: usize,
+    name: &str,
+) -> Result<i64> {
+    (!array.is_null(row))
+        .then(|| array.value(row))
+        .with_context(|| format!("Iceberg {name} is null"))
+}
+
+fn optional_i64(array: &impl arrow_array::ArrayAccessor<Item = i64>, row: usize) -> Option<i64> {
+    (!array.is_null(row)).then(|| array.value(row))
+}
+
+fn required_i32(array: &Int32Array, row: usize, name: &str) -> Result<i32> {
+    (!array.is_null(row))
+        .then(|| array.value(row))
+        .with_context(|| format!("Iceberg {name} is null"))
+}
+
+fn required_bool(array: &BooleanArray, row: usize, name: &str) -> Result<bool> {
+    (!array.is_null(row))
+        .then(|| array.value(row))
+        .with_context(|| format!("Iceberg {name} is null"))
+}
+
+fn optional_uuid(array: &FixedSizeBinaryArray, row: usize) -> Result<Option<Uuid>> {
+    Ok((!array.is_null(row))
+        .then(|| Uuid::from_slice(array.value(row)))
+        .transpose()?)
+}
+
+fn json_map_at(
+    array: &StringArray,
+    row: usize,
+    name: &str,
+) -> Result<BTreeMap<String, serde_json::Value>> {
+    if array.is_null(row) || array.value(row).is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    serde_json::from_str(array.value(row)).with_context(|| format!("invalid {name} JSON"))
+}
+
+fn string_list_at(array: &ListArray, row: usize) -> Result<Vec<String>> {
+    if array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = array.value(row);
+    let values = values
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .context("Iceberg list metadata has invalid element type")?;
+    Ok((0..values.len())
+        .filter(|index| !values.is_null(*index))
+        .map(|index| values.value(index).to_string())
+        .collect())
+}
+
+fn metadata_rows_at(array: &ListArray, row: usize) -> Result<ArrayRef> {
+    let values = array.value(row);
+    if values.as_any().downcast_ref::<StructArray>().is_none() {
+        return Err(anyhow!("Iceberg metadata list has invalid element type"));
+    }
+    Ok(values)
+}
+
+fn struct_string_at(array: &StructArray, name: &str, row: usize) -> String {
+    array
+        .column_by_name(name)
+        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
+        .filter(|column| !column.is_null(row))
+        .map(|column| column.value(row).to_string())
+        .unwrap_or_default()
+}
+
+fn links_at(array: &ListArray, row: usize) -> Result<Vec<EntryLink>> {
+    if array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = metadata_rows_at(array, row)?;
+    let values = values
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .expect("validated metadata struct array");
+    Ok((0..values.len())
+        .map(|index| EntryLink {
+            id: struct_string_at(values, "id", index),
+            target: struct_string_at(values, "target", index),
+            kind: struct_string_at(values, "kind", index),
+        })
+        .collect())
+}
+
+fn assets_at(array: &ListArray, row: usize) -> Result<Vec<EntryAsset>> {
+    if array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = metadata_rows_at(array, row)?;
+    let values = values
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .expect("validated metadata struct array");
+    Ok((0..values.len())
+        .map(|index| EntryAsset {
+            id: struct_string_at(values, "id", index),
+            name: struct_string_at(values, "name", index),
+            path: struct_string_at(values, "path", index),
+        })
+        .collect())
+}
+
+fn integrity_at(array: &StructArray, row: usize) -> Result<EntryIntegrity> {
+    if array.is_null(row) {
+        return Ok(EntryIntegrity::default());
+    }
+    Ok(EntryIntegrity {
+        checksum: struct_string_at(array, "checksum", row),
+        signature: struct_string_at(array, "signature", row),
+    })
+}
+
+fn field_value_at(column: &dyn Array, row: usize, kind: &FieldType) -> Result<Option<FieldValue>> {
+    if column.is_null(row) {
+        return Ok(None);
+    }
+    let invalid = || anyhow!("Iceberg field type does not match Form metadata");
+    let value = match kind {
+        FieldType::Boolean => FieldValue::Boolean(
+            column
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .ok_or_else(invalid)?
+                .value(row),
+        ),
+        FieldType::Integer | FieldType::Long => {
+            FieldValue::Integer(if matches!(kind, FieldType::Integer) {
+                i64::from(
+                    column
+                        .as_any()
+                        .downcast_ref::<Int32Array>()
+                        .ok_or_else(invalid)?
+                        .value(row),
+                )
+            } else {
+                column
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .ok_or_else(invalid)?
+                    .value(row)
+            })
+        }
+        FieldType::Float => FieldValue::Number(f64::from(
+            column
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .ok_or_else(invalid)?
+                .value(row),
+        )),
+        FieldType::Double => FieldValue::Number(
+            column
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .ok_or_else(invalid)?
+                .value(row),
+        ),
+        FieldType::Date => FieldValue::String(date_from_days(
+            column
+                .as_any()
+                .downcast_ref::<Date32Array>()
+                .ok_or_else(invalid)?
+                .value(row),
+        )?),
+        FieldType::Time => FieldValue::String(time_from_micros(
+            column
+                .as_any()
+                .downcast_ref::<Time64MicrosecondArray>()
+                .ok_or_else(invalid)?
+                .value(row),
+        )?),
+        FieldType::Timestamp | FieldType::TimestampTz => FieldValue::String(timestamp_from_micros(
+            column
+                .as_any()
+                .downcast_ref::<TimestampMicrosecondArray>()
+                .ok_or_else(invalid)?
+                .value(row),
+        )?),
+        FieldType::TimestampNs | FieldType::TimestampTzNs => {
+            FieldValue::String(timestamp_from_nanos(
+                column
+                    .as_any()
+                    .downcast_ref::<TimestampNanosecondArray>()
+                    .ok_or_else(invalid)?
+                    .value(row),
+            )?)
+        }
+        FieldType::Uuid => FieldValue::String(
+            Uuid::from_slice(
+                column
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .ok_or_else(invalid)?
+                    .value(row),
+            )?
+            .to_string(),
+        ),
+        FieldType::Binary => FieldValue::String(
+            BASE64.encode(
+                column
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .ok_or_else(invalid)?
+                    .value(row),
+            ),
+        ),
+        FieldType::List => FieldValue::List(
+            string_list_at(
+                column
+                    .as_any()
+                    .downcast_ref::<ListArray>()
+                    .ok_or_else(invalid)?,
+                row,
+            )?
+            .into_iter()
+            .map(FieldValue::String)
+            .collect(),
+        ),
+        FieldType::ObjectList => FieldValue::List(object_list_at(
+            column
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .ok_or_else(invalid)?,
+            row,
+        )?),
+        FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
+            FieldValue::String(
+                column
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or_else(invalid)?
+                    .value(row)
+                    .to_string(),
+            )
+        }
+    };
+    Ok(Some(value))
+}
+
+fn object_list_at(array: &ListArray, row: usize) -> Result<Vec<FieldValue>> {
+    if array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = metadata_rows_at(array, row)?;
+    let values = values
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .expect("validated metadata struct array");
+    Ok((0..values.len())
+        .map(|index| {
+            FieldValue::Object(BTreeMap::from([
+                (
+                    "type".into(),
+                    FieldValue::String(struct_string_at(values, "type", index)),
+                ),
+                (
+                    "name".into(),
+                    FieldValue::String(struct_string_at(values, "name", index)),
+                ),
+                (
+                    "description".into(),
+                    FieldValue::String(struct_string_at(values, "description", index)),
+                ),
+            ]))
+        })
+        .collect())
+}
+
+fn date_from_days(days: i32) -> Result<String> {
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).context("invalid Unix epoch")?;
+    Ok(epoch
+        .checked_add_signed(chrono::Duration::days(i64::from(days)))
+        .context("date is outside the supported range")?
+        .format("%Y-%m-%d")
+        .to_string())
+}
+
+fn time_from_micros(micros: i64) -> Result<String> {
+    let seconds = u32::try_from(micros.div_euclid(1_000_000))?;
+    let nanos = u32::try_from(micros.rem_euclid(1_000_000) * 1_000)?;
+    Ok(
+        NaiveTime::from_num_seconds_from_midnight_opt(seconds, nanos)
+            .context("time is outside the supported range")?
+            .format("%H:%M:%S%.6f")
+            .to_string(),
+    )
+}
+
+fn timestamp_from_micros(micros: i64) -> Result<String> {
+    DateTime::from_timestamp_micros(micros)
+        .context("timestamp is outside the supported range")
+        .map(|timestamp: DateTime<chrono::Utc>| timestamp.to_rfc3339())
+}
+
+fn timestamp_from_nanos(nanos: i64) -> Result<String> {
+    let seconds = nanos.div_euclid(1_000_000_000);
+    let nanos = u32::try_from(nanos.rem_euclid(1_000_000_000))?;
+    DateTime::from_timestamp(seconds, nanos)
+        .context("timestamp is outside the supported range")
+        .map(|timestamp: DateTime<chrono::Utc>| {
+            timestamp.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+        })
 }
 
 fn validate_batch_revision_metadata(
