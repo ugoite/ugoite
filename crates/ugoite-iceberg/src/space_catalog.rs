@@ -139,6 +139,16 @@ impl SpaceCatalog {
         self
     }
 
+    /// A Catalog value represents one physical publication attempt. Retrying
+    /// or issuing another mutation must use an independent command identity
+    /// and mutation claim while sharing the same Space storage boundary.
+    pub fn new_attempt(&self) -> Self {
+        let mut attempt = self.clone();
+        attempt.publication = PublicationContext::generated();
+        attempt.mutation_claimed = Arc::new(AtomicBool::new(false));
+        attempt
+    }
+
     pub fn namespace(&self) -> &NamespaceIdent {
         &self.namespace
     }

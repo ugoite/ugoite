@@ -1,7 +1,8 @@
 //! Iceberg-native persistence and query boundary.
 //!
 //! One [`IcebergWorkspace`] represents one Ugoite Space namespace. Production
-//! callers inject a durable Catalog; MemoryCatalog belongs in tests only.
+//! callers inject a durable Catalog; every built-in test workspace uses the
+//! same OpenDAL-backed SpaceCatalog boundary as production.
 
 mod migration;
 mod space_catalog;
@@ -42,7 +43,6 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
 use iceberg::expr::Reference;
-use iceberg::memory::{MemoryCatalogBuilder, MEMORY_CATALOG_WAREHOUSE};
 use iceberg::spec::{DataFileFormat, Datum};
 use iceberg::spec::{
     ListType, NestedField, PrimitiveType, Schema, SortOrder, StructType, Type, UnboundPartitionSpec,
@@ -55,7 +55,7 @@ use iceberg::writer::file_writer::location_generator::{
 use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
 use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
-use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
+use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::IcebergCatalogProvider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -63,7 +63,7 @@ use std::sync::Arc;
 use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{Compatibility, FieldType, FormChangeSet, FormDefinition, FormField};
 use ugoite_domain::id::{FormId, RevisionId, SpaceId};
-use ugoite_storage::SpaceCatalogStore;
+use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
 use uuid::Uuid;
 
 const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
@@ -78,6 +78,7 @@ const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
 #[derive(Debug, Clone)]
 pub struct IcebergWorkspace {
     catalog: Arc<dyn Catalog>,
+    space_catalog: Option<Arc<SpaceCatalog>>,
     namespace: NamespaceIdent,
     space_id: SpaceId,
     warehouse: String,
@@ -129,7 +130,7 @@ impl IcebergWorkspace {
         write: WriteConfig,
     ) -> Result<Self> {
         let warehouse = store.warehouse_uri();
-        Self::new(
+        Self::new_space_catalog(
             Arc::new(SpaceCatalog::new(store, space_id)?),
             space_id,
             warehouse,
@@ -150,6 +151,27 @@ impl IcebergWorkspace {
         }
         Ok(Self {
             catalog,
+            space_catalog: None,
+            namespace,
+            space_id,
+            warehouse: warehouse.into(),
+            write,
+        })
+    }
+
+    async fn new_space_catalog(
+        catalog: Arc<SpaceCatalog>,
+        space_id: SpaceId,
+        warehouse: impl Into<String>,
+        write: WriteConfig,
+    ) -> Result<Self> {
+        let namespace = namespace_for_space(space_id);
+        if !catalog.namespace_exists(&namespace).await? {
+            catalog.create_namespace(&namespace, HashMap::new()).await?;
+        }
+        Ok(Self {
+            catalog: catalog.clone(),
+            space_catalog: Some(catalog),
             namespace,
             space_id,
             warehouse: warehouse.into(),
@@ -159,16 +181,16 @@ impl IcebergWorkspace {
 
     pub async fn memory_for_tests(space_id: SpaceId, warehouse: impl Into<String>) -> Result<Self> {
         let warehouse = warehouse.into();
-        let catalog = MemoryCatalogBuilder::default()
-            .load(
-                "ugoite-test",
-                HashMap::from([(MEMORY_CATALOG_WAREHOUSE.to_string(), warehouse.clone())]),
-            )
-            .await?;
-        Self::new(
-            Arc::new(catalog),
+        let store = SpaceCatalogStore::new(
+            operator_from_uri(&warehouse)?,
+            format!("test/space_{}", space_id.as_uuid().simple()),
+        )?
+        .single_process();
+        let storage_warehouse = store.warehouse_uri();
+        Self::new_space_catalog(
+            Arc::new(SpaceCatalog::new(store, space_id)?),
             space_id,
-            warehouse,
+            storage_warehouse,
             WriteConfig::default(),
         )
         .await
@@ -179,6 +201,13 @@ impl IcebergWorkspace {
     }
     pub fn catalog(&self) -> Arc<dyn Catalog> {
         self.catalog.clone()
+    }
+
+    fn mutation_catalog(&self) -> Arc<dyn Catalog> {
+        self.space_catalog
+            .as_ref()
+            .map(|catalog| Arc::new(catalog.new_attempt()) as Arc<dyn Catalog>)
+            .unwrap_or_else(|| self.catalog.clone())
     }
 
     pub fn schema_commit_capability(&self) -> SchemaCommitCapability {
@@ -200,7 +229,9 @@ impl IcebergWorkspace {
             .sort_order(SortOrder::unsorted_order())
             .properties(form_properties(form, self.write)?)
             .build();
-        self.catalog.create_table(&self.namespace, creation).await?;
+        self.mutation_catalog()
+            .create_table(&self.namespace, creation)
+            .await?;
         Ok(())
     }
 
@@ -297,9 +328,10 @@ impl IcebergWorkspace {
             for (key, value) in form_properties(&evolved, self.write)? {
                 properties = properties.set(key, value);
             }
+            let catalog = self.mutation_catalog();
             properties
                 .apply(transaction)?
-                .commit(self.catalog.as_ref())
+                .commit(catalog.as_ref())
                 .await?;
             return self.load_form(changes.form_id).await;
         }
@@ -308,7 +340,8 @@ impl IcebergWorkspace {
         for (key, value) in form_properties(&evolved, self.write)? {
             action = action.set(key, value);
         }
-        action.apply(tx)?.commit(self.catalog.as_ref()).await?;
+        let catalog = self.mutation_catalog();
+        action.apply(tx)?.commit(catalog.as_ref()).await?;
         Ok(evolved)
     }
 
@@ -436,7 +469,8 @@ impl IcebergWorkspace {
             .fast_append()
             .add_data_files(data_files.clone())
             .set_snapshot_properties(summary);
-        let updated = action.apply(tx)?.commit(self.catalog.as_ref()).await?;
+        let catalog = self.mutation_catalog();
+        let updated = action.apply(tx)?.commit(catalog.as_ref()).await?;
         let snapshot_id = updated
             .metadata()
             .current_snapshot()
