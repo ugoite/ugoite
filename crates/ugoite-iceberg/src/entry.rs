@@ -10,7 +10,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashSet};
-use std::sync::Arc;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
