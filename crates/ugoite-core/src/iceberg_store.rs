@@ -42,12 +42,12 @@ pub async fn native_workspace(
 ) -> Result<ugoite_iceberg::IcebergWorkspace> {
     let space_id = stable_space_id(operator, workspace_path).await?;
     let store = SpaceCatalogStore::new(operator.clone(), workspace_path)?.single_process();
-    Ok(ugoite_iceberg::IcebergWorkspace::open_space(
+    ugoite_iceberg::IcebergWorkspace::open_space(
         store,
         space_id,
         ugoite_iceberg::WriteConfig::default(),
     )
-    .await?)
+    .await
 }
 
 pub async fn ensure_form_tables(
