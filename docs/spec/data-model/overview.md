@@ -82,18 +82,22 @@ H2 sections are parsed according to the Form field type. Supported types are exp
 
 ## Search, query, and derived data
 
-Keyword search, structured query, Links, Assets, and Ugoite SQL are DataFusion
-plans over authorized, snapshot-pinned Iceberg data. They do **not** create a
-persistent inverted index, JSON materialization table, or second history store.
+The current keyword search scans non-deleted Entry rows for a case-insensitive
+substring. It does **not** use a persistent inverted index or relevance ranking.
+The target read path is an authorized, snapshot-pinned DataFusion plan over
+Iceberg data; that transition is tracked separately and must not add a JSON
+materialization table or a second history store.
 
 `ugoite index stats` is available in core/local mode. Reindex and per-entry index update return an explicit “not implemented in this release” error, so persistent live-index/watch-loop behavior remains planned.
 
 ## Saved SQL and SQL sessions
 
-Saved SQL is represented through the reserved SQL metadata Form. A query session
-pins one reproducible Space checkpoint, validates authorization on every use,
-and applies bounded deterministic pagination. Session metadata is derived state,
-not an alternate Catalog or result store. See [sql-sessions.md](sql-sessions.md).
+Saved SQL is represented through the reserved SQL metadata Form. The current
+query session writes `sql_sessions/{session_id}/meta.json`; row and count
+requests re-run SQL against current readable data. The target session model pins
+one reproducible checkpoint and uses bounded deterministic pagination. Session
+metadata remains derived state, not an alternate Catalog or result store. See
+[sql-sessions.md](sql-sessions.md).
 
 ## Assets, links, and integrity
 

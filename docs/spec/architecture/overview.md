@@ -24,13 +24,10 @@ and derive optimistic-concurrency Revision drafts without storage access.
 
 The persistence model is one Iceberg namespace per Space and one append-only
 revision table per stable Form ID. `ugoite-storage` normalizes backend
-configuration, constructs the Catalog Head operator, probes conditional-object
-behavior, and exposes only the small exact-read/create/replace boundary.
-`ugoite-iceberg` constructs the official `iceberg-storage-opendal` factory,
-owns physical schemas and typed Arrow conversion, implements the one
-OpenDAL-backed `SpaceCatalog`, and is the only production gateway for Iceberg
-table publication and DataFusion providers. `ugoite-core` deals only in domain
-commands, authorization/query policy, checkpoints, receipts, and errors.
+configuration and owns the small Catalog Head object boundary. `ugoite-iceberg`
+constructs the official `iceberg-storage-opendal` factory, owns physical
+schemas, and implements the OpenDAL-backed `SpaceCatalog`. Core receives no
+OpenDAL, Iceberg, Arrow, Parquet, DataFusion, or SQL-parser types.
 
 `_ugoite/catalog/head.json` is the sole mutable catalog authority. Every Head
 generation names the Form tables and their immutable Iceberg metadata. A
@@ -43,10 +40,10 @@ publication chain instead of blindly repeating the logical mutation. REST,
 Memory, pointer-manifest, external-catalog, and object-list reconstruction modes
 are not production architecture.
 
-Logical Form field IDs are Iceberg field IDs. Current state is derived once from
-the revision table and fails explicitly on duplicate maximum versions. Reads use
-snapshot-pinned upstream Iceberg/DataFusion providers; query sessions and
-checkpoints are derived/pinned state, not catalog authority. One Form table
-commit is the atomicity boundary: Ugoite does not claim cross-Form transactions.
+The active follow-up issues make this architecture complete: typed Form columns,
+one mutation coordinator, duplicate-head detection, authorization-aware
+DataFusion reads, checkpoints, and read-only health evidence are target work,
+not claims about every current API. One Form table commit is the atomicity
+boundary; Ugoite does not claim cross-Form transactions.
 
 The current browser is server-backed. The target architecture adds a browser-local runtime and optional synchronization without making the server the mandatory owner of data.

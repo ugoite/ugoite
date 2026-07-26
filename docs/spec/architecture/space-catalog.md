@@ -7,6 +7,12 @@ intentionally destructive before the first release: the internal pre-release
 Space format version is unchanged, while legacy layouts and catalog modes are
 unsupported rather than migrated.
 
+The Catalog Head layout and upstream physical boundary are implemented by the
+current persistence work. The single mutation coordinator, checkpoint-pinned
+reads, authorization-aware DataFusion context, and health evidence described
+here remain active follow-up work; this document does not advertise them as
+current product APIs.
+
 ## Authority and ownership
 
 One Space maps to one Iceberg namespace. One stable Form ID maps to one

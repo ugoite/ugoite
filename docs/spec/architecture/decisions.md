@@ -61,7 +61,7 @@ two-table commit.
 
 ## ADR-010 — OpenDAL-published SpaceCatalog and DataFusion
 
-**Accepted.** A Space has one OpenDAL-backed `SpaceCatalog` implementing the
+**Accepted target.** A Space has one OpenDAL-backed `SpaceCatalog` implementing the
 current Iceberg `Catalog` trait. Its sole mutable authority is
 `_ugoite/catalog/head.json`; immutable linked publication records beneath
 `_ugoite/catalog/publications/` provide the evidence needed to resolve an
