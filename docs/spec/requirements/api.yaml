@@ -224,7 +224,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_saved_sql.rs
-  - file: crates/ugoite-core/tests/test_saved_sql.rs
+  - file: crates/ugoite-iceberg/tests/test_saved_sql.rs
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.
@@ -266,7 +266,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_saved_sql.rs
-  - file: crates/ugoite-core/tests/test_saved_sql.rs
+  - file: crates/ugoite-iceberg/tests/test_saved_sql.rs
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.
@@ -300,8 +300,8 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_materialized_view.rs
-  - file: crates/ugoite-core/tests/test_sql_sessions.rs
+  - file: crates/ugoite-iceberg/tests/test_materialized_view.rs
+  - file: crates/ugoite-iceberg/tests/test_sql_sessions.rs
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.
@@ -348,7 +348,7 @@ requirements:
   tests:
   - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
   - file: crates/ugoite-cli/tests/test_space.rs
-  - file: crates/ugoite-core/tests/test_sample_data.rs
+  - file: crates/ugoite-iceberg/tests/test_sample_data.rs
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.
@@ -391,7 +391,7 @@ requirements:
   status: planned
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_sample_data.rs
+  - file: crates/ugoite-iceberg/tests/test_sample_data.rs
 - set_id: REQCAT-API
   source_file: requirements/api.yaml
   scope: REST API contracts and service behavior requirements.

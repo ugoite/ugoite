@@ -14,7 +14,7 @@ apis:
     file: frontend/src/lib/preferences-api.ts
     function: preferencesApi.getMe
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: get_user_preferences
 - id: preferences.me.patch
   method: PATCH
@@ -28,5 +28,5 @@ apis:
     file: frontend/src/lib/preferences-api.ts
     function: preferencesApi.patchMe
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: patch_user_preferences

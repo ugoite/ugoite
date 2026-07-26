@@ -24,7 +24,7 @@ requirements:
   tests:
   - file: crates/ugoite-cli/tests/test_cli_form.rs
   - file: crates/ugoite-cli/tests/test_forms.rs
-  - file: crates/ugoite-core/tests/test_form.rs
+  - file: crates/ugoite-iceberg/tests/test_form.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -52,7 +52,7 @@ requirements:
   tests:
   - file: crates/ugoite-cli/tests/test_cli_form.rs
   - file: crates/ugoite-cli/tests/test_forms.rs
-  - file: crates/ugoite-core/tests/test_form.rs
+  - file: crates/ugoite-iceberg/tests/test_form.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -100,7 +100,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -126,7 +126,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_form.rs
+  - file: crates/ugoite-iceberg/tests/test_form.rs
   - file: crates/ugoite-domain/tests/test_coverage.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
@@ -151,7 +151,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_form.rs
+  - file: crates/ugoite-iceberg/tests/test_form.rs
   - file: crates/ugoite-domain/tests/test_coverage.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
@@ -177,7 +177,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_form.rs
+  - file: crates/ugoite-iceberg/tests/test_form.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.
@@ -202,7 +202,7 @@ requirements:
   status: planned
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_form_reserved_identity.rs
+  - file: crates/ugoite-iceberg/tests/test_form_reserved_identity.rs
 - set_id: REQCAT-FORM
   source_file: requirements/form.yaml
   scope: Form structure, validation, and lifecycle requirements.

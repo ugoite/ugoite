@@ -167,8 +167,8 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/src/authorization.rs
-  - file: crates/ugoite-core/src/service.rs
+  - file: crates/ugoite-iceberg/src/authorization.rs
+  - file: crates/ugoite-iceberg/src/service.rs
   - file: crates/ugoite-server/tests/api_contract.rs
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
@@ -225,7 +225,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/src/authorization.rs
+  - file: crates/ugoite-iceberg/src/authorization.rs
   - file: crates/ugoite-server/tests/api_contract.rs
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
@@ -252,7 +252,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/src/authorization.rs
+  - file: crates/ugoite-iceberg/src/authorization.rs
   - file: crates/ugoite-identity/src/oauth.rs
   - file: crates/ugoite-server/tests/api_contract.rs
 - set_id: REQCAT-SECURITY

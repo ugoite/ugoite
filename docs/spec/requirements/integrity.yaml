@@ -25,7 +25,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_integrity.rs
-  - file: crates/ugoite-core/tests/test_integrity.rs
+  - file: crates/ugoite-iceberg/tests/test_integrity.rs
   - file: crates/ugoite-domain/tests/test_coverage.rs
 - set_id: REQCAT-INTEGRITY
   source_file: requirements/integrity.yaml
@@ -69,4 +69,4 @@ requirements:
   status: planned
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_integrity.rs
+  - file: crates/ugoite-iceberg/tests/test_integrity.rs

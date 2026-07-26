@@ -56,7 +56,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_space.rs
-  - file: crates/ugoite-core/tests/test_space.rs
+  - file: crates/ugoite-iceberg/tests/test_space.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
@@ -87,7 +87,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_space.rs
-  - file: crates/ugoite-core/tests/test_space.rs
+  - file: crates/ugoite-iceberg/tests/test_space.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
@@ -117,7 +117,7 @@ requirements:
   - file: crates/ugoite-cli/tests/test_endpoint_config.rs
   - file: crates/ugoite-cli/tests/test_integrity.rs
   - file: crates/ugoite-cli/tests/test_space.rs
-  - file: crates/ugoite-core/tests/test_space.rs
+  - file: crates/ugoite-iceberg/tests/test_space.rs
   - file: crates/ugoite-domain/tests/test_coverage.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
@@ -145,7 +145,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_space.rs
-  - file: crates/ugoite-core/tests/test_space.rs
+  - file: crates/ugoite-iceberg/tests/test_space.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
@@ -178,7 +178,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_space.rs
+  - file: crates/ugoite-iceberg/tests/test_space.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
@@ -231,7 +231,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_space.rs
+  - file: crates/ugoite-iceberg/tests/test_space.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
@@ -325,7 +325,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_preferences.rs
+  - file: crates/ugoite-iceberg/tests/test_preferences.rs
 - set_id: REQCAT-STORAGE
   source_file: requirements/storage.yaml
   scope: Storage architecture, data persistence, and portability requirements.
