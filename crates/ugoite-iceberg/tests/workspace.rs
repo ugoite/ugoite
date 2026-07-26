@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
-use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::entry::{
+    EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+};
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
 };
@@ -315,6 +317,7 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
+        entry: EntryMetadata::default(),
         values: BTreeMap::new(),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -372,6 +375,7 @@ async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow:
                 form_version: form.version,
                 source_kind: "test".into(),
                 source_id: None,
+                entry: EntryMetadata::default(),
                 values,
                 extra_attributes: BTreeMap::new(),
                 extension_metadata: BTreeMap::new(),
@@ -680,6 +684,7 @@ async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyho
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
+        entry: EntryMetadata::default(),
         values: BTreeMap::new(),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
