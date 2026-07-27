@@ -506,7 +506,20 @@ async fn append_revision_rows_to_workspace(
         .map(|row| revision_row_to_domain(row, &domain_form))
         .collect::<Result<Vec<_>>>()?;
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let command = crate::publication_context(
+        format!(
+            "entry-revision-batch:{}",
+            revisions
+                .iter()
+                .map(|revision| revision.revision_id.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        "entry.append",
+        &revisions,
+    )?;
     workspace
+        .commit(command)?
         .append_revisions(domain_form.id, revisions)
         .await?;
     Ok(())

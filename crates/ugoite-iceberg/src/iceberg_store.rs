@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use iceberg::TableIdent;
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -49,12 +48,10 @@ pub async fn ensure_form_tables(
 ) -> Result<()> {
     let form = crate::form::to_domain_form(form_definition)?;
     let workspace = native_workspace(operator, workspace_path).await?;
-    let table = TableIdent::new(
-        workspace.namespace().clone(),
-        crate::physical_form_name(form.id),
-    );
-    if !workspace.catalog().table_exists(&table).await? {
-        workspace.create_form(&form).await?;
+    if !workspace.has_form(form.id).await? {
+        let command =
+            crate::publication_context(format!("form-create:{}", form.id), "form.create", &form)?;
+        workspace.commit(command)?.create_form(&form).await?;
     }
     Ok(())
 }

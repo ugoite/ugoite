@@ -28,7 +28,8 @@ pub mod sql_session;
 pub mod storage;
 
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
-pub use space_catalog::{PublicationContext, SpaceCatalog};
+pub use space_catalog::PublicationContext;
+use space_catalog::SpaceCatalog;
 
 use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{
@@ -58,6 +59,7 @@ use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::IcebergCatalogProvider;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use ugoite_domain::entry::{
@@ -107,10 +109,40 @@ impl Default for WriteConfig {
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommitReceipt {
+    pub command_id: String,
+    pub catalog_generation: u64,
     pub snapshot_id: i64,
     pub committed_revision_ids: Vec<RevisionId>,
     pub committed_at_micros: i64,
     pub data_file_count: usize,
+}
+
+/// The only production entry point for changes that publish a Space Catalog
+/// Head.  A coordinator owns one immutable domain command identity.  It
+/// creates a fresh, short-lived `SpaceCatalog` only for the command attempt;
+/// no publication state is ambient or shared between commands.
+#[derive(Debug, Clone)]
+pub struct SpaceCommitCoordinator {
+    workspace: IcebergWorkspace,
+    publication: PublicationContext,
+}
+
+const MAX_PUBLICATION_ATTEMPTS: usize = 3;
+
+/// Builds the immutable identity carried by one domain command. Callers pass
+/// domain values only; canonical JSON is hashed before any physical Iceberg
+/// conversion happens.
+pub fn publication_context<T: Serialize>(
+    command_id: impl Into<String>,
+    command_kind: impl Into<String>,
+    command: &T,
+) -> Result<PublicationContext> {
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(command)?));
+    Ok(PublicationContext::with_command_digest(
+        command_id,
+        command_kind,
+        digest,
+    ))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -138,26 +170,6 @@ impl IcebergWorkspace {
             write,
         )
         .await
-    }
-
-    pub async fn new(
-        catalog: Arc<dyn Catalog>,
-        space_id: SpaceId,
-        warehouse: impl Into<String>,
-        write: WriteConfig,
-    ) -> Result<Self> {
-        let namespace = namespace_for_space(space_id);
-        if !catalog.namespace_exists(&namespace).await? {
-            catalog.create_namespace(&namespace, HashMap::new()).await?;
-        }
-        Ok(Self {
-            catalog,
-            space_catalog: None,
-            namespace,
-            space_id,
-            warehouse: warehouse.into(),
-            write,
-        })
     }
 
     async fn new_space_catalog(
@@ -197,25 +209,50 @@ impl IcebergWorkspace {
         .await
     }
 
-    pub fn namespace(&self) -> &NamespaceIdent {
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn namespace_for_testing(&self) -> &NamespaceIdent {
         &self.namespace
     }
-    pub fn catalog(&self) -> Arc<dyn Catalog> {
+
+    /// Test-only physical inspection. Release builds expose no Catalog handle,
+    /// so application code cannot bypass `SpaceCommitCoordinator` to commit.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn catalog_for_testing(&self) -> Arc<dyn Catalog> {
         self.catalog.clone()
     }
 
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn clone_for_testing(&self) -> Self {
+        self.clone()
+    }
+
     fn mutation_catalog(&self) -> Arc<dyn Catalog> {
-        self.space_catalog
-            .as_ref()
-            .map(|catalog| Arc::new(catalog.new_attempt()) as Arc<dyn Catalog>)
-            .unwrap_or_else(|| self.catalog.clone())
+        self.catalog.clone()
+    }
+
+    /// Binds one stable domain command identity to a coordinator.  The
+    /// coordinator is intentionally the only public mutation API; read APIs
+    /// remain on `IcebergWorkspace`.
+    pub fn commit(&self, publication: PublicationContext) -> Result<SpaceCommitCoordinator> {
+        if self.space_catalog.is_none() {
+            return Err(anyhow!(
+                "SpaceCommitCoordinator requires the OpenDAL-backed SpaceCatalog"
+            ));
+        }
+        Ok(SpaceCommitCoordinator {
+            workspace: self.clone(),
+            publication,
+        })
     }
 
     pub fn schema_commit_capability(&self) -> SchemaCommitCapability {
         SchemaCommitCapability::AtomicSchemaEvolution
     }
 
-    pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
+    async fn create_form(&self, form: &FormDefinition) -> Result<()> {
         form.validate()?;
         validate_field_ids(form)?;
         let ident = self.form_ident(form.id);
@@ -270,6 +307,13 @@ impl IcebergWorkspace {
         Ok(form)
     }
 
+    /// Returns whether the authoritative Catalog Head currently contains this
+    /// Form table. This is a domain read and intentionally exposes neither a
+    /// physical table handle nor a mutation path.
+    pub async fn has_form(&self, form_id: FormId) -> Result<bool> {
+        Ok(self.catalog.table_exists(&self.form_ident(form_id)).await?)
+    }
+
     pub async fn list_forms(&self) -> Result<Vec<FormDefinition>> {
         let mut forms = Vec::new();
         for ident in self.catalog.list_tables(&self.namespace).await? {
@@ -282,7 +326,7 @@ impl IcebergWorkspace {
         Ok(forms)
     }
 
-    pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
+    async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
         let current = self.load_form(changes.form_id).await?;
         if changes.expected_version != Some(current.version) {
             return Err(anyhow!("Form version conflict"));
@@ -364,7 +408,6 @@ impl IcebergWorkspace {
                 .build()?
                 .metadata;
             space_catalog
-                .new_attempt()
                 .replace_table_metadata(table.identifier(), metadata)
                 .await?;
             return self.load_form(changes.form_id).await;
@@ -532,6 +575,8 @@ impl IcebergWorkspace {
             .context("append commit did not create a snapshot")?
             .snapshot_id();
         Ok(CommitReceipt {
+            command_id: String::new(),
+            catalog_generation: 0,
             snapshot_id,
             committed_revision_ids: ids,
             committed_at_micros,
@@ -539,7 +584,7 @@ impl IcebergWorkspace {
         })
     }
 
-    pub async fn append_revisions(
+    async fn append_revisions(
         &self,
         form_id: FormId,
         revisions: Vec<EntryRevision>,
@@ -679,6 +724,144 @@ impl IcebergWorkspace {
             physical_form_name(form_id)
         )
     }
+}
+
+impl SpaceCommitCoordinator {
+    fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
+        let catalog = self
+            .workspace
+            .space_catalog
+            .as_ref()
+            .context("coordinator is missing its SpaceCatalog")?;
+        let catalog = Arc::new(
+            catalog
+                .new_attempt()
+                .with_publication_context(self.publication.clone()),
+        );
+        Ok(IcebergWorkspace {
+            catalog: catalog.clone(),
+            space_catalog: Some(catalog),
+            namespace: self.workspace.namespace.clone(),
+            space_id: self.workspace.space_id,
+            warehouse: self.workspace.warehouse.clone(),
+            write: self.workspace.write,
+        })
+    }
+
+    async fn publication_receipt(&self) -> Result<Option<space_catalog::PublicationReceipt>> {
+        self.workspace
+            .space_catalog
+            .as_ref()
+            .context("coordinator is missing its SpaceCatalog")?
+            .publication_receipt(&self.publication)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            if self.publication_receipt().await?.is_some() {
+                return Ok(());
+            }
+            match self.attempt_workspace()?.create_form(form).await {
+                Ok(()) => return Ok(()),
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(anyhow!("Catalog Head changed during every create attempt"))
+    }
+
+    pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            if self.publication_receipt().await?.is_some() {
+                return self.workspace.load_form(changes.form_id).await;
+            }
+            match self.attempt_workspace()?.evolve_form(changes).await {
+                Ok(form) => return Ok(form),
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(anyhow!(
+            "Catalog Head changed during every form evolution attempt"
+        ))
+    }
+
+    pub async fn append_revisions(
+        &self,
+        form_id: FormId,
+        revisions: Vec<EntryRevision>,
+    ) -> Result<CommitReceipt> {
+        if let Some(receipt) = self.publication_receipt().await? {
+            return Ok(CommitReceipt {
+                command_id: receipt.command_id,
+                catalog_generation: receipt.catalog_generation,
+                snapshot_id: receipt
+                    .snapshot_id
+                    .context("revision publication did not create an Iceberg snapshot")?,
+                committed_revision_ids: revisions
+                    .iter()
+                    .map(|revision| revision.revision_id)
+                    .collect(),
+                committed_at_micros: revisions
+                    .iter()
+                    .map(|revision| revision.committed_at_micros)
+                    .max()
+                    .unwrap_or_default(),
+                data_file_count: 0,
+            });
+        }
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            if let Some(receipt) = self.publication_receipt().await? {
+                return Ok(CommitReceipt {
+                    command_id: receipt.command_id,
+                    catalog_generation: receipt.catalog_generation,
+                    snapshot_id: receipt
+                        .snapshot_id
+                        .context("revision publication did not create an Iceberg snapshot")?,
+                    committed_revision_ids: revisions
+                        .iter()
+                        .map(|revision| revision.revision_id)
+                        .collect(),
+                    committed_at_micros: revisions
+                        .iter()
+                        .map(|revision| revision.committed_at_micros)
+                        .max()
+                        .unwrap_or_default(),
+                    data_file_count: 0,
+                });
+            }
+            let mut receipt = match self
+                .attempt_workspace()?
+                .append_revisions(form_id, revisions.clone())
+                .await
+            {
+                Ok(receipt) => receipt,
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            let publication = self
+                .publication_receipt()
+                .await?
+                .context("successful append is missing its Catalog publication")?;
+            receipt.command_id = publication.command_id;
+            receipt.catalog_generation = publication.catalog_generation;
+            if publication.snapshot_id != Some(receipt.snapshot_id) {
+                return Err(anyhow!(
+                    "Catalog publication snapshot does not match the append receipt"
+                ));
+            }
+            return Ok(receipt);
+        }
+        Err(anyhow!("Catalog Head changed during every append attempt"))
+    }
+}
+
+fn is_publication_conflict(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("Catalog Head changed"))
 }
 
 #[derive(Debug, Clone, Copy)]
