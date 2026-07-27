@@ -272,9 +272,10 @@ impl SpaceCatalog {
         } else {
             None
         };
-        let (head, exact) = self
-            .exact_head()
-            .await?
+        let attempt = PublicationAttempt::from_exact(&self.publication, self.exact_head().await?);
+        let head = attempt
+            .expected_head
+            .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
         let base = self.load_head_table(table, &head).await?;
         if metadata.uuid() != base.metadata().uuid() {
@@ -306,17 +307,20 @@ impl SpaceCatalog {
         );
         let publication = self
             .publish_new_head(
-                Some((&head, head.publication_location.as_deref())),
-                exact.etag.as_deref(),
+                &attempt,
                 next,
                 table,
                 Some(base_metadata_location),
                 metadata_location,
+                base.metadata().current_snapshot_id(),
+                Some(base.metadata().current_schema_id()),
+                metadata.current_snapshot_id(),
+                metadata.current_schema_id(),
             )
             .await;
         match publication {
             Ok(()) => self.load_table(table).await,
-            Err(_error) if self.resolve_unknown_outcome(Some(head.generation)).await? => {
+            Err(_error) if self.resolve_unknown_outcome(&attempt).await? => {
                 self.load_table(table).await
             }
             Err(error) => Err(error),
