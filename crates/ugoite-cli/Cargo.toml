@@ -9,7 +9,7 @@ name = "ugoite"
 path = "src/main.rs"
 
 [dependencies]
-ugoite_core = { package = "ugoite-core", path = "../ugoite-core" }
+ugoite_iceberg = { package = "ugoite-iceberg", path = "../ugoite-iceberg" }
 ugoite-api-client = { path = "../ugoite-api-client" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros"] }
@@ -17,7 +17,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
 reqwest = { version = "0.13", default-features = false, features = ["json", "blocking", "rustls"] }
-opendal = { version = "0.58", default-features = false, features = ["executors-tokio", "services-fs", "services-memory"] }
+opendal = { version = "0.57", default-features = false, features = ["executors-tokio", "services-fs", "services-memory"] }
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 base64 = "0.22"
 sha2 = "0.11"

@@ -1,7 +1,7 @@
 mod common;
 
 use common::setup_operator;
-use ugoite_core::{asset, entry, form, link, saved_sql, space, sql_session};
+use ugoite_iceberg::{asset, entry, form, link, saved_sql, space, sql_session};
 
 #[tokio::test]
 /// REQ-API-008
@@ -11,7 +11,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let ws_path = "spaces/test-sql-session";
 
     struct MockIntegrity;
-    impl ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+    impl ugoite_iceberg::integrity::IntegrityProvider for MockIntegrity {
         fn checksum(&self, data: &str) -> String {
             format!("chk-{}", data.len())
         }
@@ -72,7 +72,7 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     let ws_path = "spaces/test-sql-session-acl";
 
     struct MockIntegrity;
-    impl ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+    impl ugoite_iceberg::integrity::IntegrityProvider for MockIntegrity {
         fn checksum(&self, data: &str) -> String {
             format!("chk-{}", data.len())
         }
@@ -172,7 +172,7 @@ async fn test_sql_sessions_req_api_008_scopes_auxiliary_tables() -> anyhow::Resu
     let ws_path = "spaces/test-sql-session-aux";
 
     struct MockIntegrity;
-    impl ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+    impl ugoite_iceberg::integrity::IntegrityProvider for MockIntegrity {
         fn checksum(&self, data: &str) -> String {
             format!("chk-{}", data.len())
         }

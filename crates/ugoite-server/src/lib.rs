@@ -25,19 +25,19 @@ use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
-use ugoite_core::{
-    audit::{self, AuditListOptions},
-    authorization::{Authorizer, ResourceKind},
-    error::{AppError, ErrorKind},
-    form, saved_sql,
-    service::{SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS},
-    space,
-};
+use ugoite_core::error::{AppError, ErrorKind};
 use ugoite_domain::id::{validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
     AccessPolicy, AccountStatus, Action, Actor, AgentMode, AssuranceLevel, AuthenticatedSubject,
     BindingMethod, CredentialConstraints, HumanAccount, NodeRole, PrincipalKind, PrincipalState,
     RequestAuthenticationMethod, RequestIdentity, SpacePrincipal, SpaceRole,
+};
+use ugoite_iceberg::{
+    audit::{self, AuditListOptions},
+    authorization::{Authorizer, ResourceKind},
+    form, saved_sql,
+    service::{SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS},
+    space,
 };
 use ugoite_identity::{
     node_identity::{
@@ -2355,7 +2355,7 @@ async fn create_agent(
         .create_agent(
             &space_id,
             sponsor,
-            ugoite_core::authorization::CreateAgentRequest {
+            ugoite_iceberg::authorization::CreateAgentRequest {
                 display_name: payload.display_name,
                 description: payload.description,
                 mode: payload.mode,
@@ -2898,7 +2898,7 @@ async fn get_access_policy(
         &resource_id,
     )
     .await?;
-    let resource = ugoite_core::authorization::ResourceRef {
+    let resource = ugoite_iceberg::authorization::ResourceRef {
         kind: resource_kind,
         id: resource_id,
         parent: None,
@@ -2921,7 +2921,7 @@ async fn put_access_policy(
 ) -> ApiResult<Json<Value>> {
     require_recent_passkey(&identity)?;
     let actor = principal_for_space(&state, &space_id, &identity).await?;
-    let resource = ugoite_core::authorization::ResourceRef {
+    let resource = ugoite_iceberg::authorization::ResourceRef {
         kind: parse_resource_kind(&kind)?,
         id: resource_id,
         parent: None,
@@ -3710,7 +3710,7 @@ async fn entry_history(
         Authorizer::new(state.service.operator().clone())
             .resource_policy_history(
                 &space_id,
-                &ugoite_core::authorization::ResourceRef {
+                &ugoite_iceberg::authorization::ResourceRef {
                     kind: ResourceKind::Entry,
                     id: entry_id,
                     parent: None,
@@ -3747,7 +3747,7 @@ async fn entry_revision(
     let policy_history = Authorizer::new(state.service.operator().clone())
         .resource_policy_history(
             &space_id,
-            &ugoite_core::authorization::ResourceRef {
+            &ugoite_iceberg::authorization::ResourceRef {
                 kind: ResourceKind::Entry,
                 id: entry_id,
                 parent: None,

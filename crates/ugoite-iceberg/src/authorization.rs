@@ -1,7 +1,6 @@
 //! Space-portable authorization state and the shared authorizer used by adapters.
 
 use crate::audit;
-use crate::error::{AppError, ErrorCode};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{SecondsFormat, Utc};
@@ -14,6 +13,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 use tokio::sync::Mutex;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::identity::{
     evaluate_policy, role_actions, AccessPolicy, Action, AgentMode, AgentPrincipal, Membership,
     PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
@@ -772,7 +772,7 @@ impl Authorizer {
     async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
         let path = state_path(space_id);
         let serialized = serde_json::to_vec_pretty(state)?;
-        let capabilities = self.operator.info().capability();
+        let capabilities = self.operator.info().full_capability();
 
         if state.revision == 1 {
             if capabilities.write_with_if_not_exists {

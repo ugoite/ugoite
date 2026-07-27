@@ -14,7 +14,7 @@ apis:
     file: frontend/src/lib/sql-api.ts
     function: sqlApi.list
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: list_saved_sql
   ugoite_cli:
     command: ugoite sql saved-list
@@ -32,7 +32,7 @@ apis:
     file: frontend/src/lib/sql-api.ts
     function: sqlApi.create
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: create_saved_sql
   ugoite_cli:
     command: ugoite sql saved-create
@@ -50,7 +50,7 @@ apis:
     file: frontend/src/lib/sql-api.ts
     function: sqlApi.get
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: get_saved_sql
   ugoite_cli:
     command: ugoite sql saved-get
@@ -68,7 +68,7 @@ apis:
     file: frontend/src/lib/sql-api.ts
     function: sqlApi.update
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: update_saved_sql
   ugoite_cli:
     command: ugoite sql saved-update
@@ -86,7 +86,7 @@ apis:
     file: frontend/src/lib/sql-api.ts
     function: sqlApi.delete
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: delete_saved_sql
   ugoite_cli:
     command: ugoite sql saved-delete
@@ -104,7 +104,7 @@ apis:
     file: frontend/src/lib/sql-session-api.ts
     function: sqlSessionApi.create
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: create_sql_session
   ugoite_cli:
     command: ugoite query
@@ -122,7 +122,7 @@ apis:
     file: frontend/src/lib/sql-session-api.ts
     function: sqlSessionApi.get
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: get_sql_session
 - id: sql_session.count
   method: GET
@@ -136,7 +136,7 @@ apis:
     file: frontend/src/lib/sql-session-api.ts
     function: sqlSessionApi.count
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: get_sql_session_count
 - id: sql_session.rows
   method: GET
@@ -150,7 +150,7 @@ apis:
     file: frontend/src/lib/sql-session-api.ts
     function: sqlSessionApi.rows
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: get_sql_session_rows
   ugoite_cli:
     command: ugoite query

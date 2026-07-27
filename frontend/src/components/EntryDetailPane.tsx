@@ -486,7 +486,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         setEntryError(null);
         return await fetchWithTimeout(
           entryApi.get(parameters.wsId, parameters.entryId),
-          10000,
+          45_000,
           "Loading entry timed out",
         );
       } catch (error) {

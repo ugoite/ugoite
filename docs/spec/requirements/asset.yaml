@@ -32,4 +32,4 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_assets.rs
-  - file: crates/ugoite-core/tests/test_asset.rs
+  - file: crates/ugoite-iceberg/tests/test_asset.rs

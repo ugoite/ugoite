@@ -4,10 +4,10 @@ use opendal::Operator;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::error::{AppError, ErrorCode};
 use crate::index;
 use crate::materialized_view;
 use crate::saved_sql;
+use ugoite_core::error::{AppError, ErrorCode};
 
 const SESSION_DIR: &str = "sql_sessions";
 

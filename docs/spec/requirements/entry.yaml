@@ -27,7 +27,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_entries.rs
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
   scope: Entry creation, mutation, revision, and retrieval requirements.
@@ -52,7 +52,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_entries.rs
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
   scope: Entry creation, mutation, revision, and retrieval requirements.
@@ -77,7 +77,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_entries.rs
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
   scope: Entry creation, mutation, revision, and retrieval requirements.
@@ -103,7 +103,7 @@ requirements:
   tests:
   - file: crates/ugoite-cli/tests/test_entries.rs
   - file: crates/ugoite-cli/tests/test_indexer.rs
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
   scope: Entry creation, mutation, revision, and retrieval requirements.
@@ -129,7 +129,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_entries.rs
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
   scope: Entry creation, mutation, revision, and retrieval requirements.
@@ -154,7 +154,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
   - file: frontend/src/lib/markdown.test.ts
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
@@ -204,7 +204,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
   scope: Entry creation, mutation, revision, and retrieval requirements.

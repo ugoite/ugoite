@@ -7,7 +7,7 @@ use opendal::Operator;
 use serde_json::Value;
 #[cfg(unix)]
 use tempfile::tempdir;
-use ugoite_core::{form, space};
+use ugoite_iceberg::{form, space};
 
 #[tokio::test]
 /// REQ-STO-002, REQ-STO-004
@@ -63,7 +63,7 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
 
     let dir = tempdir()?;
     let builder = Fs::default().root(dir.path().to_string_lossy().as_ref());
-    let op = Operator::new(builder)?;
+    let op = Operator::new(builder)?.finish();
 
     space::create_space(&op, "private-space", dir.path().to_string_lossy().as_ref()).await?;
 

@@ -62,7 +62,10 @@ test.describe("Smoke Tests", () => {
     const body = await page.content();
     expect(body.toLowerCase()).toContain("<!doctype html>");
     await expect(page.getByRole("heading", { name: "E2E Detail Route Entry" }))
-      .toBeVisible();
+      // Opening a freshly published Iceberg table can require one cold metadata
+      // read. Keep this UI assertion within the test's 60-second budget rather
+      // than Playwright's unrelated five-second matcher default.
+      .toBeVisible({ timeout: 50_000 });
     await expect(page.getByRole("link", { name: "Back to Form" }))
       .toHaveAttribute(
         "href",

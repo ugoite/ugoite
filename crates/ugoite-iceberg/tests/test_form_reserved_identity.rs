@@ -1,7 +1,7 @@
 mod common;
 use common::setup_operator;
-use ugoite_core::form;
-use ugoite_core::space;
+use ugoite_iceberg::form;
+use ugoite_iceberg::space;
 
 #[tokio::test]
 /// REQ-FORM-008

@@ -1,6 +1,6 @@
 mod common;
 use common::setup_operator;
-use ugoite_core::{entry, form, search, space};
+use ugoite_iceberg::{entry, form, search, space};
 
 async fn create_test_entry(
     op: &opendal::Operator,
@@ -10,7 +10,7 @@ async fn create_test_entry(
 ) -> anyhow::Result<()> {
     // Mock integrity provider
     struct MockIntegrity;
-    impl ugoite_core::integrity::IntegrityProvider for MockIntegrity {
+    impl ugoite_iceberg::integrity::IntegrityProvider for MockIntegrity {
         fn checksum(&self, data: &str) -> String {
             format!("chk-{}", data.len())
         }

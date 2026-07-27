@@ -14,7 +14,7 @@ apis:
     file: frontend/src/lib/search-api.ts
     function: searchApi.keyword
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: search_entries
   ugoite_cli:
     command: ugoite search keyword
@@ -32,7 +32,7 @@ apis:
     file: frontend/src/lib/search-api.ts
     function: searchApi.query
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: query_entries
   ugoite_cli:
     command: ugoite query

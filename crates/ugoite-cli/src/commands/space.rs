@@ -6,8 +6,8 @@ use crate::config::{
 use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
-use ugoite_core::sample_data::SampleDataOptions;
-use ugoite_core::service::{validate_public_space_patch, UgoiteService};
+use ugoite_iceberg::sample_data::SampleDataOptions;
+use ugoite_iceberg::service::{validate_public_space_patch, UgoiteService};
 
 fn backend_api_mode_error(config: &EndpointConfig, command_name: &str) -> String {
     format!(
@@ -355,7 +355,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 seed,
                 owner_display_name: resolve_sample_owner_display_name(owner),
             };
-            let summary = ugoite_core::sample_data::create_sample_space_with_terminal_progress(
+            let summary = ugoite_iceberg::sample_data::create_sample_space_with_terminal_progress(
                 &op, &root_uri, &opts,
             )
             .await?;
@@ -370,7 +370,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             }));
         }
         SpaceSubCmd::SampleScenarios => {
-            let scenarios = ugoite_core::sample_data::list_sample_scenarios();
+            let scenarios = ugoite_iceberg::sample_data::list_sample_scenarios();
             print_json(&scenarios);
         }
         SpaceSubCmd::SampleJob {
@@ -391,12 +391,12 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 owner_display_name: resolve_sample_owner_display_name(owner),
             };
             let job =
-                ugoite_core::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;
+                ugoite_iceberg::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;
             print_json(&job);
         }
         SpaceSubCmd::SampleJobStatus { root_path, job_id } => {
             let op = operator_for_path(&root_path)?;
-            let job = ugoite_core::sample_data::get_sample_space_job(&op, &job_id).await?;
+            let job = ugoite_iceberg::sample_data::get_sample_space_job(&op, &job_id).await?;
             let v = serde_json::to_value(job)?;
             print_json(&v);
         }
@@ -450,9 +450,9 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
             }
             let op = operator_for_path(&root_path)?;
             let report = if apply {
-                ugoite_core::space::migrate_authentication_cutover(&op).await?
+                ugoite_iceberg::space::migrate_authentication_cutover(&op).await?
             } else {
-                ugoite_core::space::authentication_cutover_report(&op).await?
+                ugoite_iceberg::space::authentication_cutover_report(&op).await?
             };
             print_json(&serde_json::to_value(report)?);
         }

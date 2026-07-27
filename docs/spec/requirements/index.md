@@ -9,7 +9,7 @@ A current test mapping has this shape:
 ```yaml
 verification: traced
 tests:
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
 ```
 
 When no current source/test file contains the requirement ID:

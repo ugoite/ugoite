@@ -14,7 +14,7 @@ apis:
     file: frontend/src/lib/form-api.ts
     function: formApi.list
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: list_forms
   ugoite_cli:
     command: ugoite form list
@@ -32,7 +32,7 @@ apis:
     file: frontend/src/lib/form-api.ts
     function: formApi.create
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: upsert_form
   ugoite_cli:
     command: ugoite form create
@@ -50,7 +50,7 @@ apis:
     file: frontend/src/lib/form-api.ts
     function: formApi.listTypes
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: list_forms
   ugoite_cli:
     command: ugoite form list-types
@@ -68,7 +68,7 @@ apis:
     file: frontend/src/lib/form-api.ts
     function: formApi.get
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: get_form
   ugoite_cli:
     command: ugoite form get

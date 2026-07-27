@@ -1,11 +1,11 @@
 mod common;
 use common::setup_operator;
-use ugoite_core::asset;
-use ugoite_core::entry;
-use ugoite_core::form;
-use ugoite_core::index;
-use ugoite_core::integrity::FakeIntegrityProvider;
-use ugoite_core::space;
+use ugoite_iceberg::asset;
+use ugoite_iceberg::entry;
+use ugoite_iceberg::form;
+use ugoite_iceberg::index;
+use ugoite_iceberg::integrity::FakeIntegrityProvider;
+use ugoite_iceberg::space;
 
 async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
     let form_def = serde_json::json!({
@@ -39,6 +39,63 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
     let revisions = history.get("revisions").and_then(|v| v.as_array()).unwrap();
     assert_eq!(revisions.len(), 1);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_entry_batch_publishes_one_snapshot_per_form() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "batched-entry-space", "/tmp").await?;
+    let ws_path = "spaces/batched-entry-space";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    let entries = entry::create_entries(
+        &op,
+        ws_path,
+        vec![
+            entry::EntryCreateRequest::new(
+                "batched-entry-1",
+                "---\nform: Entry\n---\n# First\n\n## Body\nOne",
+            ),
+            entry::EntryCreateRequest::new(
+                "batched-entry-2",
+                "---\nform: Entry\n---\n# Second\n\n## Body\nTwo",
+            ),
+        ],
+        "test-author",
+        &integrity,
+    )
+    .await?;
+    assert_eq!(entries.len(), 2);
+
+    let (_, table) =
+        ugoite_iceberg::iceberg_store::load_revisions_table(&op, ws_path, "Entry").await?;
+    assert_eq!(table.metadata().snapshots().len(), 1);
+    assert_eq!(
+        table
+            .metadata()
+            .current_snapshot()
+            .expect("accepted batch must publish a snapshot")
+            .summary()
+            .additional_properties
+            .get("ugoite.revision-count"),
+        Some(&"2".to_string())
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_entry_batch_rejects_unbounded_input() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let integrity = FakeIntegrityProvider;
+    let requests = (0..=entry::MAX_ENTRY_CREATE_BATCH_SIZE)
+        .map(|index| entry::EntryCreateRequest::new(format!("entry-{index}"), ""))
+        .collect();
+    let error = entry::create_entries(&op, "spaces/not-created", requests, "author", &integrity)
+        .await
+        .expect_err("oversized explicit batch must be rejected before I/O");
+    assert!(error.to_string().contains("limited to"));
     Ok(())
 }
 
@@ -363,7 +420,7 @@ async fn test_entry_req_entry_006_extract_h2_headers() -> anyhow::Result<()> {
     let content = "---\nform: Meeting\n---\n# Title\n\n## Date\n2025-01-01\n\n## Summary\nText";
     entry::create_entry(&op, ws_path, entry_id, content, "author", &integrity).await?;
 
-    let props = ugoite_core::index::extract_properties(content);
+    let props = ugoite_iceberg::index::extract_properties(content);
     let props = props.as_object().unwrap();
 
     assert!(props.contains_key("Date"));

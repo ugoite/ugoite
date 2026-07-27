@@ -1,12 +1,12 @@
 use crate::entry;
-use crate::error::AppError;
 use crate::iceberg_store;
 use crate::integrity::IntegrityProvider;
-use crate::metadata;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashSet};
+use ugoite_core::error::AppError;
+use ugoite_core::metadata;
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
 };
@@ -82,16 +82,6 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
                     changes,
                 })
                 .await?;
-            if !iceberg_store::uses_rest_catalog() {
-                let table = workspace
-                    .catalog()
-                    .load_table(&iceberg::TableIdent::new(
-                        workspace.namespace().clone(),
-                        ugoite_iceberg::physical_form_name(current_domain.id),
-                    ))
-                    .await?;
-                iceberg_store::persist_catalog_pointer(op, ws_path, &table).await?;
-            }
         }
         return Ok(());
     }

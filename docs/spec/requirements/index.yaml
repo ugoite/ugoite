@@ -24,7 +24,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_indexer.rs
-  - file: crates/ugoite-core/tests/test_index.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
   scope: Structured extraction plus derived index/query artifact behavior requirements.
@@ -49,7 +49,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_indexer.rs
-  - file: crates/ugoite-core/tests/test_index.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
   scope: Structured extraction plus derived index/query artifact behavior requirements.
@@ -74,7 +74,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_indexer.rs
-  - file: crates/ugoite-core/tests/test_index.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
   scope: Structured extraction plus derived index/query artifact behavior requirements.
@@ -97,7 +97,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_indexer.rs
-  - file: crates/ugoite-core/tests/test_index.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
   scope: Structured extraction plus derived index/query artifact behavior requirements.
@@ -120,7 +120,7 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_indexer.rs
-  - file: crates/ugoite-core/tests/test_index.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs
   - file: crates/ugoite-domain/tests/test_coverage.rs
   - file: crates/ugoite-domain/tests/test_text.rs
 - set_id: REQCAT-INDEX
@@ -191,7 +191,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_index.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
   scope: Structured extraction plus derived index/query artifact behavior requirements.
@@ -218,7 +218,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_index.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs
 - set_id: REQCAT-INDEX
   source_file: requirements/index.yaml
   scope: Structured extraction plus derived index/query artifact behavior requirements.
@@ -245,4 +245,4 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_index.rs
+  - file: crates/ugoite-iceberg/tests/test_index.rs

@@ -6,21 +6,15 @@ use opendal::services::Fs;
 use opendal::Operator;
 #[cfg(unix)]
 use tempfile::tempdir;
-use ugoite_core::asset;
-use ugoite_core::entry;
-use ugoite_core::space;
+use ugoite_iceberg::asset;
+use ugoite_iceberg::entry;
+use ugoite_iceberg::space;
 
-async fn asset_metadata_location(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<String> {
-    let manifest = op
-        .read(&format!("{ws_path}/forms/catalog-pointers.v1.json"))
-        .await?;
-    let manifest: serde_json::Value = serde_json::from_slice(&manifest.to_vec())?;
-    manifest["tables"]
-        .as_array()
-        .and_then(|tables| tables.iter().find(|table| table["form_name"] == "Assets"))
-        .and_then(|table| table["metadata_location"].as_str())
-        .map(str::to_string)
-        .ok_or_else(|| anyhow::anyhow!("Assets metadata pointer is missing"))
+async fn catalog_head(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<Vec<u8>> {
+    Ok(op
+        .read(&format!("{ws_path}/_ugoite/catalog/head.json"))
+        .await?
+        .to_vec())
 }
 
 #[tokio::test]
@@ -45,18 +39,18 @@ async fn test_asset_req_asset_001_create_asset() -> anyhow::Result<()> {
 
 #[tokio::test]
 /// REQ-ASSET-001
-async fn test_asset_req_asset_001_list_does_not_rewrite_form_metadata() -> anyhow::Result<()> {
+async fn test_asset_req_asset_001_list_does_not_rewrite_catalog_head() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "asset-list-space", "/tmp").await?;
     let ws_path = "spaces/asset-list-space";
 
     assert!(asset::list_assets(&op, ws_path).await?.is_empty());
-    let metadata_before = asset_metadata_location(&op, ws_path).await?;
+    let head_before = catalog_head(&op, ws_path).await?;
 
     assert!(asset::list_assets(&op, ws_path).await?.is_empty());
-    let metadata_after = asset_metadata_location(&op, ws_path).await?;
+    let head_after = catalog_head(&op, ws_path).await?;
 
-    assert_eq!(metadata_after, metadata_before);
+    assert_eq!(head_after, head_before);
     Ok(())
 }
 
@@ -85,7 +79,7 @@ async fn test_asset_req_asset_001_normalizes_uploaded_filename() -> anyhow::Resu
     let dir = tempdir()?;
     let root = dir.path().to_string_lossy().to_string();
     let builder = Fs::default().root(root.as_str());
-    let op = Operator::new(builder)?;
+    let op = Operator::new(builder)?.finish();
 
     space::create_space(&op, "source-space", root.as_str()).await?;
     space::create_space(&op, "victim-space", root.as_str()).await?;

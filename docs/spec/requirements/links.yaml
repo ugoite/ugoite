@@ -21,4 +21,4 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_entry.rs

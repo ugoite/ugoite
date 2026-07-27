@@ -9,10 +9,10 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use url::Url;
 
-use crate::error::{AppError, ErrorCode};
 use crate::form;
 use crate::storage::operator_from_uri_with_endpoint;
 use crate::storage::{OpendalStorage, StorageBackend};
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::id::validate_space_id;
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
 

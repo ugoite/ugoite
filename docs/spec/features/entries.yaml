@@ -14,7 +14,7 @@ apis:
     file: frontend/src/lib/entry-api.ts
     function: entryApi.list
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: list_entries
   ugoite_cli:
     command: ugoite entry list
@@ -32,7 +32,7 @@ apis:
     file: frontend/src/lib/entry-api.ts
     function: entryApi.create
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: create_entry
   ugoite_cli:
     command: ugoite entry create
@@ -50,7 +50,7 @@ apis:
     file: frontend/src/lib/search-api.ts
     function: searchApi.rowReferenceOptions
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: list_entry_options
 - id: entry.get
   method: GET
@@ -64,7 +64,7 @@ apis:
     file: frontend/src/lib/entry-api.ts
     function: entryApi.get
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: get_entry
   ugoite_cli:
     command: ugoite entry get
@@ -82,7 +82,7 @@ apis:
     file: frontend/src/lib/entry-api.ts
     function: entryApi.update
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: update_entry
   ugoite_cli:
     command: ugoite entry update
@@ -100,7 +100,7 @@ apis:
     file: frontend/src/lib/entry-api.ts
     function: entryApi.delete
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: delete_entry
   ugoite_cli:
     command: ugoite entry delete
@@ -118,7 +118,7 @@ apis:
     file: frontend/src/lib/entry-api.ts
     function: entryApi.history
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: entry_history
 - id: entry.revision
   method: GET
@@ -132,7 +132,7 @@ apis:
     file: frontend/src/lib/entry-api.ts
     function: entryApi.getRevision
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: entry_revision
 - id: entry.restore
   method: POST
@@ -146,5 +146,5 @@ apis:
     file: frontend/src/lib/entry-api.ts
     function: entryApi.restore
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: restore_entry

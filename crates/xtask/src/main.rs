@@ -153,6 +153,49 @@ fn architecture_check() -> Result<()> {
         violations.push("ugoite-server must not depend on OpenDAL directly".to_string());
     }
 
+    let core_manifest = fs::read_to_string("crates/ugoite-core/Cargo.toml")
+        .context("read ugoite-core Cargo.toml")?;
+    for forbidden in [
+        "opendal",
+        "iceberg",
+        "arrow-",
+        "parquet",
+        "datafusion",
+        "sqlparser",
+    ] {
+        if core_manifest
+            .lines()
+            .any(|line| line.trim_start().starts_with(forbidden))
+        {
+            violations.push(format!(
+                "ugoite-core must not depend on physical adapter crate {forbidden}"
+            ));
+        }
+    }
+    for path in collect_files(Path::new("crates/ugoite-core/src"))? {
+        let path_text = path.to_string_lossy();
+        let content = fs::read_to_string(&path).with_context(|| format!("read {path_text}"))?;
+        for forbidden in [
+            "opendal::",
+            "iceberg::",
+            "arrow_",
+            "parquet::",
+            "datafusion::",
+            "sqlparser::",
+            "Operator",
+            "Table",
+            "RecordBatch",
+            "Transaction",
+            "SessionContext",
+        ] {
+            if content.contains(forbidden) {
+                violations.push(format!(
+                    "{path_text} leaks physical adapter type or dependency {forbidden}"
+                ));
+            }
+        }
+    }
+
     for path in collect_files(Path::new("frontend/src"))? {
         let path_text = path.to_string_lossy();
         if path_text.contains("/lib/ugoite-client/")
@@ -188,19 +231,19 @@ fn architecture_check() -> Result<()> {
         }
         let content = fs::read_to_string(&path).with_context(|| format!("read {path_text}"))?;
         for raw_call in [
-            "ugoite_core::entry::update_entry",
-            "ugoite_core::entry::delete_entry",
-            "ugoite_core::entry::get_entry_history",
-            "ugoite_core::entry::get_entry_revision",
-            "ugoite_core::entry::restore_entry",
-            "ugoite_core::index::execute_sql_query",
-            "ugoite_core::index::get_space_stats",
-            "ugoite_core::index::reindex_all",
-            "ugoite_core::saved_sql::create_sql",
-            "ugoite_core::saved_sql::delete_sql",
-            "ugoite_core::saved_sql::get_sql",
-            "ugoite_core::saved_sql::list_sql",
-            "ugoite_core::saved_sql::update_sql",
+            "ugoite_iceberg::entry::update_entry",
+            "ugoite_iceberg::entry::delete_entry",
+            "ugoite_iceberg::entry::get_entry_history",
+            "ugoite_iceberg::entry::get_entry_revision",
+            "ugoite_iceberg::entry::restore_entry",
+            "ugoite_iceberg::index::execute_sql_query",
+            "ugoite_iceberg::index::get_space_stats",
+            "ugoite_iceberg::index::reindex_all",
+            "ugoite_iceberg::saved_sql::create_sql",
+            "ugoite_iceberg::saved_sql::delete_sql",
+            "ugoite_iceberg::saved_sql::get_sql",
+            "ugoite_iceberg::saved_sql::list_sql",
+            "ugoite_iceberg::saved_sql::update_sql",
         ] {
             if content.contains(raw_call) {
                 violations.push(format!(

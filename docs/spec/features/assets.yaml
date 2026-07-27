@@ -14,7 +14,7 @@ apis:
     file: frontend/src/lib/asset-api.ts
     function: assetApi.list
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: list_assets
   ugoite_cli:
     command: ugoite asset list
@@ -32,7 +32,7 @@ apis:
     file: frontend/src/lib/asset-api.ts
     function: assetApi.upload
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: save_asset
   ugoite_cli:
     command: ugoite asset upload
@@ -51,7 +51,7 @@ apis:
     file: frontend/src/lib/asset-api.ts
     function: assetApi.delete
   ugoite_core:
-    file: crates/ugoite-core/src/service.rs
+    file: crates/ugoite-iceberg/src/service.rs
     function: delete_asset
   ugoite_cli:
     command: ugoite asset delete

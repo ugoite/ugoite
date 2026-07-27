@@ -255,7 +255,7 @@ requirements:
   status: planned
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_sample_data.rs
+  - file: crates/ugoite-iceberg/tests/test_sample_data.rs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -271,7 +271,7 @@ requirements:
   status: planned
   verification: traced
   tests:
-  - file: crates/ugoite-core/tests/test_space.rs
+  - file: crates/ugoite-iceberg/tests/test_space.rs
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.

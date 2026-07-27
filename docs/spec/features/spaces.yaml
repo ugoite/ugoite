@@ -14,7 +14,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.list
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: list_accessible_space_ids
     ugoite_cli:
       command: ugoite space list
@@ -32,7 +32,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.create
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: create_space_for
     ugoite_cli:
       command: ugoite space create
@@ -51,7 +51,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.get
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: get_space
     ugoite_cli:
       command: ugoite space get
@@ -69,7 +69,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.patch
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: patch_space
     ugoite_cli:
       command: ugoite space patch
@@ -87,7 +87,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.testConnection
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: test_storage_connection
     ugoite_cli:
       command: ugoite space test-connection
@@ -105,7 +105,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.listMembers
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: list_members
     ugoite_cli:
       command: ugoite space members
@@ -123,7 +123,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.inviteMember
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: invite_member
     ugoite_cli:
       command: ugoite space invite-member
@@ -141,7 +141,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.updateMemberRole
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: update_member_role
     ugoite_cli:
       command: ugoite space set-member-role
@@ -159,7 +159,7 @@ apis:
       file: frontend/src/lib/space-api.ts
       function: spaceApi.revokeMember
     ugoite_core:
-      file: crates/ugoite-core/src/service.rs
+      file: crates/ugoite-iceberg/src/service.rs
       function: revoke_member
     ugoite_cli:
       command: ugoite space revoke-member
