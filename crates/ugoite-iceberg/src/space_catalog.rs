@@ -123,6 +123,17 @@ impl PublicationAttempt {
     }
 }
 
+#[derive(Debug)]
+struct PublicationUpdate {
+    affected_table: TableCoordinates,
+    base_metadata_location: Option<String>,
+    new_metadata_location: String,
+    base_snapshot_id: Option<i64>,
+    base_schema_id: Option<i32>,
+    new_snapshot_id: Option<i64>,
+    new_schema_id: i32,
+}
+
 #[derive(Clone)]
 pub struct SpaceCatalog {
     store: SpaceCatalogStore,
@@ -277,7 +288,7 @@ impl SpaceCatalog {
             .expected_head
             .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
-        let base = self.load_head_table(table, &head).await?;
+        let base = self.load_head_table(table, head).await?;
         if metadata.uuid() != base.metadata().uuid() {
             return Err(Error::new(
                 ErrorKind::DataInvalid,
@@ -309,13 +320,15 @@ impl SpaceCatalog {
             .publish_new_head(
                 &attempt,
                 next,
-                table,
-                Some(base_metadata_location),
-                metadata_location,
-                base.metadata().current_snapshot_id(),
-                Some(base.metadata().current_schema_id()),
-                metadata.current_snapshot_id(),
-                metadata.current_schema_id(),
+                PublicationUpdate {
+                    affected_table: TableCoordinates::from(table),
+                    base_metadata_location: Some(base_metadata_location),
+                    new_metadata_location: metadata_location,
+                    base_snapshot_id: base.metadata().current_snapshot_id(),
+                    base_schema_id: Some(base.metadata().current_schema_id()),
+                    new_snapshot_id: metadata.current_snapshot_id(),
+                    new_schema_id: metadata.current_schema_id(),
+                },
             )
             .await;
         match publication {
@@ -357,13 +370,7 @@ impl SpaceCatalog {
         &self,
         attempt: &PublicationAttempt,
         mut next: CatalogHead,
-        affected_table: &TableIdent,
-        base_metadata_location: Option<String>,
-        new_metadata_location: String,
-        base_snapshot_id: Option<i64>,
-        base_schema_id: Option<i32>,
-        new_snapshot_id: Option<i64>,
-        new_schema_id: i32,
+        update: PublicationUpdate,
     ) -> Result<()> {
         let previous_generation = attempt.expected_generation;
         let previous_publication = attempt.expected_previous_publication.clone();
@@ -382,13 +389,13 @@ impl SpaceCatalog {
             command_id: attempt.publication.command_id.clone(),
             command_kind: attempt.publication.command_kind.clone(),
             command_digest: attempt.publication.command_digest.clone(),
-            affected_table: TableCoordinates::from(affected_table),
-            base_metadata_location,
-            new_metadata_location,
-            base_snapshot_id,
-            base_schema_id,
-            new_snapshot_id,
-            new_schema_id,
+            affected_table: update.affected_table,
+            base_metadata_location: update.base_metadata_location,
+            new_metadata_location: update.new_metadata_location,
+            base_snapshot_id: update.base_snapshot_id,
+            base_schema_id: update.base_schema_id,
+            new_snapshot_id: update.new_snapshot_id,
+            new_schema_id: update.new_schema_id,
             next_head_checksum: next.checksum.clone(),
             next_head: next.clone(),
             checksum: String::new(),
@@ -727,13 +734,15 @@ impl Catalog for SpaceCatalog {
             .publish_new_head(
                 &attempt,
                 next,
-                &table,
-                base_metadata_location,
-                metadata_location,
-                None,
-                None,
-                created.metadata().current_snapshot_id(),
-                created.metadata().current_schema_id(),
+                PublicationUpdate {
+                    affected_table: TableCoordinates::from(&table),
+                    base_metadata_location,
+                    new_metadata_location: metadata_location,
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: created.metadata().current_snapshot_id(),
+                    new_schema_id: created.metadata().current_schema_id(),
+                },
             )
             .await;
         match publish {
@@ -795,7 +804,7 @@ impl Catalog for SpaceCatalog {
             .expected_head
             .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
-        let base = self.load_head_table(&table, &head).await?;
+        let base = self.load_head_table(&table, head).await?;
         let base_metadata_location = base.metadata_location_result()?.to_string();
         let base_snapshot_id = base.metadata().current_snapshot_id();
         let base_schema_id = base.metadata().current_schema_id();
@@ -817,13 +826,15 @@ impl Catalog for SpaceCatalog {
             .publish_new_head(
                 &attempt,
                 next,
-                &table,
-                Some(base_metadata_location),
-                new_metadata_location,
-                base_snapshot_id,
-                Some(base_schema_id),
-                staged.metadata().current_snapshot_id(),
-                staged.metadata().current_schema_id(),
+                PublicationUpdate {
+                    affected_table: TableCoordinates::from(&table),
+                    base_metadata_location: Some(base_metadata_location),
+                    new_metadata_location,
+                    base_snapshot_id,
+                    base_schema_id: Some(base_schema_id),
+                    new_snapshot_id: staged.metadata().current_snapshot_id(),
+                    new_schema_id: staged.metadata().current_schema_id(),
+                },
             )
             .await;
         match publication {
@@ -1261,13 +1272,16 @@ mod tests {
             .publish_new_head(
                 &winner_attempt,
                 CatalogHead::genesis(winner.space_id, winner.namespace()),
-                &table,
-                None,
-                "memory:///spaces/conflict/forms/form/metadata.json".to_string(),
-                None,
-                None,
-                None,
-                0,
+                PublicationUpdate {
+                    affected_table: TableCoordinates::from(&table),
+                    base_metadata_location: None,
+                    new_metadata_location: "memory:///spaces/conflict/forms/form/metadata.json"
+                        .to_string(),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
             )
             .await?;
 
@@ -1285,13 +1299,16 @@ mod tests {
             .publish_new_head(
                 &stale_attempt,
                 CatalogHead::genesis(loser.space_id, loser.namespace()),
-                &table,
-                None,
-                "memory:///spaces/conflict/forms/form/metadata.json".to_string(),
-                None,
-                None,
-                None,
-                0,
+                PublicationUpdate {
+                    affected_table: TableCoordinates::from(&table),
+                    base_metadata_location: None,
+                    new_metadata_location: "memory:///spaces/conflict/forms/form/metadata.json"
+                        .to_string(),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
             )
             .await
             .expect_err("a stale initial attempt cannot replace the winner Head");
