@@ -22,6 +22,26 @@ boundary; no hosted database is required to own or recover the content.
 - The WASM crate exposes portable domain/API protocol logic, not a local storage
   engine.
 
+## Persistence architecture
+
+A Space is the complete durable boundary. It maps to one Iceberg namespace and
+is reached only through the configured OpenDAL boundary. A server can expose a
+Space, but it never owns a hidden catalog, relational database, or recovery
+index for that Space.
+
+`_ugoite/catalog/head.json` is the only mutable catalog root. It is published
+with an actual OpenDAL ETag compare-and-swap. Immutable, checksum-protected
+publication records under `_ugoite/catalog/publications/` link each successful
+Head generation to the preceding one. Iceberg metadata, manifests, and data
+files remain Iceberg-owned immutable objects.
+
+Readers pin immutable Head and snapshot coordinates and never lock. Writers can
+prepare immutable objects concurrently, but make a mutation visible only by
+replacing Head with the exact ETag they read. Backends that cannot prove the
+conditional read/create/replace contract are read-only unless an operator
+explicitly selects single-process mode. No lease, heartbeat, TTL, lock file, or
+fencing protocol participates in correctness.
+
 ## Target state
 
 The browser should eventually open a local Space runtime and synchronize only
@@ -31,9 +51,13 @@ not become the mandatory owner of user data.
 ## Invariants
 
 1. Filesystem/object-storage-compatible Space content is the source of truth.
-2. Revisions are append-only; recovery must not depend on a hidden database.
-3. Indexes, projections, and query sessions are derived and replaceable.
-4. Domain and use-case behavior lives in reusable Rust crates.
-5. CLI, server, WASM, and browser transport code remain adapters.
-6. Authentication and authorization do not change ownership of Space data.
-7. Current and planned capabilities are documented separately.
+2. Revisions are append-only Iceberg table data; current state is derived from
+   one table and recovery never depends on a hidden database.
+3. Catalog Head is the only authoritative mutable root. Object listing never
+   establishes catalog state or publication order.
+4. Indexes, projections, health reports, checkpoints, and query sessions are
+   derived or explicitly pinned coordinates, never competing authority.
+5. Domain and use-case behavior lives in reusable Rust crates.
+6. CLI, server, WASM, and browser transport code remain adapters.
+7. Authentication and authorization do not change ownership of Space data.
+8. Current and planned capabilities are documented separately.

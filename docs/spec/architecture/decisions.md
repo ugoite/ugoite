@@ -59,21 +59,28 @@ Form table. Current state is the unique greatest `entry_version`; equal maximum
 versions are a conflict. There is no authoritative current-entry table and no
 two-table commit.
 
-## ADR-010 — Catalog and DataFusion are explicit
+## ADR-010 — OpenDAL-published SpaceCatalog and DataFusion
 
-**Accepted.** REST Catalog is the multi-writer production Catalog. Local
-single-process CLI mode uses the explicitly scoped MemoryCatalog plus its
-portable pointer manifest; object listing must not infer metadata pointers.
-MemoryCatalog is not used for shared production deployments.
-DataFusion is the standard structured query engine and receives projection,
-predicate, limit, join, and snapshot work through Iceberg providers.
+**Accepted target.** A Space has one OpenDAL-backed `SpaceCatalog` implementing the
+current Iceberg `Catalog` trait. Its sole mutable authority is
+`_ugoite/catalog/head.json`; immutable linked publication records beneath
+`_ugoite/catalog/publications/` provide the evidence needed to resolve an
+ambiguous Head compare-and-swap after later writers publish.
 
-Schema evolution receives a REST committer from the same typed configuration
-used to construct the REST Catalog. The committer does not re-read a global
-environment variable or construct a second endpoint configuration; Catalog
-config response prefixes, headers, static credentials, and OAuth credential
-exchange are applied to the atomic commit request. Iceberg Rust 0.8 is not
-forked.
+Shared writes require a real Head ETag, exact `if_match` reads, conditional
+initial creation, and conditional whole-object replacement proven by backend
+probes. ETags are opaque tokens. Unsupported backends fail closed for shared
+writes; an explicitly selected single-process mode may serialize in-process
+while retaining every durable byte through OpenDAL. Readers never lock, and no
+lease, heartbeat, TTL, lock file, fencing token, external Catalog, or relational
+database is part of the production architecture.
+
+Iceberg requirement/update application, file locations, filenames, and I/O use
+the current official Iceberg Rust stack and `iceberg-storage-opendal`; Ugoite
+does not supply a second FileIO or infer metadata from listings. DataFusion is
+the standard structured query engine and receives authorization-filtered,
+snapshot-pinned Iceberg providers. One Form-table commit is atomic; cross-Form
+transactions are explicitly unsupported.
 
 ## ADR-011 — Portable logic is not a storage adapter
 

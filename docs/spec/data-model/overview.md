@@ -8,7 +8,9 @@ Ugoite treats operator-controlled files as the persistence boundary. A **Space**
 
 - **Authoring:** people and agents edit Markdown.
 - **Domain contract:** a Form defines the typed H2 fields accepted for an Entry.
-- **Persistence:** Iceberg tables and the JSON metadata files listed below are authoritative on disk.
+- **Persistence:** Catalog Head, its reachable immutable publication records,
+  Iceberg metadata, and Iceberg revision tables are authoritative through the
+  configured OpenDAL Space boundary.
 
 The browser is currently server-backed. It does not own an independent local Space database; the Rust server and core write to the configured OpenDAL operator.
 
@@ -18,7 +20,8 @@ The browser is currently server-backed. It does not own an independent local Spa
 spaces/{space_id}/
   meta.json
   settings.json
-  forms/                  # Iceberg-owned subtree
+  _ugoite/catalog/        # Head plus immutable publication records
+  forms/                  # Iceberg-owned table locations
   assets/
   materialized_views/
   sql_sessions/
@@ -56,7 +59,8 @@ The table is an append-only revision log. Common columns include `entry_id`,
 `committed_at`, `author_id`, `form_version`, `source_kind`, and `source_id`,
 followed by Form fields. Delete is a tombstone and restore is another revision.
 Current state is derived from the unique greatest version and is never a second
-source-of-truth table.
+source-of-truth table. Equal greatest versions are a visible corruption/conflict
+and never resolved by iteration order.
 
 Date, time, timestamp, UUID, and binary Form fields use their corresponding
 Iceberg primitive types. Markdown, SQL, row references, and ordinary strings
@@ -78,13 +82,22 @@ H2 sections are parsed according to the Form field type. Supported types are exp
 
 ## Search, query, and derived data
 
-The current keyword search scans non-deleted Entry rows for a case-insensitive substring. It does **not** use a persistent inverted index or relevance ranking. Structured query and Ugoite SQL execute against current Entry data.
+The current keyword search scans non-deleted Entry rows for a case-insensitive
+substring. It does **not** use a persistent inverted index or relevance ranking.
+The target read path is an authorized, snapshot-pinned DataFusion plan over
+Iceberg data; that transition is tracked separately and must not add a JSON
+materialization table or a second history store.
 
 `ugoite index stats` is available in core/local mode. Reindex and per-entry index update return an explicit “not implemented in this release” error, so persistent live-index/watch-loop behavior remains planned.
 
 ## Saved SQL and SQL sessions
 
-Saved SQL is represented through the reserved SQL metadata Form. A query session writes only `sql_sessions/{session_id}/meta.json`; row and count requests re-run the SQL against current readable data. Materialized-view records are metadata placeholders, not persisted result tables. See [sql-sessions.md](sql-sessions.md).
+Saved SQL is represented through the reserved SQL metadata Form. The current
+query session writes `sql_sessions/{session_id}/meta.json`; row and count
+requests re-run SQL against current readable data. The target session model pins
+one reproducible checkpoint and uses bounded deterministic pagination. Session
+metadata remains derived state, not an alternate Catalog or result store. See
+[sql-sessions.md](sql-sessions.md).
 
 ## Assets, links, and integrity
 

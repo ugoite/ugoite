@@ -20,6 +20,13 @@
   linked_requirements:
   - REQCAT-API
   - REQCAT-STORAGE
+- id: SPEC-ARCH-SPACE-CATALOG
+  source_file: architecture/space-catalog.md
+  linked_policies:
+  - POL-001
+  - POL-014
+  linked_requirements:
+  - REQCAT-STORAGE
 - id: SPEC-ARCH-INTERFACE
   source_file: architecture/frontend-backend-interface.md
   linked_policies:

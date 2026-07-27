@@ -2,7 +2,9 @@
 title: 'Directory structure'
 ---
 
-`directory-layout.yaml` is the machine-readable inventory for repository-owned paths. Apache Iceberg owns the subtree beneath `forms/`; documentation and tests must not depend on its internal filenames.
+`directory-layout.yaml` is the machine-readable inventory for repository-owned
+paths. Apache Iceberg owns table data and metadata locations beneath the Space;
+documentation and tests must not depend on its internal filenames.
 
 ## Workspace layout
 
@@ -11,6 +13,10 @@ spaces/
   {space_id}/
     meta.json
     settings.json
+    _ugoite/
+      catalog/
+        head.json
+        publications/
     forms/
     assets/
     materialized_views/
@@ -59,16 +65,26 @@ Membership operations add `members`, `member_invitations`, and `membership_versi
 | Asset upload | `spaces/{space_id}/assets/{asset_id}_{safe_name}` | binary object |
 | Preference update | `users/{sha256(user_id)}/preferences.json` | portable user UI preferences |
 
-## Iceberg-managed Form storage
+## Catalog and Iceberg-managed Form storage
 
 A Form definition and its single append-only revision table are stored through
 the Catalog-backed Rust Iceberg layer. The table identity is derived from the
 stable Form UUID, not its display name. The repository specifies logical schema
 and table-property keys but leaves Iceberg metadata/data filenames unspecified.
 
-Portable local Spaces keep `forms/catalog-pointers.v1.json` as the explicit
-Catalog pointer manifest. A new process registers tables from this file; it
-never scans metadata filenames or selects the numerically greatest file.
+`_ugoite/catalog/head.json` is the only mutable catalog authority. It carries
+the Space identity, format version, catalog/form-registry generations, Form table
+coordinates, checksum, and current publication coordinate. A process opens a
+Space by reading this Head exactly with its OpenDAL ETag and loading only the
+referenced immutable Iceberg metadata.
+
+`_ugoite/catalog/publications/<generation>-<command-id>.json` records the
+complete next Head, its checksum, the preceding Head and publication
+coordinates, command identity/digest, and affected-table Iceberg coordinates.
+Records are immutable and authoritative only when reachable from Head. Listing
+objects never reconstructs catalog state or publication order. Missing/corrupt
+Head or reachable publication evidence is an explicit failure; old pointer
+manifests and layout readers are unsupported rather than migrated.
 
 Revision rows contain stable entry/revision identity, optimistic version and
 parent lineage, operation/tombstone state, commit time, author and provenance,
@@ -77,4 +93,8 @@ latest non-conflicting revision provides current Entry responses.
 
 ## Portability
 
-A complete storage root can be backed up or moved as an operator-controlled unit. Copying only one Space preserves that Space’s content and metadata but not user-scoped preferences stored under `users/`. Storage migration is an operator procedure; PATCHing a Space storage descriptor does not move existing files.
+A complete storage root can be backed up or moved as an operator-controlled
+unit. Object versioning or operator backups protect Catalog Head for disaster
+recovery. Copying only one Space preserves that Space’s content and metadata but
+not user-scoped preferences stored under `users/`. PATCHing a Space storage
+descriptor does not move existing files.

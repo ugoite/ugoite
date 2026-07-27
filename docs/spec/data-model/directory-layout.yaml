@@ -21,19 +21,22 @@ space_layout:
     - path: spaces/{space_id}/settings.json
       kind: file
       schema: space_settings
+    - path: spaces/{space_id}/_ugoite/catalog
+      kind: directory
+      notes:
+      - Catalog Head is the sole mutable catalog authority.
+    - path: spaces/{space_id}/_ugoite/catalog/head.json
+      kind: file
+      schema: iceberg_catalog_head
+    - path_glob: spaces/{space_id}/_ugoite/catalog/publications/{generation}-{command_id}.json
+      kind: file
+      schema: iceberg_catalog_publication
+      notes:
+      - Immutable records are authoritative only when reachable from Head.
     - path: spaces/{space_id}/forms
       kind: directory
       notes:
-      - Iceberg owns all paths below this root.
-    - path: spaces/{space_id}/forms/catalog-pointers.v1.json
-      kind: file
-      schema: iceberg_catalog_pointers
-      notes:
-      - Portable local Catalog pointer manifest; never inferred by listing metadata files.
-    - path: spaces/{space_id}/forms/catalog-instance-id
-      kind: file
-      notes:
-      - Opaque cache isolation identity; it is not a Form or Space identifier.
+      - Iceberg owns table data and metadata locations beneath the Space.
     - path: spaces/{space_id}/assets
       kind: directory
     - path: spaces/{space_id}/materialized_views
