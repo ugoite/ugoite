@@ -64,8 +64,12 @@ serialization but still writes every durable byte through OpenDAL.
 Readers never lock. Writers may prepare immutable files concurrently. Visibility
 changes only through Head. One Form table commit is the mutation atomicity unit;
 Ugoite makes no cross-Form transaction claim. Leases, TTLs, heartbeats, lock
-files, fences, custom FileIO, metadata reconstruction, object-list recovery,
-and custom maintenance engines are outside this architecture.
+files, fences, custom FileIO, independent metadata-history or commit engines,
+object-list recovery, and custom maintenance engines are outside this
+architecture. A narrow physical-schema compatibility adapter is permitted only
+when the upstream Rust API cannot retain an already-assigned Iceberg field ID;
+it must produce standard upstream Iceberg metadata and cannot establish a
+second field-identity authority.
 
 ## Crate boundary
 
