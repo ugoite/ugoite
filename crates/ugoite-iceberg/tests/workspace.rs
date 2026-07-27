@@ -710,7 +710,10 @@ async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyho
         first.append_revisions(form.id, vec![left]),
         second.append_revisions(form.id, vec![right.clone()]),
     );
-    left_result.or(right_result)?;
+    assert!(
+        left_result.is_ok() ^ right_result.is_ok(),
+        "same-base mutations for one Entry must have exactly one winner",
+    );
     let probe = EntryRevision {
         revision_id: Uuid::from_u128(54).into(),
         ..right
