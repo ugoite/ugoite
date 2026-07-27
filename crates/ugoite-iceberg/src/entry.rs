@@ -4,24 +4,16 @@ use crate::index;
 use crate::integrity::IntegrityProvider;
 use crate::link::Link;
 use anyhow::{anyhow, Context, Result};
-use arrow_array::builder::{ListBuilder, StringBuilder, StructBuilder};
-use arrow_array::{
-    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array,
-    Float64Array, Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray,
-    StructArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
-};
-use arrow_schema::{DataType, Fields};
-use base64::Engine as _;
-use chrono::{DateTime, NaiveTime, SecondsFormat, Utc};
-use futures::TryStreamExt;
+use chrono::Utc;
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashSet};
-use std::sync::Arc;
 use ugoite_core::error::{AppError, ErrorCode};
-use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::entry::{
+    EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+};
 use ugoite_domain::id::{FieldId, RevisionId};
 use url::Url;
 use uuid::Uuid;
@@ -490,1126 +482,6 @@ pub(crate) fn render_markdown_for_form(
     render_markdown(title, form_name, tags, &merged_fields, &field_order)
 }
 
-fn form_field_defs(form_def: &Value) -> Vec<(String, String)> {
-    let mut defs = Vec::new();
-    if let Some(fields) = form_def.get("fields") {
-        match fields {
-            Value::Object(map) => {
-                for (name, def) in map {
-                    let field_type = def
-                        .get("type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("string")
-                        .to_string();
-                    defs.push((name.clone(), field_type));
-                }
-            }
-            Value::Array(items) => {
-                for item in items {
-                    if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
-                        let field_type = item
-                            .get("type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("string")
-                            .to_string();
-                        defs.push((name.to_string(), field_type));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    defs
-}
-
-fn form_field_type_map(form_def: &Value) -> std::collections::HashMap<String, String> {
-    form_field_defs(form_def)
-        .into_iter()
-        .collect::<std::collections::HashMap<_, _>>()
-}
-
-fn days_to_date(days: i32) -> Option<String> {
-    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?;
-    let date = epoch.checked_add_signed(chrono::Duration::days(days as i64))?;
-    Some(date.format("%Y-%m-%d").to_string())
-}
-
-fn timestamp_micros_to_string(micros: i64) -> Option<String> {
-    DateTime::<Utc>::from_timestamp_micros(micros).map(|dt| dt.to_rfc3339())
-}
-
-fn time_micros_to_string(micros: i64) -> Option<String> {
-    if micros < 0 {
-        return None;
-    }
-    let secs = (micros / 1_000_000) as u32;
-    let sub_micros = (micros % 1_000_000) as u32;
-    let nanos = sub_micros * 1_000;
-    let time = NaiveTime::from_num_seconds_from_midnight_opt(secs, nanos)?;
-    if sub_micros == 0 {
-        Some(time.format("%H:%M:%S").to_string())
-    } else {
-        Some(format!("{}.{:06}", time.format("%H:%M:%S"), sub_micros))
-    }
-}
-
-fn timestamp_nanos_to_string(nanos: i64) -> Option<String> {
-    let secs = nanos.div_euclid(1_000_000_000);
-    let sub_nanos = nanos.rem_euclid(1_000_000_000) as u32;
-    let dt = DateTime::<Utc>::from_timestamp(secs, sub_nanos)?;
-    Some(dt.to_rfc3339_opts(SecondsFormat::Nanos, false))
-}
-
-fn binary_to_base64(value: &[u8]) -> String {
-    let encoded = base64::engine::general_purpose::STANDARD.encode(value);
-    format!("base64:{}", encoded)
-}
-
-fn list_element_field(list_field: &arrow_schema::Field) -> Result<arrow_schema::FieldRef> {
-    match list_field.data_type() {
-        DataType::List(inner) => Ok(inner.clone()),
-        _ => Err(anyhow!("Expected list field: {}", list_field.name())),
-    }
-}
-
-#[allow(dead_code)] // retained for the explicit legacy-table migration reader
-fn list_array_from_strings(
-    values: &[String],
-    list_field: &arrow_schema::Field,
-) -> Result<ArrayRef> {
-    let element_field = list_element_field(list_field)?;
-    let mut builder = ListBuilder::new(StringBuilder::new()).with_field(element_field);
-    for value in values {
-        builder.values().append_value(value);
-    }
-    builder.append(true);
-    Ok(Arc::new(builder.finish()))
-}
-
-fn list_struct_fields_from_field(list_field: &arrow_schema::Field) -> Result<Fields> {
-    let element_field = list_element_field(list_field)?;
-    match element_field.data_type() {
-        DataType::Struct(fields) => Ok(fields.clone()),
-        _ => Err(anyhow!(
-            "Expected list<struct> field: {}",
-            list_field.name()
-        )),
-    }
-}
-
-#[allow(dead_code)] // retained for the explicit legacy-table migration reader
-fn list_links_array_from_links(
-    links: &[Link],
-    list_field: &arrow_schema::Field,
-) -> Result<ArrayRef> {
-    let element_field = list_element_field(list_field)?;
-    let struct_fields = list_struct_fields_from_field(list_field)?;
-    let struct_builder = StructBuilder::from_fields(struct_fields.clone(), links.len());
-    let mut list_builder = ListBuilder::new(struct_builder).with_field(element_field);
-
-    for link in links {
-        let builder = list_builder.values();
-        for (idx, field) in struct_fields.iter().enumerate() {
-            let value = match field.name().as_str() {
-                "id" => link.id.as_str(),
-                "target" => link.target.as_str(),
-                "kind" => link.kind.as_str(),
-                other => {
-                    return Err(anyhow!("Unexpected link field: {}", other));
-                }
-            };
-            let field_builder = builder
-                .field_builder::<StringBuilder>(idx)
-                .ok_or_else(|| anyhow!("Invalid link field builder: {}", field.name()))?;
-            field_builder.append_value(value);
-        }
-        builder.append(true);
-    }
-    list_builder.append(true);
-    Ok(Arc::new(list_builder.finish()))
-}
-
-#[allow(dead_code)] // retained for the explicit legacy-table migration reader
-fn list_assets_array_from_values(
-    assets: &[Value],
-    list_field: &arrow_schema::Field,
-) -> Result<ArrayRef> {
-    let element_field = list_element_field(list_field)?;
-    let struct_fields = list_struct_fields_from_field(list_field)?;
-    let struct_builder = StructBuilder::from_fields(struct_fields.clone(), assets.len());
-    let mut list_builder = ListBuilder::new(struct_builder).with_field(element_field);
-
-    for asset in assets {
-        let builder = list_builder.values();
-        let asset_obj = asset.as_object();
-        for (idx, field) in struct_fields.iter().enumerate() {
-            let value = asset_obj
-                .and_then(|obj| obj.get(field.name()))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let field_builder = builder
-                .field_builder::<StringBuilder>(idx)
-                .ok_or_else(|| anyhow!("Invalid asset field builder: {}", field.name()))?;
-            field_builder.append_value(value);
-        }
-        builder.append(true);
-    }
-    list_builder.append(true);
-    Ok(Arc::new(list_builder.finish()))
-}
-
-fn extra_attributes_from_string(raw: Option<&str>) -> Value {
-    match raw {
-        Some(value) if !value.trim().is_empty() => {
-            serde_json::from_str(value).unwrap_or_else(|_| Value::Object(Map::new()))
-        }
-        _ => Value::Object(Map::new()),
-    }
-}
-
-#[allow(dead_code)] // retained for the explicit legacy-table migration reader
-fn list_strings_from_array(list_array: &ListArray, row: usize) -> Vec<String> {
-    if list_array.is_null(row) {
-        return Vec::new();
-    }
-    let values = list_array.value(row);
-    let values = values.as_any().downcast_ref::<StringArray>().map(|array| {
-        let mut items = Vec::new();
-        for i in 0..array.len() {
-            if !array.is_null(i) {
-                items.push(array.value(i).to_string());
-            }
-        }
-        items
-    });
-    values.unwrap_or_default()
-}
-
-#[allow(dead_code)] // retained for the explicit legacy-table migration reader
-fn list_links_from_array(list_array: &ListArray, row: usize, source: &str) -> Result<Vec<Link>> {
-    if list_array.is_null(row) {
-        return Ok(Vec::new());
-    }
-    let values = list_array.value(row);
-    let struct_array = values
-        .as_any()
-        .downcast_ref::<StructArray>()
-        .ok_or_else(|| anyhow!("Invalid links struct array"))?;
-
-    let id_col = struct_array
-        .column_by_name("id")
-        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-    let target_col = struct_array
-        .column_by_name("target")
-        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-    let kind_col = struct_array
-        .column_by_name("kind")
-        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-
-    let mut links = Vec::new();
-    for idx in 0..struct_array.len() {
-        let id = id_col
-            .and_then(|col| {
-                if col.is_null(idx) {
-                    None
-                } else {
-                    Some(col.value(idx))
-                }
-            })
-            .unwrap_or("");
-        if id.is_empty() {
-            continue;
-        }
-        let target = target_col
-            .and_then(|col| {
-                if col.is_null(idx) {
-                    None
-                } else {
-                    Some(col.value(idx))
-                }
-            })
-            .unwrap_or("");
-        let kind = kind_col
-            .and_then(|col| {
-                if col.is_null(idx) {
-                    None
-                } else {
-                    Some(col.value(idx))
-                }
-            })
-            .unwrap_or("");
-        links.push(Link {
-            id: id.to_string(),
-            source: source.to_string(),
-            target: target.to_string(),
-            kind: kind.to_string(),
-        });
-    }
-
-    Ok(links)
-}
-
-#[allow(dead_code)] // retained for the explicit legacy-table migration reader
-fn list_assets_from_array(list_array: &ListArray, row: usize) -> Result<Vec<Value>> {
-    if list_array.is_null(row) {
-        return Ok(Vec::new());
-    }
-    let values = list_array.value(row);
-    let struct_array = values
-        .as_any()
-        .downcast_ref::<StructArray>()
-        .ok_or_else(|| anyhow!("Invalid assets struct array"))?;
-
-    let id_col = struct_array
-        .column_by_name("id")
-        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-    let name_col = struct_array
-        .column_by_name("name")
-        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-    let path_col = struct_array
-        .column_by_name("path")
-        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-
-    let mut assets = Vec::new();
-    for idx in 0..struct_array.len() {
-        let id = id_col
-            .and_then(|col| {
-                if col.is_null(idx) {
-                    None
-                } else {
-                    Some(col.value(idx))
-                }
-            })
-            .unwrap_or("");
-        if id.is_empty() {
-            continue;
-        }
-        let name = name_col
-            .and_then(|col| {
-                if col.is_null(idx) {
-                    None
-                } else {
-                    Some(col.value(idx))
-                }
-            })
-            .unwrap_or("");
-        let path = path_col
-            .and_then(|col| {
-                if col.is_null(idx) {
-                    None
-                } else {
-                    Some(col.value(idx))
-                }
-            })
-            .unwrap_or("");
-        assets.push(serde_json::json!({
-            "id": id,
-            "name": name,
-            "path": path,
-        }));
-    }
-
-    Ok(assets)
-}
-
-fn integrity_from_struct_array(struct_array: &StructArray, row: usize) -> IntegrityPayload {
-    if struct_array.is_null(row) {
-        return IntegrityPayload::default();
-    }
-    let checksum = struct_array
-        .column_by_name("checksum")
-        .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-        .and_then(|col| {
-            if col.is_null(row) {
-                None
-            } else {
-                Some(col.value(row))
-            }
-        })
-        .unwrap_or("");
-    let signature = struct_array
-        .column_by_name("signature")
-        .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-        .and_then(|col| {
-            if col.is_null(row) {
-                None
-            } else {
-                Some(col.value(row))
-            }
-        })
-        .unwrap_or("");
-    IntegrityPayload {
-        checksum: checksum.to_string(),
-        signature: signature.to_string(),
-    }
-}
-
-async fn scan_table_batches(table: &iceberg::table::Table) -> Result<Vec<RecordBatch>> {
-    const NATIVE_REVISION_COLUMNS: [&str; 12] = [
-        "entry_id",
-        "revision_id",
-        "parent_revision_id",
-        "entry_version",
-        "operation",
-        "committed_at",
-        "author_id",
-        "form_version",
-        "source_kind",
-        "source_id",
-        "extension_metadata",
-        "extra_attributes",
-    ];
-
-    let mut scan = table.scan();
-    if table
-        .metadata()
-        .current_schema()
-        .field_by_name("committed_at")
-        .is_some()
-    {
-        // Application writes preserve the complete portable EntryRow in
-        // extension_metadata. Reading only the fixed revision envelope avoids
-        // asking Iceberg to synthesize newly added typed form columns for
-        // older Parquet files (not all Arrow types support that operation).
-        scan = scan.select(NATIVE_REVISION_COLUMNS);
-    }
-    let scan = scan.build()?;
-    let mut stream = scan.to_arrow().await?;
-    let mut batches = Vec::new();
-    while let Some(batch) = stream.try_next().await? {
-        batches.push(batch);
-    }
-    Ok(batches)
-}
-
-#[allow(dead_code)] // used by migration verification against legacy histories
-async fn latest_revision_for_entry(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-    form_def: &Value,
-    entry_id: &str,
-) -> Result<Option<RevisionRow>> {
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, form_def)?;
-    let mut selected: Option<RevisionRow> = None;
-    for row in rows {
-        if row.entry_id != entry_id {
-            continue;
-        }
-        let replace = match &selected {
-            Some(existing) => row.timestamp >= existing.timestamp,
-            None => true,
-        };
-        if replace {
-            selected = Some(row);
-        }
-    }
-    Ok(selected)
-}
-
-fn column_as<'a, T: 'static>(batch: &'a RecordBatch, name: &str) -> Result<&'a T> {
-    let column = batch
-        .column_by_name(name)
-        .ok_or_else(|| anyhow!("Missing column: {}", name))?;
-    column
-        .as_any()
-        .downcast_ref::<T>()
-        .ok_or_else(|| anyhow!("Invalid column type for {}", name))
-}
-
-fn value_from_struct_array(struct_array: &StructArray, row: usize, form_def: &Value) -> Value {
-    let type_map = form_field_type_map(form_def);
-    let mut map = Map::new();
-
-    for (idx, field) in struct_array.fields().iter().enumerate() {
-        let name = field.name();
-        let field_type = type_map.get(name).map(String::as_str).unwrap_or("string");
-        let column = struct_array.column(idx);
-
-        let value = match field_type {
-            "number" | "double" => {
-                column
-                    .as_any()
-                    .downcast_ref::<Float64Array>()
-                    .and_then(|array| {
-                        if array.is_null(row) {
-                            None
-                        } else {
-                            serde_json::Number::from_f64(array.value(row)).map(Value::Number)
-                        }
-                    })
-            }
-            "float" => column
-                .as_any()
-                .downcast_ref::<Float32Array>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        serde_json::Number::from_f64(f64::from(array.value(row))).map(Value::Number)
-                    }
-                }),
-            "integer" => column
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        Some(Value::Number(array.value(row).into()))
-                    }
-                }),
-            "long" => column
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        Some(Value::Number(array.value(row).into()))
-                    }
-                }),
-            "boolean" => column
-                .as_any()
-                .downcast_ref::<BooleanArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        Some(Value::Bool(array.value(row)))
-                    }
-                }),
-            "date" => column
-                .as_any()
-                .downcast_ref::<Date32Array>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        days_to_date(array.value(row)).map(Value::String)
-                    }
-                }),
-            "time" => column
-                .as_any()
-                .downcast_ref::<Time64MicrosecondArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        time_micros_to_string(array.value(row)).map(Value::String)
-                    }
-                }),
-            "timestamp" => column
-                .as_any()
-                .downcast_ref::<TimestampMicrosecondArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        timestamp_micros_to_string(array.value(row)).map(Value::String)
-                    }
-                }),
-            "timestamp_tz" => column
-                .as_any()
-                .downcast_ref::<TimestampMicrosecondArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        timestamp_micros_to_string(array.value(row)).map(Value::String)
-                    }
-                }),
-            "timestamp_ns" => column
-                .as_any()
-                .downcast_ref::<TimestampNanosecondArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        timestamp_nanos_to_string(array.value(row)).map(Value::String)
-                    }
-                }),
-            "timestamp_tz_ns" => column
-                .as_any()
-                .downcast_ref::<TimestampNanosecondArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        timestamp_nanos_to_string(array.value(row)).map(Value::String)
-                    }
-                }),
-            "uuid" => column
-                .as_any()
-                .downcast_ref::<FixedSizeBinaryArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        Uuid::from_slice(array.value(row))
-                            .ok()
-                            .map(|uuid| Value::String(uuid.to_string()))
-                    }
-                }),
-            "binary" => column
-                .as_any()
-                .downcast_ref::<LargeBinaryArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        Some(Value::String(binary_to_base64(array.value(row))))
-                    }
-                }),
-            "list" => column
-                .as_any()
-                .downcast_ref::<ListArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        let values = array.value(row);
-                        let values = values.as_any().downcast_ref::<StringArray>()?;
-                        let mut items = Vec::new();
-                        for i in 0..values.len() {
-                            if !values.is_null(i) {
-                                items.push(Value::String(values.value(i).to_string()));
-                            }
-                        }
-                        Some(Value::Array(items))
-                    }
-                }),
-            "object_list" => column
-                .as_any()
-                .downcast_ref::<ListArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        return None;
-                    }
-                    let values = array.value(row);
-                    let struct_array = values.as_any().downcast_ref::<StructArray>()?;
-                    let type_col = struct_array
-                        .column_by_name("type")
-                        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-                    let name_col = struct_array
-                        .column_by_name("name")
-                        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-                    let desc_col = struct_array
-                        .column_by_name("description")
-                        .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-
-                    let mut items = Vec::new();
-                    for idx in 0..struct_array.len() {
-                        let var_type = type_col
-                            .and_then(|col| {
-                                if col.is_null(idx) {
-                                    None
-                                } else {
-                                    Some(col.value(idx))
-                                }
-                            })
-                            .unwrap_or("");
-                        let name = name_col
-                            .and_then(|col| {
-                                if col.is_null(idx) {
-                                    None
-                                } else {
-                                    Some(col.value(idx))
-                                }
-                            })
-                            .unwrap_or("");
-                        let description = desc_col
-                            .and_then(|col| {
-                                if col.is_null(idx) {
-                                    None
-                                } else {
-                                    Some(col.value(idx))
-                                }
-                            })
-                            .unwrap_or("");
-                        items.push(serde_json::json!({
-                            "type": var_type,
-                            "name": name,
-                            "description": description,
-                        }));
-                    }
-                    Some(Value::Array(items))
-                }),
-            "sql" | "markdown" | "string" | "row_reference" => column
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        Some(Value::String(array.value(row).to_string()))
-                    }
-                }),
-            _ => column
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .and_then(|array| {
-                    if array.is_null(row) {
-                        None
-                    } else {
-                        Some(Value::String(array.value(row).to_string()))
-                    }
-                }),
-        };
-
-        if let Some(value) = value {
-            map.insert(name.to_string(), value);
-        }
-    }
-
-    Value::Object(map)
-}
-
-#[allow(dead_code)] // retained for the explicit legacy-table migration reader
-fn entry_rows_from_batches(
-    batches: &[RecordBatch],
-    form_def: &Value,
-    form_name: &str,
-) -> Result<Vec<EntryRow>> {
-    let mut rows = Vec::new();
-    for batch in batches {
-        let entry_ids = column_as::<StringArray>(batch, "entry_id")?;
-        let titles = column_as::<StringArray>(batch, "title")?;
-        let tags = column_as::<ListArray>(batch, "tags")?;
-        let links = column_as::<ListArray>(batch, "links")?;
-        let created_at = column_as::<TimestampMicrosecondArray>(batch, "created_at")?;
-        let updated_at = column_as::<TimestampMicrosecondArray>(batch, "updated_at")?;
-        let fields = column_as::<StructArray>(batch, "fields")?;
-        let extra_attributes = batch
-            .column_by_name("extra_attributes")
-            .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-        let assets = column_as::<ListArray>(batch, "assets")?;
-        let integrity = column_as::<StructArray>(batch, "integrity")?;
-        let deleted = column_as::<BooleanArray>(batch, "deleted")?;
-        let deleted_at = column_as::<TimestampMicrosecondArray>(batch, "deleted_at")?;
-
-        for row_idx in 0..batch.num_rows() {
-            if entry_ids.is_null(row_idx) {
-                continue;
-            }
-
-            let tags_value = list_strings_from_array(tags, row_idx);
-            let links_value = list_links_from_array(links, row_idx, entry_ids.value(row_idx))?;
-            let assets_value = list_assets_from_array(assets, row_idx)?;
-            let integrity_value = integrity_from_struct_array(integrity, row_idx);
-
-            let fields_value = if fields.is_null(row_idx) {
-                Value::Object(Map::new())
-            } else {
-                value_from_struct_array(fields, row_idx, form_def)
-            };
-            let extra_attributes_value = match extra_attributes {
-                Some(array) => {
-                    if array.is_null(row_idx) {
-                        Value::Object(Map::new())
-                    } else {
-                        extra_attributes_from_string(Some(array.value(row_idx)))
-                    }
-                }
-                None => Value::Object(Map::new()),
-            };
-
-            let deleted_at_value = if deleted_at.is_null(row_idx) {
-                None
-            } else {
-                Some(from_timestamp_micros(deleted_at.value(row_idx)))
-            };
-
-            rows.push(EntryRow {
-                entry_id: entry_ids.value(row_idx).to_string(),
-                title: if titles.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    titles.value(row_idx).to_string()
-                },
-                form: form_name.to_string(),
-                tags: tags_value,
-                links: links_value,
-                created_at: if created_at.is_null(row_idx) {
-                    0.0
-                } else {
-                    from_timestamp_micros(created_at.value(row_idx))
-                },
-                updated_at: if updated_at.is_null(row_idx) {
-                    0.0
-                } else {
-                    from_timestamp_micros(updated_at.value(row_idx))
-                },
-                fields: fields_value,
-                extra_attributes: extra_attributes_value,
-                revision_id: "".to_string(),
-                parent_revision_id: None,
-                assets: assets_value,
-                integrity: integrity_value,
-                deleted: !deleted.is_null(row_idx) && deleted.value(row_idx),
-                deleted_at: deleted_at_value,
-                author: "".to_string(),
-                entry_version: 1,
-            });
-        }
-    }
-    Ok(rows)
-}
-
-fn revision_rows_from_batches(
-    batches: &[RecordBatch],
-    form_def: &Value,
-) -> Result<Vec<RevisionRow>> {
-    if batches
-        .first()
-        .and_then(|batch| batch.column_by_name("revision_id"))
-        .and_then(|column| column.as_any().downcast_ref::<FixedSizeBinaryArray>())
-        .is_some()
-    {
-        return native_revision_rows_from_batches(batches, form_def);
-    }
-    let mut rows = Vec::new();
-    for batch in batches {
-        let revision_ids = column_as::<StringArray>(batch, "revision_id")?;
-        let entry_ids = column_as::<StringArray>(batch, "entry_id")?;
-        let parent_revision_ids = column_as::<StringArray>(batch, "parent_revision_id")?;
-        let timestamps = column_as::<TimestampMicrosecondArray>(batch, "timestamp")?;
-        let authors = column_as::<StringArray>(batch, "author")?;
-        let fields = column_as::<StructArray>(batch, "fields")?;
-        let extra_attributes = batch
-            .column_by_name("extra_attributes")
-            .and_then(|col| col.as_any().downcast_ref::<StringArray>());
-        let checksums = column_as::<StringArray>(batch, "markdown_checksum")?;
-        let integrity = column_as::<StructArray>(batch, "integrity")?;
-        let restored_from = column_as::<StringArray>(batch, "restored_from")?;
-        let state_json = column_as::<StringArray>(batch, "state_json")?;
-        let entry_versions = column_as::<Int64Array>(batch, "entry_version")?;
-        let operations = column_as::<StringArray>(batch, "operation")?;
-        let source_kinds = column_as::<StringArray>(batch, "source_kind")?;
-        let source_ids = column_as::<StringArray>(batch, "source_id")?;
-
-        for row_idx in 0..batch.num_rows() {
-            if revision_ids.is_null(row_idx) {
-                continue;
-            }
-
-            let integrity_value = integrity_from_struct_array(integrity, row_idx);
-
-            let fields_value = if fields.is_null(row_idx) {
-                Value::Object(Map::new())
-            } else {
-                value_from_struct_array(fields, row_idx, form_def)
-            };
-            let extra_attributes_value = match extra_attributes {
-                Some(array) => {
-                    if array.is_null(row_idx) {
-                        Value::Object(Map::new())
-                    } else {
-                        extra_attributes_from_string(Some(array.value(row_idx)))
-                    }
-                }
-                None => Value::Object(Map::new()),
-            };
-
-            rows.push(RevisionRow {
-                revision_id: revision_ids.value(row_idx).to_string(),
-                entry_id: if entry_ids.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    entry_ids.value(row_idx).to_string()
-                },
-                parent_revision_id: if parent_revision_ids.is_null(row_idx) {
-                    None
-                } else {
-                    Some(parent_revision_ids.value(row_idx).to_string())
-                },
-                timestamp: if timestamps.is_null(row_idx) {
-                    0.0
-                } else {
-                    from_timestamp_micros(timestamps.value(row_idx))
-                },
-                author: if authors.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    authors.value(row_idx).to_string()
-                },
-                fields: fields_value,
-                extra_attributes: extra_attributes_value,
-                markdown_checksum: if checksums.is_null(row_idx) {
-                    "".to_string()
-                } else {
-                    checksums.value(row_idx).to_string()
-                },
-                integrity: integrity_value,
-                restored_from: if restored_from.is_null(row_idx) {
-                    None
-                } else {
-                    Some(restored_from.value(row_idx).to_string())
-                },
-                state: if state_json.is_null(row_idx) {
-                    None
-                } else {
-                    Some(serde_json::from_str(state_json.value(row_idx))?)
-                },
-                entry_version: if entry_versions.is_null(row_idx) {
-                    1
-                } else {
-                    entry_versions.value(row_idx).try_into().unwrap_or(1)
-                },
-                operation: if operations.is_null(row_idx) {
-                    default_operation()
-                } else {
-                    operations.value(row_idx).to_string()
-                },
-                source_kind: if source_kinds.is_null(row_idx) {
-                    default_source_kind()
-                } else {
-                    source_kinds.value(row_idx).to_string()
-                },
-                source_id: if source_ids.is_null(row_idx) {
-                    None
-                } else {
-                    Some(source_ids.value(row_idx).to_string())
-                },
-            });
-        }
-    }
-    Ok(rows)
-}
-
-fn native_fields_from_batch(
-    batch: &RecordBatch,
-    row: usize,
-    form_def: &Value,
-) -> Result<Map<String, Value>> {
-    let mut fields = Map::new();
-    let Some(definitions) = form_def.get("fields").and_then(Value::as_object) else {
-        return Ok(fields);
-    };
-    for (name, definition) in definitions {
-        let Some(column) = batch.column_by_name(name) else {
-            continue;
-        };
-        let field_type = definition
-            .get("type")
-            .and_then(Value::as_str)
-            .unwrap_or("string");
-        if let Some(value) = native_field_value(column.as_ref(), row, field_type) {
-            fields.insert(name.clone(), value);
-        }
-    }
-    Ok(fields)
-}
-
-fn native_field_value(column: &dyn Array, row: usize, field_type: &str) -> Option<Value> {
-    match field_type {
-        "number" | "double" => column
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .and_then(|array| (!array.is_null(row)).then(|| array.value(row)))
-            .and_then(serde_json::Number::from_f64)
-            .map(Value::Number),
-        "float" => column
-            .as_any()
-            .downcast_ref::<Float32Array>()
-            .and_then(|array| (!array.is_null(row)).then(|| f64::from(array.value(row))))
-            .and_then(serde_json::Number::from_f64)
-            .map(Value::Number),
-        "integer" => column
-            .as_any()
-            .downcast_ref::<Int32Array>()
-            .and_then(|array| (!array.is_null(row)).then(|| Value::from(array.value(row)))),
-        "long" => column
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .and_then(|array| (!array.is_null(row)).then(|| Value::from(array.value(row)))),
-        "boolean" => column
-            .as_any()
-            .downcast_ref::<BooleanArray>()
-            .and_then(|array| (!array.is_null(row)).then(|| Value::Bool(array.value(row)))),
-        "date" => column
-            .as_any()
-            .downcast_ref::<Date32Array>()
-            .and_then(|array| (!array.is_null(row)).then(|| days_to_date(array.value(row))))
-            .flatten()
-            .map(Value::String),
-        "time" => column
-            .as_any()
-            .downcast_ref::<Time64MicrosecondArray>()
-            .and_then(|array| {
-                (!array.is_null(row)).then(|| time_micros_to_string(array.value(row)))
-            })
-            .flatten()
-            .map(Value::String),
-        "timestamp" | "timestamp_tz" => column
-            .as_any()
-            .downcast_ref::<TimestampMicrosecondArray>()
-            .and_then(|array| {
-                (!array.is_null(row)).then(|| timestamp_micros_to_string(array.value(row)))
-            })
-            .flatten()
-            .map(Value::String),
-        "timestamp_ns" | "timestamp_tz_ns" => column
-            .as_any()
-            .downcast_ref::<TimestampNanosecondArray>()
-            .and_then(|array| {
-                (!array.is_null(row)).then(|| timestamp_nanos_to_string(array.value(row)))
-            })
-            .flatten()
-            .map(Value::String),
-        "uuid" => column
-            .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
-            .and_then(|array| {
-                (!array.is_null(row))
-                    .then(|| Uuid::from_slice(array.value(row)).ok())
-                    .flatten()
-            })
-            .map(|value| Value::String(value.to_string())),
-        "binary" => column
-            .as_any()
-            .downcast_ref::<BinaryArray>()
-            .and_then(|array| (!array.is_null(row)).then(|| binary_to_base64(array.value(row))))
-            .map(Value::String),
-        "list" => column
-            .as_any()
-            .downcast_ref::<ListArray>()
-            .and_then(|array| {
-                if array.is_null(row) {
-                    return None;
-                }
-                let values = array.value(row);
-                let values = values.as_any().downcast_ref::<StringArray>()?;
-                Some(Value::Array(
-                    (0..values.len())
-                        .filter(|&index| !values.is_null(index))
-                        .map(|index| Value::String(values.value(index).into()))
-                        .collect(),
-                ))
-            }),
-        "string" | "text" | "markdown" | "sql" | "row_reference" => column
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .and_then(|array| {
-                (!array.is_null(row)).then(|| Value::String(array.value(row).into()))
-            }),
-        _ => None,
-    }
-}
-
-fn native_revision_rows_from_batches(
-    batches: &[RecordBatch],
-    form_def: &Value,
-) -> Result<Vec<RevisionRow>> {
-    let mut rows = Vec::new();
-    for batch in batches {
-        let revision_ids = column_as::<FixedSizeBinaryArray>(batch, "revision_id")?;
-        let entry_ids = column_as::<FixedSizeBinaryArray>(batch, "entry_id")?;
-        let parents = batch
-            .column_by_name("parent_revision_id")
-            .context("Missing parent_revision_id")?;
-        let versions = column_as::<Int64Array>(batch, "entry_version")?;
-        let timestamps = column_as::<TimestampMicrosecondArray>(batch, "committed_at")?;
-        let authors = column_as::<StringArray>(batch, "author_id")?;
-        let operations = column_as::<StringArray>(batch, "operation")?;
-        let source_kinds = column_as::<StringArray>(batch, "source_kind")?;
-        let source_ids = column_as::<StringArray>(batch, "source_id")?;
-        let extensions = column_as::<StringArray>(batch, "extension_metadata")?;
-        let extra_attributes = column_as::<StringArray>(batch, "extra_attributes")?;
-        for row_idx in 0..batch.num_rows() {
-            let extension: serde_json::Map<String, Value> = if extensions.is_null(row_idx) {
-                Map::new()
-            } else {
-                serde_json::from_str(extensions.value(row_idx))?
-            };
-            let state = extension
-                .get("ugoite.legacy.state")
-                .cloned()
-                .filter(|value| !value.is_null())
-                .map(serde_json::from_value)
-                .transpose()?;
-            let mut fields = state
-                .as_ref()
-                .map(|state: &EntryRow| state.fields.clone())
-                .unwrap_or_else(|| Value::Object(Map::new()));
-            if let Some(fields_object) = fields.as_object_mut() {
-                fields_object.extend(native_fields_from_batch(batch, row_idx, form_def)?);
-            }
-            let integrity = extension
-                .get("ugoite.legacy.integrity")
-                .cloned()
-                .map(serde_json::from_value)
-                .transpose()?
-                .unwrap_or_default();
-            let restored_from = extension
-                .get("ugoite.legacy.restored_from")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let legacy_entry_id = state
-                .as_ref()
-                .map(|state: &EntryRow| state.entry_id.clone())
-                .unwrap_or_else(|| {
-                    Uuid::from_slice(entry_ids.value(row_idx))
-                        .map(|value| value.to_string())
-                        .unwrap_or_default()
-                });
-            let physical_parent = if parents.is_null(row_idx) {
-                None
-            } else {
-                Some(
-                    Uuid::from_slice(
-                        parents
-                            .as_any()
-                            .downcast_ref::<FixedSizeBinaryArray>()
-                            .context("parent_revision_id must be UUID")?
-                            .value(row_idx),
-                    )?
-                    .to_string(),
-                )
-            };
-            rows.push(RevisionRow {
-                revision_id: state
-                    .as_ref()
-                    .filter(|state| !state.revision_id.is_empty())
-                    .map(|state| state.revision_id.clone())
-                    .unwrap_or(Uuid::from_slice(revision_ids.value(row_idx))?.to_string()),
-                entry_id: legacy_entry_id,
-                parent_revision_id: state
-                    .as_ref()
-                    .and_then(|state| state.parent_revision_id.clone())
-                    .or(physical_parent),
-                timestamp: from_timestamp_micros(timestamps.value(row_idx)),
-                author: authors.value(row_idx).to_string(),
-                fields,
-                extra_attributes: if extra_attributes.is_null(row_idx) {
-                    Value::Object(Map::new())
-                } else {
-                    serde_json::from_str(extra_attributes.value(row_idx))?
-                },
-                markdown_checksum: extension
-                    .get("ugoite.legacy.markdown_checksum")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
-                integrity,
-                restored_from,
-                state,
-                entry_version: u64::try_from(versions.value(row_idx))?,
-                operation: operations.value(row_idx).to_string(),
-                source_kind: source_kinds.value(row_idx).to_string(),
-                source_id: if source_ids.is_null(row_idx) {
-                    None
-                } else {
-                    Some(source_ids.value(row_idx).to_string())
-                },
-            });
-        }
-    }
-    Ok(rows)
-}
-
 async fn append_revision_row_to_table(
     op: &Operator,
     ws_path: &str,
@@ -1652,25 +524,6 @@ fn revision_row_to_domain(
         .as_deref()
         .map(Uuid::parse_str)
         .transpose()?;
-    let mut extension_metadata = std::collections::BTreeMap::new();
-    extension_metadata.insert(
-        "ugoite.legacy.state".to_string(),
-        serde_json::to_value(&row.state)?,
-    );
-    extension_metadata.insert(
-        "ugoite.legacy.markdown_checksum".to_string(),
-        Value::String(row.markdown_checksum.clone()),
-    );
-    extension_metadata.insert(
-        "ugoite.legacy.integrity".to_string(),
-        serde_json::to_value(&row.integrity)?,
-    );
-    if let Some(restored_from) = &row.restored_from {
-        extension_metadata.insert(
-            "ugoite.legacy.restored_from".to_string(),
-            Value::String(restored_from.clone()),
-        );
-    }
     let operation = match row.operation.as_str() {
         "upsert" => EntryOperation::Upsert,
         "delete" => EntryOperation::Delete,
@@ -1689,6 +542,21 @@ fn revision_row_to_domain(
         .unwrap_or_default()
         .into_iter()
         .collect();
+    let mut entry = row
+        .state
+        .as_ref()
+        .map(entry_metadata_from_row)
+        .unwrap_or_default();
+    entry.integrity = EntryIntegrity {
+        checksum: row.integrity.checksum.clone(),
+        signature: row.integrity.signature.clone(),
+    };
+    entry.restored_from = row
+        .restored_from
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()?
+        .map(RevisionId::from);
     Ok(EntryRevision {
         form_id: form.id,
         entry_id: entry_id.into(),
@@ -1702,10 +570,49 @@ fn revision_row_to_domain(
         form_version: form.version,
         source_kind: row.source_kind.clone(),
         source_id: row.source_id.clone(),
+        entry,
         values,
         extra_attributes,
-        extension_metadata,
+        extension_metadata: Default::default(),
     })
+}
+
+fn entry_metadata_from_row(row: &EntryRow) -> EntryMetadata {
+    EntryMetadata {
+        external_id: row.entry_id.clone(),
+        title: row.title.clone(),
+        tags: row.tags.clone(),
+        links: row
+            .links
+            .iter()
+            .map(|link| EntryLink {
+                id: link.id.clone(),
+                target: link.target.clone(),
+                kind: link.kind.clone(),
+            })
+            .collect(),
+        created_at_micros: to_timestamp_micros(row.created_at),
+        updated_at_micros: to_timestamp_micros(row.updated_at),
+        assets: row
+            .assets
+            .iter()
+            .filter_map(|asset| {
+                let object = asset.as_object()?;
+                Some(EntryAsset {
+                    id: object.get("id")?.as_str()?.to_string(),
+                    name: object.get("name")?.as_str()?.to_string(),
+                    path: object.get("path")?.as_str()?.to_string(),
+                })
+            })
+            .collect(),
+        integrity: EntryIntegrity {
+            checksum: row.integrity.checksum.clone(),
+            signature: row.integrity.signature.clone(),
+        },
+        deleted: row.deleted,
+        deleted_at_micros: row.deleted_at.map(to_timestamp_micros),
+        restored_from: None,
+    }
 }
 
 fn form_values_to_domain(
@@ -1743,6 +650,111 @@ fn json_to_field_value(value: &Value) -> Result<FieldValue> {
     })
 }
 
+fn revision_row_from_domain(
+    revision: EntryRevision,
+    form_name: &str,
+    form: &ugoite_domain::form::FormDefinition,
+) -> Result<RevisionRow> {
+    let fields = form
+        .fields
+        .iter()
+        .filter_map(|field| {
+            revision
+                .values
+                .get(&field.id)
+                .map(|value| Ok((field.name.clone(), serde_json::to_value(value)?)))
+        })
+        .collect::<Result<Map<String, Value>>>()?;
+    let links = revision
+        .entry
+        .links
+        .iter()
+        .map(|link| Link {
+            id: link.id.clone(),
+            source: if revision.entry.external_id.is_empty() {
+                revision.entry_id.to_string()
+            } else {
+                revision.entry.external_id.clone()
+            },
+            target: link.target.clone(),
+            kind: link.kind.clone(),
+        })
+        .collect::<Vec<_>>();
+    let assets = revision
+        .entry
+        .assets
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()?;
+    let integrity = IntegrityPayload {
+        checksum: revision.entry.integrity.checksum.clone(),
+        signature: revision.entry.integrity.signature.clone(),
+    };
+    let state = EntryRow {
+        entry_id: if revision.entry.external_id.is_empty() {
+            revision.entry_id.to_string()
+        } else {
+            revision.entry.external_id.clone()
+        },
+        title: revision.entry.title.clone(),
+        form: form_name.to_string(),
+        tags: revision.entry.tags.clone(),
+        links,
+        created_at: from_timestamp_micros(revision.entry.created_at_micros),
+        updated_at: from_timestamp_micros(revision.entry.updated_at_micros),
+        fields: Value::Object(fields.clone()),
+        extra_attributes: serde_json::to_value(&revision.extra_attributes)?,
+        revision_id: revision.revision_id.to_string(),
+        parent_revision_id: revision.parent_revision_id.map(|id| id.to_string()),
+        assets,
+        integrity: integrity.clone(),
+        deleted: revision.entry.deleted,
+        deleted_at: revision.entry.deleted_at_micros.map(from_timestamp_micros),
+        author: revision.author_id.clone(),
+        entry_version: revision.entry_version,
+    };
+    Ok(RevisionRow {
+        revision_id: revision.revision_id.to_string(),
+        entry_id: if revision.entry.external_id.is_empty() {
+            revision.entry_id.to_string()
+        } else {
+            revision.entry.external_id.clone()
+        },
+        parent_revision_id: revision.parent_revision_id.map(|id| id.to_string()),
+        timestamp: from_timestamp_micros(revision.committed_at_micros),
+        author: revision.author_id,
+        fields: Value::Object(fields),
+        extra_attributes: serde_json::to_value(&revision.extra_attributes)?,
+        markdown_checksum: integrity.checksum.clone(),
+        integrity,
+        restored_from: revision.entry.restored_from.map(|id| id.to_string()),
+        state: Some(state),
+        entry_version: revision.entry_version,
+        operation: match revision.operation {
+            EntryOperation::Upsert => "upsert",
+            EntryOperation::Delete => "delete",
+            EntryOperation::Restore => "restore",
+        }
+        .to_string(),
+        source_kind: revision.source_kind,
+        source_id: revision.source_id,
+    })
+}
+
+async fn revision_rows_for_form(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+) -> Result<(Value, Vec<RevisionRow>)> {
+    let (form, revisions) = iceberg_store::revisions_for_form(op, ws_path, form_name).await?;
+    let form_def = form::from_domain_form(&form);
+    let rows = revisions
+        .into_iter()
+        .map(|revision| revision_row_from_domain(revision, form_name, &form))
+        .collect::<Result<Vec<_>>>()?;
+    Ok((form_def, rows))
+}
+
 pub(crate) async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
     form::list_form_names(op, ws_path).await
 }
@@ -1765,12 +777,9 @@ pub(crate) async fn read_entry_row(
     form_name: &str,
     entry_id: &str,
 ) -> Result<EntryRow> {
-    let form_def = form::read_form_definition(op, ws_path, form_name).await?;
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, &form_def)?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
     let mut selected: Option<RevisionRow> = None;
-    for revision in rows {
+    for revision in rows.iter().cloned() {
         if revision.entry_id != entry_id || revision.state.is_none() {
             continue;
         }
@@ -1783,8 +792,8 @@ pub(crate) async fn read_entry_row(
         }
     }
     let selected = selected.ok_or_else(|| entry_not_found(entry_id))?;
-    let conflicts = revision_rows_from_batches(&batches, &form_def)?
-        .into_iter()
+    let conflicts = rows
+        .iter()
         .filter(|revision| {
             revision.entry_id == entry_id && revision.entry_version == selected.entry_version
         })
@@ -1843,10 +852,7 @@ pub(crate) async fn list_entry_rows(
     let mut latest: std::collections::HashMap<String, (String, RevisionRow)> =
         std::collections::HashMap::new();
     for form_name in list_form_names(op, ws_path).await? {
-        let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-        let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-        let batches = scan_table_batches(&table).await?;
-        let rows = revision_rows_from_batches(&batches, &form_def)?;
+        let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
         for revision in rows {
             let Some(row) = revision.state.as_ref() else {
                 continue;
@@ -1882,13 +888,12 @@ pub(crate) async fn list_form_entry_rows(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
-    form_def: &Value,
+    _form_def: &Value,
 ) -> Result<Vec<EntryRow>> {
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let batches = scan_table_batches(&table).await?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
     let mut latest: std::collections::HashMap<String, RevisionRow> =
         std::collections::HashMap::new();
-    for revision in revision_rows_from_batches(&batches, form_def)? {
+    for revision in rows {
         let Some(row) = revision.state.as_ref() else {
             continue;
         };
@@ -1923,11 +928,10 @@ pub(crate) async fn list_form_revision_rows(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
-    form_def: &Value,
+    _form_def: &Value,
 ) -> Result<Vec<RevisionRow>> {
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    revision_rows_from_batches(&batches, form_def)
+    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
+    Ok(rows)
 }
 
 pub(crate) async fn append_revision_row_for_form(
@@ -2331,10 +1335,7 @@ pub async fn get_entry_revision_content(
         return Err(entry_content_not_found(entry_id).into());
     }
 
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let (_, revisions_table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    let batches = scan_table_batches(&revisions_table).await?;
-    let revisions = revision_rows_from_batches(&batches, &form_def)?;
+    let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
@@ -2534,10 +1535,7 @@ pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> 
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, &form_def)?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
 
     let mut revisions = rows
         .into_iter()
@@ -2573,10 +1571,7 @@ pub async fn get_entry_revision(
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let (_, table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    let batches = scan_table_batches(&table).await?;
-    let rows = revision_rows_from_batches(&batches, &form_def)?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = rows
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id);
@@ -2596,10 +1591,7 @@ pub async fn restore_entry<I: IntegrityProvider>(
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
-    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-    let (_, revisions_table) = iceberg_store::load_revisions_table(op, ws_path, &form_name).await?;
-    let batches = scan_table_batches(&revisions_table).await?;
-    let revisions = revision_rows_from_batches(&batches, &form_def)?;
+    let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)

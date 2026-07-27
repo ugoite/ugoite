@@ -25,6 +25,58 @@ pub enum FieldValue {
     Null,
 }
 
+/// Fixed metadata that accompanies every revision independently of a Form's
+/// typed columns. It is part of the canonical revision model, not an opaque
+/// JSON payload.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryMetadata {
+    /// Stable API-facing identity stored beside the UUID revision key.
+    #[serde(default)]
+    pub external_id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub links: Vec<EntryLink>,
+    #[serde(default)]
+    pub created_at_micros: i64,
+    #[serde(default)]
+    pub updated_at_micros: i64,
+    #[serde(default)]
+    pub assets: Vec<EntryAsset>,
+    #[serde(default)]
+    pub integrity: EntryIntegrity,
+    #[serde(default)]
+    pub deleted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at_micros: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restored_from: Option<RevisionId>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryLink {
+    pub id: String,
+    pub target: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryAsset {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryIntegrity {
+    #[serde(default)]
+    pub checksum: String,
+    #[serde(default)]
+    pub signature: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntryRevision {
     pub form_id: FormId,
@@ -39,6 +91,8 @@ pub struct EntryRevision {
     pub form_version: FormVersion,
     pub source_kind: String,
     pub source_id: Option<String>,
+    #[serde(default)]
+    pub entry: EntryMetadata,
     pub values: BTreeMap<FieldId, FieldValue>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra_attributes: BTreeMap<String, Value>,
@@ -57,6 +111,8 @@ pub struct EntryRevisionDraft {
     pub form_version: FormVersion,
     pub source_kind: String,
     pub source_id: Option<String>,
+    #[serde(default)]
+    pub entry: EntryMetadata,
     pub values: BTreeMap<FieldId, FieldValue>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra_attributes: BTreeMap<String, Value>,
@@ -91,6 +147,7 @@ impl EntryRevisionDraft {
             form_version: self.form_version,
             source_kind: self.source_kind,
             source_id: self.source_id,
+            entry: self.entry,
             values: self.values,
             extra_attributes: self.extra_attributes,
             extension_metadata: self.extension_metadata,

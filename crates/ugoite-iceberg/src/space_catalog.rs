@@ -9,6 +9,7 @@ use iceberg::{
 };
 use iceberg_storage_opendal::{OpenDalResolvingStorageFactory, OpenDalStorage};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
@@ -139,14 +140,19 @@ impl SpaceCatalog {
         self
     }
 
-    /// A Catalog value represents one physical publication attempt. Retrying
-    /// or issuing another mutation must use an independent command identity
-    /// and mutation claim while sharing the same Space storage boundary.
+    /// Creates a fresh single-command Catalog publication attempt over the
+    /// same Space. Reads may share a catalog instance, but a write must never
+    /// reuse its immutable publication record or command identifier.
     pub fn new_attempt(&self) -> Self {
-        let mut attempt = self.clone();
-        attempt.publication = PublicationContext::generated();
-        attempt.mutation_claimed = Arc::new(AtomicBool::new(false));
-        attempt
+        Self {
+            store: self.store.clone(),
+            namespace: self.namespace.clone(),
+            space_id: self.space_id,
+            file_io: self.file_io.clone(),
+            runtime: self.runtime.clone(),
+            publication: PublicationContext::generated(),
+            mutation_claimed: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     pub fn namespace(&self) -> &NamespaceIdent {
@@ -208,6 +214,73 @@ impl SpaceCatalog {
             .file_io(self.file_io.clone())
             .runtime(self.runtime.clone())
             .build()
+    }
+
+    /// Publishes metadata built with Iceberg's standard metadata builder while
+    /// preserving caller-assigned stable field IDs. The public Iceberg Rust
+    /// transaction builder currently allocates new IDs for added columns, so
+    /// this Catalog operation is the narrow place where a Form's already
+    /// stable IDs enter the immutable Catalog publication protocol.
+    pub(crate) async fn replace_table_metadata(
+        &self,
+        table: &TableIdent,
+        metadata: TableMetadata,
+    ) -> Result<iceberg::table::Table> {
+        self.claim_mutation()?;
+        let _write_guard = if self.store.write_mode() == CatalogWriteMode::SingleProcess {
+            Some(self.store.single_process_serializer().lock_owned().await)
+        } else {
+            None
+        };
+        let (head, exact) = self
+            .exact_head()
+            .await?
+            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        let base = self.load_head_table(table, &head).await?;
+        if metadata.uuid() != base.metadata().uuid() {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "table metadata UUID does not match the Catalog Head table",
+            ));
+        }
+        let base_metadata_location = base.metadata_location_result()?.to_string();
+        let metadata_location = MetadataLocation::from_str(&base_metadata_location)?
+            .with_next_version()
+            .with_new_metadata(&metadata)
+            .to_string();
+        metadata
+            .write_to(
+                &self.file_io,
+                &MetadataLocation::from_str(&metadata_location)?,
+            )
+            .await?;
+        let mut next = head.next_generation();
+        next.tables.insert(
+            Self::table_key(table),
+            TableReference {
+                identifier: TableCoordinates::from(table),
+                form_id: metadata.properties().get("ugoite.form.id").cloned(),
+                table_uuid: metadata.uuid().to_string(),
+                metadata_location: metadata_location.clone(),
+            },
+        );
+        let publication = self
+            .publish_new_head(
+                Some((&head, head.publication_location.as_deref())),
+                exact.etag.as_deref(),
+                next,
+                table,
+                Some(base_metadata_location),
+                metadata_location,
+            )
+            .await;
+        match publication {
+            Ok(()) => self.load_table(table).await,
+            Err(_error) if self.resolve_unknown_outcome(Some(head.generation)).await? => {
+                self.load_table(table).await
+            }
+            Err(error) => Err(error),
+        }
     }
 
     async fn write_publication(&self, publication: &PublicationRecord) -> Result<String> {
@@ -479,9 +552,17 @@ impl Catalog for SpaceCatalog {
                 "Ugoite requires an explicit Iceberg table location",
             )
         })?;
-        let metadata = TableMetadataBuilder::from_table_creation(creation)?
-            .build()?
-            .metadata;
+        // Iceberg Rust's public table-creation builder intentionally assigns
+        // fresh field IDs. Ugoite's Form IDs are already stable Iceberg IDs,
+        // so preserve that schema in the resulting standard Iceberg metadata
+        // rather than maintaining a second mapping document.
+        let requested_schema = creation.schema.clone();
+        let metadata = preserve_schema_field_ids(
+            TableMetadataBuilder::from_table_creation(creation)?
+                .build()?
+                .metadata,
+            requested_schema,
+        )?;
         let metadata_location = MetadataLocation::new_with_metadata(location, &metadata);
         metadata.write_to(&self.file_io, &metadata_location).await?;
         let metadata_location = metadata_location.to_string();
@@ -780,6 +861,29 @@ fn decode_publication(bytes: &[u8]) -> Result<PublicationRecord> {
         ));
     }
     Ok(publication)
+}
+
+fn preserve_schema_field_ids(
+    metadata: TableMetadata,
+    requested_schema: iceberg::spec::Schema,
+) -> Result<TableMetadata> {
+    let requested_schema = requested_schema
+        .into_builder()
+        .with_schema_id(metadata.current_schema_id())
+        .build()?;
+    let mut encoded = serde_json::to_value(metadata).map_err(json_error)?;
+    let object = encoded
+        .as_object_mut()
+        .ok_or_else(|| Error::new(ErrorKind::Unexpected, "Iceberg metadata is not an object"))?;
+    object.insert(
+        "schemas".to_string(),
+        serde_json::to_value(vec![requested_schema.clone()]).map_err(json_error)?,
+    );
+    object.insert(
+        "last-column-id".to_string(),
+        Value::from(requested_schema.highest_field_id()),
+    );
+    serde_json::from_value(encoded).map_err(json_error)
 }
 
 fn storage_error(error: impl std::fmt::Display) -> Error {

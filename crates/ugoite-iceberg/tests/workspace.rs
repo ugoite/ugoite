@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
-use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::entry::{
+    EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+};
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
 };
@@ -59,12 +61,18 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
             Some(&field.id.get().to_string())
         );
     }
-    assert_eq!(
-        table
+    let title = table
+        .metadata()
+        .current_schema()
+        .field_by_name("title")
+        .expect("created Form field must exist in the Iceberg schema");
+    assert_eq!(title.id, form.fields[0].id.get());
+    assert!(
+        !table
             .metadata()
             .properties()
-            .get("ugoite.form.field-id-map.v1"),
-        Some(&r#"{"100":100}"#.to_string())
+            .contains_key("ugoite.form.field-id-map.v1"),
+        "Iceberg field IDs replace the legacy Ugoite field-ID map"
     );
     assert_eq!(
         physical_form_name(form.id),
@@ -315,6 +323,7 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
+        entry: EntryMetadata::default(),
         values: BTreeMap::new(),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -372,6 +381,7 @@ async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow:
                 form_version: form.version,
                 source_kind: "test".into(),
                 source_id: None,
+                entry: EntryMetadata::default(),
                 values,
                 extra_attributes: BTreeMap::new(),
                 extension_metadata: BTreeMap::new(),
@@ -407,6 +417,250 @@ async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow:
 }
 
 #[tokio::test]
+async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
+) -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(60)),
+        "memory://iceberg-stable-ids-across-files",
+    )
+    .await?;
+    let form = form();
+    workspace.create_form(&form).await?;
+    let entry_id = Uuid::from_u128(61).into();
+    let first = EntryRevision {
+        form_id: form.id,
+        entry_id,
+        revision_id: Uuid::from_u128(62).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata {
+            title: "before rename".into(),
+            ..Default::default()
+        },
+        values: BTreeMap::from([(FieldId::new(100).unwrap(), FieldValue::String("old".into()))]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    workspace
+        .append_revisions(form.id, vec![first.clone()])
+        .await?;
+
+    let evolved = workspace
+        .evolve_form(&FormChangeSet {
+            form_id: form.id,
+            expected_version: Some(form.version),
+            changes: vec![
+                FormChange::RenameField {
+                    field_id: FieldId::new(100).unwrap(),
+                    name: "summary".into(),
+                },
+                FormChange::AddField(FormField {
+                    id: FieldId::new(101).unwrap(),
+                    name: "status".into(),
+                    field_type: FieldType::String,
+                    required: false,
+                    label: None,
+                    description: None,
+                    semantic_role: None,
+                    reference_form: None,
+                    validation: None,
+                    enum_values: Vec::new(),
+                    deprecated: false,
+                }),
+            ],
+        })
+        .await?;
+    let table = workspace
+        .catalog()
+        .load_table(&iceberg::TableIdent::new(
+            workspace.namespace().clone(),
+            physical_form_name(form.id),
+        ))
+        .await?;
+    assert_eq!(
+        table
+            .metadata()
+            .current_schema()
+            .field_by_id(100)
+            .map(|field| field.name.as_str()),
+        Some("summary")
+    );
+
+    let second = EntryRevision {
+        form_id: evolved.id,
+        entry_id,
+        revision_id: Uuid::from_u128(63).into(),
+        parent_revision_id: Some(first.revision_id),
+        entry_version: 2,
+        expected_version: Some(1),
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 2,
+        author_id: "human:owner".into(),
+        form_version: evolved.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata {
+            title: "after rename".into(),
+            ..Default::default()
+        },
+        values: BTreeMap::from([
+            (FieldId::new(100).unwrap(), FieldValue::String("new".into())),
+            (
+                FieldId::new(101).unwrap(),
+                FieldValue::String("active".into()),
+            ),
+        ]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    workspace
+        .append_revisions(form.id, vec![second.clone()])
+        .await?;
+
+    let revisions = workspace.read_revisions(form.id).await?;
+    assert_eq!(revisions.len(), 2);
+    assert_eq!(
+        revisions[0].values.get(&FieldId::new(100).unwrap()),
+        Some(&FieldValue::String("old".into()))
+    );
+    assert!(!revisions[0]
+        .values
+        .contains_key(&FieldId::new(101).unwrap()));
+    assert_eq!(revisions[1], second);
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
+) -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(70)),
+        "memory://iceberg-typed-entry-round-trip",
+    )
+    .await?;
+    let mut form = form();
+    form.fields.extend([
+        FormField {
+            id: FieldId::new(101).unwrap(),
+            name: "labels".into(),
+            field_type: FieldType::List,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        },
+        FormField {
+            id: FieldId::new(102).unwrap(),
+            name: "references".into(),
+            field_type: FieldType::ObjectList,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        },
+        FormField {
+            id: FieldId::new(103).unwrap(),
+            name: "related_entry".into(),
+            field_type: FieldType::RowReference,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        },
+    ]);
+    workspace.create_form(&form).await?;
+    let revision = EntryRevision {
+        form_id: form.id,
+        entry_id: Uuid::from_u128(71).into(),
+        revision_id: Uuid::from_u128(72).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: Some("import-1".into()),
+        entry: EntryMetadata {
+            external_id: "task-71".into(),
+            title: "typed metadata".into(),
+            tags: vec!["important".into(), "today".into()],
+            links: vec![EntryLink {
+                id: "link-1".into(),
+                target: "https://example.com".into(),
+                kind: "reference".into(),
+            }],
+            created_at_micros: 10,
+            updated_at_micros: 11,
+            assets: vec![EntryAsset {
+                id: "asset-1".into(),
+                name: "image.png".into(),
+                path: "assets/image.png".into(),
+            }],
+            integrity: EntryIntegrity {
+                checksum: "sha256:abc".into(),
+                signature: "sig".into(),
+            },
+            deleted: false,
+            deleted_at_micros: None,
+            restored_from: None,
+        },
+        values: BTreeMap::from([
+            (
+                FieldId::new(100).unwrap(),
+                FieldValue::String("typed value".into()),
+            ),
+            (
+                FieldId::new(101).unwrap(),
+                FieldValue::List(vec![FieldValue::String("rust".into())]),
+            ),
+            (
+                FieldId::new(102).unwrap(),
+                FieldValue::List(vec![FieldValue::Object(BTreeMap::from([
+                    ("type".into(), FieldValue::String("issue".into())),
+                    ("name".into(), FieldValue::String("1816".into())),
+                    (
+                        "description".into(),
+                        FieldValue::String("typed reference".into()),
+                    ),
+                ]))]),
+            ),
+            (
+                FieldId::new(103).unwrap(),
+                FieldValue::String("00000000-0000-0000-0000-000000000001".into()),
+            ),
+        ]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    workspace
+        .append_revisions(form.id, vec![revision.clone()])
+        .await?;
+    assert_eq!(workspace.read_revisions(form.id).await?, vec![revision]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyhow::Result<()> {
     let first = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(50)),
@@ -436,6 +690,7 @@ async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyho
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
+        entry: EntryMetadata::default(),
         values: BTreeMap::new(),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),

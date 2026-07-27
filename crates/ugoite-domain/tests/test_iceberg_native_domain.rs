@@ -58,7 +58,7 @@ fn field_rename_preserves_stable_id_and_is_compatible() {
 }
 
 #[test]
-fn required_addition_needs_migration_and_narrowing_is_breaking() {
+fn required_addition_is_forward_compatible_and_narrowing_is_breaking() {
     let original = form();
     let required = FormChangeSet {
         form_id: original.id,
@@ -79,7 +79,7 @@ fn required_addition_needs_migration_and_narrowing_is_breaking() {
     };
     assert_eq!(
         required.compatibility(&original).unwrap(),
-        Compatibility::MigrationRequired
+        Compatibility::Compatible
     );
     let narrowing = FormChangeSet {
         form_id: original.id,
@@ -111,6 +111,7 @@ fn revision_validation_enforces_versions_parent_and_tombstones() {
         form_version: form.version,
         source_kind: "api".into(),
         source_id: None,
+        entry: Default::default(),
         values: BTreeMap::from([(field_id(100), FieldValue::String("hello".into()))]),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -142,6 +143,7 @@ fn revision_draft_derives_parent_and_expected_version() {
         form_version: form.version,
         source_kind: "wasm".into(),
         source_id: None,
+        entry: Default::default(),
         values: BTreeMap::from([(field_id(100), FieldValue::String("first".into()))]),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -158,6 +160,7 @@ fn revision_draft_derives_parent_and_expected_version() {
         form_version: form.version,
         source_kind: "wasm".into(),
         source_id: None,
+        entry: Default::default(),
         values: BTreeMap::from([(field_id(100), FieldValue::String("second".into()))]),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -185,6 +188,7 @@ fn extra_attributes_follow_form_policy() {
         form_version: form.version,
         source_kind: "api".into(),
         source_id: None,
+        entry: Default::default(),
         values: BTreeMap::from([(field_id(100), FieldValue::String("body".into()))]),
         extra_attributes: BTreeMap::from([(String::from("priority"), serde_json::json!("high"))]),
         extension_metadata: BTreeMap::new(),

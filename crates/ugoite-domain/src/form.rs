@@ -208,7 +208,6 @@ impl FormChangeSet {
         let mut result = Compatibility::Compatible;
         for change in &self.changes {
             let compatibility = match change {
-                FormChange::AddField(field) if field.required => Compatibility::MigrationRequired,
                 FormChange::AddField(_)
                 | FormChange::RenameField { .. }
                 | FormChange::RenameForm { .. }
@@ -216,9 +215,6 @@ impl FormChangeSet {
                 | FormChange::UpdateFormMetadata { .. }
                 | FormChange::DeprecateField { .. }
                 | FormChange::RestoreField { .. } => Compatibility::Compatible,
-                FormChange::ChangeRequired { required: true, .. } => {
-                    Compatibility::MigrationRequired
-                }
                 FormChange::ChangeRequired { .. } => Compatibility::Compatible,
                 FormChange::ChangeFieldType {
                     field_id,

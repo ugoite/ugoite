@@ -1,14 +1,13 @@
-use anyhow::{anyhow, Context, Result};
-use iceberg::{Catalog, TableIdent};
+use anyhow::{anyhow, Result};
+use iceberg::TableIdent;
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::HashSet;
-use std::sync::Arc;
+use ugoite_domain::entry::EntryRevision;
+use ugoite_domain::form::FormDefinition;
 use ugoite_domain::id::SpaceId;
 use ugoite_storage::SpaceCatalogStore;
 use uuid::Uuid;
-
-const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
 
 async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<SpaceId> {
     let metadata_path = format!("{}/meta.json", workspace_path.trim_end_matches('/'));
@@ -31,11 +30,9 @@ async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<Sp
     )))
 }
 
-/// Opens the one authoritative Catalog for a Space.
-///
-/// Filesystem and in-memory adapters are deliberately configured for explicit
-/// single-process mode until their shared conditional-object probes are
-/// enabled by the server storage configuration.
+/// Opens the authoritative logical Space workspace. Core deliberately sees no
+/// Iceberg table, Arrow batch, or Catalog API; those remain implementation
+/// details of `ugoite-iceberg`.
 pub async fn native_workspace(
     operator: &Operator,
     workspace_path: &str,
@@ -62,42 +59,31 @@ pub async fn ensure_form_tables(
     Ok(())
 }
 
-async fn table_for_form_name(
+async fn domain_form_by_name(
     operator: &Operator,
     workspace_path: &str,
     form_name: &str,
-) -> Result<(Arc<dyn Catalog>, iceberg::table::Table)> {
+) -> Result<(crate::IcebergWorkspace, FormDefinition)> {
     let workspace = native_workspace(operator, workspace_path).await?;
-    let catalog = workspace.catalog();
-    for table in catalog.list_tables(workspace.namespace()).await? {
-        let loaded = catalog.load_table(&table).await?;
-        let Some(raw) = loaded.metadata().properties().get(FORM_DEFINITION_PROPERTY) else {
-            continue;
-        };
-        let form: ugoite_domain::form::FormDefinition = serde_json::from_str(raw)?;
-        if form.name == form_name {
-            return Ok((catalog, loaded));
-        }
-    }
-    Err(anyhow!(
-        "Form is not registered in the authoritative SpaceCatalog: {form_name}"
-    ))
+    let form = workspace
+        .list_forms()
+        .await?
+        .into_iter()
+        .find(|form| form.name == form_name)
+        .ok_or_else(|| {
+            anyhow!("Form is not registered in the authoritative SpaceCatalog: {form_name}")
+        })?;
+    Ok((workspace, form))
 }
 
-pub async fn load_entries_table(
+pub async fn revisions_for_form(
     operator: &Operator,
     workspace_path: &str,
     form_name: &str,
-) -> Result<(Arc<dyn Catalog>, iceberg::table::Table)> {
-    table_for_form_name(operator, workspace_path, form_name).await
-}
-
-pub async fn load_revisions_table(
-    operator: &Operator,
-    workspace_path: &str,
-    form_name: &str,
-) -> Result<(Arc<dyn Catalog>, iceberg::table::Table)> {
-    table_for_form_name(operator, workspace_path, form_name).await
+) -> Result<(FormDefinition, Vec<EntryRevision>)> {
+    let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
+    let revisions = workspace.read_revisions(form.id).await?;
+    Ok((form, revisions))
 }
 
 pub async fn load_form_schema_fields(
@@ -105,29 +91,29 @@ pub async fn load_form_schema_fields(
     workspace_path: &str,
     form_name: &str,
 ) -> Result<Option<HashSet<String>>> {
-    let form = load_form_definition(operator, workspace_path, form_name).await?;
-    let fields = form
-        .get("fields")
-        .and_then(Value::as_object)
-        .map(|fields| fields.keys().cloned().collect());
-    Ok(fields)
+    let form = load_domain_form(operator, workspace_path, form_name).await?;
+    Ok(Some(
+        form.fields.into_iter().map(|field| field.name).collect(),
+    ))
 }
 
 pub async fn list_form_names(operator: &Operator, workspace_path: &str) -> Result<Vec<String>> {
     let workspace = native_workspace(operator, workspace_path).await?;
-    let catalog = workspace.catalog();
-    let mut names = Vec::new();
-    for table in catalog.list_tables(workspace.namespace()).await? {
-        let loaded = catalog.load_table(&table).await?;
-        let Some(raw) = loaded.metadata().properties().get(FORM_DEFINITION_PROPERTY) else {
-            continue;
-        };
-        let form: ugoite_domain::form::FormDefinition = serde_json::from_str(raw)?;
-        names.push(form.name);
-    }
-    names.sort();
-    names.dedup();
-    Ok(names)
+    Ok(workspace
+        .list_forms()
+        .await?
+        .into_iter()
+        .map(|form| form.name)
+        .collect())
+}
+
+pub async fn load_domain_form(
+    operator: &Operator,
+    workspace_path: &str,
+    form_name: &str,
+) -> Result<FormDefinition> {
+    let (_, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
+    Ok(form)
 }
 
 pub async fn load_form_definition(
@@ -135,12 +121,7 @@ pub async fn load_form_definition(
     workspace_path: &str,
     form_name: &str,
 ) -> Result<Value> {
-    let (_, table) = table_for_form_name(operator, workspace_path, form_name).await?;
-    let raw = table
-        .metadata()
-        .properties()
-        .get(FORM_DEFINITION_PROPERTY)
-        .context("Form definition missing from Iceberg table metadata")?;
-    let form: ugoite_domain::form::FormDefinition = serde_json::from_str(raw)?;
-    Ok(crate::form::from_domain_form(&form))
+    Ok(crate::form::from_domain_form(
+        &load_domain_form(operator, workspace_path, form_name).await?,
+    ))
 }
