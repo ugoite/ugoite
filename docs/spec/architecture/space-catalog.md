@@ -42,6 +42,11 @@ Head with `if_match` using the exact ETag. No automatic refresh/rebase changes a
 logical mutation. An ETag mismatch reloads exact state and re-runs domain
 validation.
 
+The record stores base/new metadata locations plus the base and resulting
+Iceberg snapshot and schema IDs from upstream table metadata. Snapshot IDs may
+be null for metadata-only changes or a newly created table; schema IDs make the
+schema coordinate explicit without reproducing Iceberg's history locally.
+
 A transport error after Head replacement has an unknown outcome. The writer
 rereads Head and walks reachable publication records back to its base
 generation: a matching command identity proves success; reaching base without
