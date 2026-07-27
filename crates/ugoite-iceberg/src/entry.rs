@@ -790,37 +790,15 @@ pub(crate) async fn read_entry_row(
     form_name: &str,
     entry_id: &str,
 ) -> Result<EntryRow> {
-    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
-    let mut selected: Option<RevisionRow> = None;
-    for revision in rows.iter().cloned() {
-        if revision.entry_id != entry_id || revision.state.is_none() {
-            continue;
-        }
-        let replace = match &selected {
-            Some(existing) => revision.entry_version > existing.entry_version,
-            None => true,
-        };
-        if replace {
-            selected = Some(revision);
-        }
-    }
-    let selected = selected.ok_or_else(|| entry_not_found(entry_id))?;
-    let conflicts = rows
-        .iter()
-        .filter(|revision| {
-            revision.entry_id == entry_id && revision.entry_version == selected.entry_version
-        })
-        .count();
-    if conflicts > 1 {
-        return Err(AppError::conflict(
-            ErrorCode::RevisionConflict,
-            format!(
-                "multiple revisions exist for entry {entry_id} at version {}",
-                selected.entry_version
-            ),
-        )
-        .into());
-    }
+    let (form, revisions) =
+        iceberg_store::latest_revisions_for_entry(op, ws_path, form_name, entry_id).await?;
+    let selected = revisions
+        .into_iter()
+        .map(|revision| revision_row_from_domain(revision, form_name, &form))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .find(|revision| revision.entry_id == entry_id)
+        .ok_or_else(|| entry_not_found(entry_id))?;
     selected
         .state
         .ok_or_else(|| entry_not_found(entry_id).into())
@@ -865,7 +843,12 @@ pub(crate) async fn list_entry_rows(
     let mut latest: std::collections::HashMap<String, (String, RevisionRow)> =
         std::collections::HashMap::new();
     for form_name in list_form_names(op, ws_path).await? {
-        let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
+        let (form, revisions) =
+            iceberg_store::latest_revisions_for_form(op, ws_path, &form_name).await?;
+        let rows = revisions
+            .into_iter()
+            .map(|revision| revision_row_from_domain(revision, &form_name, &form))
+            .collect::<Result<Vec<_>>>()?;
         for revision in rows {
             let Some(row) = revision.state.as_ref() else {
                 continue;
@@ -903,35 +886,13 @@ pub(crate) async fn list_form_entry_rows(
     form_name: &str,
     _form_def: &Value,
 ) -> Result<Vec<EntryRow>> {
-    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
-    let mut latest: std::collections::HashMap<String, RevisionRow> =
-        std::collections::HashMap::new();
-    for revision in rows {
-        let Some(row) = revision.state.as_ref() else {
-            continue;
-        };
-        let entry = latest.get(&row.entry_id);
-        if let Some(existing) = entry {
-            if revision.entry_version == existing.entry_version
-                && revision.revision_id != existing.revision_id
-            {
-                return Err(anyhow!(
-                    "multiple revisions exist for entry {} at version {}",
-                    row.entry_id,
-                    revision.entry_version
-                ));
-            }
-        }
-        let should_replace = match entry {
-            Some(existing) => revision.entry_version > existing.entry_version,
-            None => true,
-        };
-        if should_replace {
-            latest.insert(row.entry_id.clone(), revision);
-        }
-    }
-    Ok(latest
-        .into_values()
+    let (form, revisions) =
+        iceberg_store::latest_revisions_for_form(op, ws_path, form_name).await?;
+    Ok(revisions
+        .into_iter()
+        .map(|revision| revision_row_from_domain(revision, form_name, &form))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
         .filter_map(|revision| revision.state)
         .collect())
 }

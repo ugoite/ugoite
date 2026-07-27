@@ -8,7 +8,7 @@ use ugoite_domain::form::{
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
     physical_form_name, publication_context, IcebergWorkspace, MigrationFormReport,
-    MigrationManifest, MigrationReport,
+    MigrationManifest, MigrationReport, RevisionView,
 };
 use uuid::Uuid;
 
@@ -378,6 +378,12 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
     let receipt = append_revisions(&workspace, form.id, vec![revision.clone()]).await?;
     assert_eq!(receipt.committed_revision_ids, vec![revision.revision_id]);
     assert!(receipt.data_file_count > 0);
+    assert_eq!(
+        workspace
+            .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
+            .await?,
+        vec![revision.clone()]
+    );
 
     let conflicting = EntryRevision {
         revision_id: Uuid::from_u128(33).into(),
