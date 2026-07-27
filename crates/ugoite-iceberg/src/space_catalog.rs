@@ -221,7 +221,7 @@ impl SpaceCatalog {
     /// transaction builder currently allocates new IDs for added columns, so
     /// this Catalog operation is the narrow place where a Form's already
     /// stable IDs enter the immutable Catalog publication protocol.
-    pub async fn replace_table_metadata(
+    pub(crate) async fn replace_table_metadata(
         &self,
         table: &TableIdent,
         metadata: TableMetadata,
