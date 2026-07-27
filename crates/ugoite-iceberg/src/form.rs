@@ -75,7 +75,17 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
         let changes = form_changes(&current_domain, &desired_domain)?;
         if !changes.is_empty() {
             let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+            let command = crate::publication_context(
+                format!(
+                    "form-evolve:{}:{}",
+                    current_domain.id,
+                    current_domain.version.get()
+                ),
+                "form.evolve",
+                &changes,
+            )?;
             workspace
+                .commit(command)?
                 .evolve_form(&FormChangeSet {
                     form_id: current_domain.id,
                     expected_version: Some(current_domain.version),

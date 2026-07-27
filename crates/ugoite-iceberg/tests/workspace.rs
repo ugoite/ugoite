@@ -7,7 +7,8 @@ use ugoite_domain::form::{
 };
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
-    physical_form_name, IcebergWorkspace, MigrationFormReport, MigrationManifest, MigrationReport,
+    physical_form_name, publication_context, IcebergWorkspace, MigrationFormReport,
+    MigrationManifest, MigrationReport,
 };
 use uuid::Uuid;
 
@@ -35,6 +36,43 @@ fn form() -> FormDefinition {
     }
 }
 
+async fn create_form(workspace: &IcebergWorkspace, form: &FormDefinition) -> anyhow::Result<()> {
+    workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.form.create",
+            form,
+        )?)?
+        .create_form(form)
+        .await
+}
+
+async fn evolve_form(
+    workspace: &IcebergWorkspace,
+    changes: &FormChangeSet,
+) -> anyhow::Result<FormDefinition> {
+    workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.form.evolve",
+            changes,
+        )?)?
+        .evolve_form(changes)
+        .await
+}
+
+async fn append_revisions(
+    workspace: &IcebergWorkspace,
+    form_id: FormId,
+    revisions: Vec<EntryRevision>,
+) -> anyhow::Result<ugoite_iceberg::CommitReceipt> {
+    let command = publication_context(Uuid::new_v4().to_string(), "test.entry.append", &revisions)?;
+    workspace
+        .commit(command)?
+        .append_revisions(form_id, revisions)
+        .await
+}
+
 #[tokio::test]
 async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
@@ -43,13 +81,13 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
     )
     .await?;
     let form = form();
-    workspace.create_form(&form).await?;
+    create_form(&workspace, &form).await?;
     assert_eq!(workspace.list_forms().await?, vec![form.clone()]);
     assert_eq!(workspace.load_form(form.id).await?, form);
     let table = workspace
-        .catalog()
+        .catalog_for_testing()
         .load_table(&iceberg::TableIdent::new(
-            workspace.namespace().clone(),
+            workspace.namespace_for_testing().clone(),
             physical_form_name(form.id),
         ))
         .await?;
@@ -83,15 +121,15 @@ async fn one_stable_form_id_maps_to_one_catalog_table() -> anyhow::Result<()> {
     ));
     assert_eq!(
         workspace
-            .catalog()
-            .list_tables(workspace.namespace())
+            .catalog_for_testing()
+            .list_tables(workspace.namespace_for_testing())
             .await?
             .len(),
         1
     );
     let sql = format!(
         "SELECT entry_id FROM ugoite.{}.{} LIMIT 1",
-        workspace.namespace().as_ref()[0],
+        workspace.namespace_for_testing().as_ref()[0],
         physical_form_name(form.id)
     );
     assert!(workspace
@@ -124,11 +162,11 @@ async fn nested_fields_have_unique_iceberg_ids_across_form_columns() -> anyhow::
         enum_values: Vec::new(),
         deprecated: false,
     });
-    workspace.create_form(&form).await?;
+    create_form(&workspace, &form).await?;
     let table = workspace
-        .catalog()
+        .catalog_for_testing()
         .load_table(&iceberg::TableIdent::new(
-            workspace.namespace().clone(),
+            workspace.namespace_for_testing().clone(),
             physical_form_name(form.id),
         ))
         .await?;
@@ -185,11 +223,11 @@ async fn native_form_types_are_preserved_in_iceberg_schema() -> anyhow::Result<(
         deprecated: false,
     })
     .collect();
-    workspace.create_form(&form).await?;
+    create_form(&workspace, &form).await?;
     let table = workspace
-        .catalog()
+        .catalog_for_testing()
         .load_table(&iceberg::TableIdent::new(
-            workspace.namespace().clone(),
+            workspace.namespace_for_testing().clone(),
             physical_form_name(form.id),
         ))
         .await?;
@@ -223,22 +261,24 @@ async fn metadata_evolution_keeps_physical_identity() -> anyhow::Result<()> {
     )
     .await?;
     let form = form();
-    workspace.create_form(&form).await?;
-    let evolved = workspace
-        .evolve_form(&FormChangeSet {
+    create_form(&workspace, &form).await?;
+    let evolved = evolve_form(
+        &workspace,
+        &FormChangeSet {
             form_id: form.id,
             expected_version: Some(form.version),
             changes: vec![FormChange::RenameForm {
                 name: "Work item".into(),
             }],
-        })
-        .await?;
+        },
+    )
+    .await?;
     assert_eq!(evolved.id, form.id);
     assert_eq!(evolved.name, "Work item");
     assert_eq!(
         workspace
-            .catalog()
-            .list_tables(workspace.namespace())
+            .catalog_for_testing()
+            .list_tables(workspace.namespace_for_testing())
             .await?
             .len(),
         1
@@ -258,9 +298,10 @@ async fn local_catalog_evolves_schema_bearing_changes() -> anyhow::Result<()> {
         ugoite_iceberg::SchemaCommitCapability::AtomicSchemaEvolution
     );
     let form = form();
-    workspace.create_form(&form).await?;
-    let evolved = workspace
-        .evolve_form(&FormChangeSet {
+    create_form(&workspace, &form).await?;
+    let evolved = evolve_form(
+        &workspace,
+        &FormChangeSet {
             form_id: form.id,
             expected_version: Some(form.version),
             changes: vec![FormChange::AddField(FormField {
@@ -276,13 +317,14 @@ async fn local_catalog_evolves_schema_bearing_changes() -> anyhow::Result<()> {
                 enum_values: Vec::new(),
                 deprecated: false,
             })],
-        })
-        .await?;
+        },
+    )
+    .await?;
     assert!(evolved.fields.iter().any(|field| field.name == "due_at"));
     let table = workspace
-        .catalog()
+        .catalog_for_testing()
         .load_table(&iceberg::TableIdent::new(
-            workspace.namespace().clone(),
+            workspace.namespace_for_testing().clone(),
             physical_form_name(form.id),
         ))
         .await?;
@@ -307,7 +349,7 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
     )
     .await?;
     let form = form();
-    workspace.create_form(&form).await?;
+    create_form(&workspace, &form).await?;
     let entry_id = Uuid::from_u128(31);
     let revision_id = Uuid::from_u128(32);
     let revision = EntryRevision {
@@ -333,9 +375,7 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         FieldId::new(100).unwrap(),
         FieldValue::String("title from revision".into()),
     );
-    let receipt = workspace
-        .append_revisions(form.id, vec![revision.clone()])
-        .await?;
+    let receipt = append_revisions(&workspace, form.id, vec![revision.clone()]).await?;
     assert_eq!(receipt.committed_revision_ids, vec![revision.revision_id]);
     assert!(receipt.data_file_count > 0);
 
@@ -343,11 +383,72 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         revision_id: Uuid::from_u128(33).into(),
         ..revision
     };
-    let error = workspace
-        .append_revisions(form.id, vec![conflicting])
+    let error = append_revisions(&workspace, form.id, vec![conflicting])
         .await
         .unwrap_err();
     assert!(error.to_string().contains("conflict"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn coordinator_replays_only_the_same_canonical_command() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(34)),
+        "memory://iceberg-command-idempotency",
+    )
+    .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    let revision = EntryRevision {
+        form_id: form.id,
+        entry_id: Uuid::from_u128(35).into(),
+        revision_id: Uuid::from_u128(36).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata::default(),
+        values: BTreeMap::from([(
+            FieldId::new(100).unwrap(),
+            FieldValue::String("exactly once".into()),
+        )]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let command = publication_context("append-35", "test.entry.append", &vec![revision.clone()])?;
+    let first = workspace
+        .commit(command.clone())?
+        .append_revisions(form.id, vec![revision.clone()])
+        .await?;
+    let replay = workspace
+        .commit(command)?
+        .append_revisions(form.id, vec![revision.clone()])
+        .await?;
+    assert_eq!(replay.command_id, "append-35");
+    assert_eq!(replay.catalog_generation, first.catalog_generation);
+    assert_eq!(replay.snapshot_id, first.snapshot_id);
+    assert_eq!(
+        workspace.read_revisions(form.id).await?,
+        vec![revision.clone()]
+    );
+
+    let mut changed = revision;
+    changed.revision_id = Uuid::from_u128(37).into();
+    let reuse = workspace
+        .commit(publication_context(
+            "append-35",
+            "test.entry.append",
+            &vec![changed.clone()],
+        )?)?
+        .append_revisions(form.id, vec![changed])
+        .await
+        .unwrap_err();
+    assert!(reuse.to_string().contains("reused"));
     Ok(())
 }
 
@@ -359,7 +460,7 @@ async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow:
     )
     .await?;
     let form = form();
-    workspace.create_form(&form).await?;
+    create_form(&workspace, &form).await?;
     let revisions = [36_u128, 37]
         .into_iter()
         .map(|id| {
@@ -389,9 +490,7 @@ async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow:
         })
         .collect::<Vec<_>>();
 
-    let receipt = workspace
-        .append_revisions(form.id, revisions.clone())
-        .await?;
+    let receipt = append_revisions(&workspace, form.id, revisions.clone()).await?;
     assert_eq!(
         receipt.committed_revision_ids,
         revisions
@@ -402,9 +501,9 @@ async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow:
     assert!(receipt.data_file_count > 0);
 
     let table = workspace
-        .catalog()
+        .catalog_for_testing()
         .load_table(&iceberg::TableIdent::new(
-            workspace.namespace().clone(),
+            workspace.namespace_for_testing().clone(),
             physical_form_name(form.id),
         ))
         .await?;
@@ -425,7 +524,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
     )
     .await?;
     let form = form();
-    workspace.create_form(&form).await?;
+    create_form(&workspace, &form).await?;
     let entry_id = Uuid::from_u128(61).into();
     let first = EntryRevision {
         form_id: form.id,
@@ -448,12 +547,11 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     };
-    workspace
-        .append_revisions(form.id, vec![first.clone()])
-        .await?;
+    append_revisions(&workspace, form.id, vec![first.clone()]).await?;
 
-    let evolved = workspace
-        .evolve_form(&FormChangeSet {
+    let evolved = evolve_form(
+        &workspace,
+        &FormChangeSet {
             form_id: form.id,
             expected_version: Some(form.version),
             changes: vec![
@@ -475,12 +573,13 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
                     deprecated: false,
                 }),
             ],
-        })
-        .await?;
+        },
+    )
+    .await?;
     let table = workspace
-        .catalog()
+        .catalog_for_testing()
         .load_table(&iceberg::TableIdent::new(
-            workspace.namespace().clone(),
+            workspace.namespace_for_testing().clone(),
             physical_form_name(form.id),
         ))
         .await?;
@@ -520,9 +619,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     };
-    workspace
-        .append_revisions(form.id, vec![second.clone()])
-        .await?;
+    append_revisions(&workspace, form.id, vec![second.clone()]).await?;
 
     let revisions = workspace.read_revisions(form.id).await?;
     assert_eq!(revisions.len(), 2);
@@ -587,7 +684,7 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
             deprecated: false,
         },
     ]);
-    workspace.create_form(&form).await?;
+    create_form(&workspace, &form).await?;
     let revision = EntryRevision {
         form_id: form.id,
         entry_id: Uuid::from_u128(71).into(),
@@ -653,9 +750,7 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     };
-    workspace
-        .append_revisions(form.id, vec![revision.clone()])
-        .await?;
+    append_revisions(&workspace, form.id, vec![revision.clone()]).await?;
     assert_eq!(workspace.read_revisions(form.id).await?, vec![revision]);
     Ok(())
 }
@@ -667,15 +762,9 @@ async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyho
         "memory://iceberg-concurrent-writers",
     )
     .await?;
-    let second = IcebergWorkspace::new(
-        first.catalog(),
-        SpaceId::from(Uuid::from_u128(50)),
-        "memory://iceberg-concurrent-writers",
-        Default::default(),
-    )
-    .await?;
+    let second = first.clone_for_testing();
     let form = form();
-    first.create_form(&form).await?;
+    create_form(&first, &form).await?;
     let entry_id = Uuid::from_u128(51).into();
     let mut left = EntryRevision {
         form_id: form.id,
@@ -707,8 +796,8 @@ async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyho
         FieldValue::String("right".into()),
     );
     let (left_result, right_result) = tokio::join!(
-        first.append_revisions(form.id, vec![left]),
-        second.append_revisions(form.id, vec![right.clone()]),
+        append_revisions(&first, form.id, vec![left]),
+        append_revisions(&second, form.id, vec![right.clone()]),
     );
     assert!(
         left_result.is_ok() ^ right_result.is_ok(),
@@ -718,8 +807,7 @@ async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyho
         revision_id: Uuid::from_u128(54).into(),
         ..right
     };
-    let conflict = first
-        .append_revisions(form.id, vec![probe])
+    let conflict = append_revisions(&first, form.id, vec![probe])
         .await
         .unwrap_err();
     assert!(conflict.to_string().contains("conflict"));

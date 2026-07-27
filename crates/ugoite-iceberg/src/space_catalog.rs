@@ -52,6 +52,16 @@ pub struct PublicationContext {
     pub command_digest: String,
 }
 
+/// Durable outcome of a single command publication.  This deliberately
+/// contains only domain-facing coordinates; Iceberg metadata locations stay
+/// inside the catalog implementation.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct PublicationReceipt {
+    pub command_id: String,
+    pub catalog_generation: u64,
+    pub snapshot_id: Option<i64>,
+}
+
 impl PublicationContext {
     pub fn new(command_id: impl Into<String>, command_kind: impl Into<String>) -> Self {
         let command_id = command_id.into();
@@ -186,7 +196,7 @@ impl SpaceCatalog {
         })
     }
 
-    pub fn with_publication_context(mut self, publication: PublicationContext) -> Self {
+    pub(crate) fn with_publication_context(mut self, publication: PublicationContext) -> Self {
         self.publication = publication;
         self
     }
@@ -194,7 +204,7 @@ impl SpaceCatalog {
     /// Creates a fresh single-command Catalog publication attempt over the
     /// same Space. Reads may share a catalog instance, but a write must never
     /// reuse its immutable publication record or command identifier.
-    pub fn new_attempt(&self) -> Self {
+    pub(crate) fn new_attempt(&self) -> Self {
         Self {
             store: self.store.clone(),
             namespace: self.namespace.clone(),
@@ -206,7 +216,8 @@ impl SpaceCatalog {
         }
     }
 
-    pub fn namespace(&self) -> &NamespaceIdent {
+    #[cfg(test)]
+    fn namespace(&self) -> &NamespaceIdent {
         &self.namespace
     }
 
@@ -224,6 +235,91 @@ impl SpaceCatalog {
         }
         self.validate_head_publication(&head).await?;
         Ok(Some((head, exact)))
+    }
+
+    /// Finds a completed command through the immutable publication chain.
+    /// Reusing an id with a different kind or digest is an invalid idempotency
+    /// key reuse, rather than a request to replay a different mutation.
+    pub(crate) async fn publication_receipt(
+        &self,
+        publication: &PublicationContext,
+    ) -> Result<Option<PublicationReceipt>> {
+        let Some((mut head, _)) = self.exact_head().await? else {
+            return Ok(None);
+        };
+        let mut path = head.publication_location.clone().ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head has no publication record",
+            )
+        })?;
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(path.clone()) {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication chain contains a cycle",
+                ));
+            }
+            let record = decode_publication(
+                &self
+                    .store
+                    .read_publication(&path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            validate_publication_matches_head(&record, &head)?;
+            if record.command_id == publication.command_id {
+                if record.command_kind != publication.command_kind
+                    || record.command_digest != publication.command_digest
+                {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "publication command id was reused with different command content",
+                    ));
+                }
+                return Ok(Some(PublicationReceipt {
+                    command_id: record.command_id,
+                    catalog_generation: record.generation,
+                    snapshot_id: record.new_snapshot_id,
+                }));
+            }
+            let (previous_generation, previous_path, previous_checksum) = match (
+                record.previous_generation,
+                record.previous_publication,
+                record.previous_head_checksum,
+            ) {
+                (None, None, None) if record.generation == 0 => return Ok(None),
+                (Some(generation), Some(path), Some(checksum))
+                    if generation + 1 == record.generation =>
+                {
+                    (generation, path, checksum)
+                }
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog publication chain is incomplete or corrupt",
+                    ));
+                }
+            };
+            let previous = decode_publication(
+                &self
+                    .store
+                    .read_publication(&previous_path)
+                    .await
+                    .map_err(storage_error)?,
+            )?;
+            if previous.generation != previous_generation
+                || previous.next_head_checksum != previous_checksum
+            {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog publication predecessor is corrupt",
+                ));
+            }
+            head = previous.next_head.clone();
+            path = previous_path;
+        }
     }
 
     fn table_key(table: &TableIdent) -> String {
