@@ -406,7 +406,14 @@ impl SpaceCatalog {
         } else {
             self.store.create_head(bytes).await
         };
-        result.map_err(storage_error)
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) if is_condition_conflict(&error) => Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head changed before this publication could be committed",
+            )),
+            Err(error) => Err(storage_error(error)),
+        }
     }
 
     async fn resolve_unknown_outcome(&self, attempt: &PublicationAttempt) -> Result<bool> {
