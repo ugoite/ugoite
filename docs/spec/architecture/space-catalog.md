@@ -8,10 +8,10 @@ Space format version is unchanged, while legacy layouts and catalog modes are
 unsupported rather than migrated.
 
 The Catalog Head layout, upstream physical boundary, single mutation
-coordinator, and checkpoint-pinned revision reads are implemented by the
-current persistence work. Authorization-aware DataFusion context and health
-evidence remain follow-up work; this document does not advertise them as
-current product APIs.
+coordinator, checkpoint-pinned revision reads, and authorization-aware
+DataFusion context are implemented by the current persistence work. Health
+evidence remains follow-up work; this document does not advertise it as a
+current product API.
 
 ## Authority and ownership
 
@@ -91,8 +91,11 @@ ID (when the table has one), and schema ID. A deterministic coordinate checksum
 excludes optional capture time and human name.
 
 Checkpoint reads never acquire a writer lock and never refresh from the current
-Head. They construct Iceberg static providers from the recorded metadata and,
-when present, the recorded snapshot ID. A durable named checkpoint is created
+Head. Each resolution rereads the checkpoint's immutable publication, verifies
+its checksum and canonical Head, and requires that the Head's complete Form
+table coordinates match the checkpoint before it reads Iceberg metadata. They
+construct Iceberg static providers from the recorded metadata and, when
+present, the recorded snapshot ID. A durable named checkpoint is created
 once at `_ugoite/checkpoints/<name>.json` through OpenDAL; a missing durable
 object or immutable target returns an explicit unavailable-checkpoint error.
 There is no snapshot-expiration or custom retention implementation. If upstream

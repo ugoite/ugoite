@@ -18,7 +18,7 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use ugoite_core::query::AuthorizedQueryPolicy;
 
-use crate::IcebergWorkspace;
+use crate::{form_from_table, IcebergWorkspace};
 
 const INTERNAL_RELATION_PREFIX: &str = "__ugoite_authorized_source_";
 
@@ -56,6 +56,24 @@ impl IcebergWorkspace {
         let context = SessionContext::new_with_config_rt(config, runtime);
         let mut relations = BTreeSet::new();
 
+        if let Some(checkpoint) = &policy.checkpoint {
+            self.validate_checkpoint(checkpoint)?;
+            self.space_catalog
+                .as_ref()
+                .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+                .validate_checkpoint_evidence(checkpoint)
+                .await?;
+            let checkpoint_forms = checkpoint
+                .tables
+                .iter()
+                .map(|table| table.form_id)
+                .collect::<BTreeSet<_>>();
+            let authorized_forms = policy.forms.keys().copied().collect::<BTreeSet<_>>();
+            if checkpoint_forms != authorized_forms {
+                bail!("checkpoint Forms must exactly match authorized query Forms");
+            }
+        }
+
         for (form_id, form_policy) in &policy.forms {
             validate_relation(&form_policy.relation)?;
             if !relations.insert(form_policy.relation.clone()) {
@@ -64,19 +82,33 @@ impl IcebergWorkspace {
                     form_policy.relation
                 );
             }
-            let form = self.load_form(*form_id).await?;
-            let table = self.catalog.load_table(&self.form_ident(*form_id)).await?;
-            let snapshot_id = policy
-                .checkpoint
-                .as_ref()
-                .map(|checkpoint| {
-                    checkpoint
-                        .form_snapshots
-                        .get(form_id)
-                        .copied()
-                        .ok_or_else(|| anyhow!("checkpoint is missing authorized Form {}", form_id))
-                })
-                .transpose()?;
+            let (form, table, snapshot_id) = match &policy.checkpoint {
+                Some(checkpoint) => {
+                    let coordinate = checkpoint
+                        .tables
+                        .iter()
+                        .find(|coordinate| coordinate.form_id == *form_id)
+                        .ok_or_else(|| {
+                            anyhow!("checkpoint is missing authorized Form {form_id}")
+                        })?;
+                    let table = self
+                        .space_catalog
+                        .as_ref()
+                        .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+                        .load_checkpoint_table(checkpoint, coordinate)
+                        .await?;
+                    (
+                        form_from_table(&table, *form_id)?,
+                        table,
+                        coordinate.snapshot_id,
+                    )
+                }
+                None => (
+                    self.load_form(*form_id).await?,
+                    self.catalog.load_table(&self.form_ident(*form_id)).await?,
+                    None,
+                ),
+            };
             let provider = match snapshot_id {
                 Some(snapshot_id) => {
                     IcebergStaticTableProvider::try_new_from_table_snapshot(table, snapshot_id)
@@ -127,6 +159,12 @@ impl AuthorizedQueryContext {
             .clone()
             .try_acquire_owned()
             .map_err(|_| anyhow!("authorized query concurrency limit reached"))?;
+        tokio::time::timeout(self.limits.timeout, self.execute_with_permit(sql))
+            .await
+            .map_err(|_| anyhow!("authorized query timed out"))?
+    }
+
+    async fn execute_with_permit(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
         let plan = self
             .context
             .state()
@@ -146,12 +184,7 @@ impl AuthorizedQueryContext {
         let task_context = Arc::new(frame.task_ctx());
         let physical = frame.create_physical_plan().await?;
         validate_physical_plan(&physical)?;
-        let batches = tokio::time::timeout(
-            self.limits.timeout,
-            datafusion::physical_plan::collect(physical, task_context),
-        )
-        .await
-        .map_err(|_| anyhow!("authorized query timed out"))??;
+        let batches = datafusion::physical_plan::collect(physical, task_context).await?;
         let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
         if rows > self.limits.max_rows {
             bail!("authorized query row limit exceeded");
@@ -177,6 +210,14 @@ fn visible_columns(
         bail!("authorized query policy exposes unknown Form column {column}");
     }
     let mut visible = policy.columns.iter().cloned().collect::<Vec<_>>();
+    if let Some(column) = policy
+        .system_columns
+        .iter()
+        .map(|column| column.as_str())
+        .find(|column| form_columns.contains(column))
+    {
+        bail!("Form column {column} collides with a query system column");
+    }
     visible.extend(
         policy
             .system_columns

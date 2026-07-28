@@ -6,13 +6,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
+use ugoite_domain::checkpoint::SpaceCheckpoint;
 use ugoite_domain::id::{EntryId, FormId};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorizedQueryPolicy {
     pub forms: BTreeMap<FormId, AuthorizedQueryForm>,
     pub readable_entry_ids: BTreeSet<EntryId>,
-    pub checkpoint: Option<QueryCheckpoint>,
+    /// When present, every provider is built from this one complete,
+    /// publication-verified Space coordinate.
+    pub checkpoint: Option<SpaceCheckpoint>,
     pub limits: QueryLimits,
 }
 
@@ -24,14 +27,6 @@ pub struct AuthorizedQueryForm {
     pub columns: BTreeSet<String>,
     /// System columns which are intentionally part of this query contract.
     pub system_columns: BTreeSet<QuerySystemColumn>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueryCheckpoint {
-    /// Every exposed Form must have a snapshot in this map. A partial
-    /// checkpoint is rejected by the physical adapter rather than mixing live
-    /// and historical providers.
-    pub form_snapshots: BTreeMap<FormId, i64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

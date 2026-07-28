@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use ugoite_core::query::{
-    AuthorizedQueryForm, AuthorizedQueryPolicy, QueryCheckpoint, QueryLimits, QuerySystemColumn,
+    AuthorizedQueryForm, AuthorizedQueryPolicy, QueryLimits, QuerySystemColumn,
 };
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
@@ -176,13 +176,12 @@ async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot(
     .await?;
     let tasks = form(21, "Tasks");
     create_form(&workspace, &tasks).await?;
-    let first_snapshot = append(&workspace, &tasks, 22, 23, "first").await?;
+    append(&workspace, &tasks, 22, 23, "first").await?;
+    let checkpoint = workspace.capture_checkpoint().await?;
     append(&workspace, &tasks, 24, 25, "later").await?;
 
     let mut snapshot_policy = policy(&tasks, &[22, 24]);
-    snapshot_policy.checkpoint = Some(QueryCheckpoint {
-        form_snapshots: [(tasks.id, first_snapshot)].into_iter().collect(),
-    });
+    snapshot_policy.checkpoint = Some(checkpoint.clone());
     let context = workspace.authorized_query_context(snapshot_policy).await?;
     let batches = context.execute("SELECT * FROM tasks").await?;
     assert_eq!(
@@ -191,9 +190,11 @@ async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot(
     );
 
     let mut incomplete = policy(&tasks, &[22]);
-    incomplete.checkpoint = Some(QueryCheckpoint {
-        form_snapshots: BTreeMap::new(),
-    });
+    let mut incomplete_checkpoint = checkpoint;
+    incomplete_checkpoint.tables.clear();
+    incomplete_checkpoint.coordinate_checksum =
+        incomplete_checkpoint.computed_coordinate_checksum();
+    incomplete.checkpoint = Some(incomplete_checkpoint);
     assert!(workspace
         .authorized_query_context(incomplete)
         .await
@@ -219,7 +220,127 @@ async fn context_enforces_the_row_limit() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn system_column_allowlist_is_explicit() {
-    assert_eq!(QuerySystemColumn::EntryId.as_str(), "entry_id");
+#[tokio::test]
+async fn system_columns_are_queryable_only_when_explicitly_allowlisted() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(40)),
+        "memory://authorized-query-system-columns",
+    )
+    .await?;
+    let tasks = form(41, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 42, 43, "one").await?;
+
+    for column in [
+        QuerySystemColumn::EntryId,
+        QuerySystemColumn::EntryVersion,
+        QuerySystemColumn::CommittedAt,
+    ] {
+        let mut allowed = policy(&tasks, &[42]);
+        allowed
+            .forms
+            .get_mut(&tasks.id)
+            .unwrap()
+            .system_columns
+            .insert(column);
+        let context = workspace.authorized_query_context(allowed).await?;
+        assert_eq!(
+            context
+                .execute(&format!("SELECT {} FROM tasks", column.as_str()))
+                .await?
+                .len(),
+            1
+        );
+    }
+
+    let mut wildcard = policy(&tasks, &[42]);
+    wildcard
+        .forms
+        .get_mut(&tasks.id)
+        .unwrap()
+        .system_columns
+        .insert(QuerySystemColumn::EntryId);
+    let context = workspace.authorized_query_context(wildcard).await?;
+    let batches = context.execute("SELECT * FROM tasks").await?;
+    assert_eq!(batches[0].schema().field(0).name(), "title");
+    assert_eq!(batches[0].schema().field(1).name(), "entry_id");
+
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[42]))
+        .await?;
+    assert!(context.execute("SELECT entry_id FROM tasks").await.is_err());
+
+    let mut colliding = form(44, "Colliding");
+    colliding.fields[0].name = "entry_id".into();
+    assert!(create_form(&workspace, &colliding).await.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn context_releases_concurrency_permits_after_errors() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(50)),
+        "memory://authorized-query-concurrency",
+    )
+    .await?;
+    let tasks = form(51, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 52, 53, "one").await?;
+    let context = std::sync::Arc::new(
+        workspace
+            .authorized_query_context(policy(&tasks, &[52]))
+            .await?,
+    );
+    assert!(context.execute("SELECT count(*) FROM tasks").await.is_err());
+    assert!(context.execute("SELECT * FROM tasks").await.is_ok());
+
+    for entry in 54..63 {
+        append(&workspace, &tasks, entry, entry + 100, "many").await?;
+    }
+    let mut busy_policy = policy(&tasks, &(52..63).collect::<Vec<_>>());
+    busy_policy.limits.timeout = Duration::from_millis(50);
+    busy_policy.limits.allowed_functions.insert("count".into());
+    let busy = std::sync::Arc::new(workspace.authorized_query_context(busy_policy).await?);
+    let running = busy.clone();
+    let task = tokio::spawn(async move {
+        running
+            .execute(
+                "SELECT count(*) FROM tasks a CROSS JOIN tasks b CROSS JOIN tasks c CROSS JOIN tasks d CROSS JOIN tasks e CROSS JOIN tasks f CROSS JOIN tasks g CROSS JOIN tasks h",
+            )
+            .await
+    });
+    tokio::task::yield_now().await;
+    let second = busy.execute("SELECT * FROM tasks").await;
+    let _ = task.await?;
+    assert!(
+        second.is_err(),
+        "the second concurrent query must fail closed"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn context_enforces_memory_and_timeout_limits() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(60)),
+        "memory://authorized-query-resource-limits",
+    )
+    .await?;
+    let tasks = form(61, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 62, 63, "one").await?;
+
+    let mut memory_limited = policy(&tasks, &[62]);
+    memory_limited.limits.max_memory_bytes = 1;
+    let context = workspace.authorized_query_context(memory_limited).await?;
+    assert!(context
+        .execute("SELECT * FROM tasks ORDER BY title")
+        .await
+        .is_err());
+
+    let mut timed_out = policy(&tasks, &[62]);
+    timed_out.limits.timeout = Duration::from_nanos(1);
+    let context = workspace.authorized_query_context(timed_out).await?;
+    assert!(context.execute("SELECT * FROM tasks").await.is_err());
+    Ok(())
 }
