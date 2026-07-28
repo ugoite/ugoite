@@ -840,8 +840,7 @@ pub(crate) async fn list_entry_rows(
     op: &Operator,
     ws_path: &str,
 ) -> Result<Vec<(String, EntryRow)>> {
-    let mut latest: std::collections::HashMap<String, (String, RevisionRow)> =
-        std::collections::HashMap::new();
+    let mut latest = Vec::<(String, RevisionRow)>::new();
     for form_name in list_form_names(op, ws_path).await? {
         let (form, revisions) =
             iceberg_store::latest_revisions_for_form(op, ws_path, &form_name).await?;
@@ -853,8 +852,10 @@ pub(crate) async fn list_entry_rows(
             let Some(row) = revision.state.as_ref() else {
                 continue;
             };
-            let entry = latest.get(&row.entry_id);
-            if let Some((_, existing)) = entry {
+            if let Some((current_form_name, existing)) = latest
+                .iter_mut()
+                .find(|(_, existing)| existing.entry_id == row.entry_id)
+            {
                 if revision.entry_version == existing.entry_version
                     && revision.revision_id != existing.revision_id
                 {
@@ -864,18 +865,17 @@ pub(crate) async fn list_entry_rows(
                         revision.entry_version
                     ));
                 }
-            }
-            let should_replace = match entry {
-                Some((_, existing)) => revision.entry_version > existing.entry_version,
-                None => true,
-            };
-            if should_replace {
-                latest.insert(row.entry_id.clone(), (form_name.clone(), revision));
+                if revision.entry_version > existing.entry_version {
+                    *existing = revision;
+                    *current_form_name = form_name.clone();
+                }
+            } else {
+                latest.push((form_name.clone(), revision));
             }
         }
     }
     Ok(latest
-        .into_values()
+        .into_iter()
         .filter_map(|(form_name, revision)| revision.state.map(|row| (form_name, row)))
         .collect())
 }

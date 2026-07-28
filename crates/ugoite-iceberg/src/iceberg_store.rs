@@ -79,7 +79,9 @@ pub async fn revisions_for_form(
     form_name: &str,
 ) -> Result<(FormDefinition, Vec<EntryRevision>)> {
     let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
-    let revisions = workspace.read_revisions(form.id).await?;
+    let revisions = workspace
+        .read_revision_view(form.id, crate::RevisionView::All)
+        .await?;
     Ok((form, revisions))
 }
 
