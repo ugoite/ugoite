@@ -60,7 +60,7 @@ use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
 use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
-use iceberg_datafusion::IcebergCatalogProvider;
+use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
@@ -644,11 +644,38 @@ impl IcebergWorkspace {
         form_id: FormId,
         view: RevisionView,
     ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_with_snapshot(form_id, view, None)
+            .await
+    }
+
+    /// Reads a canonical revision view from one immutable Iceberg snapshot.
+    /// The latest-state plan is identical to the live provider; only the
+    /// upstream Iceberg table provider is pinned.
+    pub async fn read_revision_view_at_snapshot(
+        &self,
+        form_id: FormId,
+        view: RevisionView,
+        snapshot_id: i64,
+    ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_with_snapshot(form_id, view, Some(snapshot_id))
+            .await
+    }
+
+    async fn read_revision_view_with_snapshot(
+        &self,
+        form_id: FormId,
+        view: RevisionView,
+        snapshot_id: Option<i64>,
+    ) -> Result<Vec<EntryRevision>> {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
         let batches = match view {
             RevisionView::All => {
-                let mut stream = table.scan().build()?.to_arrow().await?;
+                let scan = match snapshot_id {
+                    Some(snapshot_id) => table.scan().snapshot_id(snapshot_id),
+                    None => table.scan(),
+                };
+                let mut stream = scan.build()?.to_arrow().await?;
                 let mut batches = Vec::new();
                 while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
                     batches.push(batch);
@@ -656,7 +683,7 @@ impl IcebergWorkspace {
                 batches
             }
             RevisionView::LatestIncludingTombstones | RevisionView::Current => {
-                self.read_latest_revision_batches(&table, form_id, None)
+                self.read_latest_revision_batches(&table, form_id, None, snapshot_id)
                     .await?
             }
         };
@@ -692,7 +719,7 @@ impl IcebergWorkspace {
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
         let schema = table.metadata().current_schema().clone();
         let batches = self
-            .read_latest_revision_batches(&table, form_id, Some(entry_ids))
+            .read_latest_revision_batches(&table, form_id, Some(entry_ids), None)
             .await?;
         let mut revisions = Vec::new();
         for batch in &batches {
@@ -703,17 +730,27 @@ impl IcebergWorkspace {
 
     async fn latest_revision_plan(
         &self,
+        table: &iceberg::table::Table,
         form_id: FormId,
         entry_ids: Option<&[ugoite_domain::id::EntryId]>,
+        snapshot_id: Option<i64>,
     ) -> Result<Vec<RecordBatch>> {
         let context = SessionContext::new();
-        let provider = IcebergCatalogProvider::try_new(self.catalog.clone()).await?;
-        context.register_catalog("ugoite", Arc::new(provider));
-        let table_name = format!(
-            "ugoite.{}.{}",
-            self.namespace.as_ref()[0],
-            physical_form_name(form_id)
-        );
+        let table_name = if let Some(snapshot_id) = snapshot_id {
+            let provider =
+                IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
+                    .await?;
+            context.register_table("revisions", Arc::new(provider))?;
+            "revisions".to_string()
+        } else {
+            let provider = IcebergCatalogProvider::try_new(self.catalog.clone()).await?;
+            context.register_catalog("ugoite", Arc::new(provider));
+            format!(
+                "ugoite.{}.{}",
+                self.namespace.as_ref()[0],
+                physical_form_name(form_id)
+            )
+        };
         let mut revisions = context.table(table_name).await?;
         if let Some(entry_ids) = entry_ids {
             if entry_ids.is_empty() {
@@ -771,8 +808,11 @@ impl IcebergWorkspace {
         table: &iceberg::table::Table,
         form_id: FormId,
         entry_ids: Option<&[ugoite_domain::id::EntryId]>,
+        snapshot_id: Option<i64>,
     ) -> Result<Vec<RecordBatch>> {
-        let ids = self.latest_revision_plan(form_id, entry_ids).await?;
+        let ids = self
+            .latest_revision_plan(table, form_id, entry_ids, snapshot_id)
+            .await?;
         let mut revision_ids = Vec::new();
         for batch in ids {
             let values = batch
@@ -785,12 +825,16 @@ impl IcebergWorkspace {
         if revision_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut stream = table
+        let scan = table
             .scan()
-            .with_filter(Reference::new("revision_id").is_in(revision_ids))
-            .build()?
-            .to_arrow()
-            .await?;
+            .with_filter(Reference::new("revision_id").is_in(revision_ids));
+        let mut stream = match snapshot_id {
+            Some(snapshot_id) => scan.snapshot_id(snapshot_id),
+            None => scan,
+        }
+        .build()?
+        .to_arrow()
+        .await?;
         let mut batches = Vec::new();
         while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
             batches.push(batch);

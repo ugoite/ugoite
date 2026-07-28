@@ -424,7 +424,7 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     };
-    append_revisions(&workspace, form.id, vec![first.clone()]).await?;
+    let first_receipt = append_revisions(&workspace, form.id, vec![first.clone()]).await?;
 
     let deleted = EntryRevision {
         revision_id: Uuid::from_u128(63).into(),
@@ -440,7 +440,7 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
         },
         ..first.clone()
     };
-    append_revisions(&workspace, form.id, vec![deleted.clone()]).await?;
+    let deleted_receipt = append_revisions(&workspace, form.id, vec![deleted.clone()]).await?;
     assert_eq!(
         workspace
             .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
@@ -456,6 +456,26 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
             .read_latest_revisions_for_entry(form.id, first.entry_id)
             .await?,
         vec![deleted.clone()]
+    );
+    assert_eq!(
+        workspace
+            .read_revision_view_at_snapshot(
+                form.id,
+                RevisionView::LatestIncludingTombstones,
+                first_receipt.snapshot_id,
+            )
+            .await?,
+        vec![first.clone()]
+    );
+    assert!(
+        workspace
+            .read_revision_view_at_snapshot(
+                form.id,
+                RevisionView::Current,
+                deleted_receipt.snapshot_id,
+            )
+            .await?
+            .is_empty()
     );
 
     let restored = EntryRevision {
