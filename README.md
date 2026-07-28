@@ -82,7 +82,7 @@ ugoite config set --mode core
 ugoite space list /path/to/workspace
 ugoite space create /path/to/workspace/spaces/demo
 ugoite entry list /path/to/workspace/spaces/demo
-ugoite query /path/to/workspace/spaces/demo --sql "SELECT id, title FROM entries LIMIT 10"
+ugoite query /path/to/workspace/spaces/demo --sql "SELECT id, title FROM note LIMIT 10"
 ```
 
 Server-backed mode:

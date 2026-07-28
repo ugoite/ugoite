@@ -29,7 +29,7 @@ The file contains:
   "id": "session-uuid",
   "space_id": "space-main",
   "sql_id": "saved-or-generated-sql-id",
-  "sql": "SELECT * FROM Entry.entries",
+  "sql": "SELECT * FROM note ORDER BY updated_at, id",
   "status": "ready",
   "created_at": "2026-03-11T10:10:00Z",
   "expires_at": "2026-03-11T10:20:00Z",

@@ -225,7 +225,7 @@ fn test_query_index() {
             "query",
             &space_path,
             "--sql",
-            "SELECT * FROM entries LIMIT 10",
+            "SELECT * FROM entry LIMIT 10",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -249,7 +249,7 @@ fn test_query_index_by_tag() {
             "query",
             &space_path,
             "--sql",
-            "SELECT * FROM entries LIMIT 10",
+            "SELECT * FROM entry LIMIT 10",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()

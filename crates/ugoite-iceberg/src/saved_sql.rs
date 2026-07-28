@@ -2,7 +2,6 @@ use crate::entry;
 use crate::form;
 use crate::integrity::IntegrityProvider;
 use crate::materialized_view;
-use crate::sql;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use regex::Regex;
@@ -155,9 +154,6 @@ fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
         }
     }
 
-    let sanitized = regex.replace_all(sql_text, "1");
-    sql::parse_sql(&sanitized)
-        .map_err(|err| validation_error(format!("sql must be valid: {err}")))?;
     Ok(())
 }
 

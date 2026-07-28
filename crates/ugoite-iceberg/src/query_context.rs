@@ -9,6 +9,7 @@ use datafusion::execution::context::SessionContext;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::{SessionStateBuilder, SessionStateDefaults};
+use datafusion::logical_expr::expr_fn::ident;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, SessionConfig};
@@ -16,7 +17,7 @@ use iceberg_datafusion::IcebergStaticTableProvider;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use ugoite_core::query::AuthorizedQueryPolicy;
+use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 
 use crate::{form_from_table, IcebergWorkspace};
 
@@ -112,7 +113,13 @@ impl IcebergWorkspace {
     ) -> Result<AuthorizedQueryContext> {
         self.authorized_query_context_inner(policy)
             .await
-            .map_err(|error| AuthorizedQueryError::execution_failed(error).into())
+            .map_err(|error| {
+                if error.to_string().contains("Resources exhausted") {
+                    AuthorizedQueryError::resource_limit(error).into()
+                } else {
+                    AuthorizedQueryError::execution_failed(error).into()
+                }
+            })
     }
 
     async fn authorized_query_context_inner(
@@ -239,20 +246,65 @@ impl IcebergWorkspace {
             relations.insert(internal.clone());
             context.register_table(internal.as_str(), Arc::new(provider))?;
             let visible = visible_columns(&form, form_policy)?;
-            let entry_ids = form_policy
-                .readable_entry_ids
-                .iter()
-                .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                .collect::<Vec<_>>();
-            let visible_refs = visible.iter().map(String::as_str).collect::<Vec<_>>();
             let source = context.table(internal.as_str()).await?;
-            let filtered = if entry_ids.is_empty() {
-                source.filter(lit(false))?
-            } else {
-                source.filter(col("entry_id").in_list(entry_ids, false))?
+            let scoped = match &form_policy.entry_scope {
+                EntryScope::AllCurrent => source,
+                EntryScope::Only(entry_ids) if entry_ids.is_empty() => source.filter(lit(false))?,
+                EntryScope::Only(entry_ids) => source.filter(
+                    col("entry_id").in_list(
+                        entry_ids
+                            .iter()
+                            .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                            .collect::<Vec<_>>(),
+                        false,
+                    ),
+                )?,
+            };
+            let maxima = scoped
+                .clone()
+                .aggregate(
+                    vec![col("entry_id")],
+                    vec![
+                        datafusion::functions_aggregate::expr_fn::max(col("entry_version"))
+                            .alias("latest_entry_version"),
+                    ],
+                )?
+                .select(vec![
+                    col("entry_id").alias("latest_entry_id"),
+                    col("latest_entry_version"),
+                ])?;
+            let heads = scoped.join(
+                maxima,
+                datafusion::logical_expr::JoinType::Inner,
+                &["entry_id", "entry_version"],
+                &["latest_entry_id", "latest_entry_version"],
+                None,
+            )?;
+            let duplicates = heads
+                .clone()
+                .aggregate(
+                    vec![col("entry_id")],
+                    vec![
+                        datafusion::functions_aggregate::expr_fn::count(lit(1)).alias("head_count")
+                    ],
+                )?
+                .filter(col("head_count").not_eq(lit(1)))?
+                .collect()
+                .await?;
+            if duplicates.iter().any(|batch| batch.num_rows() > 0) {
+                bail!(
+                    "entry revision invariant failed: multiple revisions share a maximum entry_version"
+                );
             }
-            .select_columns(&visible_refs)?;
-            let view = filtered.into_view();
+            let view = heads
+                .filter(col("operation").not_eq(lit("delete")))?
+                .select(
+                    visible
+                        .iter()
+                        .map(|column| ident(&column.source).alias(&column.name))
+                        .collect::<Vec<_>>(),
+                )?
+                .into_view();
             context.deregister_table(internal.as_str())?;
             context.register_table(form_policy.relation.as_str(), view)?;
         }
@@ -280,6 +332,19 @@ impl AuthorizedQueryContext {
         tokio::time::timeout(self.limits.timeout, self.execute_with_permit(sql))
             .await
             .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub async fn physical_plan_for_testing(&self, sql: &str) -> Result<String> {
+        let plan = self.context.state().create_logical_plan(sql).await?;
+        validate_logical_plan(&plan, &self.authorized_relations)?;
+        let optimized = self.context.state().optimize(&plan)?;
+        validate_logical_plan(&optimized, &self.authorized_relations)?;
+        let frame = self.context.execute_logical_plan(optimized).await?;
+        let physical = frame.create_physical_plan().await?;
+        validate_physical_plan(&physical, &self.authorized_scans)?;
+        Ok(format!("{physical:?}"))
     }
 
     async fn execute_with_permit(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
@@ -333,10 +398,15 @@ impl AuthorizedQueryContext {
     }
 }
 
+struct VisibleColumn {
+    source: String,
+    name: String,
+}
+
 fn visible_columns(
     form: &ugoite_domain::form::FormDefinition,
     policy: &ugoite_core::query::AuthorizedQueryForm,
-) -> Result<Vec<String>> {
+) -> Result<Vec<VisibleColumn>> {
     let form_columns = form
         .fields
         .iter()
@@ -349,7 +419,18 @@ fn visible_columns(
     {
         bail!("authorized query policy exposes unknown Form column {column}");
     }
-    let mut visible = policy.columns.iter().cloned().collect::<Vec<_>>();
+    let mut visible = policy
+        .columns
+        .iter()
+        .map(|column| VisibleColumn {
+            // Form field names are immutable Iceberg column names.
+            source: column.clone(),
+            // Unquoted DataFusion identifiers are lowercase. Preserve the
+            // physical Iceberg name internally while exposing a stable,
+            // case-insensitive SQL surface.
+            name: column.to_ascii_lowercase(),
+        })
+        .collect::<Vec<_>>();
     if let Some(column) = policy
         .system_columns
         .iter()
@@ -358,12 +439,14 @@ fn visible_columns(
     {
         bail!("Form column {column} collides with a query system column");
     }
-    visible.extend(
-        policy
-            .system_columns
-            .iter()
-            .map(|column| column.as_str().to_string()),
-    );
+    visible.extend(policy.system_columns.iter().map(system_column));
+    let mut exposed = BTreeSet::new();
+    if visible
+        .iter()
+        .any(|column| !exposed.insert(column.name.clone()))
+    {
+        bail!("authorized query policy exposes duplicate column names");
+    }
     if visible.is_empty() {
         bail!(
             "authorized query policy exposes no columns for {}",
@@ -371,6 +454,22 @@ fn visible_columns(
         );
     }
     Ok(visible)
+}
+
+fn system_column(column: &QuerySystemColumn) -> VisibleColumn {
+    let (source, name) = match column {
+        QuerySystemColumn::ExternalId => ("ugoite_entry_external_id", "id"),
+        QuerySystemColumn::Title => ("ugoite_entry_title", "title"),
+        QuerySystemColumn::CreatedAt => ("ugoite_entry_created_at", "created_at"),
+        QuerySystemColumn::UpdatedAt => ("ugoite_entry_updated_at", "updated_at"),
+        QuerySystemColumn::EntryId => ("entry_id", "entry_id"),
+        QuerySystemColumn::EntryVersion => ("entry_version", "entry_version"),
+        QuerySystemColumn::CommittedAt => ("committed_at", "committed_at"),
+    };
+    VisibleColumn {
+        source: source.to_string(),
+        name: name.to_string(),
+    }
 }
 
 fn validate_relation(relation: &str) -> Result<()> {

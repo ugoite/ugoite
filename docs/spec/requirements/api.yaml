@@ -250,12 +250,12 @@ requirements:
   - SPEC-DM-SQL-SESSIONS
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-007
-  title: Saved SQL variable embedding and SQL validity
-  description: 'Saved SQL entries MUST embed each declared variable in the SQL text using
+  title: Saved SQL template validation
+  description: 'Saved SQL entries MUST declare every {{variable_name}} template reference.
 
-    {{variable_name}} placeholders, and the SQL must be valid Ugoite SQL after
+    Template execution is rejected until values are bound through DataFusion parameters;
 
-    substituting placeholders with literal values.
+    Ugoite MUST NOT substitute literal text into SQL.
 
     '
   related_spec:

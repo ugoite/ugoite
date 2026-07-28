@@ -35,7 +35,7 @@ fn test_saved_sql_req_api_006_crud() {
             "--name",
             "my-query",
             "--sql",
-            "SELECT * FROM entries",
+            "SELECT * FROM sql",
             &space_path,
             "my-query",
         ])

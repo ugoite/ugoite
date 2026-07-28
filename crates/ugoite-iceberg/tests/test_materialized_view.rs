@@ -13,7 +13,7 @@ async fn test_materialized_view_req_api_008_metadata_lifecycle() -> anyhow::Resu
     let ws_path = "spaces/view-space";
 
     let sql_id = "sql-view";
-    let sql = "SELECT * FROM entries";
+    let sql = "SELECT * FROM sql";
 
     let meta = materialized_view::create_or_update_view(&op, ws_path, sql_id, sql).await?;
     assert_eq!(meta.get("sql_id"), Some(&json!(sql_id)));

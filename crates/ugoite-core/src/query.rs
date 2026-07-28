@@ -22,17 +22,30 @@ pub struct AuthorizedQueryPolicy {
 pub struct AuthorizedQueryForm {
     /// The sole SQL relation name exposed for this Form.
     pub relation: String,
-    /// Entry IDs Core authorizes for this Form. The query adapter embeds this
+    /// Entry scope Core authorizes for this Form. The query adapter embeds this
     /// relation-specific boundary in the trusted view before SQL is planned.
-    pub readable_entry_ids: BTreeSet<EntryId>,
+    pub entry_scope: EntryScope,
     /// User-defined Form columns which may be resolved or projected.
     pub columns: BTreeSet<String>,
     /// System columns which are intentionally part of this query contract.
     pub system_columns: BTreeSet<QuerySystemColumn>,
 }
 
+/// The Entry set that a relation may expose. Local core mode can authorize the
+/// whole Form without first materializing its current Entries into Rust; remote
+/// callers use the explicit ID set supplied by Core authorization.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EntryScope {
+    AllCurrent,
+    Only(BTreeSet<EntryId>),
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum QuerySystemColumn {
+    ExternalId,
+    Title,
+    CreatedAt,
+    UpdatedAt,
     EntryId,
     EntryVersion,
     CommittedAt,
@@ -41,6 +54,10 @@ pub enum QuerySystemColumn {
 impl QuerySystemColumn {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ExternalId => "id",
+            Self::Title => "title",
+            Self::CreatedAt => "created_at",
+            Self::UpdatedAt => "updated_at",
             Self::EntryId => "entry_id",
             Self::EntryVersion => "entry_version",
             Self::CommittedAt => "committed_at",

@@ -8,6 +8,7 @@ license.workspace = true
 anyhow = "1.0"
 async-trait = "0.1"
 arrow-array = "58.4"
+arrow-json = "58.4"
 arrow-schema = "58.4"
 base64 = "0.22"
 chrono = { version = "0.4.44", features = ["serde"] }
@@ -26,7 +27,6 @@ hmac = "0.13"
 rand = "0.10.1"
 regex = "1.12.3"
 serde_yaml = "0.9.34"
-sqlparser = "0.62.0"
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "sync", "time"] }
 typetag = "0.2"
 ugoite-domain = { path = "../ugoite-domain" }

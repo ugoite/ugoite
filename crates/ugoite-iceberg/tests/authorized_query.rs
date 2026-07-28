@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use ugoite_core::query::{
-    AuthorizedQueryForm, AuthorizedQueryPolicy, QueryLimits, QuerySystemColumn,
+    AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
@@ -90,10 +90,12 @@ fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
             form.id,
             AuthorizedQueryForm {
                 relation: "tasks".into(),
-                readable_entry_ids: readable
-                    .iter()
-                    .map(|id| EntryId::from(Uuid::from_u128(*id)))
-                    .collect(),
+                entry_scope: EntryScope::Only(
+                    readable
+                        .iter()
+                        .map(|id| EntryId::from(Uuid::from_u128(*id)))
+                        .collect(),
+                ),
                 columns: ["title".into()].into_iter().collect(),
                 system_columns: BTreeSet::new(),
             },
@@ -182,6 +184,31 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         .authorized_query_context(policy(&tasks, &[]))
         .await?;
     assert!(empty.execute("SELECT * FROM tasks").await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn physical_plan_keeps_iceberg_projection_filter_and_limit_pushdown() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(110)),
+        "memory://authorized-query-pushdown",
+    )
+    .await?;
+    let tasks = form(111, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 112, 113, "allowed").await?;
+
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[112]))
+        .await?;
+    let plan = context
+        .physical_plan_for_testing("SELECT title FROM tasks WHERE title = 'allowed' LIMIT 1")
+        .await?;
+    let normalized = plan.to_ascii_lowercase();
+    assert!(normalized.contains("iceberg"), "{plan}");
+    assert!(normalized.contains("projection"), "{plan}");
+    assert!(normalized.contains("filter"), "{plan}");
+    assert!(normalized.contains("limit"), "{plan}");
     Ok(())
 }
 
@@ -404,11 +431,14 @@ async fn context_enforces_memory_and_timeout_limits() -> anyhow::Result<()> {
 
     let mut memory_limited = policy(&tasks, &[62]);
     memory_limited.limits.max_memory_bytes = 1;
-    let context = workspace.authorized_query_context(memory_limited).await?;
-    assert!(context
-        .execute("SELECT * FROM tasks ORDER BY title")
-        .await
-        .is_err());
+    let error = match workspace.authorized_query_context(memory_limited).await {
+        Ok(_) => anyhow::bail!("current-state planning must honor the memory limit"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::ResourceLimitExceeded { .. })
+    ));
 
     let mut timed_out = policy(&tasks, &[62]);
     timed_out.limits.timeout = Duration::from_nanos(1);
