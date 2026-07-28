@@ -141,20 +141,13 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     let readable_forms = vec!["PublicTask".to_string()];
 
     let count =
-        sql_session::get_sql_session_count_scoped(&op, ws_path, session_id, &readable_forms, false)
+        sql_session::get_sql_session_count_scoped(&op, ws_path, session_id, &readable_forms)
             .await?;
     assert_eq!(count, 2);
 
-    let rows = sql_session::get_sql_session_rows_scoped(
-        &op,
-        ws_path,
-        session_id,
-        0,
-        10,
-        &readable_forms,
-        false,
-    )
-    .await?;
+    let rows =
+        sql_session::get_sql_session_rows_scoped(&op, ws_path, session_id, 0, 10, &readable_forms)
+            .await?;
     assert_eq!(rows["total_count"], 2);
     let rows_list = rows["rows"].as_array().unwrap();
     assert_eq!(rows_list.len(), 2);

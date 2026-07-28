@@ -29,7 +29,8 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
     };
 
     if let Some(sql_query) = extract_sql_query(&query_value) {
-        return execute_datafusion_sql(op, ws_path, &sql_query, EntryScope::AllCurrent, None).await;
+        return execute_datafusion_sql(op, ws_path, &sql_query, EntryScope::AllCurrent, None, None)
+            .await;
     }
 
     let forms = load_forms(op, ws_path).await?;
@@ -55,7 +56,7 @@ pub async fn execute_sql_query(
     ws_path: &str,
     sql_query: &str,
 ) -> Result<Vec<Value>> {
-    execute_datafusion_sql(op, ws_path, sql_query, EntryScope::AllCurrent, None).await
+    execute_datafusion_sql(op, ws_path, sql_query, EntryScope::AllCurrent, None, None).await
 }
 
 pub async fn execute_sql_query_authorized(
@@ -70,6 +71,36 @@ pub async fn execute_sql_query_authorized(
         sql_query,
         EntryScope::Only(entry_scope(readable_entry_ids)),
         None,
+        None,
+    )
+    .await
+}
+
+/// Production authorization entry point. The service supplies a relation
+/// scoped map rather than one global Entry-ID set, so a Form with no readable
+/// Entries is never registered and remains unresolvable to DataFusion.
+pub async fn execute_sql_query_authorized_by_form(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+) -> Result<Vec<Value>> {
+    let relation_scopes = readable_entries_by_form
+        .iter()
+        .map(|(relation, entries)| {
+            (
+                relation.to_ascii_lowercase(),
+                EntryScope::Only(entry_scope(entries)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    execute_datafusion_sql(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
     )
     .await
 }
@@ -91,6 +122,7 @@ pub async fn query_index_authorized(
             ws_path,
             &sql_query,
             EntryScope::Only(entry_scope(readable_entry_ids)),
+            None,
             None,
         )
         .await;
@@ -120,9 +152,7 @@ pub async fn execute_sql_query_scoped(
     ws_path: &str,
     sql_query: &str,
     readable_forms: &[String],
-    include_untyped_entries: bool,
 ) -> Result<Vec<Value>> {
-    let _ = include_untyped_entries;
     let readable_forms = readable_forms
         .iter()
         .map(|form| form.to_ascii_lowercase())
@@ -133,6 +163,7 @@ pub async fn execute_sql_query_scoped(
         sql_query,
         EntryScope::AllCurrent,
         Some(&readable_forms),
+        None,
     )
     .await
 }
@@ -154,10 +185,12 @@ async fn execute_datafusion_sql(
     sql: &str,
     entry_scope: EntryScope,
     allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
 ) -> Result<Vec<Value>> {
-    let context = datafusion_sql_context(op, ws_path, entry_scope, allowed_relations)
-        .await
-        .map_err(map_sql_error)?;
+    let context =
+        datafusion_sql_context(op, ws_path, entry_scope, allowed_relations, relation_scopes)
+            .await
+            .map_err(map_sql_error)?;
     let batches = context.execute(sql).await.map_err(map_sql_error)?;
     record_batches_to_values(&batches)
 }
@@ -167,12 +200,20 @@ async fn datafusion_sql_context(
     ws_path: &str,
     entry_scope: EntryScope,
     allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     let forms = workspace.list_forms().await?;
     let mut policy_forms = BTreeMap::new();
     for form in forms {
         let relation = form.name.to_ascii_lowercase();
+        let relation_entry_scope = match relation_scopes {
+            Some(scopes) => match scopes.get(&relation) {
+                Some(scope) => scope.clone(),
+                None => continue,
+            },
+            None => entry_scope.clone(),
+        };
         if allowed_relations.is_some_and(|allowed| !allowed.contains(&relation)) {
             continue;
         }
@@ -180,7 +221,7 @@ async fn datafusion_sql_context(
             form.id,
             AuthorizedQueryForm {
                 relation,
-                entry_scope: entry_scope.clone(),
+                entry_scope: relation_entry_scope,
                 columns: form.fields.iter().map(|field| field.name.clone()).collect(),
                 system_columns: [
                     QuerySystemColumn::ExternalId,

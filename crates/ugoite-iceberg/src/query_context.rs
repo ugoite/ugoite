@@ -14,7 +14,7 @@ use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
@@ -309,11 +309,11 @@ impl IcebergWorkspace {
             context.register_table(form_policy.relation.as_str(), view)?;
         }
 
-        let max_concurrency = policy.limits.max_concurrency;
+        let permits = self.shared_query_permits(policy.limits.max_concurrency);
         Ok(AuthorizedQueryContext {
             context,
             limits: policy.limits,
-            permits: Arc::new(Semaphore::new(max_concurrency)),
+            permits,
             authorized_relations: relations,
             authorized_scans,
         })
@@ -324,14 +324,28 @@ impl AuthorizedQueryContext {
     /// Plans and executes a read-only statement. User predicates are evaluated
     /// above the trusted Entry filter embedded in every registered view.
     pub async fn execute(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_with_parameters(sql, HashMap::new()).await
+    }
+
+    /// Binds DataFusion-native `$name` placeholders after parsing and before
+    /// optimization. Values never become SQL text, so quotes and SQL-looking
+    /// strings retain their scalar meaning.
+    pub async fn execute_with_parameters(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
         let _permit = self
             .permits
             .clone()
             .try_acquire_owned()
             .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(self.limits.timeout, self.execute_with_permit(sql))
-            .await
-            .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_with_permit(sql, parameters),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
     #[cfg(debug_assertions)]
@@ -347,12 +361,32 @@ impl AuthorizedQueryContext {
         Ok(format!("{physical:?}"))
     }
 
-    async fn execute_with_permit(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
+    async fn execute_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
         let plan = self
             .context
             .state()
             .create_logical_plan(sql)
             .await
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        let expected = plan
+            .get_parameter_names()
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .into_iter()
+            .map(|name| name.trim_start_matches('$').to_string())
+            .collect::<BTreeSet<_>>();
+        let supplied = parameters.keys().cloned().collect::<BTreeSet<_>>();
+        if expected != supplied {
+            return Err(AuthorizedQueryError::invalid_query(anyhow!(
+                "SQL parameters do not exactly match DataFusion placeholders"
+            ))
+            .into());
+        }
+        let plan = plan
+            .with_param_values(parameters)
             .map_err(AuthorizedQueryError::invalid_query)?;
         validate_logical_plan(&plan, &self.authorized_relations)
             .map_err(AuthorizedQueryError::unauthorized)?;
@@ -431,14 +465,6 @@ fn visible_columns(
             name: column.to_ascii_lowercase(),
         })
         .collect::<Vec<_>>();
-    if let Some(column) = policy
-        .system_columns
-        .iter()
-        .map(|column| column.as_str())
-        .find(|column| form_columns.contains(column))
-    {
-        bail!("Form column {column} collides with a query system column");
-    }
     visible.extend(policy.system_columns.iter().map(system_column));
     let mut exposed = BTreeSet::new();
     if visible
@@ -458,13 +484,13 @@ fn visible_columns(
 
 fn system_column(column: &QuerySystemColumn) -> VisibleColumn {
     let (source, name) = match column {
-        QuerySystemColumn::ExternalId => ("ugoite_entry_external_id", "id"),
-        QuerySystemColumn::Title => ("ugoite_entry_title", "title"),
-        QuerySystemColumn::CreatedAt => ("ugoite_entry_created_at", "created_at"),
-        QuerySystemColumn::UpdatedAt => ("ugoite_entry_updated_at", "updated_at"),
-        QuerySystemColumn::EntryId => ("entry_id", "entry_id"),
-        QuerySystemColumn::EntryVersion => ("entry_version", "entry_version"),
-        QuerySystemColumn::CommittedAt => ("committed_at", "committed_at"),
+        QuerySystemColumn::ExternalId => ("ugoite_entry_external_id", "_ugoite_id"),
+        QuerySystemColumn::Title => ("ugoite_entry_title", "_ugoite_title"),
+        QuerySystemColumn::CreatedAt => ("ugoite_entry_created_at", "_ugoite_created_at"),
+        QuerySystemColumn::UpdatedAt => ("ugoite_entry_updated_at", "_ugoite_updated_at"),
+        QuerySystemColumn::EntryId => ("entry_id", "_ugoite_entry_id"),
+        QuerySystemColumn::EntryVersion => ("entry_version", "_ugoite_entry_version"),
+        QuerySystemColumn::CommittedAt => ("committed_at", "_ugoite_committed_at"),
     };
     VisibleColumn {
         source: source.to_string(),

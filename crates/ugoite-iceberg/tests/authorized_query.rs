@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
 use ugoite_core::query::{
@@ -188,6 +188,69 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
 }
 
 #[tokio::test]
+async fn context_binds_native_datafusion_parameters_without_sql_substitution() -> anyhow::Result<()>
+{
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(101)),
+        "memory://authorized-query-parameters",
+    )
+    .await?;
+    let tasks = form(102, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 103, 104, "allowed").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[103]))
+        .await?;
+
+    let rows = context
+        .execute_with_parameters(
+            "SELECT title FROM tasks WHERE title = $title",
+            HashMap::from([(
+                "title".to_string(),
+                datafusion::scalar::ScalarValue::Utf8(Some("allowed".into())),
+            )]),
+        )
+        .await?;
+    assert_eq!(rows.iter().map(|batch| batch.num_rows()).sum::<usize>(), 1);
+
+    let injection = context
+        .execute_with_parameters(
+            "SELECT title FROM tasks WHERE title = $title",
+            HashMap::from([(
+                "title".to_string(),
+                datafusion::scalar::ScalarValue::Utf8(Some("allowed' OR 1=1 --".into())),
+            )]),
+        )
+        .await?;
+    assert_eq!(
+        injection
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        0,
+        "parameter must remain a scalar value"
+    );
+    assert!(context
+        .execute_with_parameters(
+            "SELECT title FROM tasks WHERE title = $title",
+            HashMap::new()
+        )
+        .await
+        .is_err());
+    assert!(context
+        .execute_with_parameters(
+            "SELECT title FROM tasks",
+            HashMap::from([(
+                "title".to_string(),
+                datafusion::scalar::ScalarValue::Utf8(Some("allowed".into())),
+            )]),
+        )
+        .await
+        .is_err());
+    Ok(())
+}
+
+#[tokio::test]
 async fn physical_plan_keeps_iceberg_projection_filter_and_limit_pushdown() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(110)),
@@ -362,12 +425,18 @@ async fn system_columns_are_queryable_only_when_explicitly_allowlisted() -> anyh
     let context = workspace.authorized_query_context(wildcard).await?;
     let batches = context.execute("SELECT * FROM tasks").await?;
     assert_eq!(batches[0].schema().field(0).name(), "title");
-    assert_eq!(batches[0].schema().field(1).name(), "entry_id");
+    assert_eq!(
+        batches[0].schema().field(1).name(),
+        QuerySystemColumn::EntryId.as_str()
+    );
 
     let context = workspace
         .authorized_query_context(policy(&tasks, &[42]))
         .await?;
-    assert!(context.execute("SELECT entry_id FROM tasks").await.is_err());
+    assert!(context
+        .execute("SELECT _ugoite_entry_id FROM tasks")
+        .await
+        .is_err());
 
     let mut colliding = form(44, "Colliding");
     colliding.fields[0].name = "entry_id".into();

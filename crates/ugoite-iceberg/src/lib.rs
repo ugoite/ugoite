@@ -65,7 +65,8 @@ use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
+use tokio::sync::Semaphore;
 use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
@@ -135,6 +136,12 @@ pub struct IcebergWorkspace {
     warehouse: String,
     write: WriteConfig,
 }
+
+/// Query permits are process-wide per Space coordinate. A request creates a
+/// short-lived authorization context, but it must not thereby create a fresh
+/// production concurrency budget.
+static SPACE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Arc<Semaphore>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SchemaCommitCapability {
@@ -215,6 +222,17 @@ pub struct MaintenancePlan {
 }
 
 impl IcebergWorkspace {
+    pub(crate) fn shared_query_permits(&self, max_concurrency: usize) -> Arc<Semaphore> {
+        let key = format!("{}:{}", self.warehouse, self.space_id);
+        let mut permits = SPACE_QUERY_PERMITS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        permits
+            .entry(key)
+            .or_insert_with(|| Arc::new(Semaphore::new(max_concurrency)))
+            .clone()
+    }
+
     pub async fn open_space(
         store: SpaceCatalogStore,
         space_id: SpaceId,

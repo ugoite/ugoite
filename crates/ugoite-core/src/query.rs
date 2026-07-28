@@ -54,13 +54,17 @@ pub enum QuerySystemColumn {
 impl QuerySystemColumn {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::ExternalId => "id",
-            Self::Title => "title",
-            Self::CreatedAt => "created_at",
-            Self::UpdatedAt => "updated_at",
-            Self::EntryId => "entry_id",
-            Self::EntryVersion => "entry_version",
-            Self::CommittedAt => "committed_at",
+            // Form fields own the ordinary SQL namespace. Stable Entry
+            // metadata is deliberately namespaced so an otherwise valid
+            // Form with a `title`, `id`, or timestamp field can never make a
+            // query context fail at runtime.
+            Self::ExternalId => "_ugoite_id",
+            Self::Title => "_ugoite_title",
+            Self::CreatedAt => "_ugoite_created_at",
+            Self::UpdatedAt => "_ugoite_updated_at",
+            Self::EntryId => "_ugoite_entry_id",
+            Self::EntryVersion => "_ugoite_entry_version",
+            Self::CommittedAt => "_ugoite_committed_at",
         }
     }
 }

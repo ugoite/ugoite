@@ -86,30 +86,14 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
     Ok(Value::Array(normalized))
 }
 
-fn sql_placeholder_regex() -> &'static Regex {
+fn sql_parameter_regex() -> &'static Regex {
     static SQL_PLACEHOLDER_REGEX: OnceLock<Regex> = OnceLock::new();
     SQL_PLACEHOLDER_REGEX.get_or_init(|| {
-        Regex::new(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
-            .expect("sql placeholder regex must compile")
+        // `$name` is DataFusion's native named parameter syntax. It is
+        // metadata validation only; binding is performed on LogicalPlan via
+        // `with_param_values`, never by changing SQL text.
+        Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("SQL parameter regex must compile")
     })
-}
-
-fn matches_sql_template(template: &str, candidate: &str) -> bool {
-    let regex = sql_placeholder_regex();
-    let mut pattern = String::new();
-    let mut last = 0;
-    for capture in regex.captures_iter(template) {
-        if let Some(matched) = capture.get(0) {
-            pattern.push_str(&regex::escape(&template[last..matched.start()]));
-            pattern.push_str(".+?");
-            last = matched.end();
-        }
-    }
-    pattern.push_str(&regex::escape(&template[last..]));
-    let pattern = format!("^{}$", pattern);
-    Regex::new(&pattern)
-        .map(|re| re.is_match(candidate))
-        .unwrap_or(false)
 }
 
 fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
@@ -130,7 +114,7 @@ fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
         var_names.insert(name.to_string());
     }
 
-    let regex = sql_placeholder_regex();
+    let regex = sql_parameter_regex();
     let mut embedded_names = BTreeSet::new();
     for capture in regex.captures_iter(sql_text) {
         if let Some(matched) = capture.get(1) {
@@ -141,7 +125,7 @@ fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
     for name in &var_names {
         if !embedded_names.contains(name) {
             return Err(validation_error(
-                "variables must be embedded in sql: missing {{{{{name}}}}}",
+                "variables must be embedded in SQL as ${name}",
             ));
         }
     }
@@ -236,7 +220,7 @@ pub async fn find_sql_id_by_text(
             .and_then(|obj| obj.get("sql"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        if sql_value == sql_text || matches_sql_template(sql_value, sql_text) {
+        if sql_value == sql_text {
             return Ok(Some(row.entry_id));
         }
     }

@@ -89,6 +89,16 @@ async fn execute_session_sql(op: &Operator, ws_path: &str, session_id: &str) -> 
     if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
         return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
     }
+    if let Some(by_form) = meta.get("readable_entries_by_form") {
+        let by_form = serde_json::from_value(by_form.clone())?;
+        return index::execute_sql_query_authorized_by_form(
+            op,
+            ws_path,
+            session_sql(&meta)?,
+            &by_form,
+        )
+        .await;
+    }
     if let Some(ids) = meta.get("readable_entry_ids").and_then(Value::as_array) {
         let allowed = ids
             .iter()
@@ -101,25 +111,38 @@ async fn execute_session_sql(op: &Operator, ws_path: &str, session_id: &str) -> 
     index::execute_sql_query(op, ws_path, session_sql(&meta)?).await
 }
 
+pub async fn create_sql_session_authorized_for_principals_by_form(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    readable_entries_by_form: &std::collections::BTreeMap<
+        String,
+        std::collections::HashSet<String>,
+    >,
+    principal_ids: &[Uuid],
+) -> Result<Value> {
+    let mut meta = create_sql_session(op, ws_path, sql).await?;
+    meta["readable_entries_by_form"] = serde_json::to_value(readable_entries_by_form)?;
+    meta["authorized_principal_ids"] = serde_json::to_value(principal_ids)?;
+    let session_id = meta
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("SQL session id missing"))?;
+    write_json(op, &meta_path(ws_path, session_id), &meta).await?;
+    Ok(meta)
+}
+
 async fn execute_session_sql_scoped(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
     readable_forms: &[String],
-    include_untyped_entries: bool,
 ) -> Result<Vec<Value>> {
     let meta = load_session_meta(op, ws_path, session_id).await?;
     if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
         return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
     }
-    index::execute_sql_query_scoped(
-        op,
-        ws_path,
-        session_sql(&meta)?,
-        readable_forms,
-        include_untyped_entries,
-    )
-    .await
+    index::execute_sql_query_scoped(op, ws_path, session_sql(&meta)?, readable_forms).await
 }
 
 pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Result<Value> {
@@ -266,16 +289,8 @@ pub async fn get_sql_session_count_scoped(
     ws_path: &str,
     session_id: &str,
     readable_forms: &[String],
-    include_untyped_entries: bool,
 ) -> Result<u64> {
-    let rows = execute_session_sql_scoped(
-        op,
-        ws_path,
-        session_id,
-        readable_forms,
-        include_untyped_entries,
-    )
-    .await?;
+    let rows = execute_session_sql_scoped(op, ws_path, session_id, readable_forms).await?;
     Ok(rows.len() as u64)
 }
 
@@ -307,16 +322,8 @@ pub async fn get_sql_session_rows_scoped(
     offset: usize,
     limit: usize,
     readable_forms: &[String],
-    include_untyped_entries: bool,
 ) -> Result<Value> {
-    let rows = execute_session_sql_scoped(
-        op,
-        ws_path,
-        session_id,
-        readable_forms,
-        include_untyped_entries,
-    )
-    .await?;
+    let rows = execute_session_sql_scoped(op, ws_path, session_id, readable_forms).await?;
     let total = rows.len();
     let start = offset.min(total);
     let end = (offset + limit).min(total);
@@ -343,14 +350,6 @@ pub async fn get_sql_session_rows_all_scoped(
     ws_path: &str,
     session_id: &str,
     readable_forms: &[String],
-    include_untyped_entries: bool,
 ) -> Result<Vec<Value>> {
-    execute_session_sql_scoped(
-        op,
-        ws_path,
-        session_id,
-        readable_forms,
-        include_untyped_entries,
-    )
-    .await
+    execute_session_sql_scoped(op, ws_path, session_id, readable_forms).await
 }

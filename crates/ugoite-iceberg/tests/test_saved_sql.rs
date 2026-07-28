@@ -17,7 +17,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM sql WHERE updated_at >= {{since}}".to_string(),
+        sql: "SELECT * FROM sql WHERE updated_at >= $since".to_string(),
         variables: json!([
             {
                 "type": "date",
@@ -48,7 +48,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let update_payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM sql WHERE updated_at >= {{since}} ORDER BY updated_at DESC".to_string(),
+        sql: "SELECT * FROM sql WHERE updated_at >= $since ORDER BY updated_at DESC".to_string(),
         variables: payload.variables.clone(),
     };
 
@@ -134,7 +134,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let undefined_placeholder = SqlPayload {
         name: "Undefined placeholder".to_string(),
-        sql: "SELECT * FROM sql WHERE updated_at >= {{since}}".to_string(),
+        sql: "SELECT * FROM sql WHERE updated_at >= $since".to_string(),
         variables: json!([]),
     };
 
