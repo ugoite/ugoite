@@ -7,8 +7,8 @@ intentionally destructive before the first release: the internal pre-release
 Space format version is unchanged, while legacy layouts and catalog modes are
 unsupported rather than migrated.
 
-The Catalog Head layout and upstream physical boundary are implemented by the
-current persistence work. The single mutation coordinator, checkpoint-pinned
+The Catalog Head layout, upstream physical boundary, and single mutation
+coordinator are implemented by the current persistence work. Checkpoint-pinned
 reads, authorization-aware DataFusion context, and health evidence described
 here remain active follow-up work; this document does not advertise them as
 current product APIs.
@@ -52,6 +52,14 @@ rereads Head and walks reachable publication records back to its base
 generation: a matching command identity proves success; reaching base without
 it proves non-publication; missing or corrupt evidence is an explicit
 unknown/corrupt result. Repeating the mutation blindly is forbidden.
+
+`SpaceCommitCoordinator` is the only production mutation entry point. It takes
+a stable command ID, kind, and canonical domain-command digest, constructs one
+short-lived publication-authorized `SpaceCatalog` per attempt, and returns the
+actual command ID, Catalog generation, and Iceberg snapshot ID. Reusing a
+command ID with a different digest fails. Direct physical Catalog and Arrow
+mutation APIs are private to `ugoite-iceberg`; every ETag conflict starts a
+fresh attempt and reruns the domain validation before publishing.
 
 ## Capability and concurrency boundary
 

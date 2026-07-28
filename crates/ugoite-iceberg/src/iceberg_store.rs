@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use iceberg::TableIdent;
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -49,12 +48,10 @@ pub async fn ensure_form_tables(
 ) -> Result<()> {
     let form = crate::form::to_domain_form(form_definition)?;
     let workspace = native_workspace(operator, workspace_path).await?;
-    let table = TableIdent::new(
-        workspace.namespace().clone(),
-        crate::physical_form_name(form.id),
-    );
-    if !workspace.catalog().table_exists(&table).await? {
-        workspace.create_form(&form).await?;
+    if !workspace.has_form(form.id).await? {
+        let command =
+            crate::publication_context(format!("form-create:{}", form.id), "form.create", &form)?;
+        workspace.commit(command)?.create_form(&form).await?;
     }
     Ok(())
 }
@@ -82,7 +79,37 @@ pub async fn revisions_for_form(
     form_name: &str,
 ) -> Result<(FormDefinition, Vec<EntryRevision>)> {
     let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
-    let revisions = workspace.read_revisions(form.id).await?;
+    let revisions = workspace
+        .read_revision_view(form.id, crate::RevisionView::All)
+        .await?;
+    Ok((form, revisions))
+}
+
+pub async fn latest_revisions_for_form(
+    operator: &Operator,
+    workspace_path: &str,
+    form_name: &str,
+) -> Result<(FormDefinition, Vec<EntryRevision>)> {
+    let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
+    let revisions = workspace
+        .read_revision_view(form.id, crate::RevisionView::LatestIncludingTombstones)
+        .await?;
+    Ok((form, revisions))
+}
+
+pub async fn latest_revisions_for_entry(
+    operator: &Operator,
+    workspace_path: &str,
+    form_name: &str,
+    entry_id: &str,
+) -> Result<(FormDefinition, Vec<EntryRevision>)> {
+    let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
+    let entry_id = Uuid::parse_str(entry_id)
+        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
+        .into();
+    let revisions = workspace
+        .read_latest_revisions_for_entry(form.id, entry_id)
+        .await?;
     Ok((form, revisions))
 }
 

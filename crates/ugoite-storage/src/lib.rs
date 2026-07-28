@@ -64,6 +64,8 @@ pub enum CatalogWriteMode {
     SingleProcess,
 }
 
+const EXACT_HEAD_READ_ATTEMPTS: usize = 3;
+
 /// Narrow OpenDAL boundary for the Space Catalog root and immutable
 /// publication evidence. It is intentionally not a general-purpose wrapper.
 #[derive(Clone)]
@@ -137,6 +139,21 @@ impl SpaceCatalogStore {
                 },
             )
             .await?;
+        let duplicate_create = self
+            .operator
+            .write_options(
+                &path,
+                initial.clone(),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect_err("conditional create probe must reject an existing object");
+        if duplicate_create.kind() != ErrorKind::ConditionNotMatch {
+            return Err(duplicate_create.into());
+        }
         let first_etag = self
             .operator
             .stat(&path)
@@ -167,7 +184,7 @@ impl SpaceCatalogStore {
                 &path,
                 replaced.clone(),
                 WriteOptions {
-                    if_match: Some(first_etag),
+                    if_match: Some(first_etag.clone()),
                     ..Default::default()
                 },
             )
@@ -180,6 +197,40 @@ impl SpaceCatalogStore {
             .filter(|etag| !etag.is_empty())
             .map(str::to_owned)
             .context("shared Catalog probe replacement did not return an ETag")?;
+        if second_etag == first_etag {
+            return Err(anyhow!(
+                "shared Catalog probe replacement did not change the ETag"
+            ));
+        }
+        let stale_read = self
+            .operator
+            .read_options(
+                &path,
+                ReadOptions {
+                    if_match: Some(first_etag.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect_err("conditional read probe must reject a stale ETag");
+        if stale_read.kind() != ErrorKind::ConditionNotMatch {
+            return Err(stale_read.into());
+        }
+        let stale_replace = self
+            .operator
+            .write_options(
+                &path,
+                b"{\"format_version\":1,\"stage\":\"stale\"}".to_vec(),
+                WriteOptions {
+                    if_match: Some(first_etag),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect_err("conditional replacement probe must reject a stale ETag");
+        if stale_replace.kind() != ErrorKind::ConditionNotMatch {
+            return Err(stale_replace.into());
+        }
         let observed = self
             .operator
             .read_options(
@@ -229,33 +280,48 @@ impl SpaceCatalogStore {
 
     pub async fn read_exact_head(&self) -> Result<Option<ExactCatalogHead>> {
         let path = self.head_path();
-        let metadata = match self.operator.stat(&path).await {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error.into()),
-        };
-        let etag = metadata
-            .etag()
-            .filter(|etag| !etag.is_empty())
-            .map(str::to_owned);
-        let bytes = match (self.write_mode, etag.as_deref()) {
-            (CatalogWriteMode::Shared, Some(etag)) => self
-                .operator
-                .read_options(
-                    &path,
-                    ReadOptions {
-                        if_match: Some(etag.to_string()),
-                        ..Default::default()
-                    },
-                )
-                .await?
-                .to_vec(),
-            (CatalogWriteMode::Shared, None) => {
-                return Err(anyhow!("Catalog Head stat did not return an ETag"));
+        for attempt in 0..EXACT_HEAD_READ_ATTEMPTS {
+            let metadata = match self.operator.stat(&path).await {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(error.into()),
+            };
+            let etag = metadata
+                .etag()
+                .filter(|etag| !etag.is_empty())
+                .map(str::to_owned);
+            let read = match (self.write_mode, etag.as_deref()) {
+                (CatalogWriteMode::Shared, Some(etag)) => self
+                    .operator
+                    .read_options(
+                        &path,
+                        ReadOptions {
+                            if_match: Some(etag.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map(|bytes| bytes.to_vec()),
+                (CatalogWriteMode::Shared, None) => {
+                    return Err(anyhow!("Catalog Head stat did not return an ETag"));
+                }
+                (CatalogWriteMode::SingleProcess, _) => {
+                    self.operator.read(&path).await.map(|bytes| bytes.to_vec())
+                }
+            };
+            match read {
+                Ok(bytes) => return Ok(Some(ExactCatalogHead { bytes, etag })),
+                Err(error)
+                    if self.write_mode == CatalogWriteMode::Shared
+                        && error.kind() == ErrorKind::ConditionNotMatch
+                        && attempt + 1 < EXACT_HEAD_READ_ATTEMPTS =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
             }
-            (CatalogWriteMode::SingleProcess, _) => self.operator.read(&path).await?.to_vec(),
-        };
-        Ok(Some(ExactCatalogHead { bytes, etag }))
+        }
+        unreachable!("exact Head read attempts always return or continue")
     }
 
     pub async fn create_head(&self, bytes: Vec<u8>) -> Result<()> {
@@ -498,9 +564,12 @@ impl StorageBackend for OpendalStorage {
 #[cfg(test)]
 mod tests {
     use super::{
-        operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage, StorageBackend,
+        operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage, SpaceCatalogStore,
+        StorageBackend,
     };
     use anyhow::Result;
+    use opendal::services::Memory;
+    use opendal::Operator;
 
     #[tokio::test]
     async fn operator_from_uri_supports_fs_and_memory() -> Result<()> {
@@ -569,6 +638,37 @@ mod tests {
         assert_eq!(op.info().scheme(), "s3");
         assert_eq!(op.info().root(), "/prefix/");
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn catalog_head_reads_are_exact_in_single_process_mode() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let store = SpaceCatalogStore::new(operator, "spaces/demo")?;
+
+        assert!(store.read_exact_head().await?.is_none());
+        store.create_head(b"first".to_vec()).await?;
+        let first = store.read_exact_head().await?.expect("Catalog Head exists");
+        assert_eq!(first.bytes, b"first");
+
+        store.replace_head(None, b"second".to_vec()).await?;
+        let second = store.read_exact_head().await?.expect("Catalog Head exists");
+        assert_eq!(second.bytes, b"second");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn shared_catalog_mode_fails_closed_without_an_exact_etag_contract() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let error = SpaceCatalogStore::new(operator, "spaces/demo")?
+            .verify_shared_writes()
+            .await
+            .expect_err("Memory has no ETag-bound shared-write contract");
+
+        assert!(error
+            .to_string()
+            .contains("ETag-bound reads and conditional writes"));
         Ok(())
     }
 }

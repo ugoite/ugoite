@@ -28,7 +28,8 @@ pub mod sql_session;
 pub mod storage;
 
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
-pub use space_catalog::{PublicationContext, SpaceCatalog};
+pub use space_catalog::PublicationContext;
+use space_catalog::SpaceCatalog;
 
 use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{
@@ -42,6 +43,9 @@ use arrow_array::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
+use datafusion::functions_aggregate::expr_fn::{count, max};
+use datafusion::logical_expr::JoinType;
+use datafusion::prelude::{col, lit};
 use iceberg::expr::Reference;
 use iceberg::spec::{DataFileFormat, Datum};
 use iceberg::spec::{
@@ -56,8 +60,9 @@ use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
 use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
-use iceberg_datafusion::IcebergCatalogProvider;
+use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use ugoite_domain::entry::{
@@ -92,6 +97,16 @@ pub enum SchemaCommitCapability {
     AtomicSchemaEvolution,
 }
 
+/// The reusable logical views over one append-only Form revision table.
+/// `LatestIncludingTombstones` deliberately retains delete revisions so a
+/// caller can distinguish an absent Entry from a deleted one.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RevisionView {
+    All,
+    LatestIncludingTombstones,
+    Current,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct WriteConfig {
     pub target_file_size_bytes: u64,
@@ -107,10 +122,40 @@ impl Default for WriteConfig {
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommitReceipt {
+    pub command_id: String,
+    pub catalog_generation: u64,
     pub snapshot_id: i64,
     pub committed_revision_ids: Vec<RevisionId>,
     pub committed_at_micros: i64,
     pub data_file_count: usize,
+}
+
+/// The only production entry point for changes that publish a Space Catalog
+/// Head.  A coordinator owns one immutable domain command identity.  It
+/// creates a fresh, short-lived `SpaceCatalog` only for the command attempt;
+/// no publication state is ambient or shared between commands.
+#[derive(Debug, Clone)]
+pub struct SpaceCommitCoordinator {
+    workspace: IcebergWorkspace,
+    publication: PublicationContext,
+}
+
+const MAX_PUBLICATION_ATTEMPTS: usize = 3;
+
+/// Builds the immutable identity carried by one domain command. Callers pass
+/// domain values only; canonical JSON is hashed before any physical Iceberg
+/// conversion happens.
+pub fn publication_context<T: Serialize>(
+    command_id: impl Into<String>,
+    command_kind: impl Into<String>,
+    command: &T,
+) -> Result<PublicationContext> {
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(command)?));
+    Ok(PublicationContext::with_command_digest(
+        command_id,
+        command_kind,
+        digest,
+    ))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -138,26 +183,6 @@ impl IcebergWorkspace {
             write,
         )
         .await
-    }
-
-    pub async fn new(
-        catalog: Arc<dyn Catalog>,
-        space_id: SpaceId,
-        warehouse: impl Into<String>,
-        write: WriteConfig,
-    ) -> Result<Self> {
-        let namespace = namespace_for_space(space_id);
-        if !catalog.namespace_exists(&namespace).await? {
-            catalog.create_namespace(&namespace, HashMap::new()).await?;
-        }
-        Ok(Self {
-            catalog,
-            space_catalog: None,
-            namespace,
-            space_id,
-            warehouse: warehouse.into(),
-            write,
-        })
     }
 
     async fn new_space_catalog(
@@ -197,25 +222,50 @@ impl IcebergWorkspace {
         .await
     }
 
-    pub fn namespace(&self) -> &NamespaceIdent {
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn namespace_for_testing(&self) -> &NamespaceIdent {
         &self.namespace
     }
-    pub fn catalog(&self) -> Arc<dyn Catalog> {
+
+    /// Test-only physical inspection. Release builds expose no Catalog handle,
+    /// so application code cannot bypass `SpaceCommitCoordinator` to commit.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn catalog_for_testing(&self) -> Arc<dyn Catalog> {
         self.catalog.clone()
     }
 
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn clone_for_testing(&self) -> Self {
+        self.clone()
+    }
+
     fn mutation_catalog(&self) -> Arc<dyn Catalog> {
-        self.space_catalog
-            .as_ref()
-            .map(|catalog| Arc::new(catalog.new_attempt()) as Arc<dyn Catalog>)
-            .unwrap_or_else(|| self.catalog.clone())
+        self.catalog.clone()
+    }
+
+    /// Binds one stable domain command identity to a coordinator.  The
+    /// coordinator is intentionally the only public mutation API; read APIs
+    /// remain on `IcebergWorkspace`.
+    pub fn commit(&self, publication: PublicationContext) -> Result<SpaceCommitCoordinator> {
+        if self.space_catalog.is_none() {
+            return Err(anyhow!(
+                "SpaceCommitCoordinator requires the OpenDAL-backed SpaceCatalog"
+            ));
+        }
+        Ok(SpaceCommitCoordinator {
+            workspace: self.clone(),
+            publication,
+        })
     }
 
     pub fn schema_commit_capability(&self) -> SchemaCommitCapability {
         SchemaCommitCapability::AtomicSchemaEvolution
     }
 
-    pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
+    async fn create_form(&self, form: &FormDefinition) -> Result<()> {
         form.validate()?;
         validate_field_ids(form)?;
         let ident = self.form_ident(form.id);
@@ -270,6 +320,13 @@ impl IcebergWorkspace {
         Ok(form)
     }
 
+    /// Returns whether the authoritative Catalog Head currently contains this
+    /// Form table. This is a domain read and intentionally exposes neither a
+    /// physical table handle nor a mutation path.
+    pub async fn has_form(&self, form_id: FormId) -> Result<bool> {
+        Ok(self.catalog.table_exists(&self.form_ident(form_id)).await?)
+    }
+
     pub async fn list_forms(&self) -> Result<Vec<FormDefinition>> {
         let mut forms = Vec::new();
         for ident in self.catalog.list_tables(&self.namespace).await? {
@@ -282,7 +339,7 @@ impl IcebergWorkspace {
         Ok(forms)
     }
 
-    pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
+    async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
         let current = self.load_form(changes.form_id).await?;
         if changes.expected_version != Some(current.version) {
             return Err(anyhow!("Form version conflict"));
@@ -364,7 +421,6 @@ impl IcebergWorkspace {
                 .build()?
                 .metadata;
             space_catalog
-                .new_attempt()
                 .replace_table_metadata(table.identifier(), metadata)
                 .await?;
             return self.load_form(changes.form_id).await;
@@ -421,8 +477,13 @@ impl IcebergWorkspace {
         let entry_ids = revisions
             .iter()
             .map(|revision| revision.entry_id)
-            .collect::<std::collections::HashSet<_>>();
-        let mut current = self.latest_revisions(&table, Some(&entry_ids)).await?;
+            .collect::<Vec<_>>();
+        let mut current = self
+            .read_latest_revisions_for_entries(form_id, &entry_ids)
+            .await?
+            .into_iter()
+            .map(|revision| (revision.entry_id, revision))
+            .collect::<HashMap<_, _>>();
         let mut seen = std::collections::HashSet::new();
         for revision in revisions {
             if revision.form_id != form.id || revision.form_version != form.version {
@@ -452,13 +513,7 @@ impl IcebergWorkspace {
                 return Err(anyhow!("entry revision conflict"));
             }
             revision.validate_payload(&form)?;
-            current.insert(
-                revision.entry_id,
-                LatestRevision {
-                    revision_id: revision.revision_id,
-                    entry_version: revision.entry_version,
-                },
-            );
+            current.insert(revision.entry_id, revision.clone());
         }
         validate_batch_revision_metadata(&batches, revisions)?;
         let table_arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
@@ -532,6 +587,8 @@ impl IcebergWorkspace {
             .context("append commit did not create a snapshot")?
             .snapshot_id();
         Ok(CommitReceipt {
+            command_id: String::new(),
+            catalog_generation: 0,
             snapshot_id,
             committed_revision_ids: ids,
             committed_at_micros,
@@ -539,7 +596,7 @@ impl IcebergWorkspace {
         })
     }
 
-    pub async fn append_revisions(
+    async fn append_revisions(
         &self,
         form_id: FormId,
         revisions: Vec<EntryRevision>,
@@ -570,66 +627,210 @@ impl IcebergWorkspace {
         Ok(revisions)
     }
 
-    async fn latest_revisions(
+    /// Reads one of the canonical revision views through the same DataFusion
+    /// logical-plan builder used for live and future checkpoint providers.
+    /// A duplicate maximum entry version is invariant corruption, never a
+    /// condition resolved by timestamp, revision ID, or file order.
+    pub async fn read_revision_view(
+        &self,
+        form_id: FormId,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_with_snapshot(form_id, view, None)
+            .await
+    }
+
+    /// Reads a canonical revision view from one immutable Iceberg snapshot.
+    /// The latest-state plan is identical to the live provider; only the
+    /// upstream Iceberg table provider is pinned.
+    pub async fn read_revision_view_at_snapshot(
+        &self,
+        form_id: FormId,
+        view: RevisionView,
+        snapshot_id: i64,
+    ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_with_snapshot(form_id, view, Some(snapshot_id))
+            .await
+    }
+
+    async fn read_revision_view_with_snapshot(
+        &self,
+        form_id: FormId,
+        view: RevisionView,
+        snapshot_id: Option<i64>,
+    ) -> Result<Vec<EntryRevision>> {
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let batches = match view {
+            RevisionView::All => {
+                let scan = match snapshot_id {
+                    Some(snapshot_id) => table.scan().snapshot_id(snapshot_id),
+                    None => table.scan(),
+                };
+                let mut stream = scan.build()?.to_arrow().await?;
+                let mut batches = Vec::new();
+                while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
+                    batches.push(batch);
+                }
+                batches
+            }
+            RevisionView::LatestIncludingTombstones | RevisionView::Current => {
+                self.read_latest_revision_batches(&table, None, snapshot_id, view)
+                    .await?
+            }
+        };
+        let schema = table.metadata().current_schema().clone();
+        let mut revisions = Vec::new();
+        for batch in &batches {
+            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+        }
+        Ok(revisions)
+    }
+
+    /// Point lookup variant of the latest plan. The entry predicate is applied
+    /// before the max-version aggregation, preserving latest-state semantics
+    /// while avoiding a full Form scan.
+    pub async fn read_latest_revisions_for_entry(
+        &self,
+        form_id: FormId,
+        entry_id: ugoite_domain::id::EntryId,
+    ) -> Result<Vec<EntryRevision>> {
+        self.read_latest_revisions_for_entries(form_id, &[entry_id])
+            .await
+    }
+
+    async fn read_latest_revisions_for_entries(
+        &self,
+        form_id: FormId,
+        entry_ids: &[ugoite_domain::id::EntryId],
+    ) -> Result<Vec<EntryRevision>> {
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let schema = table.metadata().current_schema().clone();
+        let batches = self
+            .read_latest_revision_batches(
+                &table,
+                Some(entry_ids),
+                None,
+                RevisionView::LatestIncludingTombstones,
+            )
+            .await?;
+        let mut revisions = Vec::new();
+        for batch in &batches {
+            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+        }
+        Ok(revisions)
+    }
+
+    async fn latest_revision_plan(
         &self,
         table: &iceberg::table::Table,
-        entry_ids: Option<&std::collections::HashSet<ugoite_domain::id::EntryId>>,
-    ) -> Result<std::collections::HashMap<ugoite_domain::id::EntryId, LatestRevision>> {
-        let mut scan = table
-            .scan()
-            .select(vec!["entry_id", "revision_id", "entry_version"]);
+        entry_ids: Option<&[ugoite_domain::id::EntryId]>,
+        snapshot_id: Option<i64>,
+        view: RevisionView,
+    ) -> Result<Vec<RecordBatch>> {
+        let context = SessionContext::new();
+        let provider = if let Some(snapshot_id) = snapshot_id {
+            IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
+                .await?
+        } else {
+            IcebergStaticTableProvider::try_new_from_table(table.clone()).await?
+        };
+        context.register_table("revisions", Arc::new(provider))?;
+        let mut revisions = context.table("revisions").await?;
         if let Some(entry_ids) = entry_ids {
-            scan = scan.with_filter(
-                Reference::new("entry_id").is_in(
+            if entry_ids.is_empty() {
+                return Ok(Vec::new());
+            }
+            revisions = revisions.filter(
+                col("entry_id").in_list(
                     entry_ids
                         .iter()
-                        .map(|entry_id| Datum::uuid(entry_id.as_uuid())),
+                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                        .collect(),
+                    false,
                 ),
-            );
+            )?;
         }
-        let scan = scan.build()?;
-        let mut stream = scan.to_arrow().await?;
-        let mut latest: std::collections::HashMap<ugoite_domain::id::EntryId, LatestRevision> =
-            std::collections::HashMap::new();
-        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
-            let entry_ids = batch
-                .column_by_name("entry_id")
-                .context("Iceberg table is missing entry_id")?;
-            let revision_ids = batch
+        let maxima = revisions
+            .clone()
+            .aggregate(
+                vec![col("entry_id")],
+                vec![max(col("entry_version")).alias("latest_entry_version")],
+            )?
+            .select(vec![
+                col("entry_id").alias("latest_entry_id"),
+                col("latest_entry_version"),
+            ])?;
+        let heads = revisions.join(
+            maxima,
+            JoinType::Inner,
+            &["entry_id", "entry_version"],
+            &["latest_entry_id", "latest_entry_version"],
+            None,
+        )?;
+        let duplicates = heads
+            .clone()
+            .aggregate(
+                vec![col("entry_id")],
+                vec![count(lit(1)).alias("head_count")],
+            )?
+            .filter(col("head_count").not_eq(lit(1)))?
+            .collect()
+            .await?;
+        if duplicates.iter().any(|batch| batch.num_rows() > 0) {
+            return Err(anyhow!(
+                "entry revision invariant failed: multiple revisions share a maximum entry_version"
+            ));
+        }
+        let heads = if view == RevisionView::Current {
+            heads.filter(col("operation").not_eq(lit("delete")))?
+        } else {
+            heads
+        };
+        Ok(heads
+            .select_columns(&["entry_id", "revision_id", "entry_version"])?
+            .collect()
+            .await?)
+    }
+
+    async fn read_latest_revision_batches(
+        &self,
+        table: &iceberg::table::Table,
+        entry_ids: Option<&[ugoite_domain::id::EntryId]>,
+        snapshot_id: Option<i64>,
+        view: RevisionView,
+    ) -> Result<Vec<RecordBatch>> {
+        let ids = self
+            .latest_revision_plan(table, entry_ids, snapshot_id, view)
+            .await?;
+        let mut revision_ids = Vec::new();
+        for batch in ids {
+            let values = batch
                 .column_by_name("revision_id")
-                .context("Iceberg table is missing revision_id")?;
-            let versions = batch
-                .column_by_name("entry_version")
-                .and_then(|array| array.as_any().downcast_ref::<Int64Array>())
-                .context("entry_version must be an int64 column")?;
+                .context("latest revision plan is missing revision_id")?;
             for row in 0..batch.num_rows() {
-                let entry_id = uuid_at(entry_ids, row)?;
-                let revision_id =
-                    ugoite_domain::id::RevisionId::from_uuid(uuid_at(revision_ids, row)?.as_uuid());
-                let version = u64::try_from(versions.value(row))
-                    .map_err(|_| anyhow!("entry_version must be non-negative"))?;
-                if let Some(known) = latest.get(&entry_id) {
-                    if version == known.entry_version && revision_id != known.revision_id {
-                        return Err(anyhow!(
-                            "entry revision conflict: entry {entry_id} has multiple revisions at version {version}"
-                        ));
-                    }
-                }
-                if latest
-                    .get(&entry_id)
-                    .is_none_or(|known: &LatestRevision| version > known.entry_version)
-                {
-                    latest.insert(
-                        entry_id,
-                        LatestRevision {
-                            revision_id,
-                            entry_version: version,
-                        },
-                    );
-                }
+                revision_ids.push(Datum::uuid(uuid_at(values, row)?.as_uuid()));
             }
         }
-        Ok(latest)
+        if revision_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let scan = table
+            .scan()
+            .with_filter(Reference::new("revision_id").is_in(revision_ids));
+        let mut stream = match snapshot_id {
+            Some(snapshot_id) => scan.snapshot_id(snapshot_id),
+            None => scan,
+        }
+        .build()?
+        .to_arrow()
+        .await?;
+        let mut batches = Vec::new();
+        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
+            batches.push(batch);
+        }
+        Ok(batches)
     }
 
     pub async fn query(&self, sql: &str) -> Result<Vec<RecordBatch>> {
@@ -681,10 +882,142 @@ impl IcebergWorkspace {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct LatestRevision {
-    revision_id: ugoite_domain::id::RevisionId,
-    entry_version: u64,
+impl SpaceCommitCoordinator {
+    fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
+        let catalog = self
+            .workspace
+            .space_catalog
+            .as_ref()
+            .context("coordinator is missing its SpaceCatalog")?;
+        let catalog = Arc::new(
+            catalog
+                .new_attempt()
+                .with_publication_context(self.publication.clone()),
+        );
+        Ok(IcebergWorkspace {
+            catalog: catalog.clone(),
+            space_catalog: Some(catalog),
+            namespace: self.workspace.namespace.clone(),
+            space_id: self.workspace.space_id,
+            warehouse: self.workspace.warehouse.clone(),
+            write: self.workspace.write,
+        })
+    }
+
+    async fn publication_receipt(&self) -> Result<Option<space_catalog::PublicationReceipt>> {
+        self.workspace
+            .space_catalog
+            .as_ref()
+            .context("coordinator is missing its SpaceCatalog")?
+            .publication_receipt(&self.publication)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            if self.publication_receipt().await?.is_some() {
+                return Ok(());
+            }
+            match self.attempt_workspace()?.create_form(form).await {
+                Ok(()) => return Ok(()),
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(anyhow!("Catalog Head changed during every create attempt"))
+    }
+
+    pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            if self.publication_receipt().await?.is_some() {
+                return self.workspace.load_form(changes.form_id).await;
+            }
+            match self.attempt_workspace()?.evolve_form(changes).await {
+                Ok(form) => return Ok(form),
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(anyhow!(
+            "Catalog Head changed during every form evolution attempt"
+        ))
+    }
+
+    pub async fn append_revisions(
+        &self,
+        form_id: FormId,
+        revisions: Vec<EntryRevision>,
+    ) -> Result<CommitReceipt> {
+        if let Some(receipt) = self.publication_receipt().await? {
+            return Ok(CommitReceipt {
+                command_id: receipt.command_id,
+                catalog_generation: receipt.catalog_generation,
+                snapshot_id: receipt
+                    .snapshot_id
+                    .context("revision publication did not create an Iceberg snapshot")?,
+                committed_revision_ids: revisions
+                    .iter()
+                    .map(|revision| revision.revision_id)
+                    .collect(),
+                committed_at_micros: revisions
+                    .iter()
+                    .map(|revision| revision.committed_at_micros)
+                    .max()
+                    .unwrap_or_default(),
+                data_file_count: 0,
+            });
+        }
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            if let Some(receipt) = self.publication_receipt().await? {
+                return Ok(CommitReceipt {
+                    command_id: receipt.command_id,
+                    catalog_generation: receipt.catalog_generation,
+                    snapshot_id: receipt
+                        .snapshot_id
+                        .context("revision publication did not create an Iceberg snapshot")?,
+                    committed_revision_ids: revisions
+                        .iter()
+                        .map(|revision| revision.revision_id)
+                        .collect(),
+                    committed_at_micros: revisions
+                        .iter()
+                        .map(|revision| revision.committed_at_micros)
+                        .max()
+                        .unwrap_or_default(),
+                    data_file_count: 0,
+                });
+            }
+            let mut receipt = match self
+                .attempt_workspace()?
+                .append_revisions(form_id, revisions.clone())
+                .await
+            {
+                Ok(receipt) => receipt,
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            let publication = self
+                .publication_receipt()
+                .await?
+                .context("successful append is missing its Catalog publication")?;
+            receipt.command_id = publication.command_id;
+            receipt.catalog_generation = publication.catalog_generation;
+            if publication.snapshot_id != Some(receipt.snapshot_id) {
+                return Err(anyhow!(
+                    "Catalog publication snapshot does not match the append receipt"
+                ));
+            }
+            return Ok(receipt);
+        }
+        Err(anyhow!("Catalog Head changed during every append attempt"))
+    }
+}
+
+fn is_publication_conflict(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("Catalog Head changed"))
 }
 
 pub fn physical_form_name(form_id: FormId) -> String {
