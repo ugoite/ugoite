@@ -15,7 +15,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use ugoite_domain::id::SpaceId;
+use tokio::sync::{Mutex, OwnedMutexGuard};
+use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
+use ugoite_domain::id::{FormId, SpaceId};
 use ugoite_storage::{CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore};
 use uuid::Uuid;
 
@@ -235,6 +237,137 @@ impl SpaceCatalog {
         }
         self.validate_head_publication(&head).await?;
         Ok(Some((head, exact)))
+    }
+
+    /// Captures the one exact Catalog Head currently visible to this reader.
+    /// This is a read-only operation: it neither claims a mutation nor takes a
+    /// writer serializer or lease.
+    pub(crate) async fn capture_checkpoint(&self) -> anyhow::Result<SpaceCheckpoint> {
+        let (head, _) = self
+            .exact_head()
+            .await?
+            .ok_or_else(|| crate::CheckpointUnavailable::new("Catalog Head"))?;
+        let publication_location = head.publication_location.clone().ok_or_else(|| {
+            crate::CheckpointIntegrityError::new("Catalog Head has no publication location")
+        })?;
+        let publication = decode_publication(
+            &self
+                .store
+                .read_publication(&publication_location)
+                .await
+                .map_err(|error| crate::CheckpointUnavailable::new(error.to_string()))?,
+        )?;
+        validate_publication_matches_head(&publication, &head)?;
+
+        let mut tables = Vec::with_capacity(head.tables.len());
+        for reference in head.tables.values() {
+            tables.push(self.capture_checkpoint_table(reference).await?);
+        }
+        tables.sort_by(|left, right| left.form_id.cmp(&right.form_id));
+
+        Ok(SpaceCheckpoint::new(
+            self.space_id,
+            head.generation,
+            head.checksum,
+            publication_location,
+            publication.checksum,
+            head.form_registry_generation,
+            tables,
+        ))
+    }
+
+    async fn capture_checkpoint_table(
+        &self,
+        reference: &TableReference,
+    ) -> anyhow::Result<CheckpointTable> {
+        let form_id = reference
+            .form_id
+            .as_deref()
+            .ok_or_else(|| {
+                crate::CheckpointIntegrityError::new("Catalog Head table has no Form ID")
+            })?
+            .parse::<Uuid>()
+            .map(FormId::from)
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?;
+        let metadata = TableMetadata::read_from(&self.file_io, &reference.metadata_location)
+            .await
+            .map_err(|error| crate::CheckpointUnavailable::new(error.to_string()))?;
+        if metadata.uuid().to_string() != reference.table_uuid {
+            return Err(crate::CheckpointIntegrityError::new(
+                "Iceberg table UUID does not match the Catalog Head",
+            )
+            .into());
+        }
+        Ok(CheckpointTable {
+            form_id,
+            namespace: reference.identifier.namespace.clone(),
+            table: reference.identifier.table.clone(),
+            table_uuid: reference.table_uuid.clone(),
+            metadata_location: reference.metadata_location.clone(),
+            snapshot_id: metadata.current_snapshot_id(),
+            schema_id: metadata.current_schema_id(),
+        })
+    }
+
+    /// Resolves a table only from the immutable coordinates recorded in a
+    /// checkpoint. It deliberately does not reread the mutable Catalog Head.
+    pub(crate) async fn load_checkpoint_table(
+        &self,
+        coordinate: &CheckpointTable,
+    ) -> anyhow::Result<iceberg::table::Table> {
+        let namespace =
+            NamespaceIdent::from_vec(coordinate.namespace.clone()).map_err(|error| {
+                crate::CheckpointIntegrityError::new(format!("invalid table namespace: {error}"))
+            })?;
+        let identifier = TableIdent::new(namespace, coordinate.table.clone());
+        let metadata = TableMetadata::read_from(&self.file_io, &coordinate.metadata_location)
+            .await
+            .map_err(|error| crate::CheckpointUnavailable::new(error.to_string()))?;
+        if metadata.uuid().to_string() != coordinate.table_uuid {
+            return Err(crate::CheckpointIntegrityError::new(
+                "Iceberg table UUID does not match the checkpoint",
+            )
+            .into());
+        }
+        if metadata.current_schema_id() != coordinate.schema_id {
+            return Err(crate::CheckpointIntegrityError::new(
+                "Iceberg schema ID does not match the checkpoint",
+            )
+            .into());
+        }
+        if metadata.current_snapshot_id() != coordinate.snapshot_id {
+            return Err(crate::CheckpointIntegrityError::new(
+                "Iceberg snapshot ID does not match the checkpoint",
+            )
+            .into());
+        }
+        Ok(iceberg::table::Table::builder()
+            .identifier(identifier)
+            .metadata(metadata)
+            .metadata_location(coordinate.metadata_location.clone())
+            .file_io(self.file_io.clone())
+            .runtime(self.runtime.clone())
+            .build()?)
+    }
+
+    pub(crate) async fn create_checkpoint(
+        &self,
+        name: &str,
+        checkpoint: &SpaceCheckpoint,
+    ) -> anyhow::Result<()> {
+        let bytes = serde_json::to_vec(checkpoint)?;
+        self.store.create_checkpoint(name, bytes).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn read_checkpoint(&self, name: &str) -> anyhow::Result<SpaceCheckpoint> {
+        let bytes = self
+            .store
+            .read_checkpoint(name)
+            .await
+            .map_err(|error| crate::CheckpointUnavailable::new(error.to_string()))?;
+        Ok(serde_json::from_slice(&bytes)
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?)
     }
 
     /// Finds a completed command through the immutable publication chain.

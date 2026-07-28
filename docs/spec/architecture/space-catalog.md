@@ -7,10 +7,10 @@ intentionally destructive before the first release: the internal pre-release
 Space format version is unchanged, while legacy layouts and catalog modes are
 unsupported rather than migrated.
 
-The Catalog Head layout, upstream physical boundary, and single mutation
-coordinator are implemented by the current persistence work. Checkpoint-pinned
-reads, authorization-aware DataFusion context, and health evidence described
-here remain active follow-up work; this document does not advertise them as
+The Catalog Head layout, upstream physical boundary, single mutation
+coordinator, and checkpoint-pinned revision reads are implemented by the
+current persistence work. Authorization-aware DataFusion context and health
+evidence remain follow-up work; this document does not advertise them as
 current product APIs.
 
 ## Authority and ownership
@@ -78,6 +78,26 @@ architecture. A narrow physical-schema compatibility adapter is permitted only
 when the upstream Rust API cannot retain an already-assigned Iceberg field ID;
 it must produce standard upstream Iceberg metadata and cannot establish a
 second field-identity authority.
+
+## Space checkpoints
+
+A `SpaceCheckpoint` is one reproducible Space-wide read coordinate, not a
+transaction, authorization artifact, SQL request, or query policy. Capture
+reads one exact Head, validates its reachable publication checksum and Head
+checksum, then loads every referenced immutable Iceberg metadata file. It
+records the Space ID, format/generation coordinates, publication location and
+checksum, and each Form table's identifier, UUID, metadata location, snapshot
+ID (when the table has one), and schema ID. A deterministic coordinate checksum
+excludes optional capture time and human name.
+
+Checkpoint reads never acquire a writer lock and never refresh from the current
+Head. They construct Iceberg static providers from the recorded metadata and,
+when present, the recorded snapshot ID. A durable named checkpoint is created
+once at `_ugoite/checkpoints/<name>.json` through OpenDAL; a missing durable
+object or immutable target returns an explicit unavailable-checkpoint error.
+There is no snapshot-expiration or custom retention implementation. If upstream
+expiration is adopted later, durable checkpoints must first become retention
+roots in that upstream design.
 
 ## Crate boundary
 

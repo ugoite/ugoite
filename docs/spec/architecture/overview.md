@@ -40,10 +40,10 @@ publication chain instead of blindly repeating the logical mutation. REST,
 Memory, pointer-manifest, external-catalog, and object-list reconstruction modes
 are not production architecture.
 
-The active follow-up issues make this architecture complete: duplicate-head
-detection, authorization-aware DataFusion reads, checkpoints, and read-only
-health evidence are target work, not claims about every current API. One Form
-table commit is the atomicity boundary; Ugoite does not claim cross-Form
-transactions.
+Checkpoint capture is a read-only, reproducible coordinate over one exact
+Head: it pins immutable Iceberg metadata and snapshots without claiming a
+cross-Form transaction. Authorization-aware DataFusion reads and read-only
+health evidence remain target work. One Form table commit is the mutation
+atomicity boundary; Ugoite does not claim cross-Form transactions.
 
 The current browser is server-backed. The target architecture adds a browser-local runtime and optional synchronization without making the server the mandatory owner of data.

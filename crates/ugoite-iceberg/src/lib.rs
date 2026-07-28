@@ -30,6 +30,7 @@ pub mod storage;
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
 pub use space_catalog::PublicationContext;
 use space_catalog::SpaceCatalog;
+pub use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 
 use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{
@@ -69,7 +70,7 @@ use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{Compatibility, FieldType, FormChangeSet, FormDefinition, FormField};
-use ugoite_domain::id::{FormId, RevisionId, SpaceId};
+use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
 use uuid::Uuid;
 
@@ -80,6 +81,50 @@ const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
 const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
 const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
+
+/// A durable checkpoint or one of its immutable targets cannot be resolved.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CheckpointUnavailable {
+    target: String,
+}
+
+impl CheckpointUnavailable {
+    fn new(target: impl Into<String>) -> Self {
+        Self {
+            target: target.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for CheckpointUnavailable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "checkpoint unavailable: {}", self.target)
+    }
+}
+
+impl std::error::Error for CheckpointUnavailable {}
+
+/// A checkpoint's coordinate checksum or immutable metadata does not match.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CheckpointIntegrityError {
+    detail: String,
+}
+
+impl CheckpointIntegrityError {
+    fn new(detail: impl Into<String>) -> Self {
+        Self {
+            detail: detail.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for CheckpointIntegrityError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "checkpoint integrity error: {}", self.detail)
+    }
+}
+
+impl std::error::Error for CheckpointIntegrityError {}
 
 #[derive(Debug, Clone)]
 pub struct IcebergWorkspace {
@@ -261,6 +306,86 @@ impl IcebergWorkspace {
         })
     }
 
+    /// Captures one exact, checksum-protected Catalog Head and the immutable
+    /// Iceberg coordinates reachable from it. This is read-only and never
+    /// acquires a writer lock or starts a transaction.
+    pub async fn capture_checkpoint(&self) -> Result<SpaceCheckpoint> {
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .capture_checkpoint()
+            .await
+    }
+
+    /// Persists a named immutable checkpoint through the Space's OpenDAL
+    /// boundary. Reusing a name fails rather than silently replacing history.
+    pub async fn save_checkpoint(&self, name: &str, checkpoint: &SpaceCheckpoint) -> Result<()> {
+        validate_checkpoint_name(name)?;
+        self.validate_checkpoint(checkpoint)?;
+        let mut stored = checkpoint.clone();
+        stored.name = Some(name.to_string());
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .create_checkpoint(name, &stored)
+            .await
+    }
+
+    /// Loads a durable checkpoint by name. A missing object is represented by
+    /// [`CheckpointUnavailable`], never by an empty or current-head fallback.
+    pub async fn load_checkpoint(&self, name: &str) -> Result<SpaceCheckpoint> {
+        validate_checkpoint_name(name)?;
+        let checkpoint = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .read_checkpoint(name)
+            .await?;
+        self.validate_checkpoint(&checkpoint)?;
+        Ok(checkpoint)
+    }
+
+    /// Reads a revision view from checkpoint-recorded immutable metadata.
+    /// Snapshot-bearing tables use Iceberg's static snapshot provider; a table
+    /// with no snapshots still uses Iceberg's static metadata provider.
+    pub async fn read_revision_view_at_checkpoint(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        self.validate_checkpoint(checkpoint)?;
+        let coordinate = checkpoint
+            .tables
+            .iter()
+            .find(|coordinate| coordinate.form_id == form_id)
+            .ok_or_else(|| CheckpointUnavailable::new(format!("Form {form_id}")))?;
+        let table = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .load_checkpoint_table(coordinate)
+            .await?;
+        let form = form_from_table(&table, form_id)?;
+        self.read_revision_view_from_table(&form, table, view, coordinate.snapshot_id, true)
+            .await
+    }
+
+    fn validate_checkpoint(&self, checkpoint: &SpaceCheckpoint) -> Result<()> {
+        if checkpoint.space_id != self.space_id {
+            return Err(
+                CheckpointIntegrityError::new("Space ID does not match this workspace").into(),
+            );
+        }
+        if !checkpoint.validate_coordinate_checksum() {
+            return Err(CheckpointIntegrityError::new(
+                "coordinate checksum or format version does not match",
+            )
+            .into());
+        }
+        Ok(())
+    }
+
     pub fn schema_commit_capability(&self) -> SchemaCommitCapability {
         SchemaCommitCapability::AtomicSchemaEvolution
     }
@@ -288,36 +413,7 @@ impl IcebergWorkspace {
 
     pub async fn load_form(&self, form_id: FormId) -> Result<FormDefinition> {
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        let raw = table
-            .metadata()
-            .properties()
-            .get(FORM_DEFINITION_PROPERTY)
-            .context("Iceberg table is missing Ugoite Form metadata")?;
-        let form: FormDefinition = serde_json::from_str(raw)?;
-        if form.id != form_id {
-            return Err(anyhow!(
-                "Form ID property does not match physical table identity"
-            ));
-        }
-        for field in &form.fields {
-            let Some(physical) = table
-                .metadata()
-                .current_schema()
-                .field_by_id(field.id.get())
-            else {
-                return Err(anyhow!(
-                    "Iceberg schema is missing Form field ID {}",
-                    field.id.get()
-                ));
-            };
-            if physical.field_type.as_ref() != &iceberg_type(&field.field_type, field.id.get()) {
-                return Err(anyhow!(
-                    "Iceberg field ID {} does not match the Form field type",
-                    field.id.get()
-                ));
-            }
-        }
-        Ok(form)
+        form_from_table(&table, form_id)
     }
 
     /// Returns whether the authoritative Catalog Head currently contains this
@@ -661,6 +757,18 @@ impl IcebergWorkspace {
     ) -> Result<Vec<EntryRevision>> {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        self.read_revision_view_from_table(&form, table, view, snapshot_id, false)
+            .await
+    }
+
+    async fn read_revision_view_from_table(
+        &self,
+        form: &FormDefinition,
+        table: iceberg::table::Table,
+        view: RevisionView,
+        snapshot_id: Option<i64>,
+        static_table: bool,
+    ) -> Result<Vec<EntryRevision>> {
         let batches = match view {
             RevisionView::All => {
                 let scan = match snapshot_id {
@@ -682,7 +790,7 @@ impl IcebergWorkspace {
         let schema = table.metadata().current_schema().clone();
         let mut revisions = Vec::new();
         for batch in &batches {
-            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+            revisions.extend(revisions_from_batch(batch, form, &schema)?);
         }
         Ok(revisions)
     }
@@ -1051,6 +1159,39 @@ fn validate_field_ids(form: &FormDefinition) -> Result<()> {
 
 fn physical_field_id(field: &ugoite_domain::form::FormField) -> i32 {
     field.id.get()
+}
+
+fn form_from_table(table: &iceberg::table::Table, form_id: FormId) -> Result<FormDefinition> {
+    let raw = table
+        .metadata()
+        .properties()
+        .get(FORM_DEFINITION_PROPERTY)
+        .context("Iceberg table is missing Ugoite Form metadata")?;
+    let form: FormDefinition = serde_json::from_str(raw)?;
+    if form.id != form_id {
+        return Err(anyhow!(
+            "Form ID property does not match physical table identity"
+        ));
+    }
+    for field in &form.fields {
+        let Some(physical) = table
+            .metadata()
+            .current_schema()
+            .field_by_id(field.id.get())
+        else {
+            return Err(anyhow!(
+                "Iceberg schema is missing Form field ID {}",
+                field.id.get()
+            ));
+        };
+        if physical.field_type.as_ref() != &iceberg_type(&field.field_type, field.id.get()) {
+            return Err(anyhow!(
+                "Iceberg field ID {} does not match the Form field type",
+                field.id.get()
+            ));
+        }
+    }
+    Ok(form)
 }
 
 fn form_schema(form: &FormDefinition) -> Result<Schema> {
