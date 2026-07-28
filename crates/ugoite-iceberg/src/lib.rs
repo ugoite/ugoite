@@ -474,15 +474,16 @@ impl IcebergWorkspace {
         }
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        let mut entry_ids = Vec::new();
-        for revision in revisions {
-            if !entry_ids.contains(&revision.entry_id) {
-                entry_ids.push(revision.entry_id);
-            }
-        }
+        let entry_ids = revisions
+            .iter()
+            .map(|revision| revision.entry_id)
+            .collect::<Vec<_>>();
         let mut current = self
             .read_latest_revisions_for_entries(form_id, &entry_ids)
-            .await?;
+            .await?
+            .into_iter()
+            .map(|revision| (revision.entry_id, revision))
+            .collect::<HashMap<_, _>>();
         let mut seen = std::collections::HashSet::new();
         for revision in revisions {
             if revision.form_id != form.id || revision.form_version != form.version {
@@ -493,9 +494,7 @@ impl IcebergWorkspace {
             if !seen.insert(revision.revision_id) {
                 return Err(anyhow!("duplicate revision ID in append batch"));
             }
-            let previous = current
-                .iter()
-                .find(|current| current.entry_id == revision.entry_id);
+            let previous = current.get(&revision.entry_id);
             if let Some(previous) = previous {
                 if revision.expected_version != Some(previous.entry_version)
                     || revision.parent_revision_id != Some(previous.revision_id)
@@ -514,14 +513,7 @@ impl IcebergWorkspace {
                 return Err(anyhow!("entry revision conflict"));
             }
             revision.validate_payload(&form)?;
-            if let Some(current) = current
-                .iter_mut()
-                .find(|current| current.entry_id == revision.entry_id)
-            {
-                *current = revision.clone();
-            } else {
-                current.push(revision.clone());
-            }
+            current.insert(revision.entry_id, revision.clone());
         }
         validate_batch_revision_metadata(&batches, revisions)?;
         let table_arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
@@ -683,7 +675,7 @@ impl IcebergWorkspace {
                 batches
             }
             RevisionView::LatestIncludingTombstones | RevisionView::Current => {
-                self.read_latest_revision_batches(&table, form_id, None, snapshot_id)
+                self.read_latest_revision_batches(&table, None, snapshot_id, view)
                     .await?
             }
         };
@@ -691,9 +683,6 @@ impl IcebergWorkspace {
         let mut revisions = Vec::new();
         for batch in &batches {
             revisions.extend(revisions_from_batch(batch, &form, &schema)?);
-        }
-        if view == RevisionView::Current {
-            revisions.retain(|revision| revision.operation != EntryOperation::Delete);
         }
         Ok(revisions)
     }
@@ -719,7 +708,12 @@ impl IcebergWorkspace {
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
         let schema = table.metadata().current_schema().clone();
         let batches = self
-            .read_latest_revision_batches(&table, form_id, Some(entry_ids), None)
+            .read_latest_revision_batches(
+                &table,
+                Some(entry_ids),
+                None,
+                RevisionView::LatestIncludingTombstones,
+            )
             .await?;
         let mut revisions = Vec::new();
         for batch in &batches {
@@ -731,27 +725,19 @@ impl IcebergWorkspace {
     async fn latest_revision_plan(
         &self,
         table: &iceberg::table::Table,
-        form_id: FormId,
         entry_ids: Option<&[ugoite_domain::id::EntryId]>,
         snapshot_id: Option<i64>,
+        view: RevisionView,
     ) -> Result<Vec<RecordBatch>> {
         let context = SessionContext::new();
-        let table_name = if let Some(snapshot_id) = snapshot_id {
-            let provider =
-                IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
-                    .await?;
-            context.register_table("revisions", Arc::new(provider))?;
-            "revisions".to_string()
+        let provider = if let Some(snapshot_id) = snapshot_id {
+            IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
+                .await?
         } else {
-            let provider = IcebergCatalogProvider::try_new(self.catalog.clone()).await?;
-            context.register_catalog("ugoite", Arc::new(provider));
-            format!(
-                "ugoite.{}.{}",
-                self.namespace.as_ref()[0],
-                physical_form_name(form_id)
-            )
+            IcebergStaticTableProvider::try_new_from_table(table.clone()).await?
         };
-        let mut revisions = context.table(table_name).await?;
+        context.register_table("revisions", Arc::new(provider))?;
+        let mut revisions = context.table("revisions").await?;
         if let Some(entry_ids) = entry_ids {
             if entry_ids.is_empty() {
                 return Ok(Vec::new());
@@ -797,6 +783,11 @@ impl IcebergWorkspace {
                 "entry revision invariant failed: multiple revisions share a maximum entry_version"
             ));
         }
+        let heads = if view == RevisionView::Current {
+            heads.filter(col("operation").not_eq(lit("delete")))?
+        } else {
+            heads
+        };
         Ok(heads
             .select_columns(&["entry_id", "revision_id", "entry_version"])?
             .collect()
@@ -806,12 +797,12 @@ impl IcebergWorkspace {
     async fn read_latest_revision_batches(
         &self,
         table: &iceberg::table::Table,
-        form_id: FormId,
         entry_ids: Option<&[ugoite_domain::id::EntryId]>,
         snapshot_id: Option<i64>,
+        view: RevisionView,
     ) -> Result<Vec<RecordBatch>> {
         let ids = self
-            .latest_revision_plan(table, form_id, entry_ids, snapshot_id)
+            .latest_revision_plan(table, entry_ids, snapshot_id, view)
             .await?;
         let mut revision_ids = Vec::new();
         for batch in ids {
@@ -958,13 +949,6 @@ impl SpaceCommitCoordinator {
         form_id: FormId,
         revisions: Vec<EntryRevision>,
     ) -> Result<CommitReceipt> {
-        let _entry_mutation_guard = self
-            .workspace
-            .space_catalog
-            .as_ref()
-            .context("coordinator is missing its SpaceCatalog")?
-            .serialize_entry_mutation()
-            .await;
         if let Some(receipt) = self.publication_receipt().await? {
             return Ok(CommitReceipt {
                 command_id: receipt.command_id,
