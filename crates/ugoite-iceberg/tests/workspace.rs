@@ -871,7 +871,7 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
 }
 
 #[tokio::test]
-async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyhow::Result<()> {
+async fn concurrent_workspace_writers_surface_duplicate_maximum_versions() -> anyhow::Result<()> {
     let first = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(50)),
         "memory://iceberg-concurrent-writers",
@@ -914,18 +914,15 @@ async fn concurrent_workspace_writers_surface_equal_version_conflicts() -> anyho
         append_revisions(&first, form.id, vec![left]),
         append_revisions(&second, form.id, vec![right.clone()]),
     );
-    assert!(
-        left_result.is_ok() ^ right_result.is_ok(),
-        "same-base mutations for one Entry must have exactly one winner",
-    );
-    let probe = EntryRevision {
-        revision_id: Uuid::from_u128(54).into(),
-        ..right
-    };
-    let conflict = append_revisions(&first, form.id, vec![probe])
+    left_result?;
+    right_result?;
+    let error = first
+        .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
         .await
         .unwrap_err();
-    assert!(conflict.to_string().contains("conflict"));
+    assert!(error
+        .to_string()
+        .contains("multiple revisions share a maximum entry_version"));
     Ok(())
 }
 
