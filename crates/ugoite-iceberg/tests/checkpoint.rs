@@ -1,3 +1,4 @@
+use iceberg::{NamespaceIdent, TableIdent};
 use std::collections::BTreeMap;
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
@@ -6,6 +7,7 @@ use ugoite_iceberg::{
     publication_context, CheckpointIntegrityError, CheckpointUnavailable, IcebergWorkspace,
     RevisionView,
 };
+use ugoite_storage::operator_from_uri;
 use uuid::Uuid;
 
 fn form() -> FormDefinition {
@@ -83,6 +85,53 @@ async fn append(
         )?)?
         .append_revisions(form.id, vec![revision])
         .await?;
+    Ok(())
+}
+
+async fn checkpoint_with_one_revision(
+    warehouse: &str,
+    space: u128,
+) -> anyhow::Result<(
+    IcebergWorkspace,
+    FormDefinition,
+    ugoite_iceberg::SpaceCheckpoint,
+)> {
+    let workspace =
+        IcebergWorkspace::memory_for_tests(SpaceId::from(Uuid::from_u128(space)), warehouse)
+            .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    append(&workspace, &form, revision(&form, 1, "immutable")).await?;
+    let checkpoint = workspace.capture_checkpoint().await?;
+    Ok((workspace, form, checkpoint))
+}
+
+fn object_path(location: &str) -> &str {
+    location
+        .strip_prefix("memory:///")
+        .or_else(|| location.strip_prefix("memory:/"))
+        .unwrap_or(location)
+}
+
+async fn assert_checkpoint_unavailable_after_delete(
+    warehouse: &str,
+    space: u128,
+    target: impl FnOnce(
+        &IcebergWorkspace,
+        &FormDefinition,
+        &ugoite_iceberg::SpaceCheckpoint,
+    ) -> anyhow::Result<String>,
+) -> anyhow::Result<()> {
+    let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, space).await?;
+    let path = target(&workspace, &form, &checkpoint)?;
+    operator_from_uri(warehouse)?
+        .delete(object_path(&path))
+        .await?;
+    let error = workspace
+        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .await
+        .expect_err("a missing immutable checkpoint target must be explicit");
+    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
     Ok(())
 }
 
@@ -209,5 +258,111 @@ async fn checkpoint_reports_missing_and_tampered_coordinates_explicitly() -> any
         .await
         .expect_err("ambiguous Form coordinates must fail closed");
     assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn checkpoint_missing_immutable_targets_are_unavailable() -> anyhow::Result<()> {
+    assert_checkpoint_unavailable_after_delete(
+        "memory://checkpoint-missing-publication",
+        30,
+        |_, _, checkpoint| Ok(checkpoint.publication_location.clone()),
+    )
+    .await?;
+    assert_checkpoint_unavailable_after_delete(
+        "memory://checkpoint-missing-metadata",
+        31,
+        |_, _, checkpoint| Ok(checkpoint.tables[0].metadata_location.clone()),
+    )
+    .await?;
+
+    let warehouse = "memory://checkpoint-missing-named";
+    let (workspace, _, checkpoint) = checkpoint_with_one_revision(warehouse, 32).await?;
+    workspace.save_checkpoint("removed", &checkpoint).await?;
+    let space_root = format!("test/space_{}", checkpoint.space_id.as_uuid().simple());
+    operator_from_uri(warehouse)?
+        .delete(&format!("{space_root}/_ugoite/checkpoints/removed.json"))
+        .await?;
+    let error = workspace
+        .load_checkpoint("removed")
+        .await
+        .expect_err("a deleted named checkpoint must be unavailable");
+    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
+    Ok(())
+}
+
+async fn manifest_and_data_locations(
+    workspace: &IcebergWorkspace,
+    checkpoint: &ugoite_iceberg::SpaceCheckpoint,
+) -> anyhow::Result<(String, String, String)> {
+    let coordinate = &checkpoint.tables[0];
+    let identifier = TableIdent::new(
+        NamespaceIdent::from_vec(coordinate.namespace.clone())?,
+        coordinate.table.clone(),
+    );
+    let table = workspace
+        .catalog_for_testing()
+        .load_table(&identifier)
+        .await?;
+    let snapshot = table
+        .metadata()
+        .current_snapshot()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("test table has no snapshot"))?;
+    let manifest_list = snapshot.manifest_list().to_owned();
+    let manifests = table.manifest_list_reader(&snapshot).load().await?;
+    let manifest = manifests
+        .entries()
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("test snapshot has no manifest"))?;
+    let manifest_path = manifest.manifest_path.clone();
+    let loaded_manifest = manifest.load_manifest(table.file_io()).await?;
+    let data = loaded_manifest
+        .entries()
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("test manifest has no data file"))?
+        .data_file()
+        .file_path()
+        .to_owned();
+    Ok((manifest_list, manifest_path, data))
+}
+
+#[tokio::test]
+async fn checkpoint_missing_manifest_list_or_data_file_is_unavailable() -> anyhow::Result<()> {
+    let warehouse = "memory://checkpoint-missing-manifest-list";
+    let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 33).await?;
+    let (manifest_list, _, _) = manifest_and_data_locations(&workspace, &checkpoint).await?;
+    operator_from_uri(warehouse)?
+        .delete(object_path(&manifest_list))
+        .await?;
+    let error = workspace
+        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .await
+        .expect_err("a deleted manifest list must be unavailable");
+    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
+
+    let warehouse = "memory://checkpoint-missing-manifest";
+    let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 34).await?;
+    let (_, manifest, _) = manifest_and_data_locations(&workspace, &checkpoint).await?;
+    operator_from_uri(warehouse)?
+        .delete(object_path(&manifest))
+        .await?;
+    let error = workspace
+        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .await
+        .expect_err("a deleted manifest must be unavailable");
+    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
+
+    let warehouse = "memory://checkpoint-missing-data";
+    let (workspace, form, checkpoint) = checkpoint_with_one_revision(warehouse, 35).await?;
+    let (_, _, data) = manifest_and_data_locations(&workspace, &checkpoint).await?;
+    operator_from_uri(warehouse)?
+        .delete(object_path(&data))
+        .await?;
+    let error = workspace
+        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .await
+        .expect_err("a deleted data file must be unavailable");
+    assert!(error.downcast_ref::<CheckpointUnavailable>().is_some());
     Ok(())
 }

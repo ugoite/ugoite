@@ -254,7 +254,7 @@ impl SpaceCatalog {
                 .store
                 .read_publication(&publication_location)
                 .await
-                .map_err(|error| crate::CheckpointUnavailable::new(error.to_string()))?,
+                .map_err(checkpoint_target_error)?,
         )?;
         validate_publication_matches_head(&publication, &head)?;
 
@@ -290,7 +290,7 @@ impl SpaceCatalog {
             .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?;
         let metadata = TableMetadata::read_from(&self.file_io, &reference.metadata_location)
             .await
-            .map_err(|error| crate::CheckpointUnavailable::new(error.to_string()))?;
+            .map_err(checkpoint_metadata_error)?;
         if metadata.uuid().to_string() != reference.table_uuid {
             return Err(crate::CheckpointIntegrityError::new(
                 "Iceberg table UUID does not match the Catalog Head",
@@ -903,11 +903,32 @@ fn checkpoint_target_error(error: opendal::Error) -> anyhow::Error {
 }
 
 fn checkpoint_metadata_error(error: iceberg::Error) -> anyhow::Error {
-    if error.kind() == ErrorKind::DataInvalid {
+    if error_chain_contains_not_found(&error) {
+        crate::CheckpointUnavailable::new("checkpoint Iceberg metadata").into()
+    } else if error.kind() == ErrorKind::DataInvalid {
         crate::CheckpointIntegrityError::new(error.to_string()).into()
     } else {
         anyhow::Error::new(error).context("read checkpoint Iceberg metadata")
     }
+}
+
+/// Iceberg wraps its OpenDAL I/O errors in an `anyhow::Error`, so inspecting
+/// only Iceberg's top-level `ErrorKind` would turn a missing immutable object
+/// into an indistinguishable operational failure. Keep this check at the
+/// checkpoint boundary: missing targets have a stable public meaning, while
+/// corrupt metadata and transient I/O retain their distinct classifications.
+pub(crate) fn error_chain_contains_not_found(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(error);
+    while let Some(source) = current {
+        if source
+            .downcast_ref::<opendal::Error>()
+            .is_some_and(|error| error.kind() == opendal::ErrorKind::NotFound)
+        {
+            return true;
+        }
+        current = source.source();
+    }
+    false
 }
 
 #[async_trait]

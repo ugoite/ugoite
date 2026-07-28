@@ -385,6 +385,7 @@ impl IcebergWorkspace {
         let form = form_from_table(&table, form_id)?;
         self.read_revision_view_from_table(&form, table, view, coordinate.snapshot_id)
             .await
+            .map_err(checkpoint_query_error)
     }
 
     fn validate_checkpoint(&self, checkpoint: &SpaceCheckpoint) -> Result<()> {
@@ -1005,6 +1006,22 @@ impl IcebergWorkspace {
             self.space_id.as_uuid().simple(),
             physical_form_name(form_id)
         )
+    }
+}
+
+/// Converts missing immutable files discovered while scanning a checkpoint to
+/// the stable checkpoint API error. Planning and execution can reach manifest
+/// lists, manifests, and data files after the metadata coordinate was loaded.
+/// Those are checkpoint targets too, even though DataFusion/Iceberg own the
+/// actual reads.
+fn checkpoint_query_error(error: anyhow::Error) -> anyhow::Error {
+    if error
+        .chain()
+        .any(space_catalog::error_chain_contains_not_found)
+    {
+        CheckpointUnavailable::new("checkpoint immutable data").into()
+    } else {
+        error
     }
 }
 
