@@ -18,6 +18,7 @@ pub mod integrity;
 pub mod link;
 pub mod materialized_view;
 pub mod preferences;
+pub mod query_context;
 pub mod sample_data;
 pub mod saved_sql;
 pub mod search;
