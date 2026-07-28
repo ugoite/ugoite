@@ -13,7 +13,7 @@ use datafusion::logical_expr::{Expr, LogicalPlan};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use ugoite_core::query::AuthorizedQueryPolicy;
@@ -31,6 +31,7 @@ pub struct AuthorizedQueryContext {
     permits: Arc<Semaphore>,
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
+    trusted_relations: BTreeMap<String, TrustedRelation>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -39,11 +40,90 @@ struct AuthorizedScan {
     snapshot_id: Option<i64>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TrustedRelation {
+    relation: String,
+    readable_entry_ids: BTreeSet<Vec<u8>>,
+    visible_columns: BTreeSet<String>,
+}
+
+/// Closed public errors for the authorization-aware query surface. Upstream
+/// DataFusion, Iceberg, and OpenDAL details remain available through the error
+/// source chain for internal diagnostics, but are never included in `Display`.
+#[derive(Debug)]
+pub enum AuthorizedQueryError {
+    InvalidQuery { source: anyhow::Error },
+    UnauthorizedQueryFeature { source: anyhow::Error },
+    ResourceLimitExceeded { source: anyhow::Error },
+    QueryTimedOut,
+    QueryExecutionFailed { source: anyhow::Error },
+}
+
+impl AuthorizedQueryError {
+    fn invalid_query(source: impl Into<anyhow::Error>) -> Self {
+        Self::InvalidQuery {
+            source: source.into(),
+        }
+    }
+
+    fn unauthorized(source: impl Into<anyhow::Error>) -> Self {
+        Self::UnauthorizedQueryFeature {
+            source: source.into(),
+        }
+    }
+
+    fn resource_limit(source: impl Into<anyhow::Error>) -> Self {
+        Self::ResourceLimitExceeded {
+            source: source.into(),
+        }
+    }
+
+    fn execution_failed(source: impl Into<anyhow::Error>) -> Self {
+        Self::QueryExecutionFailed {
+            source: source.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for AuthorizedQueryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::InvalidQuery { .. } => "invalid authorized query",
+            Self::UnauthorizedQueryFeature { .. } => "unauthorized query feature",
+            Self::ResourceLimitExceeded { .. } => "authorized query resource limit exceeded",
+            Self::QueryTimedOut => "authorized query timed out",
+            Self::QueryExecutionFailed { .. } => "authorized query execution failed",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl std::error::Error for AuthorizedQueryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidQuery { source }
+            | Self::UnauthorizedQueryFeature { source }
+            | Self::ResourceLimitExceeded { source }
+            | Self::QueryExecutionFailed { source } => Some(source.as_ref()),
+            Self::QueryTimedOut => None,
+        }
+    }
+}
+
 impl IcebergWorkspace {
     /// Translates a Core authorization decision into a closed DataFusion query
     /// surface. All providers are static Iceberg providers; a requested
     /// checkpoint requires one snapshot for every exposed Form.
     pub async fn authorized_query_context(
+        &self,
+        policy: AuthorizedQueryPolicy,
+    ) -> Result<AuthorizedQueryContext> {
+        self.authorized_query_context_inner(policy)
+            .await
+            .map_err(|error| AuthorizedQueryError::execution_failed(error).into())
+    }
+
+    async fn authorized_query_context_inner(
         &self,
         policy: AuthorizedQueryPolicy,
     ) -> Result<AuthorizedQueryContext> {
@@ -64,6 +144,7 @@ impl IcebergWorkspace {
         let context = SessionContext::new_with_config_rt(config, runtime);
         let mut relations = BTreeSet::new();
         let mut authorized_scans = BTreeSet::new();
+        let mut trusted_relations = BTreeMap::new();
 
         if let Some(checkpoint) = &policy.checkpoint {
             self.validate_checkpoint(checkpoint)?;
@@ -135,6 +216,18 @@ impl IcebergWorkspace {
                 .iter()
                 .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
                 .collect::<Vec<_>>();
+            trusted_relations.insert(
+                internal.clone(),
+                TrustedRelation {
+                    relation: form_policy.relation.clone(),
+                    readable_entry_ids: form_policy
+                        .readable_entry_ids
+                        .iter()
+                        .map(|entry_id| entry_id.as_uuid().as_bytes().to_vec())
+                        .collect(),
+                    visible_columns: visible.iter().cloned().collect(),
+                },
+            );
             let visible_refs = visible.iter().map(String::as_str).collect::<Vec<_>>();
             let source = context.table(internal.as_str()).await?;
             let filtered = if entry_ids.is_empty() {
@@ -155,6 +248,7 @@ impl IcebergWorkspace {
             permits: Arc::new(Semaphore::new(max_concurrency)),
             authorized_relations: relations,
             authorized_scans,
+            trusted_relations,
         })
     }
 }
@@ -167,10 +261,10 @@ impl AuthorizedQueryContext {
             .permits
             .clone()
             .try_acquire_owned()
-            .map_err(|_| anyhow!("authorized query concurrency limit reached"))?;
+            .map_err(AuthorizedQueryError::resource_limit)?;
         tokio::time::timeout(self.limits.timeout, self.execute_with_permit(sql))
             .await
-            .map_err(|_| anyhow!("authorized query timed out"))?
+            .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
     async fn execute_with_permit(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
@@ -179,32 +273,56 @@ impl AuthorizedQueryContext {
             .state()
             .create_logical_plan(sql)
             .await
-            .context("plan authorized query")?;
+            .map_err(AuthorizedQueryError::invalid_query)?;
         validate_logical_plan(
             &plan,
             &self.limits.allowed_functions,
             &self.authorized_relations,
-        )?;
-        let optimized = self.context.state().optimize(&plan)?;
+        )
+        .map_err(AuthorizedQueryError::unauthorized)?;
+        let optimized = self
+            .context
+            .state()
+            .optimize(&plan)
+            .map_err(AuthorizedQueryError::invalid_query)?;
         validate_logical_plan(
             &optimized,
             &self.limits.allowed_functions,
             &self.authorized_relations,
-        )?;
-        let frame = self.context.execute_logical_plan(optimized).await?;
+        )
+        .map_err(AuthorizedQueryError::unauthorized)?;
+        validate_trusted_entry_filters(&optimized, &self.trusted_relations)
+            .map_err(AuthorizedQueryError::unauthorized)?;
+        let frame = self
+            .context
+            .execute_logical_plan(optimized)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
         let max_rows_with_sentinel = self
             .limits
             .max_rows
             .checked_add(1)
-            .context("authorized query row limit is too large")?;
-        let frame = frame.limit(0, Some(max_rows_with_sentinel))?;
+            .ok_or_else(|| anyhow!("authorized query row limit is too large"))
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        let frame = frame
+            .limit(0, Some(max_rows_with_sentinel))
+            .map_err(AuthorizedQueryError::resource_limit)?;
         let task_context = Arc::new(frame.task_ctx());
-        let physical = frame.create_physical_plan().await?;
-        validate_physical_plan(&physical, &self.authorized_scans)?;
-        let batches = datafusion::physical_plan::collect(physical, task_context).await?;
+        let physical = frame
+            .create_physical_plan()
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        validate_physical_plan(&physical, &self.authorized_scans)
+            .map_err(AuthorizedQueryError::unauthorized)?;
+        let batches = datafusion::physical_plan::collect(physical, task_context)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
         let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
         if rows > self.limits.max_rows {
-            bail!("authorized query row limit exceeded");
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "authorized query row limit exceeded"
+            ))
+            .into());
         }
         Ok(batches)
     }
@@ -304,19 +422,7 @@ fn validate_logical_plan(
     }
     for expression in plan.expressions() {
         expression.apply(|expression| {
-            let name = match expression {
-                Expr::ScalarFunction(function) => Some(function.name()),
-                Expr::AggregateFunction(function) => Some(function.func.name()),
-                Expr::WindowFunction(function) => Some(function.fun.name()),
-                _ => None,
-            };
-            if let Some(name) = name {
-                if !allowed_functions.contains(&name.to_ascii_lowercase()) {
-                    return Err(datafusion::error::DataFusionError::Plan(format!(
-                        "function {name} is not authorized"
-                    )));
-                }
-            }
+            validate_expression_function(expression, allowed_functions)?;
             Ok(TreeNodeRecursion::Continue)
         })?;
     }
@@ -324,6 +430,202 @@ fn validate_logical_plan(
         validate_logical_plan(input, allowed_functions, authorized_relations)?;
     }
     Ok(())
+}
+
+/// Keep this match exhaustive. DataFusion represents function calls in several
+/// expression variants, and a future variant must fail compilation here until
+/// its authorization semantics are deliberately reviewed.
+#[allow(deprecated)]
+fn validate_expression_function(
+    expression: &Expr,
+    allowed_functions: &BTreeSet<String>,
+) -> datafusion::error::Result<()> {
+    match expression {
+        Expr::ScalarFunction(function) => authorize_function(function.name(), allowed_functions),
+        Expr::AggregateFunction(function) => {
+            authorize_function(function.func.name(), allowed_functions)
+        }
+        Expr::WindowFunction(function) => {
+            authorize_function(function.fun.name(), allowed_functions)
+        }
+        // DataFusion's UNNEST is a distinct expression/plan form rather than
+        // a ScalarFunction. It remains unavailable unless Core admits it.
+        Expr::Unnest(_) => authorize_function("unnest", allowed_functions),
+        Expr::Alias(_)
+        | Expr::Column(_)
+        | Expr::ScalarVariable(_, _)
+        | Expr::Literal(_, _)
+        | Expr::BinaryExpr(_)
+        | Expr::Like(_)
+        | Expr::SimilarTo(_)
+        | Expr::Not(_)
+        | Expr::IsNotNull(_)
+        | Expr::IsNull(_)
+        | Expr::IsTrue(_)
+        | Expr::IsFalse(_)
+        | Expr::IsUnknown(_)
+        | Expr::IsNotTrue(_)
+        | Expr::IsNotFalse(_)
+        | Expr::IsNotUnknown(_)
+        | Expr::Negative(_)
+        | Expr::Between(_)
+        | Expr::Case(_)
+        | Expr::Cast(_)
+        | Expr::TryCast(_)
+        | Expr::InList(_)
+        | Expr::Exists(_)
+        | Expr::InSubquery(_)
+        | Expr::SetComparison(_)
+        | Expr::ScalarSubquery(_)
+        | Expr::Wildcard { .. }
+        | Expr::GroupingSet(_)
+        | Expr::Placeholder(_)
+        | Expr::OuterReferenceColumn(_, _) => Ok(()),
+    }
+}
+
+fn authorize_function(
+    name: &str,
+    allowed_functions: &BTreeSet<String>,
+) -> datafusion::error::Result<()> {
+    if allowed_functions.contains(&name.to_ascii_lowercase()) {
+        Ok(())
+    } else {
+        Err(datafusion::error::DataFusionError::Plan(format!(
+            "function {name} is not authorized"
+        )))
+    }
+}
+
+/// Verifies that every internal Iceberg relation remains guarded by the Entry
+/// boundary installed while building the trusted view. A user predicate can
+/// only add another filter; it cannot make this filter disappear. This runs on
+/// the optimized plan because predicate pushdown/rewrite happens after the
+/// initial authorization check.
+fn validate_trusted_entry_filters(
+    plan: &LogicalPlan,
+    trusted_relations: &BTreeMap<String, TrustedRelation>,
+) -> Result<()> {
+    let mut seen_scans = BTreeSet::new();
+    let mut guarded_scans = BTreeSet::new();
+    let mut projected_relations = BTreeSet::new();
+    collect_trusted_entry_filters(
+        plan,
+        trusted_relations,
+        &mut seen_scans,
+        &mut guarded_scans,
+        &mut projected_relations,
+    )?;
+    for internal in trusted_relations.keys() {
+        if seen_scans.contains(internal) && !guarded_scans.contains(internal) {
+            bail!("optimized query plan lost the trusted Entry authorization filter");
+        }
+        if seen_scans.contains(internal) && !projected_relations.contains(internal) {
+            bail!("optimized query plan lost the trusted visible-column projection");
+        }
+    }
+    Ok(())
+}
+
+fn collect_trusted_entry_filters(
+    plan: &LogicalPlan,
+    trusted_relations: &BTreeMap<String, TrustedRelation>,
+    seen_scans: &mut BTreeSet<String>,
+    guarded_scans: &mut BTreeSet<String>,
+    projected_relations: &mut BTreeSet<String>,
+) -> Result<BTreeSet<String>> {
+    let mut descendants = BTreeSet::new();
+    for input in plan.inputs() {
+        descendants.extend(collect_trusted_entry_filters(
+            input,
+            trusted_relations,
+            seen_scans,
+            guarded_scans,
+            projected_relations,
+        )?);
+    }
+    if let LogicalPlan::TableScan(scan) = plan {
+        let relation = scan.table_name.to_string();
+        if let Some(trusted) = trusted_relations.get(&relation) {
+            seen_scans.insert(relation.clone());
+            descendants.insert(relation.clone());
+            if scan
+                .filters
+                .iter()
+                .any(|filter| is_trusted_entry_filter(filter, trusted))
+            {
+                guarded_scans.insert(relation);
+            }
+        }
+    }
+    if let LogicalPlan::Filter(filter) = plan {
+        if descendants.len() == 1 {
+            let internal = descendants.iter().next().expect("one relation");
+            if let Some(trusted) = trusted_relations.get(internal) {
+                if is_trusted_entry_filter(&filter.predicate, trusted) {
+                    guarded_scans.insert(internal.clone());
+                }
+            }
+        }
+    }
+    if let LogicalPlan::SubqueryAlias(alias) = plan {
+        let visible = alias
+            .schema
+            .fields()
+            .iter()
+            .map(|field| field.name().to_string())
+            .collect::<BTreeSet<_>>();
+        for (internal, trusted) in trusted_relations {
+            if alias.alias.to_string() == trusted.relation
+                && visible.is_subset(&trusted.visible_columns)
+            {
+                projected_relations.insert(internal.clone());
+            }
+        }
+    }
+    Ok(descendants)
+}
+
+fn is_trusted_entry_filter(expression: &Expr, trusted: &TrustedRelation) -> bool {
+    let mut entry_ids = BTreeSet::new();
+    let _ = expression.apply(|candidate| {
+        if let Expr::InList(list) = candidate {
+            if !list.negated && is_entry_id_column(&list.expr) {
+                entry_ids.extend(list.list.iter().filter_map(literal_binary));
+            }
+        }
+        if let Expr::BinaryExpr(binary) = candidate {
+            if binary.op == datafusion::logical_expr::Operator::Eq {
+                if is_entry_id_column(&binary.left) {
+                    if let Some(value) = literal_binary(&binary.right) {
+                        entry_ids.insert(value);
+                    }
+                } else if is_entry_id_column(&binary.right) {
+                    if let Some(value) = literal_binary(&binary.left) {
+                        entry_ids.insert(value);
+                    }
+                }
+            }
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    entry_ids == trusted.readable_entry_ids
+}
+
+fn is_entry_id_column(expression: &Expr) -> bool {
+    matches!(expression, Expr::Column(column) if column.name == "entry_id")
+}
+
+fn literal_binary(expression: &Expr) -> Option<Vec<u8>> {
+    match expression {
+        Expr::Literal(datafusion::scalar::ScalarValue::Binary(Some(value)), _) => {
+            Some(value.clone())
+        }
+        Expr::Literal(datafusion::scalar::ScalarValue::FixedSizeBinary(_, Some(value)), _) => {
+            Some(value.clone())
+        }
+        _ => None,
+    }
 }
 
 fn validate_physical_plan(

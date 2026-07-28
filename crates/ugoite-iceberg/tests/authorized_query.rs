@@ -7,7 +7,8 @@ use ugoite_core::query::{
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
 use ugoite_domain::id::{EntryId, FieldId, FormId, SpaceId};
-use ugoite_iceberg::{publication_context, IcebergWorkspace};
+use ugoite_iceberg::{publication_context, query_context::AuthorizedQueryError, IcebergWorkspace};
+use ugoite_storage::operator_from_uri;
 use uuid::Uuid;
 
 fn form(id: u128, name: &str) -> FormDefinition {
@@ -147,6 +148,9 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         "SELECT current_schema()",
         "SELECT current_catalog()",
         "SELECT unregistered_udf(title) FROM tasks",
+        "SELECT UNNEST([1, 2])",
+        "SELECT array_map([1, 2], x -> x + 1)",
+        "SELECT * FROM generate_series(1, 2)",
     ] {
         assert!(
             context.execute(sql).await.is_err(),
@@ -178,6 +182,54 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         .authorized_query_context(policy(&tasks, &[]))
         .await?;
     assert!(empty.execute("SELECT * FROM tasks").await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn function_variants_and_storage_failures_are_closed_errors() -> anyhow::Result<()> {
+    let warehouse = "memory://authorized-query-closed-errors";
+    let workspace =
+        IcebergWorkspace::memory_for_tests(SpaceId::from(Uuid::from_u128(70)), warehouse).await?;
+    let tasks = form(71, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    append(&workspace, &tasks, 72, 73, "one").await?;
+    let context = workspace
+        .authorized_query_context(policy(&tasks, &[72]))
+        .await?;
+
+    let error = context
+        .execute("SELECT UNNEST([1, 2])")
+        .await
+        .expect_err("UNNEST must be controlled by the function allowlist");
+    assert!(matches!(
+        error.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::UnauthorizedQueryFeature { .. })
+    ));
+
+    let checkpoint = workspace.capture_checkpoint().await?;
+    let mut checkpoint_policy = policy(&tasks, &[72]);
+    checkpoint_policy.checkpoint = Some(checkpoint.clone());
+    let metadata_path = checkpoint.tables[0]
+        .metadata_location
+        .strip_prefix("memory:///")
+        .or_else(|| {
+            checkpoint.tables[0]
+                .metadata_location
+                .strip_prefix("memory:/")
+        })
+        .expect("memory metadata location");
+    operator_from_uri(warehouse)?.delete(metadata_path).await?;
+    let error = match workspace.authorized_query_context(checkpoint_policy).await {
+        Ok(_) => anyhow::bail!("missing checkpoint metadata must not create a query context"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error.downcast_ref::<AuthorizedQueryError>(),
+        Some(AuthorizedQueryError::QueryExecutionFailed { .. })
+    ));
+    let rendered = error.to_string();
+    assert!(!rendered.contains("memory:"));
+    assert!(!rendered.contains("metadata"));
     Ok(())
 }
 
