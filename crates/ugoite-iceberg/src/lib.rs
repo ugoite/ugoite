@@ -150,7 +150,7 @@ pub fn publication_context<T: Serialize>(
     command_kind: impl Into<String>,
     command: &T,
 ) -> Result<PublicationContext> {
-    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(command)?));
+    let digest = hex::encode(Sha256::digest(serde_json::to_vec(command)?));
     Ok(PublicationContext::with_command_digest(
         command_id,
         command_kind,
