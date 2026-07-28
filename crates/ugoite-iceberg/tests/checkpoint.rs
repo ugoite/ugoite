@@ -262,6 +262,54 @@ async fn checkpoint_reports_missing_and_tampered_coordinates_explicitly() -> any
 }
 
 #[tokio::test]
+async fn checkpoint_rejects_tampered_snapshot_and_schema_before_persistence_or_load(
+) -> anyhow::Result<()> {
+    let warehouse = "memory://checkpoint-coordinate-validation";
+    let (workspace, _, checkpoint) = checkpoint_with_one_revision(warehouse, 29).await?;
+
+    for (name, mutate) in [
+        (
+            "snapshot",
+            (|checkpoint: &mut ugoite_iceberg::SpaceCheckpoint| {
+                checkpoint.tables[0].snapshot_id =
+                    checkpoint.tables[0].snapshot_id.map(|id| id + 1);
+            }) as fn(&mut ugoite_iceberg::SpaceCheckpoint),
+        ),
+        (
+            "schema",
+            (|checkpoint: &mut ugoite_iceberg::SpaceCheckpoint| {
+                checkpoint.tables[0].schema_id += 1;
+            }) as fn(&mut ugoite_iceberg::SpaceCheckpoint),
+        ),
+    ] {
+        let mut tampered = checkpoint.clone();
+        mutate(&mut tampered);
+        tampered.coordinate_checksum = tampered.computed_coordinate_checksum();
+        let error = workspace
+            .save_checkpoint(&format!("tampered-{name}"), &tampered)
+            .await
+            .expect_err("tampered table coordinates must not become durable");
+        assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
+
+        let load_name = format!("raw-tampered-{name}");
+        tampered.name = Some(load_name.clone());
+        let space_root = format!("test/space_{}", checkpoint.space_id.as_uuid().simple());
+        operator_from_uri(warehouse)?
+            .write(
+                &format!("{space_root}/_ugoite/checkpoints/{load_name}.json"),
+                serde_json::to_vec(&tampered)?,
+            )
+            .await?;
+        let error = workspace
+            .load_checkpoint(&load_name)
+            .await
+            .expect_err("tampered durable coordinates must fail while loading");
+        assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn checkpoint_missing_immutable_targets_are_unavailable() -> anyhow::Result<()> {
     assert_checkpoint_unavailable_after_delete(
         "memory://checkpoint-missing-publication",

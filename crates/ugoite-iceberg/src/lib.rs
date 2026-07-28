@@ -327,6 +327,11 @@ impl IcebergWorkspace {
             .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
             .validate_checkpoint_evidence(checkpoint)
             .await?;
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .validate_checkpoint_tables(checkpoint)
+            .await?;
         let mut stored = checkpoint.clone();
         stored.name = Some(name.to_string());
         self.space_catalog
@@ -357,6 +362,11 @@ impl IcebergWorkspace {
             .as_ref()
             .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
             .validate_checkpoint_evidence(&checkpoint)
+            .await?;
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .validate_checkpoint_tables(&checkpoint)
             .await?;
         Ok(checkpoint)
     }
