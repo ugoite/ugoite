@@ -12,7 +12,6 @@ use ugoite_domain::id::{EntryId, FormId};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorizedQueryPolicy {
     pub forms: BTreeMap<FormId, AuthorizedQueryForm>,
-    pub readable_entry_ids: BTreeSet<EntryId>,
     /// When present, every provider is built from this one complete,
     /// publication-verified Space coordinate.
     pub checkpoint: Option<SpaceCheckpoint>,
@@ -23,6 +22,9 @@ pub struct AuthorizedQueryPolicy {
 pub struct AuthorizedQueryForm {
     /// The sole SQL relation name exposed for this Form.
     pub relation: String,
+    /// Entry IDs Core authorizes for this Form. The query adapter embeds this
+    /// relation-specific boundary in the trusted view before SQL is planned.
+    pub readable_entry_ids: BTreeSet<EntryId>,
     /// User-defined Form columns which may be resolved or projected.
     pub columns: BTreeSet<String>,
     /// System columns which are intentionally part of this query contract.

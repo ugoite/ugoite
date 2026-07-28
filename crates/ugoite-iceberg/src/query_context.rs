@@ -29,6 +29,14 @@ pub struct AuthorizedQueryContext {
     context: SessionContext,
     limits: ugoite_core::query::QueryLimits,
     permits: Arc<Semaphore>,
+    authorized_relations: BTreeSet<String>,
+    authorized_scans: BTreeSet<AuthorizedScan>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct AuthorizedScan {
+    table_uuid: String,
+    snapshot_id: Option<i64>,
 }
 
 impl IcebergWorkspace {
@@ -55,6 +63,7 @@ impl IcebergWorkspace {
             .context("configure bounded DataFusion runtime")?;
         let context = SessionContext::new_with_config_rt(config, runtime);
         let mut relations = BTreeSet::new();
+        let mut authorized_scans = BTreeSet::new();
 
         if let Some(checkpoint) = &policy.checkpoint {
             self.validate_checkpoint(checkpoint)?;
@@ -100,6 +109,10 @@ impl IcebergWorkspace {
                     None,
                 ),
             };
+            let authorized_scan = AuthorizedScan {
+                table_uuid: table.metadata().uuid().to_string(),
+                snapshot_id,
+            };
             let provider = match snapshot_id {
                 Some(snapshot_id) => {
                     IcebergStaticTableProvider::try_new_from_table_snapshot(table, snapshot_id)
@@ -111,10 +124,13 @@ impl IcebergWorkspace {
                     .context("open static Iceberg provider")?,
             };
 
+            authorized_scans.insert(authorized_scan);
+
             let internal = format!("{INTERNAL_RELATION_PREFIX}{}", form_id.as_uuid().simple());
+            relations.insert(internal.clone());
             context.register_table(internal.as_str(), Arc::new(provider))?;
             let visible = visible_columns(&form, form_policy)?;
-            let entry_ids = policy
+            let entry_ids = form_policy
                 .readable_entry_ids
                 .iter()
                 .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
@@ -137,6 +153,8 @@ impl IcebergWorkspace {
             context,
             limits: policy.limits,
             permits: Arc::new(Semaphore::new(max_concurrency)),
+            authorized_relations: relations,
+            authorized_scans,
         })
     }
 }
@@ -162,9 +180,17 @@ impl AuthorizedQueryContext {
             .create_logical_plan(sql)
             .await
             .context("plan authorized query")?;
-        validate_logical_plan(&plan, &self.limits.allowed_functions)?;
+        validate_logical_plan(
+            &plan,
+            &self.limits.allowed_functions,
+            &self.authorized_relations,
+        )?;
         let optimized = self.context.state().optimize(&plan)?;
-        validate_logical_plan(&optimized, &self.limits.allowed_functions)?;
+        validate_logical_plan(
+            &optimized,
+            &self.limits.allowed_functions,
+            &self.authorized_relations,
+        )?;
         let frame = self.context.execute_logical_plan(optimized).await?;
         let max_rows_with_sentinel = self
             .limits
@@ -174,7 +200,7 @@ impl AuthorizedQueryContext {
         let frame = frame.limit(0, Some(max_rows_with_sentinel))?;
         let task_context = Arc::new(frame.task_ctx());
         let physical = frame.create_physical_plan().await?;
-        validate_physical_plan(&physical)?;
+        validate_physical_plan(&physical, &self.authorized_scans)?;
         let batches = datafusion::physical_plan::collect(physical, task_context).await?;
         let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
         if rows > self.limits.max_rows {
@@ -225,6 +251,9 @@ fn visible_columns(
 }
 
 fn validate_relation(relation: &str) -> Result<()> {
+    if relation.starts_with(INTERNAL_RELATION_PREFIX) {
+        bail!("authorized query relation uses a reserved internal prefix");
+    }
     let mut characters = relation.chars();
     let Some(first) = characters.next() else {
         bail!("authorized query relation must not be empty");
@@ -237,7 +266,11 @@ fn validate_relation(relation: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_logical_plan(plan: &LogicalPlan, allowed_functions: &BTreeSet<String>) -> Result<()> {
+fn validate_logical_plan(
+    plan: &LogicalPlan,
+    allowed_functions: &BTreeSet<String>,
+    authorized_relations: &BTreeSet<String>,
+) -> Result<()> {
     match plan {
         LogicalPlan::Explain(_) | LogicalPlan::Analyze(_) => bail!("EXPLAIN is not supported"),
         LogicalPlan::Dml(_)
@@ -247,7 +280,27 @@ fn validate_logical_plan(plan: &LogicalPlan, allowed_functions: &BTreeSet<String
         | LogicalPlan::DescribeTable(_)
         | LogicalPlan::Extension(_)
         | LogicalPlan::RecursiveQuery(_) => bail!("statement kind is not supported"),
-        _ => {}
+        LogicalPlan::TableScan(scan) => {
+            let relation = scan.table_name.to_string();
+            if !authorized_relations.contains(&relation) {
+                bail!("query plan scans an unauthorized relation {relation}");
+            }
+        }
+        LogicalPlan::Projection(_)
+        | LogicalPlan::Filter(_)
+        | LogicalPlan::Window(_)
+        | LogicalPlan::Aggregate(_)
+        | LogicalPlan::Sort(_)
+        | LogicalPlan::Join(_)
+        | LogicalPlan::Repartition(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::EmptyRelation(_)
+        | LogicalPlan::Subquery(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Limit(_)
+        | LogicalPlan::Values(_)
+        | LogicalPlan::Distinct(_)
+        | LogicalPlan::Unnest(_) => {}
     }
     for expression in plan.expressions() {
         expression.apply(|expression| {
@@ -268,20 +321,61 @@ fn validate_logical_plan(plan: &LogicalPlan, allowed_functions: &BTreeSet<String
         })?;
     }
     for input in plan.inputs() {
-        validate_logical_plan(input, allowed_functions)?;
+        validate_logical_plan(input, allowed_functions, authorized_relations)?;
     }
     Ok(())
 }
 
-fn validate_physical_plan(plan: &Arc<dyn ExecutionPlan>) -> Result<()> {
-    if plan
+fn validate_physical_plan(
+    plan: &Arc<dyn ExecutionPlan>,
+    authorized_scans: &BTreeSet<AuthorizedScan>,
+) -> Result<()> {
+    if let Some(scan) = plan
         .as_any()
-        .is::<datafusion::physical_plan::explain::ExplainExec>()
+        .downcast_ref::<iceberg_datafusion::physical_plan::IcebergTableScan>()
     {
-        bail!("EXPLAIN physical plan is not supported");
+        let authorized = AuthorizedScan {
+            table_uuid: scan.table().metadata().uuid().to_string(),
+            snapshot_id: scan.snapshot_id(),
+        };
+        if !authorized_scans.contains(&authorized) {
+            bail!("physical plan scans an unauthorized Iceberg table");
+        }
+        // The Entry predicate is owned by the Core-built view and may remain
+        // in a FilterExec rather than be pushed into IcebergTableScan. The
+        // optimized logical-plan validation above proves that this scan is
+        // reachable only through an authorized relation/view.
+    } else if !is_authorized_physical_node(plan.name()) {
+        bail!("physical plan node {} is not authorized", plan.name());
     }
     for child in plan.children() {
-        validate_physical_plan(child)?;
+        validate_physical_plan(child, authorized_scans)?;
     }
     Ok(())
+}
+
+fn is_authorized_physical_node(name: &str) -> bool {
+    matches!(
+        name,
+        "AggregateExec"
+            | "CoalesceBatchesExec"
+            | "CoalescePartitionsExec"
+            | "CooperativeExec"
+            | "CrossJoinExec"
+            | "EmptyExec"
+            | "FilterExec"
+            | "GlobalLimitExec"
+            | "HashJoinExec"
+            | "LocalLimitExec"
+            | "NestedLoopJoinExec"
+            | "ProjectionExec"
+            | "RepartitionExec"
+            | "SortExec"
+            | "SortMergeJoinExec"
+            | "SortPreservingMergeExec"
+            | "UnionExec"
+            | "WindowAggExec"
+            | "BoundedWindowAggExec"
+            | "UnnestExec"
+    )
 }

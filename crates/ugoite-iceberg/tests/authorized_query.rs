@@ -89,16 +89,16 @@ fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
             form.id,
             AuthorizedQueryForm {
                 relation: "tasks".into(),
+                readable_entry_ids: readable
+                    .iter()
+                    .map(|id| EntryId::from(Uuid::from_u128(*id)))
+                    .collect(),
                 columns: ["title".into()].into_iter().collect(),
                 system_columns: BTreeSet::new(),
             },
         )]
         .into_iter()
         .collect(),
-        readable_entry_ids: readable
-            .iter()
-            .map(|id| EntryId::from(Uuid::from_u128(*id)))
-            .collect(),
         checkpoint: None,
         limits: QueryLimits {
             max_memory_bytes: 8 * 1024 * 1024,
@@ -139,10 +139,14 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
 
     for sql in [
         "SELECT entry_id FROM tasks",
+        "SELECT t.entry_id FROM tasks AS t",
         "SELECT * FROM secrets",
         "SELECT * FROM information_schema.tables",
         "EXPLAIN SELECT * FROM tasks",
         "SELECT count(*) FROM tasks",
+        "SELECT current_schema()",
+        "SELECT current_catalog()",
+        "SELECT unregistered_udf(title) FROM tasks",
     ] {
         assert!(
             context.execute(sql).await.is_err(),
@@ -152,6 +156,7 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
     for sql in [
         "SELECT * FROM tasks t JOIN tasks other ON t.title = other.title",
         "SELECT * FROM (SELECT * FROM tasks) nested",
+        "SELECT t.title FROM tasks AS t",
     ] {
         let batches = context.execute(sql).await?;
         assert_eq!(
@@ -159,6 +164,16 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
             1
         );
     }
+    assert_eq!(
+        context
+            .execute("SELECT title AS entry_id FROM tasks")
+            .await?
+            .iter()
+            .map(|batch| batch.num_rows())
+            .sum::<usize>(),
+        1,
+        "a user-selected output alias must not resolve the hidden source column"
+    );
     let empty = workspace
         .authorized_query_context(policy(&tasks, &[]))
         .await?;
