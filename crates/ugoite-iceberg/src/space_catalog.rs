@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 use ugoite_domain::id::SpaceId;
 use ugoite_storage::{CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore};
 use uuid::Uuid;
@@ -153,6 +154,7 @@ pub struct SpaceCatalog {
     runtime: Runtime,
     publication: PublicationContext,
     mutation_claimed: Arc<AtomicBool>,
+    entry_mutation_serializer: Arc<Mutex<()>>,
 }
 
 impl std::fmt::Debug for SpaceCatalog {
@@ -193,6 +195,7 @@ impl SpaceCatalog {
             runtime: Runtime::current(),
             publication: PublicationContext::generated(),
             mutation_claimed: Arc::new(AtomicBool::new(false)),
+            entry_mutation_serializer: Arc::new(Mutex::new(())),
         })
     }
 
@@ -213,7 +216,15 @@ impl SpaceCatalog {
             runtime: self.runtime.clone(),
             publication: PublicationContext::generated(),
             mutation_claimed: Arc::new(AtomicBool::new(false)),
+            entry_mutation_serializer: self.entry_mutation_serializer.clone(),
         }
+    }
+
+    /// Keeps domain revision validation and its Iceberg append together for
+    /// local writers. Shared writers still rely on the Catalog Head's
+    /// conditional publish and read-time duplicate-head detection.
+    pub(crate) async fn serialize_entry_mutation(&self) -> OwnedMutexGuard<()> {
+        self.entry_mutation_serializer.clone().lock_owned().await
     }
 
     #[cfg(test)]

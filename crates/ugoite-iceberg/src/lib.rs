@@ -43,6 +43,9 @@ use arrow_array::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
+use datafusion::functions_aggregate::expr_fn::{count, max};
+use datafusion::logical_expr::JoinType;
+use datafusion::prelude::{col, lit};
 use iceberg::expr::Reference;
 use iceberg::spec::{DataFileFormat, Datum};
 use iceberg::spec::{
@@ -57,7 +60,7 @@ use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
 use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
-use iceberg_datafusion::IcebergCatalogProvider;
+use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
@@ -92,6 +95,16 @@ pub struct IcebergWorkspace {
 pub enum SchemaCommitCapability {
     MetadataOnly,
     AtomicSchemaEvolution,
+}
+
+/// The reusable logical views over one append-only Form revision table.
+/// `LatestIncludingTombstones` deliberately retains delete revisions so a
+/// caller can distinguish an absent Entry from a deleted one.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RevisionView {
+    All,
+    LatestIncludingTombstones,
+    Current,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -461,11 +474,15 @@ impl IcebergWorkspace {
         }
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        let entry_ids = revisions
-            .iter()
-            .map(|revision| revision.entry_id)
-            .collect::<std::collections::HashSet<_>>();
-        let mut current = self.latest_revisions(&table, Some(&entry_ids)).await?;
+        let mut entry_ids = Vec::new();
+        for revision in revisions {
+            if !entry_ids.contains(&revision.entry_id) {
+                entry_ids.push(revision.entry_id);
+            }
+        }
+        let mut current = self
+            .read_latest_revisions_for_entries(form_id, &entry_ids)
+            .await?;
         let mut seen = std::collections::HashSet::new();
         for revision in revisions {
             if revision.form_id != form.id || revision.form_version != form.version {
@@ -476,7 +493,9 @@ impl IcebergWorkspace {
             if !seen.insert(revision.revision_id) {
                 return Err(anyhow!("duplicate revision ID in append batch"));
             }
-            let previous = current.get(&revision.entry_id);
+            let previous = current
+                .iter()
+                .find(|current| current.entry_id == revision.entry_id);
             if let Some(previous) = previous {
                 if revision.expected_version != Some(previous.entry_version)
                     || revision.parent_revision_id != Some(previous.revision_id)
@@ -495,13 +514,14 @@ impl IcebergWorkspace {
                 return Err(anyhow!("entry revision conflict"));
             }
             revision.validate_payload(&form)?;
-            current.insert(
-                revision.entry_id,
-                LatestRevision {
-                    revision_id: revision.revision_id,
-                    entry_version: revision.entry_version,
-                },
-            );
+            if let Some(current) = current
+                .iter_mut()
+                .find(|current| current.entry_id == revision.entry_id)
+            {
+                *current = revision.clone();
+            } else {
+                current.push(revision.clone());
+            }
         }
         validate_batch_revision_metadata(&batches, revisions)?;
         let table_arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
@@ -615,66 +635,211 @@ impl IcebergWorkspace {
         Ok(revisions)
     }
 
-    async fn latest_revisions(
+    /// Reads one of the canonical revision views through the same DataFusion
+    /// logical-plan builder used for live and future checkpoint providers.
+    /// A duplicate maximum entry version is invariant corruption, never a
+    /// condition resolved by timestamp, revision ID, or file order.
+    pub async fn read_revision_view(
+        &self,
+        form_id: FormId,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_with_snapshot(form_id, view, None)
+            .await
+    }
+
+    /// Reads a canonical revision view from one immutable Iceberg snapshot.
+    /// The latest-state plan is identical to the live provider; only the
+    /// upstream Iceberg table provider is pinned.
+    pub async fn read_revision_view_at_snapshot(
+        &self,
+        form_id: FormId,
+        view: RevisionView,
+        snapshot_id: i64,
+    ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_with_snapshot(form_id, view, Some(snapshot_id))
+            .await
+    }
+
+    async fn read_revision_view_with_snapshot(
+        &self,
+        form_id: FormId,
+        view: RevisionView,
+        snapshot_id: Option<i64>,
+    ) -> Result<Vec<EntryRevision>> {
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let batches = match view {
+            RevisionView::All => {
+                let scan = match snapshot_id {
+                    Some(snapshot_id) => table.scan().snapshot_id(snapshot_id),
+                    None => table.scan(),
+                };
+                let mut stream = scan.build()?.to_arrow().await?;
+                let mut batches = Vec::new();
+                while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
+                    batches.push(batch);
+                }
+                batches
+            }
+            RevisionView::LatestIncludingTombstones | RevisionView::Current => {
+                self.read_latest_revision_batches(&table, form_id, None, snapshot_id)
+                    .await?
+            }
+        };
+        let schema = table.metadata().current_schema().clone();
+        let mut revisions = Vec::new();
+        for batch in &batches {
+            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+        }
+        if view == RevisionView::Current {
+            revisions.retain(|revision| revision.operation != EntryOperation::Delete);
+        }
+        Ok(revisions)
+    }
+
+    /// Point lookup variant of the latest plan. The entry predicate is applied
+    /// before the max-version aggregation, preserving latest-state semantics
+    /// while avoiding a full Form scan.
+    pub async fn read_latest_revisions_for_entry(
+        &self,
+        form_id: FormId,
+        entry_id: ugoite_domain::id::EntryId,
+    ) -> Result<Vec<EntryRevision>> {
+        self.read_latest_revisions_for_entries(form_id, &[entry_id])
+            .await
+    }
+
+    async fn read_latest_revisions_for_entries(
+        &self,
+        form_id: FormId,
+        entry_ids: &[ugoite_domain::id::EntryId],
+    ) -> Result<Vec<EntryRevision>> {
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let schema = table.metadata().current_schema().clone();
+        let batches = self
+            .read_latest_revision_batches(&table, form_id, Some(entry_ids), None)
+            .await?;
+        let mut revisions = Vec::new();
+        for batch in &batches {
+            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+        }
+        Ok(revisions)
+    }
+
+    async fn latest_revision_plan(
         &self,
         table: &iceberg::table::Table,
-        entry_ids: Option<&std::collections::HashSet<ugoite_domain::id::EntryId>>,
-    ) -> Result<std::collections::HashMap<ugoite_domain::id::EntryId, LatestRevision>> {
-        let mut scan = table
-            .scan()
-            .select(vec!["entry_id", "revision_id", "entry_version"]);
+        form_id: FormId,
+        entry_ids: Option<&[ugoite_domain::id::EntryId]>,
+        snapshot_id: Option<i64>,
+    ) -> Result<Vec<RecordBatch>> {
+        let context = SessionContext::new();
+        let table_name = if let Some(snapshot_id) = snapshot_id {
+            let provider =
+                IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
+                    .await?;
+            context.register_table("revisions", Arc::new(provider))?;
+            "revisions".to_string()
+        } else {
+            let provider = IcebergCatalogProvider::try_new(self.catalog.clone()).await?;
+            context.register_catalog("ugoite", Arc::new(provider));
+            format!(
+                "ugoite.{}.{}",
+                self.namespace.as_ref()[0],
+                physical_form_name(form_id)
+            )
+        };
+        let mut revisions = context.table(table_name).await?;
         if let Some(entry_ids) = entry_ids {
-            scan = scan.with_filter(
-                Reference::new("entry_id").is_in(
+            if entry_ids.is_empty() {
+                return Ok(Vec::new());
+            }
+            revisions = revisions.filter(
+                col("entry_id").in_list(
                     entry_ids
                         .iter()
-                        .map(|entry_id| Datum::uuid(entry_id.as_uuid())),
+                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                        .collect(),
+                    false,
                 ),
-            );
+            )?;
         }
-        let scan = scan.build()?;
-        let mut stream = scan.to_arrow().await?;
-        let mut latest: std::collections::HashMap<ugoite_domain::id::EntryId, LatestRevision> =
-            std::collections::HashMap::new();
-        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
-            let entry_ids = batch
-                .column_by_name("entry_id")
-                .context("Iceberg table is missing entry_id")?;
-            let revision_ids = batch
+        let maxima = revisions
+            .clone()
+            .aggregate(
+                vec![col("entry_id")],
+                vec![max(col("entry_version")).alias("latest_entry_version")],
+            )?
+            .select(vec![
+                col("entry_id").alias("latest_entry_id"),
+                col("latest_entry_version"),
+            ])?;
+        let heads = revisions.join(
+            maxima,
+            JoinType::Inner,
+            &["entry_id", "entry_version"],
+            &["latest_entry_id", "latest_entry_version"],
+            None,
+        )?;
+        let duplicates = heads
+            .clone()
+            .aggregate(
+                vec![col("entry_id")],
+                vec![count(lit(1)).alias("head_count")],
+            )?
+            .filter(col("head_count").not_eq(lit(1)))?
+            .collect()
+            .await?;
+        if duplicates.iter().any(|batch| batch.num_rows() > 0) {
+            return Err(anyhow!(
+                "entry revision invariant failed: multiple revisions share a maximum entry_version"
+            ));
+        }
+        Ok(heads
+            .select_columns(&["entry_id", "revision_id", "entry_version"])?
+            .collect()
+            .await?)
+    }
+
+    async fn read_latest_revision_batches(
+        &self,
+        table: &iceberg::table::Table,
+        form_id: FormId,
+        entry_ids: Option<&[ugoite_domain::id::EntryId]>,
+        snapshot_id: Option<i64>,
+    ) -> Result<Vec<RecordBatch>> {
+        let ids = self
+            .latest_revision_plan(table, form_id, entry_ids, snapshot_id)
+            .await?;
+        let mut revision_ids = Vec::new();
+        for batch in ids {
+            let values = batch
                 .column_by_name("revision_id")
-                .context("Iceberg table is missing revision_id")?;
-            let versions = batch
-                .column_by_name("entry_version")
-                .and_then(|array| array.as_any().downcast_ref::<Int64Array>())
-                .context("entry_version must be an int64 column")?;
+                .context("latest revision plan is missing revision_id")?;
             for row in 0..batch.num_rows() {
-                let entry_id = uuid_at(entry_ids, row)?;
-                let revision_id =
-                    ugoite_domain::id::RevisionId::from_uuid(uuid_at(revision_ids, row)?.as_uuid());
-                let version = u64::try_from(versions.value(row))
-                    .map_err(|_| anyhow!("entry_version must be non-negative"))?;
-                if let Some(known) = latest.get(&entry_id) {
-                    if version == known.entry_version && revision_id != known.revision_id {
-                        return Err(anyhow!(
-                            "entry revision conflict: entry {entry_id} has multiple revisions at version {version}"
-                        ));
-                    }
-                }
-                if latest
-                    .get(&entry_id)
-                    .is_none_or(|known: &LatestRevision| version > known.entry_version)
-                {
-                    latest.insert(
-                        entry_id,
-                        LatestRevision {
-                            revision_id,
-                            entry_version: version,
-                        },
-                    );
-                }
+                revision_ids.push(Datum::uuid(uuid_at(values, row)?.as_uuid()));
             }
         }
-        Ok(latest)
+        if revision_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let scan = table
+            .scan()
+            .with_filter(Reference::new("revision_id").is_in(revision_ids));
+        let mut stream = match snapshot_id {
+            Some(snapshot_id) => scan.snapshot_id(snapshot_id),
+            None => scan,
+        }
+        .build()?
+        .to_arrow()
+        .await?;
+        let mut batches = Vec::new();
+        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
+            batches.push(batch);
+        }
+        Ok(batches)
     }
 
     pub async fn query(&self, sql: &str) -> Result<Vec<RecordBatch>> {
@@ -793,6 +958,13 @@ impl SpaceCommitCoordinator {
         form_id: FormId,
         revisions: Vec<EntryRevision>,
     ) -> Result<CommitReceipt> {
+        let _entry_mutation_guard = self
+            .workspace
+            .space_catalog
+            .as_ref()
+            .context("coordinator is missing its SpaceCatalog")?
+            .serialize_entry_mutation()
+            .await;
         if let Some(receipt) = self.publication_receipt().await? {
             return Ok(CommitReceipt {
                 command_id: receipt.command_id,
@@ -862,12 +1034,6 @@ fn is_publication_conflict(error: &anyhow::Error) -> bool {
     error
         .chain()
         .any(|cause| cause.to_string().contains("Catalog Head changed"))
-}
-
-#[derive(Debug, Clone, Copy)]
-struct LatestRevision {
-    revision_id: ugoite_domain::id::RevisionId,
-    entry_version: u64,
 }
 
 pub fn physical_form_name(form_id: FormId) -> String {

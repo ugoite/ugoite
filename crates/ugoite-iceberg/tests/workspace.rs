@@ -8,7 +8,7 @@ use ugoite_domain::form::{
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
     physical_form_name, publication_context, IcebergWorkspace, MigrationFormReport,
-    MigrationManifest, MigrationReport,
+    MigrationManifest, MigrationReport, RevisionView,
 };
 use uuid::Uuid;
 
@@ -378,6 +378,12 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
     let receipt = append_revisions(&workspace, form.id, vec![revision.clone()]).await?;
     assert_eq!(receipt.committed_revision_ids, vec![revision.revision_id]);
     assert!(receipt.data_file_count > 0);
+    assert_eq!(
+        workspace
+            .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
+            .await?,
+        vec![revision.clone()]
+    );
 
     let conflicting = EntryRevision {
         revision_id: Uuid::from_u128(33).into(),
@@ -387,6 +393,115 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         .await
         .unwrap_err();
     assert!(error.to_string().contains("conflict"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(60)),
+        "memory://iceberg-revision-views",
+    )
+    .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+
+    let first = EntryRevision {
+        form_id: form.id,
+        entry_id: Uuid::from_u128(61).into(),
+        revision_id: Uuid::from_u128(62).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata::default(),
+        values: BTreeMap::new(),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let first_receipt = append_revisions(&workspace, form.id, vec![first.clone()]).await?;
+
+    let deleted = EntryRevision {
+        revision_id: Uuid::from_u128(63).into(),
+        parent_revision_id: Some(first.revision_id),
+        entry_version: 2,
+        expected_version: Some(1),
+        operation: EntryOperation::Delete,
+        committed_at_micros: 2,
+        entry: EntryMetadata {
+            deleted: true,
+            deleted_at_micros: Some(2),
+            ..EntryMetadata::default()
+        },
+        ..first.clone()
+    };
+    let deleted_receipt = append_revisions(&workspace, form.id, vec![deleted.clone()]).await?;
+    assert_eq!(
+        workspace
+            .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
+            .await?,
+        vec![deleted.clone()]
+    );
+    assert!(workspace
+        .read_revision_view(form.id, RevisionView::Current)
+        .await?
+        .is_empty());
+    assert_eq!(
+        workspace
+            .read_latest_revisions_for_entry(form.id, first.entry_id)
+            .await?,
+        vec![deleted.clone()]
+    );
+    assert_eq!(
+        workspace
+            .read_revision_view_at_snapshot(
+                form.id,
+                RevisionView::LatestIncludingTombstones,
+                first_receipt.snapshot_id,
+            )
+            .await?,
+        vec![first.clone()]
+    );
+    assert!(
+        workspace
+            .read_revision_view_at_snapshot(
+                form.id,
+                RevisionView::Current,
+                deleted_receipt.snapshot_id,
+            )
+            .await?
+            .is_empty()
+    );
+
+    let restored = EntryRevision {
+        revision_id: Uuid::from_u128(64).into(),
+        parent_revision_id: Some(deleted.revision_id),
+        entry_version: 3,
+        expected_version: Some(2),
+        operation: EntryOperation::Restore,
+        committed_at_micros: 3,
+        entry: EntryMetadata {
+            restored_from: Some(deleted.revision_id),
+            ..EntryMetadata::default()
+        },
+        ..first.clone()
+    };
+    append_revisions(&workspace, form.id, vec![restored.clone()]).await?;
+    assert_eq!(
+        workspace
+            .read_revision_view(form.id, RevisionView::Current)
+            .await?,
+        vec![restored.clone()]
+    );
+    assert_eq!(
+        workspace.read_revisions(form.id).await?,
+        vec![first, deleted, restored]
+    );
     Ok(())
 }
 
