@@ -874,6 +874,26 @@
         }
       }
     },
+    "/spaces/{space_id}/health": {
+      "get": {
+        "summary": "Read-only Catalog Head and Iceberg metadata health evidence",
+        "parameters": [
+          {"$ref": "#/components/parameters/SpaceId"},
+          {
+            "name": "checkpoint",
+            "in": "query",
+            "required": false,
+            "description": "A named durable checkpoint to validate. Repeat for multiple checkpoints; storage is never listed.",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {"description": "Read-only health evidence with redacted physical locations", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/JsonValue"}}}},
+          "403": {"description": "Space management permission required", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "422": {"description": "Invalid checkpoint name or unavailable Catalog evidence", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        }
+      }
+    },
     "/spaces/{space_id}": {
       "get": {
         "summary": "Get a space",

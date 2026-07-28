@@ -8,7 +8,7 @@ use crate::integrity::RealIntegrityProvider;
 use crate::{
     asset,
     authorization::{Authorizer, ResourceKind, ResourceRef},
-    entry, form, index, preferences, saved_sql, search, space, sql_session,
+    entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
     storage::operator_from_uri,
 };
 use ugoite_core::error::AppError;
@@ -137,6 +137,18 @@ impl UgoiteService {
     pub async fn get_space(&self, space_id: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         space::get_space_raw(&self.operator, space_id).await
+    }
+
+    /// Returns read-only Catalog Head and Iceberg metadata evidence for one
+    /// Space. Checkpoint names are caller-supplied because listing storage is
+    /// not a source of Catalog or orphan authority.
+    pub async fn space_health(&self, space_id: &str, checkpoint_names: &[String]) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        Ok(serde_json::to_value(
+            workspace.health_report(checkpoint_names).await?,
+        )?)
     }
 
     pub async fn patch_space(&self, space_id: &str, patch: &Value) -> Result<Value> {

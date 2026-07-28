@@ -253,6 +253,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         )
         .route("/spaces", get(list_spaces).post(create_space))
         .route("/spaces/{space_id}", get(get_space).patch(patch_space))
+        .route("/spaces/{space_id}/health", get(space_health))
         .route("/spaces/{space_id}/audit", get(list_audit_events))
         .route("/spaces/{space_id}/test-connection", post(test_connection))
         .route(
@@ -3104,6 +3105,32 @@ async fn get_space(
             .map_err(ApiError::from_core)?,
     );
     Ok(Json(value))
+}
+
+#[derive(Default, Deserialize)]
+struct SpaceHealthQuery {
+    #[serde(default)]
+    checkpoint: Vec<String>,
+}
+
+async fn space_health(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Query(query): Query<SpaceHealthQuery>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
+    state
+        .service
+        .space_health(&space_id, &query.checkpoint)
+        .await
+        .map(Json)
+        .map_err(|_| {
+            ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Space health evidence is unavailable",
+            )
+        })
 }
 
 async fn patch_space(

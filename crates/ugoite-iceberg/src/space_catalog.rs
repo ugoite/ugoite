@@ -20,6 +20,11 @@ use ugoite_domain::id::{FormId, SpaceId};
 use ugoite_storage::{CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore};
 use uuid::Uuid;
 
+use crate::health::{
+    CatalogHeadHealth, CheckpointHealth, HealthStatus, SpaceHealthReport, TableHealth,
+    TableIdentifierHealth,
+};
+
 const SPACE_FORMAT_VERSION: u32 = 1;
 const MAX_HEAD_BYTES: usize = 1 << 20;
 
@@ -273,6 +278,231 @@ impl SpaceCatalog {
             head.form_registry_generation,
             tables,
         ))
+    }
+
+    /// Reads only the authoritative Head, its reachable metadata, and named
+    /// checkpoint targets. It deliberately never lists storage or scans table
+    /// rows: neither can establish Catalog authority or orphan evidence.
+    pub(crate) async fn health_report(
+        &self,
+        checkpoint_names: &[String],
+    ) -> anyhow::Result<SpaceHealthReport> {
+        let (head, exact) = match self.exact_head().await {
+            Ok(Some(head)) => head,
+            Ok(None) => return Ok(self.unavailable_head_health(checkpoint_names)),
+            Err(_) => return Ok(self.unavailable_head_health(checkpoint_names)),
+        };
+        let mut tables = Vec::with_capacity(head.tables.len());
+        for reference in head.tables.values() {
+            tables.push(self.table_health(reference).await);
+        }
+        tables.sort_by(|left, right| {
+            left.identifier
+                .namespace
+                .cmp(&right.identifier.namespace)
+                .then(left.identifier.table.cmp(&right.identifier.table))
+        });
+
+        let mut checkpoints = Vec::with_capacity(checkpoint_names.len());
+        for name in checkpoint_names {
+            checkpoints.push(self.checkpoint_health(name).await);
+        }
+
+        let status = if tables
+            .iter()
+            .any(|table| table.status == HealthStatus::Degraded)
+            || checkpoints
+                .iter()
+                .any(|checkpoint| checkpoint.status == HealthStatus::Degraded)
+        {
+            HealthStatus::Degraded
+        } else {
+            HealthStatus::Healthy
+        };
+        Ok(SpaceHealthReport {
+            status,
+            catalog_head: CatalogHeadHealth {
+                readable: true,
+                checksum: Some(head.checksum),
+                etag: exact.etag,
+                generation: Some(head.generation),
+                form_registry_generation: Some(head.form_registry_generation),
+                issue: None,
+            },
+            tables,
+            checkpoints,
+            unreachable_failed_attempts: Vec::new(),
+            unavailable_capabilities: vec![
+                "file-size distribution: Iceberg Rust exposes snapshots and manifests, not a files metadata table",
+                "orphan discovery: object listing is intentionally not used as Catalog evidence",
+                "failed-attempt candidates: no failed-attempt coordinates are durably recorded",
+            ],
+            recommendations: vec![
+                "Enable object versioning or maintain operator backups for the Catalog Head.",
+            ],
+        })
+    }
+
+    fn unavailable_head_health(&self, checkpoint_names: &[String]) -> SpaceHealthReport {
+        SpaceHealthReport {
+            status: HealthStatus::Degraded,
+            catalog_head: CatalogHeadHealth {
+                readable: false,
+                checksum: None,
+                etag: None,
+                generation: None,
+                form_registry_generation: None,
+                issue: Some("Catalog Head is missing, unreadable, or has invalid evidence".into()),
+            },
+            tables: Vec::new(),
+            checkpoints: checkpoint_names
+                .iter()
+                .map(|name| CheckpointHealth {
+                    name: name.clone(),
+                    status: HealthStatus::Degraded,
+                    issue: Some("Catalog Head evidence is unavailable".into()),
+                })
+                .collect(),
+            unreachable_failed_attempts: Vec::new(),
+            unavailable_capabilities: vec![
+                "file-size distribution: Iceberg Rust exposes snapshots and manifests, not a files metadata table",
+                "orphan discovery: object listing is intentionally not used as Catalog evidence",
+                "failed-attempt candidates: no failed-attempt coordinates are durably recorded",
+            ],
+            recommendations: vec![
+                "Restore the Catalog Head from object versioning or an operator backup before taking action.",
+            ],
+        }
+    }
+
+    async fn table_health(&self, reference: &TableReference) -> TableHealth {
+        let identifier = TableIdentifierHealth {
+            namespace: reference.identifier.namespace.clone(),
+            table: reference.identifier.table.clone(),
+        };
+        let mut report = TableHealth {
+            status: HealthStatus::Healthy,
+            identifier,
+            form_id: reference.form_id.clone(),
+            table_uuid: reference.table_uuid.clone(),
+            metadata_location_redacted: true,
+            schema_id: None,
+            snapshot_id: None,
+            snapshot_count: None,
+            manifest_count: None,
+            manifest_size_bytes: None,
+            total_record_count: None,
+            total_data_file_count: None,
+            total_data_file_size_bytes: None,
+            issue: None,
+        };
+        let metadata = match TableMetadata::read_from(&self.file_io, &reference.metadata_location)
+            .await
+        {
+            Ok(metadata) => metadata,
+            Err(_) => {
+                report.status = HealthStatus::Degraded;
+                report.issue = Some("referenced Iceberg metadata is unavailable or invalid".into());
+                return report;
+            }
+        };
+        if metadata.uuid().to_string() != reference.table_uuid {
+            report.status = HealthStatus::Degraded;
+            report.issue = Some("Iceberg table UUID does not match the Catalog Head".into());
+            return report;
+        }
+        if metadata.properties().get(FORM_ID_PROPERTY) != reference.form_id.as_ref() {
+            report.status = HealthStatus::Degraded;
+            report.issue = Some("Iceberg Form ID does not match the Catalog Head".into());
+            return report;
+        }
+        report.schema_id = Some(metadata.current_schema_id());
+        report.snapshot_id = metadata.current_snapshot_id();
+        report.snapshot_count = Some(metadata.snapshots().len());
+        if let Some(snapshot) = metadata.current_snapshot() {
+            let summary = &snapshot.summary().additional_properties;
+            report.total_record_count = summary
+                .get("total-records")
+                .and_then(|value| value.parse().ok());
+            report.total_data_file_count = summary
+                .get("total-data-files")
+                .and_then(|value| value.parse().ok());
+            report.total_data_file_size_bytes = summary
+                .get("total-file-size-in-bytes")
+                .and_then(|value| value.parse().ok());
+            let snapshot_id = snapshot.snapshot_id();
+            let table = iceberg::table::Table::builder()
+                .identifier(reference.identifier.to_table_ident())
+                .metadata(metadata)
+                .metadata_location(reference.metadata_location.clone())
+                .file_io(self.file_io.clone())
+                .runtime(self.runtime.clone())
+                .build();
+            match table {
+                Ok(table) => {
+                    let snapshot = table
+                        .metadata()
+                        .snapshot_by_id(snapshot_id)
+                        .expect("current snapshot remains in its metadata");
+                    match table.manifest_list_reader(snapshot).load().await {
+                        Ok(manifests) => {
+                            report.manifest_count = Some(manifests.entries().len());
+                            report.manifest_size_bytes = Some(
+                                manifests
+                                    .entries()
+                                    .iter()
+                                    .map(|manifest| manifest.manifest_length)
+                                    .sum(),
+                            );
+                        }
+                        Err(_) => {
+                            report.status = HealthStatus::Degraded;
+                            report.issue = Some(
+                                "current Iceberg manifest list is unavailable or invalid".into(),
+                            );
+                        }
+                    }
+                }
+                Err(_) => {
+                    report.status = HealthStatus::Degraded;
+                    report.issue = Some("referenced Iceberg metadata is invalid".into());
+                }
+            }
+        }
+        report
+    }
+
+    async fn checkpoint_health(&self, name: &str) -> CheckpointHealth {
+        let status = match self.read_checkpoint(name).await {
+            Ok(checkpoint) => match self.validate_checkpoint_evidence(&checkpoint).await {
+                Ok(()) => self.validate_checkpoint_tables(&checkpoint).await,
+                Err(error) => Err(error),
+            },
+            Err(error) => Err(error),
+        };
+        match status {
+            Ok(()) => CheckpointHealth {
+                name: name.to_string(),
+                status: HealthStatus::Healthy,
+                issue: None,
+            },
+            Err(error)
+                if error
+                    .downcast_ref::<crate::CheckpointUnavailable>()
+                    .is_some() =>
+            {
+                CheckpointHealth {
+                    name: name.to_string(),
+                    status: HealthStatus::Degraded,
+                    issue: Some("checkpoint or a referenced immutable target is missing".into()),
+                }
+            }
+            Err(_) => CheckpointHealth {
+                name: name.to_string(),
+                status: HealthStatus::Degraded,
+                issue: Some("checkpoint evidence is invalid or unavailable".into()),
+            },
+        }
     }
 
     async fn capture_checkpoint_table(
