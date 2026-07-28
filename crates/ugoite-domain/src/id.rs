@@ -69,6 +69,7 @@ impl std::error::Error for FieldIdError {}
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum IdentifierKind {
     Space,
+    Checkpoint,
     Entry,
     Form,
     Asset,
@@ -81,6 +82,7 @@ impl IdentifierKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Space => "space_id",
+            Self::Checkpoint => "checkpoint_name",
             Self::Entry => "entry_id",
             Self::Form => "form_name",
             Self::Asset => "asset_id",
@@ -131,6 +133,10 @@ pub fn validate_identifier(kind: IdentifierKind, value: &str) -> Result<(), Iden
 
 pub fn validate_space_id(value: &str) -> Result<(), IdentifierError> {
     validate_identifier(IdentifierKind::Space, value)
+}
+
+pub fn validate_checkpoint_name(value: &str) -> Result<(), IdentifierError> {
+    validate_identifier(IdentifierKind::Checkpoint, value)
 }
 
 pub fn validate_entry_id(value: &str) -> Result<(), IdentifierError> {

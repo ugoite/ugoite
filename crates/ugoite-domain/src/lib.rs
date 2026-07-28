@@ -1,6 +1,7 @@
 #![warn(warnings)]
 #![deny(clippy::all)]
 
+pub mod checkpoint;
 pub mod entry;
 pub mod form;
 pub mod id;
