@@ -278,6 +278,12 @@ impl SpaceCatalogStore {
         self.catalog_path(&format!("publications/{generation}-{command_id}.json"))
     }
 
+    /// Durable named checkpoints are immutable Space objects. They are not
+    /// Catalog authority and never participate in Head publication.
+    pub fn checkpoint_path(&self, name: &str) -> String {
+        self.space_path(&format!("_ugoite/checkpoints/{name}.json"))
+    }
+
     pub async fn read_exact_head(&self) -> Result<Option<ExactCatalogHead>> {
         let path = self.head_path();
         for attempt in 0..EXACT_HEAD_READ_ATTEMPTS {
@@ -386,8 +392,40 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
-    pub async fn read_publication(&self, path: &str) -> Result<Vec<u8>> {
+    pub async fn read_publication(&self, path: &str) -> opendal::Result<Vec<u8>> {
         Ok(self.operator.read(path).await?.to_vec())
+    }
+
+    pub async fn create_checkpoint(&self, name: &str, bytes: Vec<u8>) -> Result<()> {
+        if !self
+            .operator
+            .info()
+            .full_capability()
+            .write_with_if_not_exists
+        {
+            return Err(anyhow!(
+                "immutable checkpoint creation requires OpenDAL if_not_exists support"
+            ));
+        }
+        self.operator
+            .write_options(
+                &self.checkpoint_path(name),
+                bytes,
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn read_checkpoint(&self, name: &str) -> opendal::Result<Vec<u8>> {
+        Ok(self
+            .operator
+            .read(&self.checkpoint_path(name))
+            .await?
+            .to_vec())
     }
 
     pub fn supports_shared_writes(&self) -> bool {
@@ -398,12 +436,15 @@ impl SpaceCatalogStore {
     }
 
     fn catalog_path(&self, suffix: &str) -> String {
-        let prefix = if self.space_root.is_empty() {
-            "_ugoite/catalog".to_string()
+        self.space_path(&format!("_ugoite/catalog/{suffix}"))
+    }
+
+    fn space_path(&self, suffix: &str) -> String {
+        if self.space_root.is_empty() {
+            suffix.to_string()
         } else {
-            format!("{}/_ugoite/catalog", self.space_root)
-        };
-        format!("{prefix}/{suffix}")
+            format!("{}/{suffix}", self.space_root)
+        }
     }
 }
 
