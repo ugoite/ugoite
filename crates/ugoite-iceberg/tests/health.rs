@@ -105,6 +105,9 @@ async fn health_uses_only_reachable_metadata_and_redacts_locations() -> anyhow::
     );
     assert!(report.tables[0].snapshot_count.unwrap_or_default() >= 1);
     assert!(report.tables[0].manifest_count.unwrap_or_default() >= 1);
+    assert!(report.tables[0].total_data_file_count.unwrap_or_default() >= 1);
+    assert!(report.tables[0].total_record_count.unwrap_or_default() >= 1);
+    assert!(report.tables[0].file_size_distribution.is_some());
     assert!(report.tables[0].metadata_location_redacted);
     assert_eq!(report.checkpoints[0].status, HealthStatus::Healthy);
     assert_eq!(report.checkpoints[1].status, HealthStatus::Degraded);
@@ -113,6 +116,11 @@ async fn health_uses_only_reachable_metadata_and_redacts_locations() -> anyhow::
     assert!(value.pointer("/tables/0/metadata_location").is_none());
     assert!(!json.contains("memory://"));
     assert!(report.unreachable_failed_attempts.is_empty());
+    assert!(!report.backend.shared_write_contract);
+    assert_eq!(
+        serde_json::to_value(&report.backend)?["probe_status"],
+        "active_probe_unavailable"
+    );
     Ok(())
 }
 
@@ -132,7 +140,45 @@ async fn health_reports_an_unreadable_catalog_head_without_storage_inference() -
     assert_eq!(report.status, HealthStatus::Degraded);
     assert!(!report.catalog_head.readable);
     assert!(report.catalog_head.checksum.is_none());
+    assert_eq!(
+        report.catalog_head.issue.as_ref().map(|issue| issue.code),
+        Some("catalog_head_missing")
+    );
     assert!(report.tables.is_empty());
     assert_eq!(report.checkpoints[0].status, HealthStatus::Degraded);
+    Ok(())
+}
+
+#[tokio::test]
+async fn health_classifies_a_corrupt_exact_head_without_disclosing_location() -> anyhow::Result<()>
+{
+    let warehouse = "memory://health-corrupt-head";
+    let space_id = SpaceId::from(Uuid::from_u128(205));
+    let workspace = IcebergWorkspace::memory_for_tests(space_id, warehouse).await?;
+    let definition = form();
+    workspace
+        .commit(publication_context(
+            "health-form",
+            "test.form.create",
+            &definition,
+        )?)?
+        .create_form(&definition)
+        .await?;
+
+    let head_path = format!(
+        "test/space_{}/_ugoite/catalog/head.json",
+        space_id.as_uuid().simple()
+    );
+    operator_from_uri(warehouse)?
+        .write(&head_path, b"not-json".to_vec())
+        .await?;
+
+    let report = workspace.health_report(&[]).await?;
+    assert_eq!(report.status, HealthStatus::Degraded);
+    assert_eq!(
+        report.catalog_head.issue.as_ref().map(|issue| issue.code),
+        Some("catalog_head_decode_failure")
+    );
+    assert!(!serde_json::to_string(&report)?.contains("memory://"));
     Ok(())
 }

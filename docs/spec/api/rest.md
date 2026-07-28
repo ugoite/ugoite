@@ -41,10 +41,11 @@ for `entry` or `asset`.
 `POST /spaces/{space_id}/bindings/rebind-owner` binds an imported Space owner to
 the current Node administrator after migration.
 `GET /spaces/{space_id}/health` is a Space-management read-only doctor report.
-It follows only the exact Catalog Head, reachable Iceberg metadata, upstream
-manifest lists, and caller-named checkpoints. It never scans Entry rows, lists
-objects to infer authority or orphans, or repairs storage; physical locations
-are redacted from its normal response.
+It follows only the exact Catalog Head, its reachable immutable publication
+chain, Iceberg metadata, manifest lists/manifests, and caller-named
+checkpoints. It never scans Entry rows, lists objects to infer authority or
+orphans, or repairs storage; physical locations are redacted from its normal
+response.
 
 Errors are structured JSON. Authentication failures use 401; valid identities
 lacking Space/token/resource permission use 403; stale/used one-time credentials

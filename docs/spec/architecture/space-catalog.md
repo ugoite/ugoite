@@ -114,18 +114,21 @@ not cross into Core.
 
 ## Read-only health evidence
 
-The health endpoint starts from one exact Catalog Head and reads only the
-referenced Iceberg metadata and upstream manifest list. It reports the Head
-checksum, generation, Form registry generation, table identifiers, Form IDs,
-UUIDs, schemas, snapshots, snapshot-summary counts, and manifest counts/size.
-Physical locations are redacted from the normal API response.
+The health endpoint starts from one exact Catalog Head, verifies its whole
+reachable immutable publication chain, and reads only referenced Iceberg
+metadata plus upstream manifest lists and manifests. It reports stable,
+redacted issue codes, the Head checksum/generation/Form registry generation,
+table identifiers/Form IDs/UUIDs/schemas/snapshots, and live data-file
+count/record/size distribution evidence. Physical locations are redacted from
+the normal API response.
 
-Named checkpoints are caller-supplied and validated through their immutable
-publication and metadata targets; health never lists checkpoint storage. The
-current upstream Rust Iceberg metadata tables expose snapshots and manifests,
-but not a files table for a size distribution, so that capability is explicit
-as unavailable. Failed-attempt and orphan candidates remain empty unless
-durable attempt coordinates exist: object-list inference is forbidden.
+Named checkpoints are caller-supplied and validated through immutable
+publication, metadata, manifest, and data-file targets; health never lists
+checkpoint storage. File evidence comes from upstream manifest entries, not a
+metadata-table scan. Backend conditional-write capabilities and the durable
+probe status are returned separately from unavailable orphan/failed-attempt
+evidence. Failed-attempt and orphan candidates remain empty unless durable
+attempt coordinates exist: object-list inference is forbidden.
 
 `ugoite-core` owns domain validation, authorization meaning, use-case
 orchestration, domain commands, receipts, checkpoints, and errors. It neither

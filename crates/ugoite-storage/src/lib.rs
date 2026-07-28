@@ -64,6 +64,18 @@ pub enum CatalogWriteMode {
     SingleProcess,
 }
 
+/// Read-only declaration of the OpenDAL contract backing a Space Catalog.
+/// It deliberately reports only capability bits and whether shared mode was
+/// previously admitted; it never triggers a write probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CatalogBackendCapabilities {
+    pub etag: bool,
+    pub read_with_if_match: bool,
+    pub write_with_if_match: bool,
+    pub write_with_if_not_exists: bool,
+    pub shared_write_contract: bool,
+}
+
 const EXACT_HEAD_READ_ATTEMPTS: usize = 3;
 
 /// Narrow OpenDAL boundary for the Space Catalog root and immutable
@@ -433,6 +445,21 @@ impl SpaceCatalogStore {
         capabilities.read_with_if_match
             && capabilities.write_with_if_match
             && capabilities.write_with_if_not_exists
+    }
+
+    pub fn backend_capabilities(&self) -> CatalogBackendCapabilities {
+        let capabilities = self.operator.info().full_capability();
+        let shared_write_contract = self.supports_shared_writes();
+        CatalogBackendCapabilities {
+            // OpenDAL exposes ETags through stat metadata rather than a
+            // separate capability bit. Exact shared Head reads additionally
+            // require the conditional-read contract.
+            etag: capabilities.stat && capabilities.read_with_if_match,
+            read_with_if_match: capabilities.read_with_if_match,
+            write_with_if_match: capabilities.write_with_if_match,
+            write_with_if_not_exists: capabilities.write_with_if_not_exists,
+            shared_write_contract,
+        }
     }
 
     fn catalog_path(&self, suffix: &str) -> String {

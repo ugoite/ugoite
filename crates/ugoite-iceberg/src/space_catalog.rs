@@ -21,12 +21,15 @@ use ugoite_storage::{CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore};
 use uuid::Uuid;
 
 use crate::health::{
-    CatalogHeadHealth, CheckpointHealth, HealthStatus, SpaceHealthReport, TableHealth,
-    TableIdentifierHealth,
+    BackendHealth, BackendMode, BackendProbeStatus, CatalogHeadHealth, CheckpointHealth,
+    FileSizeDistribution, HealthIssue, HealthStatus, SpaceHealthReport, TableHealth,
+    TableIdentifierHealth, UnavailableCapability,
 };
+use crate::FORM_ID_PROPERTY;
 
 const SPACE_FORMAT_VERSION: u32 = 1;
 const MAX_HEAD_BYTES: usize = 1 << 20;
+const SMALL_FILE_THRESHOLD_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Holds the official OpenDAL Iceberg storage instance for test-only memory
 /// spaces. It adds no I/O behavior; it merely keeps Iceberg metadata and
@@ -287,11 +290,32 @@ impl SpaceCatalog {
         &self,
         checkpoint_names: &[String],
     ) -> anyhow::Result<SpaceHealthReport> {
-        let (head, exact) = match self.exact_head().await {
-            Ok(Some(head)) => head,
-            Ok(None) => return Ok(self.unavailable_head_health(checkpoint_names)),
-            Err(_) => return Ok(self.unavailable_head_health(checkpoint_names)),
+        // Do not use `exact_head` here: normal opens deliberately collapse
+        // integrity errors into one failure, while doctor must retain their
+        // stable classifications. This reads the same exact authoritative
+        // bytes and never reconstructs Catalog state from a listing.
+        let exact = match self.store.read_exact_head().await {
+            Ok(Some(exact)) => exact,
+            Ok(None) => {
+                return Ok(self.unavailable_head_health(checkpoint_names, "catalog_head_missing"))
+            }
+            Err(_) => {
+                return Ok(self.unavailable_head_health(checkpoint_names, "catalog_head_unreadable"))
+            }
         };
+        let head = match decode_head_for_health(&exact.bytes) {
+            Ok(head) => head,
+            Err(code) => return Ok(self.unavailable_head_health(checkpoint_names, code)),
+        };
+        if head.space_id != self.space_id.to_string() || head.namespace != *self.namespace.as_ref()
+        {
+            return Ok(
+                self.unavailable_head_health(checkpoint_names, "catalog_head_identity_mismatch")
+            );
+        }
+        if let Err(issue) = self.validate_publication_chain_for_health(&head).await {
+            return Ok(self.unavailable_head_health(checkpoint_names, issue));
+        }
         let mut tables = Vec::with_capacity(head.tables.len());
         for reference in head.tables.values() {
             tables.push(self.table_health(reference).await);
@@ -331,19 +355,20 @@ impl SpaceCatalog {
             },
             tables,
             checkpoints,
+            backend: self.backend_health(),
             unreachable_failed_attempts: Vec::new(),
-            unavailable_capabilities: vec![
-                "file-size distribution: Iceberg Rust exposes snapshots and manifests, not a files metadata table",
-                "orphan discovery: object listing is intentionally not used as Catalog evidence",
-                "failed-attempt candidates: no failed-attempt coordinates are durably recorded",
-            ],
+            unavailable_capabilities: self.unavailable_capabilities(),
             recommendations: vec![
                 "Enable object versioning or maintain operator backups for the Catalog Head.",
             ],
         })
     }
 
-    fn unavailable_head_health(&self, checkpoint_names: &[String]) -> SpaceHealthReport {
+    fn unavailable_head_health(
+        &self,
+        checkpoint_names: &[String],
+        code: &'static str,
+    ) -> SpaceHealthReport {
         SpaceHealthReport {
             status: HealthStatus::Degraded,
             catalog_head: CatalogHeadHealth {
@@ -352,7 +377,7 @@ impl SpaceCatalog {
                 etag: None,
                 generation: None,
                 form_registry_generation: None,
-                issue: Some("Catalog Head is missing, unreadable, or has invalid evidence".into()),
+                issue: Some(health_issue(code, "catalog_head")),
             },
             tables: Vec::new(),
             checkpoints: checkpoint_names
@@ -360,18 +385,130 @@ impl SpaceCatalog {
                 .map(|name| CheckpointHealth {
                     name: name.clone(),
                     status: HealthStatus::Degraded,
-                    issue: Some("Catalog Head evidence is unavailable".into()),
+                    issue: Some(health_issue("catalog_head_unavailable", "catalog_head")),
                 })
                 .collect(),
+            backend: self.backend_health(),
             unreachable_failed_attempts: Vec::new(),
-            unavailable_capabilities: vec![
-                "file-size distribution: Iceberg Rust exposes snapshots and manifests, not a files metadata table",
-                "orphan discovery: object listing is intentionally not used as Catalog evidence",
-                "failed-attempt candidates: no failed-attempt coordinates are durably recorded",
-            ],
+            unavailable_capabilities: self.unavailable_capabilities(),
             recommendations: vec![
                 "Restore the Catalog Head from object versioning or an operator backup before taking action.",
             ],
+        }
+    }
+
+    fn backend_health(&self) -> BackendHealth {
+        let capability = self.store.backend_capabilities();
+        let mode = match self.store.write_mode() {
+            CatalogWriteMode::SingleProcess => BackendMode::SingleProcess,
+            CatalogWriteMode::Shared => BackendMode::Shared,
+        };
+        BackendHealth {
+            mode,
+            etag: capability.etag,
+            read_with_if_match: capability.read_with_if_match,
+            write_with_if_match: capability.write_with_if_match,
+            write_with_if_not_exists: capability.write_with_if_not_exists,
+            shared_write_contract: capability.shared_write_contract,
+            probe_status: match mode {
+                BackendMode::Shared => BackendProbeStatus::ActiveProbeVerified,
+                // No durable per-store probe history exists for the
+                // single-process contract, and health intentionally does not
+                // write one merely to answer this request.
+                BackendMode::SingleProcess => BackendProbeStatus::ActiveProbeUnavailable,
+            },
+        }
+    }
+
+    fn unavailable_capabilities(&self) -> Vec<UnavailableCapability> {
+        vec![
+            UnavailableCapability {
+                capability: "orphan_discovery",
+                reason: "object_listing_is_not_catalog_evidence",
+            },
+            UnavailableCapability {
+                capability: "failed_attempt_candidates",
+                reason: "no_durable_failed_attempt_coordinates",
+            },
+        ]
+    }
+
+    /// Doctor-only traversal of every immutable publication reachable from
+    /// the exact Head. Normal Space opening intentionally remains constant
+    /// work; this path exists solely to give an operator enough evidence to
+    /// decide whether restoration is required.
+    async fn validate_publication_chain_for_health(
+        &self,
+        head: &CatalogHead,
+    ) -> std::result::Result<(), &'static str> {
+        let Some(mut path) = head.publication_location.clone() else {
+            return Err("publication_missing");
+        };
+        let mut expected_head = head.clone();
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(path.clone()) {
+                return Err("publication_chain_corrupt");
+            }
+            let bytes = match self.store.read_publication(&path).await {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == opendal::ErrorKind::NotFound => {
+                    return Err(if expected_head == *head {
+                        "publication_missing"
+                    } else {
+                        "publication_predecessor_missing"
+                    });
+                }
+                Err(_) => return Err("publication_unreadable"),
+            };
+            let publication = decode_publication_for_health(&bytes)?;
+            if publication.generation != expected_head.generation
+                || publication.next_head_checksum != expected_head.checksum
+                || publication.next_head != expected_head
+                || expected_head.publication_command_id.as_deref()
+                    != Some(publication.command_id.as_str())
+            {
+                return Err(if expected_head == *head {
+                    "publication_head_mismatch"
+                } else {
+                    "publication_chain_corrupt"
+                });
+            }
+            match (
+                publication.previous_generation,
+                publication.previous_publication,
+                publication.previous_head_checksum,
+            ) {
+                (None, None, None) if publication.generation == 0 => return Ok(()),
+                (Some(previous_generation), Some(previous_path), Some(previous_checksum))
+                    if previous_generation + 1 == publication.generation =>
+                {
+                    path = previous_path;
+                    // A predecessor's `next_head` is the Head we must match
+                    // before taking its own predecessor link.
+                    let bytes = match self.store.read_publication(&path).await {
+                        Ok(bytes) => bytes,
+                        Err(error) if error.kind() == opendal::ErrorKind::NotFound => {
+                            return Err("publication_predecessor_missing");
+                        }
+                        Err(_) => return Err("publication_unreadable"),
+                    };
+                    let predecessor = decode_publication_for_health(&bytes)?;
+                    if predecessor.generation != previous_generation
+                        || predecessor.next_head_checksum != previous_checksum
+                    {
+                        return Err("publication_chain_gap");
+                    }
+                    expected_head = predecessor.next_head.clone();
+                    // Re-read is deliberately avoided on the next iteration
+                    // only when traversal state is simple; validating the
+                    // predecessor as `expected_head` still requires its full
+                    // immutable record, which this loop obtains below.
+                    // Store it nowhere: doctor must not construct a shadow
+                    // Catalog from history.
+                }
+                _ => return Err("publication_chain_gap"),
+            }
         }
     }
 
@@ -394,6 +531,7 @@ impl SpaceCatalog {
             total_record_count: None,
             total_data_file_count: None,
             total_data_file_size_bytes: None,
+            file_size_distribution: None,
             issue: None,
         };
         let metadata = match TableMetadata::read_from(&self.file_io, &reference.metadata_location)
@@ -402,18 +540,46 @@ impl SpaceCatalog {
             Ok(metadata) => metadata,
             Err(_) => {
                 report.status = HealthStatus::Degraded;
-                report.issue = Some("referenced Iceberg metadata is unavailable or invalid".into());
+                report.issue = Some(health_issue("table_metadata_unavailable", "table_metadata"));
                 return report;
             }
         };
         if metadata.uuid().to_string() != reference.table_uuid {
             report.status = HealthStatus::Degraded;
-            report.issue = Some("Iceberg table UUID does not match the Catalog Head".into());
+            report.issue = Some(health_issue("table_uuid_mismatch", "table_metadata"));
             return report;
         }
-        if metadata.properties().get(FORM_ID_PROPERTY) != reference.form_id.as_ref() {
+        let Some(head_form_id) = reference.form_id.as_deref() else {
             report.status = HealthStatus::Degraded;
-            report.issue = Some("Iceberg Form ID does not match the Catalog Head".into());
+            report.issue = Some(health_issue("head_form_id_missing", "catalog_head"));
+            return report;
+        };
+        let Ok(head_form_id) = head_form_id.parse::<Uuid>() else {
+            report.status = HealthStatus::Degraded;
+            report.issue = Some(health_issue("head_form_id_malformed", "catalog_head"));
+            return report;
+        };
+        if reference.identifier.table != crate::physical_form_name(FormId::from(head_form_id)) {
+            report.status = HealthStatus::Degraded;
+            report.issue = Some(health_issue(
+                "form_table_identifier_mismatch",
+                "catalog_head",
+            ));
+            return report;
+        }
+        let Some(metadata_form_id) = metadata.properties().get(FORM_ID_PROPERTY) else {
+            report.status = HealthStatus::Degraded;
+            report.issue = Some(health_issue("table_form_id_missing", "table_metadata"));
+            return report;
+        };
+        let Ok(metadata_form_id) = metadata_form_id.parse::<Uuid>() else {
+            report.status = HealthStatus::Degraded;
+            report.issue = Some(health_issue("table_form_id_malformed", "table_metadata"));
+            return report;
+        };
+        if metadata_form_id != head_form_id {
+            report.status = HealthStatus::Degraded;
+            report.issue = Some(health_issue("form_id_mismatch", "table_metadata"));
             return report;
         }
         report.schema_id = Some(metadata.current_schema_id());
@@ -454,18 +620,74 @@ impl SpaceCatalog {
                                     .map(|manifest| manifest.manifest_length)
                                     .sum(),
                             );
+                            let mut record_count = 0_u64;
+                            let mut data_file_count = 0_u64;
+                            let mut data_file_size = 0_u64;
+                            let mut min_file_size = None;
+                            let mut max_file_size = None;
+                            let mut small_file_count = 0_u64;
+                            for manifest_file in manifests.entries() {
+                                let manifest = match manifest_file
+                                    .load_manifest(&self.file_io)
+                                    .await
+                                {
+                                    Ok(manifest) => manifest,
+                                    Err(_) => {
+                                        report.status = HealthStatus::Degraded;
+                                        report.issue =
+                                            Some(health_issue("manifest_unavailable", "manifest"));
+                                        return report;
+                                    }
+                                };
+                                for entry in
+                                    manifest.entries().iter().filter(|entry| entry.is_alive())
+                                {
+                                    // Only data files describe current table data. Delete
+                                    // manifests are nevertheless loaded above as integrity
+                                    // evidence, but are not mixed into data-file metrics.
+                                    if entry.content_type() != iceberg::spec::DataContentType::Data
+                                    {
+                                        continue;
+                                    }
+                                    let size = entry.file_size_in_bytes();
+                                    data_file_count += 1;
+                                    record_count += entry.record_count();
+                                    data_file_size += size;
+                                    min_file_size = Some(
+                                        min_file_size
+                                            .map_or(size, |current: u64| current.min(size)),
+                                    );
+                                    max_file_size = Some(
+                                        max_file_size
+                                            .map_or(size, |current: u64| current.max(size)),
+                                    );
+                                    if size < SMALL_FILE_THRESHOLD_BYTES {
+                                        small_file_count += 1;
+                                    }
+                                }
+                            }
+                            report.total_record_count = Some(record_count);
+                            report.total_data_file_count = Some(data_file_count);
+                            report.total_data_file_size_bytes = Some(data_file_size);
+                            report.file_size_distribution = Some(FileSizeDistribution {
+                                min_bytes: min_file_size,
+                                max_bytes: max_file_size,
+                                average_bytes: (data_file_count > 0)
+                                    .then_some(data_file_size / data_file_count),
+                                small_file_count,
+                                small_file_threshold_bytes: SMALL_FILE_THRESHOLD_BYTES,
+                            });
                         }
                         Err(_) => {
                             report.status = HealthStatus::Degraded;
-                            report.issue = Some(
-                                "current Iceberg manifest list is unavailable or invalid".into(),
-                            );
+                            report.issue =
+                                Some(health_issue("manifest_list_unavailable", "manifest_list"));
                         }
                     }
                 }
                 Err(_) => {
                     report.status = HealthStatus::Degraded;
-                    report.issue = Some("referenced Iceberg metadata is invalid".into());
+                    report.issue = Some(health_issue("table_metadata_invalid", "table_metadata"));
                 }
             }
         }
@@ -473,35 +695,180 @@ impl SpaceCatalog {
     }
 
     async fn checkpoint_health(&self, name: &str) -> CheckpointHealth {
-        let status = match self.read_checkpoint(name).await {
-            Ok(checkpoint) => match self.validate_checkpoint_evidence(&checkpoint).await {
-                Ok(()) => self.validate_checkpoint_tables(&checkpoint).await,
-                Err(error) => Err(error),
-            },
-            Err(error) => Err(error),
+        let bytes = match self.store.read_checkpoint(name).await {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == opendal::ErrorKind::NotFound => {
+                return checkpoint_issue(name, "checkpoint_object_missing", "checkpoint")
+            }
+            Err(_) => return checkpoint_issue(name, "checkpoint_unreadable", "checkpoint"),
         };
-        match status {
-            Ok(()) => CheckpointHealth {
-                name: name.to_string(),
-                status: HealthStatus::Healthy,
-                issue: None,
-            },
-            Err(error)
-                if error
-                    .downcast_ref::<crate::CheckpointUnavailable>()
-                    .is_some() =>
+        let checkpoint: SpaceCheckpoint = match serde_json::from_slice(&bytes) {
+            Ok(checkpoint) => checkpoint,
+            Err(_) => return checkpoint_issue(name, "checkpoint_decode_failure", "checkpoint"),
+        };
+        if !checkpoint.validate_coordinate_checksum() {
+            return checkpoint_issue(
+                name,
+                "checkpoint_coordinate_checksum_mismatch",
+                "checkpoint",
+            );
+        }
+        if checkpoint.validate_structure().is_err() {
+            return checkpoint_issue(name, "checkpoint_coordinate_invalid", "checkpoint");
+        }
+        if checkpoint.space_id != self.space_id {
+            return checkpoint_issue(name, "checkpoint_space_id_mismatch", "checkpoint");
+        }
+        let publication_bytes = match self
+            .store
+            .read_publication(&checkpoint.publication_location)
+            .await
+        {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == opendal::ErrorKind::NotFound => {
+                return checkpoint_issue(name, "checkpoint_publication_missing", "publication")
+            }
+            Err(_) => {
+                return checkpoint_issue(name, "checkpoint_publication_unreadable", "publication")
+            }
+        };
+        let publication = match decode_publication_for_health(&publication_bytes) {
+            Ok(publication) => publication,
+            Err(code) => return checkpoint_issue(name, code, "publication"),
+        };
+        if publication.checksum != checkpoint.publication_checksum {
+            return checkpoint_issue(
+                name,
+                "checkpoint_publication_checksum_mismatch",
+                "publication",
+            );
+        }
+        let head = &publication.next_head;
+        if head.generation != checkpoint.catalog_generation
+            || head.checksum != checkpoint.catalog_head_checksum
+            || head.form_registry_generation != checkpoint.form_registry_generation
+        {
+            return checkpoint_issue(
+                name,
+                "checkpoint_catalog_generation_mismatch",
+                "publication",
+            );
+        }
+        if head.tables.len() != checkpoint.tables.len()
+            || !head.tables.values().all(|reference| {
+                checkpoint
+                    .tables
+                    .iter()
+                    .any(|coordinate| checkpoint_table_matches_reference(coordinate, reference))
+            })
+        {
+            return checkpoint_issue(name, "checkpoint_table_coordinate_missing", "checkpoint");
+        }
+        for coordinate in &checkpoint.tables {
+            let metadata = match TableMetadata::read_from(
+                &self.file_io,
+                &coordinate.metadata_location,
+            )
+            .await
             {
-                CheckpointHealth {
-                    name: name.to_string(),
-                    status: HealthStatus::Degraded,
-                    issue: Some("checkpoint or a referenced immutable target is missing".into()),
+                Ok(metadata) => metadata,
+                Err(_) => {
+                    return checkpoint_issue(name, "checkpoint_metadata_missing", "table_metadata")
+                }
+            };
+            if metadata.uuid().to_string() != coordinate.table_uuid {
+                return checkpoint_issue(name, "checkpoint_table_uuid_mismatch", "table_metadata");
+            }
+            if metadata.current_schema_id() != coordinate.schema_id {
+                return checkpoint_issue(name, "checkpoint_schema_id_mismatch", "table_metadata");
+            }
+            if metadata.current_snapshot_id() != coordinate.snapshot_id {
+                return checkpoint_issue(name, "checkpoint_snapshot_id_mismatch", "table_metadata");
+            }
+            let namespace = match NamespaceIdent::from_vec(coordinate.namespace.clone()) {
+                Ok(namespace) => namespace,
+                Err(_) => {
+                    return checkpoint_issue(
+                        name,
+                        "checkpoint_table_coordinate_invalid",
+                        "checkpoint",
+                    )
+                }
+            };
+            let table = match iceberg::table::Table::builder()
+                .identifier(TableIdent::new(namespace, coordinate.table.clone()))
+                .metadata(metadata)
+                .metadata_location(coordinate.metadata_location.clone())
+                .file_io(self.file_io.clone())
+                .runtime(self.runtime.clone())
+                .build()
+            {
+                Ok(table) => table,
+                Err(_) => {
+                    return checkpoint_issue(name, "checkpoint_metadata_invalid", "table_metadata")
+                }
+            };
+            if let Some(snapshot_id) = coordinate.snapshot_id {
+                let Some(snapshot) = table.metadata().snapshot_by_id(snapshot_id) else {
+                    return checkpoint_issue(name, "checkpoint_snapshot_missing", "table_metadata");
+                };
+                let manifests = match table.manifest_list_reader(snapshot).load().await {
+                    Ok(manifests) => manifests,
+                    Err(_) => {
+                        return checkpoint_issue(
+                            name,
+                            "checkpoint_manifest_list_missing",
+                            "manifest_list",
+                        )
+                    }
+                };
+                for manifest_file in manifests.entries() {
+                    let manifest = match manifest_file.load_manifest(&self.file_io).await {
+                        Ok(manifest) => manifest,
+                        Err(_) => {
+                            return checkpoint_issue(
+                                name,
+                                "checkpoint_manifest_missing",
+                                "manifest",
+                            )
+                        }
+                    };
+                    for entry in manifest.entries().iter().filter(|entry| entry.is_alive()) {
+                        let file = match self.file_io.new_input(entry.file_path()) {
+                            Ok(file) => file,
+                            Err(_) => {
+                                return checkpoint_issue(
+                                    name,
+                                    "checkpoint_data_file_unreadable",
+                                    "data_file",
+                                )
+                            }
+                        };
+                        match file.exists().await {
+                            Ok(true) => {}
+                            Ok(false) => {
+                                return checkpoint_issue(
+                                    name,
+                                    "checkpoint_data_file_missing",
+                                    "data_file",
+                                )
+                            }
+                            Err(_) => {
+                                return checkpoint_issue(
+                                    name,
+                                    "checkpoint_data_file_unreadable",
+                                    "data_file",
+                                )
+                            }
+                        }
+                    }
                 }
             }
-            Err(_) => CheckpointHealth {
-                name: name.to_string(),
-                status: HealthStatus::Degraded,
-                issue: Some("checkpoint evidence is invalid or unavailable".into()),
-            },
+        }
+        CheckpointHealth {
+            name: name.to_string(),
+            status: HealthStatus::Healthy,
+            issue: None,
         }
     }
 
@@ -1595,6 +1962,18 @@ fn decode_head(bytes: &[u8]) -> Result<CatalogHead> {
     Ok(head)
 }
 
+fn decode_head_for_health(bytes: &[u8]) -> std::result::Result<CatalogHead, &'static str> {
+    let head: CatalogHead =
+        serde_json::from_slice(bytes).map_err(|_| "catalog_head_decode_failure")?;
+    if head.format_version != SPACE_FORMAT_VERSION {
+        return Err("catalog_head_decode_failure");
+    }
+    if head.checksum != head_checksum(&head).map_err(|_| "catalog_head_decode_failure")? {
+        return Err("catalog_head_checksum_mismatch");
+    }
+    Ok(head)
+}
+
 fn encode_publication(publication: &PublicationRecord) -> Result<Vec<u8>> {
     let mut publication = publication.clone();
     publication.checksum = publication_checksum(&publication)?;
@@ -1616,6 +1995,34 @@ fn decode_publication(bytes: &[u8]) -> Result<PublicationRecord> {
         ));
     }
     Ok(publication)
+}
+
+fn decode_publication_for_health(
+    bytes: &[u8],
+) -> std::result::Result<PublicationRecord, &'static str> {
+    let publication: PublicationRecord =
+        serde_json::from_slice(bytes).map_err(|_| "publication_decode_failure")?;
+    if publication.checksum
+        != publication_checksum(&publication).map_err(|_| "publication_decode_failure")?
+    {
+        return Err("publication_checksum_mismatch");
+    }
+    if publication.next_head.checksum != publication.next_head_checksum {
+        return Err("publication_head_mismatch");
+    }
+    Ok(publication)
+}
+
+fn health_issue(code: &'static str, target: &'static str) -> HealthIssue {
+    HealthIssue { code, target }
+}
+
+fn checkpoint_issue(name: &str, code: &'static str, target: &'static str) -> CheckpointHealth {
+    CheckpointHealth {
+        name: name.to_string(),
+        status: HealthStatus::Degraded,
+        issue: Some(health_issue(code, target)),
+    }
 }
 
 fn preserve_schema_field_ids(

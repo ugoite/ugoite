@@ -10,8 +10,9 @@ pub struct SpaceHealthReport {
     pub catalog_head: CatalogHeadHealth,
     pub tables: Vec<TableHealth>,
     pub checkpoints: Vec<CheckpointHealth>,
+    pub backend: BackendHealth,
     pub unreachable_failed_attempts: Vec<FailedAttemptCandidate>,
-    pub unavailable_capabilities: Vec<&'static str>,
+    pub unavailable_capabilities: Vec<UnavailableCapability>,
     pub recommendations: Vec<&'static str>,
 }
 
@@ -29,7 +30,16 @@ pub struct CatalogHeadHealth {
     pub etag: Option<String>,
     pub generation: Option<u64>,
     pub form_registry_generation: Option<u64>,
-    pub issue: Option<String>,
+    pub issue: Option<HealthIssue>,
+}
+
+/// Stable, redacted evidence classification. `code` is intended for operator
+/// automation; `target` says which immutable evidence kind failed without
+/// disclosing a physical storage location or backend error text.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct HealthIssue {
+    pub code: &'static str,
+    pub target: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,7 +57,17 @@ pub struct TableHealth {
     pub total_record_count: Option<u64>,
     pub total_data_file_count: Option<u64>,
     pub total_data_file_size_bytes: Option<u64>,
-    pub issue: Option<String>,
+    pub file_size_distribution: Option<FileSizeDistribution>,
+    pub issue: Option<HealthIssue>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileSizeDistribution {
+    pub min_bytes: Option<u64>,
+    pub max_bytes: Option<u64>,
+    pub average_bytes: Option<u64>,
+    pub small_file_count: u64,
+    pub small_file_threshold_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,7 +80,44 @@ pub struct TableIdentifierHealth {
 pub struct CheckpointHealth {
     pub name: String,
     pub status: HealthStatus,
-    pub issue: Option<String>,
+    pub issue: Option<HealthIssue>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UnavailableCapability {
+    pub capability: &'static str,
+    pub reason: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BackendHealth {
+    pub mode: BackendMode,
+    pub etag: bool,
+    pub read_with_if_match: bool,
+    pub write_with_if_match: bool,
+    pub write_with_if_not_exists: bool,
+    pub shared_write_contract: bool,
+    pub probe_status: BackendProbeStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendMode {
+    SingleProcess,
+    Shared,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendProbeStatus {
+    /// Capabilities are known, but no durable active integration-probe result
+    /// is retained for this single-process store.
+    CapabilityDeclaration,
+    /// Shared mode is enabled only after the active conditional-write probe
+    /// completed successfully.
+    ActiveProbeVerified,
+    /// Health is read-only and never runs a write probe itself.
+    ActiveProbeUnavailable,
 }
 
 /// The publication protocol currently records no failed-attempt coordinates.
