@@ -35,7 +35,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
 
     let sql_payload = saved_sql::SqlPayload {
         name: "Alpha Query".to_string(),
-        sql: "SELECT * FROM entry WHERE title = 'Alpha'".to_string(),
+        sql: "SELECT * FROM entry WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id".to_string(),
         variables: serde_json::json!([]),
     };
     saved_sql::create_sql(
@@ -59,7 +59,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     assert_eq!(rows["total_count"], 1);
     let rows_list = rows["rows"].as_array().unwrap();
     assert_eq!(rows_list.len(), 1);
-    assert_eq!(rows_list[0]["id"], "entry-1");
+    assert_eq!(rows_list[0]["_ugoite_id"], "entry-1");
 
     Ok(())
 }
@@ -134,7 +134,7 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     let session = sql_session::create_sql_session(
         &op,
         ws_path,
-        "SELECT * FROM publictask ORDER BY id DESC LIMIT 2",
+        "SELECT * FROM publictask ORDER BY _ugoite_id DESC LIMIT 2",
     )
     .await?;
     let session_id = session["id"].as_str().unwrap();
@@ -151,8 +151,8 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     assert_eq!(rows["total_count"], 2);
     let rows_list = rows["rows"].as_array().unwrap();
     assert_eq!(rows_list.len(), 2);
-    assert_eq!(rows_list[0]["id"], "public-b");
-    assert_eq!(rows_list[1]["id"], "public-a");
+    assert_eq!(rows_list[0]["_ugoite_id"], "public-b");
+    assert_eq!(rows_list[1]["_ugoite_id"], "public-a");
 
     Ok(())
 }

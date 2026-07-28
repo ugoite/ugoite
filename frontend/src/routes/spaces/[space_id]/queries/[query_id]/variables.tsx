@@ -1,13 +1,15 @@
-import { A, useParams } from "@solidjs/router";
+import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { sqlApi } from "~/lib/ugoite-client";
+import { sqlSessionApi } from "~/lib/sql-session-api";
 import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceQueryVariablesRoute() {
   const params = useParams<{ space_id: string; query_id: string }>();
   const spaceId = () => params.space_id;
   const queryId = () => params.query_id;
+  const navigate = useNavigate();
   const [values, setValues] = createSignal<Record<string, string>>({});
   const [error, setError] = createSignal<string | null>(null);
 
@@ -21,9 +23,42 @@ export default function SpaceQueryVariablesRoute() {
 
   const handleRun = async () => {
     setError(null);
-    setError(
-      "Template parameters are not supported by the DataFusion SQL surface yet.",
-    );
+    const current = entry();
+    if (!current) return;
+    try {
+      const parameterTypes = Object.fromEntries(
+        current.variables.map((variable) => [variable.name, variable.type]),
+      );
+      const parameters = Object.fromEntries(
+        current.variables.map((variable) => {
+          const value = values()[variable.name] ?? "";
+          if (value === "") return [variable.name, null];
+          if (variable.type === "boolean") {
+            if (value !== "true" && value !== "false") {
+              throw new Error(`${variable.name} must be true or false`);
+            }
+            return [variable.name, value === "true"];
+          }
+          if (variable.type === "integer" || variable.type === "float") {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+              throw new Error(`${variable.name} must be a number`);
+            }
+            return [variable.name, numeric];
+          }
+          return [variable.name, value];
+        }),
+      );
+      const session = await sqlSessionApi.create(
+        spaceId(),
+        current.sql,
+        parameters,
+        parameterTypes,
+      );
+      navigate(`/spaces/${spaceId()}/entries?session=${encodeURIComponent(session.id)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run query");
+    }
   };
 
   return (

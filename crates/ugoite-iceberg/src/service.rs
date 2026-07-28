@@ -657,14 +657,34 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         sql: &str,
     ) -> Result<Value> {
+        self.create_sql_session_authorized_for_principals_with_parameters(
+            space_id,
+            principal_ids,
+            sql,
+            serde_json::Map::new(),
+            BTreeMap::new(),
+        )
+        .await
+    }
+
+    pub async fn create_sql_session_authorized_for_principals_with_parameters(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        sql: &str,
+        parameters: serde_json::Map<String, Value>,
+        parameter_types: BTreeMap<String, String>,
+    ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         let allowed = self
             .authorized_form_entry_ids_for_principals(space_id, principal_ids)
             .await?;
-        sql_session::create_sql_session_authorized_for_principals_by_form(
+        sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
             &self.operator,
             &self.workspace_path(space_id),
             sql,
+            parameters,
+            parameter_types,
             &allowed,
             principal_ids,
         )
@@ -819,23 +839,6 @@ impl UgoiteService {
     pub async fn create_sql_session(&self, space_id: &str, sql: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         sql_session::create_sql_session(&self.operator, &self.workspace_path(space_id), sql).await
-    }
-
-    pub async fn create_sql_session_authorized(
-        &self,
-        space_id: &str,
-        principal_id: Uuid,
-        sql: &str,
-    ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
-        sql_session::create_sql_session_authorized(
-            &self.operator,
-            &self.workspace_path(space_id),
-            sql,
-            &allowed,
-        )
-        .await
     }
 
     pub async fn get_sql_session(&self, space_id: &str, session_id: &str) -> Result<Value> {

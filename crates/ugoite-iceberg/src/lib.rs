@@ -44,9 +44,6 @@ use arrow_array::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
-use datafusion::functions_aggregate::expr_fn::{count, max};
-use datafusion::logical_expr::JoinType;
-use datafusion::prelude::{col, lit};
 use iceberg::expr::Reference;
 use iceberg::spec::{DataFileFormat, Datum};
 use iceberg::spec::{
@@ -892,57 +889,15 @@ impl IcebergWorkspace {
             IcebergStaticTableProvider::try_new_from_table(table.clone()).await?
         };
         context.register_table("revisions", Arc::new(provider))?;
-        let mut revisions = context.table("revisions").await?;
-        if let Some(entry_ids) = entry_ids {
-            if entry_ids.is_empty() {
-                return Ok(Vec::new());
+        let revisions = context.table("revisions").await?;
+        let scope = match entry_ids {
+            Some([]) => return Ok(Vec::new()),
+            Some(entry_ids) => {
+                ugoite_core::query::EntryScope::Only(entry_ids.iter().copied().collect())
             }
-            revisions = revisions.filter(
-                col("entry_id").in_list(
-                    entry_ids
-                        .iter()
-                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                        .collect(),
-                    false,
-                ),
-            )?;
-        }
-        let maxima = revisions
-            .clone()
-            .aggregate(
-                vec![col("entry_id")],
-                vec![max(col("entry_version")).alias("latest_entry_version")],
-            )?
-            .select(vec![
-                col("entry_id").alias("latest_entry_id"),
-                col("latest_entry_version"),
-            ])?;
-        let heads = revisions.join(
-            maxima,
-            JoinType::Inner,
-            &["entry_id", "entry_version"],
-            &["latest_entry_id", "latest_entry_version"],
-            None,
-        )?;
-        let duplicates = heads
-            .clone()
-            .aggregate(
-                vec![col("entry_id")],
-                vec![count(lit(1)).alias("head_count")],
-            )?
-            .filter(col("head_count").not_eq(lit(1)))?
-            .collect()
-            .await?;
-        if duplicates.iter().any(|batch| batch.num_rows() > 0) {
-            return Err(anyhow!(
-                "entry revision invariant failed: multiple revisions share a maximum entry_version"
-            ));
-        }
-        let heads = if view == RevisionView::Current {
-            heads.filter(col("operation").not_eq(lit("delete")))?
-        } else {
-            heads
+            None => ugoite_core::query::EntryScope::AllCurrent,
         };
+        let heads = crate::query_context::latest_revision_dataframe(revisions, &scope, view)?;
         Ok(heads
             .select_columns(&["entry_id", "revision_id", "entry_version"])?
             .collect()

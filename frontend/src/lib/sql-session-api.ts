@@ -3,11 +3,16 @@ import type { EntryRecord, SqlSession, SqlSessionRows } from "./types";
 import { protocolFetch } from "./ugoite-client/protocol";
 
 export const sqlSessionApi = {
-  async create(spaceId: string, sql: string): Promise<SqlSession> {
+  async create(
+    spaceId: string,
+    sql: string,
+    parameters: Record<string, string | number | boolean | null> = {},
+    parameterTypes: Record<string, string> = {},
+  ): Promise<SqlSession> {
     return await protocolFetch<SqlSession>(
       "sql_session.create",
       { space_id: spaceId },
-      { sql },
+      { sql, parameters, parameter_types: parameterTypes },
     );
   },
 

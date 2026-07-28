@@ -21,6 +21,63 @@ const SQL_MAX_ROWS: usize = 1_000;
 const SQL_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const SQL_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Converts transport values to typed DataFusion parameters. A null must carry
+/// a declared type, so it can never fall back to string substitution or an
+/// untyped SQL NULL.
+pub fn datafusion_parameters(
+    values: &Map<String, Value>,
+    types: &BTreeMap<String, String>,
+) -> Result<HashMap<String, datafusion::scalar::ScalarValue>> {
+    values
+        .iter()
+        .map(|(name, value)| {
+            let kind = types
+                .get(name)
+                .ok_or_else(|| anyhow!("SQL parameter {name} has no declared type"))?;
+            let scalar = match (kind.as_str(), value) {
+                ("string", Value::String(value)) => {
+                    datafusion::scalar::ScalarValue::Utf8(Some(value.clone()))
+                }
+                ("boolean", Value::Bool(value)) => {
+                    datafusion::scalar::ScalarValue::Boolean(Some(*value))
+                }
+                ("integer", Value::Number(value)) => datafusion::scalar::ScalarValue::Int64(
+                    value
+                        .as_i64()
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be an integer"))?
+                        .into(),
+                ),
+                ("float", Value::Number(value)) => datafusion::scalar::ScalarValue::Float64(
+                    value
+                        .as_f64()
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be a float"))?
+                        .into(),
+                ),
+                ("timestamp", Value::String(value)) => {
+                    let value = DateTime::parse_from_rfc3339(value)
+                        .map_err(|_| anyhow!("SQL parameter {name} must be an RFC3339 timestamp"))?
+                        .timestamp_micros();
+                    datafusion::scalar::ScalarValue::TimestampMicrosecond(Some(value), None)
+                }
+                ("string", Value::Null) => datafusion::scalar::ScalarValue::Utf8(None),
+                ("boolean", Value::Null) => datafusion::scalar::ScalarValue::Boolean(None),
+                ("integer", Value::Null) => datafusion::scalar::ScalarValue::Int64(None),
+                ("float", Value::Null) => datafusion::scalar::ScalarValue::Float64(None),
+                ("timestamp", Value::Null) => {
+                    datafusion::scalar::ScalarValue::TimestampMicrosecond(None, None)
+                }
+                ("string" | "boolean" | "integer" | "float" | "timestamp", _) => {
+                    return Err(anyhow!(
+                        "SQL parameter {name} does not match declared type {kind}"
+                    ))
+                }
+                _ => return Err(anyhow!("SQL parameter {name} has unsupported type {kind}")),
+            };
+            Ok((name.clone(), scalar))
+        })
+        .collect()
+}
+
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
     let query_value = if query.trim().is_empty() {
         Value::Null
@@ -57,6 +114,39 @@ pub async fn execute_sql_query(
     sql_query: &str,
 ) -> Result<Vec<Value>> {
     execute_datafusion_sql(op, ws_path, sql_query, EntryScope::AllCurrent, None, None).await
+}
+
+pub async fn execute_sql_query_page(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    execute_sql_query_page_with_parameters(op, ws_path, sql_query, HashMap::new(), offset, limit)
+        .await
+}
+
+pub async fn execute_sql_query_page_with_parameters(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        None,
+        offset,
+        limit,
+        parameters,
+    )
+    .await
 }
 
 pub async fn execute_sql_query_authorized(
@@ -101,6 +191,58 @@ pub async fn execute_sql_query_authorized_by_form(
         EntryScope::AllCurrent,
         None,
         Some(&relation_scopes),
+    )
+    .await
+}
+
+pub async fn execute_sql_query_authorized_by_form_page(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    execute_sql_query_authorized_by_form_page_with_parameters(
+        op,
+        ws_path,
+        sql_query,
+        readable_entries_by_form,
+        HashMap::new(),
+        offset,
+        limit,
+    )
+    .await
+}
+
+pub async fn execute_sql_query_authorized_by_form_page_with_parameters(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    let relation_scopes = readable_entries_by_form
+        .iter()
+        .map(|(relation, entries)| {
+            (
+                relation.to_ascii_lowercase(),
+                EntryScope::Only(entry_scope(entries)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
+        offset,
+        limit,
+        parameters,
     )
     .await
 }
@@ -168,6 +310,32 @@ pub async fn execute_sql_query_scoped(
     .await
 }
 
+pub async fn execute_sql_query_scoped_page(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_forms: &[String],
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    let readable_forms = readable_forms
+        .iter()
+        .map(|form| form.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        Some(&readable_forms),
+        None,
+        offset,
+        limit,
+        HashMap::new(),
+    )
+    .await
+}
+
 fn entry_scope(entry_ids: &HashSet<String>) -> BTreeSet<ugoite_domain::id::EntryId> {
     entry_ids
         .iter()
@@ -193,6 +361,29 @@ async fn execute_datafusion_sql(
             .map_err(map_sql_error)?;
     let batches = context.execute(sql).await.map_err(map_sql_error)?;
     record_batches_to_values(&batches)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_datafusion_sql_page(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    offset: usize,
+    limit: usize,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+) -> Result<(Vec<Value>, u64)> {
+    let context =
+        datafusion_sql_context(op, ws_path, entry_scope, allowed_relations, relation_scopes)
+            .await
+            .map_err(map_sql_error)?;
+    let (batches, count) = context
+        .execute_page(sql, parameters, offset, limit)
+        .await
+        .map_err(map_sql_error)?;
+    Ok((record_batches_to_values(&batches)?, count))
 }
 
 async fn datafusion_sql_context(

@@ -18,7 +18,10 @@ use openidconnect::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::BTreeSet, env};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -3306,6 +3309,10 @@ async fn revoke_member(
 #[derive(Deserialize)]
 struct SqlSessionCreate {
     sql: String,
+    #[serde(default)]
+    parameters: serde_json::Map<String, Value>,
+    #[serde(default)]
+    parameter_types: BTreeMap<String, String>,
 }
 
 async fn create_sql_session(
@@ -3328,7 +3335,13 @@ async fn create_sql_session(
         Json(
             state
                 .service
-                .create_sql_session_authorized_for_principals(&space_id, &principals, &payload.sql)
+                .create_sql_session_authorized_for_principals_with_parameters(
+                    &space_id,
+                    &principals,
+                    &payload.sql,
+                    payload.parameters,
+                    payload.parameter_types,
+                )
                 .await
                 .map_err(ApiError::from_core)?,
         ),

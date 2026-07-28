@@ -500,10 +500,11 @@ async fn context_enforces_memory_and_timeout_limits() -> anyhow::Result<()> {
 
     let mut memory_limited = policy(&tasks, &[62]);
     memory_limited.limits.max_memory_bytes = 1;
-    let error = match workspace.authorized_query_context(memory_limited).await {
-        Ok(_) => anyhow::bail!("current-state planning must honor the memory limit"),
-        Err(error) => error,
-    };
+    let context = workspace.authorized_query_context(memory_limited).await?;
+    let error = context
+        .execute("SELECT * FROM tasks")
+        .await
+        .expect_err("current-state execution must honor the memory limit");
     assert!(matches!(
         error.downcast_ref::<AuthorizedQueryError>(),
         Some(AuthorizedQueryError::ResourceLimitExceeded { .. })

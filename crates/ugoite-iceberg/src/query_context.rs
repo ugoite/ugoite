@@ -12,7 +12,7 @@ use datafusion::execution::{SessionStateBuilder, SessionStateDefaults};
 use datafusion::logical_expr::expr_fn::ident;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::ExecutionPlan;
-use datafusion::prelude::{col, lit, SessionConfig};
+use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -22,6 +22,77 @@ use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 use crate::{form_from_table, IcebergWorkspace};
 
 const INTERNAL_RELATION_PREFIX: &str = "__ugoite_authorized_source_";
+
+/// Canonical lazy current-state derivation for append-only Form revision
+/// tables. Every reader starts from this plan: entry authorization is applied
+/// before the maximum-version aggregate, and tombstones are removed only after
+/// that aggregate selected the latest revision. Keeping this as a DataFusion
+/// builder preserves optimizer visibility and avoids a second implementation
+/// in the SQL path.
+pub(crate) fn latest_revision_dataframe(
+    revisions: DataFrame,
+    entry_scope: &EntryScope,
+    view: crate::RevisionView,
+) -> Result<DataFrame> {
+    let scoped = match entry_scope {
+        EntryScope::AllCurrent => revisions,
+        EntryScope::Only(entry_ids) if entry_ids.is_empty() => revisions.filter(lit(false))?,
+        EntryScope::Only(entry_ids) => revisions.filter(
+            col("entry_id").in_list(
+                entry_ids
+                    .iter()
+                    .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                    .collect::<Vec<_>>(),
+                false,
+            ),
+        )?,
+    };
+    let maxima = scoped
+        .clone()
+        .aggregate(
+            vec![col("entry_id")],
+            vec![
+                datafusion::functions_aggregate::expr_fn::max(col("entry_version"))
+                    .alias("latest_entry_version"),
+            ],
+        )?
+        .select(vec![
+            col("entry_id").alias("latest_entry_id"),
+            col("latest_entry_version"),
+        ])?;
+    let heads = scoped.join(
+        maxima,
+        datafusion::logical_expr::JoinType::Inner,
+        &["entry_id", "entry_version"],
+        &["latest_entry_id", "latest_entry_version"],
+        None,
+    )?;
+    // A duplicate maximum version is a corrupt append-only history. Keep the
+    // validation inside the lazy DataFusion plan so context construction never
+    // scans unrelated Forms; a corrupt Entry is fail-closed and cannot become
+    // visible through either normal reads or SQL.
+    let valid_heads = heads
+        .clone()
+        .aggregate(
+            vec![col("entry_id")],
+            vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                .alias("ugoite_latest_head_count")],
+        )?
+        .filter(col("ugoite_latest_head_count").eq(lit(1)))?
+        .select(vec![col("entry_id").alias("ugoite_valid_entry_id")])?;
+    let heads = heads.join(
+        valid_heads,
+        datafusion::logical_expr::JoinType::Inner,
+        &["entry_id"],
+        &["ugoite_valid_entry_id"],
+        None,
+    )?;
+    if view == crate::RevisionView::Current {
+        Ok(heads.filter(col("operation").not_eq(lit("delete")))?)
+    } else {
+        Ok(heads)
+    }
+}
 
 /// A query surface containing only Core-authorized, read-only logical Form
 /// views. The underlying context remains private so callers cannot register a
@@ -78,6 +149,17 @@ impl AuthorizedQueryError {
     }
 }
 
+fn classify_datafusion_error(error: datafusion::error::DataFusionError) -> AuthorizedQueryError {
+    if matches!(
+        error.find_root(),
+        datafusion::error::DataFusionError::ResourcesExhausted(_)
+    ) {
+        AuthorizedQueryError::resource_limit(error)
+    } else {
+        AuthorizedQueryError::execution_failed(error)
+    }
+}
+
 impl std::fmt::Display for AuthorizedQueryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
@@ -111,15 +193,10 @@ impl IcebergWorkspace {
         &self,
         policy: AuthorizedQueryPolicy,
     ) -> Result<AuthorizedQueryContext> {
-        self.authorized_query_context_inner(policy)
+        Ok(self
+            .authorized_query_context_inner(policy)
             .await
-            .map_err(|error| {
-                if error.to_string().contains("Resources exhausted") {
-                    AuthorizedQueryError::resource_limit(error).into()
-                } else {
-                    AuthorizedQueryError::execution_failed(error).into()
-                }
-            })
+            .map_err(AuthorizedQueryError::execution_failed)?)
     }
 
     async fn authorized_query_context_inner(
@@ -247,64 +324,18 @@ impl IcebergWorkspace {
             context.register_table(internal.as_str(), Arc::new(provider))?;
             let visible = visible_columns(&form, form_policy)?;
             let source = context.table(internal.as_str()).await?;
-            let scoped = match &form_policy.entry_scope {
-                EntryScope::AllCurrent => source,
-                EntryScope::Only(entry_ids) if entry_ids.is_empty() => source.filter(lit(false))?,
-                EntryScope::Only(entry_ids) => source.filter(
-                    col("entry_id").in_list(
-                        entry_ids
-                            .iter()
-                            .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                            .collect::<Vec<_>>(),
-                        false,
-                    ),
-                )?,
-            };
-            let maxima = scoped
-                .clone()
-                .aggregate(
-                    vec![col("entry_id")],
-                    vec![
-                        datafusion::functions_aggregate::expr_fn::max(col("entry_version"))
-                            .alias("latest_entry_version"),
-                    ],
-                )?
-                .select(vec![
-                    col("entry_id").alias("latest_entry_id"),
-                    col("latest_entry_version"),
-                ])?;
-            let heads = scoped.join(
-                maxima,
-                datafusion::logical_expr::JoinType::Inner,
-                &["entry_id", "entry_version"],
-                &["latest_entry_id", "latest_entry_version"],
-                None,
-            )?;
-            let duplicates = heads
-                .clone()
-                .aggregate(
-                    vec![col("entry_id")],
-                    vec![
-                        datafusion::functions_aggregate::expr_fn::count(lit(1)).alias("head_count")
-                    ],
-                )?
-                .filter(col("head_count").not_eq(lit(1)))?
-                .collect()
-                .await?;
-            if duplicates.iter().any(|batch| batch.num_rows() > 0) {
-                bail!(
-                    "entry revision invariant failed: multiple revisions share a maximum entry_version"
-                );
-            }
-            let view = heads
-                .filter(col("operation").not_eq(lit("delete")))?
-                .select(
-                    visible
-                        .iter()
-                        .map(|column| ident(&column.source).alias(&column.name))
-                        .collect::<Vec<_>>(),
-                )?
-                .into_view();
+            let view = latest_revision_dataframe(
+                source,
+                &form_policy.entry_scope,
+                crate::RevisionView::Current,
+            )?
+            .select(
+                visible
+                    .iter()
+                    .map(|column| ident(&column.source).alias(&column.name))
+                    .collect::<Vec<_>>(),
+            )?
+            .into_view();
             context.deregister_table(internal.as_str())?;
             context.register_table(form_policy.relation.as_str(), view)?;
         }
@@ -348,6 +379,29 @@ impl AuthorizedQueryContext {
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
+    /// Executes a deterministic SQL session page and its count from the same
+    /// authorized, checkpoint-pinned plan. Paging is a plan operation, never
+    /// a Rust slice over materialized JSON rows.
+    pub async fn execute_page(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<arrow_array::RecordBatch>, u64)> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_page_with_permit(sql, parameters, offset, limit),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
     #[cfg(debug_assertions)]
     #[doc(hidden)]
     pub async fn physical_plan_for_testing(&self, sql: &str) -> Result<String> {
@@ -366,6 +420,72 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let plan = self.prepared_plan(sql, parameters).await?;
+        let frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let max_rows_with_sentinel = self
+            .limits
+            .max_rows
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("authorized query row limit is too large"))
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        let frame = frame
+            .limit(0, Some(max_rows_with_sentinel))
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        let batches = self.collect_frame(frame).await?;
+        let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
+        if rows > self.limits.max_rows {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "authorized query row limit exceeded"
+            ))
+            .into());
+        }
+        Ok(batches)
+    }
+
+    async fn execute_page_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<arrow_array::RecordBatch>, u64)> {
+        let plan = self.prepared_plan(sql, parameters).await?;
+        if !logical_plan_contains_sort(&plan) {
+            return Err(AuthorizedQueryError::invalid_query(anyhow!(
+                "SQL session paging requires an explicit ORDER BY"
+            ))
+            .into());
+        }
+        let frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_frame = frame
+            .clone()
+            .aggregate(
+                Vec::new(),
+                vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                    .alias("ugoite_session_count")],
+            )
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_batches = self.collect_frame(count_frame).await?;
+        let total = count_from_batches(&count_batches)?;
+        let page = frame
+            .limit(offset, Some(limit))
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        Ok((self.collect_frame(page).await?, total))
+    }
+
+    async fn prepared_plan(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<LogicalPlan> {
         let plan = self
             .context
             .state()
@@ -397,20 +517,10 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::invalid_query)?;
         validate_logical_plan(&optimized, &self.authorized_relations)
             .map_err(AuthorizedQueryError::unauthorized)?;
-        let frame = self
-            .context
-            .execute_logical_plan(optimized)
-            .await
-            .map_err(AuthorizedQueryError::execution_failed)?;
-        let max_rows_with_sentinel = self
-            .limits
-            .max_rows
-            .checked_add(1)
-            .ok_or_else(|| anyhow!("authorized query row limit is too large"))
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        let frame = frame
-            .limit(0, Some(max_rows_with_sentinel))
-            .map_err(AuthorizedQueryError::resource_limit)?;
+        Ok(optimized)
+    }
+
+    async fn collect_frame(&self, frame: DataFrame) -> Result<Vec<arrow_array::RecordBatch>> {
         let task_context = Arc::new(frame.task_ctx());
         let physical = frame
             .create_physical_plan()
@@ -420,16 +530,31 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::unauthorized)?;
         let batches = datafusion::physical_plan::collect(physical, task_context)
             .await
-            .map_err(AuthorizedQueryError::execution_failed)?;
-        let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
-        if rows > self.limits.max_rows {
-            return Err(AuthorizedQueryError::resource_limit(anyhow!(
-                "authorized query row limit exceeded"
-            ))
-            .into());
-        }
+            .map_err(classify_datafusion_error)?;
         Ok(batches)
     }
+}
+
+fn logical_plan_contains_sort(plan: &LogicalPlan) -> bool {
+    matches!(plan, LogicalPlan::Sort(_))
+        || plan
+            .inputs()
+            .iter()
+            .any(|input| logical_plan_contains_sort(input))
+}
+
+fn count_from_batches(batches: &[arrow_array::RecordBatch]) -> Result<u64> {
+    let batch = batches
+        .iter()
+        .find(|batch| batch.num_rows() == 1)
+        .ok_or_else(|| AuthorizedQueryError::execution_failed(anyhow!("count returned no row")))?;
+    let values = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow_array::Int64Array>()
+        .ok_or_else(|| AuthorizedQueryError::execution_failed(anyhow!("count has invalid type")))?;
+    u64::try_from(values.value(0))
+        .map_err(|error| AuthorizedQueryError::execution_failed(anyhow!(error)).into())
 }
 
 struct VisibleColumn {
