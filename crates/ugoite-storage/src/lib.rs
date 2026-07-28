@@ -392,7 +392,7 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
-    pub async fn read_publication(&self, path: &str) -> Result<Vec<u8>> {
+    pub async fn read_publication(&self, path: &str) -> opendal::Result<Vec<u8>> {
         Ok(self.operator.read(path).await?.to_vec())
     }
 
@@ -410,7 +410,7 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
-    pub async fn read_checkpoint(&self, name: &str) -> Result<Vec<u8>> {
+    pub async fn read_checkpoint(&self, name: &str) -> opendal::Result<Vec<u8>> {
         Ok(self
             .operator
             .read(&self.checkpoint_path(name))

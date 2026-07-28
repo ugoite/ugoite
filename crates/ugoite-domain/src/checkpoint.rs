@@ -6,6 +6,8 @@
 use crate::id::{FormId, SpaceId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
+use uuid::Uuid;
 
 pub const SPACE_CHECKPOINT_FORMAT_VERSION: u32 = 1;
 
@@ -74,6 +76,35 @@ impl SpaceCheckpoint {
     pub fn validate_coordinate_checksum(&self) -> bool {
         self.format_version == SPACE_CHECKPOINT_FORMAT_VERSION
             && self.coordinate_checksum == self.computed_coordinate_checksum()
+    }
+
+    /// Reject ambiguous or malformed coordinates before any storage is read.
+    /// Integrity of the coordinates themselves is subsequently proven against
+    /// their immutable publication and Catalog Head by the Iceberg adapter.
+    pub fn validate_structure(&self) -> Result<(), &'static str> {
+        let mut forms = BTreeSet::new();
+        let mut identifiers = BTreeSet::new();
+        for table in &self.tables {
+            if !forms.insert(table.form_id) {
+                return Err("checkpoint contains a duplicate Form ID");
+            }
+            if table.namespace.is_empty() || table.namespace.iter().any(|part| part.is_empty()) {
+                return Err("checkpoint table namespace is empty or invalid");
+            }
+            if table.table.is_empty() {
+                return Err("checkpoint table name is empty");
+            }
+            if !identifiers.insert((table.namespace.clone(), table.table.clone())) {
+                return Err("checkpoint assigns one table identifier to multiple Forms");
+            }
+            if Uuid::parse_str(&table.table_uuid).is_err() {
+                return Err("checkpoint table UUID is invalid");
+            }
+            if table.metadata_location.is_empty() {
+                return Err("checkpoint metadata location is empty");
+            }
+        }
+        Ok(())
     }
 
     pub fn computed_coordinate_checksum(&self) -> String {

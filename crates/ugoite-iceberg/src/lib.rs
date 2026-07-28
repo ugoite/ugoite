@@ -322,6 +322,11 @@ impl IcebergWorkspace {
     pub async fn save_checkpoint(&self, name: &str, checkpoint: &SpaceCheckpoint) -> Result<()> {
         validate_checkpoint_name(name)?;
         self.validate_checkpoint(checkpoint)?;
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .validate_checkpoint_evidence(checkpoint)
+            .await?;
         let mut stored = checkpoint.clone();
         stored.name = Some(name.to_string());
         self.space_catalog
@@ -342,6 +347,11 @@ impl IcebergWorkspace {
             .read_checkpoint(name)
             .await?;
         self.validate_checkpoint(&checkpoint)?;
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .validate_checkpoint_evidence(&checkpoint)
+            .await?;
         Ok(checkpoint)
     }
 
@@ -364,7 +374,7 @@ impl IcebergWorkspace {
             .space_catalog
             .as_ref()
             .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
-            .load_checkpoint_table(coordinate)
+            .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, form_id)?;
         self.read_revision_view_from_table(&form, table, view, coordinate.snapshot_id, true)
@@ -383,6 +393,9 @@ impl IcebergWorkspace {
             )
             .into());
         }
+        checkpoint
+            .validate_structure()
+            .map_err(CheckpointIntegrityError::new)?;
         Ok(())
     }
 

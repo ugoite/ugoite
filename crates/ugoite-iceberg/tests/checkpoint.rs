@@ -161,5 +161,23 @@ async fn checkpoint_reports_missing_and_tampered_coordinates_explicitly() -> any
         .await
         .expect_err("tampered coordinate checksum must fail before query planning");
     assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
+
+    let mut rewritten = workspace.capture_checkpoint().await?;
+    rewritten.catalog_head_checksum = "attacker-recomputed-checksum".into();
+    rewritten.coordinate_checksum = rewritten.computed_coordinate_checksum();
+    let error = workspace
+        .read_revision_view_at_checkpoint(&rewritten, form.id, RevisionView::Current)
+        .await
+        .expect_err("a self-consistent checkpoint must still match immutable publication evidence");
+    assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
+
+    let mut duplicate_form = workspace.capture_checkpoint().await?;
+    duplicate_form.tables.push(duplicate_form.tables[0].clone());
+    duplicate_form.coordinate_checksum = duplicate_form.computed_coordinate_checksum();
+    let error = workspace
+        .read_revision_view_at_checkpoint(&duplicate_form, form.id, RevisionView::Current)
+        .await
+        .expect_err("ambiguous Form coordinates must fail closed");
+    assert!(error.downcast_ref::<CheckpointIntegrityError>().is_some());
     Ok(())
 }

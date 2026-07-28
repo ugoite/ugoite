@@ -313,8 +313,16 @@ impl SpaceCatalog {
     /// checkpoint. It deliberately does not reread the mutable Catalog Head.
     pub(crate) async fn load_checkpoint_table(
         &self,
+        checkpoint: &SpaceCheckpoint,
         coordinate: &CheckpointTable,
     ) -> anyhow::Result<iceberg::table::Table> {
+        self.validate_checkpoint_evidence(checkpoint).await?;
+        if !checkpoint.tables.contains(coordinate) {
+            return Err(crate::CheckpointIntegrityError::new(
+                "checkpoint table coordinate is not part of this checkpoint",
+            )
+            .into());
+        }
         let namespace =
             NamespaceIdent::from_vec(coordinate.namespace.clone()).map_err(|error| {
                 crate::CheckpointIntegrityError::new(format!("invalid table namespace: {error}"))
@@ -322,7 +330,7 @@ impl SpaceCatalog {
         let identifier = TableIdent::new(namespace, coordinate.table.clone());
         let metadata = TableMetadata::read_from(&self.file_io, &coordinate.metadata_location)
             .await
-            .map_err(|error| crate::CheckpointUnavailable::new(error.to_string()))?;
+            .map_err(checkpoint_metadata_error)?;
         if metadata.uuid().to_string() != coordinate.table_uuid {
             return Err(crate::CheckpointIntegrityError::new(
                 "Iceberg table UUID does not match the checkpoint",
@@ -365,9 +373,62 @@ impl SpaceCatalog {
             .store
             .read_checkpoint(name)
             .await
-            .map_err(|error| crate::CheckpointUnavailable::new(error.to_string()))?;
+            .map_err(checkpoint_target_error)?;
         Ok(serde_json::from_slice(&bytes)
             .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?)
+    }
+
+    /// Re-establishes the immutable publication -> canonical Head chain that
+    /// authorizes checkpoint coordinates. The coordinate checksum detects
+    /// corruption, but only this evidence prevents a rewritten checkpoint
+    /// from selecting arbitrary metadata.
+    pub(crate) async fn validate_checkpoint_evidence(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+    ) -> anyhow::Result<()> {
+        let publication_bytes = self
+            .store
+            .read_publication(&checkpoint.publication_location)
+            .await
+            .map_err(checkpoint_target_error)?;
+        let publication = decode_publication(&publication_bytes)
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?;
+        if publication.checksum != checkpoint.publication_checksum {
+            return Err(crate::CheckpointIntegrityError::new(
+                "publication checksum does not match the checkpoint",
+            )
+            .into());
+        }
+        let head = &publication.next_head;
+        if head.checksum != checkpoint.catalog_head_checksum
+            || head.generation != checkpoint.catalog_generation
+            || head.form_registry_generation != checkpoint.form_registry_generation
+            || head.space_id != self.space_id.to_string()
+            || head.namespace != *self.namespace.as_ref()
+            || head.publication_location.as_deref()
+                != Some(checkpoint.publication_location.as_str())
+        {
+            return Err(crate::CheckpointIntegrityError::new(
+                "canonical Catalog Head does not match the checkpoint",
+            )
+            .into());
+        }
+        validate_publication_matches_head(&publication, head)
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?;
+        if head.tables.len() != checkpoint.tables.len()
+            || !head.tables.values().all(|reference| {
+                checkpoint
+                    .tables
+                    .iter()
+                    .any(|table| checkpoint_table_matches_reference(table, reference))
+            })
+        {
+            return Err(crate::CheckpointIntegrityError::new(
+                "checkpoint tables do not exactly match the canonical Catalog Head",
+            )
+            .into());
+        }
+        Ok(())
     }
 
     /// Finds a completed command through the immutable publication chain.
@@ -821,6 +882,32 @@ impl SpaceCatalog {
                 "Catalog publication chain is incomplete or corrupt",
             )),
         }
+    }
+}
+
+fn checkpoint_table_matches_reference(
+    coordinate: &CheckpointTable,
+    reference: &TableReference,
+) -> bool {
+    reference.form_id.as_deref() == Some(coordinate.form_id.to_string().as_str())
+        && reference.identifier.namespace == coordinate.namespace
+        && reference.identifier.table == coordinate.table
+        && reference.table_uuid == coordinate.table_uuid
+        && reference.metadata_location == coordinate.metadata_location
+}
+
+fn checkpoint_target_error(error: opendal::Error) -> anyhow::Error {
+    match error.kind() {
+        opendal::ErrorKind::NotFound => crate::CheckpointUnavailable::new(error.to_string()).into(),
+        _ => anyhow::Error::new(error).context("read checkpoint target"),
+    }
+}
+
+fn checkpoint_metadata_error(error: iceberg::Error) -> anyhow::Error {
+    if error.kind() == ErrorKind::DataInvalid {
+        crate::CheckpointIntegrityError::new(error.to_string()).into()
+    } else {
+        anyhow::Error::new(error).context("read checkpoint Iceberg metadata")
     }
 }
 
