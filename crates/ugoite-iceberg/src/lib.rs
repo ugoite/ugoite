@@ -377,7 +377,7 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, form_id)?;
-        self.read_revision_view_from_table(&form, table, view, coordinate.snapshot_id, true)
+        self.read_revision_view_from_table(&form, table, view, coordinate.snapshot_id)
             .await
     }
 
@@ -770,7 +770,7 @@ impl IcebergWorkspace {
     ) -> Result<Vec<EntryRevision>> {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        self.read_revision_view_from_table(&form, table, view, snapshot_id, false)
+        self.read_revision_view_from_table(&form, table, view, snapshot_id)
             .await
     }
 
@@ -780,7 +780,6 @@ impl IcebergWorkspace {
         table: iceberg::table::Table,
         view: RevisionView,
         snapshot_id: Option<i64>,
-        static_table: bool,
     ) -> Result<Vec<EntryRevision>> {
         let batches = match view {
             RevisionView::All => {

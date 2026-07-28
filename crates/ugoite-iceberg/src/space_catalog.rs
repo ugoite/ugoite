@@ -15,7 +15,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::{Mutex, OwnedMutexGuard};
 use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 use ugoite_domain::id::{FormId, SpaceId};
 use ugoite_storage::{CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore};
