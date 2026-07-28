@@ -24,7 +24,9 @@ updates:
         patterns:
           - "arrow-*"
           - "parquet"
-          - "iceberg"
+          - "iceberg*"
+          - "datafusion"
+          - "opendal"
     ignore:
       - dependency-name: "arrow-array"
         update-types:
@@ -39,6 +41,25 @@ updates:
           - "version-update:semver-major"
           - "version-update:semver-minor"
       - dependency-name: "iceberg"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "iceberg-datafusion"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "iceberg-storage-opendal"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      # The current official Iceberg Rust 0.10.x set selects DataFusion 53.x
+      # and OpenDAL 0.57.x. Review a new official stack as one compatible
+      # update instead of allowing a grouped update to split this graph.
+      - dependency-name: "datafusion"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "opendal"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"

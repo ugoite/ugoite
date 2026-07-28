@@ -11,7 +11,7 @@ arrow-array = "58.4"
 arrow-schema = "58.4"
 base64 = "0.23"
 chrono = { version = "0.4.44", features = ["serde"] }
-datafusion = "54.1.0"
+datafusion = "53.1.0"
 futures = "0.3"
 iceberg = "=0.10.0"
 iceberg-datafusion = "=0.10.0"
