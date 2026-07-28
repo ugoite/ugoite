@@ -397,6 +397,16 @@ impl SpaceCatalogStore {
     }
 
     pub async fn create_checkpoint(&self, name: &str, bytes: Vec<u8>) -> Result<()> {
+        if !self
+            .operator
+            .info()
+            .full_capability()
+            .write_with_if_not_exists
+        {
+            return Err(anyhow!(
+                "immutable checkpoint creation requires OpenDAL if_not_exists support"
+            ));
+        }
         self.operator
             .write_options(
                 &self.checkpoint_path(name),

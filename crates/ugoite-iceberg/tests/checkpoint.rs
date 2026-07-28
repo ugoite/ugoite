@@ -139,6 +139,36 @@ async fn checkpoint_pins_one_head_and_uses_static_iceberg_coordinates() -> anyho
 }
 
 #[tokio::test]
+async fn named_checkpoints_are_immutable() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(4)),
+        "memory://checkpoint-immutable-name",
+    )
+    .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    append(&workspace, &form, revision(&form, 1, "first")).await?;
+    let first = workspace.capture_checkpoint().await?;
+    workspace.save_checkpoint("fixed-name", &first).await?;
+
+    workspace
+        .save_checkpoint("fixed-name", &first)
+        .await
+        .expect_err("reusing a checkpoint name must fail");
+
+    append(&workspace, &form, revision(&form, 2, "second")).await?;
+    let second = workspace.capture_checkpoint().await?;
+    workspace
+        .save_checkpoint("fixed-name", &second)
+        .await
+        .expect_err("a different checkpoint must not replace a named checkpoint");
+
+    let stored = workspace.load_checkpoint("fixed-name").await?;
+    assert_eq!(stored.coordinate_checksum, first.coordinate_checksum);
+    Ok(())
+}
+
+#[tokio::test]
 async fn checkpoint_reports_missing_and_tampered_coordinates_explicitly() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(3)),

@@ -346,6 +346,12 @@ impl IcebergWorkspace {
             .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
             .read_checkpoint(name)
             .await?;
+        if checkpoint.name.as_deref() != Some(name) {
+            return Err(CheckpointIntegrityError::new(
+                "stored checkpoint name does not match its object name",
+            )
+            .into());
+        }
         self.validate_checkpoint(&checkpoint)?;
         self.space_catalog
             .as_ref()
