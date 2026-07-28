@@ -175,9 +175,13 @@ async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot(
     )
     .await?;
     let tasks = form(21, "Tasks");
+    let secrets = form(26, "Secrets");
     create_form(&workspace, &tasks).await?;
+    create_form(&workspace, &secrets).await?;
     append(&workspace, &tasks, 22, 23, "first").await?;
+    append(&workspace, &secrets, 27, 28, "secret").await?;
     let checkpoint = workspace.capture_checkpoint().await?;
+    assert_eq!(checkpoint.tables.len(), 2, "checkpoint is Space-wide");
     append(&workspace, &tasks, 24, 25, "later").await?;
 
     let mut snapshot_policy = policy(&tasks, &[22, 24]);
@@ -188,6 +192,7 @@ async fn context_requires_complete_checkpoint_and_reads_the_requested_snapshot(
         batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
         1
     );
+    assert!(context.execute("SELECT * FROM secrets").await.is_err());
 
     let mut incomplete = policy(&tasks, &[22]);
     let mut incomplete_checkpoint = checkpoint;

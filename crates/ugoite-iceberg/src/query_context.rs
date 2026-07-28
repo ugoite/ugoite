@@ -63,15 +63,6 @@ impl IcebergWorkspace {
                 .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
                 .validate_checkpoint_evidence(checkpoint)
                 .await?;
-            let checkpoint_forms = checkpoint
-                .tables
-                .iter()
-                .map(|table| table.form_id)
-                .collect::<BTreeSet<_>>();
-            let authorized_forms = policy.forms.keys().copied().collect::<BTreeSet<_>>();
-            if checkpoint_forms != authorized_forms {
-                bail!("checkpoint Forms must exactly match authorized query Forms");
-            }
         }
 
         for (form_id, form_policy) in &policy.forms {
