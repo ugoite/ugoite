@@ -91,14 +91,32 @@ pub fn datafusion_parameters(
 }
 
 pub async fn datafusion_parameter_names(
-    op: &Operator,
-    ws_path: &str,
+    _op: &Operator,
+    _ws_path: &str,
     sql: &str,
 ) -> Result<BTreeSet<String>> {
-    datafusion_sql_context(op, ws_path, EntryScope::AllCurrent, None, None, None)
-        .await?
-        .parameter_names(sql)
-        .await
+    use datafusion::sql::parser::{DFParser, Statement};
+    use datafusion::sql::sqlparser::ast::{visit_expressions, Expr, Value};
+    use std::ops::ControlFlow;
+
+    // Saving SQL validates only DataFusion syntax and native placeholders.
+    // Relation resolution remains an execution-time concern: a saved query may
+    // legitimately target a Form that an operator creates later.
+    let statements = DFParser::parse_sql(sql).context("parse saved SQL with DataFusion")?;
+    let mut names = BTreeSet::new();
+    for statement in statements {
+        if let Statement::Statement(statement) = statement {
+            let _ = visit_expressions(statement.as_ref(), |expression| {
+                if let Expr::Value(value) = expression {
+                    if let Value::Placeholder(name) = &value.value {
+                        names.insert(name.clone());
+                    }
+                }
+                ControlFlow::<()>::Continue(())
+            });
+        }
+    }
+    Ok(names)
 }
 
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {

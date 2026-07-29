@@ -17,7 +17,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM sql WHERE updated_at >= $since".to_string(),
+        sql: "SELECT * FROM sql WHERE _ugoite_updated_at >= $since".to_string(),
         variables: json!([
             {
                 "type": "date",
@@ -48,7 +48,9 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let update_payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM sql WHERE updated_at >= $since ORDER BY updated_at DESC".to_string(),
+        sql:
+            "SELECT * FROM sql WHERE _ugoite_updated_at >= $since ORDER BY _ugoite_updated_at DESC"
+                .to_string(),
         variables: payload.variables.clone(),
     };
 
@@ -83,7 +85,8 @@ async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
     let integrity = FakeIntegrityProvider;
     let payload = SqlPayload {
         name: "Advanced search - form: Meeting - memo=s".to_string(),
-        sql: "SELECT id, title FROM sql ORDER BY updated_at DESC LIMIT 50".to_string(),
+        sql: "SELECT _ugoite_id, _ugoite_title FROM sql ORDER BY _ugoite_updated_at DESC LIMIT 50"
+            .to_string(),
         variables: json!([]),
     };
 
@@ -134,7 +137,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let undefined_placeholder = SqlPayload {
         name: "Undefined placeholder".to_string(),
-        sql: "SELECT * FROM sql WHERE updated_at >= $since".to_string(),
+        sql: "SELECT * FROM sql WHERE _ugoite_updated_at >= $since".to_string(),
         variables: json!([]),
     };
 
