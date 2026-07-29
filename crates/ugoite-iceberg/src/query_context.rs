@@ -14,7 +14,7 @@ use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
@@ -86,7 +86,7 @@ pub struct AuthorizedQueryContext {
     permits: Arc<Semaphore>,
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
-    duplicate_head_checks: BTreeMap<String, DataFrame>,
+    duplicate_head_checks: Vec<DataFrame>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -246,7 +246,7 @@ impl IcebergWorkspace {
         let context = SessionContext::new_with_state(state);
         let mut relations = BTreeSet::new();
         let mut authorized_scans = BTreeSet::new();
-        let mut duplicate_head_checks = BTreeMap::new();
+        let mut duplicate_head_checks = Vec::new();
 
         if let Some(checkpoint) = &policy.checkpoint {
             self.validate_checkpoint(checkpoint)?;
@@ -321,10 +321,11 @@ impl IcebergWorkspace {
             )?
             .clone();
             // This is deliberately a DataFusion plan over the same static
-            // Iceberg provider as the visible relation. A user-facing view is
-            // expanded to its internal source before logical-plan validation,
-            // so register the invariant under both references. LIMIT and
-            // aggregates therefore cannot hide a duplicate maximum version.
+            // Iceberg provider as the visible relation. Check every
+            // authorized relation before executing a statement: DataFusion
+            // may expand a view, rewrite aliases, or remove a scan before the
+            // logical plan reaches this boundary. The invariant must not
+            // depend on those planner details.
             let duplicate_head_check = heads
                 .clone()
                 .aggregate(
@@ -334,11 +335,7 @@ impl IcebergWorkspace {
                 )?
                 .filter(col("ugoite_latest_head_count").gt(lit(1)))?
                 .limit(0, Some(1))?;
-            duplicate_head_checks.insert(
-                form_policy.relation.to_ascii_lowercase(),
-                duplicate_head_check.clone(),
-            );
-            duplicate_head_checks.insert(internal.clone(), duplicate_head_check);
+            duplicate_head_checks.push(duplicate_head_check);
             let view = heads
                 .filter(col("operation").not_eq(lit("delete")))?
                 .select(
@@ -538,7 +535,7 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::invalid_query)?;
         validate_logical_plan(&plan, &self.authorized_relations)
             .map_err(AuthorizedQueryError::unauthorized)?;
-        self.validate_revision_invariants(&plan).await?;
+        self.validate_revision_invariants().await?;
         let optimized = self
             .context
             .state()
@@ -563,13 +560,8 @@ impl AuthorizedQueryContext {
         Ok(batches)
     }
 
-    async fn validate_revision_invariants(&self, plan: &LogicalPlan) -> Result<()> {
-        let mut relations = BTreeSet::new();
-        collect_scanned_relations(plan, &mut relations);
-        for relation in relations {
-            let Some(check) = self.duplicate_head_checks.get(&relation) else {
-                continue;
-            };
+    async fn validate_revision_invariants(&self) -> Result<()> {
+        for check in &self.duplicate_head_checks {
             if self
                 .collect_frame(check.clone())
                 .await?
@@ -580,18 +572,6 @@ impl AuthorizedQueryContext {
             }
         }
         Ok(())
-    }
-}
-
-fn collect_scanned_relations(plan: &LogicalPlan, relations: &mut BTreeSet<String>) {
-    if let LogicalPlan::TableScan(scan) = plan {
-        // DataFusion qualifies resolved table references with its catalog and
-        // schema. The authorization policy is keyed by the exposed relation
-        // name, so compare only that normalized final component.
-        relations.insert(scan.table_name.table().to_ascii_lowercase());
-    }
-    for input in plan.inputs() {
-        collect_scanned_relations(input, relations);
     }
 }
 
