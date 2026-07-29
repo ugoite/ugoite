@@ -1,8 +1,7 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
-import { sqlApi } from "~/lib/ugoite-client";
-import { sqlSessionApi } from "~/lib/sql-session-api";
+import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 
 export default function SpaceQueryVariablesRoute() {
