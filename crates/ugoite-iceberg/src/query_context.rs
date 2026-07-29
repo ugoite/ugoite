@@ -376,6 +376,17 @@ impl AuthorizedQueryContext {
             .collect())
     }
 
+    /// Validates a session query against this closed context without executing
+    /// it. This binds native parameters, resolves only authorized relations,
+    /// and applies the same read-only plan checks used at execution time.
+    pub async fn validate_with_parameters(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<()> {
+        self.prepared_plan(sql, parameters).await.map(|_| ())
+    }
+
     /// Plans and executes a read-only statement. User predicates are evaluated
     /// above the trusted Entry filter embedded in every registered view.
     pub async fn execute(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
@@ -483,6 +494,16 @@ impl AuthorizedQueryContext {
         offset: usize,
         limit: usize,
     ) -> Result<(Vec<arrow_array::RecordBatch>, u64)> {
+        let requested_rows = offset
+            .checked_add(limit)
+            .ok_or_else(|| anyhow!("SQL session page range overflows"))
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        if limit == 0 || limit > self.limits.max_rows || requested_rows > self.limits.max_rows {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "SQL session page exceeds its configured row limit"
+            ))
+            .into());
+        }
         let plan = self.prepared_plan(sql, parameters).await?;
         let validation_plan = plan.clone();
         if !logical_plan_contains_sort(&plan) {

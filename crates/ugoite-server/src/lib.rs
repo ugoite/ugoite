@@ -3384,15 +3384,10 @@ async fn get_sql_session(
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    state
-        .service
-        .require_sql_session_principals(&space_id, &session_id, &principals)
-        .await
-        .map_err(ApiError::from_core)?;
     Ok(Json(
         state
             .service
-            .get_sql_session(&space_id, &session_id)
+            .get_sql_session_authorized_for_principals(&space_id, &session_id, &principals)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -3407,11 +3402,6 @@ async fn get_sql_session_count(
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    state
-        .service
-        .require_sql_session_principals(&space_id, &session_id, &principals)
-        .await
-        .map_err(ApiError::from_core)?;
     Ok(Json(json!({
         "count": state
             .service
@@ -3437,11 +3427,16 @@ async fn get_sql_session_rows(
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    state
-        .service
-        .require_sql_session_principals(&space_id, &session_id, &principals)
-        .await
-        .map_err(ApiError::from_core)?;
+    let offset = query.offset.unwrap_or_default();
+    let limit = query
+        .limit
+        .unwrap_or(ugoite_iceberg::sql_session::DEFAULT_PAGE_SIZE);
+    if limit > ugoite_iceberg::sql_session::MAX_PAGE_SIZE {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "SQL session page limit exceeds the configured maximum",
+        ));
+    }
     Ok(Json(
         state
             .service
@@ -3449,8 +3444,8 @@ async fn get_sql_session_rows(
                 &space_id,
                 &session_id,
                 &principals,
-                query.offset.unwrap_or_default(),
-                query.limit.unwrap_or(50).min(1000),
+                offset,
+                limit,
             )
             .await
             .map_err(ApiError::from_core)?,

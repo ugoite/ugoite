@@ -168,14 +168,23 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
         &integrity,
     )
     .await?;
-    let session = sql_session::create_sql_session(&op, ws_path, &invalid_sql.sql).await?;
-    assert!(sql_session::get_sql_session_count(
-        &op,
-        ws_path,
-        session["id"].as_str().expect("session id"),
-    )
-    .await
-    .is_err());
+    let readable_entries_by_form = std::collections::BTreeMap::new();
+    let principal_ids = [uuid::Uuid::from_u128(1)];
+    let authorization = sql_session::SqlSessionAuthorization {
+        principal_ids: &principal_ids,
+        policy_hash: "sha256:test-authorization-policy",
+        readable_entries_by_form: &readable_entries_by_form,
+    };
+    assert!(
+        sql_session::create_sql_session_authorized_for_principals_by_form(
+            &op,
+            ws_path,
+            &invalid_sql.sql,
+            authorization,
+        )
+        .await
+        .is_err()
+    );
 
     Ok(())
 }

@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, Utc};
 use opendal::Operator;
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::index;
@@ -10,6 +11,18 @@ use crate::SpaceCheckpoint;
 use ugoite_core::error::{AppError, ErrorCode};
 
 const SESSION_DIR: &str = "sql_sessions";
+const SESSION_LIFETIME: Duration = Duration::minutes(10);
+pub const DEFAULT_PAGE_SIZE: usize = 50;
+pub const MAX_PAGE_SIZE: usize = index::SQL_SESSION_MAX_ROWS;
+
+pub type ReadableEntriesByForm = BTreeMap<String, HashSet<String>>;
+
+#[derive(Clone, Copy)]
+pub struct SqlSessionAuthorization<'a> {
+    pub principal_ids: &'a [Uuid],
+    pub policy_hash: &'a str,
+    pub readable_entries_by_form: &'a ReadableEntriesByForm,
+}
 
 fn sessions_root(ws_path: &str) -> String {
     format!("{}/{}", ws_path.trim_end_matches('/'), SESSION_DIR)
@@ -84,74 +97,6 @@ fn session_sql(meta: &Value) -> Result<&str> {
         .ok_or_else(|| anyhow!("SQL session missing sql"))
 }
 
-async fn execute_session_page(
-    op: &Operator,
-    ws_path: &str,
-    session_id: &str,
-    offset: usize,
-    limit: usize,
-) -> Result<(Vec<Value>, u64)> {
-    let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
-        return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
-    }
-    if let Some(by_form) = meta.get("readable_entries_by_form") {
-        let by_form = serde_json::from_value(by_form.clone())?;
-        return index::execute_sql_query_authorized_by_form_page_at_checkpoint(
-            op,
-            ws_path,
-            session_sql(&meta)?,
-            &by_form,
-            index::AuthorizedSqlSessionPage {
-                parameters: session_parameters(&meta)?,
-                checkpoint: session_checkpoint(&meta)?,
-                offset,
-                limit,
-            },
-        )
-        .await;
-    }
-    index::execute_sql_query_page_with_parameters(
-        op,
-        ws_path,
-        session_sql(&meta)?,
-        session_parameters(&meta)?,
-        offset,
-        limit,
-    )
-    .await
-}
-
-async fn execute_session_page_authorized_by_form(
-    op: &Operator,
-    ws_path: &str,
-    session_id: &str,
-    readable_entries_by_form: &std::collections::BTreeMap<
-        String,
-        std::collections::HashSet<String>,
-    >,
-    offset: usize,
-    limit: usize,
-) -> Result<(Vec<Value>, u64)> {
-    let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
-        return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
-    }
-    index::execute_sql_query_authorized_by_form_page_at_checkpoint(
-        op,
-        ws_path,
-        session_sql(&meta)?,
-        readable_entries_by_form,
-        index::AuthorizedSqlSessionPage {
-            parameters: session_parameters(&meta)?,
-            checkpoint: session_checkpoint(&meta)?,
-            offset,
-            limit,
-        },
-    )
-    .await
-}
-
 fn session_checkpoint(meta: &Value) -> Result<SpaceCheckpoint> {
     serde_json::from_value(
         meta.get("checkpoint")
@@ -161,9 +106,7 @@ fn session_checkpoint(meta: &Value) -> Result<SpaceCheckpoint> {
     .map_err(Into::into)
 }
 
-fn session_parameters(
-    meta: &Value,
-) -> Result<std::collections::HashMap<String, datafusion::scalar::ScalarValue>> {
+fn session_parameters(meta: &Value) -> Result<HashMap<String, datafusion::scalar::ScalarValue>> {
     let values = meta
         .get("parameters")
         .and_then(Value::as_object)
@@ -178,24 +121,89 @@ fn session_parameters(
     index::datafusion_parameters(&values, &types)
 }
 
+fn validate_session_authorization(
+    meta: &Value,
+    principal_ids: &[Uuid],
+    authorization_policy_hash: &str,
+) -> Result<()> {
+    let stored = meta
+        .get("authorized_principal_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AppError::forbidden("SQL session is not bound to an authorized principal"))?
+        .iter()
+        .filter_map(Value::as_str)
+        .filter_map(|value| Uuid::parse_str(value).ok())
+        .collect::<BTreeSet<_>>();
+    let requested = principal_ids.iter().copied().collect::<BTreeSet<_>>();
+    if stored != requested {
+        return Err(
+            AppError::forbidden("SQL session belongs to a different principal context").into(),
+        );
+    }
+    if meta
+        .get("authorization_policy_hash")
+        .and_then(Value::as_str)
+        != Some(authorization_policy_hash)
+    {
+        return Err(AppError::forbidden("SQL session authorization policy has changed").into());
+    }
+    Ok(())
+}
+
+fn session_query_error(error: anyhow::Error) -> anyhow::Error {
+    if error.downcast_ref::<AppError>().is_some() {
+        error
+    } else {
+        AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()).into()
+    }
+}
+
+async fn execute_session_page_authorized_by_form(
+    op: &Operator,
+    ws_path: &str,
+    session_id: &str,
+    authorization: SqlSessionAuthorization<'_>,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
+        return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
+    }
+    validate_session_authorization(
+        &meta,
+        authorization.principal_ids,
+        authorization.policy_hash,
+    )?;
+    index::execute_sql_query_authorized_by_form_page_at_checkpoint(
+        op,
+        ws_path,
+        session_sql(&meta)?,
+        authorization.readable_entries_by_form,
+        index::AuthorizedSqlSessionPage {
+            parameters: session_parameters(&meta)?,
+            checkpoint: session_checkpoint(&meta)?,
+            offset,
+            limit,
+        },
+    )
+    .await
+    .map_err(session_query_error)
+}
+
 pub async fn create_sql_session_authorized_for_principals_by_form(
     op: &Operator,
     ws_path: &str,
     sql: &str,
-    readable_entries_by_form: &std::collections::BTreeMap<
-        String,
-        std::collections::HashSet<String>,
-    >,
-    principal_ids: &[Uuid],
+    authorization: SqlSessionAuthorization<'_>,
 ) -> Result<Value> {
     create_sql_session_authorized_for_principals_by_form_with_parameters(
         op,
         ws_path,
         sql,
         serde_json::Map::new(),
-        std::collections::BTreeMap::new(),
-        readable_entries_by_form,
-        principal_ids,
+        BTreeMap::new(),
+        authorization,
     )
     .await
 }
@@ -205,51 +213,26 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
     ws_path: &str,
     sql: &str,
     parameters: serde_json::Map<String, Value>,
-    parameter_types: std::collections::BTreeMap<String, String>,
-    readable_entries_by_form: &std::collections::BTreeMap<
-        String,
-        std::collections::HashSet<String>,
-    >,
-    principal_ids: &[Uuid],
+    parameter_types: BTreeMap<String, String>,
+    authorization: SqlSessionAuthorization<'_>,
 ) -> Result<Value> {
-    let mut meta =
-        create_sql_session_with_parameters(op, ws_path, sql, parameters, parameter_types).await?;
-    meta["readable_entries_by_form"] = serde_json::to_value(readable_entries_by_form)?;
-    meta["authorized_principal_ids"] = serde_json::to_value(principal_ids)?;
-    let session_id = meta
-        .get("id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("SQL session id missing"))?;
-    write_json(op, &meta_path(ws_path, session_id), &meta).await?;
-    Ok(meta)
-}
-
-async fn execute_session_page_scoped(
-    op: &Operator,
-    ws_path: &str,
-    session_id: &str,
-    offset: usize,
-    limit: usize,
-    readable_forms: &[String],
-) -> Result<(Vec<Value>, u64)> {
-    let meta = load_session_meta(op, ws_path, session_id).await?;
-    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
-        return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
-    }
-    index::execute_sql_query_scoped_page(
+    let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)?;
+    let checkpoint = crate::iceberg_store::native_workspace(op, ws_path)
+        .await?
+        .capture_checkpoint()
+        .await?;
+    index::validate_sql_session_query_at_checkpoint(
         op,
         ws_path,
-        session_sql(&meta)?,
-        readable_forms,
-        offset,
-        limit,
+        sql,
+        authorization.readable_entries_by_form,
+        bound_parameters,
+        checkpoint.clone(),
     )
     .await
-}
+    .map_err(session_query_error)?;
 
-pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Result<Value> {
     ensure_sessions_dir(op, ws_path).await?;
-
     let session_id = Uuid::new_v4().to_string();
     let session_dir = format!("{}/", session_path(ws_path, &session_id));
     op.create_dir(&session_dir).await?;
@@ -258,33 +241,39 @@ pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Resu
         Some(existing_id) => existing_id,
         None => Uuid::new_v4().to_string(),
     };
-    let checkpoint = crate::iceberg_store::native_workspace(op, ws_path)
-        .await?
-        .capture_checkpoint()
-        .await?;
-
     let now = Utc::now();
-    let expires_at = (now + Duration::minutes(10)).to_rfc3339();
-    let created_at = now.to_rfc3339();
     let space_id = space_id_from_ws_path(ws_path);
-
+    let authorized_principal_ids = authorization
+        .principal_ids
+        .iter()
+        .map(Uuid::to_string)
+        .collect::<BTreeSet<_>>();
     let meta = json!({
         "id": session_id,
         "space_id": space_id,
         "sql_id": sql_id,
         "sql": sql,
-        "parameters": {},
-        "parameter_types": {},
+        "parameters": parameters,
+        "parameter_types": parameter_types,
+        "authorized_principal_ids": authorized_principal_ids,
+        "authorization_policy_hash": authorization.policy_hash,
         "status": "ready",
-        "created_at": created_at,
-        "expires_at": expires_at,
+        "created_at": now.to_rfc3339(),
+        "expires_at": (now + SESSION_LIFETIME).to_rfc3339(),
         "error": Value::Null,
         "checkpoint": checkpoint,
         "pagination": {
             "strategy": "offset",
-            "order_by": "sql_order_by_required",
-            "default_limit": 50,
-            "max_limit": 1000,
+            "total_order": "ORDER BY ending with _ugoite_id",
+            "default_limit": DEFAULT_PAGE_SIZE,
+            "max_limit": MAX_PAGE_SIZE,
+            "max_offset": MAX_PAGE_SIZE - 1,
+        },
+        "limits": {
+            "max_rows": index::SQL_SESSION_MAX_ROWS,
+            "max_memory_bytes": index::SQL_SESSION_MAX_MEMORY_BYTES,
+            "timeout_ms": index::SQL_SESSION_TIMEOUT.as_millis(),
+            "max_concurrency": 1,
         },
         "count": {
             "mode": "on_demand",
@@ -292,57 +281,19 @@ pub async fn create_sql_session(op: &Operator, ws_path: &str, sql: &str) -> Resu
             "value": Value::Null,
         }
     });
-
     write_json(op, &meta_path(ws_path, &session_id), &meta).await?;
     Ok(meta)
 }
 
-pub async fn create_sql_session_with_parameters(
-    op: &Operator,
-    ws_path: &str,
-    sql: &str,
-    parameters: serde_json::Map<String, Value>,
-    parameter_types: std::collections::BTreeMap<String, String>,
-) -> Result<Value> {
-    // Validate at the API/storage boundary. The executor repeats exact
-    // placeholder matching after parse so missing or extra values fail closed.
-    index::datafusion_parameters(&parameters, &parameter_types)?;
-    let mut meta = create_sql_session(op, ws_path, sql).await?;
-    meta["parameters"] = Value::Object(parameters);
-    meta["parameter_types"] = serde_json::to_value(parameter_types)?;
-    let session_id = meta
-        .get("id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("SQL session id missing"))?;
-    write_json(op, &meta_path(ws_path, session_id), &meta).await?;
-    Ok(meta)
-}
-
-pub async fn require_session_principals(
+pub async fn require_session_authorization(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
     principal_ids: &[Uuid],
+    authorization_policy_hash: &str,
 ) -> Result<()> {
     let meta = load_session_meta(op, ws_path, session_id).await?;
-    let stored = meta
-        .get("authorized_principal_ids")
-        .and_then(Value::as_array)
-        .ok_or_else(|| AppError::forbidden("SQL session is not bound to an authorized principal"))?
-        .iter()
-        .filter_map(Value::as_str)
-        .filter_map(|value| Uuid::parse_str(value).ok())
-        .collect::<std::collections::BTreeSet<_>>();
-    let requested = principal_ids
-        .iter()
-        .copied()
-        .collect::<std::collections::BTreeSet<_>>();
-    if stored != requested {
-        return Err(
-            AppError::forbidden("SQL session belongs to a different principal context").into(),
-        );
-    }
-    Ok(())
+    validate_session_authorization(&meta, principal_ids, authorization_policy_hash)
 }
 
 pub async fn get_sql_session_status(
@@ -353,68 +304,23 @@ pub async fn get_sql_session_status(
     load_session_meta(op, ws_path, session_id).await
 }
 
-pub async fn get_sql_session_count(op: &Operator, ws_path: &str, session_id: &str) -> Result<u64> {
-    let (_, count) = execute_session_page(op, ws_path, session_id, 0, 1).await?;
-    Ok(count)
-}
-
 pub async fn get_sql_session_count_authorized_by_form(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
-    readable_entries_by_form: &std::collections::BTreeMap<
-        String,
-        std::collections::HashSet<String>,
-    >,
-) -> Result<u64> {
-    let (_, count) = execute_session_page_authorized_by_form(
-        op,
-        ws_path,
-        session_id,
-        readable_entries_by_form,
-        0,
-        1,
-    )
-    .await?;
-    Ok(count)
-}
-
-pub async fn get_sql_session_count_scoped(
-    op: &Operator,
-    ws_path: &str,
-    session_id: &str,
-    readable_forms: &[String],
+    authorization: SqlSessionAuthorization<'_>,
 ) -> Result<u64> {
     let (_, count) =
-        execute_session_page_scoped(op, ws_path, session_id, 0, 1, readable_forms).await?;
+        execute_session_page_authorized_by_form(op, ws_path, session_id, authorization, 0, 1)
+            .await?;
     Ok(count)
-}
-
-pub async fn get_sql_session_rows(
-    op: &Operator,
-    ws_path: &str,
-    session_id: &str,
-    offset: usize,
-    limit: usize,
-) -> Result<Value> {
-    let (rows, total) = execute_session_page(op, ws_path, session_id, offset, limit).await?;
-
-    Ok(serde_json::json!({
-        "rows": rows,
-        "offset": offset,
-        "limit": limit,
-        "total_count": total,
-    }))
 }
 
 pub async fn get_sql_session_rows_authorized_by_form(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
-    readable_entries_by_form: &std::collections::BTreeMap<
-        String,
-        std::collections::HashSet<String>,
-    >,
+    authorization: SqlSessionAuthorization<'_>,
     offset: usize,
     limit: usize,
 ) -> Result<Value> {
@@ -422,30 +328,11 @@ pub async fn get_sql_session_rows_authorized_by_form(
         op,
         ws_path,
         session_id,
-        readable_entries_by_form,
+        authorization,
         offset,
         limit,
     )
     .await?;
-    Ok(serde_json::json!({
-        "rows": rows,
-        "offset": offset,
-        "limit": limit,
-        "total_count": total,
-    }))
-}
-
-pub async fn get_sql_session_rows_scoped(
-    op: &Operator,
-    ws_path: &str,
-    session_id: &str,
-    offset: usize,
-    limit: usize,
-    readable_forms: &[String],
-) -> Result<Value> {
-    let (rows, total) =
-        execute_session_page_scoped(op, ws_path, session_id, offset, limit, readable_forms).await?;
-
     Ok(serde_json::json!({
         "rows": rows,
         "offset": offset,

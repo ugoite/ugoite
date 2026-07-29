@@ -18,9 +18,9 @@ use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
 
-const SQL_MAX_ROWS: usize = 1_000;
-const SQL_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
-const SQL_TIMEOUT: Duration = Duration::from_secs(30);
+pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
+pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
+pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Immutable execution inputs for one authorized SQL-session page.
 ///
@@ -316,6 +316,7 @@ pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
     readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
     page: AuthorizedSqlSessionPage,
 ) -> Result<(Vec<Value>, u64)> {
+    validate_sql_session_page_shape(sql_query)?;
     let relation_scopes = readable_entries_by_form
         .iter()
         .map(|(relation, entries)| {
@@ -338,6 +339,155 @@ pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
         page.parameters,
     )
     .await
+}
+
+/// Validates a SQL-session query at creation against its frozen checkpoint and
+/// current authorization boundary without materializing any result rows.
+pub async fn validate_sql_session_query_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    checkpoint: SpaceCheckpoint,
+) -> Result<()> {
+    validate_sql_session_page_shape(sql_query)?;
+    let relation_scopes = readable_entries_by_form
+        .iter()
+        .map(|(relation, entries)| {
+            (
+                relation.to_ascii_lowercase(),
+                EntryScope::Only(entry_scope(entries)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    datafusion_sql_context(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
+        Some(checkpoint),
+    )
+    .await
+    .map_err(map_sql_error)?
+    .validate_with_parameters(sql_query, parameters)
+    .await
+    .map_err(map_sql_error)
+}
+
+/// Validates the deliberately small first SQL-session pagination surface before
+/// planning it against the caller's authorized, checkpoint-pinned relations.
+///
+/// A Form's `_ugoite_id` is unique, so including it in an explicit top-level
+/// order makes offset pagination total for one-Form queries. Joins, aggregates,
+/// DISTINCT, subqueries, and set operations need a separate proof and are
+/// intentionally not part of this initial contract.
+pub fn validate_sql_session_page_shape(sql: &str) -> Result<()> {
+    use datafusion::sql::parser::{DFParser, Statement as DataFusionStatement};
+    use datafusion::sql::sqlparser::ast::{
+        Expr, GroupByExpr, LimitClause, OrderByKind, SetExpr, Statement as SqlStatement,
+        TableFactor,
+    };
+
+    let statements = DFParser::parse_sql(sql).context("parse SQL session query with DataFusion")?;
+    if statements.len() != 1 {
+        return Err(anyhow!(
+            "SQL session paging requires exactly one SELECT statement"
+        ));
+    }
+    let statement = statements.front().expect("one statement was checked above");
+    let DataFusionStatement::Statement(statement) = statement else {
+        return Err(anyhow!("SQL session paging requires a SELECT statement"));
+    };
+    let SqlStatement::Query(query) = statement.as_ref() else {
+        return Err(anyhow!("SQL session paging requires a SELECT statement"));
+    };
+    if query.with.is_some()
+        || query.fetch.is_some()
+        || !query.locks.is_empty()
+        || query.for_clause.is_some()
+        || query.settings.is_some()
+        || query.format_clause.is_some()
+        || !query.pipe_operators.is_empty()
+    {
+        return Err(anyhow!(
+            "SQL session paging supports only a simple single-Form SELECT"
+        ));
+    }
+    let has_sql_offset = match &query.limit_clause {
+        Some(LimitClause::LimitOffset {
+            offset, limit_by, ..
+        }) => offset.is_some() || !limit_by.is_empty(),
+        Some(LimitClause::OffsetCommaLimit { .. }) => true,
+        None => false,
+    };
+    if has_sql_offset {
+        return Err(anyhow!(
+            "SQL session paging does not support an SQL OFFSET or LIMIT BY clause"
+        ));
+    }
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return Err(anyhow!(
+            "SQL session paging does not support set operations or subqueries"
+        ));
+    };
+    if select.distinct.is_some()
+        || select.top.is_some()
+        || select.into.is_some()
+        || !select.lateral_views.is_empty()
+        || select.prewhere.is_some()
+        || !select.connect_by.is_empty()
+        || !matches!(&select.group_by, GroupByExpr::Expressions(expressions, modifiers) if expressions.is_empty() && modifiers.is_empty())
+        || !select.cluster_by.is_empty()
+        || !select.distribute_by.is_empty()
+        || !select.sort_by.is_empty()
+        || select.having.is_some()
+        || !select.named_window.is_empty()
+        || select.qualify.is_some()
+    {
+        return Err(anyhow!(
+            "SQL session paging does not support DISTINCT, aggregation, or window queries"
+        ));
+    }
+    let [from] = select.from.as_slice() else {
+        return Err(anyhow!(
+            "SQL session paging requires exactly one Form relation"
+        ));
+    };
+    if !from.joins.is_empty() || !matches!(&from.relation, TableFactor::Table { args: None, .. }) {
+        return Err(anyhow!(
+            "SQL session paging does not support joins or table functions"
+        ));
+    }
+    let Some(order_by) = &query.order_by else {
+        return Err(anyhow!(
+            "SQL session paging requires ORDER BY ending with _ugoite_id"
+        ));
+    };
+    let OrderByKind::Expressions(ordering) = &order_by.kind else {
+        return Err(anyhow!(
+            "SQL session paging requires ORDER BY ending with _ugoite_id"
+        ));
+    };
+    let Some(last) = ordering.last() else {
+        return Err(anyhow!(
+            "SQL session paging requires ORDER BY ending with _ugoite_id"
+        ));
+    };
+    let is_entry_id = match &last.expr {
+        Expr::Identifier(identifier) => identifier.value.eq_ignore_ascii_case("_ugoite_id"),
+        Expr::CompoundIdentifier(identifiers) => identifiers
+            .last()
+            .is_some_and(|identifier| identifier.value.eq_ignore_ascii_case("_ugoite_id")),
+        _ => false,
+    };
+    if !is_entry_id || last.with_fill.is_some() {
+        return Err(anyhow!(
+            "SQL session paging requires ORDER BY ending with _ugoite_id"
+        ));
+    }
+    Ok(())
 }
 
 pub async fn query_index_authorized(
@@ -541,9 +691,9 @@ async fn datafusion_sql_context(
             forms: policy_forms,
             checkpoint,
             limits: QueryLimits {
-                max_memory_bytes: SQL_MAX_MEMORY_BYTES,
-                max_rows: SQL_MAX_ROWS,
-                timeout: SQL_TIMEOUT,
+                max_memory_bytes: SQL_SESSION_MAX_MEMORY_BYTES,
+                max_rows: SQL_SESSION_MAX_ROWS,
+                timeout: SQL_SESSION_TIMEOUT,
                 max_concurrency: 1,
                 allowed_functions: BTreeSet::new(),
             },

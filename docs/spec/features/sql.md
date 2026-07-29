@@ -18,4 +18,16 @@ Parameters use DataFusion's native `$name` syntax and are bound as typed
 DataFusion scalar values before planning. Ugoite never substitutes parameter
 text into SQL.
 
-SQL sessions do not become authoritative data. Their metadata is stored below `sql_sessions/`; result rows are regenerated from current Space tables.
+SQL sessions do not become authoritative data. Their metadata is stored below
+`sql_sessions/`; result rows are regenerated from the session's fixed,
+publication-verified `SpaceCheckpoint`, never from the live Space Head. The
+initial pagination contract accepts only a simple single-Form `SELECT` whose
+explicit `ORDER BY` ends in `_ugoite_id`, which is the Form's stable unique tie
+breaker. Joins, aggregates, `DISTINCT`, subqueries, and queries without that
+total order are rejected rather than receiving an unstable cursor protocol.
+
+Each session stores the creating principal set and an authorization-policy
+hash, but not the authorization policy in its checkpoint. Every status, count,
+and page request revalidates the current principal and policy revision. A
+policy change requires a new session; an ordinary data write does not move an
+existing session away from its checkpoint.
