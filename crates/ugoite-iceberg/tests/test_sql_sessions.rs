@@ -1,8 +1,16 @@
 mod common;
 
+use chrono::{Duration, Utc};
 use common::setup_operator;
+use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashSet};
-use ugoite_iceberg::{entry, form, saved_sql, space, sql_session};
+use ugoite_domain::identity::{AccessPolicy, Action, AgentMode};
+use ugoite_iceberg::{
+    authorization::{Authorizer, CreateAgentRequest, ResourceKind, ResourceRef},
+    entry, form, saved_sql,
+    service::UgoiteService,
+    space, sql_session,
+};
 use uuid::Uuid;
 
 fn authorized_entries(form: &str, entry_ids: &[&str]) -> (Uuid, BTreeMap<String, HashSet<String>>) {
@@ -298,6 +306,10 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         "SELECT * FROM task",
         "SELECT * FROM task ORDER BY _ugoite_updated_at",
         "SELECT DISTINCT _ugoite_id FROM task ORDER BY _ugoite_id",
+        "SELECT _ugoite_title AS _ugoite_id FROM task ORDER BY _ugoite_id",
+        "SELECT * FROM task WHERE EXISTS (SELECT 1 FROM task t2 WHERE t2._ugoite_id = task._ugoite_id) ORDER BY _ugoite_id",
+        "SELECT (SELECT _ugoite_id FROM task LIMIT 1) FROM task ORDER BY _ugoite_id",
+        "SELECT * FROM task WHERE _ugoite_id IN (SELECT _ugoite_id FROM task) ORDER BY _ugoite_id",
         "SELECT * FROM task ORDER BY _ugoite_id LIMIT 1 OFFSET 1000000",
     ] {
         assert!(
@@ -334,6 +346,16 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         &op,
         ws_path,
         session_id,
+        authorization,
+        usize::MAX,
+        1,
+    )
+    .await
+    .is_err());
+    assert!(sql_session::get_sql_session_rows_authorized_by_form(
+        &op,
+        ws_path,
+        session_id,
         sql_session::SqlSessionAuthorization {
             policy_hash: "sha256:changed-policy",
             ..authorization
@@ -343,6 +365,193 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
     )
     .await
     .is_err());
+
+    let limit_zero = sql_session::create_sql_session_authorized_for_principals_by_form(
+        &op,
+        ws_path,
+        "SELECT * FROM task ORDER BY _ugoite_id LIMIT 0",
+        authorization,
+    )
+    .await?;
+    let limit_zero_id = limit_zero["id"].as_str().expect("session id");
+    assert_eq!(
+        sql_session::get_sql_session_count_authorized_by_form(
+            &op,
+            ws_path,
+            limit_zero_id,
+            authorization,
+        )
+        .await?,
+        0
+    );
+    assert_eq!(
+        sql_session::get_sql_session_rows_authorized_by_form(
+            &op,
+            ws_path,
+            limit_zero_id,
+            authorization,
+            0,
+            1,
+        )
+        .await?["rows"],
+        serde_json::json!([])
+    );
+
+    let meta_path = format!("{ws_path}/sql_sessions/{limit_zero_id}/meta.json");
+    let mut meta: serde_json::Value = serde_json::from_slice(&op.read(&meta_path).await?.to_vec())?;
+    meta["authorized_principal_ids"] = serde_json::json!(["not-a-uuid"]);
+    op.write(&meta_path, serde_json::to_vec(&meta)?).await?;
+    assert!(sql_session::get_sql_session_count_authorized_by_form(
+        &op,
+        ws_path,
+        limit_zero_id,
+        authorization,
+    )
+    .await
+    .is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-API-008: production service calls retain a frozen checkpoint policy.
+async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op, "memory://sql-session-service");
+    let owner = Uuid::from_u128(44);
+    let space_id = service
+        .create_space_for_principal("sql-session-service", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Task",
+                "template": "# Task\n\n## Summary\n",
+                "fields": {"Summary": {"type": "string"}},
+            }),
+        )
+        .await?;
+    for (id, title) in [("task-1", "One"), ("task-2", "Two")] {
+        service
+            .create_entry(
+                &space_id,
+                id,
+                &format!("---\nform: Task\n---\n# {title}\n\n## Summary\n{title}\n"),
+                "owner",
+            )
+            .await?;
+    }
+
+    // `last_used_at` advances the legacy global authorization revision but
+    // does not affect the owner's effective policy or this session scope.
+    let authorizer = Authorizer::new(service.operator().clone());
+    let agent = authorizer
+        .create_agent(
+            &space_id,
+            owner,
+            CreateAgentRequest {
+                display_name: "Unrelated reader".to_string(),
+                description: String::new(),
+                mode: AgentMode::Autonomous,
+                owner_principal_ids: [owner].into_iter().collect::<BTreeSet<_>>(),
+                granted_actions: [Action::Read].into_iter().collect(),
+                expires_at: Some((Utc::now() + Duration::hours(1)).to_rfc3339()),
+            },
+        )
+        .await?;
+
+    let principals = [owner];
+    let session = service
+        .create_sql_session_authorized_for_principals(
+            &space_id,
+            &principals,
+            "SELECT * FROM task ORDER BY _ugoite_id",
+        )
+        .await?;
+    let session_id = session["id"].as_str().expect("session ID");
+
+    service.delete_entry(&space_id, "task-1", false).await?;
+    service
+        .create_entry(
+            &space_id,
+            "task-3",
+            "---\nform: Task\n---\n# Three\n\n## Summary\nThree\n",
+            "owner",
+        )
+        .await?;
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Task",
+                "template": "# Task\n\n## Summary\n\n## Detail\n",
+                "fields": {
+                    "Summary": {"type": "string"},
+                    "Detail": {"id": 101, "type": "string"},
+                },
+            }),
+        )
+        .await?;
+
+    authorizer
+        .mark_agent_used(&space_id, agent.agent_id)
+        .await?;
+    assert_eq!(
+        service
+            .get_sql_session_authorized_for_principals(&space_id, session_id, &principals)
+            .await?["status"],
+        "ready"
+    );
+    assert_eq!(
+        service
+            .get_sql_session_count_authorized_for_principals(&space_id, session_id, &principals)
+            .await?,
+        2
+    );
+    let rows = service
+        .get_sql_session_rows_authorized_for_principals(&space_id, session_id, &principals, 0, 2)
+        .await?;
+    assert_eq!(rows["total_count"], 2);
+    assert_eq!(
+        rows["rows"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .map(|row| row["_ugoite_id"].as_str().expect("entry ID"))
+            .collect::<Vec<_>>(),
+        vec!["task-1", "task-2"]
+    );
+
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Entry,
+                id: "task-1".to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+    assert!(service
+        .get_sql_session_authorized_for_principals(&space_id, session_id, &principals)
+        .await
+        .is_err());
+    assert!(service
+        .get_sql_session_count_authorized_for_principals(&space_id, session_id, &principals)
+        .await
+        .is_err());
+    assert!(service
+        .get_sql_session_rows_authorized_for_principals(&space_id, session_id, &principals, 0, 1)
+        .await
+        .is_err());
 
     Ok(())
 }

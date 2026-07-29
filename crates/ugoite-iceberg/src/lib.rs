@@ -428,6 +428,31 @@ impl IcebergWorkspace {
             .map_err(checkpoint_query_error)
     }
 
+    /// Loads Form definitions from the immutable tables named by one
+    /// checkpoint. This deliberately never consults the live Form registry:
+    /// callers that retain a checkpoint must retain its relation names and
+    /// column surface as well.
+    pub async fn forms_at_checkpoint(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+    ) -> Result<Vec<FormDefinition>> {
+        self.validate_checkpoint(checkpoint)?;
+        let catalog = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?;
+        catalog.validate_checkpoint_evidence(checkpoint).await?;
+        let mut forms = Vec::with_capacity(checkpoint.tables.len());
+        for coordinate in &checkpoint.tables {
+            let table = catalog
+                .load_checkpoint_table(checkpoint, coordinate)
+                .await?;
+            forms.push(form_from_table(&table, coordinate.form_id)?);
+        }
+        forms.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(forms)
+    }
+
     fn validate_checkpoint(&self, checkpoint: &SpaceCheckpoint) -> Result<()> {
         if checkpoint.space_id != self.space_id {
             return Err(

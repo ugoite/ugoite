@@ -4,10 +4,12 @@ use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveTime, SecondsFormat, Timelike, Utc};
 use opendal::Operator;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::Duration;
+use ugoite_domain::id::FormId;
 pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
 
@@ -31,6 +33,104 @@ pub struct AuthorizedSqlSessionPage {
     pub checkpoint: SpaceCheckpoint,
     pub offset: usize,
     pub limit: usize,
+}
+
+/// Durable, derived authorization policy for one SQL session. It is stored
+/// beside the session metadata rather than in a checkpoint because a
+/// checkpoint intentionally contains only storage coordinates.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlSessionQueryPolicy {
+    pub forms: Vec<SqlSessionQueryForm>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlSessionQueryForm {
+    pub form_id: FormId,
+    pub relation: String,
+    pub entry_ids: BTreeSet<String>,
+    pub columns: BTreeSet<String>,
+    pub system_columns: BTreeSet<SqlSessionSystemColumn>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlSessionSystemColumn {
+    ExternalId,
+    Title,
+    CreatedAt,
+    UpdatedAt,
+    EntryId,
+    EntryVersion,
+    CommittedAt,
+}
+
+impl SqlSessionQueryPolicy {
+    fn authorized_query_policy(
+        &self,
+        checkpoint: SpaceCheckpoint,
+    ) -> Result<AuthorizedQueryPolicy> {
+        let mut forms = BTreeMap::new();
+        for form in &self.forms {
+            if forms.contains_key(&form.form_id) {
+                return Err(anyhow!("SQL session query policy repeats a Form ID"));
+            }
+            forms.insert(
+                form.form_id,
+                AuthorizedQueryForm {
+                    relation: form.relation.clone(),
+                    entry_scope: EntryScope::Only(entry_scope_from_ids(&form.entry_ids)),
+                    columns: form.columns.clone(),
+                    system_columns: form
+                        .system_columns
+                        .iter()
+                        .copied()
+                        .map(SqlSessionSystemColumn::as_query_system_column)
+                        .collect(),
+                },
+            );
+        }
+        if forms.is_empty() {
+            return Err(anyhow!("SQL session query policy exposes no Forms"));
+        }
+        Ok(AuthorizedQueryPolicy {
+            forms,
+            checkpoint: Some(checkpoint),
+            limits: sql_session_query_limits(),
+        })
+    }
+
+    pub fn readable_entry_ids(&self) -> BTreeSet<String> {
+        self.forms
+            .iter()
+            .flat_map(|form| form.entry_ids.iter().cloned())
+            .collect()
+    }
+}
+
+impl SqlSessionSystemColumn {
+    fn as_query_system_column(self) -> QuerySystemColumn {
+        match self {
+            Self::ExternalId => QuerySystemColumn::ExternalId,
+            Self::Title => QuerySystemColumn::Title,
+            Self::CreatedAt => QuerySystemColumn::CreatedAt,
+            Self::UpdatedAt => QuerySystemColumn::UpdatedAt,
+            Self::EntryId => QuerySystemColumn::EntryId,
+            Self::EntryVersion => QuerySystemColumn::EntryVersion,
+            Self::CommittedAt => QuerySystemColumn::CommittedAt,
+        }
+    }
+}
+
+fn sql_session_query_limits() -> QueryLimits {
+    QueryLimits {
+        max_memory_bytes: SQL_SESSION_MAX_MEMORY_BYTES,
+        max_rows: SQL_SESSION_MAX_ROWS,
+        timeout: SQL_SESSION_TIMEOUT,
+        max_concurrency: 1,
+        allowed_functions: BTreeSet::new(),
+    }
 }
 
 /// Converts transport values to typed DataFusion parameters. A null must carry
@@ -313,67 +413,116 @@ pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     sql_query: &str,
-    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    policy: &SqlSessionQueryPolicy,
     page: AuthorizedSqlSessionPage,
 ) -> Result<(Vec<Value>, u64)> {
-    validate_sql_session_page_shape(sql_query)?;
-    let relation_scopes = readable_entries_by_form
-        .iter()
-        .map(|(relation, entries)| {
-            (
-                relation.to_ascii_lowercase(),
-                EntryScope::Only(entry_scope(entries)),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    execute_datafusion_sql_page(
-        op,
-        ws_path,
-        sql_query,
-        EntryScope::AllCurrent,
-        None,
-        Some(&relation_scopes),
-        Some(page.checkpoint),
-        page.offset,
-        page.limit,
-        page.parameters,
-    )
-    .await
+    let context = datafusion_sql_session_context(op, ws_path, policy, page.checkpoint)
+        .await
+        .map_err(map_sql_error)?;
+    let (batches, count) = context
+        .execute_session_page(sql_query, page.parameters, page.offset, page.limit)
+        .await
+        .map_err(map_sql_error)?;
+    Ok((record_batches_to_values(&batches)?, count))
 }
 
-/// Validates a SQL-session query at creation against its frozen checkpoint and
-/// current authorization boundary without materializing any result rows.
+/// Executes a count-only session plan. It shares the frozen policy and
+/// checkpoint used for pages but never materializes a sentinel page row.
+pub async fn execute_sql_query_authorized_by_form_count_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    policy: &SqlSessionQueryPolicy,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    checkpoint: SpaceCheckpoint,
+) -> Result<u64> {
+    let context = datafusion_sql_session_context(op, ws_path, policy, checkpoint)
+        .await
+        .map_err(map_sql_error)?;
+    context
+        .execute_session_count(sql_query, parameters)
+        .await
+        .map_err(map_sql_error)
+}
+
+/// Validates a SQL session query at creation against only frozen policy and
+/// checkpoint inputs. The live Form registry is deliberately absent.
 pub async fn validate_sql_session_query_at_checkpoint(
     op: &Operator,
     ws_path: &str,
     sql_query: &str,
-    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    policy: &SqlSessionQueryPolicy,
     parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     checkpoint: SpaceCheckpoint,
 ) -> Result<()> {
     validate_sql_session_page_shape(sql_query)?;
-    let relation_scopes = readable_entries_by_form
-        .iter()
-        .map(|(relation, entries)| {
-            (
-                relation.to_ascii_lowercase(),
-                EntryScope::Only(entry_scope(entries)),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    datafusion_sql_context(
-        op,
-        ws_path,
-        EntryScope::AllCurrent,
-        None,
-        Some(&relation_scopes),
-        Some(checkpoint),
-    )
-    .await
-    .map_err(map_sql_error)?
-    .validate_with_parameters(sql_query, parameters)
-    .await
-    .map_err(map_sql_error)
+    let context = datafusion_sql_session_context(op, ws_path, policy, checkpoint)
+        .await
+        .map_err(map_sql_error)?;
+    context
+        .validate_session_with_parameters(sql_query, parameters)
+        .await
+        .map_err(map_sql_error)
+}
+
+/// Derives a serializable SQL-session policy from the Form definitions stored
+/// in a checkpoint. A session policy is derived metadata, never Catalog
+/// authority; it is replayed only together with this checkpoint.
+pub async fn sql_session_query_policy_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    checkpoint: &SpaceCheckpoint,
+) -> Result<SqlSessionQueryPolicy> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let forms = workspace.forms_at_checkpoint(checkpoint).await?;
+    let mut seen_relations = BTreeSet::new();
+    let mut policy_forms = Vec::new();
+    for form in forms {
+        let relation = form.name.to_ascii_lowercase();
+        let Some(entry_ids) = readable_entries_by_form.get(&relation) else {
+            continue;
+        };
+        if !seen_relations.insert(relation.clone()) {
+            return Err(anyhow!(
+                "checkpoint exposes duplicate SQL relation {relation}"
+            ));
+        }
+        policy_forms.push(SqlSessionQueryForm {
+            form_id: form.id,
+            relation,
+            entry_ids: entry_ids.iter().cloned().collect(),
+            columns: form.fields.into_iter().map(|field| field.name).collect(),
+            system_columns: [
+                SqlSessionSystemColumn::ExternalId,
+                SqlSessionSystemColumn::Title,
+                SqlSessionSystemColumn::CreatedAt,
+                SqlSessionSystemColumn::UpdatedAt,
+            ]
+            .into_iter()
+            .collect(),
+        });
+    }
+    if policy_forms.is_empty() {
+        return Err(anyhow!("SQL session has no readable checkpoint Form"));
+    }
+    policy_forms.sort_by(|left, right| left.relation.cmp(&right.relation));
+    Ok(SqlSessionQueryPolicy {
+        forms: policy_forms,
+    })
+}
+
+async fn datafusion_sql_session_context(
+    op: &Operator,
+    ws_path: &str,
+    policy: &SqlSessionQueryPolicy,
+    checkpoint: SpaceCheckpoint,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
+    crate::iceberg_store::native_workspace(op, ws_path)
+        .await?
+        .authorized_query_context(policy.authorized_query_policy(checkpoint)?)
+        .await
+        .context("create frozen DataFusion SQL session context")
 }
 
 /// Validates the deliberately small first SQL-session pagination surface before
@@ -386,9 +535,10 @@ pub async fn validate_sql_session_query_at_checkpoint(
 pub fn validate_sql_session_page_shape(sql: &str) -> Result<()> {
     use datafusion::sql::parser::{DFParser, Statement as DataFusionStatement};
     use datafusion::sql::sqlparser::ast::{
-        Expr, GroupByExpr, LimitClause, OrderByKind, SetExpr, Statement as SqlStatement,
-        TableFactor,
+        visit_expressions, Expr, GroupByExpr, LimitClause, OrderByKind, SetExpr,
+        Statement as SqlStatement, TableFactor,
     };
+    use std::ops::ControlFlow;
 
     let statements = DFParser::parse_sql(sql).context("parse SQL session query with DataFusion")?;
     if statements.len() != 1 {
@@ -403,6 +553,21 @@ pub fn validate_sql_session_page_shape(sql: &str) -> Result<()> {
     let SqlStatement::Query(query) = statement.as_ref() else {
         return Err(anyhow!("SQL session paging requires a SELECT statement"));
     };
+    let mut has_expression_subquery = false;
+    let _ = visit_expressions(statement.as_ref(), |expression| {
+        if matches!(
+            expression,
+            Expr::Exists { .. } | Expr::InSubquery { .. } | Expr::Subquery(_)
+        ) {
+            has_expression_subquery = true;
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    if has_expression_subquery {
+        return Err(anyhow!(
+            "SQL session paging does not support expression subqueries"
+        ));
+    }
     if query.with.is_some()
         || query.fetch.is_some()
         || !query.locks.is_empty()
@@ -583,6 +748,11 @@ pub async fn execute_sql_query_scoped_page(
 }
 
 fn entry_scope(entry_ids: &HashSet<String>) -> BTreeSet<ugoite_domain::id::EntryId> {
+    let entry_ids = entry_ids.iter().cloned().collect::<BTreeSet<_>>();
+    entry_scope_from_ids(&entry_ids)
+}
+
+fn entry_scope_from_ids(entry_ids: &BTreeSet<String>) -> BTreeSet<ugoite_domain::id::EntryId> {
     entry_ids
         .iter()
         .map(|entry_id| {

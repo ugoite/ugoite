@@ -26,8 +26,10 @@ explicit `ORDER BY` ends in `_ugoite_id`, which is the Form's stable unique tie
 breaker. Joins, aggregates, `DISTINCT`, subqueries, and queries without that
 total order are rejected rather than receiving an unstable cursor protocol.
 
-Each session stores the creating principal set and an authorization-policy
-hash, but not the authorization policy in its checkpoint. Every status, count,
-and page request revalidates the current principal and policy revision. A
-policy change requires a new session; an ordinary data write does not move an
-existing session away from its checkpoint.
+Each session stores the creating principal set, a canonical fingerprint of the
+policies relevant to its frozen scope, and a derived query policy beside (not
+inside) its checkpoint. Every status, count, and page request revalidates the
+current principal contract and that fingerprint without rebuilding Entry scope
+or Form metadata from the live Head. A relevant policy change requires a new
+session; an ordinary data write, Form evolution, or unrelated authorization
+activity does not move an existing session away from its checkpoint.

@@ -41,6 +41,15 @@ The file contains:
     "tables": [],
     "coordinate_checksum": "sha256:…"
   },
+  "query_policy": {
+    "forms": [{
+      "form_id": "form-uuid",
+      "relation": "note",
+      "entry_ids": ["entry-uuid"],
+      "columns": ["Body"],
+      "system_columns": ["external_id", "title", "created_at", "updated_at"]
+    }]
+  },
   "pagination": {
     "strategy": "offset",
     "total_order": "ORDER BY ending with _ugoite_id",
@@ -53,11 +62,15 @@ The file contains:
 }
 ```
 
-Rows are not stored in the session directory. Status reads load the metadata
-file; count and paged-row requests re-run the SQL against the same checkpoint
-and the caller's current readable scope. The principal set and the current
-authorization policy hash must still match the session; a changed policy is
-rejected and requires a new session. There is no stream endpoint.
+Rows are not stored in the session directory. Creation freezes a derived
+query policy: checkpoint Form IDs, relation names, columns, system columns,
+and readable Entry scope. Status reads metadata; count and paged-row requests
+rebuild DataFusion only from that frozen policy and the same checkpoint, never
+from the live Form registry or live Entries. The principal set and a canonical
+fingerprint of the policies relevant to that frozen scope must still match the
+session; current principal activity, sponsorship, and expiry are checked
+separately. A relevant policy change is rejected and requires a new session.
+There is no stream endpoint.
 
 The initial page surface accepts only one Form relation and an explicit total
 order ending in `_ugoite_id`. The API rejects joins, aggregates, `DISTINCT`,
@@ -65,4 +78,8 @@ subqueries, and page ranges beyond the retained 1,000-row session window.
 Counts and pages remain bounded by the same DataFusion memory, timeout, and
 single-query concurrency limits.
 
-Sessions expire after ten minutes by default. Accessing an expired session marks it expired and returns an expiration error. A periodic cleanup worker is not shipped, so operators should not assume automatic background deletion.
+Sessions expire after ten minutes by default. Accessing an expired session
+persists `status: "expired"` and returns an expiration error. Expiry is a
+logical access lifetime only: metadata remains physically retained in OpenDAL
+until an operator performs documented cleanup. A periodic cleanup worker is
+not shipped.

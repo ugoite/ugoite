@@ -87,6 +87,7 @@ async fn load_session_meta(op: &Operator, ws_path: &str, session_id: &str) -> Re
     let mut meta = read_json(op, &meta_path(ws_path, session_id)).await?;
     if is_expired(&meta) {
         meta["status"] = Value::String("expired".to_string());
+        write_json(op, &meta_path(ws_path, session_id), &meta).await?;
     }
     Ok(meta)
 }
@@ -121,6 +122,26 @@ fn session_parameters(meta: &Value) -> Result<HashMap<String, datafusion::scalar
     index::datafusion_parameters(&values, &types)
 }
 
+fn session_query_policy(meta: &Value) -> Result<index::SqlSessionQueryPolicy> {
+    serde_json::from_value(
+        meta.get("query_policy")
+            .cloned()
+            .ok_or_else(|| anyhow!("SQL session is missing its frozen query policy"))?,
+    )
+    .map_err(|error| anyhow!("SQL session query policy is invalid: {error}"))
+}
+
+/// Reads only session metadata and returns its frozen query policy. Service
+/// callers use this before calculating a current policy fingerprint, so a
+/// status request never needs to enumerate live Entries.
+pub async fn get_session_query_policy(
+    op: &Operator,
+    ws_path: &str,
+    session_id: &str,
+) -> Result<index::SqlSessionQueryPolicy> {
+    session_query_policy(&load_session_meta(op, ws_path, session_id).await?)
+}
+
 fn validate_session_authorization(
     meta: &Value,
     principal_ids: &[Uuid],
@@ -131,9 +152,15 @@ fn validate_session_authorization(
         .and_then(Value::as_array)
         .ok_or_else(|| AppError::forbidden("SQL session is not bound to an authorized principal"))?
         .iter()
-        .filter_map(Value::as_str)
-        .filter_map(|value| Uuid::parse_str(value).ok())
-        .collect::<BTreeSet<_>>();
+        .map(|value| {
+            let value = value.as_str().ok_or_else(|| {
+                AppError::forbidden("SQL session authorized principal metadata is malformed")
+            })?;
+            Uuid::parse_str(value).map_err(|_| {
+                AppError::forbidden("SQL session authorized principal metadata is malformed")
+            })
+        })
+        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
     let requested = principal_ids.iter().copied().collect::<BTreeSet<_>>();
     if stored != requested {
         return Err(
@@ -179,7 +206,7 @@ async fn execute_session_page_authorized_by_form(
         op,
         ws_path,
         session_sql(&meta)?,
-        authorization.readable_entries_by_form,
+        &session_query_policy(&meta)?,
         index::AuthorizedSqlSessionPage {
             parameters: session_parameters(&meta)?,
             checkpoint: session_checkpoint(&meta)?,
@@ -221,11 +248,47 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         .await?
         .capture_checkpoint()
         .await?;
+    let query_policy = index::sql_session_query_policy_at_checkpoint(
+        op,
+        ws_path,
+        authorization.readable_entries_by_form,
+        &checkpoint,
+    )
+    .await?;
+    create_sql_session_authorized_for_principals_with_frozen_policy(
+        op,
+        ws_path,
+        sql,
+        parameters,
+        parameter_types,
+        authorization,
+        bound_parameters,
+        checkpoint,
+        query_policy,
+    )
+    .await
+}
+
+/// Creates a session from a checkpoint and derived policy that the service
+/// already bound to the same authorization read. This is the production path;
+/// it never resolves Forms or Entry scope from the live head at later use.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_sql_session_authorized_for_principals_with_frozen_policy(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    parameters: serde_json::Map<String, Value>,
+    parameter_types: BTreeMap<String, String>,
+    authorization: SqlSessionAuthorization<'_>,
+    bound_parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    checkpoint: SpaceCheckpoint,
+    query_policy: index::SqlSessionQueryPolicy,
+) -> Result<Value> {
     index::validate_sql_session_query_at_checkpoint(
         op,
         ws_path,
         sql,
-        authorization.readable_entries_by_form,
+        &query_policy,
         bound_parameters,
         checkpoint.clone(),
     )
@@ -262,6 +325,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         "expires_at": (now + SESSION_LIFETIME).to_rfc3339(),
         "error": Value::Null,
         "checkpoint": checkpoint,
+        "query_policy": query_policy,
         "pagination": {
             "strategy": "offset",
             "total_order": "ORDER BY ending with _ugoite_id",
@@ -310,10 +374,25 @@ pub async fn get_sql_session_count_authorized_by_form(
     session_id: &str,
     authorization: SqlSessionAuthorization<'_>,
 ) -> Result<u64> {
-    let (_, count) =
-        execute_session_page_authorized_by_form(op, ws_path, session_id, authorization, 0, 1)
-            .await?;
-    Ok(count)
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
+        return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
+    }
+    validate_session_authorization(
+        &meta,
+        authorization.principal_ids,
+        authorization.policy_hash,
+    )?;
+    index::execute_sql_query_authorized_by_form_count_at_checkpoint(
+        op,
+        ws_path,
+        session_sql(&meta)?,
+        &session_query_policy(&meta)?,
+        session_parameters(&meta)?,
+        session_checkpoint(&meta)?,
+    )
+    .await
+    .map_err(session_query_error)
 }
 
 pub async fn get_sql_session_rows_authorized_by_form(

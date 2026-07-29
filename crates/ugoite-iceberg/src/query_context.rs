@@ -12,7 +12,7 @@ use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::{SessionStateBuilder, SessionStateDefaults};
 use datafusion::logical_expr::expr_fn::ident;
-use datafusion::logical_expr::LogicalPlan;
+use datafusion::logical_expr::{Expr, LogicalPlan};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
@@ -387,6 +387,20 @@ impl AuthorizedQueryContext {
         self.prepared_plan(sql, parameters).await.map(|_| ())
     }
 
+    /// Validates the deliberately small SQL-session pagination contract at
+    /// the same bound logical-plan stage used for execution. In particular,
+    /// this is before optimizer rewrites can remove a sort from an empty or
+    /// `LIMIT 0` plan.
+    pub async fn validate_session_with_parameters(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<()> {
+        self.prepared_session_plan(sql, parameters)
+            .await
+            .map(|_| ())
+    }
+
     /// Plans and executes a read-only statement. User predicates are evaluated
     /// above the trusted Entry filter embedded in every registered view.
     pub async fn execute(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
@@ -432,6 +446,48 @@ impl AuthorizedQueryContext {
         tokio::time::timeout(
             self.limits.timeout,
             self.execute_page_with_permit(sql, parameters, offset, limit),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    /// Executes only the requested SQL-session page. The count endpoint uses
+    /// [`Self::execute_session_count`] so it never performs an unrelated page
+    /// execution.
+    pub async fn execute_session_page(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<arrow_array::RecordBatch>, u64)> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_session_page_with_permit(sql, parameters, offset, limit),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    /// Executes a count-only SQL-session plan from the frozen checkpoint.
+    pub async fn execute_session_count(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<u64> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_session_count_with_permit(sql, parameters),
         )
         .await
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
@@ -535,7 +591,98 @@ impl AuthorizedQueryContext {
         Ok((batches, total))
     }
 
+    async fn execute_session_page_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<arrow_array::RecordBatch>, u64)> {
+        validate_session_page_range(offset, limit, self.limits.max_rows)?;
+        let plan = self.prepared_session_plan(sql, parameters).await?;
+        let validation_plan = plan.clone();
+        let frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_frame = frame
+            .clone()
+            .aggregate(
+                Vec::new(),
+                vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                    .alias("ugoite_session_count")],
+            )
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_batches = self.collect_frame(count_frame).await?;
+        let total = count_from_batches(&count_batches)?;
+        let page = frame
+            .limit(offset, Some(limit))
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        let batches = self.collect_frame(page).await?;
+        self.validate_revision_invariants(&validation_plan).await?;
+        Ok((batches, total))
+    }
+
+    async fn execute_session_count_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<u64> {
+        let plan = self.prepared_session_plan(sql, parameters).await?;
+        let validation_plan = plan.clone();
+        let frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_frame = frame
+            .aggregate(
+                Vec::new(),
+                vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                    .alias("ugoite_session_count")],
+            )
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_batches = self.collect_frame(count_frame).await?;
+        self.validate_revision_invariants(&validation_plan).await?;
+        count_from_batches(&count_batches)
+    }
+
     async fn prepared_plan(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<LogicalPlan> {
+        let plan = self.bound_logical_plan(sql, parameters).await?;
+        let optimized = self
+            .context
+            .state()
+            .optimize(&plan)
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        validate_logical_plan(&optimized, &self.authorized_relations)
+            .map_err(AuthorizedQueryError::unauthorized)?;
+        Ok(optimized)
+    }
+
+    async fn prepared_session_plan(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<LogicalPlan> {
+        let plan = self.bound_logical_plan(sql, parameters).await?;
+        validate_sql_session_logical_plan(&plan, &self.authorized_relations)
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        let optimized = self
+            .context
+            .state()
+            .optimize(&plan)
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        validate_logical_plan(&optimized, &self.authorized_relations)
+            .map_err(AuthorizedQueryError::unauthorized)?;
+        Ok(optimized)
+    }
+
+    async fn bound_logical_plan(
         &self,
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
@@ -564,14 +711,7 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::invalid_query)?;
         validate_logical_plan(&plan, &self.authorized_relations)
             .map_err(AuthorizedQueryError::unauthorized)?;
-        let optimized = self
-            .context
-            .state()
-            .optimize(&plan)
-            .map_err(AuthorizedQueryError::invalid_query)?;
-        validate_logical_plan(&optimized, &self.authorized_relations)
-            .map_err(AuthorizedQueryError::unauthorized)?;
-        Ok(optimized)
+        Ok(plan)
     }
 
     async fn collect_frame(&self, frame: DataFrame) -> Result<Vec<arrow_array::RecordBatch>> {
@@ -626,6 +766,157 @@ fn logical_plan_contains_sort(plan: &LogicalPlan) -> bool {
             .inputs()
             .iter()
             .any(|input| logical_plan_contains_sort(input))
+}
+
+fn validate_session_page_range(offset: usize, limit: usize, max_rows: usize) -> Result<()> {
+    let requested_rows = offset.checked_add(limit).ok_or_else(|| {
+        AuthorizedQueryError::resource_limit(anyhow!("SQL session page range overflows"))
+    })?;
+    if limit == 0 || limit > max_rows || requested_rows > max_rows {
+        return Err(AuthorizedQueryError::resource_limit(anyhow!(
+            "SQL session page exceeds its configured row limit"
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+/// Validates the session-only subset after DataFusion has resolved names and
+/// aliases but before optimization. Generic authorized SQL intentionally
+/// supports a broader read-only language; session paging does not.
+fn validate_sql_session_logical_plan(
+    plan: &LogicalPlan,
+    authorized_relations: &BTreeSet<String>,
+) -> Result<()> {
+    let mut sort_count = 0;
+    validate_sql_session_logical_plan_node(plan, authorized_relations, &mut sort_count)?;
+    if sort_count != 1 {
+        bail!("SQL session paging requires exactly one explicit ORDER BY");
+    }
+    Ok(())
+}
+
+fn validate_sql_session_logical_plan_node(
+    plan: &LogicalPlan,
+    authorized_relations: &BTreeSet<String>,
+    sort_count: &mut usize,
+) -> Result<()> {
+    match plan {
+        LogicalPlan::Sort(sort) => {
+            *sort_count += 1;
+            let last = sort.expr.last().ok_or_else(|| {
+                anyhow!("SQL session paging requires ORDER BY ending with _ugoite_id")
+            })?;
+            if !sort_expression_resolves_to_external_id(&last.expr, &sort.input) {
+                bail!("SQL session paging requires ORDER BY ending with the Form external ID");
+            }
+        }
+        LogicalPlan::Subquery(_)
+        | LogicalPlan::Join(_)
+        | LogicalPlan::Aggregate(_)
+        | LogicalPlan::Distinct(_)
+        | LogicalPlan::Union(_)
+        | LogicalPlan::Window(_)
+        | LogicalPlan::Unnest(_)
+        | LogicalPlan::Values(_)
+        | LogicalPlan::EmptyRelation(_) => {
+            bail!("SQL session paging supports only a simple single-Form SELECT")
+        }
+        LogicalPlan::TableScan(scan) => {
+            let relation = scan.table_name.to_string();
+            if !authorized_relations.contains(&relation) {
+                bail!("query plan scans an unauthorized relation {relation}");
+            }
+        }
+        LogicalPlan::SubqueryAlias(alias)
+            if authorized_relations.contains(&alias.alias.to_string()) =>
+        {
+            // A public relation expands to Ugoite's trusted latest-revision
+            // view, which contains an internal aggregate and join. Those
+            // operators are not user SQL and must remain outside this
+            // session-subset check.
+            return Ok(());
+        }
+        LogicalPlan::Projection(_)
+        | LogicalPlan::Filter(_)
+        | LogicalPlan::Repartition(_)
+        | LogicalPlan::SubqueryAlias(_)
+        | LogicalPlan::Limit(_) => {}
+        LogicalPlan::Explain(_)
+        | LogicalPlan::Analyze(_)
+        | LogicalPlan::Dml(_)
+        | LogicalPlan::Ddl(_)
+        | LogicalPlan::Copy(_)
+        | LogicalPlan::Statement(_)
+        | LogicalPlan::DescribeTable(_)
+        | LogicalPlan::Extension(_)
+        | LogicalPlan::RecursiveQuery(_) => {
+            bail!("SQL session paging supports only a SELECT statement")
+        }
+    }
+    for input in plan.inputs() {
+        validate_sql_session_logical_plan_node(input, authorized_relations, sort_count)?;
+    }
+    Ok(())
+}
+
+/// Follows the resolved expression through projections, filters, aliases, and
+/// scans. This rejects an output alias called `_ugoite_id` unless its lineage
+/// reaches the provider's real external-ID column.
+fn sort_expression_resolves_to_external_id(expr: &Expr, input: &LogicalPlan) -> bool {
+    match input {
+        LogicalPlan::Projection(projection) => {
+            let Expr::Column(column) = expr else {
+                return false;
+            };
+            let mut candidates = projection.expr.iter().filter(|candidate| {
+                expression_output_name(candidate) == Some(column.name.as_str())
+            });
+            let Some(candidate) = candidates.next() else {
+                return false;
+            };
+            if candidates.next().is_some() {
+                return false;
+            }
+            if expression_is_external_id_source(candidate) {
+                return true;
+            }
+            sort_expression_resolves_to_external_id(candidate, &projection.input)
+        }
+        LogicalPlan::Filter(filter) => sort_expression_resolves_to_external_id(expr, &filter.input),
+        LogicalPlan::Sort(sort) => sort_expression_resolves_to_external_id(expr, &sort.input),
+        LogicalPlan::Repartition(repartition) => {
+            sort_expression_resolves_to_external_id(expr, &repartition.input)
+        }
+        LogicalPlan::Limit(limit) => sort_expression_resolves_to_external_id(expr, &limit.input),
+        LogicalPlan::SubqueryAlias(alias) => {
+            sort_expression_resolves_to_external_id(expr, &alias.input)
+        }
+        LogicalPlan::TableScan(scan) => matches!(expr, Expr::Column(column)
+            if column.name.eq_ignore_ascii_case("ugoite_entry_external_id")
+                || (column.name.eq_ignore_ascii_case("_ugoite_id")
+                    && !scan.table_name.to_string().starts_with(INTERNAL_RELATION_PREFIX))),
+        _ => false,
+    }
+}
+
+fn expression_is_external_id_source(expr: &Expr) -> bool {
+    match expr {
+        Expr::Column(column) => column.name.eq_ignore_ascii_case("ugoite_entry_external_id"),
+        Expr::Alias(alias) => matches!(
+            alias.expr.as_ref(),
+            Expr::Column(column) if column.name.eq_ignore_ascii_case("ugoite_entry_external_id")
+        ),
+        _ => false,
+    }
+}
+
+fn expression_output_name(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Alias(alias) => Some(alias.name.as_str()),
+        Expr::Column(column) => Some(column.name.as_str()),
+        _ => None,
+    }
 }
 
 fn count_from_batches(batches: &[arrow_array::RecordBatch]) -> Result<u64> {

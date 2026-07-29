@@ -3431,12 +3431,7 @@ async fn get_sql_session_rows(
     let limit = query
         .limit
         .unwrap_or(ugoite_iceberg::sql_session::DEFAULT_PAGE_SIZE);
-    if limit > ugoite_iceberg::sql_session::MAX_PAGE_SIZE {
-        return Err(ApiError::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "SQL session page limit exceeds the configured maximum",
-        ));
-    }
+    validate_sql_session_page_request(offset, limit)?;
     Ok(Json(
         state
             .service
@@ -3450,6 +3445,20 @@ async fn get_sql_session_rows(
             .await
             .map_err(ApiError::from_core)?,
     ))
+}
+
+fn validate_sql_session_page_request(offset: usize, limit: usize) -> ApiResult<()> {
+    let page_end = offset.checked_add(limit);
+    if limit == 0
+        || limit > ugoite_iceberg::sql_session::MAX_PAGE_SIZE
+        || page_end.is_none_or(|end| end > ugoite_iceberg::sql_session::MAX_PAGE_SIZE)
+    {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "SQL session page range exceeds the configured maximum",
+        ));
+    }
+    Ok(())
 }
 
 async fn test_connection(
@@ -4408,5 +4417,18 @@ mod authentication_regression_tests {
         validate_action_names(&defaults).expect("CLI default actions are known");
         validate_access_credential_actions(&defaults)
             .expect("CLI default actions require no unavailable approval flow");
+    }
+
+    #[test]
+    fn sql_session_page_request_rejects_zero_overflow_and_large_windows() {
+        assert!(validate_sql_session_page_request(0, 1).is_ok());
+        assert!(validate_sql_session_page_request(0, 0).is_err());
+        assert!(validate_sql_session_page_request(999, 2).is_err());
+        assert!(validate_sql_session_page_request(usize::MAX, 1).is_err());
+        assert!(validate_sql_session_page_request(
+            0,
+            ugoite_iceberg::sql_session::MAX_PAGE_SIZE + 1
+        )
+        .is_err());
     }
 }
