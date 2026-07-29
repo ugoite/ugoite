@@ -93,3 +93,19 @@ fn openapi_does_not_publish_removed_credentials() {
     assert!(snapshot.pointer("/paths/~1auth~1passkey~1start").is_some());
     assert!(snapshot.pointer("/paths/~1oauth~1token").is_some());
 }
+
+#[test]
+fn openapi_publishes_read_only_space_health() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let health = snapshot
+        .pointer("/paths/~1spaces~1{space_id}~1health/get")
+        .expect("Space health endpoint");
+    assert!(health["summary"]
+        .as_str()
+        .expect("summary")
+        .contains("Read-only"));
+    assert_eq!(
+        health["parameters"][1]["name"], "checkpoint",
+        "health validates only caller-named checkpoints"
+    );
+}

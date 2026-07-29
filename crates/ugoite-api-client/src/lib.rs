@@ -25,6 +25,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "space.list",
     "space.create",
     "space.get",
+    "space.health",
     "space.patch",
     "space.test_connection",
     "space.members.list",
@@ -296,6 +297,29 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "space.health" => {
+                let mut query = Vec::new();
+                if let Some(checkpoints) = args.get("checkpoints").and_then(Value::as_array) {
+                    for checkpoint in checkpoints {
+                        let checkpoint = checkpoint.as_str().ok_or_else(|| {
+                            ApiProtocolError::invalid_arguments(
+                                operation,
+                                "checkpoints must be an array of strings",
+                            )
+                        })?;
+                        query.push(("checkpoint".into(), checkpoint.to_string()));
+                    }
+                }
+                (
+                    OperationSpec::get("Failed to inspect Space health"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "health".into(),
+                    ],
+                    query,
+                )
+            }
             "space.patch" => (
                 OperationSpec::json(HttpMethod::Patch, "Failed to patch space"),
                 vec![
@@ -957,6 +981,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to get space",
             RequestBodyKind::None,
         ),
+        "space.health" => (
+            HttpMethod::Get,
+            "Failed to inspect Space health",
+            RequestBodyKind::None,
+        ),
         "space.patch" => (
             HttpMethod::Patch,
             "Failed to patch space",
@@ -1442,6 +1471,21 @@ mod tests {
         );
         let decoded: Value = serde_json::from_str(&decoded).unwrap();
         assert_eq!(decoded["value"]["name"], "Meeting Notes");
+    }
+
+    #[test]
+    fn space_health_encodes_only_requested_checkpoint_names() {
+        let request = prepare_request(
+            "space.health",
+            &json!({"space_id": "demo", "checkpoints": ["before-upgrade", "nightly"]}),
+            None,
+        )
+        .expect("health request");
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(
+            request.path,
+            "/spaces/demo/health?checkpoint=before-upgrade&checkpoint=nightly"
+        );
     }
 
     #[test]

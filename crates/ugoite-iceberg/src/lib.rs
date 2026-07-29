@@ -12,6 +12,7 @@ pub mod audit;
 pub mod authorization;
 pub mod entry;
 pub mod form;
+pub mod health;
 pub mod iceberg_store;
 pub mod index;
 pub mod integrity;
@@ -28,6 +29,7 @@ pub mod sql;
 pub mod sql_session;
 pub mod storage;
 
+pub use health::SpaceHealthReport;
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
 pub use space_catalog::PublicationContext;
 use space_catalog::SpaceCatalog;
@@ -315,6 +317,20 @@ impl IcebergWorkspace {
             .as_ref()
             .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
             .capture_checkpoint()
+            .await
+    }
+
+    /// Collects read-only evidence from the exact Catalog Head and the Iceberg
+    /// metadata it references. It never scans table rows, lists objects, or
+    /// performs a Catalog mutation.
+    pub async fn health_report(&self, checkpoint_names: &[String]) -> Result<SpaceHealthReport> {
+        for name in checkpoint_names {
+            validate_checkpoint_name(name)?;
+        }
+        self.space_catalog
+            .as_ref()
+            .context("Space health requires the OpenDAL-backed SpaceCatalog")?
+            .health_report(checkpoint_names)
             .await
     }
 

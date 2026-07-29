@@ -85,6 +85,7 @@ export const OPENAPI_PATHS = [
   "/spaces/{space_id}/forms",
   "/spaces/{space_id}/forms/types",
   "/spaces/{space_id}/forms/{form_name}",
+  "/spaces/{space_id}/health",
   "/spaces/{space_id}/members",
   "/spaces/{space_id}/members/invitations",
   "/spaces/{space_id}/members/{principal_id}",

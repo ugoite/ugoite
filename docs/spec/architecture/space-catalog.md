@@ -8,10 +8,9 @@ Space format version is unchanged, while legacy layouts and catalog modes are
 unsupported rather than migrated.
 
 The Catalog Head layout, upstream physical boundary, single mutation
-coordinator, checkpoint-pinned revision reads, and authorization-aware
-DataFusion context are implemented by the current persistence work. Health
-evidence remains follow-up work; this document does not advertise it as a
-current product API.
+coordinator, checkpoint-pinned revision reads, authorization-aware DataFusion
+context, and read-only health evidence are implemented by the current
+persistence work.
 
 ## Authority and ownership
 
@@ -112,6 +111,24 @@ become a generic OpenDAL wrapper.
 schemas, typed Arrow conversion, upstream writers, table commits, snapshots,
 DataFusion, checkpoints, and health evidence. Its physical upstream types do
 not cross into Core.
+
+## Read-only health evidence
+
+The health endpoint starts from one exact Catalog Head, verifies its whole
+reachable immutable publication chain, and reads only referenced Iceberg
+metadata plus upstream manifest lists and manifests. It reports stable,
+redacted issue codes, the Head checksum/generation/Form registry generation,
+table identifiers/Form IDs/UUIDs/schemas/snapshots, and live data-file
+count/record/size distribution evidence. Physical locations are redacted from
+the normal API response.
+
+Named checkpoints are caller-supplied and validated through immutable
+publication, metadata, manifest, and data-file targets; health never lists
+checkpoint storage. File evidence comes from upstream manifest entries, not a
+metadata-table scan. Backend conditional-write capabilities and the durable
+probe status are returned separately from unavailable orphan/failed-attempt
+evidence. Failed-attempt and orphan candidates remain empty unless durable
+attempt coordinates exist: object-list inference is forbidden.
 
 `ugoite-core` owns domain validation, authorization meaning, use-case
 orchestration, domain commands, receipts, checkpoints, and errors. It neither
