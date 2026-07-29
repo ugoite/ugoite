@@ -127,7 +127,7 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
     .to_string();
     let results = index::query_index(&op, ws_path, &payload).await?;
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["id"].as_str(), Some("entry-2"));
+    assert_eq!(results[0]["_ugoite_id"].as_str(), Some("entry-2"));
 
     Ok(())
 }
@@ -182,7 +182,7 @@ async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
     .await?;
 
     let payload = serde_json::json!({
-        "$sql": "SELECT e.id AS left_id, f.id AS right_id FROM entry e JOIN entry f ON e.id = f.id WHERE e.id = 'entry-1'"
+        "$sql": "SELECT e._ugoite_id AS left_id, f._ugoite_id AS right_id FROM entry e JOIN entry f ON e._ugoite_id = f._ugoite_id WHERE e._ugoite_id = 'entry-1'"
     })
     .to_string();
     let results = index::query_index(&op, ws_path, &payload).await?;

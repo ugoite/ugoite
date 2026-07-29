@@ -5,6 +5,8 @@
 //! unapproved object.
 
 use anyhow::{anyhow, bail, Context, Result};
+use datafusion::catalog::default_table_source::DefaultTableSource;
+use datafusion::datasource::TableProvider;
 use datafusion::execution::context::SessionContext;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
@@ -86,7 +88,7 @@ pub struct AuthorizedQueryContext {
     permits: Arc<Semaphore>,
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
-    duplicate_head_checks: Vec<DataFrame>,
+    duplicate_head_checks: Vec<(Arc<dyn TableProvider>, DataFrame)>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -296,7 +298,7 @@ impl IcebergWorkspace {
                 table_uuid: table.metadata().uuid().to_string(),
                 snapshot_id,
             };
-            let provider = match snapshot_id {
+            let provider: Arc<dyn TableProvider> = Arc::new(match snapshot_id {
                 Some(snapshot_id) => {
                     IcebergStaticTableProvider::try_new_from_table_snapshot(table, snapshot_id)
                         .await
@@ -305,13 +307,13 @@ impl IcebergWorkspace {
                 None => IcebergStaticTableProvider::try_new_from_table(table)
                     .await
                     .context("open static Iceberg provider")?,
-            };
+            });
 
             authorized_scans.insert(authorized_scan);
 
             let internal = format!("{INTERNAL_RELATION_PREFIX}{}", form_id.as_uuid().simple());
             relations.insert(internal.clone());
-            context.register_table(internal.as_str(), Arc::new(provider))?;
+            context.register_table(internal.as_str(), provider.clone())?;
             let visible = visible_columns(&form, form_policy)?;
             let source = context.table(internal.as_str()).await?;
             let heads = latest_revision_dataframe(
@@ -320,12 +322,9 @@ impl IcebergWorkspace {
                 crate::RevisionView::LatestIncludingTombstones,
             )?
             .clone();
-            // This is deliberately a DataFusion plan over the same static
-            // Iceberg provider as the visible relation. Check every
-            // authorized relation before executing a statement: DataFusion
-            // may expand a view, rewrite aliases, or remove a scan before the
-            // logical plan reaches this boundary. The invariant must not
-            // depend on those planner details.
+            // Key this plan by the provider identity rather than a relation
+            // name. DataFusion can expand views and rewrite aliases before
+            // this boundary, but the TableScan retains the approved provider.
             let duplicate_head_check = heads
                 .clone()
                 .aggregate(
@@ -335,7 +334,7 @@ impl IcebergWorkspace {
                 )?
                 .filter(col("ugoite_latest_head_count").gt(lit(1)))?
                 .limit(0, Some(1))?;
-            duplicate_head_checks.push(duplicate_head_check);
+            duplicate_head_checks.push((provider, duplicate_head_check));
             let view = heads
                 .filter(col("operation").not_eq(lit("delete")))?
                 .select(
@@ -446,6 +445,7 @@ impl AuthorizedQueryContext {
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
         let plan = self.prepared_plan(sql, parameters).await?;
+        let validation_plan = plan.clone();
         let frame = self
             .context
             .execute_logical_plan(plan)
@@ -468,6 +468,11 @@ impl AuthorizedQueryContext {
             ))
             .into());
         }
+        // Validate after materializing the statement, but before returning
+        // any rows. Iceberg readers can observe a newer committed manifest
+        // between planning and collection; validating this point prevents a
+        // duplicate maximum revision from escaping in that interval.
+        self.validate_revision_invariants(&validation_plan).await?;
         Ok(batches)
     }
 
@@ -479,6 +484,7 @@ impl AuthorizedQueryContext {
         limit: usize,
     ) -> Result<(Vec<arrow_array::RecordBatch>, u64)> {
         let plan = self.prepared_plan(sql, parameters).await?;
+        let validation_plan = plan.clone();
         if !logical_plan_contains_sort(&plan) {
             return Err(AuthorizedQueryError::invalid_query(anyhow!(
                 "SQL session paging requires an explicit ORDER BY"
@@ -503,7 +509,9 @@ impl AuthorizedQueryContext {
         let page = frame
             .limit(offset, Some(limit))
             .map_err(AuthorizedQueryError::resource_limit)?;
-        Ok((self.collect_frame(page).await?, total))
+        let batches = self.collect_frame(page).await?;
+        self.validate_revision_invariants(&validation_plan).await?;
+        Ok((batches, total))
     }
 
     async fn prepared_plan(
@@ -535,7 +543,6 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::invalid_query)?;
         validate_logical_plan(&plan, &self.authorized_relations)
             .map_err(AuthorizedQueryError::unauthorized)?;
-        self.validate_revision_invariants().await?;
         let optimized = self
             .context
             .state()
@@ -560,8 +567,14 @@ impl AuthorizedQueryContext {
         Ok(batches)
     }
 
-    async fn validate_revision_invariants(&self) -> Result<()> {
-        for check in &self.duplicate_head_checks {
+    async fn validate_revision_invariants(&self, plan: &LogicalPlan) -> Result<()> {
+        let mut scanned_providers = BTreeSet::new();
+        collect_scanned_provider_addresses(plan, &mut scanned_providers);
+        for (provider, check) in &self.duplicate_head_checks {
+            let provider_address = Arc::as_ptr(provider) as *const () as usize;
+            if !scanned_providers.contains(&provider_address) {
+                continue;
+            }
             if self
                 .collect_frame(check.clone())
                 .await?
@@ -572,6 +585,17 @@ impl AuthorizedQueryContext {
             }
         }
         Ok(())
+    }
+}
+
+fn collect_scanned_provider_addresses(plan: &LogicalPlan, providers: &mut BTreeSet<usize>) {
+    if let LogicalPlan::TableScan(scan) = plan {
+        if let Some(source) = scan.source.as_any().downcast_ref::<DefaultTableSource>() {
+            providers.insert(Arc::as_ptr(&source.table_provider) as *const () as usize);
+        }
+    }
+    for input in plan.inputs() {
+        collect_scanned_provider_addresses(input, providers);
     }
 }
 
