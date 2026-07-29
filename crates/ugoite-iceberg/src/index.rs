@@ -22,6 +22,17 @@ const SQL_MAX_ROWS: usize = 1_000;
 const SQL_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const SQL_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Immutable execution inputs for one authorized SQL-session page.
+///
+/// Keeping the bound parameters, checkpoint, and page together makes the
+/// session's reproducible query coordinate explicit at its execution boundary.
+pub struct AuthorizedSqlSessionPage {
+    pub parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    pub checkpoint: SpaceCheckpoint,
+    pub offset: usize,
+    pub limit: usize,
+}
+
 /// Converts transport values to typed DataFusion parameters. A null must carry
 /// a declared type, so it can never fall back to string substitution or an
 /// untyped SQL NULL.
@@ -285,10 +296,7 @@ pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
     ws_path: &str,
     sql_query: &str,
     readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
-    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
-    checkpoint: SpaceCheckpoint,
-    offset: usize,
-    limit: usize,
+    page: AuthorizedSqlSessionPage,
 ) -> Result<(Vec<Value>, u64)> {
     let relation_scopes = readable_entries_by_form
         .iter()
@@ -306,10 +314,10 @@ pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
         EntryScope::AllCurrent,
         None,
         Some(&relation_scopes),
-        Some(checkpoint),
-        offset,
-        limit,
-        parameters,
+        Some(page.checkpoint),
+        page.offset,
+        page.limit,
+        page.parameters,
     )
     .await
 }

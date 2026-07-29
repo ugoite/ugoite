@@ -102,10 +102,12 @@ async fn execute_session_page(
             ws_path,
             session_sql(&meta)?,
             &by_form,
-            session_parameters(&meta)?,
-            session_checkpoint(&meta)?,
-            offset,
-            limit,
+            index::AuthorizedSqlSessionPage {
+                parameters: session_parameters(&meta)?,
+                checkpoint: session_checkpoint(&meta)?,
+                offset,
+                limit,
+            },
         )
         .await;
     }
@@ -140,10 +142,12 @@ async fn execute_session_page_authorized_by_form(
         ws_path,
         session_sql(&meta)?,
         readable_entries_by_form,
-        session_parameters(&meta)?,
-        session_checkpoint(&meta)?,
-        offset,
-        limit,
+        index::AuthorizedSqlSessionPage {
+            parameters: session_parameters(&meta)?,
+            checkpoint: session_checkpoint(&meta)?,
+            offset,
+            limit,
+        },
     )
     .await
 }
