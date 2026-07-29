@@ -14,7 +14,7 @@ use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
@@ -86,6 +86,7 @@ pub struct AuthorizedQueryContext {
     permits: Arc<Semaphore>,
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
+    duplicate_head_checks: BTreeMap<String, DataFrame>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -102,6 +103,7 @@ pub enum AuthorizedQueryError {
     InvalidQuery { source: anyhow::Error },
     UnauthorizedQueryFeature { source: anyhow::Error },
     ResourceLimitExceeded { source: anyhow::Error },
+    RevisionInvariantViolation,
     QueryTimedOut,
     QueryExecutionFailed { source: anyhow::Error },
 }
@@ -149,6 +151,9 @@ impl std::fmt::Display for AuthorizedQueryError {
             Self::InvalidQuery { .. } => "invalid authorized query",
             Self::UnauthorizedQueryFeature { .. } => "unauthorized query feature",
             Self::ResourceLimitExceeded { .. } => "authorized query resource limit exceeded",
+            Self::RevisionInvariantViolation => {
+                "entry revision invariant failed: multiple revisions share a maximum entry_version"
+            }
             Self::QueryTimedOut => "authorized query timed out",
             Self::QueryExecutionFailed { .. } => "authorized query execution failed",
         };
@@ -163,6 +168,7 @@ impl std::error::Error for AuthorizedQueryError {
             | Self::UnauthorizedQueryFeature { source }
             | Self::ResourceLimitExceeded { source }
             | Self::QueryExecutionFailed { source } => Some(source.as_ref()),
+            Self::RevisionInvariantViolation => None,
             Self::QueryTimedOut => None,
         }
     }
@@ -240,6 +246,7 @@ impl IcebergWorkspace {
         let context = SessionContext::new_with_state(state);
         let mut relations = BTreeSet::new();
         let mut authorized_scans = BTreeSet::new();
+        let mut duplicate_head_checks = BTreeMap::new();
 
         if let Some(checkpoint) = &policy.checkpoint {
             self.validate_checkpoint(checkpoint)?;
@@ -307,18 +314,37 @@ impl IcebergWorkspace {
             context.register_table(internal.as_str(), Arc::new(provider))?;
             let visible = visible_columns(&form, form_policy)?;
             let source = context.table(internal.as_str()).await?;
-            let view = latest_revision_dataframe(
+            let heads = latest_revision_dataframe(
                 source,
                 &form_policy.entry_scope,
-                crate::RevisionView::Current,
+                crate::RevisionView::LatestIncludingTombstones,
             )?
-            .select(
-                visible
-                    .iter()
-                    .map(|column| ident(&column.source).alias(&column.name))
-                    .collect::<Vec<_>>(),
-            )?
-            .into_view();
+            .clone();
+            // This is deliberately a DataFusion plan over the same static
+            // Iceberg provider as the visible relation. Every user plan that
+            // references the Form executes it first, so LIMIT and aggregates
+            // can never hide a duplicate maximum entry version.
+            duplicate_head_checks.insert(
+                form_policy.relation.clone(),
+                heads
+                    .clone()
+                    .aggregate(
+                        vec![col("entry_id")],
+                        vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                            .alias("ugoite_latest_head_count")],
+                    )?
+                    .filter(col("ugoite_latest_head_count").gt(lit(1)))?
+                    .limit(0, Some(1))?,
+            );
+            let view = heads
+                .filter(col("operation").not_eq(lit("delete")))?
+                .select(
+                    visible
+                        .iter()
+                        .map(|column| ident(&column.source).alias(&column.name))
+                        .collect::<Vec<_>>(),
+                )?
+                .into_view();
             context.deregister_table(internal.as_str())?;
             context.register_table(form_policy.relation.as_str(), view)?;
         }
@@ -330,6 +356,7 @@ impl IcebergWorkspace {
             permits,
             authorized_relations: relations,
             authorized_scans,
+            duplicate_head_checks,
         })
     }
 }
@@ -508,6 +535,7 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::invalid_query)?;
         validate_logical_plan(&plan, &self.authorized_relations)
             .map_err(AuthorizedQueryError::unauthorized)?;
+        self.validate_revision_invariants(&plan).await?;
         let optimized = self
             .context
             .state()
@@ -530,6 +558,34 @@ impl AuthorizedQueryContext {
             .await
             .map_err(classify_datafusion_error)?;
         Ok(batches)
+    }
+
+    async fn validate_revision_invariants(&self, plan: &LogicalPlan) -> Result<()> {
+        let mut relations = BTreeSet::new();
+        collect_scanned_relations(plan, &mut relations);
+        for relation in relations {
+            let Some(check) = self.duplicate_head_checks.get(&relation) else {
+                continue;
+            };
+            if self
+                .collect_frame(check.clone())
+                .await?
+                .iter()
+                .any(|batch| batch.num_rows() > 0)
+            {
+                return Err(AuthorizedQueryError::RevisionInvariantViolation.into());
+            }
+        }
+        Ok(())
+    }
+}
+
+fn collect_scanned_relations(plan: &LogicalPlan, relations: &mut BTreeSet<String>) {
+    if let LogicalPlan::TableScan(scan) = plan {
+        relations.insert(scan.table_name.to_string());
+    }
+    for input in plan.inputs() {
+        collect_scanned_relations(input, relations);
     }
 }
 

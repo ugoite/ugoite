@@ -546,6 +546,9 @@ fn map_sql_error(error: anyhow::Error) -> anyhow::Error {
         Some(AuthorizedQueryError::ResourceLimitExceeded { .. }) => {
             "SQL query exceeds the configured resource limit"
         }
+        Some(AuthorizedQueryError::RevisionInvariantViolation) => {
+            "entry revision invariant failed: multiple revisions share a maximum entry_version"
+        }
         Some(AuthorizedQueryError::QueryTimedOut) => "SQL query timed out",
         Some(AuthorizedQueryError::QueryExecutionFailed { .. }) => "SQL query execution failed",
         None => return error,

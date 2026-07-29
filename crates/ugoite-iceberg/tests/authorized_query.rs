@@ -251,6 +251,43 @@ async fn context_binds_native_datafusion_parameters_without_sql_substitution() -
 }
 
 #[tokio::test]
+async fn duplicate_maximum_versions_fail_every_sql_shape() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(600)),
+        "memory://authorized-query-duplicate-maximum",
+    )
+    .await?;
+    let concurrent = workspace.clone_for_testing();
+    let tasks = form(601, "Tasks");
+    create_form(&workspace, &tasks).await?;
+    let (left, right) = tokio::join!(
+        append(&workspace, &tasks, 602, 603, "left"),
+        append(&concurrent, &tasks, 602, 604, "right"),
+    );
+    left?;
+    right?;
+
+    let mut duplicate_policy = policy(&tasks, &[602]);
+    duplicate_policy
+        .limits
+        .allowed_functions
+        .insert("count".into());
+    let context = workspace.authorized_query_context(duplicate_policy).await?;
+    for sql in [
+        "SELECT * FROM tasks",
+        "SELECT count(*) FROM tasks",
+        "SELECT title FROM tasks LIMIT 1",
+    ] {
+        let error = context.execute(sql).await.expect_err(sql);
+        assert!(matches!(
+            error.downcast_ref::<AuthorizedQueryError>(),
+            Some(AuthorizedQueryError::RevisionInvariantViolation)
+        ));
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn physical_plan_keeps_iceberg_projection_filter_and_limit_pushdown() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(110)),
