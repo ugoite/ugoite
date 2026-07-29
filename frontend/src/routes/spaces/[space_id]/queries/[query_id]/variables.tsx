@@ -54,7 +54,11 @@ export default function SpaceQueryVariablesRoute() {
         parameters,
         parameterTypes,
       );
-      navigate(`/spaces/${spaceId()}/entries?session=${encodeURIComponent(session.id)}`);
+      navigate(
+        `/spaces/${spaceId()}/entries?session=${
+          encodeURIComponent(session.id)
+        }`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run query");
     }
