@@ -1,6 +1,6 @@
 mod common;
 use common::setup_operator;
-use ugoite_iceberg::{entry, form, index, link, space};
+use ugoite_iceberg::{entry, form, index, space};
 
 #[tokio::test]
 /// REQ-IDX-001
@@ -127,7 +127,7 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
     .to_string();
     let results = index::query_index(&op, ws_path, &payload).await?;
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["id"].as_str(), Some("entry-2"));
+    assert_eq!(results[0]["_ugoite_id"].as_str(), Some("entry-2"));
 
     Ok(())
 }
@@ -181,43 +181,14 @@ async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
     )
     .await?;
 
-    link::create_link(&op, ws_path, "entry-1", "entry-2", "reference", "link-1").await?;
-
     let payload = serde_json::json!({
-        "$sql": "SELECT * FROM entries e JOIN links l ON e.id = l.source WHERE l.target = 'entry-2'"
+        "$sql": "SELECT e._ugoite_id AS left_id, f._ugoite_id AS right_id FROM entry e JOIN entry f ON e._ugoite_id = f._ugoite_id WHERE e._ugoite_id = 'entry-1'"
     })
     .to_string();
     let results = index::query_index(&op, ws_path, &payload).await?;
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["e"]["id"].as_str(), Some("entry-1"));
-    assert_eq!(results[0]["l"]["target"].as_str(), Some("entry-2"));
-
-    let payload_right = serde_json::json!({
-        "$sql": "SELECT * FROM links l RIGHT JOIN entries e ON e.id = l.source WHERE e.id = 'entry-3'"
-    })
-    .to_string();
-    let results_right = index::query_index(&op, ws_path, &payload_right).await?;
-    assert_eq!(results_right.len(), 1);
-    assert_eq!(results_right[0]["e"]["id"].as_str(), Some("entry-3"));
-    assert!(results_right[0]["l"].is_null());
-
-    let payload_full = serde_json::json!({
-        "$sql": "SELECT * FROM entries e FULL JOIN links l ON e.id = l.source WHERE e.id = 'entry-3'"
-    })
-    .to_string();
-    let results_full = index::query_index(&op, ws_path, &payload_full).await?;
-    assert_eq!(results_full.len(), 1);
-    assert_eq!(results_full[0]["e"]["id"].as_str(), Some("entry-3"));
-    assert!(results_full[0]["l"].is_null());
-
-    let payload_using = serde_json::json!({
-        "$sql": "SELECT * FROM entries e JOIN entries f USING (id) WHERE e.id = 'entry-1'"
-    })
-    .to_string();
-    let results_using = index::query_index(&op, ws_path, &payload_using).await?;
-    assert_eq!(results_using.len(), 1);
-    assert_eq!(results_using[0]["e"]["id"].as_str(), Some("entry-1"));
-    assert_eq!(results_using[0]["f"]["id"].as_str(), Some("entry-1"));
+    assert_eq!(results[0]["left_id"].as_str(), Some("entry-1"));
+    assert_eq!(results[0]["right_id"].as_str(), Some("entry-1"));
 
     Ok(())
 }

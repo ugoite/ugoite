@@ -1,53 +1,14 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
-import { sqlSessionApi } from "~/lib/ugoite-client";
-import { sqlApi } from "~/lib/ugoite-client";
-import type { SqlVariable } from "~/lib/types";
+import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
-
-const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
-
-function formatSqlValue(value: string, variable: SqlVariable | undefined) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error(`Value required for ${variable?.name ?? "variable"}`);
-  }
-  const type = variable?.type ?? "string";
-  if (["number", "double", "float", "integer", "long"].includes(type)) {
-    const num = Number(trimmed);
-    if (Number.isNaN(num)) {
-      throw new Error(`Invalid number for ${variable?.name ?? "variable"}`);
-    }
-    return String(num);
-  }
-  if (type === "boolean") {
-    const lower = trimmed.toLowerCase();
-    if (lower !== "true" && lower !== "false") {
-      throw new Error(`Invalid boolean for ${variable?.name ?? "variable"}`);
-    }
-    return lower;
-  }
-  const escaped = trimmed.replace(/'/g, "''");
-  return `'${escaped}'`;
-}
-
-function substituteSql(
-  sql: string,
-  variables: SqlVariable[],
-  values: Record<string, string>,
-) {
-  return sql.replace(VARIABLE_REGEX, (_match, name: string) => {
-    const variable = variables.find((v) => v.name === name);
-    return formatSqlValue(values[name] ?? "", variable);
-  });
-}
 
 export default function SpaceQueryVariablesRoute() {
   const params = useParams<{ space_id: string; query_id: string }>();
-  const navigate = useNavigate();
   const spaceId = () => params.space_id;
   const queryId = () => params.query_id;
+  const navigate = useNavigate();
   const [values, setValues] = createSignal<Record<string, string>>({});
   const [error, setError] = createSignal<string | null>(null);
 
@@ -64,12 +25,35 @@ export default function SpaceQueryVariablesRoute() {
     const current = entry();
     if (!current) return;
     try {
-      const sql = substituteSql(current.sql, current.variables, values());
-      const session = await sqlSessionApi.create(spaceId(), sql);
-      if (session.status === "failed") {
-        setError(session.error || "Query failed.");
-        return;
-      }
+      const parameterTypes = Object.fromEntries(
+        current.variables.map((variable) => [variable.name, variable.type]),
+      );
+      const parameters = Object.fromEntries(
+        current.variables.map((variable) => {
+          const value = values()[variable.name] ?? "";
+          if (value === "") return [variable.name, null];
+          if (variable.type === "boolean") {
+            if (value !== "true" && value !== "false") {
+              throw new Error(`${variable.name} must be true or false`);
+            }
+            return [variable.name, value === "true"];
+          }
+          if (variable.type === "integer" || variable.type === "float") {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+              throw new Error(`${variable.name} must be a number`);
+            }
+            return [variable.name, numeric];
+          }
+          return [variable.name, value];
+        }),
+      );
+      const session = await sqlSessionApi.create(
+        spaceId(),
+        current.sql,
+        parameters,
+        parameterTypes,
+      );
       navigate(
         `/spaces/${spaceId()}/entries?session=${
           encodeURIComponent(session.id)

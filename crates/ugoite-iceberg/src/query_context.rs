@@ -5,22 +5,79 @@
 //! unapproved object.
 
 use anyhow::{anyhow, bail, Context, Result};
+use datafusion::catalog::default_table_source::DefaultTableSource;
+use datafusion::datasource::TableProvider;
 use datafusion::execution::context::SessionContext;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::{SessionStateBuilder, SessionStateDefaults};
+use datafusion::logical_expr::expr_fn::ident;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::ExecutionPlan;
-use datafusion::prelude::{col, lit, SessionConfig};
+use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use ugoite_core::query::AuthorizedQueryPolicy;
+use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 
 use crate::{form_from_table, IcebergWorkspace};
 
 const INTERNAL_RELATION_PREFIX: &str = "__ugoite_authorized_source_";
+
+/// Canonical lazy current-state derivation for append-only Form revision
+/// tables. Every reader starts from this plan: entry authorization is applied
+/// before the maximum-version aggregate, and tombstones are removed only after
+/// that aggregate selected the latest revision. Keeping this as a DataFusion
+/// builder preserves optimizer visibility and avoids a second implementation
+/// in the SQL path.
+pub(crate) fn latest_revision_dataframe(
+    revisions: DataFrame,
+    entry_scope: &EntryScope,
+    view: crate::RevisionView,
+) -> Result<DataFrame> {
+    let scoped = match entry_scope {
+        EntryScope::AllCurrent => revisions,
+        EntryScope::Only(entry_ids) if entry_ids.is_empty() => revisions.filter(lit(false))?,
+        EntryScope::Only(entry_ids) => revisions.filter(
+            col("entry_id").in_list(
+                entry_ids
+                    .iter()
+                    .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                    .collect::<Vec<_>>(),
+                false,
+            ),
+        )?,
+    };
+    let maxima = scoped
+        .clone()
+        .aggregate(
+            vec![col("entry_id")],
+            vec![
+                datafusion::functions_aggregate::expr_fn::max(col("entry_version"))
+                    .alias("latest_entry_version"),
+            ],
+        )?
+        .select(vec![
+            col("entry_id").alias("latest_entry_id"),
+            col("latest_entry_version"),
+        ])?;
+    let heads = scoped.join(
+        maxima,
+        datafusion::logical_expr::JoinType::Inner,
+        &["entry_id", "entry_version"],
+        &["latest_entry_id", "latest_entry_version"],
+        None,
+    )?;
+    // Never silently discard a duplicate maximum version. Consumers validate
+    // the resulting cardinality as an append-only-history invariant and fail
+    // the query rather than selecting an arbitrary revision.
+    if view == crate::RevisionView::Current {
+        Ok(heads.filter(col("operation").not_eq(lit("delete")))?)
+    } else {
+        Ok(heads)
+    }
+}
 
 /// A query surface containing only Core-authorized, read-only logical Form
 /// views. The underlying context remains private so callers cannot register a
@@ -31,6 +88,7 @@ pub struct AuthorizedQueryContext {
     permits: Arc<Semaphore>,
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
+    duplicate_head_checks: Vec<(Arc<dyn TableProvider>, DataFrame)>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -47,6 +105,7 @@ pub enum AuthorizedQueryError {
     InvalidQuery { source: anyhow::Error },
     UnauthorizedQueryFeature { source: anyhow::Error },
     ResourceLimitExceeded { source: anyhow::Error },
+    RevisionInvariantViolation,
     QueryTimedOut,
     QueryExecutionFailed { source: anyhow::Error },
 }
@@ -77,12 +136,26 @@ impl AuthorizedQueryError {
     }
 }
 
+fn classify_datafusion_error(error: datafusion::error::DataFusionError) -> AuthorizedQueryError {
+    if matches!(
+        error.find_root(),
+        datafusion::error::DataFusionError::ResourcesExhausted(_)
+    ) {
+        AuthorizedQueryError::resource_limit(error)
+    } else {
+        AuthorizedQueryError::execution_failed(error)
+    }
+}
+
 impl std::fmt::Display for AuthorizedQueryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
             Self::InvalidQuery { .. } => "invalid authorized query",
             Self::UnauthorizedQueryFeature { .. } => "unauthorized query feature",
             Self::ResourceLimitExceeded { .. } => "authorized query resource limit exceeded",
+            Self::RevisionInvariantViolation => {
+                "entry revision invariant failed: multiple revisions share a maximum entry_version"
+            }
             Self::QueryTimedOut => "authorized query timed out",
             Self::QueryExecutionFailed { .. } => "authorized query execution failed",
         };
@@ -97,6 +170,7 @@ impl std::error::Error for AuthorizedQueryError {
             | Self::UnauthorizedQueryFeature { source }
             | Self::ResourceLimitExceeded { source }
             | Self::QueryExecutionFailed { source } => Some(source.as_ref()),
+            Self::RevisionInvariantViolation => None,
             Self::QueryTimedOut => None,
         }
     }
@@ -110,9 +184,10 @@ impl IcebergWorkspace {
         &self,
         policy: AuthorizedQueryPolicy,
     ) -> Result<AuthorizedQueryContext> {
-        self.authorized_query_context_inner(policy)
+        Ok(self
+            .authorized_query_context_inner(policy)
             .await
-            .map_err(|error| AuthorizedQueryError::execution_failed(error).into())
+            .map_err(AuthorizedQueryError::execution_failed)?)
     }
 
     async fn authorized_query_context_inner(
@@ -173,6 +248,7 @@ impl IcebergWorkspace {
         let context = SessionContext::new_with_state(state);
         let mut relations = BTreeSet::new();
         let mut authorized_scans = BTreeSet::new();
+        let mut duplicate_head_checks = Vec::new();
 
         if let Some(checkpoint) = &policy.checkpoint {
             self.validate_checkpoint(checkpoint)?;
@@ -222,7 +298,7 @@ impl IcebergWorkspace {
                 table_uuid: table.metadata().uuid().to_string(),
                 snapshot_id,
             };
-            let provider = match snapshot_id {
+            let provider: Arc<dyn TableProvider> = Arc::new(match snapshot_id {
                 Some(snapshot_id) => {
                     IcebergStaticTableProvider::try_new_from_table_snapshot(table, snapshot_id)
                         .await
@@ -231,76 +307,148 @@ impl IcebergWorkspace {
                 None => IcebergStaticTableProvider::try_new_from_table(table)
                     .await
                     .context("open static Iceberg provider")?,
-            };
+            });
 
             authorized_scans.insert(authorized_scan);
 
             let internal = format!("{INTERNAL_RELATION_PREFIX}{}", form_id.as_uuid().simple());
             relations.insert(internal.clone());
-            context.register_table(internal.as_str(), Arc::new(provider))?;
+            context.register_table(internal.as_str(), provider.clone())?;
             let visible = visible_columns(&form, form_policy)?;
-            let entry_ids = form_policy
-                .readable_entry_ids
-                .iter()
-                .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                .collect::<Vec<_>>();
-            let visible_refs = visible.iter().map(String::as_str).collect::<Vec<_>>();
             let source = context.table(internal.as_str()).await?;
-            let filtered = if entry_ids.is_empty() {
-                source.filter(lit(false))?
-            } else {
-                source.filter(col("entry_id").in_list(entry_ids, false))?
-            }
-            .select_columns(&visible_refs)?;
-            let view = filtered.into_view();
+            let heads = latest_revision_dataframe(
+                source,
+                &form_policy.entry_scope,
+                crate::RevisionView::LatestIncludingTombstones,
+            )?
+            .clone();
+            // Key this plan by the provider identity rather than a relation
+            // name. DataFusion can expand views and rewrite aliases before
+            // this boundary, but the TableScan retains the approved provider.
+            let duplicate_head_check = heads
+                .clone()
+                .aggregate(
+                    vec![col("entry_id")],
+                    vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                        .alias("ugoite_latest_head_count")],
+                )?
+                .filter(col("ugoite_latest_head_count").gt(lit(1)))?
+                .limit(0, Some(1))?;
+            duplicate_head_checks.push((provider, duplicate_head_check));
+            let view = heads
+                .filter(col("operation").not_eq(lit("delete")))?
+                .select(
+                    visible
+                        .iter()
+                        .map(|column| ident(&column.source).alias(&column.name))
+                        .collect::<Vec<_>>(),
+                )?
+                .into_view();
             context.deregister_table(internal.as_str())?;
             context.register_table(form_policy.relation.as_str(), view)?;
         }
 
-        let max_concurrency = policy.limits.max_concurrency;
+        let permits = self.shared_query_permits(policy.limits.max_concurrency);
         Ok(AuthorizedQueryContext {
             context,
             limits: policy.limits,
-            permits: Arc::new(Semaphore::new(max_concurrency)),
+            permits,
             authorized_relations: relations,
             authorized_scans,
+            duplicate_head_checks,
         })
     }
 }
 
 impl AuthorizedQueryContext {
+    /// Parses a statement through the same closed DataFusion context used for
+    /// execution and returns its native named placeholders.
+    pub async fn parameter_names(&self, sql: &str) -> Result<BTreeSet<String>> {
+        Ok(self
+            .context
+            .state()
+            .create_logical_plan(sql)
+            .await
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .get_parameter_names()
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .into_iter()
+            .collect())
+    }
+
     /// Plans and executes a read-only statement. User predicates are evaluated
     /// above the trusted Entry filter embedded in every registered view.
     pub async fn execute(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_with_parameters(sql, HashMap::new()).await
+    }
+
+    /// Binds DataFusion-native `$name` placeholders after parsing and before
+    /// optimization. Values never become SQL text, so quotes and SQL-looking
+    /// strings retain their scalar meaning.
+    pub async fn execute_with_parameters(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
         let _permit = self
             .permits
             .clone()
             .try_acquire_owned()
             .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(self.limits.timeout, self.execute_with_permit(sql))
-            .await
-            .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_with_permit(sql, parameters),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
-    async fn execute_with_permit(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
-        let plan = self
-            .context
-            .state()
-            .create_logical_plan(sql)
-            .await
-            .map_err(AuthorizedQueryError::invalid_query)?;
-        validate_logical_plan(&plan, &self.authorized_relations)
-            .map_err(AuthorizedQueryError::unauthorized)?;
-        let optimized = self
-            .context
-            .state()
-            .optimize(&plan)
-            .map_err(AuthorizedQueryError::invalid_query)?;
-        validate_logical_plan(&optimized, &self.authorized_relations)
-            .map_err(AuthorizedQueryError::unauthorized)?;
+    /// Executes a deterministic SQL session page and its count from the same
+    /// authorized, checkpoint-pinned plan. Paging is a plan operation, never
+    /// a Rust slice over materialized JSON rows.
+    pub async fn execute_page(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<arrow_array::RecordBatch>, u64)> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_page_with_permit(sql, parameters, offset, limit),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub async fn physical_plan_for_testing(&self, sql: &str) -> Result<String> {
+        let plan = self.context.state().create_logical_plan(sql).await?;
+        validate_logical_plan(&plan, &self.authorized_relations)?;
+        let optimized = self.context.state().optimize(&plan)?;
+        validate_logical_plan(&optimized, &self.authorized_relations)?;
+        let frame = self.context.execute_logical_plan(optimized).await?;
+        let physical = frame.create_physical_plan().await?;
+        validate_physical_plan(&physical, &self.authorized_scans)?;
+        Ok(format!("{physical:?}"))
+    }
+
+    async fn execute_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let plan = self.prepared_plan(sql, parameters).await?;
+        let validation_plan = plan.clone();
         let frame = self
             .context
-            .execute_logical_plan(optimized)
+            .execute_logical_plan(plan)
             .await
             .map_err(AuthorizedQueryError::execution_failed)?;
         let max_rows_with_sentinel = self
@@ -312,6 +460,100 @@ impl AuthorizedQueryContext {
         let frame = frame
             .limit(0, Some(max_rows_with_sentinel))
             .map_err(AuthorizedQueryError::resource_limit)?;
+        let batches = self.collect_frame(frame).await?;
+        let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
+        if rows > self.limits.max_rows {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "authorized query row limit exceeded"
+            ))
+            .into());
+        }
+        // Validate after materializing the statement, but before returning
+        // any rows. Iceberg readers can observe a newer committed manifest
+        // between planning and collection; validating this point prevents a
+        // duplicate maximum revision from escaping in that interval.
+        self.validate_revision_invariants(&validation_plan).await?;
+        Ok(batches)
+    }
+
+    async fn execute_page_with_permit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<arrow_array::RecordBatch>, u64)> {
+        let plan = self.prepared_plan(sql, parameters).await?;
+        let validation_plan = plan.clone();
+        if !logical_plan_contains_sort(&plan) {
+            return Err(AuthorizedQueryError::invalid_query(anyhow!(
+                "SQL session paging requires an explicit ORDER BY"
+            ))
+            .into());
+        }
+        let frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_frame = frame
+            .clone()
+            .aggregate(
+                Vec::new(),
+                vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                    .alias("ugoite_session_count")],
+            )
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let count_batches = self.collect_frame(count_frame).await?;
+        let total = count_from_batches(&count_batches)?;
+        let page = frame
+            .limit(offset, Some(limit))
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        let batches = self.collect_frame(page).await?;
+        self.validate_revision_invariants(&validation_plan).await?;
+        Ok((batches, total))
+    }
+
+    async fn prepared_plan(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    ) -> Result<LogicalPlan> {
+        let plan = self
+            .context
+            .state()
+            .create_logical_plan(sql)
+            .await
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        let expected = plan
+            .get_parameter_names()
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .into_iter()
+            .map(|name| name.trim_start_matches('$').to_string())
+            .collect::<BTreeSet<_>>();
+        let supplied = parameters.keys().cloned().collect::<BTreeSet<_>>();
+        if expected != supplied {
+            return Err(AuthorizedQueryError::invalid_query(anyhow!(
+                "SQL parameters do not exactly match DataFusion placeholders"
+            ))
+            .into());
+        }
+        let plan = plan
+            .with_param_values(parameters)
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        validate_logical_plan(&plan, &self.authorized_relations)
+            .map_err(AuthorizedQueryError::unauthorized)?;
+        let optimized = self
+            .context
+            .state()
+            .optimize(&plan)
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        validate_logical_plan(&optimized, &self.authorized_relations)
+            .map_err(AuthorizedQueryError::unauthorized)?;
+        Ok(optimized)
+    }
+
+    async fn collect_frame(&self, frame: DataFrame) -> Result<Vec<arrow_array::RecordBatch>> {
         let task_context = Arc::new(frame.task_ctx());
         let physical = frame
             .create_physical_plan()
@@ -321,22 +563,73 @@ impl AuthorizedQueryContext {
             .map_err(AuthorizedQueryError::unauthorized)?;
         let batches = datafusion::physical_plan::collect(physical, task_context)
             .await
-            .map_err(AuthorizedQueryError::execution_failed)?;
-        let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
-        if rows > self.limits.max_rows {
-            return Err(AuthorizedQueryError::resource_limit(anyhow!(
-                "authorized query row limit exceeded"
-            ))
-            .into());
-        }
+            .map_err(classify_datafusion_error)?;
         Ok(batches)
     }
+
+    async fn validate_revision_invariants(&self, plan: &LogicalPlan) -> Result<()> {
+        let mut scanned_providers = BTreeSet::new();
+        collect_scanned_provider_addresses(plan, &mut scanned_providers);
+        for (provider, check) in &self.duplicate_head_checks {
+            let provider_address = Arc::as_ptr(provider) as *const () as usize;
+            if !scanned_providers.contains(&provider_address) {
+                continue;
+            }
+            if self
+                .collect_frame(check.clone())
+                .await?
+                .iter()
+                .any(|batch| batch.num_rows() > 0)
+            {
+                return Err(AuthorizedQueryError::RevisionInvariantViolation.into());
+            }
+        }
+        Ok(())
+    }
+}
+
+fn collect_scanned_provider_addresses(plan: &LogicalPlan, providers: &mut BTreeSet<usize>) {
+    if let LogicalPlan::TableScan(scan) = plan {
+        if let Some(source) = scan.source.as_any().downcast_ref::<DefaultTableSource>() {
+            providers.insert(Arc::as_ptr(&source.table_provider) as *const () as usize);
+        }
+    }
+    for input in plan.inputs() {
+        collect_scanned_provider_addresses(input, providers);
+    }
+}
+
+fn logical_plan_contains_sort(plan: &LogicalPlan) -> bool {
+    matches!(plan, LogicalPlan::Sort(_))
+        || plan
+            .inputs()
+            .iter()
+            .any(|input| logical_plan_contains_sort(input))
+}
+
+fn count_from_batches(batches: &[arrow_array::RecordBatch]) -> Result<u64> {
+    let batch = batches
+        .iter()
+        .find(|batch| batch.num_rows() == 1)
+        .ok_or_else(|| AuthorizedQueryError::execution_failed(anyhow!("count returned no row")))?;
+    let values = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow_array::Int64Array>()
+        .ok_or_else(|| AuthorizedQueryError::execution_failed(anyhow!("count has invalid type")))?;
+    u64::try_from(values.value(0))
+        .map_err(|error| AuthorizedQueryError::execution_failed(anyhow!(error)).into())
+}
+
+struct VisibleColumn {
+    source: String,
+    name: String,
 }
 
 fn visible_columns(
     form: &ugoite_domain::form::FormDefinition,
     policy: &ugoite_core::query::AuthorizedQueryForm,
-) -> Result<Vec<String>> {
+) -> Result<Vec<VisibleColumn>> {
     let form_columns = form
         .fields
         .iter()
@@ -349,21 +642,26 @@ fn visible_columns(
     {
         bail!("authorized query policy exposes unknown Form column {column}");
     }
-    let mut visible = policy.columns.iter().cloned().collect::<Vec<_>>();
-    if let Some(column) = policy
-        .system_columns
+    let mut visible = policy
+        .columns
         .iter()
-        .map(|column| column.as_str())
-        .find(|column| form_columns.contains(column))
+        .map(|column| VisibleColumn {
+            // Form field names are immutable Iceberg column names.
+            source: column.clone(),
+            // Unquoted DataFusion identifiers are lowercase. Preserve the
+            // physical Iceberg name internally while exposing a stable,
+            // case-insensitive SQL surface.
+            name: column.to_ascii_lowercase(),
+        })
+        .collect::<Vec<_>>();
+    visible.extend(policy.system_columns.iter().map(system_column));
+    let mut exposed = BTreeSet::new();
+    if visible
+        .iter()
+        .any(|column| !exposed.insert(column.name.clone()))
     {
-        bail!("Form column {column} collides with a query system column");
+        bail!("authorized query policy exposes duplicate column names");
     }
-    visible.extend(
-        policy
-            .system_columns
-            .iter()
-            .map(|column| column.as_str().to_string()),
-    );
     if visible.is_empty() {
         bail!(
             "authorized query policy exposes no columns for {}",
@@ -371,6 +669,22 @@ fn visible_columns(
         );
     }
     Ok(visible)
+}
+
+fn system_column(column: &QuerySystemColumn) -> VisibleColumn {
+    let (source, name) = match column {
+        QuerySystemColumn::ExternalId => ("ugoite_entry_external_id", "_ugoite_id"),
+        QuerySystemColumn::Title => ("ugoite_entry_title", "_ugoite_title"),
+        QuerySystemColumn::CreatedAt => ("ugoite_entry_created_at", "_ugoite_created_at"),
+        QuerySystemColumn::UpdatedAt => ("ugoite_entry_updated_at", "_ugoite_updated_at"),
+        QuerySystemColumn::EntryId => ("entry_id", "_ugoite_entry_id"),
+        QuerySystemColumn::EntryVersion => ("entry_version", "_ugoite_entry_version"),
+        QuerySystemColumn::CommittedAt => ("committed_at", "_ugoite_committed_at"),
+    };
+    VisibleColumn {
+        source: source.to_string(),
+        name: name.to_string(),
+    }
 }
 
 fn validate_relation(relation: &str) -> Result<()> {

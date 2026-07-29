@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use opendal::Operator;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
 use crate::integrity::RealIntegrityProvider;
@@ -448,6 +448,33 @@ impl UgoiteService {
             .collect())
     }
 
+    /// Build the Core-owned Form → Entry authorization boundary used by the
+    /// DataFusion adapter. A Form absent from this map is deliberately not a
+    /// SQL relation at all; it must not become an empty but discoverable view.
+    pub async fn authorized_form_entry_ids(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+    ) -> Result<BTreeMap<String, HashSet<String>>> {
+        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
+        let mut by_form = BTreeMap::<String, HashSet<String>>::new();
+        for entry in self.list_entries(space_id).await? {
+            let Some(entry_id) = entry.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(form) = entry.get("form").and_then(Value::as_str) else {
+                continue;
+            };
+            if allowed.contains(entry_id) {
+                by_form
+                    .entry(form.to_ascii_lowercase())
+                    .or_default()
+                    .insert(entry_id.to_string());
+            }
+        }
+        Ok(by_form)
+    }
+
     pub async fn authorized_entry_ids_for_principals(
         &self,
         space_id: &str,
@@ -463,6 +490,32 @@ impl UgoiteService {
             allowed.retain(|entry_id| next.contains(entry_id));
         }
         Ok(allowed)
+    }
+
+    pub async fn authorized_form_entry_ids_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<BTreeMap<String, HashSet<String>>> {
+        let allowed = self
+            .authorized_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        let mut by_form = BTreeMap::<String, HashSet<String>>::new();
+        for entry in self.list_entries(space_id).await? {
+            let (Some(entry_id), Some(form)) = (
+                entry.get("id").and_then(Value::as_str),
+                entry.get("form").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            if allowed.contains(entry_id) {
+                by_form
+                    .entry(form.to_ascii_lowercase())
+                    .or_default()
+                    .insert(entry_id.to_string());
+            }
+        }
+        Ok(by_form)
     }
 
     pub async fn list_entries_authorized_for_principals(
@@ -616,14 +669,34 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         sql: &str,
     ) -> Result<Value> {
+        self.create_sql_session_authorized_for_principals_with_parameters(
+            space_id,
+            principal_ids,
+            sql,
+            serde_json::Map::new(),
+            BTreeMap::new(),
+        )
+        .await
+    }
+
+    pub async fn create_sql_session_authorized_for_principals_with_parameters(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        sql: &str,
+        parameters: serde_json::Map<String, Value>,
+        parameter_types: BTreeMap<String, String>,
+    ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         let allowed = self
-            .authorized_entry_ids_for_principals(space_id, principal_ids)
+            .authorized_form_entry_ids_for_principals(space_id, principal_ids)
             .await?;
-        sql_session::create_sql_session_authorized_for_principals(
+        sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
             &self.operator,
             &self.workspace_path(space_id),
             sql,
+            parameters,
+            parameter_types,
             &allowed,
             principal_ids,
         )
@@ -705,8 +778,10 @@ impl UgoiteService {
         principal_id: Uuid,
         sql: &str,
     ) -> Result<Vec<Value>> {
-        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
-        index::execute_sql_query_authorized(
+        let allowed = self
+            .authorized_form_entry_ids(space_id, principal_id)
+            .await?;
+        index::execute_sql_query_authorized_by_form(
             &self.operator,
             &self.workspace_path(space_id),
             sql,
@@ -778,23 +853,6 @@ impl UgoiteService {
         sql_session::create_sql_session(&self.operator, &self.workspace_path(space_id), sql).await
     }
 
-    pub async fn create_sql_session_authorized(
-        &self,
-        space_id: &str,
-        principal_id: Uuid,
-        sql: &str,
-    ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
-        sql_session::create_sql_session_authorized(
-            &self.operator,
-            &self.workspace_path(space_id),
-            sql,
-            &allowed,
-        )
-        .await
-    }
-
     pub async fn get_sql_session(&self, space_id: &str, session_id: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_sql_session_id(session_id))?;
@@ -817,6 +875,26 @@ impl UgoiteService {
         .await
     }
 
+    pub async fn get_sql_session_count_authorized_for_principals(
+        &self,
+        space_id: &str,
+        session_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<u64> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_sql_session_id(session_id))?;
+        let allowed = self
+            .authorized_form_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        sql_session::get_sql_session_count_authorized_by_form(
+            &self.operator,
+            &self.workspace_path(space_id),
+            session_id,
+            &allowed,
+        )
+        .await
+    }
+
     pub async fn get_sql_session_rows(
         &self,
         space_id: &str,
@@ -830,6 +908,30 @@ impl UgoiteService {
             &self.operator,
             &self.workspace_path(space_id),
             session_id,
+            offset,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn get_sql_session_rows_authorized_for_principals(
+        &self,
+        space_id: &str,
+        session_id: &str,
+        principal_ids: &[Uuid],
+        offset: usize,
+        limit: usize,
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_sql_session_id(session_id))?;
+        let allowed = self
+            .authorized_form_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        sql_session::get_sql_session_rows_authorized_by_form(
+            &self.operator,
+            &self.workspace_path(space_id),
+            session_id,
+            &allowed,
             offset,
             limit,
         )

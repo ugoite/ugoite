@@ -47,8 +47,8 @@ requirements:
   - SPEC-ARCH-DECISIONS
   id: REQ-STO-002
   title: Space Directory Structure
-  description: Creating a Space writes meta.json and settings.json, creates forms/, assets/, materialized_views/,
-    and sql_sessions/, and bootstraps the Entry Form through the Iceberg-backed Form store.
+  description: Creating a Space writes meta.json and settings.json, creates forms/, assets/, and sql_sessions/,
+    and bootstraps the Entry Form through the Iceberg-backed Form store.
   related_spec:
   - data-model/directory-structure.md
   priority: high

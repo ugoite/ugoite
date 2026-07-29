@@ -18,7 +18,10 @@ use openidconnect::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::BTreeSet, env};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -3333,6 +3336,10 @@ async fn revoke_member(
 #[derive(Deserialize)]
 struct SqlSessionCreate {
     sql: String,
+    #[serde(default)]
+    parameters: serde_json::Map<String, Value>,
+    #[serde(default)]
+    parameter_types: BTreeMap<String, String>,
 }
 
 async fn create_sql_session(
@@ -3355,7 +3362,13 @@ async fn create_sql_session(
         Json(
             state
                 .service
-                .create_sql_session_authorized_for_principals(&space_id, &principals, &payload.sql)
+                .create_sql_session_authorized_for_principals_with_parameters(
+                    &space_id,
+                    &principals,
+                    &payload.sql,
+                    payload.parameters,
+                    payload.parameter_types,
+                )
                 .await
                 .map_err(ApiError::from_core)?,
         ),
@@ -3370,13 +3383,10 @@ async fn get_sql_session(
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     state
         .service
-        .require_sql_session_principals(
-            &space_id,
-            &session_id,
-            &authorization_principal_ids(&identity, principal_id),
-        )
+        .require_sql_session_principals(&space_id, &session_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(
@@ -3396,19 +3406,16 @@ async fn get_sql_session_count(
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     state
         .service
-        .require_sql_session_principals(
-            &space_id,
-            &session_id,
-            &authorization_principal_ids(&identity, principal_id),
-        )
+        .require_sql_session_principals(&space_id, &session_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(json!({
         "count": state
             .service
-            .get_sql_session_count(&space_id, &session_id)
+            .get_sql_session_count_authorized_for_principals(&space_id, &session_id, &principals)
             .await
             .map_err(ApiError::from_core)?,
     })))
@@ -3429,21 +3436,19 @@ async fn get_sql_session_rows(
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     state
         .service
-        .require_sql_session_principals(
-            &space_id,
-            &session_id,
-            &authorization_principal_ids(&identity, principal_id),
-        )
+        .require_sql_session_principals(&space_id, &session_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(
         state
             .service
-            .get_sql_session_rows(
+            .get_sql_session_rows_authorized_for_principals(
                 &space_id,
                 &session_id,
+                &principals,
                 query.offset.unwrap_or_default(),
                 query.limit.unwrap_or(50).min(1000),
             )

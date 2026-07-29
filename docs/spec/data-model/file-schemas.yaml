@@ -237,30 +237,6 @@ schemas:
         next_head_checksum: {type: string}
         next_head: {type: object}
         checksum: {type: string}
-  materialized_view_meta:
-    description: Metadata-only placeholder; no result rows.
-    path: spaces/{id}/materialized_views/{sql_id}/meta.json
-    schema:
-      type: object
-      required:
-      - sql_id
-      - sql
-      - created_at
-      - updated_at
-      - snapshot_id
-      properties:
-        sql_id:
-          type: string
-        sql:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        snapshot_id:
-          type: integer
   sql_session_meta:
     description: SQL session metadata; count and rows are evaluated on demand.
     path: spaces/{id}/sql_sessions/{session_id}/meta.json
@@ -274,7 +250,7 @@ schemas:
       - status
       - created_at
       - expires_at
-      - view
+      - checkpoint
       - pagination
       - count
       properties:
@@ -301,7 +277,7 @@ schemas:
           type:
           - string
           - 'null'
-        view:
+        checkpoint:
           type: object
         pagination:
           type: object

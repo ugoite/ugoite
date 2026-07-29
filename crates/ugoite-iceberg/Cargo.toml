@@ -8,6 +8,7 @@ license.workspace = true
 anyhow = "1.0"
 async-trait = "0.1"
 arrow-array = "58.4"
+arrow-json = "58.4"
 arrow-schema = "58.4"
 base64 = "0.23"
 chrono = { version = "0.4.44", features = ["serde"] }

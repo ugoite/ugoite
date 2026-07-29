@@ -17,7 +17,6 @@ pub mod iceberg_store;
 pub mod index;
 pub mod integrity;
 pub mod link;
-pub mod materialized_view;
 pub mod preferences;
 pub mod query_context;
 pub mod sample_data;
@@ -25,7 +24,6 @@ pub mod saved_sql;
 pub mod search;
 pub mod service;
 pub mod space;
-pub mod sql;
 pub mod sql_session;
 pub mod storage;
 
@@ -47,9 +45,6 @@ use arrow_array::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
-use datafusion::functions_aggregate::expr_fn::{count, max};
-use datafusion::logical_expr::JoinType;
-use datafusion::prelude::{col, lit};
 use iceberg::expr::Reference;
 use iceberg::spec::{DataFileFormat, Datum};
 use iceberg::spec::{
@@ -68,7 +63,8 @@ use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
+use tokio::sync::Semaphore;
 use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
@@ -138,6 +134,12 @@ pub struct IcebergWorkspace {
     warehouse: String,
     write: WriteConfig,
 }
+
+/// Query permits are process-wide per Space coordinate. A request creates a
+/// short-lived authorization context, but it must not thereby create a fresh
+/// production concurrency budget.
+static SPACE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Arc<Semaphore>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SchemaCommitCapability {
@@ -218,6 +220,17 @@ pub struct MaintenancePlan {
 }
 
 impl IcebergWorkspace {
+    pub(crate) fn shared_query_permits(&self, max_concurrency: usize) -> Arc<Semaphore> {
+        let key = format!("{}:{}", self.warehouse, self.space_id);
+        let mut permits = SPACE_QUERY_PERMITS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        permits
+            .entry(key)
+            .or_insert_with(|| Arc::new(Semaphore::new(max_concurrency)))
+            .clone()
+    }
+
     pub async fn open_space(
         store: SpaceCatalogStore,
         space_id: SpaceId,
@@ -891,57 +904,15 @@ impl IcebergWorkspace {
             IcebergStaticTableProvider::try_new_from_table(table.clone()).await?
         };
         context.register_table("revisions", Arc::new(provider))?;
-        let mut revisions = context.table("revisions").await?;
-        if let Some(entry_ids) = entry_ids {
-            if entry_ids.is_empty() {
-                return Ok(Vec::new());
+        let revisions = context.table("revisions").await?;
+        let scope = match entry_ids {
+            Some([]) => return Ok(Vec::new()),
+            Some(entry_ids) => {
+                ugoite_core::query::EntryScope::Only(entry_ids.iter().copied().collect())
             }
-            revisions = revisions.filter(
-                col("entry_id").in_list(
-                    entry_ids
-                        .iter()
-                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
-                        .collect(),
-                    false,
-                ),
-            )?;
-        }
-        let maxima = revisions
-            .clone()
-            .aggregate(
-                vec![col("entry_id")],
-                vec![max(col("entry_version")).alias("latest_entry_version")],
-            )?
-            .select(vec![
-                col("entry_id").alias("latest_entry_id"),
-                col("latest_entry_version"),
-            ])?;
-        let heads = revisions.join(
-            maxima,
-            JoinType::Inner,
-            &["entry_id", "entry_version"],
-            &["latest_entry_id", "latest_entry_version"],
-            None,
-        )?;
-        let duplicates = heads
-            .clone()
-            .aggregate(
-                vec![col("entry_id")],
-                vec![count(lit(1)).alias("head_count")],
-            )?
-            .filter(col("head_count").not_eq(lit(1)))?
-            .collect()
-            .await?;
-        if duplicates.iter().any(|batch| batch.num_rows() > 0) {
-            return Err(anyhow!(
-                "entry revision invariant failed: multiple revisions share a maximum entry_version"
-            ));
-        }
-        let heads = if view == RevisionView::Current {
-            heads.filter(col("operation").not_eq(lit("delete")))?
-        } else {
-            heads
+            None => ugoite_core::query::EntryScope::AllCurrent,
         };
+        let heads = crate::query_context::latest_revision_dataframe(revisions, &scope, view)?;
         Ok(heads
             .select_columns(&["entry_id", "revision_id", "entry_version"])?
             .collect()
@@ -959,11 +930,21 @@ impl IcebergWorkspace {
             .latest_revision_plan(table, entry_ids, snapshot_id, view)
             .await?;
         let mut revision_ids = Vec::new();
+        let mut entry_ids = std::collections::BTreeSet::new();
         for batch in ids {
+            let entry_values = batch
+                .column_by_name("entry_id")
+                .context("latest revision plan is missing entry_id")?;
             let values = batch
                 .column_by_name("revision_id")
                 .context("latest revision plan is missing revision_id")?;
             for row in 0..batch.num_rows() {
+                let entry_id = uuid_at(entry_values, row)?;
+                if !entry_ids.insert(entry_id) {
+                    return Err(anyhow!(
+                        "entry revision invariant failed: multiple revisions share a maximum entry_version"
+                    ));
+                }
                 revision_ids.push(Datum::uuid(uuid_at(values, row)?.as_uuid()));
             }
         }

@@ -179,7 +179,7 @@ requirements:
   - SPEC-API-REST
   id: REQ-IDX-008
   title: Ugoite SQL Query Execution
-  description: 'Execute Ugoite SQL queries against Iceberg-derived entry records via the
+  description: 'Execute read-only DataFusion SQL queries against authorized Iceberg Form relations via the
 
     existing /spaces/{space_id}/query endpoint.
 
@@ -205,11 +205,9 @@ requirements:
   - SPEC-API-REST
   id: REQ-IDX-009
   title: Ugoite SQL JOIN Support
-  description: 'Ugoite SQL MUST support JOIN queries across entries, links, and assets
+  description: 'Ugoite SQL MUST support DataFusion joins between authorized Form relations.
 
-    using INNER, LEFT, RIGHT, FULL, and CROSS joins with ON/USING/NATURAL
-
-    constraints.
+    JSON-backed entries, links, and assets SQL tables are not part of the SQL surface.
 
     '
   related_spec:

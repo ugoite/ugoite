@@ -20,7 +20,6 @@ spaces/
       checkpoints/
     forms/
     assets/
-    materialized_views/
     sql_sessions/
 
 users/
@@ -61,7 +60,6 @@ Membership operations add `members`, `member_invitations`, and `membership_versi
 | Trigger | Path | Current meaning |
 |---|---|---|
 | Response signing | `spaces/{space_id}/hmac.json` | response-signing key material |
-| Saved SQL/session use | `spaces/{space_id}/materialized_views/{sql_id}/meta.json` | metadata placeholder; no result rows |
 | SQL session creation | `spaces/{space_id}/sql_sessions/{session_id}/meta.json` | query/session metadata |
 | Asset upload | `spaces/{space_id}/assets/{asset_id}_{safe_name}` | binary object |
 | Preference update | `users/{sha256(user_id)}/preferences.json` | portable user UI preferences |

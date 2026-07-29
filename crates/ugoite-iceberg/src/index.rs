@@ -1,22 +1,125 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use arrow_json::writer::ArrayWriter;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveTime, SecondsFormat, Timelike, Utc};
 use opendal::Operator;
 use regex::Regex;
 use serde_json::{Map, Value};
 use serde_yaml;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::time::Duration;
 pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
 
 use crate::entry;
-use crate::sql;
+use crate::SpaceCheckpoint;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::{
+    AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+};
+
+const SQL_MAX_ROWS: usize = 1_000;
+const SQL_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
+const SQL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Immutable execution inputs for one authorized SQL-session page.
+///
+/// Keeping the bound parameters, checkpoint, and page together makes the
+/// session's reproducible query coordinate explicit at its execution boundary.
+pub struct AuthorizedSqlSessionPage {
+    pub parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    pub checkpoint: SpaceCheckpoint,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+/// Converts transport values to typed DataFusion parameters. A null must carry
+/// a declared type, so it can never fall back to string substitution or an
+/// untyped SQL NULL.
+pub fn datafusion_parameters(
+    values: &Map<String, Value>,
+    types: &BTreeMap<String, String>,
+) -> Result<HashMap<String, datafusion::scalar::ScalarValue>> {
+    values
+        .iter()
+        .map(|(name, value)| {
+            let kind = types
+                .get(name)
+                .ok_or_else(|| anyhow!("SQL parameter {name} has no declared type"))?;
+            let scalar = match (kind.as_str(), value) {
+                ("string", Value::String(value)) => {
+                    datafusion::scalar::ScalarValue::Utf8(Some(value.clone()))
+                }
+                ("boolean", Value::Bool(value)) => {
+                    datafusion::scalar::ScalarValue::Boolean(Some(*value))
+                }
+                ("integer", Value::Number(value)) => datafusion::scalar::ScalarValue::Int64(
+                    value
+                        .as_i64()
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be an integer"))?
+                        .into(),
+                ),
+                ("float", Value::Number(value)) => datafusion::scalar::ScalarValue::Float64(
+                    value
+                        .as_f64()
+                        .ok_or_else(|| anyhow!("SQL parameter {name} must be a float"))?
+                        .into(),
+                ),
+                ("timestamp", Value::String(value)) => {
+                    let value = DateTime::parse_from_rfc3339(value)
+                        .map_err(|_| anyhow!("SQL parameter {name} must be an RFC3339 timestamp"))?
+                        .timestamp_micros();
+                    datafusion::scalar::ScalarValue::TimestampMicrosecond(Some(value), None)
+                }
+                ("string", Value::Null) => datafusion::scalar::ScalarValue::Utf8(None),
+                ("boolean", Value::Null) => datafusion::scalar::ScalarValue::Boolean(None),
+                ("integer", Value::Null) => datafusion::scalar::ScalarValue::Int64(None),
+                ("float", Value::Null) => datafusion::scalar::ScalarValue::Float64(None),
+                ("timestamp", Value::Null) => {
+                    datafusion::scalar::ScalarValue::TimestampMicrosecond(None, None)
+                }
+                ("string" | "boolean" | "integer" | "float" | "timestamp", _) => {
+                    return Err(anyhow!(
+                        "SQL parameter {name} does not match declared type {kind}"
+                    ))
+                }
+                _ => return Err(anyhow!("SQL parameter {name} has unsupported type {kind}")),
+            };
+            Ok((name.clone(), scalar))
+        })
+        .collect()
+}
+
+pub async fn datafusion_parameter_names(
+    _op: &Operator,
+    _ws_path: &str,
+    sql: &str,
+) -> Result<BTreeSet<String>> {
+    use datafusion::sql::parser::{DFParser, Statement};
+    use datafusion::sql::sqlparser::ast::{visit_expressions, Expr, Value};
+    use std::ops::ControlFlow;
+
+    // Saving SQL validates only DataFusion syntax and native placeholders.
+    // Relation resolution remains an execution-time concern: a saved query may
+    // legitimately target a Form that an operator creates later.
+    let statements = DFParser::parse_sql(sql).context("parse saved SQL with DataFusion")?;
+    let mut names = BTreeSet::new();
+    for statement in statements {
+        if let Statement::Statement(statement) = statement {
+            let _ = visit_expressions(statement.as_ref(), |expression| {
+                if let Expr::Value(value) = expression {
+                    if let Value::Placeholder(name) = &value.value {
+                        names.insert(name.clone());
+                    }
+                }
+                ControlFlow::<()>::Continue(())
+            });
+        }
+    }
+    Ok(names)
+}
 
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
-    let forms = load_forms(op, ws_path).await?;
-    let entries_map = collect_entries(op, ws_path, &forms).await?;
-
     let query_value = if query.trim().is_empty() {
         Value::Null
     } else {
@@ -24,10 +127,20 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
     };
 
     if let Some(sql_query) = extract_sql_query(&query_value) {
-        let parsed = sql::parse_sql(&sql_query)?;
-        let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
-        return sql::filter_entries_by_sql(&tables, &parsed);
+        return execute_datafusion_sql(
+            op,
+            ws_path,
+            &sql_query,
+            EntryScope::AllCurrent,
+            None,
+            None,
+            None,
+        )
+        .await;
     }
+
+    let forms = load_forms(op, ws_path).await?;
+    let entries_map = collect_entries(op, ws_path, &forms).await?;
 
     let filters: Option<Map<String, Value>> = query_value.as_object().cloned();
 
@@ -49,11 +162,50 @@ pub async fn execute_sql_query(
     ws_path: &str,
     sql_query: &str,
 ) -> Result<Vec<Value>> {
-    let forms = load_forms(op, ws_path).await?;
-    let entries_map = collect_entries(op, ws_path, &forms).await?;
-    let parsed = sql::parse_sql(sql_query)?;
-    let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
-    sql::filter_entries_by_sql(&tables, &parsed)
+    execute_datafusion_sql(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        None,
+        None,
+    )
+    .await
+}
+
+pub async fn execute_sql_query_page(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    execute_sql_query_page_with_parameters(op, ws_path, sql_query, HashMap::new(), offset, limit)
+        .await
+}
+
+pub async fn execute_sql_query_page_with_parameters(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        None,
+        None,
+        offset,
+        limit,
+        parameters,
+    )
+    .await
 }
 
 pub async fn execute_sql_query_authorized(
@@ -62,15 +214,130 @@ pub async fn execute_sql_query_authorized(
     sql_query: &str,
     readable_entry_ids: &HashSet<String>,
 ) -> Result<Vec<Value>> {
-    let forms = load_forms(op, ws_path).await?;
-    let entries_map = collect_entries(op, ws_path, &forms)
-        .await?
-        .into_iter()
-        .filter(|(entry_id, _)| readable_entry_ids.contains(entry_id))
-        .collect();
-    let parsed = sql::parse_sql(sql_query)?;
-    let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
-    sql::filter_entries_by_sql(&tables, &parsed)
+    execute_datafusion_sql(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::Only(entry_scope(readable_entry_ids)),
+        None,
+        None,
+        None,
+    )
+    .await
+}
+
+/// Production authorization entry point. The service supplies a relation
+/// scoped map rather than one global Entry-ID set, so a Form with no readable
+/// Entries is never registered and remains unresolvable to DataFusion.
+pub async fn execute_sql_query_authorized_by_form(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+) -> Result<Vec<Value>> {
+    let relation_scopes = readable_entries_by_form
+        .iter()
+        .map(|(relation, entries)| {
+            (
+                relation.to_ascii_lowercase(),
+                EntryScope::Only(entry_scope(entries)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    execute_datafusion_sql(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
+        None,
+    )
+    .await
+}
+
+pub async fn execute_sql_query_authorized_by_form_page(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    execute_sql_query_authorized_by_form_page_with_parameters(
+        op,
+        ws_path,
+        sql_query,
+        readable_entries_by_form,
+        HashMap::new(),
+        offset,
+        limit,
+    )
+    .await
+}
+
+pub async fn execute_sql_query_authorized_by_form_page_with_parameters(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    let relation_scopes = readable_entries_by_form
+        .iter()
+        .map(|(relation, entries)| {
+            (
+                relation.to_ascii_lowercase(),
+                EntryScope::Only(entry_scope(entries)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
+        None,
+        offset,
+        limit,
+        parameters,
+    )
+    .await
+}
+
+pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    page: AuthorizedSqlSessionPage,
+) -> Result<(Vec<Value>, u64)> {
+    let relation_scopes = readable_entries_by_form
+        .iter()
+        .map(|(relation, entries)| {
+            (
+                relation.to_ascii_lowercase(),
+                EntryScope::Only(entry_scope(entries)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
+        Some(page.checkpoint),
+        page.offset,
+        page.limit,
+        page.parameters,
+    )
+    .await
 }
 
 pub async fn query_index_authorized(
@@ -79,22 +346,29 @@ pub async fn query_index_authorized(
     query: &str,
     readable_entry_ids: &HashSet<String>,
 ) -> Result<Vec<Value>> {
-    let forms = load_forms(op, ws_path).await?;
-    let entries_map: Map<String, Value> = collect_entries(op, ws_path, &forms)
-        .await?
-        .into_iter()
-        .filter(|(entry_id, _)| readable_entry_ids.contains(entry_id))
-        .collect();
     let query_value = if query.trim().is_empty() {
         Value::Null
     } else {
         serde_json::from_str(query).unwrap_or(Value::Null)
     };
     if let Some(sql_query) = extract_sql_query(&query_value) {
-        let parsed = sql::parse_sql(&sql_query)?;
-        let tables = build_sql_tables(op, ws_path, &forms, &entries_map).await?;
-        return sql::filter_entries_by_sql(&tables, &parsed);
+        return execute_datafusion_sql(
+            op,
+            ws_path,
+            &sql_query,
+            EntryScope::Only(entry_scope(readable_entry_ids)),
+            None,
+            None,
+            None,
+        )
+        .await;
     }
+    let forms = load_forms(op, ws_path).await?;
+    let entries_map: Map<String, Value> = collect_entries(op, ws_path, &forms)
+        .await?
+        .into_iter()
+        .filter(|(entry_id, _)| readable_entry_ids.contains(entry_id))
+        .collect();
     let filters = query_value.as_object();
     entries_map
         .into_values()
@@ -114,15 +388,198 @@ pub async fn execute_sql_query_scoped(
     ws_path: &str,
     sql_query: &str,
     readable_forms: &[String],
-    include_untyped_entries: bool,
 ) -> Result<Vec<Value>> {
-    let forms = load_forms(op, ws_path).await?;
-    let entries_map = collect_entries(op, ws_path, &forms).await?;
-    let scoped_entries =
-        filter_entries_for_sql_scope(entries_map, readable_forms, include_untyped_entries);
-    let parsed = sql::parse_sql(sql_query)?;
-    let tables = build_sql_tables(op, ws_path, &forms, &scoped_entries).await?;
-    sql::filter_entries_by_sql(&tables, &parsed)
+    let readable_forms = readable_forms
+        .iter()
+        .map(|form| form.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    execute_datafusion_sql(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        Some(&readable_forms),
+        None,
+        None,
+    )
+    .await
+}
+
+pub async fn execute_sql_query_scoped_page(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_forms: &[String],
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    let readable_forms = readable_forms
+        .iter()
+        .map(|form| form.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        Some(&readable_forms),
+        None,
+        None,
+        offset,
+        limit,
+        HashMap::new(),
+    )
+    .await
+}
+
+fn entry_scope(entry_ids: &HashSet<String>) -> BTreeSet<ugoite_domain::id::EntryId> {
+    entry_ids
+        .iter()
+        .map(|entry_id| {
+            Uuid::parse_str(entry_id)
+                .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
+                .into()
+        })
+        .collect()
+}
+
+async fn execute_datafusion_sql(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+) -> Result<Vec<Value>> {
+    let context = datafusion_sql_context(
+        op,
+        ws_path,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let batches = context.execute(sql).await.map_err(map_sql_error)?;
+    record_batches_to_values(&batches)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_datafusion_sql_page(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    offset: usize,
+    limit: usize,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+) -> Result<(Vec<Value>, u64)> {
+    let context = datafusion_sql_context(
+        op,
+        ws_path,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let (batches, count) = context
+        .execute_page(sql, parameters, offset, limit)
+        .await
+        .map_err(map_sql_error)?;
+    Ok((record_batches_to_values(&batches)?, count))
+}
+
+async fn datafusion_sql_context(
+    op: &Operator,
+    ws_path: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let forms = workspace.list_forms().await?;
+    let mut policy_forms = BTreeMap::new();
+    for form in forms {
+        let relation = form.name.to_ascii_lowercase();
+        let relation_entry_scope = match relation_scopes {
+            Some(scopes) => match scopes.get(&relation) {
+                Some(scope) => scope.clone(),
+                None => continue,
+            },
+            None => entry_scope.clone(),
+        };
+        if allowed_relations.is_some_and(|allowed| !allowed.contains(&relation)) {
+            continue;
+        }
+        policy_forms.insert(
+            form.id,
+            AuthorizedQueryForm {
+                relation,
+                entry_scope: relation_entry_scope,
+                columns: form.fields.iter().map(|field| field.name.clone()).collect(),
+                system_columns: [
+                    QuerySystemColumn::ExternalId,
+                    QuerySystemColumn::Title,
+                    QuerySystemColumn::CreatedAt,
+                    QuerySystemColumn::UpdatedAt,
+                ]
+                .into_iter()
+                .collect(),
+            },
+        );
+    }
+    workspace
+        .authorized_query_context(AuthorizedQueryPolicy {
+            forms: policy_forms,
+            checkpoint,
+            limits: QueryLimits {
+                max_memory_bytes: SQL_MAX_MEMORY_BYTES,
+                max_rows: SQL_MAX_ROWS,
+                timeout: SQL_TIMEOUT,
+                max_concurrency: 1,
+                allowed_functions: BTreeSet::new(),
+            },
+        })
+        .await
+        .context("create DataFusion SQL context")
+}
+
+fn record_batches_to_values(batches: &[arrow_array::RecordBatch]) -> Result<Vec<Value>> {
+    let mut writer = ArrayWriter::new(Vec::new());
+    writer
+        .write_batches(&batches.iter().collect::<Vec<_>>())
+        .context("encode DataFusion result rows as JSON")?;
+    writer.finish().context("finish DataFusion JSON encoding")?;
+    serde_json::from_slice(&writer.into_inner()).context("decode DataFusion result rows")
+}
+
+fn map_sql_error(error: anyhow::Error) -> anyhow::Error {
+    use crate::query_context::AuthorizedQueryError;
+
+    let message = match error.downcast_ref::<AuthorizedQueryError>() {
+        Some(AuthorizedQueryError::InvalidQuery { .. }) => "invalid SQL query",
+        Some(AuthorizedQueryError::UnauthorizedQueryFeature { .. }) => {
+            "unsupported SQL relation, statement, or function"
+        }
+        Some(AuthorizedQueryError::ResourceLimitExceeded { .. }) => {
+            "SQL query exceeds the configured resource limit"
+        }
+        Some(AuthorizedQueryError::RevisionInvariantViolation) => {
+            "entry revision invariant failed: multiple revisions share a maximum entry_version"
+        }
+        Some(AuthorizedQueryError::QueryTimedOut) => "SQL query timed out",
+        Some(AuthorizedQueryError::QueryExecutionFailed { .. }) => "SQL query execution failed",
+        None => return error,
+    };
+    AppError::invalid_input(ErrorCode::InvalidInput, message).into()
 }
 
 fn extract_sql_query(value: &Value) -> Option<String> {
@@ -633,27 +1090,6 @@ async fn collect_entries(
     Ok(entries)
 }
 
-fn filter_entries_for_sql_scope(
-    entries_map: Map<String, Value>,
-    readable_forms: &[String],
-    include_untyped_entries: bool,
-) -> Map<String, Value> {
-    let readable_form_set: HashSet<String> = readable_forms
-        .iter()
-        .map(|form_name| form_name.to_lowercase())
-        .collect();
-
-    entries_map
-        .into_iter()
-        .filter(|(_entry_id, entry_value)| {
-            match entry_value.get("form").and_then(|value| value.as_str()) {
-                Some(form_name) => readable_form_set.contains(&form_name.to_lowercase()),
-                None => include_untyped_entries,
-            }
-        })
-        .collect()
-}
-
 async fn build_record(
     ws_path: &str,
     form_name: &str,
@@ -690,80 +1126,4 @@ async fn build_record(
     });
 
     Ok(Some(record))
-}
-
-async fn build_sql_tables(
-    op: &Operator,
-    ws_path: &str,
-    forms: &HashMap<String, Value>,
-    entries_map: &Map<String, Value>,
-) -> Result<HashMap<String, Vec<Value>>> {
-    let mut tables: HashMap<String, Vec<Value>> = HashMap::new();
-    tables.insert(
-        "entries".to_string(),
-        entries_map.values().cloned().collect::<Vec<_>>(),
-    );
-
-    for form_name in forms.keys() {
-        let rows: Vec<Value> = entries_map
-            .values()
-            .filter(|entry| {
-                entry
-                    .get("form")
-                    .and_then(|v| v.as_str())
-                    .map(|form| form.eq_ignore_ascii_case(form_name))
-                    .unwrap_or(false)
-            })
-            .cloned()
-            .collect();
-        tables.insert(form_name.to_lowercase(), rows);
-    }
-
-    let visible_entry_ids: HashSet<String> = entries_map.keys().cloned().collect();
-    let mut entry_form_map: HashMap<String, String> = HashMap::new();
-    for (entry_id, entry_value) in entries_map {
-        if let Some(form) = entry_value.get("form").and_then(|v| v.as_str()) {
-            entry_form_map.insert(entry_id.to_string(), form.to_string());
-        }
-    }
-
-    let mut asset_rows = Vec::new();
-    let entry_rows = entry::list_entry_rows(op, ws_path).await?;
-    let mut link_rows = Vec::new();
-    for (_form_name, row) in entry_rows {
-        if row.deleted || !visible_entry_ids.contains(&row.entry_id) {
-            continue;
-        }
-        for link_item in row.links {
-            if !visible_entry_ids.contains(&link_item.source)
-                || !visible_entry_ids.contains(&link_item.target)
-            {
-                continue;
-            }
-            let source_form = entry_form_map.get(&link_item.source).cloned();
-            let target_form = entry_form_map.get(&link_item.target).cloned();
-            link_rows.push(serde_json::json!({
-                "id": link_item.id,
-                "source": link_item.source,
-                "target": link_item.target,
-                "kind": link_item.kind,
-                "source_form": source_form,
-                "target_form": target_form,
-            }));
-        }
-        for asset in row.assets {
-            if let Some(obj) = asset.as_object() {
-                asset_rows.push(serde_json::json!({
-                    "id": obj.get("id").cloned().unwrap_or(Value::Null),
-                    "entry_id": row.entry_id,
-                    "name": obj.get("name").cloned().unwrap_or(Value::Null),
-                    "path": obj.get("path").cloned().unwrap_or(Value::Null),
-                }));
-            }
-        }
-    }
-    tables.insert("links".to_string(), link_rows);
-    tables.insert("assets".to_string(), asset_rows);
-
-    Ok(tables)
 }

@@ -76,13 +76,7 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
 
     assert_eq!(mode(&spaces_root)?, 0o700);
     assert_eq!(mode(&space_dir)?, 0o700);
-    for dir_name in [
-        "security",
-        "forms",
-        "assets",
-        "materialized_views",
-        "sql_sessions",
-    ] {
+    for dir_name in ["security", "forms", "assets", "sql_sessions"] {
         assert_eq!(mode(&space_dir.join(dir_name))?, 0o700);
     }
     for file_name in ["meta.json", "settings.json"] {

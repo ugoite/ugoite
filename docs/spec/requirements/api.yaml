@@ -250,12 +250,12 @@ requirements:
   - SPEC-DM-SQL-SESSIONS
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-007
-  title: Saved SQL variable embedding and SQL validity
-  description: 'Saved SQL entries MUST embed each declared variable in the SQL text using
+  title: Saved SQL template validation
+  description: 'Saved SQL entries MUST declare every {{variable_name}} template reference.
 
-    {{variable_name}} placeholders, and the SQL must be valid Ugoite SQL after
+    Template execution is rejected until values are bound through DataFusion parameters;
 
-    substituting placeholders with literal values.
+    Ugoite MUST NOT substitute literal text into SQL.
 
     '
   related_spec:
@@ -293,14 +293,13 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-008
   title: SQL session query API
-  description: The API creates SQL query sessions and exposes status, count, and paged rows. Session metadata is persisted; result rows are evaluated from current Space tables. No stream endpoint is shipped.
+  description: The API creates SQL query sessions and exposes status, count, and paged rows. Session metadata persists one SpaceCheckpoint; result rows are evaluated from that fixed coordinate. No stream endpoint is shipped.
   related_spec:
   - api/rest.md#endpoints
   priority: high
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-iceberg/tests/test_materialized_view.rs
   - file: crates/ugoite-iceberg/tests/test_sql_sessions.rs
 - set_id: REQCAT-API
   source_file: requirements/api.yaml

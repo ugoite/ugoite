@@ -5,6 +5,7 @@ use serde_json::json;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::saved_sql::{self, SqlPayload};
 use ugoite_iceberg::space;
+use ugoite_iceberg::sql_session;
 
 #[tokio::test]
 /// REQ-API-006
@@ -16,7 +17,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM entries WHERE updated_at >= {{since}}".to_string(),
+        sql: "SELECT * FROM sql WHERE _ugoite_updated_at >= $since".to_string(),
         variables: json!([
             {
                 "type": "date",
@@ -47,8 +48,9 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let update_payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM entries WHERE updated_at >= {{since}} ORDER BY updated_at DESC"
-            .to_string(),
+        sql:
+            "SELECT * FROM sql WHERE _ugoite_updated_at >= $since ORDER BY _ugoite_updated_at DESC"
+                .to_string(),
         variables: payload.variables.clone(),
     };
 
@@ -83,7 +85,8 @@ async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
     let integrity = FakeIntegrityProvider;
     let payload = SqlPayload {
         name: "Advanced search - form: Meeting - memo=s".to_string(),
-        sql: "SELECT * FROM entries WHERE form = 'Meeting' AND properties.\"memo\" = 's' ORDER BY updated_at DESC LIMIT 50".to_string(),
+        sql: "SELECT _ugoite_id, _ugoite_title FROM sql ORDER BY _ugoite_updated_at DESC LIMIT 50"
+            .to_string(),
         variables: json!([]),
     };
 
@@ -110,7 +113,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let missing_placeholder = SqlPayload {
         name: "Missing placeholder".to_string(),
-        sql: "SELECT * FROM entries".to_string(),
+        sql: "SELECT * FROM sql".to_string(),
         variables: json!([
             {
                 "type": "date",
@@ -134,7 +137,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let undefined_placeholder = SqlPayload {
         name: "Undefined placeholder".to_string(),
-        sql: "SELECT * FROM entries WHERE updated_at >= {{since}}".to_string(),
+        sql: "SELECT * FROM sql WHERE _ugoite_updated_at >= $since".to_string(),
         variables: json!([]),
     };
 
@@ -152,11 +155,11 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let invalid_sql = SqlPayload {
         name: "Invalid SQL".to_string(),
-        sql: "FROM entries".to_string(),
+        sql: "SELECT * FROM missing".to_string(),
         variables: json!([]),
     };
 
-    let invalid_err = saved_sql::create_sql(
+    saved_sql::create_sql(
         &op,
         ws_path,
         "sql-invalid",
@@ -164,9 +167,15 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
         "author",
         &integrity,
     )
+    .await?;
+    let session = sql_session::create_sql_session(&op, ws_path, &invalid_sql.sql).await?;
+    assert!(sql_session::get_sql_session_count(
+        &op,
+        ws_path,
+        session["id"].as_str().expect("session id"),
+    )
     .await
-    .unwrap_err();
-    assert!(invalid_err.to_string().contains("UGOITE_SQL_VALIDATION"));
+    .is_err());
 
     Ok(())
 }
