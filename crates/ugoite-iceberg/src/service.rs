@@ -863,6 +863,26 @@ impl UgoiteService {
         .await
     }
 
+    pub async fn get_sql_session_count_authorized_for_principals(
+        &self,
+        space_id: &str,
+        session_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<u64> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_sql_session_id(session_id))?;
+        let allowed = self
+            .authorized_form_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        sql_session::get_sql_session_count_authorized_by_form(
+            &self.operator,
+            &self.workspace_path(space_id),
+            session_id,
+            &allowed,
+        )
+        .await
+    }
+
     pub async fn get_sql_session_rows(
         &self,
         space_id: &str,
@@ -876,6 +896,30 @@ impl UgoiteService {
             &self.operator,
             &self.workspace_path(space_id),
             session_id,
+            offset,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn get_sql_session_rows_authorized_for_principals(
+        &self,
+        space_id: &str,
+        session_id: &str,
+        principal_ids: &[Uuid],
+        offset: usize,
+        limit: usize,
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_sql_session_id(session_id))?;
+        let allowed = self
+            .authorized_form_entry_ids_for_principals(space_id, principal_ids)
+            .await?;
+        sql_session::get_sql_session_rows_authorized_by_form(
+            &self.operator,
+            &self.workspace_path(space_id),
+            session_id,
+            &allowed,
             offset,
             limit,
         )

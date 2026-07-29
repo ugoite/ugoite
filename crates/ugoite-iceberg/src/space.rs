@@ -98,13 +98,7 @@ fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
 
     set_owner_only_mode(spaces_root, 0o700)?;
     set_owner_only_mode(&space_dir, 0o700)?;
-    for dir in [
-        "security",
-        "forms",
-        "assets",
-        "materialized_views",
-        "sql_sessions",
-    ] {
+    for dir in ["security", "forms", "assets", "sql_sessions"] {
         set_owner_only_mode(&space_dir.join(dir), 0o700)?;
     }
     for file in ["meta.json", "settings.json"] {
@@ -138,13 +132,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
 
     storage.create_dir(&format!("{ws_path}/")).await?;
 
-    for dir in [
-        "security",
-        "forms",
-        "assets",
-        "materialized_views",
-        "sql_sessions",
-    ] {
+    for dir in ["security", "forms", "assets", "sql_sessions"] {
         storage.create_dir(&format!("{ws_path}/{dir}/")).await?;
     }
 

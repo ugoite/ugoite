@@ -1,18 +1,10 @@
 ---
-title: 'SQL sessions and materialized-view metadata'
+title: 'SQL sessions'
 ---
 
-The current implementation persists query metadata through OpenDAL and re-evaluates results from current Entry tables. It does not require an RDB, queue, or shared filesystem beyond the configured storage operator.
-
-## Saved SQL and materialized-view metadata
-
-Creating or updating saved SQL creates or refreshes:
-
-```text
-spaces/{space_id}/materialized_views/{sql_id}/meta.json
-```
-
-The current JSON fields are `sql_id`, `sql`, `created_at`, `updated_at`, and a generated numeric `snapshot_id`. This is a metadata placeholder only: no materialized result rows or inherited Form ACL policy are implemented. Deleting saved SQL deletes the corresponding metadata directory.
+The implementation persists query metadata through OpenDAL and re-evaluates
+results from one fixed Iceberg checkpoint. It does not require an RDB, queue,
+or shared filesystem beyond the configured storage operator.
 
 ## Session metadata
 
@@ -34,12 +26,7 @@ The file contains:
   "created_at": "2026-03-11T10:10:00Z",
   "expires_at": "2026-03-11T10:20:00Z",
   "error": null,
-  "view": {
-    "sql_id": "saved-or-generated-sql-id",
-    "snapshot_id": 42,
-    "snapshot_at": "2026-03-11T10:10:00Z",
-    "schema_version": 1
-  },
+  "checkpoint": {"catalog_generation": 42, "tables": []},
   "pagination": {
     "strategy": "offset",
     "order_by": ["updated_at", "id"],
@@ -50,6 +37,8 @@ The file contains:
 }
 ```
 
-Rows are not stored in the session directory. Status reads load the metadata file; count and paged-row requests re-run the SQL against the caller’s current readable scope. There is no stream endpoint.
+Rows are not stored in the session directory. Status reads load the metadata
+file; count and paged-row requests re-run the SQL against the checkpoint and
+the caller's current readable scope. There is no stream endpoint.
 
 Sessions expire after ten minutes by default. Accessing an expired session marks it expired and returns an expiration error. A periodic cleanup worker is not shipped, so operators should not assume automatic background deletion.

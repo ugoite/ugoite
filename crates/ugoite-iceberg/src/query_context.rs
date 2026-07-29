@@ -67,26 +67,9 @@ pub(crate) fn latest_revision_dataframe(
         &["latest_entry_id", "latest_entry_version"],
         None,
     )?;
-    // A duplicate maximum version is a corrupt append-only history. Keep the
-    // validation inside the lazy DataFusion plan so context construction never
-    // scans unrelated Forms; a corrupt Entry is fail-closed and cannot become
-    // visible through either normal reads or SQL.
-    let valid_heads = heads
-        .clone()
-        .aggregate(
-            vec![col("entry_id")],
-            vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
-                .alias("ugoite_latest_head_count")],
-        )?
-        .filter(col("ugoite_latest_head_count").eq(lit(1)))?
-        .select(vec![col("entry_id").alias("ugoite_valid_entry_id")])?;
-    let heads = heads.join(
-        valid_heads,
-        datafusion::logical_expr::JoinType::Inner,
-        &["entry_id"],
-        &["ugoite_valid_entry_id"],
-        None,
-    )?;
+    // Never silently discard a duplicate maximum version. Consumers validate
+    // the resulting cardinality as an append-only-history invariant and fail
+    // the query rather than selecting an arbitrary revision.
     if view == crate::RevisionView::Current {
         Ok(heads.filter(col("operation").not_eq(lit("delete")))?)
     } else {
@@ -352,6 +335,21 @@ impl IcebergWorkspace {
 }
 
 impl AuthorizedQueryContext {
+    /// Parses a statement through the same closed DataFusion context used for
+    /// execution and returns its native named placeholders.
+    pub async fn parameter_names(&self, sql: &str) -> Result<BTreeSet<String>> {
+        Ok(self
+            .context
+            .state()
+            .create_logical_plan(sql)
+            .await
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .get_parameter_names()
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .into_iter()
+            .collect())
+    }
+
     /// Plans and executes a read-only statement. User predicates are evaluated
     /// above the trusted Entry filter embedded in every registered view.
     pub async fn execute(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {

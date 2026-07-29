@@ -12,6 +12,7 @@ pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
 
 use crate::entry;
+use crate::SpaceCheckpoint;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
@@ -78,6 +79,17 @@ pub fn datafusion_parameters(
         .collect()
 }
 
+pub async fn datafusion_parameter_names(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+) -> Result<BTreeSet<String>> {
+    datafusion_sql_context(op, ws_path, EntryScope::AllCurrent, None, None, None)
+        .await?
+        .parameter_names(sql)
+        .await
+}
+
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
     let query_value = if query.trim().is_empty() {
         Value::Null
@@ -86,8 +98,16 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
     };
 
     if let Some(sql_query) = extract_sql_query(&query_value) {
-        return execute_datafusion_sql(op, ws_path, &sql_query, EntryScope::AllCurrent, None, None)
-            .await;
+        return execute_datafusion_sql(
+            op,
+            ws_path,
+            &sql_query,
+            EntryScope::AllCurrent,
+            None,
+            None,
+            None,
+        )
+        .await;
     }
 
     let forms = load_forms(op, ws_path).await?;
@@ -113,7 +133,16 @@ pub async fn execute_sql_query(
     ws_path: &str,
     sql_query: &str,
 ) -> Result<Vec<Value>> {
-    execute_datafusion_sql(op, ws_path, sql_query, EntryScope::AllCurrent, None, None).await
+    execute_datafusion_sql(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        None,
+        None,
+    )
+    .await
 }
 
 pub async fn execute_sql_query_page(
@@ -142,6 +171,7 @@ pub async fn execute_sql_query_page_with_parameters(
         EntryScope::AllCurrent,
         None,
         None,
+        None,
         offset,
         limit,
         parameters,
@@ -160,6 +190,7 @@ pub async fn execute_sql_query_authorized(
         ws_path,
         sql_query,
         EntryScope::Only(entry_scope(readable_entry_ids)),
+        None,
         None,
         None,
     )
@@ -191,6 +222,7 @@ pub async fn execute_sql_query_authorized_by_form(
         EntryScope::AllCurrent,
         None,
         Some(&relation_scopes),
+        None,
     )
     .await
 }
@@ -240,6 +272,41 @@ pub async fn execute_sql_query_authorized_by_form_page_with_parameters(
         EntryScope::AllCurrent,
         None,
         Some(&relation_scopes),
+        None,
+        offset,
+        limit,
+        parameters,
+    )
+    .await
+}
+
+pub async fn execute_sql_query_authorized_by_form_page_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    checkpoint: SpaceCheckpoint,
+    offset: usize,
+    limit: usize,
+) -> Result<(Vec<Value>, u64)> {
+    let relation_scopes = readable_entries_by_form
+        .iter()
+        .map(|(relation, entries)| {
+            (
+                relation.to_ascii_lowercase(),
+                EntryScope::Only(entry_scope(entries)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    execute_datafusion_sql_page(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
+        Some(checkpoint),
         offset,
         limit,
         parameters,
@@ -264,6 +331,7 @@ pub async fn query_index_authorized(
             ws_path,
             &sql_query,
             EntryScope::Only(entry_scope(readable_entry_ids)),
+            None,
             None,
             None,
         )
@@ -306,6 +374,7 @@ pub async fn execute_sql_query_scoped(
         EntryScope::AllCurrent,
         Some(&readable_forms),
         None,
+        None,
     )
     .await
 }
@@ -328,6 +397,7 @@ pub async fn execute_sql_query_scoped_page(
         sql_query,
         EntryScope::AllCurrent,
         Some(&readable_forms),
+        None,
         None,
         offset,
         limit,
@@ -354,11 +424,18 @@ async fn execute_datafusion_sql(
     entry_scope: EntryScope,
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
 ) -> Result<Vec<Value>> {
-    let context =
-        datafusion_sql_context(op, ws_path, entry_scope, allowed_relations, relation_scopes)
-            .await
-            .map_err(map_sql_error)?;
+    let context = datafusion_sql_context(
+        op,
+        ws_path,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+    )
+    .await
+    .map_err(map_sql_error)?;
     let batches = context.execute(sql).await.map_err(map_sql_error)?;
     record_batches_to_values(&batches)
 }
@@ -371,14 +448,21 @@ async fn execute_datafusion_sql_page(
     entry_scope: EntryScope,
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
     offset: usize,
     limit: usize,
     parameters: HashMap<String, datafusion::scalar::ScalarValue>,
 ) -> Result<(Vec<Value>, u64)> {
-    let context =
-        datafusion_sql_context(op, ws_path, entry_scope, allowed_relations, relation_scopes)
-            .await
-            .map_err(map_sql_error)?;
+    let context = datafusion_sql_context(
+        op,
+        ws_path,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+    )
+    .await
+    .map_err(map_sql_error)?;
     let (batches, count) = context
         .execute_page(sql, parameters, offset, limit)
         .await
@@ -392,6 +476,7 @@ async fn datafusion_sql_context(
     entry_scope: EntryScope,
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     let forms = workspace.list_forms().await?;
@@ -428,7 +513,7 @@ async fn datafusion_sql_context(
     workspace
         .authorized_query_context(AuthorizedQueryPolicy {
             forms: policy_forms,
-            checkpoint: None,
+            checkpoint,
             limits: QueryLimits {
                 max_memory_bytes: SQL_MAX_MEMORY_BYTES,
                 max_rows: SQL_MAX_ROWS,

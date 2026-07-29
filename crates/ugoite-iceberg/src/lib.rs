@@ -16,7 +16,6 @@ pub mod iceberg_store;
 pub mod index;
 pub mod integrity;
 pub mod link;
-pub mod materialized_view;
 pub mod preferences;
 pub mod query_context;
 pub mod sample_data;
@@ -915,11 +914,21 @@ impl IcebergWorkspace {
             .latest_revision_plan(table, entry_ids, snapshot_id, view)
             .await?;
         let mut revision_ids = Vec::new();
+        let mut entry_ids = std::collections::BTreeSet::new();
         for batch in ids {
+            let entry_values = batch
+                .column_by_name("entry_id")
+                .context("latest revision plan is missing entry_id")?;
             let values = batch
                 .column_by_name("revision_id")
                 .context("latest revision plan is missing revision_id")?;
             for row in 0..batch.num_rows() {
+                let entry_id = uuid_at(entry_values, row)?;
+                if !entry_ids.insert(entry_id) {
+                    return Err(anyhow!(
+                        "entry revision invariant failed: multiple revisions share a maximum entry_version"
+                    ));
+                }
                 revision_ids.push(Datum::uuid(uuid_at(values, row)?.as_uuid()));
             }
         }

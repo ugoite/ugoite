@@ -1,14 +1,11 @@
 use crate::entry;
 use crate::form;
 use crate::integrity::IntegrityProvider;
-use crate::materialized_view;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
-use std::sync::OnceLock;
 use uuid::Uuid;
 
 const SQL_FORM_NAME: &str = "SQL";
@@ -86,17 +83,12 @@ fn normalize_sql_variables(value: Option<&Value>) -> Result<Value> {
     Ok(Value::Array(normalized))
 }
 
-fn sql_parameter_regex() -> &'static Regex {
-    static SQL_PLACEHOLDER_REGEX: OnceLock<Regex> = OnceLock::new();
-    SQL_PLACEHOLDER_REGEX.get_or_init(|| {
-        // `$name` is DataFusion's native named parameter syntax. It is
-        // metadata validation only; binding is performed on LogicalPlan via
-        // `with_param_values`, never by changing SQL text.
-        Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("SQL parameter regex must compile")
-    })
-}
-
-fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
+async fn validate_sql_payload(
+    op: &Operator,
+    ws_path: &str,
+    sql_text: &str,
+    variables: &Value,
+) -> Result<()> {
     let items = variables
         .as_array()
         .ok_or_else(|| validation_error("variables must be an array"))?;
@@ -114,13 +106,12 @@ fn validate_sql_payload(sql_text: &str, variables: &Value) -> Result<()> {
         var_names.insert(name.to_string());
     }
 
-    let regex = sql_parameter_regex();
-    let mut embedded_names = BTreeSet::new();
-    for capture in regex.captures_iter(sql_text) {
-        if let Some(matched) = capture.get(1) {
-            embedded_names.insert(matched.as_str().to_string());
-        }
-    }
+    let embedded_names = crate::index::datafusion_parameter_names(op, ws_path, sql_text)
+        .await
+        .map_err(|_| validation_error("sql is not valid DataFusion SQL"))?
+        .into_iter()
+        .map(|name| name.trim_start_matches('$').to_string())
+        .collect::<BTreeSet<_>>();
 
     for name in &var_names {
         if !embedded_names.contains(name) {
@@ -241,7 +232,7 @@ pub async fn create_sql<I: IntegrityProvider>(
 
     let form_def = ensure_sql_form(op, ws_path).await?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
-    validate_sql_payload(&payload.sql, &variables)?;
+    validate_sql_payload(op, ws_path, &payload.sql, &variables).await?;
 
     let timestamp = entry::now_ts();
     let revision_id = Uuid::new_v4().to_string();
@@ -290,8 +281,6 @@ pub async fn create_sql<I: IntegrityProvider>(
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 
-    materialized_view::create_or_update_view(op, ws_path, sql_id, &payload.sql).await?;
-
     sql_entry_from_row(&row)
 }
 
@@ -322,7 +311,7 @@ pub async fn update_sql<I: IntegrityProvider>(
     }
 
     let variables = normalize_sql_variables(Some(&payload.variables))?;
-    validate_sql_payload(&payload.sql, &variables)?;
+    validate_sql_payload(op, ws_path, &payload.sql, &variables).await?;
     let mut timestamp = entry::now_ts();
     if timestamp <= row.updated_at {
         timestamp = row.updated_at + 0.001;
@@ -362,8 +351,6 @@ pub async fn update_sql<I: IntegrityProvider>(
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 
-    materialized_view::create_or_update_view(op, ws_path, sql_id, &payload.sql).await?;
-
     sql_entry_from_row(&row)
 }
 
@@ -382,6 +369,5 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()
     row.deleted_at = Some(delete_ts);
     row.updated_at = delete_ts;
     entry::write_entry_row(op, ws_path, SQL_FORM_NAME, sql_id, &row).await?;
-    materialized_view::delete_view(op, ws_path, sql_id).await?;
     Ok(())
 }

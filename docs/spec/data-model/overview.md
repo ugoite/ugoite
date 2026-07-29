@@ -23,7 +23,6 @@ spaces/{space_id}/
   _ugoite/catalog/        # Head plus immutable publication records
   forms/                  # Iceberg-owned table locations
   assets/
-  materialized_views/
   sql_sessions/
 
 users/{sha256(user_id)}/
@@ -92,11 +91,11 @@ materialization table or a second history store.
 
 ## Saved SQL and SQL sessions
 
-Saved SQL is represented through the reserved SQL metadata Form. The current
-query session writes `sql_sessions/{session_id}/meta.json`; row and count
-requests re-run SQL against current readable data. The target session model pins
-one reproducible checkpoint and uses bounded deterministic pagination. Session
-metadata remains derived state, not an alternate Catalog or result store. See
+Saved SQL is represented through the reserved SQL metadata Form. A query session
+writes `sql_sessions/{session_id}/meta.json` with one reproducible
+`SpaceCheckpoint`; row and count requests use that coordinate and bounded
+deterministic pagination. Session metadata remains derived state, not an
+alternate Catalog or result store. See
 [sql-sessions.md](sql-sessions.md).
 
 ## Assets, links, and integrity

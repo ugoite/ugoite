@@ -39,8 +39,6 @@ space_layout:
       - Iceberg owns table data and metadata locations beneath the Space.
     - path: spaces/{space_id}/assets
       kind: directory
-    - path: spaces/{space_id}/materialized_views
-      kind: directory
     - path: spaces/{space_id}/sql_sessions
       kind: directory
     post_bootstrap:
@@ -54,12 +52,6 @@ space_layout:
       - path: spaces/{space_id}/hmac.json
         kind: file
         schema: response_hmac
-    saved_sql_or_session:
-      operation: create_or_update_view
-      entries:
-      - path: spaces/{space_id}/materialized_views/{sql_id}/meta.json
-        kind: file
-        schema: materialized_view_meta
     sql_session_creation:
       operation: create_sql_session
       entries:
