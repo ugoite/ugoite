@@ -582,7 +582,10 @@ impl AuthorizedQueryContext {
 
 fn collect_scanned_relations(plan: &LogicalPlan, relations: &mut BTreeSet<String>) {
     if let LogicalPlan::TableScan(scan) = plan {
-        relations.insert(scan.table_name.to_string());
+        // DataFusion qualifies resolved table references with its catalog and
+        // schema. The authorization policy is keyed by the exposed relation
+        // name, so compare only that normalized final component.
+        relations.insert(scan.table_name.table().to_ascii_lowercase());
     }
     for input in plan.inputs() {
         collect_scanned_relations(input, relations);
