@@ -162,6 +162,11 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         serde_json::json!({"title": "string"})
     );
     let session_id = session["id"].as_str().unwrap();
+    let query_policy = serde_json::from_value(session["query_policy"].clone())?;
+    let execution_authorization = sql_session::SqlSessionExecutionAuthorization {
+        authorization,
+        query_policy: &query_policy,
+    };
 
     entry::create_entry(
         &op,
@@ -177,7 +182,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         &op,
         ws_path,
         session_id,
-        authorization,
+        execution_authorization,
     )
     .await?;
     assert_eq!(count, 1);
@@ -186,7 +191,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         &op,
         ws_path,
         session_id,
-        authorization,
+        execution_authorization,
         0,
         10,
     )
@@ -285,12 +290,17 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     )
     .await?;
     let session_id = session["id"].as_str().unwrap();
+    let query_policy = serde_json::from_value(session["query_policy"].clone())?;
+    let execution_authorization = sql_session::SqlSessionExecutionAuthorization {
+        authorization,
+        query_policy: &query_policy,
+    };
 
     let count = sql_session::get_sql_session_count_authorized_by_form(
         &op,
         ws_path,
         session_id,
-        authorization,
+        execution_authorization,
     )
     .await?;
     assert_eq!(count, 2);
@@ -299,7 +309,7 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
         &op,
         ws_path,
         session_id,
-        authorization,
+        execution_authorization,
         0,
         10,
     )
@@ -390,11 +400,16 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
     )
     .await?;
     let session_id = session["id"].as_str().expect("session id");
+    let query_policy = serde_json::from_value(session["query_policy"].clone())?;
+    let execution_authorization = sql_session::SqlSessionExecutionAuthorization {
+        authorization,
+        query_policy: &query_policy,
+    };
     assert!(sql_session::get_sql_session_rows_authorized_by_form(
         &op,
         ws_path,
         session_id,
-        authorization,
+        execution_authorization,
         1_000,
         1,
     )
@@ -404,7 +419,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         &op,
         ws_path,
         session_id,
-        authorization,
+        execution_authorization,
         usize::MAX,
         1,
     )
@@ -414,9 +429,12 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         &op,
         ws_path,
         session_id,
-        sql_session::SqlSessionAuthorization {
-            policy_hash: "sha256:changed-policy",
-            ..authorization
+        sql_session::SqlSessionExecutionAuthorization {
+            authorization: sql_session::SqlSessionAuthorization {
+                policy_hash: "sha256:changed-policy",
+                ..authorization
+            },
+            query_policy: &query_policy,
         },
         0,
         1,
@@ -432,12 +450,17 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
     )
     .await?;
     let limit_zero_id = limit_zero["id"].as_str().expect("session id");
+    let limit_zero_query_policy = serde_json::from_value(limit_zero["query_policy"].clone())?;
+    let limit_zero_execution_authorization = sql_session::SqlSessionExecutionAuthorization {
+        authorization,
+        query_policy: &limit_zero_query_policy,
+    };
     assert_eq!(
         sql_session::get_sql_session_count_authorized_by_form(
             &op,
             ws_path,
             limit_zero_id,
-            authorization,
+            limit_zero_execution_authorization,
         )
         .await?,
         0
@@ -447,7 +470,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
             &op,
             ws_path,
             limit_zero_id,
-            authorization,
+            limit_zero_execution_authorization,
             0,
             1,
         )
@@ -463,7 +486,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         &op,
         ws_path,
         limit_zero_id,
-        authorization,
+        limit_zero_execution_authorization,
     )
     .await
     .is_err());
@@ -741,6 +764,86 @@ async fn sql_sessions_apply_sparse_entry_denials_in_the_provider() -> anyhow::Re
             .await?["rows"][0]["_ugoite_id"],
         "task-public"
     );
+
+    // Query policy is durable derived metadata, not execution authority. Each
+    // access must reject a policy that no longer equals the scope, Form, and
+    // projection reconstructed from the immutable checkpoint and current ACL.
+    let meta_path = format!(
+        "{}/sql_sessions/{session_id}/meta.json",
+        service.workspace_path(&space_id)
+    );
+    let original_meta: serde_json::Value =
+        serde_json::from_slice(&service.operator().read(&meta_path).await?.to_vec())?;
+    let original_policy = original_meta["query_policy"].clone();
+    let mut all_current = original_policy.clone();
+    all_current["forms"][0]["entry_scope"] = serde_json::json!("all_current");
+    let mut empty_all_except = original_policy.clone();
+    empty_all_except["forms"][0]["entry_scope"] = serde_json::json!({"all_except": []});
+    let mut extra_system_columns = original_policy.clone();
+    extra_system_columns["forms"][0]["system_columns"] = serde_json::json!([
+        "external_id",
+        "title",
+        "created_at",
+        "updated_at",
+        "entry_id",
+        "entry_version",
+        "committed_at",
+    ]);
+    let mut different_form = original_policy.clone();
+    different_form["forms"][0]["form_id"] = serde_json::json!(Uuid::now_v7().to_string());
+    let mut different_relation = original_policy.clone();
+    different_relation["forms"][0]["relation"] = serde_json::json!("other");
+    let mut different_columns = original_policy.clone();
+    different_columns["forms"][0]["columns"] = serde_json::json!(["other_column"]);
+    let oversized_scope = (0..=ugoite_iceberg::index::SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS)
+        .map(|index| format!("injected-{index}"))
+        .collect::<Vec<_>>();
+    let mut oversized_scope_policy = original_policy.clone();
+    oversized_scope_policy["forms"][0]["entry_scope"] =
+        serde_json::json!({"all_except": oversized_scope});
+
+    for (name, query_policy) in [
+        ("all_current scope", all_current),
+        ("empty all_except scope", empty_all_except),
+        ("extra system columns", extra_system_columns),
+        ("different Form ID", different_form),
+        ("different relation", different_relation),
+        ("different columns", different_columns),
+        ("oversized scope", oversized_scope_policy),
+    ] {
+        let mut meta = original_meta.clone();
+        meta["query_policy"] = query_policy;
+        service
+            .operator()
+            .write(&meta_path, serde_json::to_vec(&meta)?)
+            .await?;
+
+        let error = service
+            .get_sql_session_authorized_for_principals(&space_id, session_id, &principals)
+            .await
+            .expect_err(&format!("status must reject a tampered {name}"));
+        assert_forbidden(&error);
+        let error = service
+            .get_sql_session_count_authorized_for_principals(&space_id, session_id, &principals)
+            .await
+            .expect_err(&format!("count must reject a tampered {name}"));
+        assert_forbidden(&error);
+        let error = service
+            .get_sql_session_rows_authorized_for_principals(
+                &space_id,
+                session_id,
+                &principals,
+                0,
+                1,
+            )
+            .await
+            .expect_err(&format!("rows must reject a tampered {name}"));
+        assert_forbidden(&error);
+    }
+    service
+        .operator()
+        .write(&meta_path, serde_json::to_vec(&original_meta)?)
+        .await?;
 
     Ok(())
 }

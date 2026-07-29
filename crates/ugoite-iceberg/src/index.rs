@@ -489,8 +489,9 @@ pub async fn validate_sql_session_query_at_checkpoint(
 }
 
 /// Derives a serializable SQL-session policy from the Form definitions stored
-/// in a checkpoint. A session policy is derived metadata, never Catalog
-/// authority; it is replayed only together with this checkpoint.
+/// in a checkpoint. A persisted session policy is derived metadata, never
+/// Catalog or execution authority; callers recreate and compare it at every
+/// use before executing with the rebuilt value.
 pub async fn sql_session_query_policy_at_checkpoint(
     op: &Operator,
     ws_path: &str,

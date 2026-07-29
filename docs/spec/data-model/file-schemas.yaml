@@ -281,7 +281,7 @@ schemas:
         checkpoint:
           type: object
         query_policy:
-          description: Derived checkpoint-pinned single-Form, column, and sparse Entry-denial authorization policy. It is session metadata, never Catalog authority and does not list every readable Entry.
+          description: Derived checkpoint-pinned single-Form, column, and sparse Entry-denial policy cache. It is never execution or Catalog authority; every use rebuilds and compares it from the immutable checkpoint and current authorization state, and it does not list every readable Entry.
           type: object
         pagination:
           type: object

@@ -463,12 +463,10 @@ impl IcebergWorkspace {
     ) -> Result<FormDefinition> {
         self.validate_checkpoint(checkpoint)?;
         let relation = relation.to_ascii_lowercase();
-        let mut matches = checkpoint.tables.iter().filter(|coordinate| {
-            coordinate
-                .form_name
-                .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case(&relation))
-        });
+        let mut matches = checkpoint
+            .tables
+            .iter()
+            .filter(|coordinate| coordinate.form_name.eq_ignore_ascii_case(&relation));
         let coordinate = matches
             .next()
             .ok_or_else(|| CheckpointUnavailable::new(format!("Form relation {relation}")))?;
@@ -485,9 +483,7 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, coordinate.form_id)?;
-        if !form.name.eq_ignore_ascii_case(&relation)
-            || coordinate.form_name.as_deref() != Some(form.name.as_str())
-        {
+        if !form.name.eq_ignore_ascii_case(&relation) || coordinate.form_name != form.name {
             return Err(CheckpointIntegrityError::new(
                 "checkpoint Form relation does not match immutable Iceberg metadata",
             )

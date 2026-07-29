@@ -885,7 +885,12 @@ impl SpaceCatalog {
             form_name: metadata
                 .properties()
                 .get(crate::FORM_NAME_PROPERTY)
-                .cloned(),
+                .cloned()
+                .ok_or_else(|| {
+                    crate::CheckpointIntegrityError::new(
+                        "Iceberg table has no immutable Form relation name",
+                    )
+                })?,
             namespace: reference.identifier.namespace.clone(),
             table: reference.identifier.table.clone(),
             table_uuid: reference.table_uuid.clone(),

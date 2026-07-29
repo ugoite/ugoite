@@ -23,6 +23,15 @@ pub struct SqlSessionAuthorization<'a> {
     pub policy_hash: &'a str,
 }
 
+/// Use-time authorization inputs. The query policy must be rebuilt from the
+/// immutable checkpoint and current authorization state by the caller; the
+/// persisted policy is compared with it only as derived metadata.
+#[derive(Clone, Copy)]
+pub struct SqlSessionExecutionAuthorization<'a> {
+    pub authorization: SqlSessionAuthorization<'a>,
+    pub query_policy: &'a index::SqlSessionQueryPolicy,
+}
+
 /// Creation-only authorization inputs. The public convenience constructor
 /// accepts an explicit readable-ID map for callers that already have one; the
 /// production service instead supplies a frozen sparse scope directly.
@@ -151,15 +160,24 @@ fn session_query_policy(meta: &Value) -> Result<index::SqlSessionQueryPolicy> {
     .map_err(|error| anyhow!("SQL session query policy is invalid: {error}"))
 }
 
-/// Reads only session metadata and returns its frozen query policy. Service
-/// callers use this before calculating a current policy fingerprint, so a
-/// status request never needs to enumerate live Entries.
-pub async fn get_session_query_policy(
+/// The durable inputs used to recreate an expected execution policy.
+#[derive(Clone)]
+pub struct SqlSessionExecutionInputs {
+    pub sql: String,
+    pub checkpoint: SpaceCheckpoint,
+}
+
+/// Reads the durable query coordinate, not the stored derived policy.
+pub async fn get_session_execution_inputs(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
-) -> Result<index::SqlSessionQueryPolicy> {
-    session_query_policy(&load_session_meta(op, ws_path, session_id).await?)
+) -> Result<SqlSessionExecutionInputs> {
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    Ok(SqlSessionExecutionInputs {
+        sql: session_sql(&meta)?.to_string(),
+        checkpoint: session_checkpoint(&meta)?,
+    })
 }
 
 fn validate_session_authorization(
@@ -207,6 +225,21 @@ fn validate_session_authorization(
     Ok(())
 }
 
+fn validate_session_execution_authorization(
+    meta: &Value,
+    authorization: SqlSessionExecutionAuthorization<'_>,
+) -> Result<()> {
+    validate_session_authorization(
+        meta,
+        authorization.authorization.principal_ids,
+        authorization.authorization.policy_hash,
+    )?;
+    if session_query_policy(meta)? != *authorization.query_policy {
+        return Err(AppError::forbidden("SQL session query policy has changed").into());
+    }
+    Ok(())
+}
+
 fn session_query_error(error: anyhow::Error) -> anyhow::Error {
     if error.downcast_ref::<AppError>().is_some() {
         error
@@ -219,7 +252,7 @@ async fn execute_session_page_authorized_by_form(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
-    authorization: SqlSessionAuthorization<'_>,
+    authorization: SqlSessionExecutionAuthorization<'_>,
     offset: usize,
     limit: usize,
 ) -> Result<(Vec<Value>, u64)> {
@@ -227,16 +260,12 @@ async fn execute_session_page_authorized_by_form(
     if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
         return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
     }
-    validate_session_authorization(
-        &meta,
-        authorization.principal_ids,
-        authorization.policy_hash,
-    )?;
+    validate_session_execution_authorization(&meta, authorization)?;
     index::execute_sql_query_authorized_by_form_page_at_checkpoint(
         op,
         ws_path,
         session_sql(&meta)?,
-        &session_query_policy(&meta)?,
+        authorization.query_policy,
         index::AuthorizedSqlSessionPage {
             parameters: session_parameters(&meta)?,
             checkpoint: session_checkpoint(&meta)?,
@@ -394,45 +423,33 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy(
     Ok(meta)
 }
 
-pub async fn require_session_authorization(
+pub async fn get_sql_session_status_authorized(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
-    principal_ids: &[Uuid],
-    authorization_policy_hash: &str,
-) -> Result<()> {
-    let meta = load_session_meta(op, ws_path, session_id).await?;
-    validate_session_authorization(&meta, principal_ids, authorization_policy_hash)
-}
-
-pub async fn get_sql_session_status(
-    op: &Operator,
-    ws_path: &str,
-    session_id: &str,
+    authorization: SqlSessionExecutionAuthorization<'_>,
 ) -> Result<Value> {
-    load_session_meta(op, ws_path, session_id).await
+    let meta = load_session_meta(op, ws_path, session_id).await?;
+    validate_session_execution_authorization(&meta, authorization)?;
+    Ok(meta)
 }
 
 pub async fn get_sql_session_count_authorized_by_form(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
-    authorization: SqlSessionAuthorization<'_>,
+    authorization: SqlSessionExecutionAuthorization<'_>,
 ) -> Result<u64> {
     let meta = load_session_meta(op, ws_path, session_id).await?;
     if meta.get("status").and_then(|v| v.as_str()) == Some("expired") {
         return Err(AppError::expired(ErrorCode::SqlSessionExpired, "SQL session expired").into());
     }
-    validate_session_authorization(
-        &meta,
-        authorization.principal_ids,
-        authorization.policy_hash,
-    )?;
+    validate_session_execution_authorization(&meta, authorization)?;
     index::execute_sql_query_authorized_by_form_count_at_checkpoint(
         op,
         ws_path,
         session_sql(&meta)?,
-        &session_query_policy(&meta)?,
+        authorization.query_policy,
         session_parameters(&meta)?,
         session_checkpoint(&meta)?,
     )
@@ -444,7 +461,7 @@ pub async fn get_sql_session_rows_authorized_by_form(
     op: &Operator,
     ws_path: &str,
     session_id: &str,
-    authorization: SqlSessionAuthorization<'_>,
+    authorization: SqlSessionExecutionAuthorization<'_>,
     offset: usize,
     limit: usize,
 ) -> Result<Value> {

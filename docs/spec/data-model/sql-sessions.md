@@ -69,13 +69,16 @@ When every principal has Space read access, the scope records only Entry-level
 denials as `all_except`; it never enumerates every readable Entry in metadata.
 Any explicit or sparse scope is capped at the session's 1,000-row hard limit
 and is rejected before session metadata is written when it exceeds that bound.
-Status reads metadata; count and paged-row requests rebuild DataFusion only
-from that frozen policy and the same checkpoint, never from the live Form
-registry or live Entries. The principal set and a canonical fingerprint of
-Entry access policies must still match the session; current principal activity,
-sponsorship, and expiry are checked separately. A policy change is rejected
-and requires a new session. An empty principal set is forbidden. There is no
-stream endpoint.
+`query_policy` is derived metadata, never execution authority. Status, count,
+and paged-row requests reparse the stored SQL, resolve the one Form from the
+checkpoint's immutable metadata, and rebuild its scope, columns, and system
+columns from the current authorization state before comparing that expected
+policy with the stored cache. DataFusion receives the rebuilt policy, never a
+policy accepted solely from OpenDAL metadata. The principal set and a canonical
+fingerprint of Entry access policies must still match the session; current
+principal activity, sponsorship, and expiry are checked separately. A policy
+change is rejected and requires a new session. An empty principal set is
+forbidden. There is no stream endpoint.
 
 The initial page surface accepts only one Form relation and an explicit total
 order ending in `_ugoite_id`. The API rejects joins, aggregates, `DISTINCT`,

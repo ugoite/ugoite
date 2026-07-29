@@ -18,8 +18,7 @@ pub struct CheckpointTable {
     /// The Form relation captured from immutable Iceberg metadata. It lets a
     /// query session resolve one requested Form without loading every Form
     /// definition from the checkpoint.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub form_name: Option<String>,
+    pub form_name: String,
     pub namespace: Vec<String>,
     pub table: String,
     pub table_uuid: String,
@@ -94,13 +93,11 @@ impl SpaceCheckpoint {
             if !forms.insert(table.form_id) {
                 return Err("checkpoint contains a duplicate Form ID");
             }
-            if let Some(form_name) = &table.form_name {
-                if form_name.trim().is_empty() {
-                    return Err("checkpoint Form relation is empty");
-                }
-                if !form_names.insert(form_name.to_ascii_lowercase()) {
-                    return Err("checkpoint contains duplicate Form relations");
-                }
+            if table.form_name.trim().is_empty() {
+                return Err("checkpoint Form relation is empty");
+            }
+            if !form_names.insert(table.form_name.to_ascii_lowercase()) {
+                return Err("checkpoint contains duplicate Form relations");
             }
             if table.namespace.is_empty() || table.namespace.iter().any(|part| part.is_empty()) {
                 return Err("checkpoint table namespace is empty or invalid");
@@ -181,7 +178,7 @@ mod tests {
             2,
             vec![CheckpointTable {
                 form_id: FormId::from(Uuid::from_u128(2)),
-                form_name: Some("form".into()),
+                form_name: "form".into(),
                 namespace: vec!["space_1".into()],
                 table: "form_2".into(),
                 table_uuid: "table".into(),
