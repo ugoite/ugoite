@@ -321,21 +321,24 @@ impl IcebergWorkspace {
             )?
             .clone();
             // This is deliberately a DataFusion plan over the same static
-            // Iceberg provider as the visible relation. Every user plan that
-            // references the Form executes it first, so LIMIT and aggregates
-            // can never hide a duplicate maximum entry version.
+            // Iceberg provider as the visible relation. A user-facing view is
+            // expanded to its internal source before logical-plan validation,
+            // so register the invariant under both references. LIMIT and
+            // aggregates therefore cannot hide a duplicate maximum version.
+            let duplicate_head_check = heads
+                .clone()
+                .aggregate(
+                    vec![col("entry_id")],
+                    vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                        .alias("ugoite_latest_head_count")],
+                )?
+                .filter(col("ugoite_latest_head_count").gt(lit(1)))?
+                .limit(0, Some(1))?;
             duplicate_head_checks.insert(
-                form_policy.relation.clone(),
-                heads
-                    .clone()
-                    .aggregate(
-                        vec![col("entry_id")],
-                        vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
-                            .alias("ugoite_latest_head_count")],
-                    )?
-                    .filter(col("ugoite_latest_head_count").gt(lit(1)))?
-                    .limit(0, Some(1))?,
+                form_policy.relation.to_ascii_lowercase(),
+                duplicate_head_check.clone(),
             );
+            duplicate_head_checks.insert(internal.clone(), duplicate_head_check);
             let view = heads
                 .filter(col("operation").not_eq(lit("delete")))?
                 .select(
