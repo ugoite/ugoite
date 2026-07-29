@@ -4,7 +4,10 @@ use chrono::{Duration, Utc};
 use common::setup_operator;
 use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashSet};
-use ugoite_domain::identity::{AccessPolicy, Action, AgentMode};
+use ugoite_core::error::{AppError, ErrorKind};
+use ugoite_domain::identity::{
+    AccessPolicy, Action, AgentMode, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
+};
 use ugoite_iceberg::{
     authorization::{Authorizer, CreateAgentRequest, ResourceKind, ResourceRef},
     entry, form, saved_sql,
@@ -29,6 +32,13 @@ fn authorized_entries(form: &str, entry_ids: &[&str]) -> (Uuid, BTreeMap<String,
 }
 
 const AUTHORIZATION_POLICY_HASH: &str = "sha256:test-authorization-policy";
+
+fn assert_forbidden(error: &anyhow::Error) {
+    assert_eq!(
+        error.downcast_ref::<AppError>().map(AppError::kind),
+        Some(ErrorKind::Forbidden)
+    );
+}
 
 #[tokio::test]
 /// REQ-API-008
@@ -85,8 +95,50 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let authorization = sql_session::SqlSessionAuthorization {
         principal_ids: &principal_ids,
         policy_hash: AUTHORIZATION_POLICY_HASH,
+    };
+    let create_authorization = sql_session::SqlSessionCreateAuthorization {
+        authorization,
         readable_entries_by_form: &readable_entries_by_form,
     };
+
+    let no_principals = [];
+    let error = sql_session::create_sql_session_authorized_for_principals_by_form(
+        &op,
+        ws_path,
+        "SELECT * FROM entry ORDER BY _ugoite_id",
+        sql_session::SqlSessionCreateAuthorization {
+            authorization: sql_session::SqlSessionAuthorization {
+                principal_ids: &no_principals,
+                policy_hash: AUTHORIZATION_POLICY_HASH,
+            },
+            readable_entries_by_form: &readable_entries_by_form,
+        },
+    )
+    .await
+    .expect_err("a public SQL-session constructor must reject an empty principal set");
+    assert_forbidden(&error);
+
+    let oversized_entries = (0..=ugoite_iceberg::index::SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS)
+        .map(|index| format!("entry-{index}"))
+        .collect::<HashSet<_>>();
+    let oversized_scope = [("entry".to_string(), oversized_entries)]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    let error = sql_session::create_sql_session_authorized_for_principals_by_form(
+        &op,
+        ws_path,
+        "SELECT * FROM entry ORDER BY _ugoite_id",
+        sql_session::SqlSessionCreateAuthorization {
+            authorization,
+            readable_entries_by_form: &oversized_scope,
+        },
+    )
+    .await
+    .expect_err("an explicit authorization scope must be bounded before checkpoint creation");
+    assert!(error
+        .to_string()
+        .contains("authorization scope exceeds the configured maximum"));
+
     let parameters = [("title".to_string(), serde_json::json!("Alpha"))]
         .into_iter()
         .collect();
@@ -100,7 +152,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
             &sql_payload.sql,
             parameters,
             parameter_types,
-            authorization,
+            create_authorization,
         )
         .await?;
     assert_eq!(session["status"], "ready");
@@ -220,13 +272,16 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     let authorization = sql_session::SqlSessionAuthorization {
         principal_ids: &principal_ids,
         policy_hash: AUTHORIZATION_POLICY_HASH,
+    };
+    let create_authorization = sql_session::SqlSessionCreateAuthorization {
+        authorization,
         readable_entries_by_form: &readable_entries_by_form,
     };
     let session = sql_session::create_sql_session_authorized_for_principals_by_form(
         &op,
         ws_path,
         "SELECT * FROM publictask ORDER BY _ugoite_id DESC LIMIT 2",
-        authorization,
+        create_authorization,
     )
     .await?;
     let session_id = session["id"].as_str().unwrap();
@@ -299,6 +354,9 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
     let authorization = sql_session::SqlSessionAuthorization {
         principal_ids: &principal_ids,
         policy_hash: AUTHORIZATION_POLICY_HASH,
+    };
+    let create_authorization = sql_session::SqlSessionCreateAuthorization {
+        authorization,
         readable_entries_by_form: &readable_entries_by_form,
     };
 
@@ -317,7 +375,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
                 &op,
                 ws_path,
                 sql,
-                authorization,
+                create_authorization,
             )
             .await
             .is_err()
@@ -328,7 +386,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         &op,
         ws_path,
         "SELECT * FROM task ORDER BY _ugoite_id",
-        authorization,
+        create_authorization,
     )
     .await?;
     let session_id = session["id"].as_str().expect("session id");
@@ -370,7 +428,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         &op,
         ws_path,
         "SELECT * FROM task ORDER BY _ugoite_id LIMIT 0",
-        authorization,
+        create_authorization,
     )
     .await?;
     let limit_zero_id = limit_zero["id"].as_str().expect("session id");
@@ -471,6 +529,39 @@ async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::R
         )
         .await?;
     let session_id = session["id"].as_str().expect("session ID");
+    assert_eq!(
+        session["query_policy"]["forms"][0]["entry_scope"],
+        serde_json::json!({"all_except": []})
+    );
+    assert!(session["query_policy"]["forms"][0]
+        .get("entry_ids")
+        .is_none());
+
+    let no_principals = [];
+    let error = service
+        .create_sql_session_authorized_for_principals(
+            &space_id,
+            &no_principals,
+            "SELECT * FROM task ORDER BY _ugoite_id",
+        )
+        .await
+        .expect_err("session creation must reject an empty principal set");
+    assert_forbidden(&error);
+    let error = service
+        .get_sql_session_authorized_for_principals(&space_id, session_id, &no_principals)
+        .await
+        .expect_err("session status must reject an empty principal set");
+    assert_forbidden(&error);
+    let error = service
+        .get_sql_session_count_authorized_for_principals(&space_id, session_id, &no_principals)
+        .await
+        .expect_err("session count must reject an empty principal set");
+    assert_forbidden(&error);
+    let error = service
+        .get_sql_session_rows_authorized_for_principals(&space_id, session_id, &no_principals, 0, 1)
+        .await
+        .expect_err("session rows must reject an empty principal set");
+    assert_forbidden(&error);
 
     service.delete_entry(&space_id, "task-1", false).await?;
     service
@@ -553,5 +644,123 @@ async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::R
         .await
         .is_err());
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_sessions_apply_sparse_entry_denials_in_the_provider() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op, "memory://sql-session-sparse-scope");
+    let owner = Uuid::from_u128(81);
+    let viewer = Uuid::from_u128(82);
+    let space_id = service
+        .create_space_for_principal("sql-session-sparse-scope", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Task",
+                "template": "# Task\n\n## Summary\n",
+                "fields": {"Summary": {"type": "string"}},
+            }),
+        )
+        .await?;
+    for (id, title) in [("task-public", "Public"), ("task-private", "Private")] {
+        service
+            .create_entry(
+                &space_id,
+                id,
+                &format!("---\nform: Task\n---\n# {title}\n\n## Summary\n{title}\n"),
+                "owner",
+            )
+            .await?;
+    }
+
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Entry,
+                id: "task-private".to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+
+    let principals = [viewer];
+    let session = service
+        .create_sql_session_authorized_for_principals(
+            &space_id,
+            &principals,
+            "SELECT * FROM task ORDER BY _ugoite_id",
+        )
+        .await?;
+    assert_eq!(
+        session["query_policy"]["forms"][0]["entry_scope"],
+        serde_json::json!({"all_except": ["task-private"]})
+    );
+    let session_id = session["id"].as_str().expect("session ID");
+    assert_eq!(
+        service
+            .get_sql_session_count_authorized_for_principals(&space_id, session_id, &principals)
+            .await?,
+        1
+    );
+    assert_eq!(
+        service
+            .get_sql_session_rows_authorized_for_principals(
+                &space_id,
+                session_id,
+                &principals,
+                0,
+                1,
+            )
+            .await?["rows"][0]["_ugoite_id"],
+        "task-public"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_session_rejects_unsupported_sql_before_resolving_a_space_scope() -> anyhow::Result<()>
+{
+    let service = UgoiteService::from_operator(
+        setup_operator()?,
+        "memory://sql-session-early-shape-validation",
+    );
+    let principals = [Uuid::from_u128(91)];
+    let error = service
+        .create_sql_session_authorized_for_principals(
+            "missing-space",
+            &principals,
+            "SELECT * FROM task JOIN other ON task._ugoite_id = other._ugoite_id ORDER BY task._ugoite_id",
+        )
+        .await
+        .expect_err("unsupported SQL must fail before the Space is opened");
+    assert!(error.to_string().contains("does not support joins"));
     Ok(())
 }

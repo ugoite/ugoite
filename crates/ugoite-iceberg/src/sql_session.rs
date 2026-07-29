@@ -21,7 +21,27 @@ pub type ReadableEntriesByForm = BTreeMap<String, HashSet<String>>;
 pub struct SqlSessionAuthorization<'a> {
     pub principal_ids: &'a [Uuid],
     pub policy_hash: &'a str,
+}
+
+/// Creation-only authorization inputs. The public convenience constructor
+/// accepts an explicit readable-ID map for callers that already have one; the
+/// production service instead supplies a frozen sparse scope directly.
+#[derive(Clone, Copy)]
+pub struct SqlSessionCreateAuthorization<'a> {
+    pub authorization: SqlSessionAuthorization<'a>,
     pub readable_entries_by_form: &'a ReadableEntriesByForm,
+}
+
+impl SqlSessionAuthorization<'_> {
+    fn require_principals(self) -> Result<()> {
+        if self.principal_ids.is_empty() {
+            return Err(AppError::forbidden(
+                "SQL session requires at least one authorized principal",
+            )
+            .into());
+        }
+        Ok(())
+    }
 }
 
 fn sessions_root(ws_path: &str) -> String {
@@ -147,6 +167,11 @@ fn validate_session_authorization(
     principal_ids: &[Uuid],
     authorization_policy_hash: &str,
 ) -> Result<()> {
+    if principal_ids.is_empty() {
+        return Err(
+            AppError::forbidden("SQL session requires at least one authorized principal").into(),
+        );
+    }
     let stored = meta
         .get("authorized_principal_ids")
         .and_then(Value::as_array)
@@ -161,6 +186,11 @@ fn validate_session_authorization(
             })
         })
         .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+    if stored.is_empty() {
+        return Err(
+            AppError::forbidden("SQL session is not bound to an authorized principal").into(),
+        );
+    }
     let requested = principal_ids.iter().copied().collect::<BTreeSet<_>>();
     if stored != requested {
         return Err(
@@ -222,7 +252,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form(
     op: &Operator,
     ws_path: &str,
     sql: &str,
-    authorization: SqlSessionAuthorization<'_>,
+    authorization: SqlSessionCreateAuthorization<'_>,
 ) -> Result<Value> {
     create_sql_session_authorized_for_principals_by_form_with_parameters(
         op,
@@ -241,8 +271,21 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
     sql: &str,
     parameters: serde_json::Map<String, Value>,
     parameter_types: BTreeMap<String, String>,
-    authorization: SqlSessionAuthorization<'_>,
+    authorization: SqlSessionCreateAuthorization<'_>,
 ) -> Result<Value> {
+    authorization.authorization.require_principals()?;
+    let relation = index::sql_session_page_relation(sql).map_err(session_query_error)?;
+    let readable_entry_ids = authorization
+        .readable_entries_by_form
+        .get(&relation)
+        .ok_or_else(|| anyhow!("SQL session has no readable checkpoint Form {relation}"))?;
+    if readable_entry_ids.len() > index::SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "SQL session authorization scope exceeds the configured maximum",
+        )
+        .into());
+    }
     let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)?;
     let checkpoint = crate::iceberg_store::native_workspace(op, ws_path)
         .await?
@@ -251,7 +294,8 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
     let query_policy = index::sql_session_query_policy_at_checkpoint(
         op,
         ws_path,
-        authorization.readable_entries_by_form,
+        &relation,
+        index::SqlSessionEntryScope::Only(readable_entry_ids.iter().cloned().collect()),
         &checkpoint,
     )
     .await?;
@@ -261,7 +305,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         sql,
         parameters,
         parameter_types,
-        authorization,
+        authorization.authorization,
         bound_parameters,
         checkpoint,
         query_policy,
@@ -284,6 +328,7 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy(
     checkpoint: SpaceCheckpoint,
     query_policy: index::SqlSessionQueryPolicy,
 ) -> Result<Value> {
+    authorization.require_principals()?;
     index::validate_sql_session_query_at_checkpoint(
         op,
         ws_path,

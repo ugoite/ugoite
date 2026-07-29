@@ -21,6 +21,10 @@ use ugoite_core::query::{
 };
 
 pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
+/// A durable SQL-session policy may carry a sparse ID set only up to the same
+/// hard window bound as its rows. Production creation uses `AllExcept`; the
+/// public explicit-ID constructor uses `Only` and is bounded identically.
+pub const SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS: usize = SQL_SESSION_MAX_ROWS;
 pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -49,9 +53,30 @@ pub struct SqlSessionQueryPolicy {
 pub struct SqlSessionQueryForm {
     pub form_id: FormId,
     pub relation: String,
-    pub entry_ids: BTreeSet<String>,
+    pub entry_scope: SqlSessionEntryScope,
     pub columns: BTreeSet<String>,
     pub system_columns: BTreeSet<SqlSessionSystemColumn>,
+}
+
+/// Serializable authorization boundary for one frozen SQL-session Form. The
+/// `AllExcept` form keeps a sparse set of Entry-level ACL exceptions rather
+/// than serializing every readable Entry in a large Form.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SqlSessionEntryScope {
+    AllCurrent,
+    Only(BTreeSet<String>),
+    AllExcept(BTreeSet<String>),
+}
+
+impl SqlSessionEntryScope {
+    fn as_query_scope(&self) -> EntryScope {
+        match self {
+            Self::AllCurrent => EntryScope::AllCurrent,
+            Self::Only(entry_ids) => EntryScope::Only(entry_scope_from_ids(entry_ids)),
+            Self::AllExcept(entry_ids) => EntryScope::AllExcept(entry_scope_from_ids(entry_ids)),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -71,6 +96,11 @@ impl SqlSessionQueryPolicy {
         &self,
         checkpoint: SpaceCheckpoint,
     ) -> Result<AuthorizedQueryPolicy> {
+        if self.forms.len() != 1 {
+            return Err(anyhow!(
+                "SQL session query policy must expose exactly one Form"
+            ));
+        }
         let mut forms = BTreeMap::new();
         for form in &self.forms {
             if forms.contains_key(&form.form_id) {
@@ -80,7 +110,7 @@ impl SqlSessionQueryPolicy {
                 form.form_id,
                 AuthorizedQueryForm {
                     relation: form.relation.clone(),
-                    entry_scope: EntryScope::Only(entry_scope_from_ids(&form.entry_ids)),
+                    entry_scope: form.entry_scope.as_query_scope(),
                     columns: form.columns.clone(),
                     system_columns: form
                         .system_columns
@@ -99,13 +129,6 @@ impl SqlSessionQueryPolicy {
             checkpoint: Some(checkpoint),
             limits: sql_session_query_limits(),
         })
-    }
-
-    pub fn readable_entry_ids(&self) -> BTreeSet<String> {
-        self.forms
-            .iter()
-            .flat_map(|form| form.entry_ids.iter().cloned())
-            .collect()
     }
 }
 
@@ -471,27 +494,18 @@ pub async fn validate_sql_session_query_at_checkpoint(
 pub async fn sql_session_query_policy_at_checkpoint(
     op: &Operator,
     ws_path: &str,
-    readable_entries_by_form: &BTreeMap<String, HashSet<String>>,
+    relation: &str,
+    entry_scope: SqlSessionEntryScope,
     checkpoint: &SpaceCheckpoint,
 ) -> Result<SqlSessionQueryPolicy> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
-    let forms = workspace.forms_at_checkpoint(checkpoint).await?;
-    let mut seen_relations = BTreeSet::new();
-    let mut policy_forms = Vec::new();
-    for form in forms {
-        let relation = form.name.to_ascii_lowercase();
-        let Some(entry_ids) = readable_entries_by_form.get(&relation) else {
-            continue;
-        };
-        if !seen_relations.insert(relation.clone()) {
-            return Err(anyhow!(
-                "checkpoint exposes duplicate SQL relation {relation}"
-            ));
-        }
-        policy_forms.push(SqlSessionQueryForm {
+    let relation = relation.to_ascii_lowercase();
+    let form = workspace.form_at_checkpoint(checkpoint, &relation).await?;
+    Ok(SqlSessionQueryPolicy {
+        forms: vec![SqlSessionQueryForm {
             form_id: form.id,
             relation,
-            entry_ids: entry_ids.iter().cloned().collect(),
+            entry_scope,
             columns: form.fields.into_iter().map(|field| field.name).collect(),
             system_columns: [
                 SqlSessionSystemColumn::ExternalId,
@@ -501,14 +515,7 @@ pub async fn sql_session_query_policy_at_checkpoint(
             ]
             .into_iter()
             .collect(),
-        });
-    }
-    if policy_forms.is_empty() {
-        return Err(anyhow!("SQL session has no readable checkpoint Form"));
-    }
-    policy_forms.sort_by(|left, right| left.relation.cmp(&right.relation));
-    Ok(SqlSessionQueryPolicy {
-        forms: policy_forms,
+        }],
     })
 }
 
@@ -533,6 +540,13 @@ async fn datafusion_sql_session_context(
 /// DISTINCT, subqueries, and set operations need a separate proof and are
 /// intentionally not part of this initial contract.
 pub fn validate_sql_session_page_shape(sql: &str) -> Result<()> {
+    sql_session_page_relation(sql).map(|_| ())
+}
+
+/// Parses and validates the supported SQL-session subset before any Form or
+/// Entry provider is opened. The returned lower-case relation is the only Form
+/// that creation may resolve from the checkpoint.
+pub fn sql_session_page_relation(sql: &str) -> Result<String> {
     use datafusion::sql::parser::{DFParser, Statement as DataFusionStatement};
     use datafusion::sql::sqlparser::ast::{
         visit_expressions, Expr, GroupByExpr, LimitClause, OrderByKind, SetExpr,
@@ -620,11 +634,19 @@ pub fn validate_sql_session_page_shape(sql: &str) -> Result<()> {
             "SQL session paging requires exactly one Form relation"
         ));
     };
-    if !from.joins.is_empty() || !matches!(&from.relation, TableFactor::Table { args: None, .. }) {
+    if !from.joins.is_empty() {
         return Err(anyhow!(
             "SQL session paging does not support joins or table functions"
         ));
     }
+    let TableFactor::Table {
+        name, args: None, ..
+    } = &from.relation
+    else {
+        return Err(anyhow!(
+            "SQL session paging does not support joins or table functions"
+        ));
+    };
     let Some(order_by) = &query.order_by else {
         return Err(anyhow!(
             "SQL session paging requires ORDER BY ending with _ugoite_id"
@@ -652,7 +674,7 @@ pub fn validate_sql_session_page_shape(sql: &str) -> Result<()> {
             "SQL session paging requires ORDER BY ending with _ugoite_id"
         ));
     }
-    Ok(())
+    Ok(name.to_string().to_ascii_lowercase())
 }
 
 pub async fn query_index_authorized(

@@ -45,7 +45,7 @@ The file contains:
     "forms": [{
       "form_id": "form-uuid",
       "relation": "note",
-      "entry_ids": ["entry-uuid"],
+      "entry_scope": {"all_except": ["entry-hidden-from-session"]},
       "columns": ["Body"],
       "system_columns": ["external_id", "title", "created_at", "updated_at"]
     }]
@@ -62,15 +62,20 @@ The file contains:
 }
 ```
 
-Rows are not stored in the session directory. Creation freezes a derived
-query policy: checkpoint Form IDs, relation names, columns, system columns,
-and readable Entry scope. Status reads metadata; count and paged-row requests
-rebuild DataFusion only from that frozen policy and the same checkpoint, never
-from the live Form registry or live Entries. The principal set and a canonical
-fingerprint of the policies relevant to that frozen scope must still match the
-session; current principal activity, sponsorship, and expiry are checked
-separately. A relevant policy change is rejected and requires a new session.
-There is no stream endpoint.
+Rows are not stored in the session directory. Creation parses and validates the
+single Form relation before it opens a checkpoint, then freezes that Form's
+checkpoint metadata, columns, system columns, and provider-side Entry scope.
+When every principal has Space read access, the scope records only Entry-level
+denials as `all_except`; it never enumerates every readable Entry in metadata.
+Any explicit or sparse scope is capped at the session's 1,000-row hard limit
+and is rejected before session metadata is written when it exceeds that bound.
+Status reads metadata; count and paged-row requests rebuild DataFusion only
+from that frozen policy and the same checkpoint, never from the live Form
+registry or live Entries. The principal set and a canonical fingerprint of
+Entry access policies must still match the session; current principal activity,
+sponsorship, and expiry are checked separately. A policy change is rejected
+and requires a new session. An empty principal set is forbidden. There is no
+stream endpoint.
 
 The initial page surface accepts only one Form relation and an explicit total
 order ending in `_ugoite_id`. The API rejects joins, aggregates, `DISTINCT`,

@@ -27,9 +27,12 @@ breaker. Joins, aggregates, `DISTINCT`, subqueries, and queries without that
 total order are rejected rather than receiving an unstable cursor protocol.
 
 Each session stores the creating principal set, a canonical fingerprint of the
-policies relevant to its frozen scope, and a derived query policy beside (not
-inside) its checkpoint. Every status, count, and page request revalidates the
-current principal contract and that fingerprint without rebuilding Entry scope
-or Form metadata from the live Head. A relevant policy change requires a new
-session; an ordinary data write, Form evolution, or unrelated authorization
-activity does not move an existing session away from its checkpoint.
+Entry access policies, and a derived query policy beside (not inside) its
+checkpoint. Session creation validates the SQL shape before it resolves the
+one requested Form at that checkpoint. Its provider boundary carries sparse
+Entry denials rather than a Rust-collected list of every readable Entry. Every
+status, count, and page request revalidates the current non-empty principal
+contract and that fingerprint without rebuilding Entry scope or Form metadata
+from the live Head. A policy change requires a new session; an ordinary data
+write, Form evolution, or unrelated authorization activity does not move an
+existing session away from its checkpoint.

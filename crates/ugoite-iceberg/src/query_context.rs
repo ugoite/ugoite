@@ -48,6 +48,16 @@ pub(crate) fn latest_revision_dataframe(
                 false,
             ),
         )?,
+        EntryScope::AllExcept(entry_ids) if entry_ids.is_empty() => revisions,
+        EntryScope::AllExcept(entry_ids) => revisions.filter(
+            col("entry_id").in_list(
+                entry_ids
+                    .iter()
+                    .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                    .collect::<Vec<_>>(),
+                true,
+            ),
+        )?,
     };
     let maxima = scoped
         .clone()

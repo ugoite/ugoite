@@ -31,13 +31,18 @@ pub struct AuthorizedQueryForm {
     pub system_columns: BTreeSet<QuerySystemColumn>,
 }
 
-/// The Entry set that a relation may expose. Local core mode can authorize the
-/// whole Form without first materializing its current Entries into Rust; remote
-/// callers use the explicit ID set supplied by Core authorization.
+/// The Entry set that a relation may expose. Core can authorize the whole Form
+/// without first materializing its current Entries into Rust; remote callers
+/// use either an explicit allow-list or sparse Entry-level exceptions supplied
+/// by the authorization boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntryScope {
     AllCurrent,
     Only(BTreeSet<EntryId>),
+    /// Exposes the current Form without materializing every permitted Entry
+    /// ID in Core. The trusted DataFusion view removes the listed exceptions
+    /// before it derives each Entry's latest revision.
+    AllExcept(BTreeSet<EntryId>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

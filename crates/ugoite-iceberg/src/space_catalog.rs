@@ -882,6 +882,10 @@ impl SpaceCatalog {
         }
         Ok(CheckpointTable {
             form_id,
+            form_name: metadata
+                .properties()
+                .get(crate::FORM_NAME_PROPERTY)
+                .cloned(),
             namespace: reference.identifier.namespace.clone(),
             table: reference.identifier.table.clone(),
             table_uuid: reference.table_uuid.clone(),

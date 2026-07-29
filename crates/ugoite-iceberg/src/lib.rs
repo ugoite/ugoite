@@ -75,7 +75,7 @@ use uuid::Uuid;
 
 const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
 const FORM_ID_PROPERTY: &str = "ugoite.form.id";
-const FORM_NAME_PROPERTY: &str = "ugoite.form.name";
+pub(crate) const FORM_NAME_PROPERTY: &str = "ugoite.form.name";
 const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
 const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
@@ -451,6 +451,49 @@ impl IcebergWorkspace {
         }
         forms.sort_by(|left, right| left.name.cmp(&right.name));
         Ok(forms)
+    }
+
+    /// Resolves exactly one Form from immutable checkpoint metadata. SQL
+    /// session creation uses this after parsing the relation, rather than
+    /// loading every Form definition or any Entry rows.
+    pub async fn form_at_checkpoint(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        relation: &str,
+    ) -> Result<FormDefinition> {
+        self.validate_checkpoint(checkpoint)?;
+        let relation = relation.to_ascii_lowercase();
+        let mut matches = checkpoint.tables.iter().filter(|coordinate| {
+            coordinate
+                .form_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case(&relation))
+        });
+        let coordinate = matches
+            .next()
+            .ok_or_else(|| CheckpointUnavailable::new(format!("Form relation {relation}")))?;
+        if matches.next().is_some() {
+            return Err(CheckpointIntegrityError::new(format!(
+                "checkpoint contains multiple Forms for relation {relation}"
+            ))
+            .into());
+        }
+        let table = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .load_checkpoint_table(checkpoint, coordinate)
+            .await?;
+        let form = form_from_table(&table, coordinate.form_id)?;
+        if !form.name.eq_ignore_ascii_case(&relation)
+            || coordinate.form_name.as_deref() != Some(form.name.as_str())
+        {
+            return Err(CheckpointIntegrityError::new(
+                "checkpoint Form relation does not match immutable Iceberg metadata",
+            )
+            .into());
+        }
+        Ok(form)
     }
 
     fn validate_checkpoint(&self, checkpoint: &SpaceCheckpoint) -> Result<()> {

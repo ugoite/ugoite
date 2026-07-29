@@ -173,6 +173,9 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     let authorization = sql_session::SqlSessionAuthorization {
         principal_ids: &principal_ids,
         policy_hash: "sha256:test-authorization-policy",
+    };
+    let create_authorization = sql_session::SqlSessionCreateAuthorization {
+        authorization,
         readable_entries_by_form: &readable_entries_by_form,
     };
     assert!(
@@ -180,7 +183,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
             &op,
             ws_path,
             &invalid_sql.sql,
-            authorization,
+            create_authorization,
         )
         .await
         .is_err()
