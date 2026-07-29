@@ -313,9 +313,10 @@ impl SpaceCatalog {
                 self.unavailable_head_health(checkpoint_names, "catalog_head_identity_mismatch")
             );
         }
-        if let Err(issue) = self.validate_publication_chain_for_health(&head).await {
-            return Ok(self.unavailable_head_health(checkpoint_names, issue));
-        }
+        let publication_issue = self
+            .validate_publication_chain_for_health(&head)
+            .await
+            .err();
         let mut tables = Vec::with_capacity(head.tables.len());
         for reference in head.tables.values() {
             tables.push(self.table_health(reference).await);
@@ -332,9 +333,10 @@ impl SpaceCatalog {
             checkpoints.push(self.checkpoint_health(name).await);
         }
 
-        let status = if tables
-            .iter()
-            .any(|table| table.status == HealthStatus::Degraded)
+        let status = if publication_issue.is_some()
+            || tables
+                .iter()
+                .any(|table| table.status == HealthStatus::Degraded)
             || checkpoints
                 .iter()
                 .any(|checkpoint| checkpoint.status == HealthStatus::Degraded)
@@ -351,7 +353,7 @@ impl SpaceCatalog {
                 etag: exact.etag,
                 generation: Some(head.generation),
                 form_registry_generation: Some(head.form_registry_generation),
-                issue: None,
+                issue: publication_issue.map(|code| health_issue(code, "publication")),
             },
             tables,
             checkpoints,
@@ -444,7 +446,9 @@ impl SpaceCatalog {
         let Some(mut path) = head.publication_location.clone() else {
             return Err("publication_missing");
         };
-        let mut expected_head = head.clone();
+        let mut expected_generation = head.generation;
+        let mut expected_checksum = head.checksum.clone();
+        let mut is_head_publication = true;
         let mut visited = BTreeSet::new();
         loop {
             if !visited.insert(path.clone()) {
@@ -453,7 +457,7 @@ impl SpaceCatalog {
             let bytes = match self.store.read_publication(&path).await {
                 Ok(bytes) => bytes,
                 Err(error) if error.kind() == opendal::ErrorKind::NotFound => {
-                    return Err(if expected_head == *head {
+                    return Err(if is_head_publication {
                         "publication_missing"
                     } else {
                         "publication_predecessor_missing"
@@ -462,13 +466,14 @@ impl SpaceCatalog {
                 Err(_) => return Err("publication_unreadable"),
             };
             let publication = decode_publication_for_health(&bytes)?;
-            if publication.generation != expected_head.generation
-                || publication.next_head_checksum != expected_head.checksum
-                || publication.next_head != expected_head
-                || expected_head.publication_command_id.as_deref()
-                    != Some(publication.command_id.as_str())
+            if publication.generation != expected_generation
+                || publication.next_head_checksum != expected_checksum
+                || (is_head_publication && publication.next_head != *head)
+                || (is_head_publication
+                    && head.publication_command_id.as_deref()
+                        != Some(publication.command_id.as_str()))
             {
-                return Err(if expected_head == *head {
+                return Err(if is_head_publication {
                     "publication_head_mismatch"
                 } else {
                     "publication_chain_corrupt"
@@ -484,28 +489,9 @@ impl SpaceCatalog {
                     if previous_generation + 1 == publication.generation =>
                 {
                     path = previous_path;
-                    // A predecessor's `next_head` is the Head we must match
-                    // before taking its own predecessor link.
-                    let bytes = match self.store.read_publication(&path).await {
-                        Ok(bytes) => bytes,
-                        Err(error) if error.kind() == opendal::ErrorKind::NotFound => {
-                            return Err("publication_predecessor_missing");
-                        }
-                        Err(_) => return Err("publication_unreadable"),
-                    };
-                    let predecessor = decode_publication_for_health(&bytes)?;
-                    if predecessor.generation != previous_generation
-                        || predecessor.next_head_checksum != previous_checksum
-                    {
-                        return Err("publication_chain_gap");
-                    }
-                    expected_head = predecessor.next_head.clone();
-                    // Re-read is deliberately avoided on the next iteration
-                    // only when traversal state is simple; validating the
-                    // predecessor as `expected_head` still requires its full
-                    // immutable record, which this loop obtains below.
-                    // Store it nowhere: doctor must not construct a shadow
-                    // Catalog from history.
+                    expected_generation = previous_generation;
+                    expected_checksum = previous_checksum;
+                    is_head_publication = false;
                 }
                 _ => return Err("publication_chain_gap"),
             }

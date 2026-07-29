@@ -308,8 +308,8 @@ impl SpaceCatalogStore {
                 .etag()
                 .filter(|etag| !etag.is_empty())
                 .map(str::to_owned);
-            let read = match (self.write_mode, etag.as_deref()) {
-                (CatalogWriteMode::Shared, Some(etag)) => self
+            let read = match etag.as_deref() {
+                Some(etag) => self
                     .operator
                     .read_options(
                         &path,
@@ -320,18 +320,15 @@ impl SpaceCatalogStore {
                     )
                     .await
                     .map(|bytes| bytes.to_vec()),
-                (CatalogWriteMode::Shared, None) => {
+                None if self.write_mode == CatalogWriteMode::Shared => {
                     return Err(anyhow!("Catalog Head stat did not return an ETag"));
                 }
-                (CatalogWriteMode::SingleProcess, _) => {
-                    self.operator.read(&path).await.map(|bytes| bytes.to_vec())
-                }
+                None => self.operator.read(&path).await.map(|bytes| bytes.to_vec()),
             };
             match read {
                 Ok(bytes) => return Ok(Some(ExactCatalogHead { bytes, etag })),
                 Err(error)
-                    if self.write_mode == CatalogWriteMode::Shared
-                        && error.kind() == ErrorKind::ConditionNotMatch
+                    if error.kind() == ErrorKind::ConditionNotMatch
                         && attempt + 1 < EXACT_HEAD_READ_ATTEMPTS =>
                 {
                     continue;
