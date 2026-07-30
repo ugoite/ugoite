@@ -202,74 +202,7 @@ impl Authorizer {
         resource: Option<&ResourceRef>,
     ) -> Result<BTreeSet<Action>> {
         let state = self.state(space_id).await?;
-        let principal = state
-            .principals
-            .get(&principal_id)
-            .filter(|principal| matches!(principal.state, PrincipalState::Active))
-            .ok_or_else(|| AppError::forbidden("principal is not active in this space"))?;
-        if !matches!(principal.kind, PrincipalKind::Human | PrincipalKind::Agent) {
-            return Ok(BTreeSet::new());
-        }
-        let mut effective = if matches!(principal.kind, PrincipalKind::Agent) {
-            let agent = state
-                .agents
-                .get(&principal_id)
-                .filter(|agent| matches!(agent.status, PrincipalState::Active))
-                .ok_or_else(|| AppError::forbidden("agent is not active"))?;
-            if !state
-                .principals
-                .get(&agent.sponsor_principal_id)
-                .is_some_and(|sponsor| {
-                    matches!(sponsor.kind, PrincipalKind::Human)
-                        && matches!(sponsor.state, PrincipalState::Active)
-                })
-            {
-                return Err(AppError::forbidden("agent sponsor is not active").into());
-            }
-            let expires_at = agent
-                .expires_at
-                .as_deref()
-                .ok_or_else(|| AppError::forbidden("agent has no expiry or review deadline"))?;
-            if chrono::DateTime::parse_from_rfc3339(expires_at)
-                .context("invalid agent expiry")?
-                .with_timezone(&Utc)
-                <= Utc::now()
-            {
-                return Err(
-                    AppError::forbidden("agent expiry or review deadline has passed").into(),
-                );
-            }
-            state
-                .agent_grants
-                .get(&principal_id)
-                .cloned()
-                .unwrap_or_default()
-        } else {
-            let membership = state
-                .memberships
-                .get(&principal_id)
-                .ok_or_else(|| AppError::forbidden("principal is not a member of this space"))?;
-            role_actions(&membership.role)
-        };
-        if let Some(resource) = resource {
-            if let Some(parent) = resource.parent.as_deref() {
-                effective =
-                    evaluate_policy(&effective, principal_id, state.policies.get(&parent.key()));
-            }
-            effective = evaluate_policy(
-                &effective,
-                principal_id,
-                state.policies.get(&resource.key()),
-            );
-        }
-        if state
-            .memberships
-            .get(&principal_id)
-            .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
-        {
-            effective.extend(role_actions(&SpaceRole::Owner));
-        }
-        Ok(effective)
+        effective_actions_for_state(&state, principal_id, resource)
     }
 
     pub async fn require(
@@ -835,6 +768,82 @@ impl Authorizer {
         }
         Ok(())
     }
+}
+
+/// Evaluates authorization against one already-read state snapshot. Query
+/// session creation uses this to derive its scope and fingerprint from the
+/// same state without an Entry-by-Entry OpenDAL reread.
+pub(crate) fn effective_actions_for_state(
+    state: &AuthorizationState,
+    principal_id: Uuid,
+    resource: Option<&ResourceRef>,
+) -> Result<BTreeSet<Action>> {
+    let principal = state
+        .principals
+        .get(&principal_id)
+        .filter(|principal| matches!(principal.state, PrincipalState::Active))
+        .ok_or_else(|| AppError::forbidden("principal is not active in this space"))?;
+    if !matches!(principal.kind, PrincipalKind::Human | PrincipalKind::Agent) {
+        return Ok(BTreeSet::new());
+    }
+    let mut effective = if matches!(principal.kind, PrincipalKind::Agent) {
+        let agent = state
+            .agents
+            .get(&principal_id)
+            .filter(|agent| matches!(agent.status, PrincipalState::Active))
+            .ok_or_else(|| AppError::forbidden("agent is not active"))?;
+        if !state
+            .principals
+            .get(&agent.sponsor_principal_id)
+            .is_some_and(|sponsor| {
+                matches!(sponsor.kind, PrincipalKind::Human)
+                    && matches!(sponsor.state, PrincipalState::Active)
+            })
+        {
+            return Err(AppError::forbidden("agent sponsor is not active").into());
+        }
+        let expires_at = agent
+            .expires_at
+            .as_deref()
+            .ok_or_else(|| AppError::forbidden("agent has no expiry or review deadline"))?;
+        if chrono::DateTime::parse_from_rfc3339(expires_at)
+            .context("invalid agent expiry")?
+            .with_timezone(&Utc)
+            <= Utc::now()
+        {
+            return Err(AppError::forbidden("agent expiry or review deadline has passed").into());
+        }
+        state
+            .agent_grants
+            .get(&principal_id)
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        let membership = state
+            .memberships
+            .get(&principal_id)
+            .ok_or_else(|| AppError::forbidden("principal is not a member of this space"))?;
+        role_actions(&membership.role)
+    };
+    if let Some(resource) = resource {
+        if let Some(parent) = resource.parent.as_deref() {
+            effective =
+                evaluate_policy(&effective, principal_id, state.policies.get(&parent.key()));
+        }
+        effective = evaluate_policy(
+            &effective,
+            principal_id,
+            state.policies.get(&resource.key()),
+        );
+    }
+    if state
+        .memberships
+        .get(&principal_id)
+        .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
+    {
+        effective.extend(role_actions(&SpaceRole::Owner));
+    }
+    Ok(effective)
 }
 
 fn owner_count(state: &AuthorizationState) -> usize {

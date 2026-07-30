@@ -1,13 +1,16 @@
 use anyhow::{anyhow, Result};
 use opendal::Operator;
-use serde_json::Value;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
 use crate::integrity::RealIntegrityProvider;
 use crate::{
     asset,
-    authorization::{Authorizer, ResourceKind, ResourceRef},
+    authorization::{
+        effective_actions_for_state, AuthorizationState, Authorizer, ResourceKind, ResourceRef,
+    },
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
     storage::operator_from_uri,
 };
@@ -40,6 +43,11 @@ pub enum SpacePermission {
 pub struct UgoiteService {
     operator: Operator,
     root_uri: String,
+}
+
+struct CurrentSqlSessionExecutionAuthorization {
+    policy_hash: String,
+    query_policy: index::SqlSessionQueryPolicy,
 }
 
 impl UgoiteService {
@@ -688,36 +696,108 @@ impl UgoiteService {
         parameter_types: BTreeMap<String, String>,
     ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
-        let allowed = self
-            .authorized_form_entry_ids_for_principals(space_id, principal_ids)
+        require_sql_session_principals(principal_ids)?;
+        let relation = index::sql_session_page_relation(sql).map_err(|error| {
+            AppError::invalid_input(
+                ugoite_core::error::ErrorCode::InvalidInput,
+                error.to_string(),
+            )
+        })?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let checkpoint = workspace.capture_checkpoint().await?;
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
             .await?;
-        sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
+        let entry_scope = sql_session_entry_scope(&state, principal_ids)?;
+        let query_policy = index::sql_session_query_policy_at_checkpoint(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &relation,
+            entry_scope,
+            &checkpoint,
+        )
+        .await?;
+        let authorization_policy_hash = sql_session_policy_hash(&state, principal_ids)?;
+        let authorization = sql_session::SqlSessionAuthorization {
+            principal_ids,
+            policy_hash: &authorization_policy_hash,
+        };
+        let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)?;
+        sql_session::create_sql_session_authorized_for_principals_with_frozen_policy(
             &self.operator,
             &self.workspace_path(space_id),
             sql,
             parameters,
             parameter_types,
-            &allowed,
-            principal_ids,
+            authorization,
+            bound_parameters,
+            checkpoint,
+            query_policy,
         )
         .await
     }
 
-    pub async fn require_sql_session_principals(
+    pub async fn get_sql_session_authorized_for_principals(
         &self,
         space_id: &str,
         session_id: &str,
         principal_ids: &[Uuid],
-    ) -> Result<()> {
+    ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_sql_session_id(session_id))?;
-        sql_session::require_session_principals(
+        let current_authorization = self
+            .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
+            .await?;
+        sql_session::get_sql_session_status_authorized(
             &self.operator,
             &self.workspace_path(space_id),
             session_id,
-            principal_ids,
+            sql_session::SqlSessionExecutionAuthorization {
+                authorization: sql_session::SqlSessionAuthorization {
+                    principal_ids,
+                    policy_hash: &current_authorization.policy_hash,
+                },
+                query_policy: &current_authorization.query_policy,
+            },
         )
         .await
+    }
+
+    /// Rebuilds the execution policy from immutable checkpoint metadata and
+    /// the current authorization state. Durable session policy JSON is only a
+    /// cache: every use compares it against this independently derived value.
+    async fn sql_session_current_execution_authorization(
+        &self,
+        space_id: &str,
+        session_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<CurrentSqlSessionExecutionAuthorization> {
+        require_sql_session_principals(principal_ids)?;
+        let workspace_path = self.workspace_path(space_id);
+        let inputs =
+            sql_session::get_session_execution_inputs(&self.operator, &workspace_path, session_id)
+                .await
+                .map_err(sql_session_metadata_authorization_error)?;
+        let relation = index::sql_session_page_relation(&inputs.sql)
+            .map_err(sql_session_metadata_authorization_error)?;
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
+        let entry_scope = sql_session_entry_scope(&state, principal_ids)?;
+        let query_policy = index::sql_session_query_policy_at_checkpoint(
+            &self.operator,
+            &workspace_path,
+            &relation,
+            entry_scope,
+            &inputs.checkpoint,
+        )
+        .await
+        .map_err(sql_session_metadata_authorization_error)?;
+        Ok(CurrentSqlSessionExecutionAuthorization {
+            policy_hash: sql_session_policy_hash(&state, principal_ids)?,
+            query_policy,
+        })
     }
 
     async fn asset_parent_entry(&self, space_id: &str, asset_id: &str) -> Result<Option<String>> {
@@ -848,33 +928,6 @@ impl UgoiteService {
         preferences::patch_user_preferences(&self.operator, user_id, patch).await
     }
 
-    pub async fn create_sql_session(&self, space_id: &str, sql: &str) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        sql_session::create_sql_session(&self.operator, &self.workspace_path(space_id), sql).await
-    }
-
-    pub async fn get_sql_session(&self, space_id: &str, session_id: &str) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        validate_storage_id(validate_sql_session_id(session_id))?;
-        sql_session::get_sql_session_status(
-            &self.operator,
-            &self.workspace_path(space_id),
-            session_id,
-        )
-        .await
-    }
-
-    pub async fn get_sql_session_count(&self, space_id: &str, session_id: &str) -> Result<u64> {
-        validate_storage_id(validate_space_id(space_id))?;
-        validate_storage_id(validate_sql_session_id(session_id))?;
-        sql_session::get_sql_session_count(
-            &self.operator,
-            &self.workspace_path(space_id),
-            session_id,
-        )
-        .await
-    }
-
     pub async fn get_sql_session_count_authorized_for_principals(
         &self,
         space_id: &str,
@@ -883,33 +936,21 @@ impl UgoiteService {
     ) -> Result<u64> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_sql_session_id(session_id))?;
-        let allowed = self
-            .authorized_form_entry_ids_for_principals(space_id, principal_ids)
+        let current_authorization = self
+            .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
             .await?;
+        let authorization = sql_session::SqlSessionExecutionAuthorization {
+            authorization: sql_session::SqlSessionAuthorization {
+                principal_ids,
+                policy_hash: &current_authorization.policy_hash,
+            },
+            query_policy: &current_authorization.query_policy,
+        };
         sql_session::get_sql_session_count_authorized_by_form(
             &self.operator,
             &self.workspace_path(space_id),
             session_id,
-            &allowed,
-        )
-        .await
-    }
-
-    pub async fn get_sql_session_rows(
-        &self,
-        space_id: &str,
-        session_id: &str,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
-        validate_storage_id(validate_sql_session_id(session_id))?;
-        sql_session::get_sql_session_rows(
-            &self.operator,
-            &self.workspace_path(space_id),
-            session_id,
-            offset,
-            limit,
+            authorization,
         )
         .await
     }
@@ -924,14 +965,21 @@ impl UgoiteService {
     ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_sql_session_id(session_id))?;
-        let allowed = self
-            .authorized_form_entry_ids_for_principals(space_id, principal_ids)
+        let current_authorization = self
+            .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
             .await?;
+        let authorization = sql_session::SqlSessionExecutionAuthorization {
+            authorization: sql_session::SqlSessionAuthorization {
+                principal_ids,
+                policy_hash: &current_authorization.policy_hash,
+            },
+            query_policy: &current_authorization.query_policy,
+        };
         sql_session::get_sql_session_rows_authorized_by_form(
             &self.operator,
             &self.workspace_path(space_id),
             session_id,
-            &allowed,
+            authorization,
             offset,
             limit,
         )
@@ -1008,6 +1056,128 @@ impl UgoiteService {
     ) -> Result<Value> {
         space::test_storage_connection(config).await
     }
+}
+
+fn require_sql_session_principals(principal_ids: &[Uuid]) -> Result<()> {
+    if principal_ids.is_empty() {
+        return Err(
+            AppError::forbidden("SQL session requires at least one authorized principal").into(),
+        );
+    }
+    Ok(())
+}
+
+fn sql_session_metadata_authorization_error(error: anyhow::Error) -> anyhow::Error {
+    if error.downcast_ref::<AppError>().is_some() {
+        error
+    } else {
+        AppError::forbidden("SQL session execution metadata is invalid").into()
+    }
+}
+
+/// Builds a sparse provider-side authorization predicate from the authoritative
+/// policy state. SQL sessions require every principal to have Space-level
+/// read, so only Entry policies that remove that inherited read need to be
+/// carried into the frozen checkpoint policy.
+fn sql_session_entry_scope(
+    state: &AuthorizationState,
+    principal_ids: &[Uuid],
+) -> Result<index::SqlSessionEntryScope> {
+    validate_sql_session_principal_access(state, principal_ids)?;
+    let mut denied_entry_ids = std::collections::BTreeSet::new();
+    for resource_key in state.policies.keys() {
+        let Some(entry_id) = resource_key.strip_prefix("entry:") else {
+            continue;
+        };
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: entry_id.to_string(),
+            parent: None,
+        };
+        let mut readable_by_every_principal = true;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(state, *principal_id, Some(&resource))?
+                .contains(&Action::Read)
+            {
+                readable_by_every_principal = false;
+                break;
+            }
+        }
+        if !readable_by_every_principal {
+            if denied_entry_ids.len() == index::SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS {
+                return Err(AppError::invalid_input(
+                    ugoite_core::error::ErrorCode::InvalidInput,
+                    "SQL session authorization scope exceeds the configured maximum",
+                )
+                .into());
+            }
+            denied_entry_ids.insert(entry_id.to_string());
+        }
+    }
+    Ok(index::SqlSessionEntryScope::AllExcept(denied_entry_ids))
+}
+
+fn validate_sql_session_principal_access(
+    state: &AuthorizationState,
+    principal_ids: &[Uuid],
+) -> Result<()> {
+    require_sql_session_principals(principal_ids)?;
+    for principal_id in principal_ids {
+        if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
+            return Err(AppError::forbidden(
+                "principal is not currently allowed to read this Space",
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+fn sql_session_policy_hash(state: &AuthorizationState, principal_ids: &[Uuid]) -> Result<String> {
+    require_sql_session_principals(principal_ids)?;
+    let principal_ids = principal_ids
+        .iter()
+        .map(Uuid::to_string)
+        .collect::<std::collections::BTreeSet<_>>();
+    let membership_roles = principal_ids
+        .iter()
+        .map(|principal_id| {
+            let principal_id = Uuid::parse_str(principal_id)
+                .expect("principal IDs were serialized from UUID values");
+            (
+                principal_id.to_string(),
+                state
+                    .memberships
+                    .get(&principal_id)
+                    .map(|membership| membership.role.clone()),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let agent_grants = principal_ids
+        .iter()
+        .map(|principal_id| {
+            let principal_id = Uuid::parse_str(principal_id)
+                .expect("principal IDs were serialized from UUID values");
+            (
+                principal_id.to_string(),
+                state.agent_grants.get(&principal_id).cloned(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let entry_policies = state
+        .policies
+        .iter()
+        .filter(|(resource_key, _)| resource_key.starts_with("entry:"))
+        .map(|(resource_key, policy)| (resource_key.clone(), policy.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let canonical = serde_json::to_vec(&json!({
+        "space_uid": state.space_uid,
+        "principal_ids": principal_ids,
+        "membership_roles": membership_roles,
+        "agent_grants": agent_grants,
+        "entry_policies": entry_policies,
+    }))?;
+    Ok(format!("sha256:{}", hex::encode(Sha256::digest(canonical))))
 }
 
 fn validate_storage_id(

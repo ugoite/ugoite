@@ -3384,15 +3384,10 @@ async fn get_sql_session(
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    state
-        .service
-        .require_sql_session_principals(&space_id, &session_id, &principals)
-        .await
-        .map_err(ApiError::from_core)?;
     Ok(Json(
         state
             .service
-            .get_sql_session(&space_id, &session_id)
+            .get_sql_session_authorized_for_principals(&space_id, &session_id, &principals)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -3407,11 +3402,6 @@ async fn get_sql_session_count(
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    state
-        .service
-        .require_sql_session_principals(&space_id, &session_id, &principals)
-        .await
-        .map_err(ApiError::from_core)?;
     Ok(Json(json!({
         "count": state
             .service
@@ -3437,11 +3427,11 @@ async fn get_sql_session_rows(
     validate_id(&session_id, "session_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    state
-        .service
-        .require_sql_session_principals(&space_id, &session_id, &principals)
-        .await
-        .map_err(ApiError::from_core)?;
+    let offset = query.offset.unwrap_or_default();
+    let limit = query
+        .limit
+        .unwrap_or(ugoite_iceberg::sql_session::DEFAULT_PAGE_SIZE);
+    validate_sql_session_page_request(offset, limit)?;
     Ok(Json(
         state
             .service
@@ -3449,12 +3439,26 @@ async fn get_sql_session_rows(
                 &space_id,
                 &session_id,
                 &principals,
-                query.offset.unwrap_or_default(),
-                query.limit.unwrap_or(50).min(1000),
+                offset,
+                limit,
             )
             .await
             .map_err(ApiError::from_core)?,
     ))
+}
+
+fn validate_sql_session_page_request(offset: usize, limit: usize) -> ApiResult<()> {
+    let page_end = offset.checked_add(limit);
+    if limit == 0
+        || limit > ugoite_iceberg::sql_session::MAX_PAGE_SIZE
+        || page_end.is_none_or(|end| end > ugoite_iceberg::sql_session::MAX_PAGE_SIZE)
+    {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "SQL session page range exceeds the configured maximum",
+        ));
+    }
+    Ok(())
 }
 
 async fn test_connection(
@@ -4413,5 +4417,18 @@ mod authentication_regression_tests {
         validate_action_names(&defaults).expect("CLI default actions are known");
         validate_access_credential_actions(&defaults)
             .expect("CLI default actions require no unavailable approval flow");
+    }
+
+    #[test]
+    fn sql_session_page_request_rejects_zero_overflow_and_large_windows() {
+        assert!(validate_sql_session_page_request(0, 1).is_ok());
+        assert!(validate_sql_session_page_request(0, 0).is_err());
+        assert!(validate_sql_session_page_request(999, 2).is_err());
+        assert!(validate_sql_session_page_request(usize::MAX, 1).is_err());
+        assert!(validate_sql_session_page_request(
+            0,
+            ugoite_iceberg::sql_session::MAX_PAGE_SIZE + 1
+        )
+        .is_err());
     }
 }
