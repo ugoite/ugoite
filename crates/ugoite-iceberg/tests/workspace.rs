@@ -352,31 +352,56 @@ async fn existing_form_field_type_changes_are_typed_and_leave_form_unchanged() -
     .await?;
     let mut form = form();
     form.fields[0].field_type = FieldType::Timestamp;
+    form.fields.push(FormField {
+        id: FieldId::new(101).unwrap(),
+        name: "count".into(),
+        field_type: FieldType::Integer,
+        required: false,
+        label: None,
+        description: None,
+        semantic_role: None,
+        reference_form: None,
+        validation: None,
+        enum_values: Vec::new(),
+        deprecated: false,
+    });
     create_form(&workspace, &form).await?;
+    let checkpoint_before = workspace.capture_checkpoint().await?;
 
-    let error = evolve_form(
-        &workspace,
-        &FormChangeSet {
-            form_id: form.id,
-            expected_version: Some(form.version),
-            changes: vec![FormChange::ChangeFieldType {
-                field_id: FieldId::new(100).unwrap(),
-                field_type: FieldType::Date,
-            }],
-        },
-    )
-    .await
-    .expect_err("existing Form field type changes must be rejected");
-    let app_error = error
-        .downcast_ref::<AppError>()
-        .expect("type-change rejection must remain a typed application error");
-    assert_eq!(app_error.kind(), ErrorKind::InvalidInput);
-    assert_eq!(app_error.code(), ErrorCode::FormFieldTypeChangeNotSupported);
-    assert_eq!(
-        app_error.message(),
-        "Changing the type of existing Form field 'title' from 'timestamp' to 'date' is not supported; create a new field instead"
-    );
-    assert_eq!(workspace.load_form(form.id).await?, form);
+    for (field_id, target_type, expected_message) in [
+        (
+            FieldId::new(100).unwrap(),
+            FieldType::Date,
+            "Changing the type of existing Form field 'title' from 'timestamp' to 'date' is not supported; create a new field instead",
+        ),
+        (
+            FieldId::new(101).unwrap(),
+            FieldType::Long,
+            "Changing the type of existing Form field 'count' from 'integer' to 'long' is not supported; create a new field instead",
+        ),
+    ] {
+        let error = evolve_form(
+            &workspace,
+            &FormChangeSet {
+                form_id: form.id,
+                expected_version: Some(form.version),
+                changes: vec![FormChange::ChangeFieldType {
+                    field_id,
+                    field_type: target_type,
+                }],
+            },
+        )
+        .await
+        .expect_err("existing Form field type changes must be rejected");
+        let app_error = error
+            .downcast_ref::<AppError>()
+            .expect("type-change rejection must remain a typed application error");
+        assert_eq!(app_error.kind(), ErrorKind::InvalidInput);
+        assert_eq!(app_error.code(), ErrorCode::FormFieldTypeChangeNotSupported);
+        assert_eq!(app_error.message(), expected_message);
+        assert_eq!(workspace.load_form(form.id).await?, form);
+        assert_eq!(workspace.capture_checkpoint().await?, checkpoint_before);
+    }
     Ok(())
 }
 

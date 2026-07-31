@@ -65,7 +65,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, LazyLock, Mutex};
 use tokio::sync::Semaphore;
-use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::error::AppError;
 use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
@@ -87,7 +87,7 @@ const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
 fn unsupported_form_field_type_change(
     current: &FormDefinition,
     changes: &FormChangeSet,
-) -> AppError {
+) -> Result<AppError> {
     changes
         .changes
         .iter()
@@ -106,12 +106,7 @@ fn unsupported_form_field_type_change(
                 field_type.as_str(),
             ))
         })
-        .unwrap_or_else(|| {
-            AppError::invalid_input(
-                ErrorCode::FormFieldTypeChangeNotSupported,
-                "Changing the type of an existing Form field is not supported; create a new field instead",
-            )
-        })
+        .context("breaking Form compatibility did not contain a field type change")
 }
 
 /// A durable checkpoint or one of its immutable targets cannot be resolved.
@@ -599,7 +594,7 @@ impl IcebergWorkspace {
         }
         match changes.compatibility(&current)? {
             Compatibility::Breaking => {
-                return Err(unsupported_form_field_type_change(&current, changes).into())
+                return Err(unsupported_form_field_type_change(&current, changes)?.into())
             }
             Compatibility::MigrationRequired => {
                 return Err(anyhow!("Form change requires a populated migration plan"))
@@ -629,7 +624,9 @@ impl IcebergWorkspace {
             if physical.field_type.as_ref()
                 != &iceberg_type(&evolved_field.field_type, field.id.get())
             {
-                return Err(unsupported_form_field_type_change(&current, changes).into());
+                return Err(anyhow!(
+                    "Iceberg schema is inconsistent with the existing Form definition"
+                ));
             }
         }
         if let Some(space_catalog) = &self.space_catalog {

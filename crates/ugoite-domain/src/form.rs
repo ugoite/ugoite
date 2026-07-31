@@ -71,15 +71,6 @@ impl FieldType {
             Self::RowReference => "row_reference",
         }
     }
-
-    pub fn can_widen_to(&self, target: &Self) -> bool {
-        self == target
-            || matches!(
-                (self, target),
-                (Self::Integer, Self::Long)
-                    | (Self::Integer | Self::Long | Self::Float, Self::Double)
-            )
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -242,18 +233,14 @@ impl FormChangeSet {
                 FormChange::ChangeRequired { .. } => Compatibility::Compatible,
                 FormChange::ChangeFieldType {
                     field_id,
-                    field_type,
+                    ..
                 } => {
-                    let source = current
+                    current
                         .fields
                         .iter()
                         .find(|field| field.id == *field_id)
                         .ok_or(DomainError::UnknownField(*field_id))?;
-                    if source.field_type.can_widen_to(field_type) {
-                        Compatibility::Compatible
-                    } else {
-                        Compatibility::Breaking
-                    }
+                    Compatibility::Breaking
                 }
             };
             result = result.max(compatibility);
