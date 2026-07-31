@@ -33,13 +33,6 @@ async fn create_test_entry(
     Ok(())
 }
 
-#[derive(serde::Deserialize, Debug)]
-#[allow(dead_code)]
-struct SearchResultWrapper {
-    id: String,
-    // Add logic to extract matches if search struct exposes more
-}
-
 #[tokio::test]
 /// REQ-SRCH-001
 async fn test_search_req_srch_001_keyword_search() -> anyhow::Result<()> {
@@ -66,7 +59,6 @@ async fn test_search_req_srch_001_keyword_search() -> anyhow::Result<()> {
     let first = results.iter().find(|result| result.id == "entry1").unwrap();
     assert_eq!(first.title, "entry1");
     assert_eq!(first.form, "Entry");
-    assert!(first.properties.get("Body").is_some());
 
     Ok(())
 }

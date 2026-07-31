@@ -398,7 +398,7 @@ impl UgoiteService {
         &self,
         space_id: &str,
         query: &str,
-    ) -> Result<Vec<search::SearchResult>> {
+    ) -> Result<Vec<search::KeywordSearchResult>> {
         validate_storage_id(validate_space_id(space_id))?;
         search::search_entries(&self.operator, &self.workspace_path(space_id), query).await
     }
@@ -664,7 +664,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
         query: &str,
-    ) -> Result<Vec<search::SearchResult>> {
+    ) -> Result<Vec<search::KeywordSearchResult>> {
         let allowed = self
             .authorized_entry_ids_for_principals(space_id, principal_ids)
             .await?;
@@ -849,7 +849,7 @@ impl UgoiteService {
         space_id: &str,
         principal_id: Uuid,
         query: &str,
-    ) -> Result<Vec<search::SearchResult>> {
+    ) -> Result<Vec<search::KeywordSearchResult>> {
         let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
         search::search_entries_authorized(
             &self.operator,

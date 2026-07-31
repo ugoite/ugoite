@@ -90,6 +90,13 @@ describe("sqlSessionApi", () => {
     });
   });
 
+  it("rejects arbitrary SQL projections instead of creating an empty Entry card", () => {
+    expect(() => sqlSessionRowToEntryRecord({ field_100: "Active" }))
+      .toThrow(
+        "SQL session result is not an Entry projection",
+      );
+  });
+
   it("throws on create failure", async () => {
     server.use(
       http.post(

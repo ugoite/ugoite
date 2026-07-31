@@ -5,16 +5,16 @@ import { http, HttpResponse } from "msw";
 import SpaceSearchRoute from "./search";
 import {
   resetMockData,
-  seedEntry,
   seedForm,
   seedSpace,
   seedSqlEntry,
 } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
-import type { Entry, EntryRecord, Form, Space } from "~/lib/types";
+import type { Form, KeywordSearchResult, Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
 
 const navigateMock = vi.fn();
+const entryRelation = "form_00000000000000000000000000000001";
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; class?: string; children: unknown }) => (
@@ -47,7 +47,8 @@ describe("/spaces/:space_id/search", () => {
     seedSqlEntry("default", {
       id: "query-1",
       name: "Recent Search",
-      sql: "SELECT * FROM entries LIMIT 10",
+      sql:
+        `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
       variables: [],
       created_at: 1772960822.056,
       updated_at: 1772960822.056,
@@ -66,25 +67,13 @@ describe("/spaces/:space_id/search", () => {
   });
 
   it("REQ-SRCH-004: runs a direct keyword search and renders matching entries", async () => {
-    const entry: Entry = {
+    const record: KeywordSearchResult = {
       id: "entry-1",
       title: "Alpha Entry",
-      content:
-        "---\nform: Entry\n---\n# Alpha Entry\n\n## Body\nKeyword-first search is easier.",
-      revision_id: "rev-1",
+      form: "Entry",
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-02T00:00:00Z",
     };
-    const record: EntryRecord = {
-      id: entry.id,
-      title: entry.title ?? "Alpha Entry",
-      form: "Entry",
-      updated_at: entry.updated_at,
-      properties: { Body: "Keyword-first search is easier." },
-      tags: ["search"],
-      links: [],
-    };
-    seedEntry("default", entry, record);
     let entryListCalls = 0;
     let sqlSessionCalls = 0;
     server.use(
@@ -122,7 +111,7 @@ describe("/spaces/:space_id/search", () => {
   it("REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session", async () => {
     const meetingForm: Form = {
       name: "Meeting",
-      sql_relation: "meeting",
+      sql_relation: entryRelation,
       version: 1,
       template: "# Meeting\n\n## Status\n",
       fields: {
@@ -193,10 +182,10 @@ describe("/spaces/:space_id/search", () => {
         "Advanced search - form: Meeting - updated-from: 2025-03-01 - updated-to: 2025-03-03 - Status=Active",
       );
       expect(savedSqlBody?.sql).toBe(
-        "SELECT * FROM \"meeting\" WHERE _ugoite_updated_at >= TIMESTAMP '2025-03-01 00:00:00Z' AND _ugoite_updated_at < TIMESTAMP '2025-03-04 00:00:00Z' AND \"field_100\" = 'Active' ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50",
+        `SELECT * FROM "${entryRelation}" WHERE _ugoite_updated_at >= TIMESTAMP '2025-03-01 00:00:00Z' AND _ugoite_updated_at < TIMESTAMP '2025-03-04 00:00:00Z' AND "field_100" = 'Active' ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50`,
       );
       expect(sessionSqlBody?.sql).toBe(
-        'SELECT * FROM "meeting" WHERE _ugoite_updated_at >= $search_0 AND _ugoite_updated_at < $search_1 AND "field_100" = $search_2 ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
+        `SELECT * FROM "${entryRelation}" WHERE _ugoite_updated_at >= $search_0 AND _ugoite_updated_at < $search_1 AND "field_100" = $search_2 ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50`,
       );
       expect(sessionSqlBody?.parameters).toEqual({
         search_0: "2025-03-01T00:00:00.000Z",
@@ -519,7 +508,8 @@ describe("/spaces/:space_id/search", () => {
     seedSqlEntry("default", {
       id: "saved-ready",
       name: "Ready history",
-      sql: "SELECT * FROM entries WHERE title = 'Alpha'",
+      sql:
+        `SELECT * FROM "${entryRelation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_updated_at DESC, _ugoite_id`,
       variables: [],
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-02T00:00:00Z",
@@ -528,11 +518,21 @@ describe("/spaces/:space_id/search", () => {
     seedSqlEntry("default", {
       id: "saved-vars",
       name: "Needs variables",
-      sql: "SELECT * FROM entries WHERE title = {{title}}",
+      sql:
+        `SELECT * FROM "${entryRelation}" WHERE _ugoite_title = {{title}} ORDER BY _ugoite_updated_at DESC, _ugoite_id`,
       variables: [{ type: "string", name: "title", description: "Title" }],
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-03T00:00:00Z",
       revision_id: "rev-2",
+    });
+    seedSqlEntry("default", {
+      id: "saved-legacy",
+      name: "Legacy SQL",
+      sql: "SELECT * FROM entries WHERE title = 'Alpha'",
+      variables: [],
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-04T00:00:00Z",
+      revision_id: "rev-3",
     });
 
     let sessionSqlBody: { sql?: string } | null = null;
@@ -540,7 +540,14 @@ describe("/spaces/:space_id/search", () => {
       http.post(
         testApiUrl("/spaces/default/sql-sessions"),
         async ({ request }) => {
-          sessionSqlBody = (await request.json()) as { sql?: string };
+          const body = (await request.json()) as { sql?: string };
+          if (body.sql && /\bentries\b/i.test(body.sql)) {
+            return HttpResponse.json(
+              { detail: "Legacy SQL relations are unsupported" },
+              { status: 422 },
+            );
+          }
+          sessionSqlBody = body;
           return HttpResponse.json(
             { id: "history-session", status: "ready", error: null },
             { status: 201 },
@@ -556,7 +563,7 @@ describe("/spaces/:space_id/search", () => {
     );
     await waitFor(() => {
       expect(sessionSqlBody?.sql).toBe(
-        "SELECT * FROM entries WHERE title = 'Alpha'",
+        `SELECT * FROM "${entryRelation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_updated_at DESC, _ugoite_id`,
       );
       expect(navigateMock).toHaveBeenCalledWith(
         "/spaces/default/entries?session=history-session",
@@ -568,6 +575,12 @@ describe("/spaces/:space_id/search", () => {
     expect(navigateMock).toHaveBeenCalledWith(
       "/spaces/default/queries/saved-vars/variables",
     );
+
+    navigateMock.mockReset();
+    fireEvent.click(await screen.findByRole("button", { name: /Legacy SQL/ }));
+    expect(await screen.findByText(/Legacy SQL relations are unsupported/))
+      .toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("links the Assets facet to the Space asset workspace", () => {

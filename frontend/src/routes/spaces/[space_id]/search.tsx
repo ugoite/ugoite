@@ -7,7 +7,7 @@ import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
-import type { SearchResult, SqlEntry } from "~/lib/types";
+import type { KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 
 type SearchMode = "keyword" | "advanced";
@@ -363,7 +363,9 @@ export default function SpaceSearchRoute() {
 
   const [mode, setMode] = createSignal<SearchMode>("keyword");
   const [keywordQuery, setKeywordQuery] = createSignal("");
-  const [keywordResults, setKeywordResults] = createSignal<SearchResult[]>([]);
+  const [keywordResults, setKeywordResults] = createSignal<
+    KeywordSearchResult[]
+  >([]);
   const [keywordSearchPerformed, setKeywordSearchPerformed] = createSignal(
     false,
   );

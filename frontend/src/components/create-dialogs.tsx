@@ -465,7 +465,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
 
   const buildDefaultValue = (name: string, field: Form["fields"][string]) => {
     /* v8 ignore start */
-    if (name.toLowerCase() === "sql") return "SELECT * FROM entries LIMIT 50";
+    if (name.toLowerCase() === "sql") return "";
     switch (field.type) {
       case "integer":
       case "long":

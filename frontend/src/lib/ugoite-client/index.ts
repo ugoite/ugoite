@@ -15,7 +15,11 @@ export { preferencesApi } from "../preferences-api";
 export { searchApi } from "../search-api";
 export { spaceApi } from "../space-api";
 export { sqlApi } from "../sql-api";
-export { sqlSessionApi, sqlSessionRowToEntryRecord } from "../sql-session-api";
+export {
+  sqlSessionApi,
+  SqlSessionEntryProjectionError,
+  sqlSessionRowToEntryRecord,
+} from "../sql-session-api";
 export { RevisionConflictError } from "../entry-api";
 export {
   getWasmSupportedOperations,

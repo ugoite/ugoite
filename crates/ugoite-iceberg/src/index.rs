@@ -1510,10 +1510,10 @@ mod tests {
     fn sql_session_relation_parser_uses_identifier_value_without_quotes() {
         assert_eq!(
             sql_session_page_relation(
-                r#"SELECT * FROM "meeting" ORDER BY _ugoite_updated_at DESC, _ugoite_id"#,
+                r#"SELECT * FROM "form_00000000000000000000000000000001" ORDER BY _ugoite_updated_at DESC, _ugoite_id"#,
             )
             .expect("quoted relation is valid"),
-            "meeting"
+            "form_00000000000000000000000000000001"
         );
     }
 

@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
-pub const SPACE_CHECKPOINT_FORMAT_VERSION: u32 = 2;
+pub const SPACE_CHECKPOINT_FORMAT_VERSION: u32 = 1;
 
 /// One immutable Iceberg table coordinate reachable from a Catalog Head.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -81,19 +81,6 @@ impl SpaceCheckpoint {
     pub fn validate_coordinate_checksum(&self) -> bool {
         self.format_version == SPACE_CHECKPOINT_FORMAT_VERSION
             && self.coordinate_checksum == self.computed_coordinate_checksum()
-    }
-
-    /// Decode only the current checkpoint representation. Older checkpoint
-    /// versions are deliberately rejected before deserializing their table
-    /// payload so a breaking format change remains explicit.
-    pub fn from_json_value(value: serde_json::Value) -> anyhow::Result<Self> {
-        let version = value.get("format_version").and_then(|value| value.as_u64());
-        anyhow::ensure!(
-            version == Some(u64::from(SPACE_CHECKPOINT_FORMAT_VERSION)),
-            "unsupported SpaceCheckpoint format version: {}",
-            version.map_or_else(|| "missing".to_string(), |version| version.to_string())
-        );
-        Ok(serde_json::from_value(value)?)
     }
 
     /// Reject ambiguous or malformed coordinates before any storage is read.
@@ -219,16 +206,5 @@ mod tests {
             second.computed_coordinate_checksum()
         );
         assert!(second.validate_coordinate_checksum());
-    }
-
-    #[test]
-    fn rejects_the_previous_checkpoint_format_before_payload_decode() {
-        let error = SpaceCheckpoint::from_json_value(serde_json::json!({
-            "format_version": 1,
-        }))
-        .expect_err("v1 checkpoints must be explicitly unsupported");
-        assert!(error
-            .to_string()
-            .contains("unsupported SpaceCheckpoint format version: 1"));
     }
 }

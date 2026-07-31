@@ -124,7 +124,9 @@ export const seedEntry = (
 
 export const seedForm = (spaceId: string, entryForm: Form) => {
   if (!entryForm.sql_relation) {
-    throw new Error(`seedForm requires backend sql_relation for ${entryForm.name}`);
+    throw new Error(
+      `seedForm requires backend sql_relation for ${entryForm.name}`,
+    );
   }
   mockForms.get(spaceId)?.set(entryForm.name, entryForm);
 };
@@ -682,6 +684,12 @@ export const handlers = [
     async ({ params, request }) => {
       const spaceId = params.spaceId as string;
       const body = (await request.json()) as { sql: string };
+      if (typeof body.sql === "string" && /\bentries\b/i.test(body.sql)) {
+        return HttpResponse.json(
+          { detail: "Legacy SQL relations are unsupported" },
+          { status: 422 },
+        );
+      }
       const id = crypto.randomUUID();
       const session = {
         id,

@@ -128,11 +128,12 @@ fn session_sql(meta: &Value) -> Result<&str> {
 }
 
 fn session_checkpoint(meta: &Value) -> Result<SpaceCheckpoint> {
-    SpaceCheckpoint::from_json_value(
+    serde_json::from_value(
         meta.get("checkpoint")
             .cloned()
             .ok_or_else(|| anyhow!("SQL session is missing its SpaceCheckpoint"))?,
     )
+    .map_err(Into::into)
 }
 
 fn session_parameters(meta: &Value) -> Result<HashMap<String, datafusion::scalar::ScalarValue>> {

@@ -296,16 +296,11 @@ export interface ApiError {
   detail: string;
 }
 
-/** Keyword-search result returned by the single backend Entry scan. */
-export interface SearchResult {
+/** Minimal keyword-search result returned by the backend Entry scan. */
+export interface KeywordSearchResult {
   id: string;
   title: string;
   form: string;
-  created_at?: string | number;
+  created_at: string | number;
   updated_at: string | number;
-  properties: Record<string, unknown>;
-  tags: string[];
-  links: EntryLink[];
-  checksum?: string;
-  assets?: Asset[];
 }

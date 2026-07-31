@@ -3,14 +3,14 @@ use opendal::Operator;
 use std::collections::HashSet;
 
 use crate::entry;
-pub use ugoite_domain::search::SearchResult;
+pub use ugoite_domain::search::KeywordSearchResult;
 
 /// Hybrid keyword search using index and content fallback.
 pub async fn search_entries(
     op: &Operator,
     ws_path: &str,
     query: &str,
-) -> Result<Vec<SearchResult>> {
+) -> Result<Vec<KeywordSearchResult>> {
     search_entries_with_authorized_ids(op, ws_path, query, None).await
 }
 
@@ -19,7 +19,7 @@ pub async fn search_entries_authorized(
     ws_path: &str,
     query: &str,
     readable_entry_ids: &HashSet<String>,
-) -> Result<Vec<SearchResult>> {
+) -> Result<Vec<KeywordSearchResult>> {
     search_entries_with_authorized_ids(op, ws_path, query, Some(readable_entry_ids)).await
 }
 
@@ -28,7 +28,7 @@ async fn search_entries_with_authorized_ids(
     ws_path: &str,
     query: &str,
     readable_entry_ids: Option<&HashSet<String>>,
-) -> Result<Vec<SearchResult>> {
+) -> Result<Vec<KeywordSearchResult>> {
     let query = query.to_lowercase();
     let rows = entry::list_entry_rows(op, ws_path).await?;
     let mut results = Vec::new();
@@ -39,17 +39,12 @@ async fn search_entries_with_authorized_ids(
         }
         let dump = serde_json::to_string(&row)?.to_lowercase();
         if dump.contains(&query) {
-            results.push(SearchResult {
+            results.push(KeywordSearchResult {
                 id: row.entry_id,
                 title: row.title,
                 form: row.form,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
-                properties: entry::merge_entry_fields(&row.fields, &row.extra_attributes),
-                tags: row.tags,
-                links: row.links,
-                assets: row.assets,
-                checksum: row.integrity.checksum,
             });
         }
     }

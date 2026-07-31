@@ -1,5 +1,10 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client.ts";
+import {
+	ensureDefaultForm,
+	getBackendUrl,
+	getDefaultFormRelation,
+	waitForServers,
+} from "./lib/client.ts";
 
 const spaceId = "default";
 const themes = ["materialize", "classic", "pop"] as const;
@@ -18,6 +23,7 @@ test.describe("UI theme flows", () => {
 	for (const theme of themes) {
 		test(themeTestTitles[theme], async ({ page, request }) => {
 			test.setTimeout(120_000);
+			const relation = await getDefaultFormRelation(request);
 			const runId = Date.now();
 			const entryTitle = `E2E Theme Entry ${theme} ${runId}`;
 			const variableQueryId = `e2e-theme-var-${theme}-${runId}`;
@@ -41,7 +47,7 @@ test.describe("UI theme flows", () => {
 					data: {
 						id: variableQueryId,
 						name: variableQueryName,
-						sql: "SELECT * FROM entries WHERE title = {{title}} LIMIT 10",
+						sql: `SELECT * FROM "${relation}" WHERE _ugoite_title = {{title}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
 						variables: [
 							{ type: "string", name: "title", description: "Title" },
 						],

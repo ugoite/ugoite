@@ -107,6 +107,39 @@ describe("/spaces/:space_id/entries", () => {
     );
   });
 
+  it("shows an explicit error for SQL rows that are not Entry projections", async () => {
+    searchParams.session = "session-1";
+    server.use(
+      http.get(
+        testApiUrl("/spaces/default/sql-sessions/session-1"),
+        () =>
+          HttpResponse.json({
+            id: "session-1",
+            status: "ready",
+          }),
+      ),
+      http.get(
+        testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
+        () =>
+          HttpResponse.json({
+            rows: [{ field_100: "Active" }],
+            offset: 0,
+            limit: 24,
+            total_count: 1,
+          }),
+      ),
+    );
+
+    renderRoute();
+
+    expect(
+      await screen.findByText(/SQL session result is not an Entry projection/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Untitled/ }))
+      .not.toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("returns to the Forms workspace when clearing SQL results", async () => {
     searchParams.session = "session-1";
     server.use(
