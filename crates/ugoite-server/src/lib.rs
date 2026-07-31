@@ -4365,6 +4365,8 @@ pub fn openapi_snapshot() -> Value {
 #[cfg(test)]
 mod authentication_regression_tests {
     use super::*;
+    use axum::{body::Body, http::Request, routing::post};
+    use tower::ServiceExt;
 
     fn token_claims(sub: Uuid, actor_principal_id: Option<Uuid>) -> AccessTokenClaims {
         AccessTokenClaims {
@@ -4430,5 +4432,105 @@ mod authentication_regression_tests {
             ugoite_iceberg::sql_session::MAX_PAGE_SIZE + 1
         )
         .is_err());
+    }
+
+    #[test]
+    fn unsupported_form_field_type_changes_are_client_errors_with_actionable_details() {
+        let error = ApiError::from_core(
+            AppError::form_field_type_change_not_supported("time", "timestamp", "date").into(),
+        );
+
+        assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            error.detail,
+            json!({
+                "code": "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED",
+                "message": "Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn form_type_change_route_returns_422_with_the_workspace_error() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-form-type-change-route")?;
+        let principal_id = Uuid::from_u128(1859);
+        let space_id = state
+            .service
+            .create_space_for_principal("form-type-change", principal_id, "Route test")
+            .await?
+            .to_string();
+        let form_id = Uuid::from_u128(1862);
+        let original = json!({
+            "id": form_id,
+            "name": "Meeting",
+            "version": 1,
+            "fields": {
+                "time": {"id": 100, "type": "timestamp", "required": false}
+            },
+            "allow_extra_attributes": "deny"
+        });
+        state.service.upsert_form(&space_id, &original).await?;
+
+        let desired = json!({
+            "id": form_id,
+            "name": "Meeting",
+            "version": 1,
+            "fields": {
+                "time": {"id": 100, "type": "date", "required": false}
+            },
+            "allow_extra_attributes": "deny"
+        });
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let identity = RequestIdentityContext {
+            request_identity: RequestIdentity {
+                subject: AuthenticatedSubject::HumanAccount {
+                    account_id: principal_id,
+                },
+                actor: Actor::Human {
+                    account_id: principal_id,
+                },
+                credential_id: Uuid::from_u128(1863),
+                authentication_method: RequestAuthenticationMethod::Passkey,
+                assurance: AssuranceLevel::PhishingResistant,
+                constraints: CredentialConstraints::default(),
+                session_id: None,
+            },
+            account_id: principal_id,
+            display_name: "Route test".into(),
+            node_admin: false,
+            token_principal_id: Some(principal_id),
+            token_actor_principal_id: None,
+            token_space_uid: Some(space_uid),
+            token_actions: Some(
+                ["read", "create", "update"]
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+            ),
+            recent_passkey: true,
+        };
+        let route = Router::new()
+            .route("/spaces/{space_id}/forms", post(upsert_form))
+            .layer(Extension(identity))
+            .with_state(state.clone());
+        let response = route
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/forms"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(desired.to_string()))?,
+            )
+            .await
+            .expect("Form route response");
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let body: Value = serde_json::from_slice(&body)?;
+        assert_eq!(body["code"], "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED");
+        assert_eq!(
+            body["message"],
+            "Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead"
+        );
+        let stored = state.service.get_form(&space_id, "Meeting").await?;
+        assert_eq!(stored["fields"]["time"]["type"], "timestamp");
+        Ok(())
     }
 }

@@ -15,7 +15,7 @@ const labels = {
   },
 } as const;
 
-export function AccountMenu() {
+export function AccountMenu(props: { settingsHref?: string } = {}) {
   const [open, setOpen] = createSignal(false);
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
 
@@ -40,7 +40,7 @@ export function AccountMenu() {
         <div class="accountMenuPanel" role="menu">
           <div class="accountMenuTitle">{copy().account}</div>
           <a
-            href="/settings/security"
+            href={props.settingsHref ?? "/settings/security"}
             role="menuitem"
             onClick={() => setOpen(false)}
           >

@@ -7,7 +7,7 @@ import type {
   EntryUpdatePayload,
   Form,
 } from "./types";
-import { normalizeTimestamp } from "./date-format";
+import { normalizeEntryRecord, normalizeTimestamp } from "./date-format";
 import { buildEntryMarkdownByMode } from "./entry-input";
 import {
   protocolFetch,
@@ -18,14 +18,6 @@ type EntryResponse = Omit<Entry, "content"> & {
   content?: string;
   markdown?: string;
 };
-
-const normalizeEntryRecord = (entry: EntryRecord): EntryRecord => ({
-  ...entry,
-  ...(entry.created_at === undefined
-    ? {}
-    : { created_at: normalizeTimestamp(entry.created_at) }),
-  updated_at: normalizeTimestamp(entry.updated_at),
-});
 
 const normalizeEntry = (entry: EntryResponse): Entry => ({
   ...entry,

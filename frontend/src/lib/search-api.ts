@@ -1,5 +1,6 @@
 import { normalizeTimestamp } from "./date-format";
 import type { EntryRecord, SearchResult } from "./types";
+import { normalizeEntryRecord } from "./date-format";
 import { protocolFetch } from "./ugoite-client/protocol";
 
 export type EntrySummary = {
@@ -14,11 +15,12 @@ export const searchApi = {
     spaceId: string,
     filter: Record<string, unknown>,
   ): Promise<EntryRecord[]> {
-    return await protocolFetch<EntryRecord[]>(
+    const entries = await protocolFetch<EntryRecord[]>(
       "search.query",
       { space_id: spaceId },
       { filter },
     );
+    return entries.map(normalizeEntryRecord);
   },
 
   async keyword(spaceId: string, query: string): Promise<SearchResult[]> {

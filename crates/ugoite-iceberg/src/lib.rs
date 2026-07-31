@@ -65,11 +65,13 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, LazyLock, Mutex};
 use tokio::sync::Semaphore;
+use ugoite_core::error::AppError;
 use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{
-    sql_relation_name, Compatibility, FieldType, FormChangeSet, FormDefinition, FormField,
+    sql_relation_name, Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition,
+    FormField,
 };
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
@@ -82,6 +84,31 @@ const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
 const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
 const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
+
+fn unsupported_form_field_type_change(
+    current: &FormDefinition,
+    changes: &FormChangeSet,
+) -> Result<AppError> {
+    changes
+        .changes
+        .iter()
+        .find_map(|change| {
+            let FormChange::ChangeFieldType {
+                field_id,
+                field_type,
+            } = change
+            else {
+                return None;
+            };
+            let source = current.fields.iter().find(|field| field.id == *field_id)?;
+            Some(AppError::form_field_type_change_not_supported(
+                &source.name,
+                source.field_type.as_str(),
+                field_type.as_str(),
+            ))
+        })
+        .context("breaking Form compatibility did not contain a field type change")
+}
 
 /// A durable checkpoint or one of its immutable targets cannot be resolved.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -571,9 +598,7 @@ impl IcebergWorkspace {
         }
         match changes.compatibility(&current)? {
             Compatibility::Breaking => {
-                return Err(anyhow!(
-                    "breaking Form change requires an explicit major migration"
-                ))
+                return Err(unsupported_form_field_type_change(&current, changes)?.into())
             }
             Compatibility::MigrationRequired => {
                 return Err(anyhow!("Form change requires a populated migration plan"))
@@ -604,7 +629,7 @@ impl IcebergWorkspace {
                 != &iceberg_type(&evolved_field.field_type, field.id.get())
             {
                 return Err(anyhow!(
-                    "Iceberg field type changes require an explicit migration"
+                    "Iceberg schema is inconsistent with the existing Form definition"
                 ));
             }
         }
