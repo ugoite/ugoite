@@ -246,7 +246,7 @@ export default function SpaceSettingsRoute() {
                     <For each={managedRoles}>
                       {(role) => (
                         <option value={role}>
-                          {t(`settings.roleLabel.${role}` as TranslationKey)}
+                          {role} — {t(`settings.role.${role}` as TranslationKey)}
                         </option>
                       )}
                     </For>
@@ -309,7 +309,7 @@ export default function SpaceSettingsRoute() {
                           <For each={managedRoles}>
                             {(role) => (
                               <option value={role}>
-                            {t(`settings.roleLabel.${role}` as TranslationKey)}
+                                {role} — {t(`settings.role.${role}` as TranslationKey)}
                               </option>
                             )}
                           </For>
@@ -350,13 +350,13 @@ export default function SpaceSettingsRoute() {
                       setAgentMode(e.currentTarget.value as AgentMode)}
                   >
                     <option value="autonomous">
-                      {t("settings.agentModeLabel.autonomous")}
+                      autonomous — {t("settings.agentMode.autonomous")}
                     </option>
                     <option value="delegated">
-                      {t("settings.agentModeLabel.delegated")}
+                      delegated — {t("settings.agentMode.delegated")}
                     </option>
                     <option value="both">
-                      {t("settings.agentModeLabel.both")}
+                      both — {t("settings.agentMode.both")}
                     </option>
                   </select>
                 </label>

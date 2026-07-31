@@ -71,7 +71,9 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     entry::create_entry(&op, ws_path, "entry-2", entry_two, "author", &MockIntegrity).await?;
 
     let sql_payload = saved_sql::SqlPayload {
-        name: "Alpha Query".to_string(),
+        name: Some("Alpha Query".to_string()),
+        kind: saved_sql::SqlKind::UserQuery,
+        metadata: None,
         sql: "SELECT * FROM entry WHERE _ugoite_title = $title ORDER BY _ugoite_id".to_string(),
         variables: serde_json::json!([{
             "name": "title",

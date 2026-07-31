@@ -17,6 +17,7 @@ import {
   updateH2Section,
 } from "~/lib/markdown";
 import { t } from "~/lib/i18n";
+import { formatDateLabel } from "~/lib/date-format";
 
 interface FormTableProps {
   spaceId: string;
@@ -63,7 +64,7 @@ function applyColumnFilters(
       /* v8 ignore start */
       if (field === "title") val = entry.title || "";
       else if (field === "updated_at") {
-        val = new Date(entry.updated_at).toLocaleDateString();
+        val = formatDateLabel(entry.updated_at);
       } else val = String(entry.properties?.[field] ?? "");
       /* v8 ignore stop */
 
@@ -463,7 +464,7 @@ export function FormTable(props: FormTableProps) {
     // Col N+1: Updated
     const lastCol = currentFields.length + 1;
     if (c1 <= lastCol && c2 >= lastCol) {
-      rowData.push(new Date(entry.updated_at).toLocaleDateString());
+      rowData.push(formatDateLabel(entry.updated_at));
     }
     return rowData.join("\t");
   };
@@ -975,7 +976,7 @@ export function FormTable(props: FormTableProps) {
                           fields().length + 1,
                         )}
                     >
-                      {new Date(entry.updated_at).toLocaleDateString()}
+                      {formatDateLabel(entry.updated_at)}
                     </td>
                   </tr>
                 )}

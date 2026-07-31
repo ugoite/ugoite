@@ -9,7 +9,6 @@ import { sqlApi } from "~/lib/ugoite-client";
 import type { Form, SqlVariable } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
-import { UNTITLED_SQL_NAME } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 
 const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
@@ -49,7 +48,7 @@ export default function SpaceQueryCreateRoute() {
 
   const handleSave = async () => {
     setError(null);
-    const name = queryName().trim() || UNTITLED_SQL_NAME;
+    const name = queryName().trim();
     const sql = sqlInput().trim();
     if (!sql) {
       setError(t("sqlPage.sqlRequired"));
@@ -59,7 +58,9 @@ export default function SpaceQueryCreateRoute() {
     setIsSaving(true);
     try {
       await sqlApi.create(spaceId(), {
-        name,
+        name: name || null,
+        kind: "user-query",
+        metadata: name ? undefined : { generatedName: "untitled" },
         sql,
         variables: extractVariables(sql),
       });

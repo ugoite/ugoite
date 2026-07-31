@@ -1,10 +1,12 @@
 import { createSignal, For, Show } from "solid-js";
 import { t } from "~/lib/i18n";
 import type { Asset } from "~/lib/types";
+import { formatDateTimeLabel } from "~/lib/date-format";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export interface AssetUploaderProps {
   onUpload: (file: File) => Promise<Asset>;
-  onRemove?: (assetId: string) => void;
+  onRemove?: (assetId: string) => void | Promise<void>;
   assets?: Asset[];
   accept?: string;
 }
@@ -38,21 +40,24 @@ export function AssetUploader(props: AssetUploaderProps) {
       /* v8 ignore stop */
     } catch (err) {
       /* v8 ignore start */
-      setError(
-        err instanceof Error
-          ? err.message
-          : t("assetUploader.error.uploadFailed"),
-      );
+      setError(formatUserFacingError(err, "assetUploader.error.uploadFailed"));
       /* v8 ignore stop */
     } finally {
       setUploading(false);
     }
   };
 
-  const handleRemove = (assetId: string) => {
+  const handleRemove = async (assetId: string) => {
     /* v8 ignore start */
     if (props.onRemove) {
-      props.onRemove(assetId);
+      setError(null);
+      try {
+        await props.onRemove(assetId);
+      } catch (err) {
+        setError(
+          formatUserFacingError(err, "assetUploader.error.removeFailed"),
+        );
+      }
     }
     /* v8 ignore stop */
   };
@@ -122,7 +127,9 @@ export function AssetUploader(props: AssetUploaderProps) {
 
       {/* Error Message */}
       <Show when={error()}>
-        <div class="ui-alert ui-alert-error text-sm mb-4">{error()}</div>
+        <div role="alert" class="ui-alert ui-alert-error text-sm mb-4">
+          {error()}
+        </div>
       </Show>
 
       {/* Assets List */}
@@ -143,7 +150,9 @@ export function AssetUploader(props: AssetUploaderProps) {
                       <p class="text-xs ui-muted truncate">{asset.link}</p>
                     </Show>
                     <Show when={asset.uploaded_at}>
-                      <p class="text-xs ui-muted">{asset.uploaded_at}</p>
+                      <p class="text-xs ui-muted">
+                        {formatDateTimeLabel(asset.uploaded_at)}
+                      </p>
                     </Show>
                   </div>
                 </div>

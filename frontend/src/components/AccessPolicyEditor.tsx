@@ -25,15 +25,20 @@ export function AccessPolicyEditor(props: {
   const [loaded, setLoaded] = createSignal(false);
   const [message, setMessage] = createSignal("");
 
+  const canEdit = () => loaded() && !policy.loading && !policy.error;
+
   createEffect(() => {
     const current = policy();
-    if (loaded() || policy.loading) return;
+    if (loaded() || policy.loading || policy.error || current === undefined) {
+      return;
+    }
     setInherit(current?.inherit_space_role ?? true);
     setGrants(current?.grants ?? []);
     setLoaded(true);
   });
 
   const addGrant = () => {
+    if (!canEdit()) return;
     const principal = principalId().trim();
     const selected = actions().split(",").map((action) => action.trim())
       .filter((action) =>
@@ -48,6 +53,7 @@ export function AccessPolicyEditor(props: {
   };
 
   const save = async () => {
+    if (!canEdit()) return;
     setMessage("");
     try {
       await accessApi.put(props.spaceId, props.kind, props.resourceId, {
@@ -66,10 +72,26 @@ export function AccessPolicyEditor(props: {
   return (
     <section class="ui-card ui-stack-sm">
       <h2 class="text-lg font-semibold">{t("accessPolicy.heading")}</h2>
+      <Show when={policy.error}>
+        <div class="ui-alert ui-alert-error" role="alert">
+          <p>{formatUserFacingError(policy.error, "accessPolicy.failedLoad")}</p>
+          <button
+            type="button"
+            class="ui-button ui-button-secondary mt-2"
+            onClick={() => {
+              setLoaded(false);
+              void refetch();
+            }}
+          >
+            {t("common.retry")}
+          </button>
+        </div>
+      </Show>
       <label class="flex items-center gap-2">
         <input
           type="checkbox"
           checked={inherit()}
+          disabled={!canEdit()}
           onChange={(event) => setInherit(event.currentTarget.checked)}
         />
         {t("accessPolicy.inherit")}
@@ -79,12 +101,14 @@ export function AccessPolicyEditor(props: {
           class="ui-input font-mono"
           placeholder={t("accessPolicy.principalPlaceholder")}
           value={principalId()}
+          disabled={!canEdit()}
           onInput={(event) => setPrincipalId(event.currentTarget.value)}
         />
         <input
           class="ui-input"
           placeholder={t("accessPolicy.actionsPlaceholder")}
           value={actions()}
+          disabled={!canEdit()}
           onInput={(event) => setActions(event.currentTarget.value)}
         />
       </div>
@@ -92,6 +116,7 @@ export function AccessPolicyEditor(props: {
         type="button"
         class="ui-button ui-button-secondary w-fit"
         onClick={addGrant}
+        disabled={!canEdit()}
       >
         {t("accessPolicy.addGrant")}
       </button>
@@ -102,6 +127,7 @@ export function AccessPolicyEditor(props: {
             <button
               type="button"
               class="ui-button ui-button-secondary"
+              disabled={!canEdit()}
               onClick={() =>
                 setGrants((current) =>
                   current.filter((item) =>
@@ -118,6 +144,7 @@ export function AccessPolicyEditor(props: {
         type="button"
         class="ui-button ui-button-primary w-fit"
         onClick={() => void save()}
+        disabled={!canEdit()}
       >
         {t("accessPolicy.save")}
       </button>

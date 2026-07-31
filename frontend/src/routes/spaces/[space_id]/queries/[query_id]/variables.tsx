@@ -98,7 +98,7 @@ export default function SpaceQueryVariablesRoute() {
       <Show when={entry()}>
         {(data) => (
           <div class="settingsMain surface">
-            <p class="text-sm ui-muted">{displaySqlName(data().name)}</p>
+            <p class="text-sm ui-muted">{displaySqlName(data())}</p>
             <div class="ui-stack-sm">
               <For each={variables()}>
                 {(variable, index) => {

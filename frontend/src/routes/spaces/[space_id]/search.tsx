@@ -7,14 +7,12 @@ import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import type { EntryRecord, SearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
-import {
-  encodeSearchHistoryName,
-  type SearchHistoryCriteria,
-  displaySqlName,
-} from "~/lib/sql-metadata";
+import { type SearchHistoryCriteria, displaySqlName } from
+  "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 
 type SearchMode = "keyword" | "advanced";
@@ -113,9 +111,13 @@ async function enrichKeywordResults(
     buildKeywordMetadataSql(idsNeedingEnrichment),
   );
   if (session.status === "failed") {
-    throw new Error(
-      session.error ?? t("searchPage.error.enrichFailed"),
-    );
+    throw new UgoiteApiError({
+      kind: "internal",
+      operation: "sql_session.create",
+      status: 500,
+      message: session.error ?? t("searchPage.error.enrichFailed"),
+      detail: session.error,
+    });
   }
   const metadata = await sqlSessionApi.rows(
     spaceId,
@@ -324,7 +326,11 @@ export default function SpaceSearchRoute() {
       const session = await sqlSessionApi.create(spaceId(), entry.sql);
       if (session.status === "failed") {
         setActionError(
-          formatUserFacingError(session.error, "searchPage.error.searchFailed"),
+          formatUserFacingError(
+            session.error,
+            "searchPage.error.searchFailed",
+            "sql_session.create",
+          ),
         );
         return;
       }
@@ -363,7 +369,9 @@ export default function SpaceSearchRoute() {
       );
       if (!existing) {
         await sqlApi.create(spaceId(), {
-          name: encodeSearchHistoryName(criteria),
+          name: null,
+          kind: "search-history",
+          metadata: { searchCriteria: criteria },
           sql,
           variables: [],
         });
@@ -376,6 +384,7 @@ export default function SpaceSearchRoute() {
           formatUserFacingError(
             session.error,
             "searchPage.error.advancedSearchFailed",
+            "sql_session.create",
           ),
         );
         return;
@@ -860,7 +869,7 @@ export default function SpaceSearchRoute() {
                       >
                         <div class="flex items-center justify-between gap-2">
                           <h3 class="text-sm font-semibold">
-                            {displaySqlName(entry.name)}
+                            {displaySqlName(entry)}
                           </h3>
                           <span class="text-xs ui-muted">
                             {runningSearchId() === entry.id

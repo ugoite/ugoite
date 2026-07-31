@@ -2,7 +2,7 @@ use crate::config::{load_config, print_json, resolve_space_reference, validated_
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use ugoite_iceberg::saved_sql::SqlPayload;
+use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 
 #[derive(Args)]
@@ -111,14 +111,16 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     &base,
                     "sql.create",
                     serde_json::json!({"space_id": space_id}),
-                    Some(serde_json::json!({"id": sql_id, "name": name, "sql": sql, "variables": vars, "author": author})),
+                    Some(serde_json::json!({"id": sql_id, "name": name, "kind": "user-query", "sql": sql, "variables": vars, "author": author})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
             let payload = SqlPayload {
-                name,
+                name: Some(name),
+                kind: SqlKind::UserQuery,
+                metadata: None,
                 sql,
                 variables: vars,
             };
@@ -147,14 +149,16 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     &base,
                     "sql.update",
                     serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
-                    Some(serde_json::json!({"name": name, "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author})),
+                    Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
             let payload = SqlPayload {
-                name,
+                name: Some(name),
+                kind: SqlKind::UserQuery,
+                metadata: None,
                 sql,
                 variables: vars,
             };

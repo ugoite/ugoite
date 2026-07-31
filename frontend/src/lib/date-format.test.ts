@@ -1,6 +1,10 @@
 // REQ-FE-054: Timestamp normalization in query and entry lists
 import { afterEach, describe, expect, it } from "vitest";
-import { formatDateLabel, normalizeTimestamp } from "./date-format";
+import {
+  formatDateLabel,
+  formatDateTimeLabel,
+  normalizeTimestamp,
+} from "./date-format";
 import { setLocale } from "./i18n";
 
 describe("date-format", () => {
@@ -48,6 +52,26 @@ describe("date-format", () => {
     setLocale("ja");
     expect(formatDateLabel(isoTimestamp)).toBe(
       new Date(isoTimestamp).toLocaleDateString("ja-JP"),
+    );
+  });
+
+  it("REQ-FE-044: formats date-times from the reactive locale state", () => {
+    const isoTimestamp = "2026-07-31T09:30:00.000Z";
+
+    setLocale("en");
+    expect(formatDateTimeLabel(isoTimestamp)).toBe(
+      new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(isoTimestamp)),
+    );
+
+    setLocale("ja");
+    expect(formatDateTimeLabel(isoTimestamp)).toBe(
+      new Intl.DateTimeFormat("ja-JP", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(isoTimestamp)),
     );
   });
 

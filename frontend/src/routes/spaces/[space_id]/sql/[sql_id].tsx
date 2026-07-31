@@ -38,7 +38,11 @@ export default function SpaceSqlDetailRoute() {
       const session = await sqlSessionApi.create(spaceId(), current.sql);
       if (session.status === "failed") {
         setRunError(
-          formatUserFacingError(session.error, "querySession.failed"),
+          formatUserFacingError(
+            session.error,
+            "querySession.failed",
+            "sql_session.create",
+          ),
         );
         return;
       }
@@ -69,7 +73,7 @@ export default function SpaceSqlDetailRoute() {
           >
             {(data) => (
               <>
-                <h1>{displaySqlName(data().name)}</h1>
+                <h1>{displaySqlName(data())}</h1>
                 <p class="ui-page-subtitle max-w-2xl">
                   {t("sqlPage.reviewDescription")}
                 </p>

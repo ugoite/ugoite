@@ -4,6 +4,8 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { AssetUploader } from "./AssetUploader";
 import { setLocale } from "~/lib/i18n";
 import type { Asset } from "~/lib/types";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
+import { formatDateTimeLabel } from "~/lib/date-format";
 
 describe("AssetUploader", () => {
   beforeEach(() => {
@@ -118,6 +120,65 @@ describe("AssetUploader", () => {
     await waitFor(() => {
       expect(screen.getByText(/upload failed/i)).toBeInTheDocument();
     });
+  });
+
+  it("localizes typed upload errors and keeps unknown details", async () => {
+    setLocale("ja");
+    const onUpload = vi.fn().mockRejectedValue(
+      new UgoiteApiError({
+        kind: "not_found",
+        code: "ASSET_NOT_FOUND",
+        status: 404,
+        message: "Asset not found",
+        detail: { request_id: "asset-upload-1" },
+      }),
+    );
+
+    render(() => <AssetUploader onUpload={onUpload} />);
+    const input = screen.getByLabelText("アセットをアップロード") as
+      HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      value: [new File(["test"], "test.txt", { type: "text/plain" })],
+      writable: false,
+    });
+    fireEvent.change(input);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("アセットが見つかりません。");
+    expect(alert).toHaveTextContent("asset-upload-1");
+  });
+
+  it("localizes typed remove errors and formats uploaded dates", async () => {
+    setLocale("ja");
+    const onRemove = vi.fn().mockRejectedValue(
+      new UgoiteApiError({
+        kind: "conflict",
+        code: "ASSET_REFERENCED",
+        status: 409,
+        message: "Asset is referenced",
+      }),
+    );
+    const uploadedAt = "2026-07-31T09:30:00.000Z";
+
+    render(() => (
+      <AssetUploader
+        onUpload={vi.fn()}
+        assets={[{
+          id: "att-1",
+          name: "doc.pdf",
+          path: "assets/att-1_doc.pdf",
+          uploaded_at: uploadedAt,
+        }]}
+        onRemove={onRemove}
+      />
+    ));
+
+    expect(screen.getByText(formatDateTimeLabel(uploadedAt))).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("アセット doc.pdf を削除"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "このアセットは参照中です。",
+    );
   });
 
   it("should display correct icons for various file types", () => {

@@ -7,6 +7,8 @@ import { sortSpaces } from "~/lib/space-list";
 import type { Space } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { formatUserFacingError } from "~/lib/user-facing-error";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
 const localDevAuthGuideUrl = getDocsiteHref(
   "/docs/guide/develop/local-dev-auth-login",
@@ -17,20 +19,23 @@ const browserWalkthroughUrl = getDocsiteHref(
   "docs/guide/start/browser-first-entry.md",
 );
 
-const toMessage = (value: unknown): string => {
-  if (value instanceof Error && value.message.trim()) {
-    return value.message;
-  }
-  return "";
-};
-
 const normalizeCreateError = (value: unknown): string => {
-  const message = toMessage(value);
-  if (/invalid space_id:/i.test(message)) {
+  if (
+    value instanceof UgoiteApiError &&
+    value.code === "INVALID_IDENTIFIER"
+  ) {
     return t("spacesPage.invalidSpaceId");
   }
-  return message || t("spacesPage.failedCreate");
+  return formatUserFacingError(value, "spacesPage.failedCreate");
 };
+
+const isAuthenticationError = (value: unknown): boolean =>
+  value instanceof UgoiteApiError &&
+  (value.status === 401 || value.code === "AUTHENTICATION_FAILED");
+
+const isForbiddenError = (value: unknown): boolean =>
+  value instanceof UgoiteApiError &&
+  (value.status === 403 || value.code === "FORBIDDEN");
 
 function SpaceCards(props: { label: string; spaces: readonly Space[] }) {
   return (
@@ -68,13 +73,13 @@ function SpaceCards(props: { label: string; spaces: readonly Space[] }) {
 
 export default function SpacesIndexRoute() {
   const navigate = useNavigate();
-  const [spacesError, setSpacesError] = createSignal("");
+  const [spacesError, setSpacesError] = createSignal<unknown>(null);
   const [spaces, { refetch: refetchSpaces }] = createResource(async () => {
     setSpacesError("");
     try {
       return await spaceApi.list();
     } catch (error) {
-      setSpacesError(toMessage(error) || t("spacesPage.failedLoad"));
+      setSpacesError(error);
       return [];
     }
   });
@@ -88,22 +93,13 @@ export default function SpacesIndexRoute() {
 
   const authHint = createMemo(
     (): { message: string; showGuide: boolean } | null => {
-      const message = spacesError().toLowerCase();
-      if (
-        message.includes("401") ||
-        message.includes("authentication") ||
-        message.includes("unauthorized")
-      ) {
+      if (isAuthenticationError(spacesError())) {
         return {
           message: t("spacesPage.authRequired"),
           showGuide: true,
         };
       }
-      if (
-        message.includes("403") ||
-        message.includes("forbidden") ||
-        message.includes("not authorized")
-      ) {
+      if (isForbiddenError(spacesError())) {
         return {
           message: t("spacesPage.authForbidden"),
           showGuide: false,
@@ -179,12 +175,7 @@ export default function SpacesIndexRoute() {
     if (!spacesError() || redirected()) {
       return;
     }
-    const message = spacesError().toLowerCase();
-    if (
-      message.includes("401") ||
-      message.includes("authentication") ||
-      message.includes("unauthorized")
-    ) {
+    if (isAuthenticationError(spacesError())) {
       setRedirected(true);
       navigate("/login?next=%2Fspaces");
     }
@@ -291,7 +282,10 @@ export default function SpacesIndexRoute() {
           </Show>
           <Show when={spacesError()}>
             <p class="ui-alert ui-alert-error text-sm">
-              {t("spacesPage.failedLoad")}
+              {formatUserFacingError(
+                spacesError(),
+                "spacesPage.failedLoad",
+              )}
             </p>
             <Show when={authHint()}>
               {(hint) => (

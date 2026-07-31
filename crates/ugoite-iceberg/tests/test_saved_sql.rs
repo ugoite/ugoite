@@ -3,7 +3,7 @@ mod common;
 use common::setup_operator;
 use serde_json::json;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
-use ugoite_iceberg::saved_sql::{self, SqlPayload};
+use ugoite_iceberg::saved_sql::{self, SqlKind, SqlMetadata, SqlPayload};
 use ugoite_iceberg::space;
 use ugoite_iceberg::sql_session;
 
@@ -16,7 +16,9 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
     let integrity = FakeIntegrityProvider;
 
     let payload = SqlPayload {
-        name: "Recent Meetings".to_string(),
+        name: Some("Recent Meetings".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
         sql: "SELECT * FROM sql WHERE _ugoite_updated_at >= $since".to_string(),
         variables: json!([
             {
@@ -47,7 +49,9 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
         .any(|item| item.get("id") == Some(&json!("sql-1"))));
 
     let update_payload = SqlPayload {
-        name: "Recent Meetings".to_string(),
+        name: Some("Recent Meetings".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
         sql:
             "SELECT * FROM sql WHERE _ugoite_updated_at >= $since ORDER BY _ugoite_updated_at DESC"
                 .to_string(),
@@ -84,7 +88,18 @@ async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
     let ws_path = "spaces/advanced-search";
     let integrity = FakeIntegrityProvider;
     let payload = SqlPayload {
-        name: "Advanced search - form: Meeting - memo=s".to_string(),
+        name: None,
+        kind: SqlKind::SearchHistory,
+        metadata: Some(SqlMetadata {
+            search_criteria: Some(ugoite_iceberg::saved_sql::SearchHistoryCriteria {
+                form_name: "Meeting".to_string(),
+                tags: vec!["project".to_string()],
+                updated_from: "".to_string(),
+                updated_to: "".to_string(),
+                field_conditions: vec![],
+            }),
+            generated_name: None,
+        }),
         sql: "SELECT _ugoite_id, _ugoite_title FROM sql ORDER BY _ugoite_updated_at DESC LIMIT 50"
             .to_string(),
         variables: json!([]),
@@ -99,7 +114,9 @@ async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
         &integrity,
     )
     .await?;
-    assert_eq!(saved["name"], payload.name);
+    assert!(saved["name"].is_null());
+    assert_eq!(saved["kind"], json!("search-history"));
+    assert_eq!(saved["metadata"]["searchCriteria"]["formName"], "Meeting");
     Ok(())
 }
 
@@ -112,7 +129,9 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     let integrity = FakeIntegrityProvider;
 
     let missing_placeholder = SqlPayload {
-        name: "Missing placeholder".to_string(),
+        name: Some("Missing placeholder".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
         sql: "SELECT * FROM sql".to_string(),
         variables: json!([
             {
@@ -136,7 +155,9 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     assert!(missing_err.to_string().contains("UGOITE_SQL_VALIDATION"));
 
     let undefined_placeholder = SqlPayload {
-        name: "Undefined placeholder".to_string(),
+        name: Some("Undefined placeholder".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
         sql: "SELECT * FROM sql WHERE _ugoite_updated_at >= $since".to_string(),
         variables: json!([]),
     };
@@ -154,7 +175,9 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     assert!(undefined_err.to_string().contains("UGOITE_SQL_VALIDATION"));
 
     let invalid_sql = SqlPayload {
-        name: "Invalid SQL".to_string(),
+        name: Some("Invalid SQL".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
         sql: "SELECT * FROM missing".to_string(),
         variables: json!([]),
     };

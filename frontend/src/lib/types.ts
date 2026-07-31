@@ -225,7 +225,9 @@ export interface SqlVariable {
 /** Saved SQL entry */
 export interface SqlEntry {
   id: string;
-  name: string;
+  name: string | null;
+  kind: "user-query" | "search-history";
+  metadata?: SqlMetadata;
   sql: string;
   variables: SqlVariable[];
   created_at: string;
@@ -235,16 +237,35 @@ export interface SqlEntry {
 
 export interface SqlCreatePayload {
   id?: string;
-  name: string;
+  name: string | null;
+  kind: "user-query" | "search-history";
+  metadata?: SqlMetadata;
   sql: string;
   variables: SqlVariable[];
 }
 
 export interface SqlUpdatePayload {
-  name: string;
+  name: string | null;
+  kind: "user-query" | "search-history";
+  metadata?: SqlMetadata;
   sql: string;
   variables: SqlVariable[];
   parent_revision_id?: string | null;
+}
+
+export interface SqlMetadata {
+  searchCriteria?: {
+    formName: string;
+    tags: string[];
+    updatedFrom: string;
+    updatedTo: string;
+    fieldConditions: Array<{
+      field: string;
+      operator: "equals" | "contains";
+      value: string;
+    }>;
+  };
+  generatedName?: "untitled";
 }
 
 export interface SqlSession {

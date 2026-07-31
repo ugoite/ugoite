@@ -37,6 +37,7 @@ const CODE_KEYS: Record<string, TranslationKey> = {
 const OPERATION_KEYS: Partial<Record<UgoiteApiOperation | string, TranslationKey>> = {
   "search.keyword": "errors.operation.search",
   "search.query": "errors.operation.search",
+  "space.list": "errors.operation.settings",
   "sql.list": "errors.operation.savedSql",
   "sql.get": "errors.operation.savedSql",
   "sql.create": "errors.operation.savedSql",
@@ -108,8 +109,19 @@ const apiDetails = (error: UgoiteApiError): string | null =>
 export const formatUserFacingError = (
   error: unknown,
   fallbackKey: TranslationKey,
+  operation?: string,
 ): string => {
-  const apiError = error instanceof UgoiteApiError ? error : null;
+  const apiError = error instanceof UgoiteApiError
+    ? error
+    : typeof error === "string" && operation
+    ? new UgoiteApiError({
+      kind: "internal",
+      operation,
+      status: 500,
+      message: error,
+      detail: error,
+    })
+    : null;
   const summaryKey = (apiError?.code && CODE_KEYS[apiError.code]) ??
     (apiError?.operation && OPERATION_KEYS[apiError.operation]) ??
     (apiError?.kind && KIND_KEYS[apiError.kind]) ??

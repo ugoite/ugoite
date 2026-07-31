@@ -5,6 +5,7 @@ import { GlobalShell } from "~/components/GlobalShell";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { formatDateTimeLabel } from "~/lib/date-format";
 
 const credentialTabs = [
   ["passkeys", "securityPage.passkeys"],
@@ -47,6 +48,7 @@ export function CredentialSettings() {
   }>();
   const [totpCode, setTotpCode] = createSignal("");
   const [totpConfigured, setTotpConfigured] = createSignal(false);
+  const [actionError, setActionError] = createSignal<string | null>(null);
   const [activeTab, setActiveTab] = createSignal<CredentialTab>(
     credentialTabFromSearch(searchParams.tab),
   );
@@ -54,6 +56,16 @@ export function CredentialSettings() {
   const selectTab = (tab: CredentialTab) => {
     setActiveTab(tab);
     setSearchParams({ tab });
+  };
+  const runAction = async (action: () => Promise<void>) => {
+    setActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(
+        formatUserFacingError(error, "securityPage.actionFailed"),
+      );
+    }
   };
   const [credentials, { refetch }] = createResource(async () => ({
     passkeys: await authApi.listPasskeys(),
@@ -94,6 +106,9 @@ export function CredentialSettings() {
           )}
         </p>
       </Show>
+      <Show when={actionError()}>
+        <p class="ui-alert ui-alert-error" role="alert">{actionError()}</p>
+      </Show>
       <Show when={activeTab() === "passkeys"}>
         <section
           id="credential-panel-passkeys"
@@ -106,10 +121,11 @@ export function CredentialSettings() {
             <button
               type="button"
               class="ui-button ui-button-primary"
-              onClick={async () => {
-                await authApi.addPasskey();
-                await refetch();
-              }}
+              onClick={() =>
+                void runAction(async () => {
+                  await authApi.addPasskey();
+                  await refetch();
+                })}
             >
               {t("securityPage.addPasskey")}
             </button>
@@ -121,19 +137,20 @@ export function CredentialSettings() {
                   <div class="flex items-center justify-between">
                     <span>
                       {String(credential.credential_id)} ·{" "}
-                      {t("securityPage.lastUsed")} {String(
-                        credential.last_used_at ?? t("securityPage.never"),
-                      )}
+                      {t("securityPage.lastUsed")} {credential.last_used_at
+                        ? formatDateTimeLabel(credential.last_used_at)
+                        : t("securityPage.never")}
                     </span>
                     <button
                       type="button"
                       class="ui-button ui-button-secondary"
-                      onClick={async () => {
-                        await authApi.revokePasskey(
-                          String(credential.credential_id),
-                        );
-                        await refetch();
-                      }}
+                      onClick={() =>
+                        void runAction(async () => {
+                          await authApi.revokePasskey(
+                            String(credential.credential_id),
+                          );
+                          await refetch();
+                        })}
                     >
                       {t("settings.revoke")}
                     </button>
@@ -162,7 +179,11 @@ export function CredentialSettings() {
                   <button
                     type="button"
                     class="ui-button ui-button-secondary"
-                    onClick={() => authApi.linkOidc(provider.provider_id)}
+                    onClick={() =>
+                      void runAction(async () => {
+                        await authApi.linkOidc(provider.provider_id);
+                        await refetch();
+                      })}
                   >
                     {t("securityPage.link", { issuer: provider.issuer })}
                   </button>
@@ -190,7 +211,9 @@ export function CredentialSettings() {
                     <span>
                       {String(session.session_id)} ·{" "}
                       {t("securityPage.lastSeen")}{" "}
-                      {String(session.last_seen_at ?? t("securityPage.never"))}
+                      {session.last_seen_at
+                        ? formatDateTimeLabel(session.last_seen_at)
+                        : t("securityPage.never")}
                       {session.revoked_at
                         ? ` · ${t("securityPage.revoked")}`
                         : ""}
@@ -199,12 +222,13 @@ export function CredentialSettings() {
                       <button
                         type="button"
                         class="ui-button ui-button-secondary"
-                        onClick={async () => {
-                          await authApi.revokeSession(
-                            String(session.session_id),
-                          );
-                          await refetch();
-                        }}
+                        onClick={() =>
+                          void runAction(async () => {
+                            await authApi.revokeSession(
+                              String(session.session_id),
+                            );
+                            await refetch();
+                          })}
                       >
                         {t("settings.revoke")}
                       </button>
@@ -235,8 +259,10 @@ export function CredentialSettings() {
               <button
                 type="button"
                 class="ui-button ui-button-primary"
-                onClick={async () =>
-                  setTotp(await authApi.startTotpEnrollment())}
+                onClick={() =>
+                  void runAction(async () => {
+                    setTotp(await authApi.startTotpEnrollment());
+                  })}
               >
                 {t("securityPage.enrollRecovery")}
               </button>
@@ -259,11 +285,12 @@ export function CredentialSettings() {
                 <button
                   type="button"
                   class="ui-button ui-button-primary"
-                  onClick={async () => {
-                    await authApi.finishTotpEnrollment(totpCode());
-                    setTotpConfigured(true);
-                    setTotp(undefined);
-                  }}
+                  onClick={() =>
+                    void runAction(async () => {
+                      await authApi.finishTotpEnrollment(totpCode());
+                      setTotpConfigured(true);
+                      setTotp(undefined);
+                    })}
                 >
                   {t("securityPage.confirmTotp")}
                 </button>
@@ -292,19 +319,20 @@ export function CredentialSettings() {
                   <div class="flex items-center justify-between">
                     <span>
                       {String(credential.device_name)} ·{" "}
-                      {t("securityPage.lastUsed")} {String(
-                        credential.last_used_at ?? t("securityPage.never"),
-                      )}
+                      {t("securityPage.lastUsed")} {credential.last_used_at
+                        ? formatDateTimeLabel(credential.last_used_at)
+                        : t("securityPage.never")}
                     </span>
                     <button
                       type="button"
                       class="ui-button ui-button-secondary"
-                      onClick={async () => {
-                        await authApi.revokeDevice(
-                          String(credential.credential_id),
-                        );
-                        await refetch();
-                      }}
+                      onClick={() =>
+                        void runAction(async () => {
+                          await authApi.revokeDevice(
+                            String(credential.credential_id),
+                          );
+                          await refetch();
+                        })}
                     >
                       {t("settings.revoke")}
                     </button>

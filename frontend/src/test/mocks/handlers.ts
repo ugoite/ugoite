@@ -633,7 +633,9 @@ export const handlers = [
   testHttp.post("/spaces/:spaceId/sql", async ({ params, request }) => {
     const spaceId = params.spaceId as string;
     const body = (await request.json()) as {
-      name: string;
+      name: string | null;
+      kind: "user-query" | "search-history";
+      metadata?: Record<string, unknown>;
       sql: string;
       variables?: string[];
     };
@@ -642,6 +644,8 @@ export const handlers = [
     const entry = {
       id,
       name: body.name,
+      kind: body.kind,
+      metadata: body.metadata,
       sql: body.sql,
       variables: body.variables || [],
       space_id: spaceId,
@@ -657,7 +661,12 @@ export const handlers = [
     if (!entry) {
       return HttpResponse.json({ detail: "Not found" }, { status: 404 });
     }
-    const body = (await request.json()) as { name?: string; sql?: string };
+    const body = (await request.json()) as {
+      name?: string | null;
+      kind?: "user-query" | "search-history";
+      metadata?: Record<string, unknown>;
+      sql?: string;
+    };
     Object.assign(entry, body);
     const revisionId = generateRevisionId();
     return HttpResponse.json({ id: sqlId, revision_id: revisionId });

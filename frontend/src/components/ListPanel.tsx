@@ -1,6 +1,7 @@
 import { createMemo, For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import { t } from "~/lib/i18n";
+import { formatDateLabel } from "~/lib/date-format";
 import type { EntryRecord, Form } from "~/lib/types";
 import { SearchBar } from "./SearchBar";
 
@@ -273,15 +274,6 @@ function EntryListItem(props: EntryListItemProps) {
   const propertyEntries = () =>
     Object.entries(props.entry.properties ?? {}).slice(0, 3);
 
-  const formatDate = (dateStr: string) => {
-    try {
-      return new Date(dateStr).toLocaleDateString();
-    } catch {
-      /* v8 ignore start */
-      return dateStr;
-    } /* v8 ignore stop */
-  };
-
   return (
     <li data-testid="entry-item">
       <button
@@ -336,7 +328,7 @@ function EntryListItem(props: EntryListItemProps) {
           </svg>
           <span>
             {t("common.updatedAt", {
-              date: formatDate(props.entry.updated_at),
+              date: formatDateLabel(props.entry.updated_at),
             })}
           </span>
         </div>

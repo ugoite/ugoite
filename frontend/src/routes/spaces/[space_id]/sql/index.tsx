@@ -6,6 +6,7 @@ import { sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
+import { formatDateLabel } from "~/lib/date-format";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export default function SpaceSqlIndexRoute() {
@@ -63,8 +64,8 @@ export default function SpaceSqlIndexRoute() {
                 <UiIcon name="sql" />
               </span>
               <span>
-                <b>{displaySqlName(query.name)}</b>
-                <small>{query.updated_at}</small>
+                <b>{displaySqlName(query)}</b>
+                <small>{formatDateLabel(query.updated_at)}</small>
               </span>
               <span>›</span>
             </A>

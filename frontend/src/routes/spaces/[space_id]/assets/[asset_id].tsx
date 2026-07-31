@@ -5,6 +5,7 @@ import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { SpaceShell } from "~/components/SpaceShell";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export default function SpaceAssetDetailRoute() {
   const navigate = useNavigate();
@@ -29,9 +30,7 @@ export default function SpaceAssetDetailRoute() {
       await assetApi.delete(spaceId(), assetId());
       navigate(`/spaces/${spaceId()}/assets`);
     } catch (err) {
-      setDeleteError(
-        err instanceof Error ? err.message : t("assetDetail.failedDelete"),
-      );
+      setDeleteError(formatUserFacingError(err, "assetDetail.failedDelete"));
     } finally {
       setIsDeleting(false);
     }
@@ -60,7 +59,9 @@ export default function SpaceAssetDetailRoute() {
           <p class="ui-muted">{t("assetDetail.loading")}</p>
         </Show>
         <Show when={assets.error}>
-          <p class="ui-alert ui-alert-error">{t("assetDetail.failedLoad")}</p>
+          <p class="ui-alert ui-alert-error">
+            {formatUserFacingError(assets.error, "assetDetail.failedLoad")}
+          </p>
         </Show>
         <Show when={asset()}>
           {(item) => (

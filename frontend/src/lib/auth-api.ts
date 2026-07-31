@@ -1,3 +1,5 @@
+import { UgoiteApiError } from "./ugoite-client/protocol";
+
 export type AuthConfig = {
   status: "uninitialized" | "active";
   nodeId: string;
@@ -43,7 +45,14 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
       : typeof payload.detail === "string"
       ? payload.detail
       : `Authentication failed (${response.status})`;
-    throw new Error(message);
+    throw new UgoiteApiError({
+      kind: typeof payload.kind === "string" ? payload.kind : "internal",
+      message,
+      code: typeof payload.code === "string" ? payload.code : undefined,
+      status: response.status,
+      detail: payload.detail,
+      payload,
+    });
   }
   return payload as T;
 };

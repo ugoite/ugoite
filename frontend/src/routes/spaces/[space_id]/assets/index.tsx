@@ -6,6 +6,7 @@ import { assetApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import type { Asset } from "~/lib/types";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export default function SpaceAssetsRoute() {
   const params = useParams<{ space_id: string }>();
@@ -27,7 +28,7 @@ export default function SpaceAssetsRoute() {
       await refetch();
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : t("assetDetail.failedDelete"),
+        formatUserFacingError(error, "assetDetail.failedDelete"),
       );
     }
   };
@@ -60,7 +61,9 @@ export default function SpaceAssetsRoute() {
           <p class="ui-muted">{t("dashboard.section.assets.loading")}</p>
         </Show>
         <Show when={assets.error}>
-          <p class="ui-alert ui-alert-error">{t("assetsPage.failedLoad")}</p>
+          <p class="ui-alert ui-alert-error">
+            {formatUserFacingError(assets.error, "assetsPage.failedLoad")}
+          </p>
         </Show>
       </div>
     </SpaceShell>
