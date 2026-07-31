@@ -151,7 +151,8 @@ pub struct NodeAuditInput<'a> {
     pub safe_metadata: serde_json::Value,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AccountInvitation {
     pub invitation_id: Uuid,
     pub token_hash: String,
@@ -159,73 +160,8 @@ pub struct AccountInvitation {
     pub space_uid: Option<Uuid>,
     pub role: Option<String>,
     pub expires_at: String,
-    #[serde(default)]
     pub acceptance: Option<InvitationAcceptance>,
     pub created_by: Uuid,
-}
-
-impl<'de> Deserialize<'de> for AccountInvitation {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct AccountInvitationData {
-            invitation_id: Uuid,
-            token_hash: String,
-            display_name: String,
-            space_uid: Option<Uuid>,
-            role: Option<String>,
-            expires_at: String,
-            #[serde(default)]
-            acceptance: Option<InvitationAcceptance>,
-            #[serde(default)]
-            used_at: Option<String>,
-            #[serde(default)]
-            accepted_account_id: Option<Uuid>,
-            #[serde(default)]
-            accepted_principal_id: Option<Uuid>,
-            #[serde(default)]
-            acceptance_kind: Option<InvitationAcceptanceKind>,
-            created_by: Uuid,
-        }
-
-        let data = AccountInvitationData::deserialize(deserializer)?;
-        let acceptance = match data.acceptance {
-            Some(acceptance) => Some(acceptance),
-            None => match (
-                data.used_at,
-                data.accepted_account_id,
-                data.accepted_principal_id,
-                data.acceptance_kind,
-            ) {
-                (Some(claimed_at), Some(account_id), Some(principal_id), Some(kind)) => {
-                    Some(InvitationAcceptance::Pending {
-                        account_id,
-                        principal_id,
-                        kind,
-                        claimed_at,
-                    })
-                }
-                (None, None, None, None) => None,
-                _ => {
-                    return Err(serde::de::Error::custom(
-                        "invitation has an incomplete legacy acceptance claim",
-                    ));
-                }
-            },
-        };
-        Ok(Self {
-            invitation_id: data.invitation_id,
-            token_hash: data.token_hash,
-            display_name: data.display_name,
-            space_uid: data.space_uid,
-            role: data.role,
-            expires_at: data.expires_at,
-            acceptance,
-            created_by: data.created_by,
-        })
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3052,6 +2988,93 @@ fn random_user_code() -> Result<String> {
 mod tests {
     use super::*;
     use ugoite_storage::operator_from_uri;
+
+    fn main_invitation_json(used: bool) -> serde_json::Value {
+        let account_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let mut invitation = serde_json::json!({
+            "invitation_id": Uuid::now_v7(),
+            "token_hash": "token-hash",
+            "display_name": "Invited user",
+            "space_uid": Uuid::now_v7(),
+            "role": "viewer",
+            "expires_at": "2099-01-01T00:00:00.000Z",
+            "used_at": null,
+            "accepted_account_id": null,
+            "accepted_principal_id": null,
+            "created_by": Uuid::now_v7(),
+        });
+        if used {
+            invitation["used_at"] = serde_json::json!("2026-07-31T00:00:00.000Z");
+            invitation["accepted_account_id"] = serde_json::json!(account_id);
+            invitation["accepted_principal_id"] = serde_json::json!(principal_id);
+        }
+        invitation
+    }
+
+    #[test]
+    fn invitation_acceptance_states_round_trip() -> Result<()> {
+        let account_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let states = vec![
+            None,
+            Some(InvitationAcceptance::Pending {
+                account_id,
+                principal_id,
+                kind: InvitationAcceptanceKind::ExistingAccount,
+                claimed_at: "2026-07-31T00:00:00.000Z".to_string(),
+            }),
+            Some(InvitationAcceptance::Completed {
+                account_id,
+                principal_id,
+                kind: InvitationAcceptanceKind::PasskeyRegistration,
+                claimed_at: "2026-07-31T00:00:00.000Z".to_string(),
+                completed_at: "2026-07-31T00:01:00.000Z".to_string(),
+            }),
+        ];
+
+        for acceptance in states {
+            let invitation = AccountInvitation {
+                invitation_id: Uuid::now_v7(),
+                token_hash: "token-hash".to_string(),
+                display_name: "Invited user".to_string(),
+                space_uid: Some(Uuid::now_v7()),
+                role: Some("viewer".to_string()),
+                expires_at: "2099-01-01T00:00:00.000Z".to_string(),
+                acceptance,
+                created_by: Uuid::now_v7(),
+            };
+            let encoded = serde_json::to_value(&invitation)?;
+            let decoded: AccountInvitation = serde_json::from_value(encoded.clone())?;
+            assert_eq!(serde_json::to_value(decoded)?, encoded);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn main_invitation_formats_are_rejected_instead_of_resurrected() -> Result<()> {
+        for used in [false, true] {
+            let error = serde_json::from_value::<AccountInvitation>(main_invitation_json(used))
+                .expect_err("the pre-v1 invitation format must not be accepted");
+            assert!(error.to_string().contains("unknown field"), "{error}");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_invitation_rejects_the_entire_node_state() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let mut state = serde_json::to_value(service.read_state().await?)?;
+        state["invitations"] = serde_json::json!({
+            Uuid::now_v7().to_string(): main_invitation_json(true),
+        });
+
+        let error = serde_json::from_value::<NodeState>(state)
+            .expect_err("a legacy invitation must not be silently resurrected");
+        assert!(error.to_string().contains("unknown field"), "{error}");
+        Ok(())
+    }
 
     #[tokio::test]
     async fn setup_secret_is_hashed_and_only_emitted_once() -> Result<()> {
