@@ -366,6 +366,7 @@ async fn existing_form_field_type_changes_are_typed_and_leave_form_unchanged() -
         description: None,
         semantic_role: None,
         reference_form: None,
+        list_item: None,
         validation: None,
         enum_values: Vec::new(),
         deprecated: false,
@@ -1078,13 +1079,12 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
 }
 
 #[tokio::test]
-async fn concurrent_workspace_writers_surface_duplicate_maximum_versions() -> anyhow::Result<()> {
+async fn duplicate_maximum_versions_are_rejected_by_reads() -> anyhow::Result<()> {
     let first = IcebergWorkspace::memory_for_tests(
         SpaceId::from(Uuid::from_u128(50)),
         "memory://iceberg-concurrent-writers",
     )
     .await?;
-    let second = first.clone_for_testing();
     let form = form();
     create_form(&first, &form).await?;
     let entry_id = Uuid::from_u128(51).into();
@@ -1117,12 +1117,12 @@ async fn concurrent_workspace_writers_surface_duplicate_maximum_versions() -> an
         FieldId::new(100).unwrap(),
         FieldValue::String("right".into()),
     );
-    let (left_result, right_result) = tokio::join!(
-        append_revisions(&first, form.id, vec![left]),
-        append_revisions(&second, form.id, vec![right.clone()]),
-    );
-    left_result?;
-    right_result?;
+    first
+        .append_revisions_for_testing_allowing_duplicate_versions(form.id, vec![left])
+        .await?;
+    first
+        .append_revisions_for_testing_allowing_duplicate_versions(form.id, vec![right.clone()])
+        .await?;
     let error = first
         .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
         .await

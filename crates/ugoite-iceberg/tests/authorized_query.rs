@@ -51,12 +51,25 @@ async fn append(
     workspace: &IcebergWorkspace,
     form: &FormDefinition,
     entry: u128,
-    revision: u128,
+    revision_id: u128,
     title: &str,
 ) -> anyhow::Result<i64> {
+    let revision = revision(form, entry, revision_id, title);
+    Ok(workspace
+        .commit(publication_context(
+            Uuid::new_v4().to_string(),
+            "test.entry",
+            &revision,
+        )?)?
+        .append_revisions(form.id, vec![revision])
+        .await?
+        .snapshot_id)
+}
+
+fn revision(form: &FormDefinition, entry: u128, revision: u128, title: &str) -> EntryRevision {
     let mut values = BTreeMap::new();
     values.insert(FieldId::new(100).unwrap(), FieldValue::String(title.into()));
-    let revision = EntryRevision {
+    EntryRevision {
         form_id: form.id,
         entry_id: EntryId::from(Uuid::from_u128(entry)),
         revision_id: Uuid::from_u128(revision).into(),
@@ -73,16 +86,21 @@ async fn append(
         values,
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
-    };
-    Ok(workspace
-        .commit(publication_context(
-            Uuid::new_v4().to_string(),
-            "test.entry",
-            &revision,
-        )?)?
-        .append_revisions(form.id, vec![revision])
-        .await?
-        .snapshot_id)
+    }
+}
+
+async fn append_duplicate(
+    workspace: &IcebergWorkspace,
+    form: &FormDefinition,
+    entry: u128,
+    revision_id: u128,
+    title: &str,
+) -> anyhow::Result<()> {
+    let revision = revision(form, entry, revision_id, title);
+    workspace
+        .append_revisions_for_testing_allowing_duplicate_versions(form.id, vec![revision])
+        .await?;
+    Ok(())
 }
 
 fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
@@ -258,15 +276,10 @@ async fn duplicate_maximum_versions_fail_every_sql_shape() -> anyhow::Result<()>
         "memory://authorized-query-duplicate-maximum",
     )
     .await?;
-    let concurrent = workspace.clone_for_testing();
     let tasks = form(601, "Tasks");
     create_form(&workspace, &tasks).await?;
-    let (left, right) = tokio::join!(
-        append(&workspace, &tasks, 602, 603, "left"),
-        append(&concurrent, &tasks, 602, 604, "right"),
-    );
-    left?;
-    right?;
+    append_duplicate(&workspace, &tasks, 602, 603, "left").await?;
+    append_duplicate(&workspace, &tasks, 602, 604, "right").await?;
 
     let mut duplicate_policy = policy(&tasks, &[602]);
     duplicate_policy

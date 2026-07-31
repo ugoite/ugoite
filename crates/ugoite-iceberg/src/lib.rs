@@ -72,8 +72,7 @@ use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
 use ugoite_domain::entry::{
-    AssetReference, EntryIntegrity, EntryMetadata, EntryOperation,
-    EntryRevision, FieldValue,
+    AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{
     Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition, FormField,
@@ -752,7 +751,11 @@ impl IcebergWorkspace {
             space_catalog
                 .replace_table_metadata(table.identifier(), metadata)
                 .await?;
-            return self.load_form(changes.form_id).await;
+            // The attempt remains bound to the pre-publication Head.  Its
+            // static providers must not be refreshed behind that boundary;
+            // the value we just derived is the authoritative post-commit
+            // Form returned to the caller.
+            return Ok(evolved);
         }
         if additions.is_empty() {
             let tx = Transaction::new(&table);
@@ -1012,6 +1015,47 @@ impl IcebergWorkspace {
         batches: Vec<RecordBatch>,
         revisions: &[EntryRevision],
     ) -> Result<CommitReceipt> {
+        self.append_record_batches_inner(form_id, batches, revisions, true)
+            .await
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub async fn append_revisions_for_testing_allowing_duplicate_versions(
+        &self,
+        form_id: FormId,
+        revisions: Vec<EntryRevision>,
+    ) -> Result<CommitReceipt> {
+        if revisions.is_empty() {
+            return Err(anyhow!("append batch must not be empty"));
+        }
+        let mut attempt_workspace = self.clone();
+        let catalog = self
+            .space_catalog
+            .as_ref()
+            .context("test duplicate append requires the SpaceCatalog")?
+            .new_attempt();
+        attempt_workspace.catalog = Arc::new(catalog.clone());
+        attempt_workspace.space_catalog = Some(Arc::new(catalog));
+        let form = attempt_workspace.load_form(form_id).await?;
+        let table = attempt_workspace
+            .catalog
+            .load_table(&attempt_workspace.form_ident(form_id))
+            .await?;
+        let batch =
+            revision_batch_from_values(&form, table.metadata().current_schema(), &revisions)?;
+        attempt_workspace
+            .append_record_batches_inner(form_id, vec![batch], &revisions, false)
+            .await
+    }
+
+    async fn append_record_batches_inner(
+        &self,
+        form_id: FormId,
+        batches: Vec<RecordBatch>,
+        revisions: &[EntryRevision],
+        validate_revision_chain: bool,
+    ) -> Result<CommitReceipt> {
         if batches.is_empty() || revisions.is_empty() {
             return Err(anyhow!("append batch must not be empty"));
         }
@@ -1028,12 +1072,15 @@ impl IcebergWorkspace {
             .iter()
             .map(|revision| revision.entry_id)
             .collect::<Vec<_>>();
-        let mut current = self
-            .read_latest_revisions_for_entries(form_id, &entry_ids)
-            .await?
-            .into_iter()
-            .map(|revision| (revision.entry_id, revision))
-            .collect::<HashMap<_, _>>();
+        let mut current = if validate_revision_chain {
+            self.read_latest_revisions_for_entries(form_id, &entry_ids)
+                .await?
+                .into_iter()
+                .map(|revision| (revision.entry_id, revision))
+                .collect::<HashMap<_, _>>()
+        } else {
+            HashMap::new()
+        };
         let mut seen = std::collections::HashSet::new();
         for revision in revisions {
             if revision.form_id != form.id || revision.form_version != form.version {
@@ -1044,26 +1091,30 @@ impl IcebergWorkspace {
             if !seen.insert(revision.revision_id) {
                 return Err(anyhow!("duplicate revision ID in append batch"));
             }
-            let previous = current.get(&revision.entry_id);
-            if let Some(previous) = previous {
-                if revision.expected_version != Some(previous.entry_version)
-                    || revision.parent_revision_id != Some(previous.revision_id)
-                    || revision.entry_version
-                        != previous
-                            .entry_version
-                            .checked_add(1)
-                            .ok_or_else(|| anyhow!("entry version overflow"))?
+            if validate_revision_chain {
+                let previous = current.get(&revision.entry_id);
+                if let Some(previous) = previous {
+                    if revision.expected_version != Some(previous.entry_version)
+                        || revision.parent_revision_id != Some(previous.revision_id)
+                        || revision.entry_version
+                            != previous
+                                .entry_version
+                                .checked_add(1)
+                                .ok_or_else(|| anyhow!("entry version overflow"))?
+                    {
+                        return Err(anyhow!("entry revision conflict"));
+                    }
+                } else if revision.expected_version.is_some()
+                    || revision.parent_revision_id.is_some()
+                    || revision.entry_version != 1
                 {
                     return Err(anyhow!("entry revision conflict"));
                 }
-            } else if revision.expected_version.is_some()
-                || revision.parent_revision_id.is_some()
-                || revision.entry_version != 1
-            {
-                return Err(anyhow!("entry revision conflict"));
             }
             revision.validate_payload(&form)?;
-            current.insert(revision.entry_id, revision.clone());
+            if validate_revision_chain {
+                current.insert(revision.entry_id, revision.clone());
+            }
         }
         validate_batch_revision_metadata(&batches, revisions)?;
         let table_arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
