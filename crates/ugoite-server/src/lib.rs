@@ -4553,4 +4553,129 @@ mod authentication_regression_tests {
         assert_eq!(stored["fields"]["time"]["type"], "timestamp");
         Ok(())
     }
+
+    #[tokio::test]
+    async fn invitation_finalization_converges_after_space_membership_commit() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests("memory://server-invitation-saga")?;
+        state.initialize_node().await?;
+        let owner_account_id = Uuid::now_v7();
+        let owner_principal_id = Uuid::now_v7();
+        let invited_account_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("invitation-saga", owner_principal_id, "Owner")
+            .await?;
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid,
+                principal_id: owner_principal_id,
+                node_account_id: owner_account_id,
+                binding_method: BindingMethod::Setup,
+            })
+            .await?;
+        let principal_id = Uuid::now_v7();
+        let backup_owner_principal_id = Uuid::now_v7();
+        let account = HumanAccount {
+            account_id: invited_account_id,
+            display_name: "Invited viewer".to_string(),
+            status: AccountStatus::Active,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            node_roles: BTreeSet::new(),
+        };
+        let invitation = AccountInvitation {
+            invitation_id: Uuid::now_v7(),
+            token_hash: "test".to_string(),
+            display_name: account.display_name.clone(),
+            space_uid: Some(space_uid),
+            role: Some("viewer".to_string()),
+            expires_at: chrono::Utc::now().to_rfc3339(),
+            acceptance: Some(
+                ugoite_identity::node_identity::InvitationAcceptance::Pending {
+                    account_id: invited_account_id,
+                    principal_id,
+                    kind: ugoite_identity::node_identity::InvitationAcceptanceKind::PasskeyRegistration,
+                    claimed_at: chrono::Utc::now().to_rfc3339(),
+                },
+            ),
+            created_by: owner_account_id,
+        };
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        authorizer
+            .add_human_member(
+                &space_uid.to_string(),
+                owner_principal_id,
+                SpacePrincipal {
+                    principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: account.display_name.clone(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        authorizer
+            .add_human_member(
+                &space_uid.to_string(),
+                owner_principal_id,
+                SpacePrincipal {
+                    principal_id: backup_owner_principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Backup owner".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Owner,
+            )
+            .await?;
+        authorizer
+            .change_role(
+                &space_uid.to_string(),
+                owner_principal_id,
+                owner_principal_id,
+                SpaceRole::Viewer,
+            )
+            .await?;
+
+        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+            .await
+            .expect("membership-first finalization");
+        authorizer
+            .revoke_principal(
+                &space_uid.to_string(),
+                backup_owner_principal_id,
+                owner_principal_id,
+            )
+            .await?;
+        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+            .await
+            .expect("idempotent retry after inviter revocation");
+
+        let authorization = authorizer.state(&space_uid.to_string()).await?;
+        assert_eq!(authorization.memberships.len(), 3);
+        let node = state.identity.read_state().await?;
+        assert_eq!(
+            node.bindings
+                .iter()
+                .filter(|binding| binding.space_uid == space_uid)
+                .count(),
+            2
+        );
+
+        authorizer
+            .revoke_principal(
+                &space_uid.to_string(),
+                backup_owner_principal_id,
+                principal_id,
+            )
+            .await?;
+        assert!(
+            bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+                .await
+                .is_err()
+        );
+        Ok(())
+    }
 }

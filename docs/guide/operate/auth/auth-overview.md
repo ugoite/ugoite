@@ -77,7 +77,8 @@ Passkey cannot be removed.
 ## Invitations and OIDC
 
 Space owners issue a one-use invitation URL. Only the invitation hash, expiry,
-creator, Space UID, and requested role are stored. The recipient registers a
+creator, Space UID, requested role, and its durable acceptance claim are stored.
+The recipient registers a
 Passkey, accepts with an existing signed-in account, or starts an enabled OIDC
 authorization-code flow with PKCE. A new OIDC subject cannot create an account
 without an invitation. Ugoite validates the provider ID token and nonce, then
@@ -85,6 +86,18 @@ issues its own opaque session; provider tokens are never accepted by the Ugoite
 API. A signed-in user can add an OIDC method only after recent Passkey
 authentication; Ugoite refuses to link an issuer/subject pair already owned by
 another account.
+
+An account has at most one Node binding in a Space. If an already-bound account
+opens an invitation for that same Space, acceptance is idempotent and keeps the
+existing principal instead of creating a second membership.
+
+Invitation registration claims keep their account and principal fixed. If the
+Space membership or Node binding step fails after the claim is durable, opening
+the same invitation again requires the claimant to complete normal Passkey
+login before authenticated acceptance resumes finalization; the invitation
+token never authenticates the claimed account. The original invitation expiry
+does not block that retry. A conflicting or revoked Space principal is reported
+as a conflict instead of being silently replaced.
 
 An account has at most one Node binding in a Space. If an already-bound account
 opens an invitation for that same Space, acceptance is idempotent and keeps the
