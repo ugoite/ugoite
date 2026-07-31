@@ -15,6 +15,7 @@ use crate::{
     storage::operator_from_uri,
 };
 use ugoite_core::error::AppError;
+use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
     validate_space_id, validate_sql_id, validate_sql_session_id,
@@ -475,7 +476,7 @@ impl UgoiteService {
             };
             if allowed.contains(entry_id) {
                 by_form
-                    .entry(form.to_ascii_lowercase())
+                    .entry(sql_relation_name(form))
                     .or_default()
                     .insert(entry_id.to_string());
             }
@@ -518,7 +519,7 @@ impl UgoiteService {
             };
             if allowed.contains(entry_id) {
                 by_form
-                    .entry(form.to_ascii_lowercase())
+                    .entry(sql_relation_name(form))
                     .or_default()
                     .insert(entry_id.to_string());
             }

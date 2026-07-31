@@ -59,10 +59,14 @@ async fn test_search_req_srch_001_keyword_search() -> anyhow::Result<()> {
     assert_eq!(results.len(), 2);
 
     // Check results contain expected entries
-    let found_ids: Vec<String> = results.into_iter().map(|s| s.id).collect();
+    let found_ids: Vec<String> = results.iter().map(|s| s.id.clone()).collect();
     assert!(found_ids.contains(&"entry1".to_string()));
     assert!(found_ids.contains(&"entry3".to_string()));
     assert!(!found_ids.contains(&"entry2".to_string()));
+    let first = results.iter().find(|result| result.id == "entry1").unwrap();
+    assert_eq!(first.title, "entry1");
+    assert_eq!(first.form, "Entry");
+    assert!(first.properties.get("Body").is_some());
 
     Ok(())
 }

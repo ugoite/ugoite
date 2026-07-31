@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashSet};
 use ugoite_core::error::AppError;
 use ugoite_core::metadata;
+use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
 };
@@ -759,6 +760,10 @@ fn enrich_form_definition(form_def: &Value) -> Result<Value> {
     let mut enriched = form_def.clone();
     if let Some(obj) = enriched.as_object_mut() {
         obj.insert("template".to_string(), Value::String(template));
+        obj.insert(
+            "sql_relation".to_string(),
+            Value::String(sql_relation_name(name)),
+        );
     }
     Ok(enriched)
 }

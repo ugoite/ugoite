@@ -123,6 +123,9 @@ export const seedEntry = (
 };
 
 export const seedForm = (spaceId: string, entryForm: Form) => {
+  if (!entryForm.sql_relation) {
+    throw new Error(`seedForm requires backend sql_relation for ${entryForm.name}`);
+  }
   mockForms.get(spaceId)?.set(entryForm.name, entryForm);
 };
 

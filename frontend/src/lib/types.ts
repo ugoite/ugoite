@@ -195,6 +195,8 @@ export interface FormField {
 
 export interface Form {
   name: string;
+  /** Backend-owned DataFusion relation; never derive this from the Form name. */
+  sql_relation?: string;
   version: number;
   template: string;
   fields: Record<string, FormField>;
@@ -287,5 +289,16 @@ export interface ApiError {
   detail: string;
 }
 
-/** Search result entry */
-export type SearchResult = EntryRecord;
+/** Keyword-search result returned by the single backend Entry scan. */
+export interface SearchResult {
+  id: string;
+  title: string;
+  form: string;
+  created_at?: string | number;
+  updated_at: string | number;
+  properties: Record<string, unknown>;
+  tags: string[];
+  links: EntryLink[];
+  checksum?: string;
+  assets?: Asset[];
+}

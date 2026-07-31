@@ -3,16 +3,15 @@ import { createMemo, createSignal, For, Index, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
-import { entryApi } from "~/lib/ugoite-client";
 import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
-import type { EntryRecord, SearchResult, SqlEntry } from "~/lib/types";
+import type { SearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 
 type SearchMode = "keyword" | "advanced";
-type FieldMatchOperator = "equals" | "contains";
+type FieldMatchOperator = "equals" | "contains" | "lt" | "lte" | "gt" | "gte";
 
 type FieldCondition = {
   id: string;
@@ -23,13 +22,33 @@ type FieldCondition = {
 
 type AdvancedSearchCriteria = {
   formName: string;
+  sqlRelation: string;
   updatedFrom: string;
   updatedTo: string;
   fieldConditions: Array<{
     field: string;
+    type: SearchFieldType;
     operator: FieldMatchOperator;
     value: string;
   }>;
+};
+
+type SearchFieldType = "string" | "boolean" | "integer" | "float" |
+  "date" | "timestamp" | "unsupported";
+
+type SearchParameterValue = string | number | boolean | null;
+
+type AdvancedSearchQuery = {
+  sql: string;
+  historySql: string;
+  parameters: Record<string, SearchParameterValue>;
+  parameterTypes: Record<string, string>;
+};
+
+type AvailableField = {
+  name: string;
+  type: SearchFieldType;
+  supported: boolean;
 };
 
 const ADVANCED_SEARCH_LIMIT = 50;
@@ -49,105 +68,217 @@ function parseTimestamp(value: string | number | null | undefined): number {
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
-function coerceSearchResult(
-  result: Partial<SearchResult> & { id: string },
-  fallback?: EntryRecord,
-): SearchResult {
-  return {
-    id: result.id,
-    title: result.title || fallback?.title || "Untitled",
-    form: result.form ?? fallback?.form,
-    updated_at: result.updated_at || fallback?.updated_at || "",
-    properties: result.properties ?? fallback?.properties ?? {},
-    tags: result.tags ?? fallback?.tags ?? [],
-    links: result.links ?? fallback?.links ?? [],
-    canvas_position: result.canvas_position ?? fallback?.canvas_position,
-    checksum: result.checksum ?? fallback?.checksum,
-    assets: result.assets ?? fallback?.assets,
-  };
+function normalizeFieldType(type: string): SearchFieldType {
+  switch (type) {
+    case "string":
+    case "markdown":
+      return "string";
+    case "boolean":
+      return "boolean";
+    case "integer":
+    case "long":
+      return "integer";
+    case "number":
+    case "float":
+    case "double":
+      return "float";
+    case "date":
+      return "date";
+    case "timestamp":
+    case "timestamp_tz":
+    case "timestamp_ns":
+    case "timestamp_tz_ns":
+      return "timestamp";
+    default:
+      return "unsupported";
+  }
 }
 
-function dateInputToSqlTimestamp(
+function operatorsForFieldType(type: SearchFieldType): FieldMatchOperator[] {
+  if (type === "string") return ["equals", "contains"];
+  if (type === "boolean") return ["equals"];
+  if (type === "integer" || type === "float" || type === "date" ||
+    type === "timestamp") {
+    return ["equals", "lt", "lte", "gt", "gte"];
+  }
+  return [];
+}
+
+function operatorLabel(operator: FieldMatchOperator): string {
+  return {
+    equals: "equals",
+    contains: "contains",
+    lt: "less than",
+    lte: "less than or equal",
+    gt: "greater than",
+    gte: "greater than or equal",
+  }[operator];
+}
+
+function fieldInputType(type: SearchFieldType): "text" | "number" | "date" | "datetime-local" {
+  if (type === "integer" || type === "float") return "number";
+  if (type === "date") return "date";
+  if (type === "timestamp") return "datetime-local";
+  return "text";
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll(
+    "_",
+    "\\_",
+  );
+}
+
+function dateInput(
   value: string,
   boundary: "start" | "end",
-): string | null {
-  if (!value) return null;
+): { parameter: string; literal: string } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [yearText, monthText, dayText] = value.split("-");
   const year = Number(yearText);
   const month = Number(monthText);
   const day = Number(dayText);
-  if (![year, month, day].every(Number.isInteger)) {
-    return null;
-  }
-  const startOfDay = new Date(Date.UTC(year, month - 1, day));
+  const date = new Date(Date.UTC(year, month - 1, day));
   if (
-    startOfDay.getUTCFullYear() !== year ||
-    startOfDay.getUTCMonth() !== month - 1 ||
-    startOfDay.getUTCDate() !== day
-  ) {
-    return null;
-  }
-  const time = boundary === "start" ? "00:00:00.000" : "23:59:59.999";
-  return `TIMESTAMP '${yearText}-${monthText}-${dayText} ${time}Z'`;
+    ![year, month, day].every(Number.isInteger) ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) return null;
+  if (boundary === "end") date.setUTCDate(date.getUTCDate() + 1);
+  const dateText = date.toISOString().slice(0, 10);
+  return {
+    parameter: `${dateText}T00:00:00.000Z`,
+    literal: `TIMESTAMP '${dateText} 00:00:00Z'`,
+  };
 }
 
-async function enrichKeywordResults(
-  spaceId: string,
-  results: SearchResult[],
-): Promise<SearchResult[]> {
-  const idsNeedingEnrichment = [
-    ...new Set(
-      results.filter((result) => !result.title || !result.updated_at).map((
-        result,
-      ) => result.id),
-    ),
-  ];
-  if (idsNeedingEnrichment.length === 0) {
-    return results;
+function sqlLiteral(value: SearchParameterValue, type: string): string {
+  if (value === null) return "NULL";
+  if (type === "string") return escapeSqlLiteral(String(value));
+  if (type === "boolean") return value ? "TRUE" : "FALSE";
+  if (type === "integer" || type === "float") return String(value);
+  if (type === "date") return `DATE '${String(value)}'`;
+  if (type === "timestamp") {
+    return `TIMESTAMP '${String(value).replace("T", " ")}'`;
   }
-
-  // Keyword search returns stable Entry IDs. Resolve display metadata through
-  // the Entry index rather than manufacturing a cross-Form SQL session: SQL
-  // sessions intentionally expose one Form and require a total order.
-  const entries = await entryApi.list(spaceId);
-  const metadataById = new Map(entries.map((entry) => [entry.id, entry] as const));
-  return results.map((result) =>
-    coerceSearchResult(result, metadataById.get(result.id))
-  );
+  return escapeSqlLiteral(String(value));
 }
 
-function buildAdvancedSearchSql(criteria: AdvancedSearchCriteria): string {
-  if (!criteria.formName) {
-    return "";
-  }
+function buildAdvancedSearchQuery(
+  criteria: AdvancedSearchCriteria,
+): AdvancedSearchQuery | null {
+  if (!criteria.formName || !criteria.sqlRelation) return null;
 
-  const conditions: string[] = [];
+  const sessionConditions: string[] = [];
+  const historyConditions: string[] = [];
+  const parameters: Record<string, SearchParameterValue> = {};
+  const parameterTypes: Record<string, string> = {};
+  let parameterIndex = 0;
+  const bind = (
+    value: SearchParameterValue,
+    type: string,
+    literal: string,
+  ) => {
+    const name = `search_${parameterIndex++}`;
+    parameters[name] = value;
+    parameterTypes[name] = type;
+    return { parameter: `$${name}`, literal };
+  };
 
-  const updatedFrom = dateInputToSqlTimestamp(criteria.updatedFrom, "start");
-  if (updatedFrom) {
-    conditions.push(`_ugoite_updated_at >= ${updatedFrom}`);
-  }
+  const addDateCondition = (value: string, operator: ">=" | "<") => {
+    const converted = dateInput(value, operator === ">=" ? "start" : "end");
+    if (!converted) throw new Error(`Invalid date: ${value}`);
+    const bound = bind(converted.parameter, "timestamp", converted.literal);
+    sessionConditions.push(`_ugoite_updated_at ${operator} ${bound.parameter}`);
+    historyConditions.push(`_ugoite_updated_at ${operator} ${bound.literal}`);
+  };
 
-  const updatedTo = dateInputToSqlTimestamp(criteria.updatedTo, "end");
-  if (updatedTo) {
-    conditions.push(`_ugoite_updated_at <= ${updatedTo}`);
-  }
+  if (criteria.updatedFrom) addDateCondition(criteria.updatedFrom, ">=");
+  if (criteria.updatedTo) addDateCondition(criteria.updatedTo, "<");
 
   for (const condition of criteria.fieldConditions) {
     const fieldPath = quoteSqlIdentifier(condition.field.toLowerCase());
-    if (condition.operator === "contains") {
-      conditions.push(
-        `${fieldPath} ILIKE ${escapeSqlLiteral(`%${condition.value}%`)}`,
-      );
+    const operator = condition.operator === "equals"
+      ? "="
+      : condition.operator === "contains"
+      ? "ILIKE"
+      : condition.operator === "lt"
+      ? "<"
+      : condition.operator === "lte"
+      ? "<="
+      : condition.operator === "gt"
+      ? ">"
+      : ">=";
+    let value: SearchParameterValue;
+    let type: string;
+    let literalValue: string;
+    if (condition.type === "string") {
+      type = "string";
+      value = condition.operator === "contains"
+        ? `%${escapeLikePattern(condition.value)}%`
+        : condition.value;
+      literalValue = escapeSqlLiteral(String(value));
+    } else if (condition.type === "boolean") {
+      if (condition.value !== "true" && condition.value !== "false") {
+        throw new Error(`${condition.field} requires true or false.`);
+      }
+      type = "boolean";
+      value = condition.value === "true";
+      literalValue = value ? "TRUE" : "FALSE";
+    } else if (condition.type === "integer") {
+      if (!/^-?\d+$/.test(condition.value) ||
+        !Number.isSafeInteger(Number(condition.value))) {
+        throw new Error(`${condition.field} requires an integer.`);
+      }
+      type = "integer";
+      value = Number(condition.value);
+      literalValue = String(value);
+    } else if (condition.type === "float") {
+      const number = Number(condition.value);
+      if (!Number.isFinite(number)) {
+        throw new Error(`${condition.field} requires a number.`);
+      }
+      type = "float";
+      value = number;
+      literalValue = String(number);
+    } else if (condition.type === "date") {
+      const converted = dateInput(condition.value, "start");
+      if (!converted) throw new Error(`${condition.field} requires YYYY-MM-DD.`);
+      type = "date";
+      value = converted.parameter.slice(0, 10);
+      literalValue = sqlLiteral(value, type);
+    } else if (condition.type === "timestamp") {
+      const timestamp = new Date(condition.value);
+      if (Number.isNaN(timestamp.getTime())) {
+        throw new Error(`${condition.field} requires an RFC3339 timestamp.`);
+      }
+      type = "timestamp";
+      value = timestamp.toISOString();
+      literalValue = sqlLiteral(value, type);
+    } else {
       continue;
     }
-    conditions.push(`${fieldPath} = ${escapeSqlLiteral(condition.value)}`);
+    const bound = bind(value, type, literalValue);
+    const escape = condition.operator === "contains" ? " ESCAPE '\\'" : "";
+    sessionConditions.push(`${fieldPath} ${operator} ${bound.parameter}${escape}`);
+    historyConditions.push(`${fieldPath} ${operator} ${bound.literal}${escape}`);
   }
 
-  const where = conditions.length > 0
-    ? ` WHERE ${conditions.join(" AND ")}`
+  const sessionWhere = sessionConditions.length > 0
+    ? ` WHERE ${sessionConditions.join(" AND ")}`
     : "";
-  return `SELECT * FROM ${quoteSqlIdentifier(criteria.formName.toLowerCase())}${where} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT ${ADVANCED_SEARCH_LIMIT}`;
+  const historyWhere = historyConditions.length > 0
+    ? ` WHERE ${historyConditions.join(" AND ")}`
+    : "";
+  const render = (where: string) =>
+    `SELECT * FROM ${quoteSqlIdentifier(criteria.sqlRelation)}${where} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT ${ADVANCED_SEARCH_LIMIT}`;
+  return {
+    sql: render(sessionWhere),
+    historySql: render(historyWhere),
+    parameters,
+    parameterTypes,
+  };
 }
 
 function buildSearchHistoryName(criteria: AdvancedSearchCriteria): string {
@@ -166,7 +297,7 @@ function buildSearchHistoryName(criteria: AdvancedSearchCriteria): string {
   }
 
   for (const condition of criteria.fieldConditions.slice(0, 2)) {
-    const symbol = condition.operator === "contains" ? "~" : "=";
+    const symbol = { equals: "=", contains: "~", lt: "<", lte: "<=", gt: ">", gte: ">=" }[condition.operator];
     parts.push(`${condition.field}${symbol}${condition.value}`);
   }
 
@@ -229,16 +360,22 @@ export default function SpaceSearchRoute() {
     )
   );
 
+  const selectedForm = createMemo(() => availableForms().find((entryForm) =>
+    entryForm.name === advancedFormName().trim()
+  ));
+
   const availableFields = createMemo(() => {
-    const formName = advancedFormName().trim();
-    if (!formName) return [] as string[];
-    const selectedForm = availableForms().find((entryForm) =>
-      entryForm.name === formName
-    );
-    if (!selectedForm?.fields) return [] as string[];
-    return Object.keys(selectedForm.fields).sort((left, right) =>
-      left.localeCompare(right)
-    );
+    if (!selectedForm()?.fields) return [] as AvailableField[];
+    return Object.entries(selectedForm()?.fields ?? {})
+      .map(([name, field]) => {
+        const type = normalizeFieldType(field.type);
+        return {
+          name,
+          type,
+          supported: operatorsForFieldType(type).length > 0,
+        };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name));
   });
 
   const searchHistory = createMemo(() =>
@@ -250,15 +387,26 @@ export default function SpaceSearchRoute() {
 
   const advancedCriteria = createMemo<AdvancedSearchCriteria>(() => ({
     formName: advancedFormName().trim(),
+    sqlRelation: selectedForm()?.sql_relation ?? "",
     updatedFrom: advancedUpdatedFrom().trim(),
     updatedTo: advancedUpdatedTo().trim(),
     fieldConditions: fieldConditions()
-      .map((condition) => ({
-        field: condition.field.trim(),
-        operator: condition.operator,
-        value: condition.value.trim(),
-      }))
-      .filter((condition) => condition.field && condition.value),
+      .map((condition) => {
+        const field = availableFields().find((item) =>
+          item.name === condition.field.trim()
+        );
+        return {
+          field: condition.field.trim(),
+          type: field?.type ?? "unsupported",
+          operator: condition.operator,
+          value: condition.value.trim(),
+          supported: field?.supported ?? false,
+        };
+      })
+      .filter((condition) =>
+        condition.field && condition.value && condition.supported
+      )
+      .map(({ supported: _supported, ...condition }) => condition),
   }));
 
   const keywordResultCountLabel = createMemo(() => {
@@ -274,10 +422,15 @@ export default function SpaceSearchRoute() {
     setFieldConditions((current) =>
       current.map((condition) =>
         condition.id === id
-          ? {
-            ...condition,
-            [key]: value,
-          }
+          ? (() => {
+            const next = { ...condition, [key]: value };
+            if (key === "field") {
+              const field = availableFields().find((item) => item.name === value);
+              const operators = operatorsForFieldType(field?.type ?? "unsupported");
+              if (!operators.includes(next.operator)) next.operator = "equals";
+            }
+            return next;
+          })()
           : condition
       )
     );
@@ -298,7 +451,7 @@ export default function SpaceSearchRoute() {
     setKeywordLoading(true);
     try {
       const results = await searchApi.keyword(spaceId(), query);
-      setKeywordResults(await enrichKeywordResults(spaceId(), results));
+      setKeywordResults(results);
     } catch (err) {
       setKeywordResults([]);
       setActionError(
@@ -343,10 +496,16 @@ export default function SpaceSearchRoute() {
 
   const handleAdvancedSearch = async () => {
     const criteria = advancedCriteria();
-    const sql = buildAdvancedSearchSql(criteria);
-    if (!sql) {
+    let query: AdvancedSearchQuery | null;
+    try {
+      query = buildAdvancedSearchQuery(criteria);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Invalid search condition.");
+      return;
+    }
+    if (!query) {
       setActionError(
-        "Choose a Form before running an advanced search.",
+        "Choose a Form with a backend SQL relation before running an advanced search.",
       );
       return;
     }
@@ -357,22 +516,26 @@ export default function SpaceSearchRoute() {
     try {
       const existing = searchHistory().find(
         (entry) =>
-          entry.sql.trim() === sql.trim() &&
+          entry.sql.trim() === query.historySql.trim() &&
           (!entry.variables || entry.variables.length === 0),
       );
-      if (!existing) {
-        await sqlApi.create(spaceId(), {
-          name: buildSearchHistoryName(criteria),
-          sql,
-          variables: [],
-        });
-        await refetchSavedSearches();
-      }
-
-      const session = await sqlSessionApi.create(spaceId(), sql);
+      const session = await sqlSessionApi.create(
+        spaceId(),
+        query.sql,
+        query.parameters,
+        query.parameterTypes,
+      );
       if (session.status === "failed") {
         setActionError(session.error || "Advanced search failed.");
         return;
+      }
+      if (!existing) {
+        await sqlApi.create(spaceId(), {
+          name: buildSearchHistoryName(criteria),
+          sql: query.historySql,
+          variables: [],
+        });
+        await refetchSavedSearches();
       }
       navigate(
         `/spaces/${spaceId()}/entries?session=${
@@ -575,8 +738,10 @@ export default function SpaceSearchRoute() {
                           >
                             <option value="">Choose a field</option>
                             <For each={availableFields()}>
-                              {(fieldName) => (
-                                <option value={fieldName}>{fieldName}</option>
+                              {(field) => (
+                                <option value={field.name} disabled={!field.supported}>
+                                  {field.name}{field.supported ? "" : " (unsupported)"}
+                                </option>
                               )}
                             </For>
                           </select>
@@ -600,8 +765,11 @@ export default function SpaceSearchRoute() {
                               event.currentTarget.value,
                             )}
                         >
-                          <option value="equals">equals</option>
-                          <option value="contains">contains</option>
+                          <For each={operatorsForFieldType(availableFields().find((field) => field.name === condition().field)?.type ?? "unsupported")}>
+                            {(operator) => (
+                              <option value={operator}>{operatorLabel(operator)}</option>
+                            )}
+                          </For>
                         </select>
                       </div>
                       <div>
@@ -610,9 +778,9 @@ export default function SpaceSearchRoute() {
                         </label>
                         <input
                           id={`value-${condition().id}`}
-                          type="text"
+                          type={fieldInputType(availableFields().find((field) => field.name === condition().field)?.type ?? "string")}
                           class="ui-input mt-2 w-full"
-                          placeholder="alice"
+                          placeholder={availableFields().find((field) => field.name === condition().field)?.type === "boolean" ? "true or false" : "alice"}
                           value={condition().value}
                           onInput={(event) =>
                             updateFieldCondition(

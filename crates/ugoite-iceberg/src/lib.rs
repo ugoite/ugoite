@@ -68,7 +68,9 @@ use tokio::sync::Semaphore;
 use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
-use ugoite_domain::form::{Compatibility, FieldType, FormChangeSet, FormDefinition, FormField};
+use ugoite_domain::form::{
+    sql_relation_name, Compatibility, FieldType, FormChangeSet, FormDefinition, FormField,
+};
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
 use uuid::Uuid;
@@ -466,7 +468,7 @@ impl IcebergWorkspace {
         let mut matches = checkpoint
             .tables
             .iter()
-            .filter(|coordinate| coordinate.form_name.eq_ignore_ascii_case(&relation));
+            .filter(|coordinate| sql_relation_name(&coordinate.form_name) == relation);
         let coordinate = matches
             .next()
             .ok_or_else(|| CheckpointUnavailable::new(format!("Form relation {relation}")))?;
@@ -483,7 +485,7 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, coordinate.form_id)?;
-        if !form.name.eq_ignore_ascii_case(&relation) || coordinate.form_name != form.name {
+        if sql_relation_name(&form.name) != relation || coordinate.form_name != form.name {
             return Err(CheckpointIntegrityError::new(
                 "checkpoint Form relation does not match immutable Iceberg metadata",
             )

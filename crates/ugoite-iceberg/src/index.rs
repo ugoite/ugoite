@@ -9,6 +9,7 @@ use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::Duration;
+use ugoite_domain::form::sql_relation_name;
 use ugoite_domain::id::FormId;
 pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
@@ -194,6 +195,13 @@ pub fn datafusion_parameters(
                         .timestamp_micros();
                     datafusion::scalar::ScalarValue::TimestampMicrosecond(Some(value), None)
                 }
+                ("date", Value::String(value)) => {
+                    let value = NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                        .map_err(|_| anyhow!("SQL parameter {name} must be an ISO date"))?;
+                    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1)
+                        .expect("the Unix epoch is a valid date");
+                    datafusion::scalar::ScalarValue::Date32(Some((value - epoch).num_days() as i32))
+                }
                 ("string", Value::Null) => datafusion::scalar::ScalarValue::Utf8(None),
                 ("boolean", Value::Null) => datafusion::scalar::ScalarValue::Boolean(None),
                 ("integer", Value::Null) => datafusion::scalar::ScalarValue::Int64(None),
@@ -201,7 +209,8 @@ pub fn datafusion_parameters(
                 ("timestamp", Value::Null) => {
                     datafusion::scalar::ScalarValue::TimestampMicrosecond(None, None)
                 }
-                ("string" | "boolean" | "integer" | "float" | "timestamp", _) => {
+                ("date", Value::Null) => datafusion::scalar::ScalarValue::Date32(None),
+                ("string" | "boolean" | "integer" | "float" | "timestamp" | "date", _) => {
                     return Err(anyhow!(
                         "SQL parameter {name} does not match declared type {kind}"
                     ))
@@ -675,7 +684,18 @@ pub fn sql_session_page_relation(sql: &str) -> Result<String> {
             "SQL session paging requires ORDER BY ending with _ugoite_id"
         ));
     }
-    Ok(name.to_string().to_ascii_lowercase())
+    let Some(identifier) = name.0.last() else {
+        return Err(anyhow!("SQL session paging requires a Form relation"));
+    };
+    if name.0.len() != 1 {
+        return Err(anyhow!(
+            "SQL session paging requires exactly one Form relation"
+        ));
+    }
+    let identifier = identifier
+        .as_ident()
+        .ok_or_else(|| anyhow!("SQL session paging requires a plain Form relation"))?;
+    Ok(identifier.value.to_ascii_lowercase())
 }
 
 pub async fn query_index_authorized(
@@ -729,7 +749,7 @@ pub async fn execute_sql_query_scoped(
 ) -> Result<Vec<Value>> {
     let readable_forms = readable_forms
         .iter()
-        .map(|form| form.to_ascii_lowercase())
+        .map(|form| sql_relation_name(form))
         .collect::<HashSet<_>>();
     execute_datafusion_sql(
         op,
@@ -753,7 +773,7 @@ pub async fn execute_sql_query_scoped_page(
 ) -> Result<(Vec<Value>, u64)> {
     let readable_forms = readable_forms
         .iter()
-        .map(|form| form.to_ascii_lowercase())
+        .map(|form| sql_relation_name(form))
         .collect::<HashSet<_>>();
     execute_datafusion_sql_page(
         op,
@@ -851,7 +871,7 @@ async fn datafusion_sql_context(
     let forms = workspace.list_forms().await?;
     let mut policy_forms = BTreeMap::new();
     for form in forms {
-        let relation = form.name.to_ascii_lowercase();
+        let relation = sql_relation_name(&form.name);
         let relation_entry_scope = match relation_scopes {
             Some(scopes) => match scopes.get(&relation) {
                 Some(scope) => scope.clone(),
@@ -1469,4 +1489,50 @@ async fn build_record(
     });
 
     Ok(Some(record))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{datafusion_parameters, sql_session_page_relation};
+    use chrono::DateTime;
+    use serde_json::{Map, Value};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn sql_session_relation_parser_uses_identifier_value_without_quotes() {
+        assert_eq!(
+            sql_session_page_relation(
+                r#"SELECT * FROM "meeting" ORDER BY _ugoite_updated_at DESC, _ugoite_id"#,
+            )
+            .expect("quoted relation is valid"),
+            "meeting"
+        );
+    }
+
+    #[test]
+    fn native_parameters_keep_date_and_microsecond_timestamp_types() {
+        let values = Map::from_iter([
+            (
+                "when".to_string(),
+                Value::String("2025-03-03T23:59:59.999999Z".to_string()),
+            ),
+            ("day".to_string(), Value::String("2025-03-03".to_string())),
+        ]);
+        let types = BTreeMap::from_iter([
+            ("when".to_string(), "timestamp".to_string()),
+            ("day".to_string(), "date".to_string()),
+        ]);
+        let parameters = datafusion_parameters(&values, &types).expect("typed parameters");
+        assert!(matches!(
+            parameters.get("when"),
+            Some(datafusion::scalar::ScalarValue::TimestampMicrosecond(Some(value), None))
+                if *value == DateTime::parse_from_rfc3339("2025-03-03T23:59:59.999999Z")
+                    .expect("timestamp")
+                    .timestamp_micros()
+        ));
+        assert!(matches!(
+            parameters.get("day"),
+            Some(datafusion::scalar::ScalarValue::Date32(Some(value))) if *value == 20150
+        ));
+    }
 }

@@ -30,9 +30,8 @@ async fn search_entries_with_authorized_ids(
     readable_entry_ids: Option<&HashSet<String>>,
 ) -> Result<Vec<SearchResult>> {
     let query = query.to_lowercase();
-    let mut found_ids = HashSet::new();
-
     let rows = entry::list_entry_rows(op, ws_path).await?;
+    let mut results = Vec::new();
     for (_form_name, row) in rows {
         if row.deleted || readable_entry_ids.is_some_and(|allowed| !allowed.contains(&row.entry_id))
         {
@@ -40,13 +39,19 @@ async fn search_entries_with_authorized_ids(
         }
         let dump = serde_json::to_string(&row)?.to_lowercase();
         if dump.contains(&query) {
-            found_ids.insert(row.entry_id);
+            results.push(SearchResult {
+                id: row.entry_id,
+                title: row.title,
+                form: row.form,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                properties: entry::merge_entry_fields(&row.fields, &row.extra_attributes),
+                tags: row.tags,
+                links: row.links,
+                assets: row.assets,
+                checksum: row.integrity.checksum,
+            });
         }
     }
-
-    let results = found_ids
-        .into_iter()
-        .map(|id| SearchResult { id })
-        .collect();
     Ok(results)
 }

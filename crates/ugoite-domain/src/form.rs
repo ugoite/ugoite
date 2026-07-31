@@ -94,6 +94,38 @@ pub struct FormDefinition {
     pub extension_metadata: BTreeMap<String, Value>,
 }
 
+/// Returns the stable ASCII SQL relation exposed for a Form.
+///
+/// Form names are portable storage identifiers and may contain `-`, while
+/// DataFusion relations are deliberately kept to unquoted ASCII identifiers.
+/// Keep ordinary names readable for SQL authors and encode characters that
+/// would otherwise collide with a different valid Form name.
+pub fn sql_relation_name(form_name: &str) -> String {
+    let mut relation = String::new();
+    for (index, character) in form_name.chars().enumerate() {
+        if character.is_ascii_alphanumeric() {
+            if index == 0 && character.is_ascii_digit() {
+                relation.push_str("_x");
+            }
+            relation.push(character.to_ascii_lowercase());
+        } else {
+            relation.push_str("_x");
+            let codepoint = if character == '_' {
+                b'_' as u32
+            } else {
+                character as u32
+            };
+            relation.push_str(&format!("{:x}", codepoint));
+            relation.push('_');
+        }
+    }
+    if relation.is_empty() {
+        "_x0_".to_string()
+    } else {
+        relation
+    }
+}
+
 impl FormDefinition {
     pub fn validate(&self) -> Result<(), DomainError> {
         if self.name.trim().is_empty() {
@@ -189,6 +221,26 @@ impl FormDefinition {
             .iter_mut()
             .find(|field| field.id == id)
             .ok_or(DomainError::UnknownField(id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sql_relation_name;
+
+    #[test]
+    fn sql_relation_names_are_ascii_and_preserve_readable_names() {
+        assert_eq!(sql_relation_name("Meeting"), "meeting");
+        assert_eq!(sql_relation_name("daily-note"), "daily_x2d_note");
+        assert_eq!(
+            sql_relation_name("daily_x2d_note"),
+            "daily_x5f_x2d_x5f_note"
+        );
+        assert_ne!(
+            sql_relation_name("daily-note"),
+            sql_relation_name("daily_x2d_note")
+        );
+        assert_eq!(sql_relation_name("2fa"), "_x2fa");
     }
 }
 

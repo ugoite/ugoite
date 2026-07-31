@@ -1,3 +1,4 @@
+import { normalizeTimestamp } from "./date-format";
 import type { EntryRecord, SearchResult } from "./types";
 import { protocolFetch } from "./ugoite-client/protocol";
 
@@ -21,10 +22,17 @@ export const searchApi = {
   },
 
   async keyword(spaceId: string, query: string): Promise<SearchResult[]> {
-    return await protocolFetch<SearchResult[]>("search.keyword", {
-      space_id: spaceId,
-      q: query,
-    });
+    const results = await protocolFetch<SearchResult[]>("search.keyword", {
+     space_id: spaceId,
+     q: query,
+   });
+    return results.map((result) => ({
+      ...result,
+      created_at: result.created_at === undefined
+        ? undefined
+        : normalizeTimestamp(result.created_at),
+      updated_at: normalizeTimestamp(result.updated_at),
+    }));
   },
 
   async rowReferenceOptions(

@@ -867,3 +867,73 @@ async fn sql_session_rejects_unsupported_sql_before_resolving_a_space_scope() ->
     assert!(error.to_string().contains("does not support joins"));
     Ok(())
 }
+
+#[tokio::test]
+async fn sql_session_uses_backend_relation_mapping_for_hyphenated_forms() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "test-sql-session-relation", "/tmp").await?;
+    let ws_path = "spaces/test-sql-session-relation";
+    let form_def = serde_json::json!({
+        "name": "Daily-Note",
+        "template": "# Daily-Note\n\n## Count\n",
+        "fields": {
+            "Count": {"type": "integer"},
+            "Enabled": {"type": "boolean"}
+        }
+    });
+    form::upsert_form(&op, ws_path, &form_def).await?;
+
+    let principal_ids = [Uuid::from_u128(92)];
+    let readable_entries_by_form = [("daily_x2d_note".to_string(), HashSet::new())]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    let session = sql_session::create_sql_session_authorized_for_principals_by_form(
+        &op,
+        ws_path,
+        "SELECT * FROM \"daily_x2d_note\" ORDER BY _ugoite_id",
+        sql_session::SqlSessionCreateAuthorization {
+            authorization: sql_session::SqlSessionAuthorization {
+                principal_ids: &principal_ids,
+                policy_hash: AUTHORIZATION_POLICY_HASH,
+            },
+            readable_entries_by_form: &readable_entries_by_form,
+        },
+    )
+    .await?;
+    assert_eq!(session["status"], "ready");
+    assert_eq!(
+        session["query_policy"]["forms"][0]["relation"],
+        "daily_x2d_note"
+    );
+
+    let parameters = serde_json::Map::from_iter([
+        ("search_0".to_string(), serde_json::json!(10)),
+        (
+            "search_1".to_string(),
+            serde_json::json!("2025-03-04T00:00:00.000Z"),
+        ),
+        ("search_2".to_string(), serde_json::json!(true)),
+    ]);
+    let parameter_types = BTreeMap::from_iter([
+        ("search_0".to_string(), "integer".to_string()),
+        ("search_1".to_string(), "timestamp".to_string()),
+        ("search_2".to_string(), "boolean".to_string()),
+    ]);
+    let typed_session = sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
+        &op,
+        ws_path,
+        "SELECT * FROM \"daily_x2d_note\" WHERE _ugoite_updated_at < $search_1 AND \"count\" = $search_0 AND \"enabled\" = $search_2 ORDER BY _ugoite_updated_at DESC, _ugoite_id",
+        parameters,
+        parameter_types,
+        sql_session::SqlSessionCreateAuthorization {
+            authorization: sql_session::SqlSessionAuthorization {
+                principal_ids: &principal_ids,
+                policy_hash: AUTHORIZATION_POLICY_HASH,
+            },
+            readable_entries_by_form: &readable_entries_by_form,
+        },
+    )
+    .await?;
+    assert_eq!(typed_session["status"], "ready");
+    Ok(())
+}
