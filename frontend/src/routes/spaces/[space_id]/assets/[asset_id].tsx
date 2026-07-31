@@ -38,10 +38,16 @@ export default function SpaceAssetDetailRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="forms" title="Asset">
+    <SpaceShell
+      spaceId={spaceId()}
+      activeNavigation="forms"
+      title={t("assetDetail.heading")}
+    >
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">Forms / Assets</div>
+          <div class="eyebrow">
+            {t("spaceShell.bottom.grid")} / {t("assetsPage.heading")}
+          </div>
           <h1>{t("assetDetail.heading")}</h1>
         </div>
         <A href={`/spaces/${spaceId()}/assets`} class="btn">

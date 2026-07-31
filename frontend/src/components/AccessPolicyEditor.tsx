@@ -1,6 +1,11 @@
 import { createEffect, createSignal, For, Show } from "solid-js";
-import { accessApi, type AccessPolicy, type ResourceKind } from "~/lib/access-api";
+import {
+  accessApi,
+  type AccessPolicy,
+  type ResourceKind,
+} from "~/lib/access-api";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
 
 export function AccessPolicyEditor(props: {
   spaceId: string;
@@ -30,8 +35,9 @@ export function AccessPolicyEditor(props: {
   const addGrant = () => {
     const principal = principalId().trim();
     const selected = actions().split(",").map((action) => action.trim())
-      .filter((action) => ["read", "update", "delete", "share"].includes(action)) as
-      AccessPolicy["grants"][number]["actions"];
+      .filter((action) =>
+        ["read", "update", "delete", "share"].includes(action)
+      ) as AccessPolicy["grants"][number]["actions"];
     if (!principal || selected.length === 0) return;
     setGrants((current) => [
       ...current.filter((grant) => grant.principal_id !== principal),
@@ -48,41 +54,47 @@ export function AccessPolicyEditor(props: {
         inherit_space_role: inherit(),
         grants: grants(),
       });
-      setMessage("Access policy saved.");
+      setMessage(t("accessPolicy.saved"));
       setLoaded(false);
       await refetch();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to save policy.");
+      setMessage(
+        error instanceof Error ? error.message : t("accessPolicy.failedSave"),
+      );
     }
   };
 
   return (
     <section class="ui-card ui-stack-sm">
-      <h2 class="text-lg font-semibold">Sharing and access</h2>
+      <h2 class="text-lg font-semibold">{t("accessPolicy.heading")}</h2>
       <label class="flex items-center gap-2">
         <input
           type="checkbox"
           checked={inherit()}
           onChange={(event) => setInherit(event.currentTarget.checked)}
         />
-        Inherit Space role access
+        {t("accessPolicy.inherit")}
       </label>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
         <input
           class="ui-input font-mono"
-          placeholder="Principal UUID"
+          placeholder={t("accessPolicy.principalPlaceholder")}
           value={principalId()}
           onInput={(event) => setPrincipalId(event.currentTarget.value)}
         />
         <input
           class="ui-input"
-          placeholder="read,update"
+          placeholder={t("accessPolicy.actionsPlaceholder")}
           value={actions()}
           onInput={(event) => setActions(event.currentTarget.value)}
         />
       </div>
-      <button type="button" class="ui-button ui-button-secondary w-fit" onClick={addGrant}>
-        Add grant
+      <button
+        type="button"
+        class="ui-button ui-button-secondary w-fit"
+        onClick={addGrant}
+      >
+        {t("accessPolicy.addGrant")}
       </button>
       <For each={grants()}>
         {(grant) => (
@@ -93,17 +105,26 @@ export function AccessPolicyEditor(props: {
               class="ui-button ui-button-secondary"
               onClick={() =>
                 setGrants((current) =>
-                  current.filter((item) => item.principal_id !== grant.principal_id))}
+                  current.filter((item) =>
+                    item.principal_id !== grant.principal_id
+                  )
+                )}
             >
-              Remove
+              {t("common.remove")}
             </button>
           </div>
         )}
       </For>
-      <button type="button" class="ui-button ui-button-primary w-fit" onClick={() => void save()}>
-        Save access policy
+      <button
+        type="button"
+        class="ui-button ui-button-primary w-fit"
+        onClick={() => void save()}
+      >
+        {t("accessPolicy.save")}
       </button>
-      <Show when={message()}><p class="ui-muted">{message()}</p></Show>
+      <Show when={message()}>
+        <p class="ui-muted">{message()}</p>
+      </Show>
     </section>
   );
 }

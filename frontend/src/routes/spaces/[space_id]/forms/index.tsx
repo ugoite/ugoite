@@ -5,40 +5,13 @@ import { FormTable } from "~/components/FormTable";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
-import { locale } from "~/lib/i18n";
+import { t } from "~/lib/i18n";
 import {
   filterCreatableEntryForms,
   isReservedMetadataForm,
 } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
-
-const copy = {
-  en: {
-    forms: "Forms",
-    newForm: "Form",
-    find: "Find a Form",
-    noForms: "No Forms yet",
-    failedLoad: "Failed to load Forms.",
-    retry: "Retry",
-    select: "Select a Form",
-    edit: "Edit Form",
-    newEntry: "Entry",
-    showMetadata: "Show system forms",
-  },
-  ja: {
-    forms: "フォーム",
-    newForm: "フォーム",
-    find: "フォームを探す",
-    noForms: "フォームがありません",
-    failedLoad: "フォームを読み込めませんでした。",
-    retry: "再試行",
-    select: "フォームを選択",
-    edit: "フォームを編集",
-    newEntry: "エントリー",
-    showMetadata: "システムフォームを表示",
-  },
-} as const;
 
 export default function SpaceFormsIndexPane() {
   const ctx = useEntriesRouteContext();
@@ -48,11 +21,8 @@ export default function SpaceFormsIndexPane() {
   const [showFormDialog, setShowFormDialog] = createSignal(false);
   const [showEditDialog, setShowEditDialog] = createSignal(false);
   const [showMetadata, setShowMetadata] = createSignal(false);
-  const c = () => copy[locale() === "ja" ? "ja" : "en"];
   const forms = createMemo(() =>
-    showMetadata()
-      ? ctx.forms()
-      : filterCreatableEntryForms(ctx.forms())
+    showMetadata() ? ctx.forms() : filterCreatableEntryForms(ctx.forms())
   );
   const selectedName = createMemo(() => String(params.form || ""));
   const selectedForm = createMemo(() =>
@@ -85,19 +55,19 @@ export default function SpaceFormsIndexPane() {
     <SpaceShell
       spaceId={ctx.spaceId()}
       activeNavigation="forms"
-      title={c().forms}
+      title={t("spaceShell.bottom.grid")}
     >
       <Show
         when={!ctx.formsError?.()}
         fallback={
           <div class="settingsMain surface ui-stack-sm">
-            <p class="ui-alert ui-alert-error">{c().failedLoad}</p>
+            <p class="ui-alert ui-alert-error">{t("formsPage.failedLoad")}</p>
             <button
               class="btn"
               type="button"
               onClick={() => ctx.refetchForms()}
             >
-              {c().retry}
+              {t("formsPage.retry")}
             </button>
           </div>
         }
@@ -105,22 +75,23 @@ export default function SpaceFormsIndexPane() {
         <div class="split">
           <aside class="listPane surface">
             <div class="paneHead">
-              <b>{c().forms}</b>
+              <b>{t("spaceShell.bottom.grid")}</b>
               <button
                 class="btn iconBtn"
                 type="button"
-                aria-label={c().newForm}
+                aria-label={t("formsPage.newFormAria")}
                 onClick={() => setShowFormDialog(true)}
               >
                 <UiIcon name="plus" />
               </button>
             </div>
             <label class="formVisibilityToggle">
-              <span>{c().showMetadata}</span>
+              <span>{t("formsPage.showMetadata")}</span>
               <input
                 type="checkbox"
                 checked={showMetadata()}
-                onChange={(event) => setShowMetadata(event.currentTarget.checked)}
+                onChange={(event) =>
+                  setShowMetadata(event.currentTarget.checked)}
               />
               <span class="formVisibilityTrack" aria-hidden="true" />
             </label>
@@ -129,12 +100,14 @@ export default function SpaceFormsIndexPane() {
               <input
                 value={query()}
                 onInput={(event) => setQuery(event.currentTarget.value)}
-                placeholder={c().find}
+                placeholder={t("formsPage.find")}
               />
             </label>
             <For
               each={filteredForms()}
-              fallback={<div class="ui-muted p-3">{c().noForms}</div>}
+              fallback={
+                <div class="ui-muted p-3">{t("formsPage.noForms")}</div>
+              }
             >
               {(form) => (
                 <button
@@ -154,8 +127,8 @@ export default function SpaceFormsIndexPane() {
                     <Show when={isReservedMetadataForm(form.name)}>
                       <span
                         class="systemFormIcon"
-                        aria-label="System form"
-                        title="System form"
+                        aria-label={t("formsPage.systemForm")}
+                        title={t("formsPage.systemForm")}
                       >
                         <UiIcon name="storage" />
                       </span>
@@ -170,7 +143,9 @@ export default function SpaceFormsIndexPane() {
             <Show
               when={selectedForm()}
               fallback={
-                <div class="surface settingsMain ui-muted">{c().select}</div>
+                <div class="surface settingsMain ui-muted">
+                  {t("formsPage.selectPlaceholder")}
+                </div>
               }
             >
               {(form) => (
@@ -182,7 +157,7 @@ export default function SpaceFormsIndexPane() {
                         type="button"
                         onClick={() => setShowEditDialog(true)}
                       >
-                        <UiIcon name="settings" /> {c().edit}
+                        <UiIcon name="settings" /> {t("formsPage.editForm")}
                       </button>
                       <button
                         class="btn primary"
@@ -194,7 +169,7 @@ export default function SpaceFormsIndexPane() {
                             }`,
                           )}
                       >
-                        <UiIcon name="plus" /> {c().newEntry}
+                        <UiIcon name="plus" /> {t("formsPage.newEntry")}
                       </button>
                     </div>
                   </div>

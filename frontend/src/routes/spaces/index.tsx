@@ -6,6 +6,7 @@ import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { sortSpaces } from "~/lib/space-list";
 import type { Space } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
 
 const localDevAuthGuideUrl = getDocsiteHref(
   "/docs/guide/develop/local-dev-auth-login",
@@ -26,9 +27,9 @@ const toMessage = (value: unknown): string => {
 const normalizeCreateError = (value: unknown): string => {
   const message = toMessage(value);
   if (/invalid space_id:/i.test(message)) {
-    return "Space IDs can use only letters, numbers, hyphens, and underscores.";
+    return t("spacesPage.invalidSpaceId");
   }
-  return message || "Failed to create space.";
+  return message || t("spacesPage.failedCreate");
 };
 
 function SpaceCards(props: { label: string; spaces: readonly Space[] }) {
@@ -49,13 +50,13 @@ function SpaceCards(props: { label: string; spaces: readonly Space[] }) {
                 href={`/spaces/${space.id}/settings`}
                 class="ui-button ui-button-secondary text-sm"
               >
-                Settings
+                {t("spacesPage.openSettings")}
               </A>
               <A
                 href={`/spaces/${space.id}/dashboard`}
                 class="ui-button ui-button-primary text-sm"
               >
-                Open Space
+                {t("spacesPage.openSpace")}
               </A>
             </div>
           </li>
@@ -73,7 +74,7 @@ export default function SpacesIndexRoute() {
     try {
       return await spaceApi.list();
     } catch (error) {
-      setSpacesError(toMessage(error) || "Failed to load spaces.");
+      setSpacesError(toMessage(error) || t("spacesPage.failedLoad"));
       return [];
     }
   });
@@ -94,8 +95,7 @@ export default function SpacesIndexRoute() {
         message.includes("unauthorized")
       ) {
         return {
-          message:
-            "Authentication required. Open /login to start a local browser session.",
+          message: t("spacesPage.authRequired"),
           showGuide: true,
         };
       }
@@ -105,8 +105,7 @@ export default function SpacesIndexRoute() {
         message.includes("not authorized")
       ) {
         return {
-          message:
-            "You are signed in but do not have permission to view these spaces.",
+          message: t("spacesPage.authForbidden"),
           showGuide: false,
         };
       }
@@ -142,7 +141,7 @@ export default function SpacesIndexRoute() {
     event.preventDefault();
     const spaceId = newSpaceId().trim();
     if (!spaceId) {
-      setCreateError("Please provide a space ID.");
+      setCreateError(t("spacesPage.spaceIdRequired"));
       return;
     }
     setIsCreating(true);
@@ -192,19 +191,19 @@ export default function SpacesIndexRoute() {
   });
 
   return (
-    <GlobalShell title="Spaces" active="spaces">
+    <GlobalShell title={t("spacesPage.title")} active="spaces">
       <div class="ui-stack">
         <div class="screenHead">
           <div class="screenTitle">
             <div class="eyebrow">Ugoite</div>
-            <h1>Spaces</h1>
+            <h1>{t("spacesPage.title")}</h1>
           </div>
           <div class="actions">
             <A
               href="/spaces/join"
               class="ui-button ui-button-secondary text-sm"
             >
-              Join with invitation
+              {t("spacesPage.join")}
             </A>
             <Show when={!spacesError() && !showCreateForm() && !hasNoSpaces()}>
               <button
@@ -212,29 +211,32 @@ export default function SpacesIndexRoute() {
                 class="ui-button ui-button-primary text-sm"
                 onClick={openCreateForm}
               >
-                Create space
+                {t("spacesPage.create")}
               </button>
             </Show>
             <A href="/" class="ui-muted text-sm">
-              Back to Home
+              {t("spacesPage.backHome")}
             </A>
           </div>
         </div>
 
         <section class="settingsMain surface">
-          <h2 class="text-lg font-semibold mb-3">Available Spaces</h2>
+          <h2 class="text-lg font-semibold mb-3">
+            {t("spacesPage.available")}
+          </h2>
           <Show when={showCreateForm()}>
             <form class="ui-card ui-stack-sm mb-4" onSubmit={handleCreateSpace}>
               <div>
-                <h3 class="text-base font-semibold">Create space</h3>
+                <h3 class="text-base font-semibold">
+                  {t("spacesPage.create")}
+                </h3>
                 <p class="text-sm ui-muted">
-                  Spaces are never created automatically. Choose a space ID to
-                  create one explicitly.
+                  {t("spacesPage.createDescription")}
                 </p>
               </div>
               <div class="ui-field">
                 <label class="ui-label" for="space-name">
-                  Space ID
+                  {t("spacesPage.spaceId")}
                 </label>
                 <input
                   id="space-name"
@@ -242,11 +244,10 @@ export default function SpacesIndexRoute() {
                   class="ui-input"
                   value={newSpaceId()}
                   onInput={(event) => setNewSpaceId(event.currentTarget.value)}
-                  placeholder="e.g. team-notes"
+                  placeholder={t("spacesPage.spaceIdPlaceholder")}
                 />
                 <p class="mt-2 text-xs ui-muted">
-                  Use letters, numbers, hyphens, or underscores. This becomes
-                  the space URL and storage ID.
+                  {t("spacesPage.spaceIdHelp")}
                 </p>
               </div>
               <Show when={createError()}>
@@ -259,7 +260,7 @@ export default function SpacesIndexRoute() {
                       onClick={() => void reauthenticateAndCreate()}
                       disabled={isCreating()}
                     >
-                      Authenticate with Passkey
+                      {t("spacesPage.authenticate")}
                     </button>
                   </Show>
                 </div>
@@ -271,24 +272,26 @@ export default function SpacesIndexRoute() {
                   onClick={closeCreateForm}
                   disabled={isCreating()}
                 >
-                  Cancel
+                  {t("spacesPage.cancel")}
                 </button>
                 <button
                   type="submit"
                   class="ui-button ui-button-primary text-sm"
                   disabled={!newSpaceId().trim() || isCreating()}
                 >
-                  {isCreating() ? "Creating..." : "Create space"}
+                  {isCreating()
+                    ? t("spacesPage.creating")
+                    : t("spacesPage.create")}
                 </button>
               </div>
             </form>
           </Show>
           <Show when={spaces.loading}>
-            <p class="text-sm ui-muted">Loading spaces...</p>
+            <p class="text-sm ui-muted">{t("spacesPage.loading")}</p>
           </Show>
           <Show when={spacesError()}>
             <p class="ui-alert ui-alert-error text-sm">
-              Failed to load spaces.
+              {t("spacesPage.failedLoad")}
             </p>
             <Show when={authHint()}>
               {(hint) => (
@@ -301,7 +304,7 @@ export default function SpacesIndexRoute() {
                       rel="noopener"
                       class="ui-muted text-sm hover:underline"
                     >
-                      Local Dev Auth/Login
+                      {t("spacesPage.localDevAuth")}
                     </a>
                   </Show>
                 </div>
@@ -310,14 +313,14 @@ export default function SpacesIndexRoute() {
           </Show>
           <Show when={hasNoSpaces() && !showCreateForm()}>
             <div class="ui-card ui-card-dashed ui-stack-sm">
-              <p class="text-sm ui-muted">No spaces available.</p>
+              <p class="text-sm ui-muted">{t("spacesPage.noSpaces")}</p>
               <div>
                 <button
                   type="button"
                   class="ui-button ui-button-primary text-sm"
                   onClick={openCreateForm}
                 >
-                  Create space
+                  {t("spacesPage.create")}
                 </button>
               </div>
               <a
@@ -326,12 +329,12 @@ export default function SpacesIndexRoute() {
                 rel="noopener"
                 class="ui-muted text-sm hover:underline"
               >
-                Learn how to create your first entry in the browser
+                {t("spacesPage.learnFirstEntry")}
               </a>
             </div>
           </Show>
           <Show when={listedSpaces().length > 0}>
-            <SpaceCards label="Spaces" spaces={listedSpaces()} />
+            <SpaceCards label={t("spacesPage.title")} spaces={listedSpaces()} />
           </Show>
         </section>
       </div>

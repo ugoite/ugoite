@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { readFile } from "node:fs/promises";
 import { http, HttpResponse } from "msw";
 import { afterAll, afterEach, beforeAll } from "vitest";
+import { setLocale } from "../lib/i18n";
 
 // Import MSW server - will be created when mocks are available
 let server: ReturnType<typeof import("msw/node").setupServer>;
@@ -9,10 +10,13 @@ let wasmBytes: Uint8Array<ArrayBuffer>;
 
 const registerWasmHandler = () => {
   server.use(
-    http.get(/.*ugoite_wasm\.wasm(?:\?.*)?$/, () =>
-      new HttpResponse(wasmBytes, {
-        headers: { "Content-Type": "application/wasm" },
-      })),
+    http.get(
+      /.*ugoite_wasm\.wasm(?:\?.*)?$/,
+      () =>
+        new HttpResponse(wasmBytes, {
+          headers: { "Content-Type": "application/wasm" },
+        }),
+    ),
   );
 };
 
@@ -67,6 +71,7 @@ beforeAll(async () => {
 afterEach(() => {
   server?.resetHandlers();
   registerWasmHandler();
+  setLocale("en");
 });
 
 // Close server after all tests

@@ -9,6 +9,7 @@ import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { EntryRecord, SearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
 
 type SearchMode = "keyword" | "advanced";
 type FieldMatchOperator = "equals" | "contains";
@@ -55,7 +56,7 @@ function coerceSearchResult(
 ): SearchResult {
   return {
     id: result.id,
-    title: result.title || fallback?.title || "Untitled",
+    title: result.title || fallback?.title || t("common.untitled"),
     form: result.form ?? fallback?.form,
     updated_at: result.updated_at || fallback?.updated_at || "",
     properties: result.properties ?? fallback?.properties ?? {},
@@ -119,7 +120,7 @@ async function enrichKeywordResults(
   );
   if (session.status === "failed") {
     throw new Error(
-      session.error || "Failed to enrich keyword search results.",
+      session.error || t("searchPage.error.enrichFailed"),
     );
   }
   const metadata = await sqlSessionApi.rows(
@@ -181,19 +182,23 @@ function buildSearchHistoryName(criteria: AdvancedSearchCriteria): string {
   const parts: string[] = [];
 
   if (criteria.formName) {
-    parts.push(`form: ${criteria.formName}`);
+    parts.push(t("searchPage.history.form", { value: criteria.formName }));
   }
 
   for (const tag of criteria.tags) {
-    parts.push(`tag: ${tag}`);
+    parts.push(t("searchPage.history.tag", { value: tag }));
   }
 
   if (criteria.updatedFrom) {
-    parts.push(`updated-from: ${criteria.updatedFrom}`);
+    parts.push(
+      t("searchPage.history.updatedFrom", { value: criteria.updatedFrom }),
+    );
   }
 
   if (criteria.updatedTo) {
-    parts.push(`updated-to: ${criteria.updatedTo}`);
+    parts.push(
+      t("searchPage.history.updatedTo", { value: criteria.updatedTo }),
+    );
   }
 
   for (const condition of criteria.fieldConditions.slice(0, 2)) {
@@ -203,14 +208,14 @@ function buildSearchHistoryName(criteria: AdvancedSearchCriteria): string {
 
   const extraConditions = criteria.fieldConditions.length - 2;
   if (extraConditions > 0) {
-    parts.push(`+${extraConditions} more`);
+    parts.push(t("searchPage.history.more", { count: extraConditions }));
   }
 
   if (parts.length === 0) {
-    return "Advanced search";
+    return t("searchPage.advancedSearch");
   }
 
-  const label = `Advanced search - ${parts.join(" - ")}`;
+  const label = `${t("searchPage.advancedSearch")} - ${parts.join(" - ")}`;
   return label.length > 120 ? `${label.slice(0, 117)}...` : label;
 }
 
@@ -299,7 +304,12 @@ export default function SpaceSearchRoute() {
 
   const keywordResultCountLabel = createMemo(() => {
     const count = keywordResults().length;
-    return count === 1 ? "1 result" : `${count} results`;
+    return t(
+      count === 1 ? "searchBar.results.one" : "searchBar.results.other",
+      {
+        count,
+      },
+    );
   });
 
   const updateFieldCondition = (
@@ -324,7 +334,7 @@ export default function SpaceSearchRoute() {
     if (!query) {
       setKeywordSearchPerformed(false);
       setKeywordResults([]);
-      setActionError("Enter at least one keyword to search your entries.");
+      setActionError(t("searchPage.error.emptyKeyword"));
       return;
     }
 
@@ -338,7 +348,7 @@ export default function SpaceSearchRoute() {
     } catch (err) {
       setKeywordResults([]);
       setActionError(
-        err instanceof Error ? err.message : "Failed to search entries.",
+        err instanceof Error ? err.message : t("searchPage.error.searchFailed"),
       );
     } finally {
       setKeywordLoading(false);
@@ -360,7 +370,7 @@ export default function SpaceSearchRoute() {
     try {
       const session = await sqlSessionApi.create(spaceId(), entry.sql);
       if (session.status === "failed") {
-        setActionError(session.error || "Search failed.");
+        setActionError(session.error || t("searchPage.error.searchFailed"));
         return;
       }
       navigate(
@@ -370,7 +380,9 @@ export default function SpaceSearchRoute() {
       );
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Failed to run saved search.",
+        err instanceof Error
+          ? err.message
+          : t("searchPage.error.savedSearchFailed"),
       );
     } finally {
       setRunningSearchId(null);
@@ -382,7 +394,7 @@ export default function SpaceSearchRoute() {
     const sql = buildAdvancedSearchSql(criteria);
     if (!sql) {
       setActionError(
-        "Add at least one structured filter before running an advanced search.",
+        t("searchPage.error.advancedFilterRequired"),
       );
       return;
     }
@@ -407,7 +419,9 @@ export default function SpaceSearchRoute() {
 
       const session = await sqlSessionApi.create(spaceId(), sql);
       if (session.status === "failed") {
-        setActionError(session.error || "Advanced search failed.");
+        setActionError(
+          session.error || t("searchPage.error.advancedSearchFailed"),
+        );
         return;
       }
       navigate(
@@ -417,7 +431,9 @@ export default function SpaceSearchRoute() {
       );
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Failed to run advanced search.",
+        err instanceof Error
+          ? err.message
+          : t("searchPage.error.advancedSearchFailed"),
       );
     } finally {
       setRunningSearchId(null);
@@ -425,428 +441,484 @@ export default function SpaceSearchRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="Search">
+    <SpaceShell
+      spaceId={spaceId()}
+      activeNavigation="search"
+      title={t("searchPage.title")}
+    >
       <div>
         <div class="screenHead">
           <div class="screenTitle">
             <div class="eyebrow">{spaceId()}</div>
-            <h1>Search</h1>
+            <h1>{t("searchPage.title")}</h1>
           </div>
           <A
             href={`/spaces/${spaceId()}/queries/new`}
             class="ui-button ui-button-secondary inline-flex items-center gap-2 text-sm"
           >
-            Open SQL editor
+            {t("searchPage.openSqlEditor")}
           </A>
         </div>
 
         <div class="searchPage">
           <aside class="facet surface">
-            <button type="button" classList={{ active: mode() === "keyword" }} onClick={() => setMode("keyword")}><UiIcon name="entry" /> Entries</button>
-            <button type="button" onClick={() => setMode("advanced")} classList={{ active: mode() === "advanced" }}><UiIcon name="forms" /> Forms</button>
-            <A href={`/spaces/${spaceId()}/assets`}>
-              <UiIcon name="asset" /> Assets
-            </A>
-            <A href={`/spaces/${spaceId()}/sql`}><UiIcon name="sql" /> Saved SQL</A>
-          </aside>
-          <main>
-        <div class="ui-card p-5">
-          <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class={mode() === "keyword"
-                ? "ui-button ui-button-primary text-sm"
-                : "ui-button ui-button-secondary text-sm"}
+              classList={{ active: mode() === "keyword" }}
               onClick={() => setMode("keyword")}
             >
-              Quick search
+              <UiIcon name="entry" /> {t("searchPage.nav.entries")}
             </button>
             <button
               type="button"
-              class={mode() === "advanced"
-                ? "ui-button ui-button-primary text-sm"
-                : "ui-button ui-button-secondary text-sm"}
               onClick={() => setMode("advanced")}
+              classList={{ active: mode() === "advanced" }}
             >
-              Advanced search
+              <UiIcon name="forms" /> {t("searchPage.nav.forms")}
             </button>
-          </div>
-
-          <Show when={mode() === "keyword"}>
-            <form
-              class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleKeywordSearch();
-              }}
-            >
-              <div class="flex-1">
-                <label class="ui-label" for="search-keywords">
-                  Search keywords
-                </label>
-                <div class="searchBox">
-                  <UiIcon name="search" />
-                <input
-                  id="search-keywords"
-                  type="text"
-                  class=""
-                  placeholder="Search entries by title, fields, tags, or content"
-                  value={keywordQuery()}
-                  onInput={(event) =>
-                    setKeywordQuery(event.currentTarget.value)}
-                /></div>
-              </div>
-              <div class="sm:self-end">
+            <A href={`/spaces/${spaceId()}/assets`}>
+              <UiIcon name="asset" /> {t("searchPage.nav.assets")}
+            </A>
+            <A href={`/spaces/${spaceId()}/sql`}>
+              <UiIcon name="sql" /> {t("searchPage.nav.savedSql")}
+            </A>
+          </aside>
+          <main>
+            <div class="ui-card p-5">
+              <div class="flex flex-wrap items-center gap-2">
                 <button
-                  type="submit"
-                  class="ui-button ui-button-primary text-sm"
-                  disabled={keywordLoading()}
+                  type="button"
+                  class={mode() === "keyword"
+                    ? "ui-button ui-button-primary text-sm"
+                    : "ui-button ui-button-secondary text-sm"}
+                  onClick={() => setMode("keyword")}
                 >
-                  {keywordLoading() ? "Searching..." : "Search entries"}
+                  {t("searchPage.quickSearch")}
+                </button>
+                <button
+                  type="button"
+                  class={mode() === "advanced"
+                    ? "ui-button ui-button-primary text-sm"
+                    : "ui-button ui-button-secondary text-sm"}
+                  onClick={() => setMode("advanced")}
+                >
+                  {t("searchPage.advancedSearch")}
                 </button>
               </div>
-            </form>
-          </Show>
 
-          <Show when={mode() === "advanced"}>
-            <div class="mt-5 ui-stack-sm">
-              <div class="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label class="ui-label" for="advanced-form">
-                    Form
-                  </label>
-                  <select
-                    id="advanced-form"
-                    class="ui-input mt-2 w-full"
-                    value={advancedFormName()}
-                    onChange={(event) =>
-                      setAdvancedFormName(event.currentTarget.value)}
-                  >
-                    <option value="">Any form</option>
-                    <For each={availableForms()}>
-                      {(entryForm) => (
-                        <option value={entryForm.name}>{entryForm.name}</option>
-                      )}
-                    </For>
-                  </select>
-                </div>
-                <div>
-                  <label class="ui-label" for="advanced-tags">
-                    Tags (comma-separated)
-                  </label>
-                  <input
-                    id="advanced-tags"
-                    type="text"
-                    class="ui-input mt-2 w-full"
-                    placeholder="project, weekly-review"
-                    value={advancedTagsInput()}
-                    onInput={(event) =>
-                      setAdvancedTagsInput(event.currentTarget.value)}
-                  />
-                </div>
-                <div>
-                  <label class="ui-label" for="advanced-updated-from">
-                    Updated from
-                  </label>
-                  <input
-                    id="advanced-updated-from"
-                    type="date"
-                    class="ui-input mt-2 w-full"
-                    value={advancedUpdatedFrom()}
-                    onInput={(event) =>
-                      setAdvancedUpdatedFrom(event.currentTarget.value)}
-                  />
-                </div>
-                <div>
-                  <label class="ui-label" for="advanced-updated-to">
-                    Updated to
-                  </label>
-                  <input
-                    id="advanced-updated-to"
-                    type="date"
-                    class="ui-input mt-2 w-full"
-                    value={advancedUpdatedTo()}
-                    onInput={(event) =>
-                      setAdvancedUpdatedTo(event.currentTarget.value)}
-                  />
-                </div>
-              </div>
+              <Show when={mode() === "keyword"}>
+                <form
+                  class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleKeywordSearch();
+                  }}
+                >
+                  <div class="flex-1">
+                    <label class="ui-label" for="search-keywords">
+                      {t("searchPage.searchKeywords")}
+                    </label>
+                    <div class="searchBox">
+                      <UiIcon name="search" />
+                      <input
+                        id="search-keywords"
+                        type="text"
+                        class=""
+                        placeholder={t("searchPage.keywordPlaceholder")}
+                        value={keywordQuery()}
+                        onInput={(event) =>
+                          setKeywordQuery(event.currentTarget.value)}
+                      />
+                    </div>
+                  </div>
+                  <div class="sm:self-end">
+                    <button
+                      type="submit"
+                      class="ui-button ui-button-primary text-sm"
+                      disabled={keywordLoading()}
+                    >
+                      {keywordLoading()
+                        ? t("searchBar.searching")
+                        : t("searchPage.searchEntries")}
+                    </button>
+                  </div>
+                </form>
+              </Show>
 
-              <div class="mt-4 ui-stack-sm">
-                <div class="flex items-center justify-between gap-2">
-                  <h2 class="text-base font-semibold">Field conditions</h2>
-                  <button
-                    type="button"
-                    class="ui-button ui-button-secondary text-sm"
-                    onClick={() =>
-                      setFieldConditions((
-                        current,
-                      ) => [...current, createFieldCondition()])}
-                  >
-                    Add field condition
-                  </button>
-                </div>
+              <Show when={mode() === "advanced"}>
+                <div class="mt-5 ui-stack-sm">
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label class="ui-label" for="advanced-form">
+                        {t("searchPage.form")}
+                      </label>
+                      <select
+                        id="advanced-form"
+                        class="ui-input mt-2 w-full"
+                        value={advancedFormName()}
+                        onChange={(event) =>
+                          setAdvancedFormName(event.currentTarget.value)}
+                      >
+                        <option value="">{t("searchPage.anyForm")}</option>
+                        <For each={availableForms()}>
+                          {(entryForm) => (
+                            <option value={entryForm.name}>
+                              {entryForm.name}
+                            </option>
+                          )}
+                        </For>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="ui-label" for="advanced-tags">
+                        {t("searchPage.tags")}
+                      </label>
+                      <input
+                        id="advanced-tags"
+                        type="text"
+                        class="ui-input mt-2 w-full"
+                        placeholder={t("searchPage.tagsPlaceholder")}
+                        value={advancedTagsInput()}
+                        onInput={(event) =>
+                          setAdvancedTagsInput(event.currentTarget.value)}
+                      />
+                    </div>
+                    <div>
+                      <label class="ui-label" for="advanced-updated-from">
+                        {t("searchPage.updatedFrom")}
+                      </label>
+                      <input
+                        id="advanced-updated-from"
+                        type="date"
+                        class="ui-input mt-2 w-full"
+                        value={advancedUpdatedFrom()}
+                        onInput={(event) =>
+                          setAdvancedUpdatedFrom(event.currentTarget.value)}
+                      />
+                    </div>
+                    <div>
+                      <label class="ui-label" for="advanced-updated-to">
+                        {t("searchPage.updatedTo")}
+                      </label>
+                      <input
+                        id="advanced-updated-to"
+                        type="date"
+                        class="ui-input mt-2 w-full"
+                        value={advancedUpdatedTo()}
+                        onInput={(event) =>
+                          setAdvancedUpdatedTo(event.currentTarget.value)}
+                      />
+                    </div>
+                  </div>
 
-                <Index each={fieldConditions()}>
-                  {(condition) => (
-                    <div class="ui-card grid gap-3 p-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto]">
-                      <div>
-                        <label class="ui-label" for={`field-${condition().id}`}>
-                          Field
-                        </label>
-                        <Show
-                          when={availableFields().length > 0}
-                          fallback={
+                  <div class="mt-4 ui-stack-sm">
+                    <div class="flex items-center justify-between gap-2">
+                      <h2 class="text-base font-semibold">
+                        {t("searchPage.fieldConditions")}
+                      </h2>
+                      <button
+                        type="button"
+                        class="ui-button ui-button-secondary text-sm"
+                        onClick={() =>
+                          setFieldConditions((
+                            current,
+                          ) => [...current, createFieldCondition()])}
+                      >
+                        {t("searchPage.addFieldCondition")}
+                      </button>
+                    </div>
+
+                    <Index each={fieldConditions()}>
+                      {(condition) => (
+                        <div class="ui-card grid gap-3 p-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto]">
+                          <div>
+                            <label
+                              class="ui-label"
+                              for={`field-${condition().id}`}
+                            >
+                              {t("searchPage.field")}
+                            </label>
+                            <Show
+                              when={availableFields().length > 0}
+                              fallback={
+                                <input
+                                  id={`field-${condition().id}`}
+                                  type="text"
+                                  class="ui-input mt-2 w-full"
+                                  placeholder={t("searchPage.fieldPlaceholder")}
+                                  value={condition().field}
+                                  onInput={(event) =>
+                                    updateFieldCondition(
+                                      condition().id,
+                                      "field",
+                                      event.currentTarget.value,
+                                    )}
+                                />
+                              }
+                            >
+                              <select
+                                id={`field-${condition().id}`}
+                                class="ui-input mt-2 w-full"
+                                value={condition().field}
+                                onChange={(event) =>
+                                  updateFieldCondition(
+                                    condition().id,
+                                    "field",
+                                    event.currentTarget.value,
+                                  )}
+                              >
+                                <option value="">
+                                  {t("searchPage.chooseField")}
+                                </option>
+                                <For each={availableFields()}>
+                                  {(fieldName) => (
+                                    <option value={fieldName}>
+                                      {fieldName}
+                                    </option>
+                                  )}
+                                </For>
+                              </select>
+                            </Show>
+                          </div>
+                          <div>
+                            <label
+                              class="ui-label"
+                              for={`operator-${condition().id}`}
+                            >
+                              {t("searchPage.match")}
+                            </label>
+                            <select
+                              id={`operator-${condition().id}`}
+                              class="ui-input mt-2 w-full"
+                              value={condition().operator}
+                              onChange={(event) =>
+                                updateFieldCondition(
+                                  condition().id,
+                                  "operator",
+                                  event.currentTarget.value,
+                                )}
+                            >
+                              <option value="equals">
+                                {t("searchPage.equals")}
+                              </option>
+                              <option value="contains">
+                                {t("searchPage.contains")}
+                              </option>
+                            </select>
+                          </div>
+                          <div>
+                            <label
+                              class="ui-label"
+                              for={`value-${condition().id}`}
+                            >
+                              {t("searchPage.value")}
+                            </label>
                             <input
-                              id={`field-${condition().id}`}
+                              id={`value-${condition().id}`}
                               type="text"
                               class="ui-input mt-2 w-full"
-                              placeholder="Owner"
-                              value={condition().field}
+                              placeholder={t("searchPage.valuePlaceholder")}
+                              value={condition().value}
                               onInput={(event) =>
                                 updateFieldCondition(
                                   condition().id,
-                                  "field",
+                                  "value",
                                   event.currentTarget.value,
                                 )}
                             />
-                          }
-                        >
-                          <select
-                            id={`field-${condition().id}`}
-                            class="ui-input mt-2 w-full"
-                            value={condition().field}
-                            onChange={(event) =>
-                              updateFieldCondition(
-                                condition().id,
-                                "field",
-                                event.currentTarget.value,
-                              )}
-                          >
-                            <option value="">Choose a field</option>
-                            <For each={availableFields()}>
-                              {(fieldName) => (
-                                <option value={fieldName}>{fieldName}</option>
-                              )}
-                            </For>
-                          </select>
-                        </Show>
-                      </div>
-                      <div>
-                        <label
-                          class="ui-label"
-                          for={`operator-${condition().id}`}
-                        >
-                          Match
-                        </label>
-                        <select
-                          id={`operator-${condition().id}`}
-                          class="ui-input mt-2 w-full"
-                          value={condition().operator}
-                          onChange={(event) =>
-                            updateFieldCondition(
-                              condition().id,
-                              "operator",
-                              event.currentTarget.value,
-                            )}
-                        >
-                          <option value="equals">equals</option>
-                          <option value="contains">contains</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label class="ui-label" for={`value-${condition().id}`}>
-                          Value
-                        </label>
-                        <input
-                          id={`value-${condition().id}`}
-                          type="text"
-                          class="ui-input mt-2 w-full"
-                          placeholder="alice"
-                          value={condition().value}
-                          onInput={(event) =>
-                            updateFieldCondition(
-                              condition().id,
-                              "value",
-                              event.currentTarget.value,
-                            )}
-                        />
-                      </div>
-                      <div class="md:self-end">
-                        <button
-                          type="button"
-                          class="ui-button ui-button-secondary text-sm"
-                          onClick={() =>
-                            setFieldConditions((current) => {
-                              if (current.length === 1) {
-                                return [createFieldCondition()];
-                              }
-                              return current.filter((item) =>
-                                item.id !== condition().id
-                              );
-                            })}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </Index>
-              </div>
+                          </div>
+                          <div class="md:self-end">
+                            <button
+                              type="button"
+                              class="ui-button ui-button-secondary text-sm"
+                              onClick={() =>
+                                setFieldConditions((current) => {
+                                  if (current.length === 1) {
+                                    return [createFieldCondition()];
+                                  }
+                                  return current.filter((item) =>
+                                    item.id !== condition().id
+                                  );
+                                })}
+                            >
+                              {t("searchPage.remove")}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </Index>
+                  </div>
 
-              <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
-                <p class="text-sm ui-muted">
-                  Advanced searches compile to reusable SQL-backed history and
-                  open the shared query results view.
-                </p>
-                <button
-                  type="button"
-                  class="ui-button ui-button-primary text-sm"
-                  disabled={runningSearchId() === "advanced-search"}
-                  onClick={() => void handleAdvancedSearch()}
-                >
-                  {runningSearchId() === "advanced-search"
-                    ? "Running..."
-                    : "Run advanced search"}
-                </button>
-              </div>
-            </div>
-          </Show>
-        </div>
-
-        <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
-          <section class="ui-card p-5">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 class="text-lg font-semibold">Keyword results</h2>
-                <Show when={keywordSearchPerformed() && !keywordLoading()}>
-                  <p class="mt-1 text-sm ui-muted">
-                    {keywordResultCountLabel()}
-                  </p>
-                </Show>
-              </div>
-            </div>
-
-            <div class="mt-4 ui-stack-sm">
-              <Show when={actionError()}>
-                <p class="text-sm ui-text-danger">{actionError()}</p>
-              </Show>
-              <Show when={keywordLoading()}>
-                <p class="text-sm ui-muted">Searching entries...</p>
-              </Show>
-              <Show
-                when={!keywordLoading() &&
-                  keywordSearchPerformed() &&
-                  keywordResults().length === 0 &&
-                  !actionError()}
-              >
-                <p class="text-sm ui-muted">No matching entries found.</p>
-              </Show>
-              <Show
-                when={!keywordSearchPerformed() && !keywordLoading() &&
-                  !actionError()}
-              >
-                <p class="text-sm ui-muted">
-                  Search results stay here so you can refine your query without
-                  leaving the page.
-                </p>
-              </Show>
-              <div class="grid gap-4 sm:grid-cols-2">
-                <For each={keywordResults()}>
-                  {(entry) => (
+                  <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.advancedDescription")}
+                    </p>
                     <button
                       type="button"
-                      class="ui-card ui-card-interactive text-left"
-                      onClick={() =>
-                        navigate(
-                          `/spaces/${spaceId()}/entries/${
-                            encodeURIComponent(entry.id)
-                          }`,
-                        )}
+                      class="ui-button ui-button-primary text-sm"
+                      disabled={runningSearchId() === "advanced-search"}
+                      onClick={() => void handleAdvancedSearch()}
                     >
-                      <div class="flex items-start justify-between gap-2">
-                        <h3 class="text-base font-semibold">
-                          {entry.title || "Untitled"}
-                        </h3>
-                        <Show when={entry.form}>
-                          <span class="ui-pill">{entry.form}</span>
-                        </Show>
-                      </div>
-                      <p class="mt-2 text-xs ui-muted">
-                        Updated {formatDateLabel(entry.updated_at)}
-                      </p>
+                      {runningSearchId() === "advanced-search"
+                        ? t("searchPage.running")
+                        : t("searchPage.runAdvancedSearch")}
                     </button>
-                  )}
-                </For>
-              </div>
-            </div>
-          </section>
-
-          <aside class="ui-card p-5">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 class="text-lg font-semibold">Search history</h2>
-                <p class="mt-1 text-sm ui-muted">
-                  Saved searches and power-user SQL queries stay reusable here.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="ui-button ui-button-secondary text-sm"
-                onClick={() => void refetchSavedSearches()}
-              >
-                Refresh history
-              </button>
+                  </div>
+                </div>
+              </Show>
             </div>
 
-            <div class="mt-4 ui-stack-sm">
-              <Show when={savedSearches.loading}>
-                <p class="text-sm ui-muted">Loading search history...</p>
-              </Show>
-              <Show when={savedSearches.error}>
-                <p class="text-sm ui-text-danger">
-                  Failed to load search history.
-                </p>
-              </Show>
-              <Show when={forms.loading}>
-                <p class="text-sm ui-muted">Loading form filters...</p>
-              </Show>
-              <Show when={forms.error}>
-                <p class="text-sm ui-text-danger">
-                  Failed to load forms for advanced search.
-                </p>
-              </Show>
-              <Show
-                when={!savedSearches.loading && searchHistory().length === 0}
-              >
-                <p class="text-sm ui-muted">No search history yet.</p>
-              </Show>
-              <For each={searchHistory()}>
-                {(entry) => (
+            <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
+              <section class="ui-card p-5">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 class="text-lg font-semibold">
+                      {t("searchPage.keywordResults")}
+                    </h2>
+                    <Show when={keywordSearchPerformed() && !keywordLoading()}>
+                      <p class="mt-1 text-sm ui-muted">
+                        {keywordResultCountLabel()}
+                      </p>
+                    </Show>
+                  </div>
+                </div>
+
+                <div class="mt-4 ui-stack-sm">
+                  <Show when={actionError()}>
+                    <p class="text-sm ui-text-danger">{actionError()}</p>
+                  </Show>
+                  <Show when={keywordLoading()}>
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.searchingEntries")}
+                    </p>
+                  </Show>
+                  <Show
+                    when={!keywordLoading() &&
+                      keywordSearchPerformed() &&
+                      keywordResults().length === 0 &&
+                      !actionError()}
+                  >
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.noMatchingEntries")}
+                    </p>
+                  </Show>
+                  <Show
+                    when={!keywordSearchPerformed() && !keywordLoading() &&
+                      !actionError()}
+                  >
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.initialHelp")}
+                    </p>
+                  </Show>
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <For each={keywordResults()}>
+                      {(entry) => (
+                        <button
+                          type="button"
+                          class="ui-card ui-card-interactive text-left"
+                          onClick={() =>
+                            navigate(
+                              `/spaces/${spaceId()}/entries/${
+                                encodeURIComponent(entry.id)
+                              }`,
+                            )}
+                        >
+                          <div class="flex items-start justify-between gap-2">
+                            <h3 class="text-base font-semibold">
+                              {entry.title || t("common.untitled")}
+                            </h3>
+                            <Show when={entry.form}>
+                              <span class="ui-pill">{entry.form}</span>
+                            </Show>
+                          </div>
+                          <p class="mt-2 text-xs ui-muted">
+                            {t("common.updatedAt", {
+                              date: formatDateLabel(entry.updated_at),
+                            })}
+                          </p>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="ui-card p-5">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 class="text-lg font-semibold">
+                      {t("searchPage.searchHistory")}
+                    </h2>
+                    <p class="mt-1 text-sm ui-muted">
+                      {t("searchPage.searchHistoryDescription")}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    class="ui-card ui-card-interactive w-full text-left"
-                    onClick={() => void runSavedSearch(entry)}
+                    class="ui-button ui-button-secondary text-sm"
+                    onClick={() => void refetchSavedSearches()}
                   >
-                    <div class="flex items-center justify-between gap-2">
-                      <h3 class="text-sm font-semibold">{entry.name}</h3>
-                      <span class="text-xs ui-muted">
-                        {runningSearchId() === entry.id
-                          ? "Running"
-                          : entry.variables?.length
-                          ? "Variables"
-                          : "Run again"}
-                      </span>
-                    </div>
-                    <p class="mt-2 text-xs ui-muted">
-                      Updated {formatDateLabel(entry.updated_at)}
-                    </p>
+                    {t("searchPage.refreshHistory")}
                   </button>
-                )}
-              </For>
+                </div>
+
+                <div class="mt-4 ui-stack-sm">
+                  <Show when={savedSearches.loading}>
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.loadingHistory")}
+                    </p>
+                  </Show>
+                  <Show when={savedSearches.error}>
+                    <p class="text-sm ui-text-danger">
+                      {t("searchPage.failedLoadHistory")}
+                    </p>
+                  </Show>
+                  <Show when={forms.loading}>
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.loadingFormFilters")}
+                    </p>
+                  </Show>
+                  <Show when={forms.error}>
+                    <p class="text-sm ui-text-danger">
+                      {t("searchPage.failedLoadForms")}
+                    </p>
+                  </Show>
+                  <Show
+                    when={!savedSearches.loading &&
+                      searchHistory().length === 0}
+                  >
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.noSearchHistory")}
+                    </p>
+                  </Show>
+                  <For each={searchHistory()}>
+                    {(entry) => (
+                      <button
+                        type="button"
+                        class="ui-card ui-card-interactive w-full text-left"
+                        onClick={() => void runSavedSearch(entry)}
+                      >
+                        <div class="flex items-center justify-between gap-2">
+                          <h3 class="text-sm font-semibold">{entry.name}</h3>
+                          <span class="text-xs ui-muted">
+                            {runningSearchId() === entry.id
+                              ? t("searchPage.runningSaved")
+                              : entry.variables?.length
+                              ? t("searchPage.variables")
+                              : t("searchPage.runAgain")}
+                          </span>
+                        </div>
+                        <p class="mt-2 text-xs ui-muted">
+                          {t("common.updatedAt", {
+                            date: formatDateLabel(entry.updated_at),
+                          })}
+                        </p>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </aside>
             </div>
-          </aside>
-        </div>
           </main>
         </div>
       </div>

@@ -1,30 +1,7 @@
-import { Show, type JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
-import { locale } from "~/lib/i18n";
-
-const labels = {
-  en: {
-    home: "Home",
-    forms: "Forms",
-    search: "Search",
-    settings: "Settings",
-    spaces: "Spaces",
-    about: "About",
-    menu: "Menu",
-    signIn: "Sign in",
-  },
-  ja: {
-    home: "ホーム",
-    forms: "フォーム",
-    search: "検索",
-    settings: "設定",
-    spaces: "スペース",
-    about: "Ugoiteについて",
-    menu: "メニュー",
-    signIn: "ログイン",
-  },
-} as const;
+import { t } from "~/lib/i18n";
 
 export function GlobalShell(
   props: {
@@ -34,7 +11,6 @@ export function GlobalShell(
     authenticated?: boolean;
   },
 ) {
-  const copy = () => labels[locale() === "ja" ? "ja" : "en"];
   return (
     <main class="app workspaceApp">
       <div class="desktopSidebar">
@@ -46,19 +22,19 @@ export function GlobalShell(
           <nav class="navGroup">
             <a class="navItem" href="/spaces">
               <UiIcon name="home" />
-              <span>{copy().home}</span>
+              <span>{t("nav.home")}</span>
             </a>
             <a class="navItem" href="/spaces">
               <UiIcon name="forms" />
-              <span>{copy().forms}</span>
+              <span>{t("spaceShell.bottom.grid")}</span>
             </a>
             <a class="navItem" href="/spaces">
               <UiIcon name="search" />
-              <span>{copy().search}</span>
+              <span>{t("spaceShell.top.search")}</span>
             </a>
             <a class="navItem" href="/spaces">
               <UiIcon name="settings" />
-              <span>{copy().settings}</span>
+              <span>{t("themeMenu.spaceSettings")}</span>
             </a>
           </nav>
           <div class="sideFoot">
@@ -68,7 +44,7 @@ export function GlobalShell(
               href="/spaces"
             >
               <UiIcon name="spaces" />
-              <span>{copy().spaces}</span>
+              <span>{t("nav.spaces")}</span>
             </a>
             <a
               class="navItem"
@@ -76,7 +52,7 @@ export function GlobalShell(
               href="/about"
             >
               <UiIcon name="about" />
-              <span>{copy().about}</span>
+              <span>{t("nav.about")}</span>
             </a>
           </div>
         </aside>
@@ -86,17 +62,19 @@ export function GlobalShell(
           <a
             class="btn iconBtn mobileMenu"
             href="/spaces"
-            aria-label={copy().menu}
+            aria-label={t("common.menu")}
           >
             <UiIcon name="menu" />
           </a>
-          <select class="spaceSelect" aria-label="Space">
+          <select class="spaceSelect" aria-label={t("common.space")}>
             <option>Ugoite</option>
           </select>
           <div class="crumbTop">{props.title}</div>
           <Show
             when={props.authenticated !== false}
-            fallback={<a class="btn" href="/login">{copy().signIn}</a>}
+            fallback={
+              <a class="btn" href="/login">{t("globalShell.signIn")}</a>
+            }
           >
             <AccountMenu />
           </Show>
@@ -106,19 +84,19 @@ export function GlobalShell(
       <nav class="bottomNav">
         <a class="active" href="/spaces">
           <UiIcon name="home" />
-          <span>{copy().home}</span>
+          <span>{t("nav.home")}</span>
         </a>
         <a href="/spaces">
           <UiIcon name="forms" />
-          <span>{copy().forms}</span>
+          <span>{t("spaceShell.bottom.grid")}</span>
         </a>
         <a href="/spaces">
           <UiIcon name="search" />
-          <span>{copy().search}</span>
+          <span>{t("spaceShell.top.search")}</span>
         </a>
         <a href="/spaces">
           <UiIcon name="settings" />
-          <span>{copy().settings}</span>
+          <span>{t("themeMenu.spaceSettings")}</span>
         </a>
       </nav>
     </main>

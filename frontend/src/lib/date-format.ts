@@ -47,7 +47,11 @@ export const formatDateLabel = (
   value: string | number | null | undefined,
 ): string => {
   const date = timestampToDate(value);
-  if (date) return date.toLocaleDateString();
+  const dateLocale = typeof document !== "undefined" &&
+      document.documentElement.lang === "ja"
+    ? "ja-JP"
+    : "en";
+  if (date) return date.toLocaleDateString(dateLocale);
   if (typeof value === "string" && value.trim()) return value.trim();
   return "—";
 };

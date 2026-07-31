@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 import type { Form } from "~/lib/types";
+import { t } from "~/lib/i18n";
 
 interface FormListProps {
   entryForms: Form[];
@@ -11,7 +12,9 @@ export function FormList(props: FormListProps) {
   return (
     <div class="ui-sidebar w-64 h-full overflow-y-auto flex-shrink-0">
       <div class="ui-sidebar-header p-4">
-        <h2 class="ui-label text-sm uppercase tracking-wider">Forms</h2>
+        <h2 class="ui-label text-sm uppercase tracking-wider">
+          {t("formsList.title")}
+        </h2>
       </div>
       <ul>
         <For each={props.entryForms}>
@@ -28,7 +31,9 @@ export function FormList(props: FormListProps) {
               >
                 <div class="font-medium">{entryForm.name}</div>
                 <div class="text-xs ui-muted mt-1">
-                  {Object.keys(entryForm.fields).length} fields
+                  {t("formsList.fields", {
+                    count: Object.keys(entryForm.fields).length,
+                  })}
                 </div>
               </button>
             </li>

@@ -1,8 +1,10 @@
 // REQ-FE-044: Frontend multilingual dictionary and locale switching
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initializeLocale, locale, setLocale, t } from "./i18n";
 
 describe("i18n", () => {
+  afterEach(() => setLocale("en"));
+
   beforeEach(() => {
     localStorage.clear();
     window.localStorage.clear();

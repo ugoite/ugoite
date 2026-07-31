@@ -8,6 +8,7 @@ import { buildSqlSchema } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { Form, SqlVariable } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
 
 const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 
@@ -22,7 +23,7 @@ function extractVariables(sql: string): SqlVariable[] {
   return Array.from(names).map((name) => ({
     type: "string",
     name,
-    description: `Variable ${name}`,
+    description: t("sqlPage.variableDescription", { name }),
   }));
 }
 
@@ -46,10 +47,10 @@ export default function SpaceQueryCreateRoute() {
 
   const handleSave = async () => {
     setError(null);
-    const name = queryName().trim() || "Untitled query";
+    const name = queryName().trim() || t("sqlPage.untitledQuery");
     const sql = sqlInput().trim();
     if (!sql) {
-      setError("SQL is required.");
+      setError(t("sqlPage.sqlRequired"));
       return;
     }
 
@@ -62,36 +63,39 @@ export default function SpaceQueryCreateRoute() {
       });
       navigate(`/spaces/${spaceId()}/search`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save query");
+      setError(err instanceof Error ? err.message : t("sqlPage.failedSave"));
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="SQL / New">
+    <SpaceShell
+      spaceId={spaceId()}
+      activeNavigation="search"
+      title={`${t("searchPage.nav.savedSql")} / ${t("sqlPage.newSql")}`}
+    >
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">Search / Saved SQL</div>
-          <h1>New SQL</h1>
+          <div class="eyebrow">{t("sqlPage.searchSavedSql")}</div>
+          <h1>{t("sqlPage.newSql")}</h1>
         </div>
       </div>
       <div class="settingsMain surface">
         <label class="ui-label" for="query-title">
-          Query name
+          {t("sqlPage.queryName")}
         </label>
         <input
           id="query-title"
           class="ui-input"
-          placeholder="Untitled query"
+          placeholder={t("sqlPage.untitledQuery")}
           value={queryName()}
-          onInput={(e) =>
-            setQueryName(e.currentTarget.value)}
+          onInput={(e) => setQueryName(e.currentTarget.value)}
         />
 
         <div>
           <label class="ui-label mb-2" for="query-sql">
-            SQL
+            {t("sqlPage.sql")}
           </label>
           <SqlQueryEditor
             id="query-sql"
@@ -120,7 +124,7 @@ export default function SpaceQueryCreateRoute() {
           onClick={handleSave}
           disabled={isSaving()}
         >
-          {isSaving() ? "Saving..." : "Save"}
+          {isSaving() ? t("sqlPage.saving") : t("common.save")}
         </button>
       </div>
     </SpaceShell>

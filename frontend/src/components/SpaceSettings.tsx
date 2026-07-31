@@ -1,4 +1,5 @@
 import { createMemo, createSignal, Show } from "solid-js";
+import { t } from "~/lib/i18n";
 import { summarizeSpaceStorage } from "~/lib/storage-topology";
 import type {
   Space,
@@ -28,6 +29,9 @@ export function SpaceSettings(props: SpaceSettingsProps) {
   );
   const [pending, setPending] = createSignal(false);
   const [message, setMessage] = createSignal("");
+  const [messageType, setMessageType] = createSignal<"success" | "error">(
+    "success",
+  );
   const section = () => props.section ?? "general";
   const storageSummary = createMemo(() => summarizeSpaceStorage(props.space));
   const config = (): StorageConnectionConfig => {
@@ -57,10 +61,12 @@ export function SpaceSettings(props: SpaceSettingsProps) {
           }
           : { storage_config: config() },
       );
-      setMessage("Saved");
+      setMessageType("success");
+      setMessage(t("spaceSettings.saved"));
     } catch (error) {
+      setMessageType("error");
       setMessage(
-        error instanceof Error ? error.message : "Failed to save settings",
+        error instanceof Error ? error.message : t("spaceSettings.failedSave"),
       );
     } finally {
       setPending(false);
@@ -72,9 +78,17 @@ export function SpaceSettings(props: SpaceSettingsProps) {
     setMessage("");
     try {
       const result = await props.onTestConnection(config());
-      setMessage(`Connection successful (${result.status})`);
+      setMessageType("success");
+      setMessage(
+        t("spaceSettings.connectionSuccessful", { status: result.status }),
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Connection failed");
+      setMessageType("error");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : t("spaceSettings.connectionFailed"),
+      );
     } finally {
       setPending(false);
     }
@@ -85,9 +99,9 @@ export function SpaceSettings(props: SpaceSettingsProps) {
         when={section() === "general"}
         fallback={
           <div class="settingsSection">
-            <h2>Storage</h2>
+            <h2>{t("spaceSettings.storage")}</h2>
             <section class="ui-card ui-stack-sm">
-              <h3>Storage topology</h3>
+              <h3>{t("spaceSettings.storageTopology")}</h3>
               <p class="ui-muted">{storageSummary().description}</p>
               <span class="ui-pill">{storageSummary().label}</span>
               <Show when={storageSummary().uri}>
@@ -95,13 +109,12 @@ export function SpaceSettings(props: SpaceSettingsProps) {
               </Show>
             </section>
             <p class="ui-alert ui-alert-warning">
-              The saved URI below is migration metadata only. Updating it does
-              not move existing data or change the backend's current storage
-              root.
+              {t("spaceSettings.storageWarning")}
             </p>
             <div class="settingsGrid">
               <label>
-                URI<input
+                {t("spaceSettings.uri")}
+                <input
                   id="storage-uri"
                   value={uri()}
                   onInput={(e) => setUri(e.currentTarget.value)}
@@ -110,7 +123,8 @@ export function SpaceSettings(props: SpaceSettingsProps) {
                 />
               </label>
               <label>
-                Endpoint<input
+                {t("spaceSettings.endpoint")}
+                <input
                   id="storage-endpoint"
                   value={endpoint()}
                   onInput={(e) => setEndpoint(e.currentTarget.value)}
@@ -118,7 +132,11 @@ export function SpaceSettings(props: SpaceSettingsProps) {
                 />
               </label>
               <label>
-                Status<input value="configured" readOnly />
+                {t("spaceSettings.status")}
+                <input
+                  value={t("spaceSettings.configured")}
+                  readOnly
+                />
               </label>
             </div>
             <div class="actions">
@@ -128,20 +146,21 @@ export function SpaceSettings(props: SpaceSettingsProps) {
                 onClick={() => void test()}
                 disabled={pending() || !uri().trim()}
               >
-                Test Connection
+                {t("spaceSettings.testConnection")}
               </button>
               <button class="btn primary" type="submit" disabled={pending()}>
-                Save
+                {t("spaceSettings.save")}
               </button>
             </div>
           </div>
         }
       >
         <div class="settingsSection">
-          <h2>General</h2>
+          <h2>{t("spaceSettings.general")}</h2>
           <div class="settingsGrid">
             <label>
-              Space Name<input
+              {t("spaceSettings.spaceName")}
+              <input
                 id="space-name"
                 value={name()}
                 onInput={(e) => setName(e.currentTarget.value)}
@@ -149,7 +168,8 @@ export function SpaceSettings(props: SpaceSettingsProps) {
               />
             </label>
             <label>
-              Default Form<input
+              {t("spaceSettings.defaultForm")}
+              <input
                 value={defaultForm()}
                 onInput={(event) => setDefaultForm(event.currentTarget.value)}
                 required
@@ -157,7 +177,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
             </label>
           </div>
           <button class="btn primary" type="submit" disabled={pending()}>
-            Save
+            {t("spaceSettings.save")}
           </button>
         </div>
       </Show>
@@ -165,10 +185,8 @@ export function SpaceSettings(props: SpaceSettingsProps) {
         <p
           class="ui-alert"
           classList={{
-            "ui-alert-success": message() === "Saved" ||
-              message().startsWith("Connection successful"),
-            "ui-alert-error": message() !== "Saved" &&
-              !message().startsWith("Connection successful"),
+            "ui-alert-success": messageType() === "success",
+            "ui-alert-error": messageType() === "error",
           }}
         >
           {message()}

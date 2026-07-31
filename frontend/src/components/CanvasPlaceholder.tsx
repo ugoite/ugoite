@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { EntryRecord } from "~/lib/types";
+import { t } from "~/lib/i18n";
 
 export interface CanvasPlaceholderProps {
   entries: EntryRecord[];
@@ -53,8 +54,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
             />
           </svg>
           <span class="text-sm">
-            Canvas View Preview — Full drag-and-drop functionality coming in
-            Milestone 6
+            {t("canvas.preview")}
           </span>
         </div>
       </div>
@@ -86,8 +86,8 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                     d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
                   />
                 </svg>
-                <p>No entries to display</p>
-                <p class="text-sm mt-1">Create a entry to see it here</p>
+                <p>{t("canvas.empty")}</p>
+                <p class="text-sm mt-1">{t("canvas.create")}</p>
               </div>
             </div>
           }
@@ -114,7 +114,7 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                   {/* Card Header */}
                   <div class="p-3 ui-card-header">
                     <h3 class="font-medium truncate">
-                      {entry.title || "Untitled"}
+                      {entry.title || t("common.untitled")}
                     </h3>
                     <Show when={entry.form}>
                       <span class="text-xs ui-muted">{entry.form}</span>
@@ -127,7 +127,9 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                     <Show
                       when={Object.keys(entry.properties).length > 0}
                       fallback={
-                        <p class="text-sm ui-muted italic">No properties</p>
+                        <p class="text-sm ui-muted italic">
+                          {t("canvas.noProperties")}
+                        </p>
                       }
                     >
                       <div class="space-y-1 text-sm">
@@ -149,7 +151,9 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                         </For>
                         <Show when={Object.keys(entry.properties).length > 3}>
                           <span class="text-xs ui-muted">
-                            +{Object.keys(entry.properties).length - 3} more
+                            {t("canvas.more", {
+                              count: Object.keys(entry.properties).length - 3,
+                            })}
                           </span>
                         </Show>
                       </div>
@@ -171,7 +175,9 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                             d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
                           />
                         </svg>
-                        <span>{entry.links.length} links</span>
+                        <span>
+                          {t("canvas.links", { count: entry.links.length })}
+                        </span>
                       </div>
                     </Show>
                   </div>

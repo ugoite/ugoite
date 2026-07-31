@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
-import { locale } from "~/lib/i18n";
+import { t, type TranslationKey } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
@@ -29,28 +29,12 @@ const navItems: Array<{ id: SpaceNavigation; icon: UiIconName; path: string }> =
     { id: "settings", icon: "settings", path: "settings" },
   ];
 
-const labels = {
-  en: {
-    home: "Home",
-    forms: "Forms",
-    search: "Search",
-    settings: "Settings",
-    spaces: "Spaces",
-    about: "About",
-    menu: "Menu",
-    account: "Account",
-  },
-  ja: {
-    home: "ホーム",
-    forms: "フォーム",
-    search: "検索",
-    settings: "設定",
-    spaces: "スペース",
-    about: "Ugoiteについて",
-    menu: "メニュー",
-    account: "アカウント",
-  },
-} as const;
+const navigationLabels: Record<SpaceNavigation, TranslationKey> = {
+  home: "nav.home",
+  forms: "spaceShell.bottom.grid",
+  search: "spaceShell.top.search",
+  settings: "spaceShell.nav.settings",
+};
 
 export function SpaceShell(props: SpaceShellProps) {
   const spaceStore = createSpaceStore();
@@ -58,7 +42,6 @@ export function SpaceShell(props: SpaceShellProps) {
   onMount(() => {
     void spaceStore.loadSpaces().catch(() => undefined);
   });
-  const copy = () => labels[locale() === "ja" ? "ja" : "en"];
   const active = createMemo<SpaceNavigation>(() => {
     if (props.activeNavigation) return props.activeNavigation;
     if (props.activeTopTab === "dashboard") return "home";
@@ -78,7 +61,7 @@ export function SpaceShell(props: SpaceShellProps) {
     ) return "forms";
     return "home";
   });
-  const crumb = createMemo(() => props.title ?? copy()[active()]);
+  const crumb = createMemo(() => props.title ?? t(navigationLabels[active()]));
   const activePath = createMemo(() =>
     navItems.find((item) => item.id === active())?.path ?? "dashboard"
   );
@@ -94,7 +77,7 @@ export function SpaceShell(props: SpaceShellProps) {
   const navigation = (mobile = false) => (
     <nav
       class={mobile ? "bottomNav" : "navGroup"}
-      aria-label="Space navigation"
+      aria-label={t("spaceShell.navigation")}
     >
       {navItems.map((item) => (
         <a
@@ -105,7 +88,7 @@ export function SpaceShell(props: SpaceShellProps) {
           onClick={() => setDrawerOpen(false)}
         >
           <UiIcon name={item.icon} />
-          <span>{copy()[item.id]}</span>
+          <span>{t(navigationLabels[item.id])}</span>
         </a>
       ))}
     </nav>
@@ -121,7 +104,7 @@ export function SpaceShell(props: SpaceShellProps) {
         <button
           type="button"
           class="drawerBackdrop"
-          aria-label="Close menu"
+          aria-label={t("spaceShell.closeMenu")}
           onClick={() => setDrawerOpen(false)}
         />
         <div class="mobileDrawer">{sidebar()}</div>
@@ -131,7 +114,7 @@ export function SpaceShell(props: SpaceShellProps) {
           <button
             class="btn iconBtn mobileMenu"
             type="button"
-            aria-label={copy().menu}
+            aria-label={t("common.menu")}
             onClick={() => setDrawerOpen(true)}
           >
             <UiIcon name="menu" />
@@ -155,13 +138,17 @@ export function SpaceShell(props: SpaceShellProps) {
           <span>Ugoite</span>
         </a>
         <label class="sidebarSpaceSelect">
-          <span class="ui-sr-only">Space</span>
+          <span class="ui-sr-only">{t("common.space")}</span>
           <select
-            aria-label="Space"
+            aria-label={t("common.space")}
             value={props.spaceId}
             onChange={(event) => switchSpace(event.currentTarget.value)}
           >
-            <Show when={!spaceStore.spaces().some((space) => space.id === props.spaceId)}>
+            <Show
+              when={!spaceStore.spaces().some((space) =>
+                space.id === props.spaceId
+              )}
+            >
               <option value={props.spaceId}>{props.spaceId}</option>
             </Show>
             <For each={spaceStore.spaces()}>
@@ -177,11 +164,11 @@ export function SpaceShell(props: SpaceShellProps) {
         <div class="sideFoot">
           <a class="navItem" href="/spaces">
             <UiIcon name="spaces" />
-            <span>{copy().spaces}</span>
+            <span>{t("nav.spaces")}</span>
           </a>
           <a class="navItem" href="/about">
             <UiIcon name="about" />
-            <span>{copy().about}</span>
+            <span>{t("nav.about")}</span>
           </a>
         </div>
       </aside>

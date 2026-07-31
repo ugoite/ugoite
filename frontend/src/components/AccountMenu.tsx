@@ -1,23 +1,9 @@
 import { createSignal, Show } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
-import { locale } from "~/lib/i18n";
-
-const labels = {
-  en: {
-    account: "Account",
-    settings: "Account settings",
-    signOut: "Sign out",
-  },
-  ja: {
-    account: "アカウント",
-    settings: "アカウント設定",
-    signOut: "ログアウト",
-  },
-} as const;
+import { t } from "~/lib/i18n";
 
 export function AccountMenu(props: { settingsHref?: string } = {}) {
   const [open, setOpen] = createSignal(false);
-  const copy = () => labels[locale() === "ja" ? "ja" : "en"];
 
   const signOut = async () => {
     await authApi.clearSession();
@@ -29,7 +15,7 @@ export function AccountMenu(props: { settingsHref?: string } = {}) {
       <button
         class="avatar"
         type="button"
-        aria-label={copy().account}
+        aria-label={t("account.title")}
         aria-expanded={open()}
         aria-haspopup="menu"
         onClick={() => setOpen((value) => !value)}
@@ -38,20 +24,20 @@ export function AccountMenu(props: { settingsHref?: string } = {}) {
       </button>
       <Show when={open()}>
         <div class="accountMenuPanel" role="menu">
-          <div class="accountMenuTitle">{copy().account}</div>
+          <div class="accountMenuTitle">{t("account.title")}</div>
           <a
             href={props.settingsHref ?? "/settings/security"}
             role="menuitem"
             onClick={() => setOpen(false)}
           >
-            {copy().settings}
+            {t("account.settings")}
           </a>
           <button
             type="button"
             role="menuitem"
             onClick={() => void signOut()}
           >
-            {copy().signOut}
+            {t("account.signOut")}
           </button>
         </div>
       </Show>

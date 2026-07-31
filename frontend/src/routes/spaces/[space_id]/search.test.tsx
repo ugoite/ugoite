@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { http, HttpResponse } from "msw";
 import SpaceSearchRoute from "./search";
@@ -13,6 +13,7 @@ import {
 import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Form, Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
+import { setLocale } from "~/lib/i18n";
 
 const navigateMock = vi.fn();
 
@@ -41,7 +42,10 @@ describe("/spaces/:space_id/search", () => {
     navigateMock.mockReset();
     resetMockData();
     seedSpace(testSpace);
+    setLocale("en");
   });
+
+  afterEach(() => setLocale("en"));
 
   it("REQ-FE-054: renders human-readable updated dates in search history", async () => {
     seedSqlEntry("default", {
@@ -305,5 +309,24 @@ describe("/spaces/:space_id/search", () => {
       "href",
       "/spaces/default/assets",
     );
+  });
+
+  it("REQ-FE-044: keeps search controls and state messages in Japanese", () => {
+    setLocale("ja");
+
+    render(() => <SpaceSearchRoute />);
+
+    expect(screen.getByRole("heading", { name: "検索" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "クイック検索" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "詳細検索" }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("検索キーワード")).toHaveAttribute(
+      "placeholder",
+      "タイトル、フィールド、タグ、本文からエントリを検索",
+    );
+    expect(screen.getByText("キーワード検索結果")).toBeInTheDocument();
+    expect(screen.getByText("検索履歴")).toBeInTheDocument();
+    expect(screen.queryByText("Search")).not.toBeInTheDocument();
   });
 });
