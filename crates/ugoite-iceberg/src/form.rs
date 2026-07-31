@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashSet};
 use ugoite_core::error::AppError;
 use ugoite_core::metadata;
-use ugoite_domain::form::sql_relation_name;
+use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
 };
@@ -751,6 +751,12 @@ fn preserve_stable_identities(normalized: &mut Value, existing: &Value) -> Resul
 }
 
 fn enrich_form_definition(form_def: &Value) -> Result<Value> {
+    let form_id = FormId::from(Uuid::parse_str(
+        form_def
+            .get("id")
+            .and_then(Value::as_str)
+            .context("Form definition missing stable 'id' field")?,
+    )?);
     let name = form_def
         .get("name")
         .and_then(|v| v.as_str())
@@ -762,8 +768,29 @@ fn enrich_form_definition(form_def: &Value) -> Result<Value> {
         obj.insert("template".to_string(), Value::String(template));
         obj.insert(
             "sql_relation".to_string(),
-            Value::String(sql_relation_name(name)),
+            Value::String(sql_relation_name(form_id)),
         );
+        let fields = obj
+            .get_mut("fields")
+            .and_then(Value::as_object_mut)
+            .context("Form definition missing 'fields' object")?;
+        for field in fields.values_mut() {
+            let field_id = FieldId::new(
+                field
+                    .get("id")
+                    .and_then(Value::as_i64)
+                    .context("Form field definition missing stable 'id' field")?
+                    .try_into()
+                    .context("Form field id is outside the supported range")?,
+            )?;
+            field
+                .as_object_mut()
+                .context("Form field definition must be an object")?
+                .insert(
+                    "sql_column".to_string(),
+                    Value::String(sql_column_name(field_id)),
+                );
+        }
     }
     Ok(enriched)
 }

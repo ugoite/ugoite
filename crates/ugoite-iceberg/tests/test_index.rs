@@ -115,6 +115,11 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
         }
     });
     form::upsert_form(&op, ws_path, &class_def).await?;
+    let meeting = form::get_form(&op, ws_path, "Meeting").await?;
+    let meeting_relation = meeting["sql_relation"].as_str().expect("SQL relation");
+    let date_column = meeting["fields"]["Date"]["sql_column"]
+        .as_str()
+        .expect("SQL column");
 
     let entry_one = "---\nform: Meeting\n---\n# Entry 1\n\n## Date\n2025-01-01\n\n## Topic\nalpha";
     entry::create_entry(&op, ws_path, "entry-1", entry_one, "author", &MockIntegrity).await?;
@@ -122,7 +127,9 @@ async fn test_index_req_idx_008_query_sql() -> anyhow::Result<()> {
     entry::create_entry(&op, ws_path, "entry-2", entry_two, "author", &MockIntegrity).await?;
 
     let payload = serde_json::json!({
-        "$sql": "SELECT * FROM Meeting WHERE Date >= '2025-02-01'"
+        "$sql": format!(
+            "SELECT * FROM \"{meeting_relation}\" WHERE \"{date_column}\" >= '2025-02-01'"
+        )
     })
     .to_string();
     let results = index::query_index(&op, ws_path, &payload).await?;
@@ -165,6 +172,8 @@ async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
         }
     });
     form::upsert_form(&op, ws_path, &class_def).await?;
+    let entry_form = form::get_form(&op, ws_path, "Entry").await?;
+    let entry_relation = entry_form["sql_relation"].as_str().expect("SQL relation");
 
     let entry_one = "---\nform: Entry\n---\n# Entry 1\n\n## Body\nAlpha";
     let entry_two = "---\nform: Entry\n---\n# Entry 2\n\n## Body\nBeta";
@@ -182,7 +191,9 @@ async fn test_index_req_idx_009_query_sql_joins() -> anyhow::Result<()> {
     .await?;
 
     let payload = serde_json::json!({
-        "$sql": "SELECT e._ugoite_id AS left_id, f._ugoite_id AS right_id FROM entry e JOIN entry f ON e._ugoite_id = f._ugoite_id WHERE e._ugoite_id = 'entry-1'"
+        "$sql": format!(
+            "SELECT e._ugoite_id AS left_id, f._ugoite_id AS right_id FROM \"{entry_relation}\" e JOIN \"{entry_relation}\" f ON e._ugoite_id = f._ugoite_id WHERE e._ugoite_id = 'entry-1'"
+        )
     })
     .to_string();
     let results = index::query_index(&op, ws_path, &payload).await?;

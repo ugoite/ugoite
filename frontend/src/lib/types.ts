@@ -188,12 +188,16 @@ export interface EntryUpdatePayload {
 }
 
 export interface FormField {
+  id?: number;
   type: string;
   required: boolean;
   target_form?: string;
+  /** Backend-owned stable SQL column; never derive this from the field label. */
+  sql_column?: string;
 }
 
 export interface Form {
+  id?: string;
   name: string;
   /** Backend-owned DataFusion relation; never derive this from the Form name. */
   sql_relation?: string;

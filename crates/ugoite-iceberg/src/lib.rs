@@ -468,7 +468,7 @@ impl IcebergWorkspace {
         let mut matches = checkpoint
             .tables
             .iter()
-            .filter(|coordinate| sql_relation_name(&coordinate.form_name) == relation);
+            .filter(|coordinate| coordinate.form_relation == relation);
         let coordinate = matches
             .next()
             .ok_or_else(|| CheckpointUnavailable::new(format!("Form relation {relation}")))?;
@@ -485,7 +485,10 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, coordinate.form_id)?;
-        if sql_relation_name(&form.name) != relation || coordinate.form_name != form.name {
+        if coordinate.form_relation != relation
+            || coordinate.form_relation != sql_relation_name(form.id)
+            || coordinate.form_id != form.id
+        {
             return Err(CheckpointIntegrityError::new(
                 "checkpoint Form relation does not match immutable Iceberg metadata",
             )
@@ -1238,7 +1241,7 @@ fn is_publication_conflict(error: &anyhow::Error) -> bool {
 }
 
 pub fn physical_form_name(form_id: FormId) -> String {
-    format!("form_{}", form_id.as_uuid().simple())
+    sql_relation_name(form_id)
 }
 
 pub fn namespace_for_space(space_id: SpaceId) -> NamespaceIdent {

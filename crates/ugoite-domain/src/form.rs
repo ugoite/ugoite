@@ -96,34 +96,19 @@ pub struct FormDefinition {
 
 /// Returns the stable ASCII SQL relation exposed for a Form.
 ///
-/// Form names are portable storage identifiers and may contain `-`, while
-/// DataFusion relations are deliberately kept to unquoted ASCII identifiers.
-/// Keep ordinary names readable for SQL authors and encode characters that
-/// would otherwise collide with a different valid Form name.
-pub fn sql_relation_name(form_name: &str) -> String {
-    let mut relation = String::new();
-    for (index, character) in form_name.chars().enumerate() {
-        if character.is_ascii_alphanumeric() {
-            if index == 0 && character.is_ascii_digit() {
-                relation.push_str("_x");
-            }
-            relation.push(character.to_ascii_lowercase());
-        } else {
-            relation.push_str("_x");
-            let codepoint = if character == '_' {
-                b'_' as u32
-            } else {
-                character as u32
-            };
-            relation.push_str(&format!("{:x}", codepoint));
-            relation.push('_');
-        }
-    }
-    if relation.is_empty() {
-        "_x0_".to_string()
-    } else {
-        relation
-    }
+/// SQL identity follows the immutable Form identity rather than its editable
+/// display name. This keeps the relation unique for every valid Form set and
+/// preserves Saved SQL across Form renames.
+pub fn sql_relation_name(form_id: FormId) -> String {
+    format!("form_{}", form_id.as_uuid().simple())
+}
+
+/// Returns the stable ASCII SQL column exposed for a Form field.
+///
+/// Field names are editable labels. Field IDs are the immutable identity that
+/// Iceberg already uses for schema evolution, so SQL follows that identity.
+pub fn sql_column_name(field_id: FieldId) -> String {
+    format!("field_{}", field_id.get())
 }
 
 impl FormDefinition {
@@ -226,21 +211,18 @@ impl FormDefinition {
 
 #[cfg(test)]
 mod tests {
-    use super::sql_relation_name;
+    use super::{sql_column_name, sql_relation_name};
+    use crate::id::{FieldId, FormId};
+    use uuid::Uuid;
 
     #[test]
-    fn sql_relation_names_are_ascii_and_preserve_readable_names() {
-        assert_eq!(sql_relation_name("Meeting"), "meeting");
-        assert_eq!(sql_relation_name("daily-note"), "daily_x2d_note");
+    fn sql_names_follow_immutable_ids() {
+        let form_id = FormId::from(Uuid::from_u128(1));
         assert_eq!(
-            sql_relation_name("daily_x2d_note"),
-            "daily_x5f_x2d_x5f_note"
+            sql_relation_name(form_id),
+            "form_00000000000000000000000000000001"
         );
-        assert_ne!(
-            sql_relation_name("daily-note"),
-            sql_relation_name("daily_x2d_note")
-        );
-        assert_eq!(sql_relation_name("2fa"), "_x2fa");
+        assert_eq!(sql_column_name(FieldId::new(104).unwrap()), "field_104");
     }
 }
 

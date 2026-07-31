@@ -23,15 +23,21 @@ describe("sql helpers", () => {
   it("should include form fields in schema", () => {
     const forms: Form[] = [
       {
+        id: "00000000-0000-0000-0000-000000000001",
         name: "Meeting",
+        sql_relation: "form_00000000000000000000000000000001",
         version: 1,
         template: "# Meeting\n\n## Date\n",
-        fields: { Date: { type: "date", required: false } },
+        fields: {
+          Date: { type: "date", required: false, sql_column: "field_104" },
+        },
       },
     ];
     const schema = buildSqlSchema(forms);
-    expect(schema.tables?.Meeting).toContain("Date");
-    expect(schema.tables?.entries).toContain("Date");
+    expect(schema.tables?.form_00000000000000000000000000000001).toContain(
+      "field_104",
+    );
+    expect(schema.tables?.entries).not.toContain("field_104");
   });
 
   it("should flag empty query", () => {

@@ -11,24 +11,19 @@ const BASE_TABLES = [...(sqlRules.base_tables ?? ["entries"])];
 /* v8 ignore stop */
 
 export function buildSqlSchema(forms: Form[]): SqlSchema {
-  const formFieldSet = new Set<string>();
-  for (const item of forms) {
-    /* v8 ignore start */
-    for (const field of Object.keys(item.fields ?? {})) {
-      /* v8 ignore stop */
-      formFieldSet.add(field);
-    }
-  }
-
-  const unionFields = [...BASE_COLUMNS, ...formFieldSet];
   const tables: Record<string, string[]> = {};
   for (const table of BASE_TABLES) {
-    tables[table] = unionFields;
+    tables[table] = BASE_COLUMNS;
   }
 
   for (const item of forms) {
     /* v8 ignore start */
-    tables[item.name] = [...BASE_COLUMNS, ...Object.keys(item.fields ?? {})];
+    const relation = item.sql_relation?.trim();
+    if (!relation) continue;
+    const columns = Object.values(item.fields ?? {})
+      .map((field) => field.sql_column?.trim())
+      .filter((column): column is string => Boolean(column));
+    tables[relation] = [...BASE_COLUMNS, ...columns];
     /* v8 ignore stop */
   }
 

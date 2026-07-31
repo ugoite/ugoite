@@ -117,13 +117,17 @@ describe("/spaces/:space_id/search", () => {
       version: 1,
       template: "# Meeting\n\n## Status\n",
       fields: {
-        Status: { type: "string", required: false },
+        Status: { type: "string", required: false, sql_column: "field_100" },
       },
     };
     seedForm("default", meetingForm);
 
     let savedSqlBody: { name?: string; sql?: string } | null = null;
-    let sessionSqlBody: { sql?: string; parameters?: Record<string, unknown>; parameter_types?: Record<string, string> } | null = null;
+    let sessionSqlBody: {
+      sql?: string;
+      parameters?: Record<string, unknown>;
+      parameter_types?: Record<string, string>;
+    } | null = null;
     const postOrder: string[] = [];
 
     server.use(
@@ -180,10 +184,10 @@ describe("/spaces/:space_id/search", () => {
         "Advanced search - form: Meeting - updated-from: 2025-03-01 - updated-to: 2025-03-03 - Status=Active",
       );
       expect(savedSqlBody?.sql).toBe(
-        "SELECT * FROM \"meeting\" WHERE _ugoite_updated_at >= TIMESTAMP '2025-03-01 00:00:00Z' AND _ugoite_updated_at < TIMESTAMP '2025-03-04 00:00:00Z' AND \"status\" = 'Active' ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50",
+        "SELECT * FROM \"meeting\" WHERE _ugoite_updated_at >= TIMESTAMP '2025-03-01 00:00:00Z' AND _ugoite_updated_at < TIMESTAMP '2025-03-04 00:00:00Z' AND \"field_100\" = 'Active' ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50",
       );
       expect(sessionSqlBody?.sql).toBe(
-        "SELECT * FROM \"meeting\" WHERE _ugoite_updated_at >= $search_0 AND _ugoite_updated_at < $search_1 AND \"status\" = $search_2 ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50",
+        'SELECT * FROM "meeting" WHERE _ugoite_updated_at >= $search_0 AND _ugoite_updated_at < $search_1 AND "field_100" = $search_2 ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50',
       );
       expect(sessionSqlBody?.parameters).toEqual({
         search_0: "2025-03-01T00:00:00.000Z",
@@ -209,37 +213,158 @@ describe("/spaces/:space_id/search", () => {
       version: 1,
       template: "",
       fields: {
-        Count: { type: "integer", required: false },
-        Enabled: { type: "boolean", required: false },
+        Count: { type: "integer", required: false, sql_column: "field_100" },
+        Enabled: { type: "boolean", required: false, sql_column: "field_101" },
       },
     });
-    let sessionBody: { sql?: string; parameters?: Record<string, unknown>; parameter_types?: Record<string, string> } | null = null;
+    let sessionBody: {
+      sql?: string;
+      parameters?: Record<string, unknown>;
+      parameter_types?: Record<string, string>;
+    } | null = null;
     server.use(
-      http.post(testApiUrl("/spaces/default/sql-sessions"), async ({ request }) => {
-        sessionBody = (await request.json()) as typeof sessionBody;
-        return HttpResponse.json({ id: "typed-session", status: "ready", error: null }, { status: 201 });
-      }),
-      http.post(testApiUrl("/spaces/default/sql"), () =>
-        HttpResponse.json({ id: "typed-saved", revision_id: "rev-typed" }, { status: 201 })
+      http.post(
+        testApiUrl("/spaces/default/sql-sessions"),
+        async ({ request }) => {
+          sessionBody = (await request.json()) as typeof sessionBody;
+          return HttpResponse.json({
+            id: "typed-session",
+            status: "ready",
+            error: null,
+          }, { status: 201 });
+        },
+      ),
+      http.post(
+        testApiUrl("/spaces/default/sql"),
+        () =>
+          HttpResponse.json({ id: "typed-saved", revision_id: "rev-typed" }, {
+            status: 201,
+          }),
       ),
     );
     render(() => <SpaceSearchRoute />);
     fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
     await screen.findByRole("option", { name: "Metrics" });
-    fireEvent.change(await screen.findByLabelText("Form"), { target: { value: "Metrics" } });
+    fireEvent.change(await screen.findByLabelText("Form"), {
+      target: { value: "Metrics" },
+    });
     const fields = await screen.findAllByLabelText("Field");
     fireEvent.change(fields[0], { target: { value: "Count" } });
-    fireEvent.input(screen.getAllByLabelText("Value")[0], { target: { value: "10" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add field condition" }));
+    fireEvent.input(screen.getAllByLabelText("Value")[0], {
+      target: { value: "10" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add field condition" }),
+    );
     const booleanFields = await screen.findAllByLabelText("Field");
     fireEvent.change(booleanFields[1], { target: { value: "Enabled" } });
-    fireEvent.input(screen.getAllByLabelText("Value")[1], { target: { value: "true" } });
-    fireEvent.click(screen.getByRole("button", { name: "Run advanced search" }));
+    fireEvent.input(screen.getAllByLabelText("Value")[1], {
+      target: { value: "true" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
     await waitFor(() => {
       expect(sessionBody?.parameters).toEqual({ search_0: 10, search_1: true });
-      expect(sessionBody?.parameter_types).toEqual({ search_0: "integer", search_1: "boolean" });
-      expect(sessionBody?.sql).toContain('"count" = $search_0');
-      expect(sessionBody?.sql).toContain('"enabled" = $search_1');
+      expect(sessionBody?.parameter_types).toEqual({
+        search_0: "integer",
+        search_1: "boolean",
+      });
+      expect(sessionBody?.sql).toContain('"field_100" = $search_0');
+      expect(sessionBody?.sql).toContain('"field_101" = $search_1');
+    });
+  });
+
+  it("does not offer long or nanosecond fields as approximate Advanced search types", async () => {
+    seedForm("default", {
+      name: "Precise metrics",
+      sql_relation: "form_precise_metrics",
+      version: 1,
+      template: "",
+      fields: {
+        LargeCount: { type: "long", required: false, sql_column: "field_100" },
+        PreciseTime: {
+          type: "timestamp_ns",
+          required: false,
+          sql_column: "field_101",
+        },
+      },
+    });
+    render(() => <SpaceSearchRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    await screen.findByRole("option", { name: "Precise metrics" });
+    fireEvent.change(await screen.findByLabelText("Form"), {
+      target: { value: "Precise metrics" },
+    });
+
+    expect(
+      await screen.findByRole("option", { name: "LargeCount (unsupported)" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("option", { name: "PreciseTime (unsupported)" }),
+    ).toBeDisabled();
+  });
+
+  it("resets field conditions when the selected Form changes", async () => {
+    seedForm("default", {
+      name: "Form A",
+      sql_relation: "form_a",
+      version: 1,
+      template: "",
+      fields: {
+        Status: { type: "string", required: false, sql_column: "field_100" },
+      },
+    });
+    seedForm("default", {
+      name: "Form B",
+      sql_relation: "form_b",
+      version: 1,
+      template: "",
+      fields: {
+        Owner: { type: "string", required: false, sql_column: "field_101" },
+      },
+    });
+    let sessionSql = "";
+    server.use(
+      http.post(
+        testApiUrl("/spaces/default/sql-sessions"),
+        async ({ request }) => {
+          sessionSql = ((await request.json()) as { sql: string }).sql;
+          return HttpResponse.json({
+            id: "form-switch-session",
+            status: "ready",
+            error: null,
+          }, { status: 201 });
+        },
+      ),
+      http.post(
+        testApiUrl("/spaces/default/sql"),
+        () =>
+          HttpResponse.json({
+            id: "form-switch-saved",
+            revision_id: "rev-switch",
+          }, { status: 201 }),
+      ),
+    );
+    render(() => <SpaceSearchRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    const formSelect = await screen.findByLabelText("Form");
+    fireEvent.change(formSelect, { target: { value: "Form A" } });
+    fireEvent.change(await screen.findByLabelText("Field"), {
+      target: { value: "Status" },
+    });
+    fireEvent.input(screen.getByLabelText("Value"), {
+      target: { value: "open" },
+    });
+    fireEvent.change(formSelect, { target: { value: "Form B" } });
+
+    const resetField = await screen.findByLabelText("Field");
+    expect(resetField).toHaveValue("");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
+    await waitFor(() => {
+      expect(sessionSql).not.toContain('"field_100"');
     });
   });
 
@@ -256,18 +381,32 @@ describe("/spaces/:space_id/search", () => {
     server.use(
       http.post(testApiUrl("/spaces/default/sql"), () => {
         savedCalls += 1;
-        return HttpResponse.json({ id: "should-not-exist", revision_id: "rev-failed" }, { status: 201 });
+        return HttpResponse.json({
+          id: "should-not-exist",
+          revision_id: "rev-failed",
+        }, { status: 201 });
       }),
-      http.post(testApiUrl("/spaces/default/sql-sessions"), async ({ request }) => {
-        sessionSql = ((await request.json()) as { sql: string }).sql;
-        return HttpResponse.json({ id: "failed-session", status: "failed", error: "planner rejected query" }, { status: 201 });
-      }),
+      http.post(
+        testApiUrl("/spaces/default/sql-sessions"),
+        async ({ request }) => {
+          sessionSql = ((await request.json()) as { sql: string }).sql;
+          return HttpResponse.json({
+            id: "failed-session",
+            status: "failed",
+            error: "planner rejected query",
+          }, { status: 201 });
+        },
+      ),
     );
     render(() => <SpaceSearchRoute />);
     fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
     await screen.findByRole("option", { name: "Daily-Note" });
-    fireEvent.change(await screen.findByLabelText("Form"), { target: { value: "Daily-Note" } });
-    fireEvent.click(screen.getByRole("button", { name: "Run advanced search" }));
+    fireEvent.change(await screen.findByLabelText("Form"), {
+      target: { value: "Daily-Note" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
     await waitFor(() => {
       expect(sessionSql).toContain('FROM "daily_x2d_note"');
       expect(screen.getByText("planner rejected query")).toBeInTheDocument();
@@ -281,34 +420,60 @@ describe("/spaces/:space_id/search", () => {
       sql_relation: "notes",
       version: 1,
       template: "",
-      fields: { Memo: { type: "string", required: false } },
+      fields: {
+        Memo: { type: "string", required: false, sql_column: "field_100" },
+      },
     });
     let sessionBody: {
       sql?: string;
       parameters?: Record<string, unknown>;
     } | null = null;
     server.use(
-      http.post(testApiUrl("/spaces/default/sql-sessions"), async ({ request }) => {
-        sessionBody = (await request.json()) as typeof sessionBody;
-        return HttpResponse.json({ id: "contains-session", status: "ready", error: null }, { status: 201 });
-      }),
-      http.post(testApiUrl("/spaces/default/sql"), () =>
-        HttpResponse.json({ id: "contains-saved", revision_id: "rev-contains" }, { status: 201 })
+      http.post(
+        testApiUrl("/spaces/default/sql-sessions"),
+        async ({ request }) => {
+          sessionBody = (await request.json()) as typeof sessionBody;
+          return HttpResponse.json({
+            id: "contains-session",
+            status: "ready",
+            error: null,
+          }, { status: 201 });
+        },
+      ),
+      http.post(
+        testApiUrl("/spaces/default/sql"),
+        () =>
+          HttpResponse.json({
+            id: "contains-saved",
+            revision_id: "rev-contains",
+          }, { status: 201 }),
       ),
     );
     render(() => <SpaceSearchRoute />);
     fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
     await screen.findByRole("option", { name: "Notes" });
-    fireEvent.change(await screen.findByLabelText("Form"), { target: { value: "Notes" } });
+    fireEvent.change(await screen.findByLabelText("Form"), {
+      target: { value: "Notes" },
+    });
     await screen.findByRole("option", { name: "Memo" });
-    fireEvent.change(screen.getByLabelText("Field"), { target: { value: "Memo" } });
-    fireEvent.change(screen.getByLabelText("Match"), { target: { value: "contains" } });
-    fireEvent.input(screen.getByLabelText("Value"), { target: { value: "100%_match" } });
-    fireEvent.click(screen.getByRole("button", { name: "Run advanced search" }));
+    fireEvent.change(screen.getByLabelText("Field"), {
+      target: { value: "Memo" },
+    });
+    fireEvent.change(screen.getByLabelText("Match"), {
+      target: { value: "contains" },
+    });
+    fireEvent.input(screen.getByLabelText("Value"), {
+      target: { value: "100%_match" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
 
     await waitFor(() => {
       expect(sessionBody?.parameters).toEqual({ search_0: "%100\\%\\_match%" });
-      expect(sessionBody?.sql).toContain('"memo" ILIKE $search_0 ESCAPE \'\\\'');
+      expect(sessionBody?.sql).toContain(
+        "\"field_100\" ILIKE $search_0 ESCAPE '\\'",
+      );
     });
   });
 
@@ -318,7 +483,9 @@ describe("/spaces/:space_id/search", () => {
       sql_relation: "meeting",
       version: 1,
       template: "",
-      fields: { memo: { type: "string", required: false } },
+      fields: {
+        memo: { type: "string", required: false, sql_column: "field_100" },
+      },
     });
     render(() => <SpaceSearchRoute />);
 

@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::Duration;
-use ugoite_domain::form::sql_relation_name;
+use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::FormId;
 pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
@@ -516,7 +516,11 @@ pub async fn sql_session_query_policy_at_checkpoint(
             form_id: form.id,
             relation,
             entry_scope,
-            columns: form.fields.into_iter().map(|field| field.name).collect(),
+            columns: form
+                .fields
+                .into_iter()
+                .map(|field| sql_column_name(field.id))
+                .collect(),
             system_columns: [
                 SqlSessionSystemColumn::ExternalId,
                 SqlSessionSystemColumn::Title,
@@ -749,7 +753,7 @@ pub async fn execute_sql_query_scoped(
 ) -> Result<Vec<Value>> {
     let readable_forms = readable_forms
         .iter()
-        .map(|form| sql_relation_name(form))
+        .map(|relation| relation.to_ascii_lowercase())
         .collect::<HashSet<_>>();
     execute_datafusion_sql(
         op,
@@ -773,7 +777,7 @@ pub async fn execute_sql_query_scoped_page(
 ) -> Result<(Vec<Value>, u64)> {
     let readable_forms = readable_forms
         .iter()
-        .map(|form| sql_relation_name(form))
+        .map(|relation| relation.to_ascii_lowercase())
         .collect::<HashSet<_>>();
     execute_datafusion_sql_page(
         op,
@@ -871,7 +875,7 @@ async fn datafusion_sql_context(
     let forms = workspace.list_forms().await?;
     let mut policy_forms = BTreeMap::new();
     for form in forms {
-        let relation = sql_relation_name(&form.name);
+        let relation = sql_relation_name(form.id);
         let relation_entry_scope = match relation_scopes {
             Some(scopes) => match scopes.get(&relation) {
                 Some(scope) => scope.clone(),
@@ -887,7 +891,11 @@ async fn datafusion_sql_context(
             AuthorizedQueryForm {
                 relation,
                 entry_scope: relation_entry_scope,
-                columns: form.fields.iter().map(|field| field.name.clone()).collect(),
+                columns: form
+                    .fields
+                    .iter()
+                    .map(|field| sql_column_name(field.id))
+                    .collect(),
                 system_columns: [
                     QuerySystemColumn::ExternalId,
                     QuerySystemColumn::Title,
