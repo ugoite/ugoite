@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
@@ -52,6 +52,21 @@ describe("v5 SpaceShell", () => {
     for (const link of screen.getAllByRole("link", { name: "Forms" })) {
       expect(link).toHaveClass("active");
     }
+  });
+  it("opens account settings inside the current Space settings navigation", () => {
+    render(() => (
+      <SpaceShell spaceId="my-space" activeNavigation="home">
+        <p>Content</p>
+      </SpaceShell>
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+
+    expect(screen.getByRole("menuitem", { name: "Account settings" }))
+      .toHaveAttribute(
+        "href",
+        "/spaces/my-space/settings?section=credentials",
+      );
   });
   it("offers the other available spaces in the workspace selector", () => {
     render(() => (
