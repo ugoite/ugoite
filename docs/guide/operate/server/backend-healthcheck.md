@@ -1,5 +1,5 @@
 ---
-title: 'Server health check'
+title: "Server health check"
 ---
 
 The unauthenticated health endpoint is:
@@ -8,7 +8,8 @@ The unauthenticated health endpoint is:
 curl --fail http://127.0.0.1:8000/health
 ```
 
-HTTP `200` confirms that the process is accepting requests. It does not validate every Space, credential, or storage backend.
+HTTP `200` confirms that the process is accepting requests. It does not validate
+every Space, credential, or storage backend.
 
 For the source Compose file, resolve the random loopback port first:
 

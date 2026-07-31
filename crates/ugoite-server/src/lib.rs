@@ -1715,7 +1715,7 @@ async fn oauth_protected_resource_metadata(
         "authorization_servers": [issuer],
         "scopes_supported": ["read", "create", "update", "delete", "share"],
         "bearer_methods_supported": [],
-        "resource_documentation": "/docs/guide/authentication"
+        "resource_documentation": "/docs/guide/operate/auth/auth-overview"
     })))
 }
 

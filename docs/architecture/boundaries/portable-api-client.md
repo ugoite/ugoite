@@ -1,8 +1,9 @@
 ---
-title: 'Portable API client'
+title: "Portable API client"
 ---
 
-`ugoite-api-client` is the shared remote-operation contract for native and WebAssembly clients.
+`ugoite-api-client` is the shared remote-operation contract for native and
+WebAssembly clients.
 
 It defines:
 
@@ -13,7 +14,8 @@ It defines:
 - response and error decoding;
 - a protocol version and operation manifest.
 
-It does **not** perform network I/O and must remain independent of server frameworks, async runtimes, browser APIs, storage, and `ugoite-core`.
+It does **not** perform network I/O and must remain independent of server
+frameworks, async runtimes, browser APIs, storage, and `ugoite-core`.
 
 Native CLI flow:
 
@@ -27,4 +29,6 @@ Browser flow:
 route/API module -> ugoite-client -> WASM JSON protocol -> JavaScript fetch -> WASM decode
 ```
 
-New portable REST operations should be added to the manifest, request preparation, decoding tests, native adapter, browser adapter, OpenAPI/feature registry, and end-to-end coverage as applicable.
+New portable REST operations should be added to the manifest, request
+preparation, decoding tests, native adapter, browser adapter, OpenAPI/feature
+registry, and end-to-end coverage as applicable.

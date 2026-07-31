@@ -13,9 +13,9 @@ small so it cannot drift into a second manual.
 
 ## Start
 
-- [Container quick start](docs/guide/container-quickstart.md)
-- [Local development](docs/guide/local-dev-auth-login.md)
-- [CLI guide](docs/guide/cli.md)
+- [Container quick start](docs/guide/start/container-quickstart.md)
+- [Local development](docs/guide/develop/local-dev-auth-login.md)
+- [CLI guide](docs/guide/automate/cli.md)
 - [Architecture](docs/architecture/index.md)
 - [REST and OpenAPI](docs/spec/api/rest.md)
 - [Executable specification](docs/spec/index.md)
@@ -102,7 +102,7 @@ Approve the displayed device code from a Passkey-authenticated browser.
   [`docs/spec/api/openapi.yaml`](docs/spec/api/openapi.yaml)
 - MCP resource surface: [`docs/spec/api/mcp.md`](docs/spec/api/mcp.md)
 - Architecture:
-  [`docs/architecture/north-star.md`](docs/architecture/north-star.md)
+  [`docs/architecture/principles/north-star.md`](docs/architecture/principles/north-star.md)
 - Operator guides: [`docs/guide`](docs/guide)
 - Executable specification registry: [`docs/spec`](docs/spec)
 

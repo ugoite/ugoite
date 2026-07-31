@@ -38,7 +38,7 @@ describe("v5 space Home", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: /Entry/ }))[0]);
     expect(screen.getByText("Create Form Dialog")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Create your first entry with the browser walkthrough" }))
-      .toHaveAttribute("href", "https://ugoite.github.io/ugoite/docs/guide/browser-first-entry");
+      .toHaveAttribute("href", "https://ugoite.github.io/ugoite/docs/guide/start/browser-first-entry");
   });
   it("does not show walkthrough guidance while existing entries are loading", async () => {
     const [mockEntries, setMockEntries] = createSignal<Array<{ id: string; title: string; form: string; updated_at: string; properties: Record<string, never>; tags: never[]; links: never[] }>>([]);

@@ -11,8 +11,8 @@ Node Identity contains human accounts, Passkeys, optional OIDC links, browser
 sessions, CLI devices, and Node administrator roles. It is stored through the
 atomic `NodeControlStore` below `_ugoite/nodes/{node_id}` and is never exported
 as part of a Space. `UGOITE_NODE_CONTROL_URI` may select a separate durable
-OpenDAL location. OIDC users are keyed by the
-exact `(issuer, subject)` pair; email is display data only.
+OpenDAL location. OIDC users are keyed by the exact `(issuer, subject)` pair;
+email is display data only.
 
 Each Space stores an immutable UUIDv7 `space_uid`, stable human or agent
 principals, memberships, ACL policies, and append-only authorization audit
@@ -30,8 +30,8 @@ On the first server start, Ugoite writes only a SHA-256 hash of a
 cryptographically random, 30-minute, one-use setup secret and prints a setup URL
 to the local console/container log. Opening that URL starts WebAuthn
 registration. The Node remains uninitialized until either two Passkeys are
-registered, or one Passkey plus confirmed TOTP and the issued recovery codes
-are established. Until then, the setup session can access only credential
+registered, or one Passkey plus confirmed TOTP and the issued recovery codes are
+established. Until then, the setup session can access only credential
 strengthening endpoints.
 
 The first account receives `node_admin`, an owner principal in the initial
@@ -77,12 +77,12 @@ Passkey cannot be removed.
 Space owners issue a one-use invitation URL. Only the invitation hash, expiry,
 creator, Space UID, and requested role are stored. The recipient registers a
 Passkey, accepts with an existing signed-in account, or starts an enabled OIDC
-authorization-code flow with PKCE. A new OIDC
-subject cannot create an account without an invitation. Ugoite validates the
-provider ID token and nonce, then issues its own opaque session; provider tokens
-are never accepted by the Ugoite API. A signed-in user can add an OIDC method
-only after recent Passkey authentication; Ugoite refuses to link an
-issuer/subject pair already owned by another account.
+authorization-code flow with PKCE. A new OIDC subject cannot create an account
+without an invitation. Ugoite validates the provider ID token and nonce, then
+issues its own opaque session; provider tokens are never accepted by the Ugoite
+API. A signed-in user can add an OIDC method only after recent Passkey
+authentication; Ugoite refuses to link an issuer/subject pair already owned by
+another account.
 
 ## CLI devices
 
@@ -92,23 +92,23 @@ requested actions. The CLI stores its private key in the OS keychain when
 available, otherwise in an owner-only file. Access tokens last five minutes;
 refresh credentials rotate on every use and expire after 30 days.
 
-Access tokens are opaque random values; the Node control store saves only their hashes and
-server-side issuer, Node, Space, action, actor-chain, expiry, credential, and
-key-binding metadata. They can be revoked immediately and expose no claims to
-the holder. Every API request uses DPoP. Ugoite validates the proof signature, registered
-key thumbprint, method, URI, access-token hash, timestamp, and one-use `jti`. A
-copied access token is unusable without the device key. Devices and last-use
-state are visible and individually revocable. The expected URI comes from the
-Node's canonical public URL and the actual request path, never a client-provided
-forwarding header.
+Access tokens are opaque random values; the Node control store saves only their
+hashes and server-side issuer, Node, Space, action, actor-chain, expiry,
+credential, and key-binding metadata. They can be revoked immediately and expose
+no claims to the holder. Every API request uses DPoP. Ugoite validates the proof
+signature, registered key thumbprint, method, URI, access-token hash, timestamp,
+and one-use `jti`. A copied access token is unusable without the device key.
+Devices and last-use state are visible and individually revocable. The expected
+URI comes from the Node's canonical public URL and the actual request path,
+never a client-provided forwarding header.
 
 ## Agents and MCP
 
 Agents are Space principals, not API keys. Every agent has a human sponsor and
 at least one human owner, its own public-key credential, explicit actions,
-status, and a required expiry or review deadline. Autonomous tokens contain only the agent grant.
-Delegated tokens contain an actor chain and use the intersection of the agent
-grant and the current human's permissions.
+status, and a required expiry or review deadline. Autonomous tokens contain only
+the agent grant. Delegated tokens contain an actor chain and use the
+intersection of the agent grant and the current human's permissions.
 
 Agents cannot manage members, transfer ownership, or manage other agents.
 `delete` and `share` are unavailable to all noninteractive credentials until an
@@ -127,8 +127,8 @@ Space roles map to actions: owner has read/create/update/delete/share, editor
 has read/create/update, and viewer has read. The first ACL version applies only
 to Entry and Asset. A policy inherits the Space role by default and adds
 explicit grants. Setting `inherit_space_role` to false creates a private
-allow-list without introducing deny rules. Entry-linked Assets inherit the
-Entry policy.
+allow-list without introducing deny rules. Entry-linked Assets inherit the Entry
+policy.
 
 The shared Rust Authorizer is called by REST, CLI, MCP, search, structured
 query, and SQL sessions. SQL receives the authorized Entry ID set before tables,

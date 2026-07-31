@@ -12,5 +12,5 @@ limited to the agent grant. A delegated token additionally records the human
 principal and intersects both permission sets.
 
 Revoke the agent to disable all of its credentials. Agent creation, delegation,
-use and revocation are attributed in the Space audit chain. Agents cannot
-manage membership, ownership, or agents, and cannot receive `delete` or `share`.
+use and revocation are attributed in the Space audit chain. Agents cannot manage
+membership, ownership, or agents, and cannot receive `delete` or `share`.

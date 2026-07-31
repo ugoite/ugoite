@@ -5,7 +5,7 @@ import {
 } from "./support/docsite-server.ts";
 
 const docPath = "/docs/spec/";
-const editLinkDocPath = "/docs/guide/cli/";
+const editLinkDocPath = "/docs/guide/automate/cli/";
 const homepagePath = "/";
 
 let docsiteServer: DocsiteServer | undefined;
@@ -65,25 +65,32 @@ test.describe("Docsite navigation layout", () => {
     await expect(page.locator(".right-sidebar-container")).toBeVisible();
     await expectSidebarToContainLinks(page, { expectSpecificationLink: true });
 
-    await page.goto(buildDocsiteUrl(editLinkDocPath), { waitUntil: "networkidle" });
+    await page.goto(buildDocsiteUrl(editLinkDocPath), {
+      waitUntil: "networkidle",
+    });
     await expect(
       page.getByRole("link", { name: "Edit page" }),
     ).toHaveAttribute(
       "href",
-      "https://github.com/ugoite/ugoite/edit/main/docs/guide/cli.md",
+      "https://github.com/ugoite/ugoite/edit/main/docs/guide/automate/cli.md",
     );
   });
 
   test("REQ-E2E-005: the homepage keeps the hero and Starlight navigation", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(buildDocsiteUrl(homepagePath), { waitUntil: "networkidle" });
+    await page.goto(buildDocsiteUrl(homepagePath), {
+      waitUntil: "networkidle",
+    });
 
-    await expect(page.getByText("A private, portable knowledge space")).toBeVisible();
+    await expect(page.getByText("A private, portable knowledge space"))
+      .toBeVisible();
     await page.getByRole("button", { name: "Menu" }).click();
     await expectSidebarToContainLinks(page, { expectSpecificationLink: false });
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(buildDocsiteUrl(homepagePath), { waitUntil: "networkidle" });
+    await page.goto(buildDocsiteUrl(homepagePath), {
+      waitUntil: "networkidle",
+    });
     await expect(page.locator("#starlight__sidebar")).toBeVisible();
     await expectSidebarToContainLinks(page, { expectSpecificationLink: false });
   });
@@ -102,21 +109,40 @@ async function expectSidebarToContainLinks(
 ): Promise<void> {
   const sidebar = page.locator("#starlight__sidebar");
 
-  await expect(sidebar.getByRole("link", { name: "CLI guide" })).toHaveAttribute(
-    "href",
-    /\/docs\/guide\/cli\/$/,
-  );
+  await openSidebarGroup(page, "Automate", "CLI guide");
+  await expect(sidebar.getByRole("link", { name: "CLI guide" }))
+    .toHaveAttribute(
+      "href",
+      /\/docs\/guide\/automate\/cli\/$/,
+    );
   await expect(
     sidebar.getByRole("link", { name: "Container quick start" }),
   ).toBeVisible();
+  await openSidebarGroup(page, "Architecture", "Architecture North Star");
+  await openSidebarGroup(page, "Principles", "Architecture North Star");
   await expect(
     sidebar.getByRole("link", { name: "Architecture North Star" }),
   ).toBeVisible();
   await expect(sidebar.getByText("Specification", { exact: true }).first())
     .toBeVisible();
   if (options.expectSpecificationLink) {
+    await openSidebarGroup(page, "Specification", "Ugoite specification index");
     await expect(
       sidebar.getByRole("link", { name: "Ugoite specification index" }),
     ).toBeVisible();
   }
+}
+
+async function openSidebarGroup(
+  page: Page,
+  label: string,
+  expectedLink: string,
+): Promise<void> {
+  const sidebar = page.locator("#starlight__sidebar");
+  const link = sidebar.getByRole("link", { name: expectedLink });
+  if (await link.isVisible()) {
+    return;
+  }
+  const summary = sidebar.locator("summary").filter({ hasText: label }).first();
+  await summary.click();
 }

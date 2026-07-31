@@ -5,10 +5,10 @@ hero:
   tagline: A private, portable knowledge space built around operator-owned files.
   actions:
     - text: Container quick start
-      link: docs/guide/container-quickstart/
+      link: docs/guide/start/container-quickstart/
       icon: right-arrow
     - text: Run from source
-      link: docs/guide/local-dev-auth-login/
+      link: docs/guide/develop/local-dev-auth-login/
       variant: minimal
     - text: View on GitHub
       link: https://github.com/ugoite/ugoite
@@ -25,12 +25,12 @@ that can be rebuilt.
 ## Choose a path
 
 - **Operate it:** start with the
-  [container quick start](guide/container-quickstart.md), then review
-  [operations](guide/operations.md).
+  [container quick start](guide/start/container-quickstart.md), then review
+  [operations](guide/operate/server/operations.md).
 - **Develop it:** follow the
-  [local development login guide](guide/local-dev-auth-login.md) and the
+  [local development login guide](guide/develop/local-dev-auth-login.md) and the
   [architecture overview](spec/architecture/overview.md).
-- **Automate it:** use the [CLI guide](guide/cli.md),
+- **Automate it:** use the [CLI guide](guide/automate/cli.md),
   [REST API](spec/api/rest.md), or current [MCP surface](spec/api/mcp.md).
 - **Verify it:** browse the [executable specification](spec/index.md), whose
   registries point back to implementation and tests.

@@ -42,8 +42,8 @@ ugoite auth logout
 ```
 
 `auth profile` reports metadata only. `auth logout` removes the local device
-credential. The browser credential page can revoke a device that is lost.
-Core mode does not need `auth login`.
+credential. The browser credential page can revoke a device that is lost. Core
+mode does not need `auth login`.
 
 ## Spaces and entries
 
@@ -58,9 +58,9 @@ ugoite entry list /path/to/workspace/spaces/team-notes
 ```
 
 An entry ID is a user-chosen storage-safe slug. It may contain ASCII letters,
-digits, `-`, and `_`, must be 1–128 bytes, and must not contain path
-separators, control characters, or `.`/`..` path segments. `first-note` is
-therefore an example ID, not a reserved name.
+digits, `-`, and `_`, must be 1–128 bytes, and must not contain path separators,
+control characters, or `.`/`..` path segments. `first-note` is therefore an
+example ID, not a reserved name.
 
 The smallest complete first-entry workflow is:
 
@@ -121,8 +121,7 @@ ugoite query /path/to/workspace/spaces/team-notes \
 
 Each Form is queryable through its lowercase name. Relations expose the Form
 fields plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
-`_ugoite_updated_at`; `entries`, `links`,
-and `assets` are not SQL relations.
+`_ugoite_updated_at`; `entries`, `links`, and `assets` are not SQL relations.
 
 ## Indexes and assets
 
