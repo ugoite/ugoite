@@ -151,7 +151,7 @@ pub struct NodeAuditInput<'a> {
     pub safe_metadata: serde_json::Value,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct AccountInvitation {
     pub invitation_id: Uuid,
     pub token_hash: String,
@@ -159,14 +159,73 @@ pub struct AccountInvitation {
     pub space_uid: Option<Uuid>,
     pub role: Option<String>,
     pub expires_at: String,
-    pub used_at: Option<String>,
     #[serde(default)]
-    pub accepted_account_id: Option<Uuid>,
-    #[serde(default)]
-    pub accepted_principal_id: Option<Uuid>,
-    #[serde(default)]
-    pub acceptance_kind: Option<InvitationAcceptanceKind>,
+    pub acceptance: Option<InvitationAcceptance>,
     pub created_by: Uuid,
+}
+
+impl<'de> Deserialize<'de> for AccountInvitation {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct AccountInvitationData {
+            invitation_id: Uuid,
+            token_hash: String,
+            display_name: String,
+            space_uid: Option<Uuid>,
+            role: Option<String>,
+            expires_at: String,
+            #[serde(default)]
+            acceptance: Option<InvitationAcceptance>,
+            #[serde(default)]
+            used_at: Option<String>,
+            #[serde(default)]
+            accepted_account_id: Option<Uuid>,
+            #[serde(default)]
+            accepted_principal_id: Option<Uuid>,
+            #[serde(default)]
+            acceptance_kind: Option<InvitationAcceptanceKind>,
+            created_by: Uuid,
+        }
+
+        let data = AccountInvitationData::deserialize(deserializer)?;
+        let acceptance = match data.acceptance {
+            Some(acceptance) => Some(acceptance),
+            None => match (
+                data.used_at,
+                data.accepted_account_id,
+                data.accepted_principal_id,
+                data.acceptance_kind,
+            ) {
+                (Some(claimed_at), Some(account_id), Some(principal_id), Some(kind)) => {
+                    Some(InvitationAcceptance::Pending {
+                        account_id,
+                        principal_id,
+                        kind,
+                        claimed_at,
+                    })
+                }
+                (None, None, None, None) => None,
+                _ => {
+                    return Err(serde::de::Error::custom(
+                        "invitation has an incomplete legacy acceptance claim",
+                    ));
+                }
+            },
+        };
+        Ok(Self {
+            invitation_id: data.invitation_id,
+            token_hash: data.token_hash,
+            display_name: data.display_name,
+            space_uid: data.space_uid,
+            role: data.role,
+            expires_at: data.expires_at,
+            acceptance,
+            created_by: data.created_by,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -175,6 +234,54 @@ pub enum InvitationAcceptanceKind {
     ExistingAccount,
     PasskeyRegistration,
     Oidc,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "state")]
+pub enum InvitationAcceptance {
+    Pending {
+        account_id: Uuid,
+        principal_id: Uuid,
+        kind: InvitationAcceptanceKind,
+        claimed_at: String,
+    },
+    Completed {
+        account_id: Uuid,
+        principal_id: Uuid,
+        kind: InvitationAcceptanceKind,
+        claimed_at: String,
+        completed_at: String,
+    },
+}
+
+impl InvitationAcceptance {
+    fn account_id(&self) -> Uuid {
+        match self {
+            Self::Pending { account_id, .. } | Self::Completed { account_id, .. } => *account_id,
+        }
+    }
+
+    fn principal_id(&self) -> Uuid {
+        match self {
+            Self::Pending { principal_id, .. } | Self::Completed { principal_id, .. } => {
+                *principal_id
+            }
+        }
+    }
+
+    fn kind(&self) -> &InvitationAcceptanceKind {
+        match self {
+            Self::Pending { kind, .. } | Self::Completed { kind, .. } => kind,
+        }
+    }
+}
+
+impl AccountInvitation {
+    pub fn accepted_principal_id(&self) -> Option<Uuid> {
+        self.acceptance
+            .as_ref()
+            .map(InvitationAcceptance::principal_id)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -809,16 +916,14 @@ impl NodeIdentityService {
             .find(|invitation| invitation.token_hash == token_hash(invitation_token))
             .cloned()
             .ok_or_else(|| anyhow!("invitation is invalid"))?;
-        if invitation.used_at.is_some() {
+        if let Some(acceptance) = invitation.acceptance.as_ref() {
             if matches!(
-                invitation.acceptance_kind,
-                Some(InvitationAcceptanceKind::PasskeyRegistration)
-            ) && invitation.accepted_account_id.is_some()
-                && invitation.accepted_principal_id.is_some()
-                && invitation
-                    .accepted_account_id
-                    .and_then(|account_id| state.accounts.get(&account_id))
-                    .is_some_and(|account| matches!(account.status, AccountStatus::Active))
+                acceptance.kind(),
+                InvitationAcceptanceKind::PasskeyRegistration
+            ) && state
+                .accounts
+                .get(&acceptance.account_id())
+                .is_some_and(|account| matches!(account.status, AccountStatus::Active))
             {
                 return Ok(InvitationRegistrationStart::Resume);
             }
@@ -881,7 +986,8 @@ impl NodeIdentityService {
             .get(&invitation_id)
             .cloned()
             .ok_or_else(|| anyhow!("invitation not found"))?;
-        if invitation.token_hash != token_hash(invitation_token) || invitation.used_at.is_some() {
+        if invitation.token_hash != token_hash(invitation_token) || invitation.acceptance.is_some()
+        {
             bail!("invitation is invalid or used");
         }
         validate_expiry(&invitation.expires_at, "invitation")?;
@@ -930,10 +1036,12 @@ impl NodeIdentityService {
             .invitations
             .get_mut(&invitation_id)
             .ok_or_else(|| anyhow!("invitation not found"))?;
-        invitation.used_at = Some(timestamp(Utc::now()));
-        invitation.accepted_account_id = Some(account.account_id);
-        invitation.accepted_principal_id = Some(Uuid::now_v7());
-        invitation.acceptance_kind = Some(InvitationAcceptanceKind::PasskeyRegistration);
+        invitation.acceptance = Some(InvitationAcceptance::Pending {
+            account_id: account.account_id,
+            principal_id: Uuid::now_v7(),
+            kind: InvitationAcceptanceKind::PasskeyRegistration,
+            claimed_at: timestamp(Utc::now()),
+        });
         let invitation = invitation.clone();
         state.registration_challenges.remove(&challenge_id);
         let session_id = self
@@ -945,61 +1053,6 @@ impl NodeIdentityService {
             )
             .await?;
         self.write_state(&state).await?;
-        Ok(InvitationRegistrationFinish {
-            account,
-            session_id,
-            invitation,
-        })
-    }
-
-    pub async fn resume_invitation_registration(
-        &self,
-        invitation_token: &str,
-    ) -> Result<InvitationRegistrationFinish> {
-        let _guard = self.state_lock.lock().await;
-        let state = self.read_state().await?;
-        let invitation = state
-            .invitations
-            .values()
-            .find(|invitation| invitation.token_hash == token_hash(invitation_token))
-            .cloned()
-            .ok_or_else(|| anyhow!("invitation is invalid"))?;
-        if !matches!(
-            invitation.acceptance_kind,
-            Some(InvitationAcceptanceKind::PasskeyRegistration)
-        ) || invitation.used_at.is_none()
-        {
-            bail!("invitation registration cannot be resumed");
-        }
-        let account_id = invitation
-            .accepted_account_id
-            .ok_or_else(|| anyhow!("invitation registration claim is incomplete"))?;
-        let account = state
-            .accounts
-            .get(&account_id)
-            .filter(|account| matches!(account.status, AccountStatus::Active))
-            .cloned()
-            .ok_or_else(|| anyhow!("invitation registration claim is incomplete"))?;
-        let method_id = state
-            .authentication_methods
-            .values()
-            .find(|method| {
-                method.account_id == account_id
-                    && matches!(method.kind, AuthenticationMethodKind::Passkey)
-                    && state.passkeys.values().any(|passkey| {
-                        passkey.account_id == account_id && passkey.method_id == method.method_id
-                    })
-            })
-            .map(|method| method.method_id)
-            .ok_or_else(|| anyhow!("invitation registration claim is incomplete"))?;
-        let session_id = self
-            .create_session(
-                &state,
-                account_id,
-                method_id,
-                AssuranceLevel::PhishingResistant,
-            )
-            .await?;
         Ok(InvitationRegistrationFinish {
             account,
             session_id,
@@ -1680,10 +1733,7 @@ impl NodeIdentityService {
             space_uid,
             role,
             expires_at: timestamp(Utc::now() + Duration::hours(INVITATION_LIFETIME_HOURS)),
-            used_at: None,
-            accepted_account_id: None,
-            accepted_principal_id: None,
-            acceptance_kind: None,
+            acceptance: None,
             created_by: actor,
         };
         state.invitations.insert(invitation_id, invitation.clone());
@@ -1724,21 +1774,20 @@ impl NodeIdentityService {
                 .invitations
                 .get_mut(&invitation_id)
                 .ok_or_else(|| anyhow!("invitation is invalid"))?;
-            if invitation.used_at.is_some() {
-                if invitation.accepted_account_id == Some(account_id)
-                    && invitation.accepted_principal_id.is_some()
-                {
+            if let Some(acceptance) = invitation.acceptance.as_ref() {
+                if acceptance.account_id() == account_id {
                     invitation.clone()
                 } else {
                     bail!("invitation is invalid");
                 }
             } else {
                 validate_expiry(&invitation.expires_at, "invitation")?;
-                invitation.used_at = Some(timestamp(Utc::now()));
-                invitation.accepted_account_id = Some(account_id);
-                invitation.accepted_principal_id =
-                    Some(existing_principal_id.unwrap_or_else(Uuid::now_v7));
-                invitation.acceptance_kind = Some(InvitationAcceptanceKind::ExistingAccount);
+                invitation.acceptance = Some(InvitationAcceptance::Pending {
+                    account_id,
+                    principal_id: existing_principal_id.unwrap_or_else(Uuid::now_v7),
+                    kind: InvitationAcceptanceKind::ExistingAccount,
+                    claimed_at: timestamp(Utc::now()),
+                });
                 write_state = true;
                 invitation.clone()
             }
@@ -1764,6 +1813,54 @@ impl NodeIdentityService {
         }
         state.bindings.push(binding);
         self.write_state(&state).await
+    }
+
+    pub async fn complete_invitation_acceptance(
+        &self,
+        invitation_id: Uuid,
+        account_id: Uuid,
+        principal_id: Uuid,
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let invitation = state
+            .invitations
+            .get_mut(&invitation_id)
+            .ok_or_else(|| anyhow!("invitation is invalid"))?;
+        let acceptance = invitation
+            .acceptance
+            .take()
+            .ok_or_else(|| anyhow!("invitation acceptance is incomplete"))?;
+        let (acceptance, changed) = match acceptance {
+            InvitationAcceptance::Pending {
+                account_id: claimed_account_id,
+                principal_id: claimed_principal_id,
+                kind,
+                claimed_at,
+            } if claimed_account_id == account_id && claimed_principal_id == principal_id => (
+                InvitationAcceptance::Completed {
+                    account_id,
+                    principal_id,
+                    kind,
+                    claimed_at,
+                    completed_at: timestamp(Utc::now()),
+                },
+                true,
+            ),
+            completed @ InvitationAcceptance::Completed {
+                account_id: claimed_account_id,
+                principal_id: claimed_principal_id,
+                ..
+            } if claimed_account_id == account_id && claimed_principal_id == principal_id => {
+                (completed, false)
+            }
+            _ => bail!("invitation acceptance does not match finalization"),
+        };
+        invitation.acceptance = Some(acceptance);
+        if changed {
+            self.write_state(&state).await?;
+        }
+        Ok(())
     }
 
     pub async fn binding_for_account(
@@ -2517,22 +2614,20 @@ impl NodeIdentityService {
                     .values_mut()
                     .find(|invitation| invitation.token_hash == invitation_hash)
                     .ok_or_else(|| anyhow!("invitation is invalid"))?;
-                if invitation.used_at.is_some() {
-                    if invitation.accepted_account_id != Some(account_id)
-                        || !matches!(
-                            invitation.acceptance_kind,
-                            Some(InvitationAcceptanceKind::Oidc)
-                        )
+                if let Some(acceptance) = invitation.acceptance.as_ref() {
+                    if acceptance.account_id() != account_id
+                        || !matches!(acceptance.kind(), InvitationAcceptanceKind::Oidc)
                     {
                         bail!("invitation is invalid");
                     }
                 } else {
                     validate_expiry(&invitation.expires_at, "invitation")?;
-                    invitation.used_at = Some(timestamp(Utc::now()));
-                    invitation.accepted_account_id = Some(account_id);
-                    invitation.accepted_principal_id =
-                        Some(existing_principal_id.unwrap_or_else(Uuid::now_v7));
-                    invitation.acceptance_kind = Some(InvitationAcceptanceKind::Oidc);
+                    invitation.acceptance = Some(InvitationAcceptance::Pending {
+                        account_id,
+                        principal_id: existing_principal_id.unwrap_or_else(Uuid::now_v7),
+                        kind: InvitationAcceptanceKind::Oidc,
+                        claimed_at: timestamp(Utc::now()),
+                    });
                 }
                 Some(invitation.clone())
             } else {
@@ -2548,7 +2643,7 @@ impl NodeIdentityService {
                 .find(|invitation| invitation.token_hash == invitation_hash)
                 .ok_or_else(|| anyhow!("invitation is invalid"))?;
             validate_expiry(&invitation.expires_at, "invitation")?;
-            if invitation.used_at.is_some() {
+            if invitation.acceptance.is_some() {
                 bail!("invitation was already used");
             }
             let account = HumanAccount {
@@ -2562,10 +2657,12 @@ impl NodeIdentityService {
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
             };
-            invitation.used_at = Some(timestamp(Utc::now()));
-            invitation.accepted_account_id = Some(account.account_id);
-            invitation.accepted_principal_id = Some(Uuid::now_v7());
-            invitation.acceptance_kind = Some(InvitationAcceptanceKind::Oidc);
+            invitation.acceptance = Some(InvitationAcceptance::Pending {
+                account_id: account.account_id,
+                principal_id: Uuid::now_v7(),
+                kind: InvitationAcceptanceKind::Oidc,
+                claimed_at: timestamp(Utc::now()),
+            });
             let invitation_copy = invitation.clone();
             state.accounts.insert(account.account_id, account.clone());
             (account, Some(invitation_copy))
@@ -3210,11 +3307,21 @@ mod tests {
         let (_, first) = service
             .accept_invitation_for_account(&token, account_id)
             .await?;
+        service
+            .complete_invitation_acceptance(
+                first.invitation_id,
+                account_id,
+                first.accepted_principal_id().expect("accepted principal"),
+            )
+            .await?;
         let (_, retry) = service
             .accept_invitation_for_account(&token, account_id)
             .await?;
-        assert_eq!(first.accepted_principal_id, retry.accepted_principal_id);
-        assert!(first.used_at.is_some());
+        assert_eq!(first.accepted_principal_id(), retry.accepted_principal_id());
+        assert!(matches!(
+            retry.acceptance,
+            Some(InvitationAcceptance::Completed { .. })
+        ));
         Ok(())
     }
 
@@ -3256,13 +3363,19 @@ mod tests {
         let (_, invitation) = service
             .accept_invitation_for_account(&token, account_id)
             .await?;
-        assert_eq!(invitation.accepted_account_id, Some(account_id));
-        assert_eq!(invitation.accepted_principal_id, Some(principal_id));
+        assert_eq!(invitation.accepted_principal_id(), Some(principal_id));
+        assert!(matches!(
+            invitation.acceptance,
+            Some(InvitationAcceptance::Pending {
+                account_id: claimed_account_id,
+                ..
+            }) if claimed_account_id == account_id
+        ));
 
         let (_, retry) = service
             .accept_invitation_for_account(&token, account_id)
             .await?;
-        assert_eq!(retry.accepted_principal_id, Some(principal_id));
+        assert_eq!(retry.accepted_principal_id(), Some(principal_id));
         assert_eq!(
             service
                 .read_state()
@@ -3324,26 +3437,23 @@ mod tests {
         let (_, first) = service
             .accept_invitation_for_account(&token, account_id)
             .await?;
-        let claimed_principal = first.accepted_principal_id;
+        let claimed_principal = first.accepted_principal_id();
         assert!(service
             .accept_invitation_for_account(&token, other_account_id)
             .await
             .is_err());
-        let replacement_principal = Uuid::now_v7();
         let mut state = service.read_state().await?;
         let invitation = state
             .invitations
             .get_mut(&first.invitation_id)
             .expect("issued invitation");
         invitation.expires_at = "2000-01-01T00:00:00.000Z".to_string();
-        invitation.accepted_principal_id = Some(replacement_principal);
         service.write_state(&state).await?;
 
         let (_, retry) = service
             .accept_invitation_for_account(&token, account_id)
             .await?;
-        assert_eq!(retry.accepted_principal_id, Some(replacement_principal));
-        assert_ne!(retry.accepted_principal_id, claimed_principal);
+        assert_eq!(retry.accepted_principal_id(), claimed_principal);
         Ok(())
     }
 

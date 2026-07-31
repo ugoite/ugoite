@@ -879,6 +879,17 @@ async fn auth_invitation_finish(
         BindingMethod::Invite,
     )
     .await?;
+    state
+        .identity
+        .complete_invitation_acceptance(
+            result.invitation.invitation_id,
+            result.account.account_id,
+            result.invitation.accepted_principal_id().ok_or_else(|| {
+                ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+            })?,
+        )
+        .await
+        .map_err(auth_error)?;
     Ok((
         StatusCode::CREATED,
         [(
@@ -901,12 +912,23 @@ async fn auth_invitation_accept_existing(
         .await
         .map_err(auth_error)?;
     bind_invited_account(&state, &account, &invitation, BindingMethod::Invite).await?;
+    state
+        .identity
+        .complete_invitation_acceptance(
+            invitation.invitation_id,
+            account.account_id,
+            invitation.accepted_principal_id().ok_or_else(|| {
+                ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+            })?,
+        )
+        .await
+        .map_err(auth_error)?;
     Ok((
         StatusCode::CREATED,
         Json(json!({
             "account": account,
             "space_uid": invitation.space_uid,
-            "principal_id": invitation.accepted_principal_id,
+            "principal_id": invitation.accepted_principal_id(),
         })),
     ))
 }
@@ -1584,6 +1606,17 @@ async fn oidc_callback(
         .map_err(auth_error)?;
     if let Some(invitation) = invitation {
         bind_invited_account(&state, &account, &invitation, BindingMethod::Oidc).await?;
+        state
+            .identity
+            .complete_invitation_acceptance(
+                invitation.invitation_id,
+                account.account_id,
+                invitation.accepted_principal_id().ok_or_else(|| {
+                    ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+                })?,
+            )
+            .await
+            .map_err(auth_error)?;
     }
     state
         .identity
@@ -1661,21 +1694,47 @@ async fn bind_invited_account(
         return Ok(());
     };
     let space_id = find_space_id_by_uid(state, space_uid).await?;
-    let inviter = state
-        .identity
-        .principal_for_account(space_uid, invitation.created_by)
-        .await
-        .map_err(auth_error)?;
-    let principal_id = invitation.accepted_principal_id.ok_or_else(|| {
+    let principal_id = invitation.accepted_principal_id().ok_or_else(|| {
         ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
     })?;
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let authorization = authorizer
+        .state(&space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let active_space_member =
+        authorization
+            .principals
+            .get(&principal_id)
+            .is_some_and(|principal| {
+                matches!(principal.kind, PrincipalKind::Human)
+                    && matches!(principal.state, PrincipalState::Active)
+                    && authorization.memberships.contains_key(&principal_id)
+            });
+    let principal_has_conflicting_space_state = authorization
+        .principals
+        .get(&principal_id)
+        .is_some_and(|principal| {
+            !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
+        });
     match state
         .identity
         .binding_for_account(space_uid, account.account_id)
         .await
         .map_err(auth_error)?
     {
-        Some(existing_principal_id) if existing_principal_id == principal_id => return Ok(()),
+        Some(existing_principal_id) if existing_principal_id == principal_id => {
+            if active_space_member {
+                return Ok(());
+            }
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "SPACE_MEMBERSHIP_CONFLICT",
+                    "message": "Node binding exists but the Space has no active membership for this principal",
+                }),
+            ));
+        }
         Some(_) => {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
@@ -1687,21 +1746,37 @@ async fn bind_invited_account(
         }
         None => {}
     }
-    Authorizer::new(state.service.operator().clone())
-        .add_human_member(
-            &space_id,
-            inviter,
-            SpacePrincipal {
-                principal_id,
-                kind: PrincipalKind::Human,
-                display_name: account.display_name.clone(),
-                state: PrincipalState::Active,
-                created_at: chrono::Utc::now().to_rfc3339(),
-            },
-            parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
-        )
-        .await
-        .map_err(ApiError::from_core)?;
+    if principal_has_conflicting_space_state {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            json!({
+                "code": "SPACE_MEMBERSHIP_CONFLICT",
+                "message": "Space authorization state conflicts with the invitation principal",
+            }),
+        ));
+    }
+    if !active_space_member {
+        let inviter = state
+            .identity
+            .principal_for_account(space_uid, invitation.created_by)
+            .await
+            .map_err(auth_error)?;
+        authorizer
+            .add_human_member(
+                &space_id,
+                inviter,
+                SpacePrincipal {
+                    principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: account.display_name.clone(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
+            )
+            .await
+            .map_err(ApiError::from_core)?;
+    }
     state
         .identity
         .add_binding(ugoite_domain::identity::PrincipalBinding {

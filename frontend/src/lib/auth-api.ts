@@ -222,10 +222,8 @@ export const authApi = {
       },
     );
     if (challenge.status === "resume") {
-      await request("/auth/invitations/finish", {
-        method: "POST",
-        body: JSON.stringify({ invitation_token: invitationToken, resume: true }),
-      });
+      await authApi.loginWithPasskey();
+      await authApi.acceptInvitation(invitationToken);
       return;
     }
     const credential = await createPasskey(challenge);

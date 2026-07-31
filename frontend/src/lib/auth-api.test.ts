@@ -1,26 +1,27 @@
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { server } from "~/test/mocks/server";
 import { testApiUrl } from "~/test/http-origin";
 import { authApi } from "./auth-api";
 
 describe("invitation registration finalization", () => {
-  it("resumes a durable Passkey claim without creating another credential", async () => {
-    let finishBody: Record<string, unknown> | undefined;
+  it("re-authenticates with Passkey before accepting a durable claim", async () => {
     server.use(
       http.post(testApiUrl("/auth/invitations/start"), () =>
         HttpResponse.json({ status: "resume" })),
-      http.post(testApiUrl("/auth/invitations/finish"), async ({ request }) => {
-        finishBody = await request.json() as Record<string, unknown>;
-        return HttpResponse.json({ account: {} });
-      }),
     );
 
-    await authApi.registerInvitation("invitation-token");
-
-    expect(finishBody).toEqual({
-      invitation_token: "invitation-token",
-      resume: true,
-    });
+    const loginWithPasskey = vi.spyOn(authApi, "loginWithPasskey")
+      .mockResolvedValue();
+    const acceptInvitation = vi.spyOn(authApi, "acceptInvitation")
+      .mockResolvedValue();
+    try {
+      await authApi.registerInvitation("invitation-token");
+      expect(loginWithPasskey).toHaveBeenCalledOnce();
+      expect(acceptInvitation).toHaveBeenCalledWith("invitation-token");
+    } finally {
+      loginWithPasskey.mockRestore();
+      acceptInvitation.mockRestore();
+    }
   });
 });
