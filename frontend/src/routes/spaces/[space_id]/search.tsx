@@ -3,6 +3,7 @@ import { createMemo, createSignal, For, Index, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
+import { entryApi } from "~/lib/ugoite-client";
 import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
@@ -22,7 +23,6 @@ type FieldCondition = {
 
 type AdvancedSearchCriteria = {
   formName: string;
-  tags: string[];
   updatedFrom: string;
   updatedTo: string;
   fieldConditions: Array<{
@@ -67,15 +67,10 @@ function coerceSearchResult(
   };
 }
 
-function buildKeywordMetadataSql(entryIds: string[]): string {
-  const ids = entryIds.map(escapeSqlLiteral).join(", ");
-  return `SELECT * FROM entries WHERE id IN (${ids}) LIMIT ${entryIds.length}`;
-}
-
-function dateInputToUnixSeconds(
+function dateInputToSqlTimestamp(
   value: string,
   boundary: "start" | "end",
-): number | null {
+): string | null {
   if (!value) return null;
   const [yearText, monthText, dayText] = value.split("-");
   const year = Number(yearText);
@@ -92,10 +87,8 @@ function dateInputToUnixSeconds(
   ) {
     return null;
   }
-  const millis = boundary === "start"
-    ? startOfDay.getTime()
-    : startOfDay.getTime() + 86_400_000 - 1;
-  return Math.floor(millis / 1000);
+  const time = boundary === "start" ? "00:00:00.000" : "23:59:59.999";
+  return `TIMESTAMP '${yearText}-${monthText}-${dayText} ${time}Z'`;
 }
 
 async function enrichKeywordResults(
@@ -113,52 +106,35 @@ async function enrichKeywordResults(
     return results;
   }
 
-  const session = await sqlSessionApi.create(
-    spaceId,
-    buildKeywordMetadataSql(idsNeedingEnrichment),
-  );
-  if (session.status === "failed") {
-    throw new Error(
-      session.error || "Failed to enrich keyword search results.",
-    );
-  }
-  const metadata = await sqlSessionApi.rows(
-    spaceId,
-    session.id,
-    0,
-    idsNeedingEnrichment.length,
-  );
-  const metadataById = new Map(
-    metadata.rows.map((entry) => [entry.id, entry] as const),
-  );
+  // Keyword search returns stable Entry IDs. Resolve display metadata through
+  // the Entry index rather than manufacturing a cross-Form SQL session: SQL
+  // sessions intentionally expose one Form and require a total order.
+  const entries = await entryApi.list(spaceId);
+  const metadataById = new Map(entries.map((entry) => [entry.id, entry] as const));
   return results.map((result) =>
     coerceSearchResult(result, metadataById.get(result.id))
   );
 }
 
 function buildAdvancedSearchSql(criteria: AdvancedSearchCriteria): string {
+  if (!criteria.formName) {
+    return "";
+  }
+
   const conditions: string[] = [];
 
-  if (criteria.formName) {
-    conditions.push(`form = ${escapeSqlLiteral(criteria.formName)}`);
+  const updatedFrom = dateInputToSqlTimestamp(criteria.updatedFrom, "start");
+  if (updatedFrom) {
+    conditions.push(`_ugoite_updated_at >= ${updatedFrom}`);
   }
 
-  for (const tag of criteria.tags) {
-    conditions.push(`tags = ${escapeSqlLiteral(tag)}`);
-  }
-
-  const updatedFrom = dateInputToUnixSeconds(criteria.updatedFrom, "start");
-  if (updatedFrom !== null) {
-    conditions.push(`updated_at >= ${updatedFrom}`);
-  }
-
-  const updatedTo = dateInputToUnixSeconds(criteria.updatedTo, "end");
-  if (updatedTo !== null) {
-    conditions.push(`updated_at <= ${updatedTo}`);
+  const updatedTo = dateInputToSqlTimestamp(criteria.updatedTo, "end");
+  if (updatedTo) {
+    conditions.push(`_ugoite_updated_at <= ${updatedTo}`);
   }
 
   for (const condition of criteria.fieldConditions) {
-    const fieldPath = `properties.${quoteSqlIdentifier(condition.field)}`;
+    const fieldPath = quoteSqlIdentifier(condition.field.toLowerCase());
     if (condition.operator === "contains") {
       conditions.push(
         `${fieldPath} ILIKE ${escapeSqlLiteral(`%${condition.value}%`)}`,
@@ -168,13 +144,10 @@ function buildAdvancedSearchSql(criteria: AdvancedSearchCriteria): string {
     conditions.push(`${fieldPath} = ${escapeSqlLiteral(condition.value)}`);
   }
 
-  if (conditions.length === 0) {
-    return "";
-  }
-
-  return `SELECT * FROM entries WHERE ${
-    conditions.join(" AND ")
-  } ORDER BY updated_at DESC LIMIT ${ADVANCED_SEARCH_LIMIT}`;
+  const where = conditions.length > 0
+    ? ` WHERE ${conditions.join(" AND ")}`
+    : "";
+  return `SELECT * FROM ${quoteSqlIdentifier(criteria.formName.toLowerCase())}${where} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT ${ADVANCED_SEARCH_LIMIT}`;
 }
 
 function buildSearchHistoryName(criteria: AdvancedSearchCriteria): string {
@@ -182,10 +155,6 @@ function buildSearchHistoryName(criteria: AdvancedSearchCriteria): string {
 
   if (criteria.formName) {
     parts.push(`form: ${criteria.formName}`);
-  }
-
-  for (const tag of criteria.tags) {
-    parts.push(`tag: ${tag}`);
   }
 
   if (criteria.updatedFrom) {
@@ -239,7 +208,6 @@ export default function SpaceSearchRoute() {
     null,
   );
   const [advancedFormName, setAdvancedFormName] = createSignal("");
-  const [advancedTagsInput, setAdvancedTagsInput] = createSignal("");
   const [advancedUpdatedFrom, setAdvancedUpdatedFrom] = createSignal("");
   const [advancedUpdatedTo, setAdvancedUpdatedTo] = createSignal("");
   const [fieldConditions, setFieldConditions] = createSignal<FieldCondition[]>([
@@ -282,10 +250,6 @@ export default function SpaceSearchRoute() {
 
   const advancedCriteria = createMemo<AdvancedSearchCriteria>(() => ({
     formName: advancedFormName().trim(),
-    tags: advancedTagsInput()
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean),
     updatedFrom: advancedUpdatedFrom().trim(),
     updatedTo: advancedUpdatedTo().trim(),
     fieldConditions: fieldConditions()
@@ -382,7 +346,7 @@ export default function SpaceSearchRoute() {
     const sql = buildAdvancedSearchSql(criteria);
     if (!sql) {
       setActionError(
-        "Add at least one structured filter before running an advanced search.",
+        "Choose a Form before running an advanced search.",
       );
       return;
     }
@@ -522,27 +486,13 @@ export default function SpaceSearchRoute() {
                     onChange={(event) =>
                       setAdvancedFormName(event.currentTarget.value)}
                   >
-                    <option value="">Any form</option>
+                    <option value="">Choose a Form</option>
                     <For each={availableForms()}>
                       {(entryForm) => (
                         <option value={entryForm.name}>{entryForm.name}</option>
                       )}
                     </For>
                   </select>
-                </div>
-                <div>
-                  <label class="ui-label" for="advanced-tags">
-                    Tags (comma-separated)
-                  </label>
-                  <input
-                    id="advanced-tags"
-                    type="text"
-                    class="ui-input mt-2 w-full"
-                    placeholder="project, weekly-review"
-                    value={advancedTagsInput()}
-                    onInput={(event) =>
-                      setAdvancedTagsInput(event.currentTarget.value)}
-                  />
                 </div>
                 <div>
                   <label class="ui-label" for="advanced-updated-from">

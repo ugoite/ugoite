@@ -1,5 +1,5 @@
 version: "0.1"
-updated: "2026-03-12"
+updated: "2026-07-31"
 page:
   id: space-search
   title: Entry Search
@@ -54,10 +54,12 @@ components:
       type: structured-search-form
       fields:
         - form
-        - tags
         - updated_from
         - updated_to
         - field_conditions[]
+      form_selection:
+        required: true
+        reason: SQL sessions are scoped to one Form and expose only Form fields plus reserved system columns.
       field_conditions:
         item_fields:
           - field
