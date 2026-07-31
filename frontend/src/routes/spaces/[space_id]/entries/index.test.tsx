@@ -85,7 +85,6 @@ describe("/spaces/:space_id/entries", () => {
               updated_at: 1772960822.056,
               properties: {},
               tags: [],
-              links: [],
             }],
             offset: 0,
             limit: 24,

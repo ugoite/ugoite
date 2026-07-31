@@ -60,7 +60,6 @@ describe("sqlSessionApi", () => {
                 updated_at: 1772960822.056,
                 properties: {},
                 tags: [],
-                links: [],
               },
             ],
             offset: 0,

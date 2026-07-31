@@ -323,10 +323,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/sql/{sql_id}",
             get(get_sql).put(update_sql).delete(delete_sql),
         )
-        .route(
-            "/spaces/{space_id}/assets",
-            get(list_assets).post(upload_asset),
-        )
+        .route("/spaces/{space_id}/assets", post(upload_asset))
         .route(
             "/spaces/{space_id}/assets/{asset_id}",
             get(get_asset).delete(delete_asset),
@@ -3657,7 +3654,6 @@ async fn get_entry(
 struct EntryUpdate {
     markdown: String,
     parent_revision_id: Option<String>,
-    assets: Option<Vec<Value>>,
 }
 
 async fn update_entry(
@@ -3684,7 +3680,6 @@ async fn update_entry(
             &payload.markdown,
             payload.parent_revision_id.as_deref(),
             &principal_id.to_string(),
-            payload.assets,
         )
         .await
         .map_err(ApiError::from_core)?;
@@ -4117,40 +4112,6 @@ async fn delete_sql(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn list_assets(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    let values = serde_json::to_value(
-        state
-            .service
-            .list_assets(&space_id)
-            .await
-            .map_err(ApiError::from_core)?,
-    )
-    .map_err(|error| ApiError::from_core(error.into()))?
-    .as_array()
-    .cloned()
-    .unwrap_or_default();
-    Ok(Json(Value::Array(
-        state
-            .service
-            .filter_json_resources_authorized_for_principals(
-                &space_id,
-                &principals,
-                ResourceKind::Asset,
-                "id",
-                values,
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    )))
-}
-
 async fn upload_asset(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -4164,13 +4125,17 @@ async fn upload_asset(
         .map_err(|error| ApiError::new(StatusCode::BAD_REQUEST, error.to_string()))?
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "file is required"))?;
     let name = field.file_name().unwrap_or("asset").to_string();
+    let media_type = field
+        .content_type()
+        .unwrap_or("application/octet-stream")
+        .to_string();
     let bytes = field
         .bytes()
         .await
         .map_err(|error| ApiError::new(StatusCode::BAD_REQUEST, error.to_string()))?;
     let value = state
         .service
-        .save_asset(&space_id, &name, &bytes)
+        .save_asset_with_media_type(&space_id, &name, &bytes, &media_type)
         .await
         .map_err(ApiError::from_core)?;
     Ok((

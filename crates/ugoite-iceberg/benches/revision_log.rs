@@ -22,6 +22,7 @@ fn fixture(entry_count: usize, revisions_per_entry: usize) -> (FormDefinition, V
             description: None,
             semantic_role: None,
             reference_form: None,
+            list_item: None,
             validation: None,
             enum_values: Vec::new(),
             deprecated: false,

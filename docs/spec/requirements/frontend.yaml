@@ -350,7 +350,6 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: frontend/src/components/AssetUploader.test.tsx
   - file: frontend/src/components/ListPanel.test.tsx
   - file: frontend/src/components/SearchBar.test.tsx
   - file: frontend/src/themes/registry.test.ts
@@ -599,33 +598,6 @@ requirements:
   verification: traced
   tests:
   - file: frontend/src/components/SearchBar.test.tsx
-- set_id: REQCAT-FRONTEND
-  source_file: requirements/frontend.yaml
-  scope: Frontend route, component, and interaction requirements.
-  linked_policies:
-  - POL-006
-  - POL-009
-  - POL-013
-  - POL-014
-  linked_specifications:
-  - SPEC-UI-OVERVIEW
-  - SPEC-UI-PAGES
-  - SPEC-ARCH-INTERFACE
-  id: REQ-FE-015
-  title: Asset Upload UI
-  description: 'Editor MUST provide file upload capability with drag-drop support and
-
-    display attached files with type icons.
-
-    '
-  related_spec:
-  - stories/advanced.yaml#STORY-006
-  - api/rest.md#endpoints
-  priority: medium
-  status: implemented
-  verification: traced
-  tests:
-  - file: frontend/src/components/AssetUploader.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -952,7 +924,6 @@ requirements:
   verification: traced
   tests:
   - file: frontend/src/components/SpaceShell.test.tsx
-  - file: frontend/src/lib/asset-store.test.ts
   - file: frontend/src/spec/ui-pages.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml

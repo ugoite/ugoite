@@ -156,7 +156,7 @@ requirements:
   title: Space-Scoped Entry and Asset Authorization
   description: Space roles and grant-only inheritable ACLs MUST protect Entries and Assets. Private policies disable
     role inheritance and grant only named principals. Filtering MUST occur before search, SQL, aggregation, history,
-    Asset access, link-option generation, and MCP results are produced.
+    Asset access, reference resolution, and MCP results are produced.
   related_spec:
   - data-model/overview.md#forms-and-entries
   - api/rest.md#endpoints

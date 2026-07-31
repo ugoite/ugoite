@@ -1,4 +1,4 @@
-import type { Asset } from "./types";
+import type { AssetReference } from "./types";
 import { protocolFetch } from "./ugoite-client/protocol";
 
 /** Asset API client backed by the shared Rust/WASM protocol. */
@@ -7,19 +7,15 @@ export const assetApi = {
     spaceId: string,
     file: File | Blob,
     filename?: string,
-  ): Promise<Asset> {
+  ): Promise<AssetReference> {
     const formData = new FormData();
     formData.append("file", file, filename);
-    return await protocolFetch<Asset>(
+    return await protocolFetch<AssetReference>(
       "asset.upload",
       { space_id: spaceId },
       undefined,
       { body: formData },
     );
-  },
-
-  async list(spaceId: string): Promise<Asset[]> {
-    return await protocolFetch<Asset[]>("asset.list", { space_id: spaceId });
   },
 
   async delete(

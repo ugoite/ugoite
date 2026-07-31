@@ -45,6 +45,7 @@ pub enum FieldType {
     List,
     ObjectList,
     RowReference,
+    AssetReference,
 }
 
 impl FieldType {
@@ -72,12 +73,29 @@ pub struct FormField {
     pub semantic_role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_form: Option<FormId>,
+    /// Item schema for a typed `list` field. Keeping this separate from
+    /// `FieldType::List` preserves the existing JSON shape while making the
+    /// item type part of the persisted Form definition.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "items")]
+    pub list_item: Option<ListItemDefinition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub validation: Option<Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enum_values: Vec<String>,
     #[serde(default)]
     pub deprecated: bool,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ListItemDefinition {
+    #[serde(rename = "type")]
+    pub field_type: FieldType,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "target_form"
+    )]
+    pub reference_form: Option<FormId>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -113,6 +131,36 @@ impl FormDefinition {
             }
             if !names.insert(field.name.as_str()) {
                 return Err(DomainError::DuplicateFieldName(field.name.clone()));
+            }
+            match field.field_type {
+                FieldType::RowReference if field.reference_form.is_none() => {
+                    return Err(DomainError::ReferenceTargetMissing(field.id));
+                }
+                FieldType::RowReference => {}
+                FieldType::List if field.list_item.is_none() => {}
+                FieldType::List => {
+                    let item = field.list_item.as_ref().expect("checked above");
+                    if matches!(item.field_type, FieldType::List | FieldType::ObjectList) {
+                        return Err(DomainError::InvalidListItemType(field.id));
+                    }
+                    if matches!(item.field_type, FieldType::RowReference)
+                        && item.reference_form.is_none()
+                    {
+                        return Err(DomainError::ReferenceTargetMissing(field.id));
+                    }
+                    if !matches!(item.field_type, FieldType::RowReference)
+                        && item.reference_form.is_some()
+                    {
+                        return Err(DomainError::InvalidReferenceTarget(field.id));
+                    }
+                }
+                _ if field.list_item.is_some() => {
+                    return Err(DomainError::InvalidListItemType(field.id));
+                }
+                _ if field.reference_form.is_some() => {
+                    return Err(DomainError::InvalidReferenceTarget(field.id));
+                }
+                _ => {}
             }
         }
         Ok(())
@@ -151,6 +199,8 @@ impl FormDefinition {
                     label,
                     description,
                     semantic_role,
+                    reference_form,
+                    list_item,
                     validation,
                     enum_values,
                 } => {
@@ -158,6 +208,8 @@ impl FormDefinition {
                     field.label.clone_from(label);
                     field.description.clone_from(description);
                     field.semantic_role.clone_from(semantic_role);
+                    field.reference_form.clone_from(reference_form);
+                    field.list_item.clone_from(list_item);
                     field.validation.clone_from(validation);
                     field.enum_values.clone_from(enum_values);
                 }
@@ -259,6 +311,10 @@ pub enum FormChange {
         label: Option<String>,
         description: Option<String>,
         semantic_role: Option<String>,
+        #[serde(default)]
+        reference_form: Option<FormId>,
+        #[serde(default)]
+        list_item: Option<ListItemDefinition>,
         validation: Option<Value>,
         enum_values: Vec<String>,
     },
@@ -296,6 +352,9 @@ pub enum DomainError {
     UnknownField(FieldId),
     ReservedFieldId(FieldId),
     VersionConflict,
+    ReferenceTargetMissing(FieldId),
+    InvalidReferenceTarget(FieldId),
+    InvalidListItemType(FieldId),
 }
 
 impl fmt::Display for DomainError {

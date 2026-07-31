@@ -1,165 +1,132 @@
 mod common;
 use common::setup_operator;
-#[cfg(unix)]
-use opendal::services::Fs;
-#[cfg(unix)]
-use opendal::Operator;
-#[cfg(unix)]
-use tempfile::tempdir;
 use ugoite_iceberg::asset;
 use ugoite_iceberg::entry;
+use ugoite_iceberg::form;
+use ugoite_iceberg::index;
+use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::space;
 
-async fn catalog_head(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<Vec<u8>> {
-    Ok(op
-        .read(&format!("{ws_path}/_ugoite/catalog/head.json"))
+#[tokio::test]
+async fn upload_returns_a_typed_reference_without_creating_an_entry() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-space", "/tmp").await?;
+    let ws_path = "spaces/asset-space";
+    let reference = asset::save_asset(&op, ws_path, "image.png", b"bytes").await?;
+
+    assert_eq!(reference.name, "image.png");
+    assert_eq!(reference.size_bytes, 5);
+    assert_eq!(reference.media_type, "application/octet-stream");
+    assert!(
+        op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
+            .await?
+    );
+    assert!(ugoite_iceberg::entry::list_entries(&op, ws_path)
         .await?
-        .to_vec())
-}
-
-#[tokio::test]
-/// REQ-ASSET-001
-async fn test_asset_req_asset_001_create_asset() -> anyhow::Result<()> {
-    let op = setup_operator()?;
-    space::create_space(&op, "test-space", "/tmp").await?;
-    let ws_path = "spaces/test-space";
-
-    let content = b"fake image content";
-    let info = asset::save_asset(&op, ws_path, "image.png", content).await?;
-
-    assert!(op.exists(&format!("{}/{}", ws_path, info.path)).await?);
-
-    let listed = asset::list_assets(&op, ws_path).await?;
-    assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].id, info.id);
-    assert_eq!(listed[0].name, "image.png");
-
+        .is_empty());
     Ok(())
 }
 
 #[tokio::test]
-/// REQ-ASSET-001
-async fn test_asset_req_asset_001_list_does_not_rewrite_catalog_head() -> anyhow::Result<()> {
+async fn read_and_delete_use_the_exact_asset_id_key() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    space::create_space(&op, "asset-list-space", "/tmp").await?;
-    let ws_path = "spaces/asset-list-space";
+    space::create_space(&op, "asset-exact-key", "/tmp").await?;
+    let ws_path = "spaces/asset-exact-key";
+    let reference = asset::save_asset(&op, ws_path, "file.txt", b"data").await?;
 
-    assert!(asset::list_assets(&op, ws_path).await?.is_empty());
-    let head_before = catalog_head(&op, ws_path).await?;
+    let content = asset::read_asset(&op, ws_path, &reference.asset_id).await?;
+    assert_eq!(content.reference.asset_id, reference.asset_id);
+    assert_eq!(content.bytes, b"data");
 
-    assert!(asset::list_assets(&op, ws_path).await?.is_empty());
-    let head_after = catalog_head(&op, ws_path).await?;
-
-    assert_eq!(head_after, head_before);
+    asset::delete_asset(&op, ws_path, &reference.asset_id).await?;
+    assert!(
+        !op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
+            .await?
+    );
     Ok(())
 }
 
 #[tokio::test]
-/// REQ-ASSET-001
-async fn test_asset_req_asset_001_delete_asset() -> anyhow::Result<()> {
+async fn upload_normalizes_the_display_name_without_leaking_storage_details() -> anyhow::Result<()>
+{
     let op = setup_operator()?;
-    space::create_space(&op, "test-space", "/tmp").await?;
-    let ws_path = "spaces/test-space";
-
-    let info = asset::save_asset(&op, ws_path, "file.txt", b"data").await?;
-
-    assert!(op.exists(&format!("{}/{}", ws_path, info.path)).await?);
-
-    asset::delete_asset(&op, ws_path, &info.id).await?;
-
-    assert!(!op.exists(&format!("{}/{}", ws_path, info.path)).await?);
-
-    Ok(())
-}
-
-#[cfg(unix)]
-#[tokio::test]
-/// REQ-ASSET-001
-async fn test_asset_req_asset_001_normalizes_uploaded_filename() -> anyhow::Result<()> {
-    let dir = tempdir()?;
-    let root = dir.path().to_string_lossy().to_string();
-    let builder = Fs::default().root(root.as_str());
-    let op = Operator::new(builder)?.finish();
-
-    space::create_space(&op, "source-space", root.as_str()).await?;
-    space::create_space(&op, "victim-space", root.as_str()).await?;
-
-    let victim_meta_path = "spaces/victim-space/meta.json";
-    let victim_meta_before = op.read(victim_meta_path).await?.to_vec();
-
-    let info = asset::save_asset(
+    space::create_space(&op, "asset-name", "/tmp").await?;
+    let ws_path = "spaces/asset-name";
+    let reference = asset::save_asset(
         &op,
-        "spaces/source-space",
-        "../../../../victim-space/meta.json",
+        ws_path,
+        "../../## uploaded_at\nspoofed.txt",
         b"payload",
     )
     .await?;
 
-    let stored_name = info.path.trim_start_matches("assets/");
+    assert_eq!(reference.name, "uploaded_at spoofed.txt");
+    let encoded = serde_json::to_string(&reference)?;
+    assert!(!encoded.contains("assets/"));
+    assert!(!encoded.contains("ugoite://"));
+    Ok(())
+}
 
-    assert_eq!(info.name, "meta.json");
-    assert!(info.path.starts_with("assets/"));
-    assert!(!info.path.contains(".."));
-    assert!(!stored_name.contains('/'));
-    assert!(
-        op.exists(&format!("spaces/source-space/{}", info.path))
-            .await?
-    );
-    assert_eq!(
-        op.read(victim_meta_path).await?.to_vec(),
-        victim_meta_before
-    );
-
-    let dot_info = asset::save_asset(&op, "spaces/source-space", ".", b"dot payload").await?;
-    let dot_stored_name = dot_info.path.trim_start_matches("assets/");
-
-    assert_eq!(dot_info.name, dot_info.id);
-    assert_eq!(
-        dot_info.path,
-        format!("assets/{}_{}", dot_info.id, dot_info.id)
-    );
-    assert!(!dot_info.path.contains(".."));
-    assert!(!dot_stored_name.contains('/'));
-    assert!(
-        op.exists(&format!("spaces/source-space/{}", dot_info.path))
-            .await?
-    );
-
-    let metadata_safe_info = asset::save_asset(
+#[tokio::test]
+async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-form", "/tmp").await?;
+    let ws_path = "spaces/asset-form";
+    form::upsert_form(
         &op,
-        "spaces/source-space",
-        "## uploaded_at\nspoofed.txt",
-        b"metadata payload",
+        ws_path,
+        &serde_json::json!({
+            "name": "Media",
+            "fields": {
+                "Attachment": {"type": "asset_reference"},
+                "Attachments": {
+                    "type": "list",
+                    "items": {"type": "asset_reference"}
+                }
+            }
+        }),
     )
     .await?;
-    let metadata_entry =
-        entry::get_entry_content(&op, "spaces/source-space", &metadata_safe_info.id).await?;
+    let reference = asset::save_asset(&op, ws_path, "image.png", b"bytes").await?;
+    let reference_json = serde_json::to_string(&reference)?;
+    let content = format!(
+        "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}]\n---\n# Photo"
+    );
+    entry::create_entry(
+        &op,
+        ws_path,
+        "media-1",
+        &content,
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
 
-    assert_eq!(metadata_safe_info.name, "uploaded_at spoofed.txt");
+    let entries = entry::list_entries(&op, ws_path).await?;
     assert_eq!(
-        metadata_safe_info.path,
-        format!("assets/{}_uploaded_at spoofed.txt", metadata_safe_info.id)
+        entries[0]["properties"]["Attachment"]["asset_id"],
+        reference.asset_id
     );
-    assert_eq!(metadata_entry.sections["name"], "uploaded_at spoofed.txt");
     assert_eq!(
-        metadata_entry.sections["link"],
-        format!("ugoite://asset/{}", metadata_safe_info.id)
+        entries[0]["properties"]["Attachments"][0]["asset_id"],
+        reference.asset_id
     );
-    assert!(metadata_entry.sections["uploaded_at"]
-        .as_str()
-        .is_some_and(|value| !value.is_empty()));
+    let scalar_fields = ["Attachment".to_string()];
+    let list_fields = ["Attachments".to_string()];
     assert!(
-        metadata_entry
-            .markdown
-            .contains("## name\nuploaded_at spoofed.txt"),
-        "markdown was {}",
-        metadata_entry.markdown
+        index::current_asset_reference_exists(
+            &op,
+            ws_path,
+            "Media",
+            &scalar_fields,
+            &list_fields,
+            &reference.asset_id,
+        )
+        .await?
     );
-    assert!(
-        !metadata_entry.markdown.contains("## name\n## uploaded_at"),
-        "markdown was {}",
-        metadata_entry.markdown
-    );
-
+    let error = asset::delete_asset(&op, ws_path, &reference.asset_id)
+        .await
+        .expect_err("current typed Form values must guard the asset");
+    assert!(error.to_string().contains("referenced"));
     Ok(())
 }

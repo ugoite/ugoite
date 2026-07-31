@@ -26,6 +26,7 @@ fn form(id: u128, name: &str) -> FormDefinition {
             description: None,
             semantic_role: None,
             reference_form: None,
+            list_item: None,
             validation: None,
             enum_values: Vec::new(),
             deprecated: false,

@@ -16,6 +16,7 @@ pub enum EntryOperation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum FieldValue {
+    AssetReference(AssetReference),
     String(String),
     Boolean(bool),
     Integer(i64),
@@ -23,6 +24,16 @@ pub enum FieldValue {
     List(Vec<FieldValue>),
     Object(BTreeMap<String, FieldValue>),
     Null,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssetReference {
+    pub asset_id: String,
+    pub name: String,
+    pub media_type: String,
+    pub size_bytes: u64,
+    pub sha256: String,
 }
 
 /// Fixed metadata that accompanies every revision independently of a Form's
@@ -38,13 +49,9 @@ pub struct EntryMetadata {
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
-    pub links: Vec<EntryLink>,
-    #[serde(default)]
     pub created_at_micros: i64,
     #[serde(default)]
     pub updated_at_micros: i64,
-    #[serde(default)]
-    pub assets: Vec<EntryAsset>,
     #[serde(default)]
     pub integrity: EntryIntegrity,
     #[serde(default)]
@@ -53,20 +60,6 @@ pub struct EntryMetadata {
     pub deleted_at_micros: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restored_from: Option<RevisionId>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EntryLink {
-    pub id: String,
-    pub target: String,
-    pub kind: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EntryAsset {
-    pub id: String,
-    pub name: String,
-    pub path: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,7 +186,7 @@ impl EntryRevision {
                     .iter()
                     .find(|field| field.id == *field_id)
                     .ok_or(RevisionError::UnknownField(*field_id))?;
-                if !value_matches_type(value, &field.field_type) {
+                if !value_matches_type(value, field) {
                     return Err(RevisionError::WrongType(*field_id));
                 }
             }
@@ -231,11 +224,13 @@ impl EntryRevision {
     }
 }
 
-fn value_matches_type(value: &FieldValue, field_type: &FieldType) -> bool {
+fn value_matches_type(value: &FieldValue, field: &crate::form::FormField) -> bool {
     if matches!(value, FieldValue::Null) {
         return true;
     }
-    match (value, field_type) {
+    match (value, &field.field_type) {
+        (FieldValue::String(_), FieldType::RowReference)
+        | (FieldValue::AssetReference(_), FieldType::AssetReference) => true,
         (
             FieldValue::String(_),
             FieldType::String
@@ -248,8 +243,7 @@ fn value_matches_type(value: &FieldValue, field_type: &FieldType) -> bool {
             | FieldType::TimestampNs
             | FieldType::TimestampTzNs
             | FieldType::Uuid
-            | FieldType::Binary
-            | FieldType::RowReference,
+            | FieldType::Binary,
         )
         | (FieldValue::Boolean(_), FieldType::Boolean)
         | (
@@ -257,14 +251,51 @@ fn value_matches_type(value: &FieldValue, field_type: &FieldType) -> bool {
             FieldType::Integer | FieldType::Long | FieldType::Float | FieldType::Double,
         )
         | (FieldValue::Number(_), FieldType::Float | FieldType::Double) => true,
-        (FieldValue::List(values), FieldType::List) => values
-            .iter()
-            .all(|value| matches!(value, FieldValue::String(_))),
+        (FieldValue::List(values), FieldType::List) => field
+            .list_item
+            .as_ref()
+            .map(|item| {
+                values
+                    .iter()
+                    .all(|value| value_matches_list_item(value, item))
+            })
+            .unwrap_or_else(|| {
+                values
+                    .iter()
+                    .all(|value| matches!(value, FieldValue::String(_)))
+            }),
         (FieldValue::List(values), FieldType::ObjectList) => values
             .iter()
             .all(|value| matches!(value, FieldValue::Object(_))),
         _ => false,
     }
+}
+
+fn value_matches_list_item(value: &FieldValue, item: &crate::form::ListItemDefinition) -> bool {
+    matches!(
+        (&item.field_type, value),
+        (FieldType::RowReference, FieldValue::String(_))
+            | (FieldType::AssetReference, FieldValue::AssetReference(_))
+            | (FieldType::String, FieldValue::String(_))
+            | (FieldType::Markdown, FieldValue::String(_))
+            | (FieldType::Sql, FieldValue::String(_))
+            | (FieldType::Date, FieldValue::String(_))
+            | (FieldType::Time, FieldValue::String(_))
+            | (FieldType::Timestamp, FieldValue::String(_))
+            | (FieldType::TimestampTz, FieldValue::String(_))
+            | (FieldType::TimestampNs, FieldValue::String(_))
+            | (FieldType::TimestampTzNs, FieldValue::String(_))
+            | (FieldType::Uuid, FieldValue::String(_))
+            | (FieldType::Binary, FieldValue::String(_))
+            | (FieldType::Boolean, FieldValue::Boolean(_))
+            | (FieldType::Integer, FieldValue::Integer(_))
+            | (FieldType::Long, FieldValue::Integer(_))
+            | (FieldType::Float, FieldValue::Integer(_))
+            | (FieldType::Double, FieldValue::Integer(_))
+            | (FieldType::Float, FieldValue::Number(_))
+            | (FieldType::Double, FieldValue::Number(_))
+            | (_, FieldValue::Null)
+    )
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

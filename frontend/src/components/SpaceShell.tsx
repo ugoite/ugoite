@@ -73,8 +73,7 @@ export function SpaceShell(props: SpaceShellProps) {
       pathname.includes("/queries")
     ) return "search";
     if (
-      pathname.includes("/forms") || pathname.includes("/entries") ||
-      pathname.includes("/assets")
+      pathname.includes("/forms") || pathname.includes("/entries")
     ) return "forms";
     return "home";
   });

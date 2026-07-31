@@ -69,8 +69,6 @@ components:
             - form
             - updated_at
             - entry_id
-        - id: entry-assets
-          type: asset-uploader
         - id: entry-management
           type: action-card
           actions:

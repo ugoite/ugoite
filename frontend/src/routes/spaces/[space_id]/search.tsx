@@ -60,10 +60,8 @@ function coerceSearchResult(
     updated_at: result.updated_at || fallback?.updated_at || "",
     properties: result.properties ?? fallback?.properties ?? {},
     tags: result.tags ?? fallback?.tags ?? [],
-    links: result.links ?? fallback?.links ?? [],
     canvas_position: result.canvas_position ?? fallback?.canvas_position,
     checksum: result.checksum ?? fallback?.checksum,
-    assets: result.assets ?? fallback?.assets,
   };
 }
 
@@ -444,9 +442,6 @@ export default function SpaceSearchRoute() {
           <aside class="facet surface">
             <button type="button" classList={{ active: mode() === "keyword" }} onClick={() => setMode("keyword")}><UiIcon name="entry" /> Entries</button>
             <button type="button" onClick={() => setMode("advanced")} classList={{ active: mode() === "advanced" }}><UiIcon name="forms" /> Forms</button>
-            <A href={`/spaces/${spaceId()}/assets`}>
-              <UiIcon name="asset" /> Assets
-            </A>
             <A href={`/spaces/${spaceId()}/sql`}><UiIcon name="sql" /> Saved SQL</A>
           </aside>
           <main>

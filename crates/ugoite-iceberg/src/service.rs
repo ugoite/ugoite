@@ -227,7 +227,6 @@ impl UgoiteService {
         markdown: &str,
         parent_revision_id: Option<&str>,
         author: &str,
-        assets: Option<Vec<Value>>,
     ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -242,7 +241,6 @@ impl UgoiteService {
             markdown,
             parent_revision_id,
             author,
-            assets,
             &integrity,
         )
         .await
@@ -409,17 +407,6 @@ impl UgoiteService {
         resource_id: &str,
         parent: Option<ResourceRef>,
     ) -> Result<()> {
-        let parent = if matches!(kind, ResourceKind::Asset) && parent.is_none() {
-            self.asset_parent_entry(space_id, resource_id)
-                .await?
-                .map(|id| ResourceRef {
-                    kind: ResourceKind::Entry,
-                    id,
-                    parent: None,
-                })
-        } else {
-            parent
-        };
         Authorizer::new(self.operator.clone())
             .require(
                 space_id,
@@ -579,23 +566,10 @@ impl UgoiteService {
             let Some(id) = value.get(id_field).and_then(Value::as_str) else {
                 continue;
             };
-            let parent = if matches!(kind, ResourceKind::Asset) {
-                self.asset_parent_entry(space_id, id)
-                    .await?
-                    .map(|entry_id| {
-                        Box::new(ResourceRef {
-                            kind: ResourceKind::Entry,
-                            id: entry_id,
-                            parent: None,
-                        })
-                    })
-            } else {
-                None
-            };
             resources.push(ResourceRef {
                 kind: kind.clone(),
                 id: id.to_string(),
-                parent,
+                parent: None,
             });
         }
         let allowed = Authorizer::new(self.operator.clone())
@@ -800,26 +774,6 @@ impl UgoiteService {
         })
     }
 
-    async fn asset_parent_entry(&self, space_id: &str, asset_id: &str) -> Result<Option<String>> {
-        Ok(self
-            .list_entries(space_id)
-            .await?
-            .into_iter()
-            .find_map(|entry| {
-                let linked = entry
-                    .get("assets")
-                    .and_then(Value::as_array)
-                    .is_some_and(|assets| {
-                        assets
-                            .iter()
-                            .any(|asset| asset.get("id").and_then(Value::as_str) == Some(asset_id))
-                    });
-                linked
-                    .then(|| entry.get("id").and_then(Value::as_str).map(str::to_string))
-                    .flatten()
-            }))
-    }
-
     pub async fn search_entries_authorized(
         &self,
         space_id: &str,
@@ -880,23 +834,36 @@ impl UgoiteService {
         index::get_space_stats(&self.operator, &self.workspace_path(space_id)).await
     }
 
-    pub async fn list_assets(&self, space_id: &str) -> Result<Vec<asset::AssetInfo>> {
-        validate_storage_id(validate_space_id(space_id))?;
-        asset::list_assets(&self.operator, &self.workspace_path(space_id)).await
-    }
-
     pub async fn save_asset(
         &self,
         space_id: &str,
         filename: &str,
         content: &[u8],
-    ) -> Result<asset::AssetInfo> {
+    ) -> Result<ugoite_domain::entry::AssetReference> {
         validate_storage_id(validate_space_id(space_id))?;
         asset::save_asset(
             &self.operator,
             &self.workspace_path(space_id),
             filename,
             content,
+        )
+        .await
+    }
+
+    pub async fn save_asset_with_media_type(
+        &self,
+        space_id: &str,
+        filename: &str,
+        content: &[u8],
+        media_type: &str,
+    ) -> Result<ugoite_domain::entry::AssetReference> {
+        validate_storage_id(validate_space_id(space_id))?;
+        asset::save_asset_with_media_type(
+            &self.operator,
+            &self.workspace_path(space_id),
+            filename,
+            content,
+            media_type,
         )
         .await
     }

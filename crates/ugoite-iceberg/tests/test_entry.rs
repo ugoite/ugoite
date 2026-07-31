@@ -1,6 +1,5 @@
 mod common;
 use common::setup_operator;
-use ugoite_iceberg::asset;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::index;
@@ -15,6 +14,70 @@ async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Res
         "allow_extra_attributes": "allow_columns",
     });
     form::upsert_form(op, ws_path, &form_def).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn row_reference_values_must_target_current_entries_in_the_declared_form(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "typed-reference-entry", "/tmp").await?;
+    let ws_path = "spaces/typed-reference-entry";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Project",
+            "fields": {"Name": {"type": "string"}},
+        }),
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Task",
+            "fields": {
+                "Parent": {"type": "row_reference", "target_form": "Project"},
+                "Reviewers": {
+                    "type": "list",
+                    "items": {"type": "row_reference", "target_form": "Project"},
+                },
+            },
+        }),
+    )
+    .await?;
+    let integrity = FakeIntegrityProvider;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "project-1",
+        "---\nform: Project\nName: Example\n---\n# Project",
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "task-1",
+        "---\nform: Task\nParent: project-1\nReviewers: [project-1]\n---\n# Task",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let error = entry::create_entry(
+        &op,
+        ws_path,
+        "task-2",
+        "---\nform: Task\nParent: missing\nReviewers: [missing]\n---\n# Invalid",
+        "author",
+        &integrity,
+    )
+    .await
+    .expect_err("references must resolve to the declared target Form");
+    assert!(error.to_string().contains("does not belong to Form"));
     Ok(())
 }
 
@@ -195,7 +258,6 @@ async fn test_entry_req_entry_003_update_entry_success() -> anyhow::Result<()> {
         new_content,
         Some(&initial_revision),
         "author1",
-        None,
         &integrity,
     )
     .await?;
@@ -240,7 +302,6 @@ async fn test_entry_req_entry_002_update_entry_conflict() -> anyhow::Result<()> 
         "---\nform: Entry\n---\n# New Content",
         Some(wrong_revision),
         "author1",
-        None,
         &integrity,
     )
     .await;
@@ -283,7 +344,6 @@ async fn test_entry_req_entry_005_entry_history_append() -> anyhow::Result<()> {
         "---\nform: Entry\n---\n# Version 2",
         Some(&rev_v1),
         "author1",
-        None,
         &integrity,
     )
     .await?;
@@ -329,7 +389,6 @@ async fn test_entry_req_entry_005_revision_content_renders_requested_revision_se
         "---\nform: Entry\n---\n# Version 2\n\n## Body\nBeta",
         Some(&rev_v1),
         "author1",
-        None,
         &integrity,
     )
     .await?;
@@ -419,33 +478,6 @@ async fn test_entry_req_entry_006_extract_h2_headers() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-/// REQ-LNK-004
-async fn test_entry_req_lnk_004_normalize_ugoite_link_uris() -> anyhow::Result<()> {
-    let op = setup_operator()?;
-    space::create_space(&op, "test-links", "/tmp").await?;
-    let ws_path = "spaces/test-links";
-    let integrity = FakeIntegrityProvider;
-
-    let form_def = serde_json::json!({
-        "name": "Entry",
-        "fields": {
-            "Body": {"type": "markdown"}
-        }
-    });
-    form::upsert_form(&op, ws_path, &form_def).await?;
-
-    let content = "---\nform: Entry\n---\n# Title\n\n## Body\nSee [ref](ugoite://entries/entry-123), [file](ugoite://assets/asset-456), and [query](ugoite://entry?id=entry-789).";
-    entry::create_entry(&op, ws_path, "entry-links", content, "author", &integrity).await?;
-
-    let content_info = entry::get_entry_content(&op, ws_path, "entry-links").await?;
-    assert!(content_info.markdown.contains("ugoite://entry/entry-123"));
-    assert!(content_info.markdown.contains("ugoite://asset/asset-456"));
-    assert!(content_info.markdown.contains("ugoite://entry/entry-789"));
-
-    Ok(())
-}
-
-#[tokio::test]
 /// REQ-FORM-004
 async fn test_entry_req_form_004_deny_extra_attributes() -> anyhow::Result<()> {
     let op = setup_operator()?;
@@ -514,58 +546,6 @@ async fn test_entry_req_form_004_allow_extra_attributes() -> anyhow::Result<()> 
             .and_then(|props| props.get("Extra"));
         assert!(extra_prop.is_some());
     }
-
-    Ok(())
-}
-
-#[tokio::test]
-/// REQ-ENTRY-008
-async fn test_entry_req_entry_008_assets_linking() -> anyhow::Result<()> {
-    let op = setup_operator()?;
-    space::create_space(&op, "test-assets", "/tmp").await?;
-    let ws_path = "spaces/test-assets";
-    ensure_entry_form(&op, ws_path).await?;
-    let integrity = FakeIntegrityProvider;
-
-    let info = asset::save_asset(&op, ws_path, "file.txt", b"data").await?;
-    entry::create_entry(
-        &op,
-        ws_path,
-        "entry-asset",
-        "---\nform: Entry\n---\n# Assets",
-        "author",
-        &integrity,
-    )
-    .await?;
-
-    let current = entry::get_entry_content(&op, ws_path, "entry-asset").await?;
-    let assets = vec![serde_json::json!({
-        "id": info.id,
-        "name": info.name,
-        "path": info.path,
-    })];
-
-    entry::update_entry(
-        &op,
-        ws_path,
-        "entry-asset",
-        "---\nform: Entry\n---\n# Assets\nwith file",
-        Some(&current.revision_id),
-        "author",
-        Some(assets),
-        &integrity,
-    )
-    .await?;
-
-    let entry_json = entry::get_entry(&op, ws_path, "entry-asset").await?;
-    let assets = entry_json
-        .get("assets")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    assert!(assets
-        .iter()
-        .any(|asset| asset.get("id").and_then(|v| v.as_str()) == Some(info.id.as_str())));
 
     Ok(())
 }

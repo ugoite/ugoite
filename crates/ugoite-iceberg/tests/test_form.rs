@@ -113,6 +113,7 @@ async fn test_form_req_form_001_list_column_types() -> anyhow::Result<()> {
     assert!(types.contains(&"timestamp_tz_ns".to_string()));
     assert!(types.contains(&"uuid".to_string()));
     assert!(types.contains(&"row_reference".to_string()));
+    assert!(types.contains(&"asset_reference".to_string()));
     assert!(types.contains(&"binary".to_string()));
     assert!(types.contains(&"list".to_string()));
     Ok(())
@@ -195,6 +196,16 @@ async fn test_form_req_form_007_row_reference_requires_target() -> anyhow::Resul
         }
     });
     form::upsert_form(&op, ws_path, &valid_form).await?;
+
+    let stored = form::get_form(&op, ws_path, "Task").await?;
+    let project = form::get_form(&op, ws_path, "Project").await?;
+    let target_form = stored["fields"]["Project"]["target_form"]
+        .as_str()
+        .expect("stable target Form ID");
+    assert_eq!(
+        target_form,
+        project["id"].as_str().expect("Project Form ID")
+    );
 
     Ok(())
 }

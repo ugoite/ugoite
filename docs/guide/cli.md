@@ -121,8 +121,8 @@ ugoite query /path/to/workspace/spaces/team-notes \
 
 Each Form is queryable through its lowercase name. Relations expose the Form
 fields plus `_ugoite_id`, `_ugoite_title`, `_ugoite_created_at`, and
-`_ugoite_updated_at`; `entries`, `links`,
-and `assets` are not SQL relations.
+`_ugoite_updated_at`; there is no cross-Form `entries` relation and assets are
+only values in typed Form columns.
 
 ## Indexes and assets
 
@@ -134,15 +134,12 @@ ugoite index run /path/to/workspace/spaces/team-notes
 ```
 
 The CLI reports that these commands are unavailable in backend/API mode. In core
-mode, asset list, upload, and delete take a local Space path:
+mode, asset upload and delete take a local Space path:
 
 ```bash
-ugoite asset list /path/to/workspace/spaces/team-notes
 ugoite asset upload /path/to/workspace/spaces/team-notes ./diagram.png
 ugoite asset delete /path/to/workspace/spaces/team-notes asset-id
 ```
-
-In backend/API mode, `asset list` and `asset delete` accept a bare Space ID.
 Remote CLI asset upload is not available in this release.
 
 Every command has exhaustive, version-specific help. Use

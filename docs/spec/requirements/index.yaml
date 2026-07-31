@@ -207,7 +207,8 @@ requirements:
   title: Ugoite SQL JOIN Support
   description: 'Ugoite SQL MUST support DataFusion joins between authorized Form relations.
 
-    JSON-backed entries, links, and assets SQL tables are not part of the SQL surface.
+    JSON-backed entries or asset tables are not part of the SQL surface; typed
+    Form columns are the only reference surface.
 
     '
   related_spec:

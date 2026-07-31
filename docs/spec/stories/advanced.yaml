@@ -12,7 +12,7 @@ stories:
 
     '
   acceptance_criteria:
-  - User records audio; app saves it as an entry asset
+  - User records audio; app saves an AssetReference into a chosen Form field
   - User invokes their connected MCP Agent (e.g., "Format this voice entry")
   - Agent reads the transcript (via MCP), extracts fields, and updates the entry with H2 headers
   requirements:

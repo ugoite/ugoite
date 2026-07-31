@@ -7,7 +7,7 @@ import {
 } from "msw";
 import { testApiPath } from "~/test/http-origin";
 import type {
-  Asset,
+  AssetReference,
   Entry,
   EntryCreatePayload,
   EntryRecord,
@@ -23,7 +23,7 @@ import type {
 let mockSpaces: Map<string, Space> = new Map();
 let mockEntries: Map<string, Map<string, Entry>> = new Map();
 let mockEntryIndex: Map<string, Map<string, EntryRecord>> = new Map();
-let mockAssets: Map<string, Map<string, Asset>> = new Map();
+let mockAssets: Map<string, Map<string, AssetReference>> = new Map();
 let mockForms: Map<string, Map<string, Form>> = new Map();
 let mockSqlEntries: Map<string, Map<string, Record<string, unknown>>> =
   new Map();
@@ -345,8 +345,6 @@ export const handlers = [
       revision_id: revisionId,
       created_at: now,
       updated_at: now,
-      assets: [],
-      links: [],
     });
 
     const record: EntryRecord = {
@@ -355,8 +353,6 @@ export const handlers = [
       updated_at: now,
       properties,
       tags: [],
-      links: [],
-      assets: [],
     };
 
     mockEntries.get(spaceId)?.set(entryId, entry);
@@ -429,7 +425,6 @@ export const handlers = [
       entry.markdown = body.markdown;
       entry.revision_id = newRevisionId;
       entry.updated_at = now;
-      entry.assets = body.assets ?? entry.assets ?? [];
 
       // Update index
       const record = mockEntryIndex.get(spaceId)?.get(entryId);
@@ -439,9 +434,6 @@ export const handlers = [
         record.properties = properties;
         if (body.canvas_position) {
           record.canvas_position = body.canvas_position;
-        }
-        if (body.assets) {
-          record.assets = body.assets;
         }
       }
 
@@ -521,7 +513,13 @@ export const handlers = [
     // The file name is not critical for these tests
     const name = "test-file.bin";
     const id = crypto.randomUUID();
-    const asset: Asset = { id, name, path: `assets/${id}_${name}` };
+    const asset: AssetReference = {
+      asset_id: id,
+      name,
+      media_type: "application/octet-stream",
+      size_bytes: 0,
+      sha256: "",
+    };
     const store = mockAssets.get(spaceId);
     store?.set(id, asset);
     return HttpResponse.json(asset, { status: 201 });
@@ -536,28 +534,8 @@ export const handlers = [
       return HttpResponse.json({ detail: "Not found" }, { status: 404 });
     }
 
-    // Check references
-    const entries = mockEntries.get(spaceId) || new Map();
-    for (const entry of entries.values()) {
-      if ((entry.assets || []).some((a) => a.id === assetId)) {
-        return HttpResponse.json({ detail: "Asset is referenced by a entry" }, {
-          status: 409,
-        });
-      }
-    }
-
     store.delete(assetId);
     return HttpResponse.json({ status: "deleted", id: assetId });
-  }),
-
-  // List assets
-  testHttp.get("/spaces/:spaceId/assets", ({ params }) => {
-    const spaceId = params.spaceId as string;
-    if (!mockSpaces.has(spaceId)) {
-      return HttpResponse.json({ detail: "Space not found" }, { status: 404 });
-    }
-    const assets = Array.from(mockAssets.get(spaceId)?.values() || []);
-    return HttpResponse.json(assets);
   }),
 
   // Entry history

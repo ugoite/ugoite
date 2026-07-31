@@ -82,7 +82,6 @@ describe("/spaces/:space_id/search", () => {
       updated_at: entry.updated_at,
       properties: { Body: "Keyword-first search is easier." },
       tags: ["search"],
-      links: [],
     };
     seedEntry("default", entry, record);
     let metadataSql: string | null = null;
@@ -298,12 +297,4 @@ describe("/spaces/:space_id/search", () => {
     );
   });
 
-  it("links the Assets facet to the Space asset workspace", () => {
-    render(() => <SpaceSearchRoute />);
-
-    expect(screen.getByRole("link", { name: /Assets/ })).toHaveAttribute(
-      "href",
-      "/spaces/default/assets",
-    );
-  });
 });

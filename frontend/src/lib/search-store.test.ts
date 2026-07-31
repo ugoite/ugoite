@@ -31,7 +31,6 @@ describe("createSearchStore", () => {
       updated_at: "2025-01-01T00:00:00Z",
       properties: {},
       tags: [],
-      links: [],
     };
     seedEntry("search-store-ws", entry, record);
   });

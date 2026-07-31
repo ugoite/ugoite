@@ -42,18 +42,11 @@ async fn test_service_boundary_covers_primary_adapter_operations() -> Result<()>
     assert_eq!(search[0].id, "first");
 
     let asset = service.save_asset("demo", "hello.txt", b"hello").await?;
-    let assets = service.list_assets("demo").await?;
-    assert!(assets.iter().any(|item| item.id == asset.id));
-    let content = service.read_asset("demo", &asset.id).await?;
-    assert_eq!(content.info.name, "hello.txt");
+    let content = service.read_asset("demo", &asset.asset_id).await?;
+    assert_eq!(content.reference.asset_id, asset.asset_id);
     assert_eq!(content.bytes, b"hello");
 
-    service.delete_asset("demo", &asset.id).await?;
-    assert!(!service
-        .list_assets("demo")
-        .await?
-        .iter()
-        .any(|item| item.id == asset.id));
+    service.delete_asset("demo", &asset.asset_id).await?;
 
     Ok(())
 }

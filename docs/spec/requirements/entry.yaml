@@ -169,8 +169,8 @@ requirements:
   - SPEC-DM-OVERVIEW
   - SPEC-API-REST
   id: REQ-ENTRY-007
-  title: Properties and Links in List Response
-  description: 'Include properties and links fields when retrieving entry list.
+  title: Properties in List Response
+  description: 'Include Form-owned properties when retrieving the entry list.
 
     '
   related_spec:
@@ -191,10 +191,10 @@ requirements:
   - SPEC-DM-OVERVIEW
   - SPEC-API-REST
   id: REQ-ENTRY-008
-  title: Assets Upload & Linking
-  description: 'Upload binary assets, return a generated asset ID, and allow
+  title: Asset Upload Returns a Form Value
+  description: 'Upload binary assets, return an AssetReference, and let users
 
-    entries to reference assets in stored entry content.
+    store that value only in an asset_reference Form field.
 
     '
   related_spec:
@@ -204,7 +204,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-iceberg/tests/test_entry.rs
+  - file: crates/ugoite-iceberg/tests/test_asset.rs
 - set_id: REQCAT-ENTRY
   source_file: requirements/entry.yaml
   scope: Entry creation, mutation, revision, and retrieval requirements.
@@ -218,8 +218,10 @@ requirements:
   - SPEC-DM-OVERVIEW
   - SPEC-API-REST
   id: REQ-ENTRY-009
-  title: Asset Garbage Collection Guard
-  description: 'Prevent deleting assets that are still referenced by any entry.
+  title: Asset Reference Guard
+  description: 'Prevent deleting assets that are still referenced by current,
+
+    non-deleted typed Form values.
 
     '
   related_spec:

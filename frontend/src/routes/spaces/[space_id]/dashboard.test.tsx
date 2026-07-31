@@ -41,7 +41,7 @@ describe("v5 space Home", () => {
       .toHaveAttribute("href", "https://ugoite.github.io/ugoite/docs/guide/browser-first-entry");
   });
   it("does not show walkthrough guidance while existing entries are loading", async () => {
-    const [mockEntries, setMockEntries] = createSignal<Array<{ id: string; title: string; form: string; updated_at: string; properties: Record<string, never>; tags: never[]; links: never[] }>>([]);
+    const [mockEntries, setMockEntries] = createSignal<Array<{ id: string; title: string; form: string; updated_at: string; properties: Record<string, never>; tags: never[] }>>([]);
     let resolveLoad: () => void;
     entryStoreMock.entries.mockImplementation(mockEntries);
     entryStoreMock.loadEntries.mockReturnValue(new Promise<void>((resolve) => { resolveLoad = resolve; }));
@@ -49,7 +49,7 @@ describe("v5 space Home", () => {
     render(() => <SpaceDashboardRoute />);
     expect(screen.queryByRole("link", { name: /browser walkthrough/ })).not.toBeInTheDocument();
 
-    setMockEntries([{ id: "entry-1", title: "API memo", form: "Notes", updated_at: "2026-01-01", properties: {}, tags: [], links: [] }]);
+    setMockEntries([{ id: "entry-1", title: "API memo", form: "Notes", updated_at: "2026-01-01", properties: {}, tags: [] }]);
     resolveLoad!();
     await waitFor(() => expect(entryStoreMock.loadEntries).toHaveBeenCalled());
     expect(screen.queryByRole("link", { name: /browser walkthrough/ })).not.toBeInTheDocument();

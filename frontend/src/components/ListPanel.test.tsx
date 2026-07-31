@@ -35,7 +35,6 @@ describe("ListPanel", () => {
       updated_at: "2026-01-01T00:00:00Z",
       created_at: "2026-01-01T00:00:00Z",
       properties: { date: "2026-01-01" },
-      links: [],
     },
     {
       id: "entry-2",
@@ -44,7 +43,6 @@ describe("ListPanel", () => {
       updated_at: "2026-01-02T00:00:00Z",
       created_at: "2026-01-02T00:00:00Z",
       properties: {},
-      links: [],
     },
   ];
 
@@ -242,7 +240,6 @@ describe("ListPanel", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: { count: 42, flag: true },
         tags: [],
-        links: [],
       };
       const noPropsEntry: EntryRecord = {
         id: "no-props",
@@ -250,7 +247,6 @@ describe("ListPanel", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: null as unknown as Record<string, unknown>,
         tags: [],
-        links: [],
       };
       render(() => (
         <ListPanel
