@@ -12,7 +12,7 @@ test.describe("Space Membership", () => {
     expect(created.status()).toBe(201);
     const invite = await request.post(
       getBackendUrl(`/spaces/${spaceId}/members/invitations`),
-      { data: { display_name: "Invited viewer", role: "viewer" } },
+      { data: { label: "Invited viewer", role: "viewer" } },
     );
     expect(invite.status()).toBe(201);
     const { invitation_url: invitationUrl } = await invite.json() as {
@@ -38,7 +38,7 @@ test.describe("Space Membership", () => {
 
     try {
       await page.goto(invitationUrl);
-      await page.getByRole("button", { name: "Register Passkey and join" })
+      await page.getByRole("button", { name: "Accept invitation" })
         .click();
       await expect(page).toHaveURL(/\/spaces$/);
       const space = await invited.request.get(

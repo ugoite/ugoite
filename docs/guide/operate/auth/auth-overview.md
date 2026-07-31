@@ -86,6 +86,10 @@ API. A signed-in user can add an OIDC method only after recent Passkey
 authentication; Ugoite refuses to link an issuer/subject pair already owned by
 another account.
 
+An account has at most one Node binding in a Space. If an already-bound account
+opens an invitation for that same Space, acceptance is idempotent and keeps the
+existing principal instead of creating a second membership.
+
 ## CLI devices
 
 `ugoite auth login` generates a P-256 key, requests a device code, and prints a

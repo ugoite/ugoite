@@ -1669,6 +1669,24 @@ async fn bind_invited_account(
     let principal_id = invitation.accepted_principal_id.ok_or_else(|| {
         ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
     })?;
+    match state
+        .identity
+        .binding_for_account(space_uid, account.account_id)
+        .await
+        .map_err(auth_error)?
+    {
+        Some(existing_principal_id) if existing_principal_id == principal_id => return Ok(()),
+        Some(_) => {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "ACCOUNT_ALREADY_BOUND",
+                    "message": "account is already bound to this Space",
+                }),
+            ));
+        }
+        None => {}
+    }
     Authorizer::new(state.service.operator().clone())
         .add_human_member(
             &space_id,

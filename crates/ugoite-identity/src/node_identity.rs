@@ -351,6 +351,19 @@ pub struct NodeState {
     pub oidc_attempts: BTreeMap<String, OidcLoginAttempt>,
 }
 
+fn bound_principal_for_account(
+    state: &NodeState,
+    space_uid: Option<Uuid>,
+    account_id: Uuid,
+) -> Option<Uuid> {
+    let space_uid = space_uid?;
+    state
+        .bindings
+        .iter()
+        .find(|binding| binding.space_uid == space_uid && binding.node_account_id == account_id)
+        .map(|binding| binding.principal_id)
+}
+
 #[derive(Debug, Serialize)]
 pub struct BootstrapResult {
     pub setup_secret: String,
@@ -1606,24 +1619,47 @@ impl NodeIdentityService {
             .find(|invitation| invitation.token_hash == token_hash(invitation_token))
             .map(|invitation| invitation.invitation_id)
             .ok_or_else(|| anyhow!("invitation is invalid"))?;
-        let invitation = state
-            .invitations
-            .get_mut(&invitation_id)
-            .ok_or_else(|| anyhow!("invitation is invalid"))?;
-        validate_expiry(&invitation.expires_at, "invitation")?;
-        if invitation.used_at.is_some() {
-            if invitation.accepted_account_id == Some(account_id)
-                && invitation.accepted_principal_id.is_some()
-            {
-                return Ok((account, invitation.clone()));
+        let existing_principal_id = bound_principal_for_account(
+            &state,
+            state
+                .invitations
+                .get(&invitation_id)
+                .and_then(|invitation| invitation.space_uid),
+            account_id,
+        );
+        let mut write_state = false;
+        let invitation = {
+            let invitation = state
+                .invitations
+                .get_mut(&invitation_id)
+                .ok_or_else(|| anyhow!("invitation is invalid"))?;
+            validate_expiry(&invitation.expires_at, "invitation")?;
+            if invitation.used_at.is_some() {
+                if invitation.accepted_account_id == Some(account_id)
+                    && invitation.accepted_principal_id.is_some()
+                {
+                    if let Some(existing_principal_id) = existing_principal_id {
+                        if invitation.accepted_principal_id != Some(existing_principal_id) {
+                            invitation.accepted_principal_id = Some(existing_principal_id);
+                            write_state = true;
+                        }
+                    }
+                    invitation.clone()
+                } else {
+                    bail!("invitation is invalid");
+                }
+            } else {
+                invitation.used_at = Some(timestamp(Utc::now()));
+                invitation.accepted_account_id = Some(account_id);
+                invitation.accepted_principal_id =
+                    Some(existing_principal_id.unwrap_or_else(Uuid::now_v7));
+                write_state = true;
+                invitation.clone()
             }
-            bail!("invitation is invalid");
+        };
+        if write_state {
+            self.write_state(&state).await?;
         }
-        invitation.used_at = Some(timestamp(Utc::now()));
-        invitation.accepted_account_id = Some(account_id);
-        invitation.accepted_principal_id = Some(Uuid::now_v7());
-        let invitation = invitation.clone();
-        self.write_state(&state).await?;
         Ok((account, invitation))
     }
 
@@ -1644,13 +1680,22 @@ impl NodeIdentityService {
         self.write_state(&state).await
     }
 
-    pub async fn principal_for_account(&self, space_uid: Uuid, account_id: Uuid) -> Result<Uuid> {
+    pub async fn binding_for_account(
+        &self,
+        space_uid: Uuid,
+        account_id: Uuid,
+    ) -> Result<Option<Uuid>> {
         let state = self.read_state().await?;
-        state
-            .bindings
-            .iter()
-            .find(|binding| binding.space_uid == space_uid && binding.node_account_id == account_id)
-            .map(|binding| binding.principal_id)
+        Ok(bound_principal_for_account(
+            &state,
+            Some(space_uid),
+            account_id,
+        ))
+    }
+
+    pub async fn principal_for_account(&self, space_uid: Uuid, account_id: Uuid) -> Result<Uuid> {
+        self.binding_for_account(space_uid, account_id)
+            .await?
             .ok_or_else(|| anyhow!("account is not bound to a principal in this space"))
     }
 
@@ -2374,6 +2419,13 @@ impl NodeIdentityService {
                 .cloned()
                 .ok_or_else(|| anyhow!("OIDC account is not active"))?;
             let invitation = if let Some(invitation_hash) = invitation_hash {
+                let invitation_space_uid = state
+                    .invitations
+                    .values()
+                    .find(|invitation| invitation.token_hash == invitation_hash)
+                    .and_then(|invitation| invitation.space_uid);
+                let existing_principal_id =
+                    bound_principal_for_account(&state, invitation_space_uid, account_id);
                 let invitation = state
                     .invitations
                     .values_mut()
@@ -2388,7 +2440,10 @@ impl NodeIdentityService {
                 if invitation.used_at.is_none() {
                     invitation.used_at = Some(timestamp(Utc::now()));
                     invitation.accepted_account_id = Some(account_id);
-                    invitation.accepted_principal_id = Some(Uuid::now_v7());
+                    invitation.accepted_principal_id =
+                        Some(existing_principal_id.unwrap_or_else(Uuid::now_v7));
+                } else if let Some(existing_principal_id) = existing_principal_id {
+                    invitation.accepted_principal_id = Some(existing_principal_id);
                 }
                 Some(invitation.clone())
             } else {
@@ -3070,6 +3125,64 @@ mod tests {
             .await?;
         assert_eq!(first.accepted_principal_id, retry.accepted_principal_id);
         assert!(first.used_at.is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn existing_space_binding_accepts_invitation_without_creating_a_second_principal(
+    ) -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Existing owner".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+            },
+        );
+        state.bindings.push(PrincipalBinding {
+            space_uid,
+            principal_id,
+            node_account_id: account_id,
+            binding_method: BindingMethod::Setup,
+        });
+        service.write_state(&state).await?;
+        let (_, token) = service
+            .issue_invitation(
+                account_id,
+                "Invited owner",
+                Some(space_uid),
+                Some("viewer".to_string()),
+            )
+            .await?;
+
+        let (_, invitation) = service
+            .accept_invitation_for_account(&token, account_id)
+            .await?;
+        assert_eq!(invitation.accepted_account_id, Some(account_id));
+        assert_eq!(invitation.accepted_principal_id, Some(principal_id));
+
+        let (_, retry) = service
+            .accept_invitation_for_account(&token, account_id)
+            .await?;
+        assert_eq!(retry.accepted_principal_id, Some(principal_id));
+        assert_eq!(
+            service
+                .read_state()
+                .await?
+                .bindings
+                .iter()
+                .filter(|binding| binding.space_uid == space_uid)
+                .count(),
+            1
+        );
         Ok(())
     }
 
