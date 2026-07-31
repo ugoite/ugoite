@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
@@ -338,6 +339,44 @@ async fn local_catalog_evolves_schema_bearing_changes() -> anyhow::Result<()> {
             .as_ref(),
         &iceberg::spec::Type::Primitive(iceberg::spec::PrimitiveType::Date),
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn existing_form_field_type_changes_are_typed_and_leave_form_unchanged() -> anyhow::Result<()>
+{
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(5)),
+        "memory://iceberg-unsupported-form-type-change",
+    )
+    .await?;
+    let mut form = form();
+    form.fields[0].field_type = FieldType::Timestamp;
+    create_form(&workspace, &form).await?;
+
+    let error = evolve_form(
+        &workspace,
+        &FormChangeSet {
+            form_id: form.id,
+            expected_version: Some(form.version),
+            changes: vec![FormChange::ChangeFieldType {
+                field_id: FieldId::new(100).unwrap(),
+                field_type: FieldType::Date,
+            }],
+        },
+    )
+    .await
+    .expect_err("existing Form field type changes must be rejected");
+    let app_error = error
+        .downcast_ref::<AppError>()
+        .expect("type-change rejection must remain a typed application error");
+    assert_eq!(app_error.kind(), ErrorKind::InvalidInput);
+    assert_eq!(app_error.code(), ErrorCode::FormFieldTypeChangeNotSupported);
+    assert_eq!(
+        app_error.message(),
+        "Changing the type of existing Form field 'title' from 'timestamp' to 'date' is not supported; create a new field instead"
+    );
+    assert_eq!(workspace.load_form(form.id).await?, form);
     Ok(())
 }
 

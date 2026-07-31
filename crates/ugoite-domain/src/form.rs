@@ -48,6 +48,30 @@ pub enum FieldType {
 }
 
 impl FieldType {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Markdown => "markdown",
+            Self::Sql => "sql",
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Long => "long",
+            Self::Float => "float",
+            Self::Double => "double",
+            Self::Date => "date",
+            Self::Time => "time",
+            Self::Timestamp => "timestamp",
+            Self::TimestampTz => "timestamp_tz",
+            Self::TimestampNs => "timestamp_ns",
+            Self::TimestampTzNs => "timestamp_tz_ns",
+            Self::Uuid => "uuid",
+            Self::Binary => "binary",
+            Self::List => "list",
+            Self::ObjectList => "object_list",
+            Self::RowReference => "row_reference",
+        }
+    }
+
     pub fn can_widen_to(&self, target: &Self) -> bool {
         self == target
             || matches!(

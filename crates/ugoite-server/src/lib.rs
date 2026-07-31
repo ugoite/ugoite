@@ -4431,4 +4431,20 @@ mod authentication_regression_tests {
         )
         .is_err());
     }
+
+    #[test]
+    fn unsupported_form_field_type_changes_are_client_errors_with_actionable_details() {
+        let error = ApiError::from_core(
+            AppError::form_field_type_change_not_supported("time", "timestamp", "date").into(),
+        );
+
+        assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            error.detail,
+            json!({
+                "code": "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED",
+                "message": "Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead"
+            })
+        );
+    }
 }

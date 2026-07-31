@@ -516,27 +516,7 @@ pub(crate) fn from_domain_form(form: &FormDefinition) -> Value {
 }
 
 fn domain_field_type_name(field_type: &FieldType) -> &'static str {
-    match field_type {
-        FieldType::String => "string",
-        FieldType::Markdown => "markdown",
-        FieldType::Sql => "sql",
-        FieldType::Boolean => "boolean",
-        FieldType::Integer => "integer",
-        FieldType::Long => "long",
-        FieldType::Float => "float",
-        FieldType::Double => "double",
-        FieldType::Date => "date",
-        FieldType::Time => "time",
-        FieldType::Timestamp => "timestamp",
-        FieldType::TimestampTz => "timestamp_tz",
-        FieldType::TimestampNs => "timestamp_ns",
-        FieldType::TimestampTzNs => "timestamp_tz_ns",
-        FieldType::Uuid => "uuid",
-        FieldType::Binary => "binary",
-        FieldType::List => "list",
-        FieldType::ObjectList => "object_list",
-        FieldType::RowReference => "row_reference",
-    }
+    field_type.as_str()
 }
 
 fn normalize_form_definition_with_options(

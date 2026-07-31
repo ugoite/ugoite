@@ -2369,6 +2369,40 @@ describe("EditFormDialog", () => {
     );
   });
 
+  it("REQ-FE-043: displays the shared unsupported field type error", async () => {
+    const onSubmit = vi.fn().mockRejectedValue(
+      new Error(
+        "Failed to create form: Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead",
+      ),
+    );
+    const timestampForm: Form = {
+      ...mockForm,
+      fields: {
+        time: { type: "timestamp", required: false },
+      },
+    };
+
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={timestampForm}
+        columnTypes={["timestamp", "date"]}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "date" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead",
+    );
+  });
+
   it("REQ-FE-032: removes a column from the edit dialog", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();

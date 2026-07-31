@@ -50,3 +50,8 @@ response.
 Errors are structured JSON. Authentication failures use 401; valid identities
 lacking Space/token/resource permission use 403; stale/used one-time credentials
 fail without revealing stored secret material.
+
+Form evolution that changes the type of an existing field is intentionally
+unsupported before v1. The server returns HTTP 422 with code
+`FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED` and a message naming the field and
+recommending a new field; it does not return this expected rejection as a 500.
