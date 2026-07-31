@@ -150,13 +150,13 @@ async function cleanupSavedSearchesByPrefix(
 		name: string | null;
 		kind: "user-query" | "search-history";
 	}>;
-	for (
-		const entry of list.filter((item) =>
-			item.kind === "user-query" &&
-			item.name !== null &&
-			item.name.startsWith(namePrefix)
-		)
-	) {
+	const created = list.filter((item) => {
+		const name = item.name;
+		return item.kind === "user-query" &&
+			name !== null &&
+			name.startsWith(namePrefix);
+	});
+	for (const entry of created) {
 		await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${entry.id}`));
 	}
 }

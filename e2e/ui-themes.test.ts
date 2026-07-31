@@ -177,11 +177,12 @@ async function cleanupThemeQueries(
 		kind: "user-query" | "search-history";
 	}>;
 	const prefixes = [`E2E Theme Query ${theme}`, `E2E Variables ${theme}`];
-	const created = list.filter((item) =>
-		item.kind === "user-query" &&
-		item.name !== null &&
-		prefixes.some((prefix) => item.name.startsWith(prefix))
-	);
+	const created = list.filter((item) => {
+		const name = item.name;
+		return item.kind === "user-query" &&
+			name !== null &&
+			prefixes.some((prefix) => name.startsWith(prefix));
+	});
 	for (const item of created) {
 		await request.delete(getBackendUrl(`/spaces/${space}/sql/${item.id}`));
 	}
