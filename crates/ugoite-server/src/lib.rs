@@ -3557,16 +3557,17 @@ async fn create_entry(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     validate_id(&entry_id, "entry_id")?;
     let created = state
         .service
-        .create_entry_authorized(
+        .create_entry_authorized_for_principals(
             &space_id,
             &entry_id,
             &payload.markdown,
             &principal_id.to_string(),
-            principal_id,
+            &principals,
         )
         .await
         .map_err(ApiError::from_core)?;
@@ -3672,15 +3673,17 @@ async fn update_entry(
         &entry_id,
     )
     .await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     validate_id(&entry_id, "entry_id")?;
     let value = state
         .service
-        .update_entry(
+        .update_entry_authorized_for_principals(
             &space_id,
             &entry_id,
             &payload.markdown,
             payload.parent_revision_id.as_deref(),
             &principal_id.to_string(),
+            &principals,
         )
         .await
         .map_err(ApiError::from_core)?;
@@ -3828,16 +3831,18 @@ async fn restore_entry(
         &entry_id,
     )
     .await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     validate_id(&entry_id, "entry_id")?;
     validate_id(&payload.revision_id, "revision_id")?;
     Ok(Json(
         state
             .service
-            .restore_entry(
+            .restore_entry_authorized_for_principals(
                 &space_id,
                 &entry_id,
                 &payload.revision_id,
                 &principal_id.to_string(),
+                &principals,
             )
             .await
             .map_err(ApiError::from_core)?,
@@ -4246,9 +4251,10 @@ async fn delete_asset(
     )
     .await?;
     validate_id(&asset_id, "asset_id")?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     state
         .service
-        .delete_asset_with_principal(&space_id, &asset_id, Some(principal_id))
+        .delete_asset_with_principals(&space_id, &asset_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(json!({"id": asset_id, "status": "deleted"})))

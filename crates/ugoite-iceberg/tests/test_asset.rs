@@ -97,7 +97,7 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
     let reference = asset::save_asset(&op, ws_path, "image.png", b"bytes").await?;
     let reference_json = serde_json::to_string(&reference)?;
     let content = format!(
-        "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}]\n---\n# Photo"
+            "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}, null]\n---\n# Photo"
     );
     entry::create_entry(
         &op,
@@ -118,6 +118,7 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
         entries[0]["properties"]["Attachments"][0]["asset_id"],
         reference.asset_id
     );
+    assert!(entries[0]["properties"]["Attachments"][1].is_null());
     let workspace = ugoite_iceberg::iceberg_store::native_workspace(&op, ws_path).await?;
     assert!(
         asset::current_asset_reference_exists_in_workspace(
@@ -255,6 +256,124 @@ async fn asset_deletion_and_reference_creation_share_the_catalog_head_boundary(
 }
 
 #[tokio::test]
+async fn asset_reference_races_are_deterministic_at_the_validation_boundary() -> anyhow::Result<()>
+{
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-race-gate", "/tmp").await?;
+    let ws_path = "spaces/asset-race-gate";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Media",
+            "fields": {"Attachment": {"type": "asset_reference"}}
+        }),
+    )
+    .await?;
+    let scopes = BTreeMap::from([("media".to_string(), EntryScope::AllCurrent)]);
+
+    // The reference has validated against Head N. Deletion publishes Head
+    // N+1 while the reference is paused; the stale reference CAS must lose.
+    let first = asset::save_asset(&op, ws_path, "first.bin", b"first").await?;
+    let first_json = serde_json::to_string(&first)?;
+    let gate = ugoite_iceberg::TestValidationGate::new();
+    ugoite_iceberg::install_test_validation_gate(gate.clone());
+    let create_op = op.clone();
+    let create_ws_path = ws_path.to_string();
+    let create = tokio::spawn(async move {
+        entry::create_entry(
+            &create_op,
+            &create_ws_path,
+            "stale-reference",
+            &format!("---\nform: Media\nAttachment: {first_json}\n---\n# First"),
+            "author",
+            &FakeIntegrityProvider,
+        )
+        .await
+    });
+    gate.wait_until_entered().await;
+    ugoite_iceberg::clear_test_validation_gate();
+    asset::delete_asset(&op, ws_path, &first.asset_id, &scopes).await?;
+    gate.release();
+    let create_result = create.await?;
+    assert!(create_result.is_err());
+    assert!(asset::read_asset(&op, ws_path, &first.asset_id)
+        .await
+        .is_err());
+
+    // The deletion has validated against Head N. The reference publishes
+    // Head N+1 before deletion creates its marker; deletion then loses its
+    // stale CAS and the bytes remain.
+    let second = asset::save_asset(&op, ws_path, "second.bin", b"second").await?;
+    let second_json = serde_json::to_string(&second)?;
+    let gate = ugoite_iceberg::TestValidationGate::new();
+    ugoite_iceberg::install_test_validation_gate(gate.clone());
+    let delete_op = op.clone();
+    let delete_ws_path = ws_path.to_string();
+    let delete_asset_id = second.asset_id.clone();
+    let delete_scopes = scopes.clone();
+    let delete = tokio::spawn(async move {
+        asset::delete_asset(
+            &delete_op,
+            &delete_ws_path,
+            &delete_asset_id,
+            &delete_scopes,
+        )
+        .await
+    });
+    gate.wait_until_entered().await;
+    ugoite_iceberg::clear_test_validation_gate();
+    entry::create_entry(
+        &op,
+        ws_path,
+        "reference-wins",
+        &format!("---\nform: Media\nAttachment: {second_json}\n---\n# Second"),
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    gate.release();
+    assert!(delete.await?.is_err());
+    assert_eq!(
+        asset::read_asset(&op, ws_path, &second.asset_id)
+            .await?
+            .bytes,
+        b"second"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn asset_lifecycle_markers_keep_catalog_head_bounded() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-lifecycle-bounded", "/tmp").await?;
+    let ws_path = "spaces/asset-lifecycle-bounded";
+    let store = ugoite_storage::SpaceCatalogStore::new(op.clone(), ws_path)?;
+    let initial = store
+        .read_exact_head()
+        .await?
+        .expect("space Head")
+        .bytes
+        .len();
+    for index in 0..64 {
+        let reference =
+            asset::save_asset(&op, ws_path, &format!("asset-{index}.bin"), b"bytes").await?;
+        asset::delete_asset(&op, ws_path, &reference.asset_id, &BTreeMap::new()).await?;
+    }
+    let final_size = store
+        .read_exact_head()
+        .await?
+        .expect("space Head")
+        .bytes
+        .len();
+    assert!(
+        final_size <= initial + 512,
+        "Catalog Head grew from {initial} to {final_size} bytes"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn authorization_state_hides_scalar_and_list_asset_references() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let service = UgoiteService::from_operator(op.clone(), "memory://asset-auth-scope");
@@ -341,6 +460,23 @@ async fn authorization_state_hides_scalar_and_list_asset_references() -> anyhow:
             &scopes,
         )
         .await?
+    );
+    let delete_error = service
+        .delete_asset_with_principal(&space_id, &reference.asset_id, Some(viewer))
+        .await
+        .expect_err("hidden current references must still protect Asset bytes");
+    assert!(delete_error
+        .to_string()
+        .contains("cannot be deleted while it is in use"));
+    assert_eq!(
+        asset::read_asset(
+            service.operator(),
+            &format!("spaces/{space_id}"),
+            &reference.asset_id,
+        )
+        .await?
+        .bytes,
+        b"private"
     );
     Ok(())
 }

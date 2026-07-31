@@ -440,15 +440,6 @@ pub(crate) fn render_markdown_for_form(
     render_markdown(title, form_name, tags, &merged_fields, &field_order)
 }
 
-async fn append_revision_row_to_table(
-    op: &Operator,
-    ws_path: &str,
-    row: &RevisionRow,
-    form_def: &Value,
-) -> Result<()> {
-    append_revision_rows_to_workspace(op, ws_path, std::slice::from_ref(row), form_def).await
-}
-
 async fn append_revision_rows_to_workspace(
     op: &Operator,
     ws_path: &str,
@@ -469,6 +460,11 @@ async fn append_revision_rows_to_workspace_authorized(
         return Err(anyhow!("revision batch must not be empty"));
     }
     let domain_form = form::to_domain_form(form_def)?;
+    if let Some(scopes) = relation_scopes {
+        if !scopes.contains_key(&domain_form.name.to_ascii_lowercase()) {
+            return Err(AppError::forbidden("Form is not readable").into());
+        }
+    }
     let revisions = rows
         .iter()
         .map(|row| revision_row_to_domain(row, &domain_form))
@@ -610,10 +606,18 @@ fn json_to_field_value_for_field(value: &Value, field: &FormField) -> Result<Fie
             .context("typed asset reference list must be an array")?
             .iter()
             .map(|value| {
-                Ok(FieldValue::AssetReference(
-                    serde_json::from_value::<AssetReference>(value.clone())
-                        .context("invalid asset reference list item")?,
-                ))
+                if value.is_null() {
+                    Ok(FieldValue::Null)
+                } else if value.is_object() {
+                    Ok(FieldValue::AssetReference(
+                        serde_json::from_value::<AssetReference>(value.clone())
+                            .context("invalid asset reference list item")?,
+                    ))
+                } else {
+                    Err(anyhow!(
+                        "asset reference list items must be objects or null"
+                    ))
+                }
             })
             .collect::<Result<Vec<_>>>()?;
         return Ok(FieldValue::List(values));
@@ -871,8 +875,26 @@ pub(crate) async fn append_revision_row_for_form(
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
+    append_revision_row_for_form_authorized(op, ws_path, form_name, row, form_def, None).await
+}
+
+pub(crate) async fn append_revision_row_for_form_authorized(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    row: &RevisionRow,
+    form_def: &Value,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<()> {
     let _ = form_name;
-    append_revision_row_to_table(op, ws_path, row, form_def).await
+    append_revision_rows_to_workspace_authorized(
+        op,
+        ws_path,
+        std::slice::from_ref(row),
+        form_def,
+        relation_scopes,
+    )
+    .await
 }
 
 pub async fn append_revision_batch_for_form(
@@ -1398,9 +1420,38 @@ pub async fn update_entry<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
+    update_entry_authorized(
+        op,
+        ws_path,
+        entry_id,
+        content,
+        parent_revision_id,
+        author,
+        integrity,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn update_entry_authorized<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    content: &str,
+    parent_revision_id: Option<&str>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
+    if let Some(scopes) = relation_scopes {
+        if !scopes.contains_key(&form_name.to_ascii_lowercase()) {
+            return Err(AppError::forbidden("Form is not readable").into());
+        }
+    }
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
 
     if let Some(expected_parent) = parent_revision_id {
@@ -1501,7 +1552,15 @@ pub async fn update_entry<I: IntegrityProvider>(
         source_kind: "api".to_string(),
         source_id: None,
     };
-    append_revision_row_for_form(op, ws_path, &form_name, &revision, &form_def).await?;
+    append_revision_row_for_form_authorized(
+        op,
+        ws_path,
+        &form_name,
+        &revision,
+        &form_def,
+        relation_scopes,
+    )
+    .await?;
 
     get_entry(op, ws_path, entry_id).await
 }
@@ -1608,9 +1667,27 @@ pub async fn restore_entry<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
+    restore_entry_authorized(op, ws_path, entry_id, revision_id, author, integrity, None).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn restore_entry_authorized<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    revision_id: &str,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
+    if let Some(scopes) = relation_scopes {
+        if !scopes.contains_key(&form_name.to_ascii_lowercase()) {
+            return Err(AppError::forbidden("Form is not readable").into());
+        }
+    }
     let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
         .into_iter()
@@ -1667,7 +1744,15 @@ pub async fn restore_entry<I: IntegrityProvider>(
         source_kind: "api".to_string(),
         source_id: Some(revision_id.to_string()),
     };
-    append_revision_row_for_form(op, ws_path, &form_name, &restore_revision, &form_def).await?;
+    append_revision_row_for_form_authorized(
+        op,
+        ws_path,
+        &form_name,
+        &restore_revision,
+        &form_def,
+        relation_scopes,
+    )
+    .await?;
 
     Ok(serde_json::json!({
         "revision_id": new_rev_id,

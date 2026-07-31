@@ -66,7 +66,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
-use tokio::sync::Semaphore;
+use tokio::sync::{Notify, Semaphore};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
@@ -195,6 +195,76 @@ pub struct CommitReceipt {
 pub struct SpaceCommitCoordinator {
     workspace: IcebergWorkspace,
     publication: PublicationContext,
+    #[cfg(debug_assertions)]
+    validation_gate: Option<Arc<TestValidationGate>>,
+}
+
+/// Debug-only synchronization used by the deterministic publication race
+/// tests. It is absent from release builds and cannot affect production
+/// scheduling or persistence.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct TestValidationGate {
+    reached: std::sync::atomic::AtomicBool,
+    entered: Notify,
+    release: Notify,
+}
+
+#[cfg(debug_assertions)]
+impl TestValidationGate {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            reached: std::sync::atomic::AtomicBool::new(false),
+            entered: Notify::new(),
+            release: Notify::new(),
+        })
+    }
+
+    pub async fn wait_until_entered(&self) {
+        while !self.reached.load(std::sync::atomic::Ordering::Acquire) {
+            self.entered.notified().await;
+        }
+    }
+
+    pub fn release(&self) {
+        self.release.notify_one();
+    }
+
+    async fn pause(&self) {
+        self.reached
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.entered.notify_waiters();
+        self.release.notified().await;
+    }
+}
+
+#[cfg(debug_assertions)]
+static TEST_VALIDATION_GATE: LazyLock<Mutex<Option<Arc<TestValidationGate>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn install_test_validation_gate(gate: Arc<TestValidationGate>) {
+    *TEST_VALIDATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
+}
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn clear_test_validation_gate() {
+    *TEST_VALIDATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+#[cfg(debug_assertions)]
+fn current_test_validation_gate() -> Option<Arc<TestValidationGate>> {
+    TEST_VALIDATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 const MAX_PUBLICATION_ATTEMPTS: usize = 3;
@@ -326,6 +396,8 @@ impl IcebergWorkspace {
         Ok(SpaceCommitCoordinator {
             workspace: self.clone(),
             publication,
+            #[cfg(debug_assertions)]
+            validation_gate: current_test_validation_gate(),
         })
     }
 
@@ -702,7 +774,12 @@ impl IcebergWorkspace {
             .collect::<HashMap<_, _>>();
         let pending_entry_ids = revisions
             .iter()
-            .filter(|revision| revision.operation != EntryOperation::Delete)
+            .filter(|revision| {
+                !matches!(
+                    revision.operation,
+                    EntryOperation::Delete | EntryOperation::Restore
+                )
+            })
             .flat_map(|revision| {
                 [
                     (!revision.entry.external_id.is_empty())
@@ -716,7 +793,10 @@ impl IcebergWorkspace {
             .collect::<BTreeSet<_>>();
         let mut references = BTreeSet::<(FormId, String)>::new();
         for revision in revisions {
-            if revision.operation == EntryOperation::Delete {
+            if matches!(
+                revision.operation,
+                EntryOperation::Delete | EntryOperation::Restore
+            ) {
                 continue;
             }
             for field in &form.fields {
@@ -837,7 +917,10 @@ impl IcebergWorkspace {
     ) -> Result<()> {
         let form = self.load_form(form_id).await?;
         for revision in revisions {
-            if revision.operation == EntryOperation::Delete {
+            if matches!(
+                revision.operation,
+                EntryOperation::Delete | EntryOperation::Restore
+            ) {
                 continue;
             }
             for field in &form.fields {
@@ -1319,17 +1402,18 @@ fn checkpoint_query_error(error: anyhow::Error) -> anyhow::Error {
 }
 
 impl SpaceCommitCoordinator {
-    fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
+    async fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
         let catalog = self
             .workspace
             .space_catalog
             .as_ref()
             .context("coordinator is missing its SpaceCatalog")?;
-        let catalog = Arc::new(
-            catalog
-                .new_attempt()
-                .with_publication_context(self.publication.clone()),
-        );
+        let catalog = catalog
+            .new_attempt()
+            .with_publication_context(self.publication.clone())
+            .bind_exact_head()
+            .await?;
+        let catalog = Arc::new(catalog);
         Ok(IcebergWorkspace {
             catalog: catalog.clone(),
             space_catalog: Some(catalog),
@@ -1355,7 +1439,7 @@ impl SpaceCommitCoordinator {
             if self.publication_receipt().await?.is_some() {
                 return Ok(());
             }
-            match self.attempt_workspace()?.create_form(form).await {
+            match self.attempt_workspace().await?.create_form(form).await {
                 Ok(()) => return Ok(()),
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
@@ -1369,7 +1453,7 @@ impl SpaceCommitCoordinator {
             if self.publication_receipt().await?.is_some() {
                 return self.workspace.load_form(changes.form_id).await;
             }
-            match self.attempt_workspace()?.evolve_form(changes).await {
+            match self.attempt_workspace().await?.evolve_form(changes).await {
                 Ok(form) => return Ok(form),
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
@@ -1434,13 +1518,17 @@ impl SpaceCommitCoordinator {
                     data_file_count: 0,
                 });
             }
-            let attempt = self.attempt_workspace()?;
+            let attempt = self.attempt_workspace().await?;
             attempt
                 .validate_asset_references_not_deleted(form_id, &revisions)
                 .await?;
             attempt
                 .validate_row_reference_targets(form_id, &revisions, relation_scopes)
                 .await?;
+            #[cfg(debug_assertions)]
+            if let Some(gate) = &self.validation_gate {
+                gate.pause().await;
+            }
             let mut receipt = match attempt.append_revisions(form_id, revisions.clone()).await {
                 Ok(receipt) => receipt,
                 Err(error) if is_publication_conflict(&error) => continue,
@@ -1474,18 +1562,46 @@ impl SpaceCommitCoordinator {
             if self.publication_receipt().await?.is_some() {
                 return Ok(());
             }
-            let attempt = self.attempt_workspace()?;
+            let attempt = self.attempt_workspace().await?;
             if attempt.asset_is_deleted(asset_id).await? {
                 return Err(anyhow!("Asset '{}' is already unavailable", asset_id));
             }
-            if crate::asset::current_asset_reference_exists_in_workspace(
+            let all_current_scopes = attempt
+                .list_forms()
+                .await?
+                .into_iter()
+                .map(|form| {
+                    (
+                        form.name.to_ascii_lowercase(),
+                        ugoite_core::query::EntryScope::AllCurrent,
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let referenced_anywhere = crate::asset::current_asset_reference_exists_in_workspace(
                 &attempt,
                 asset_id,
-                relation_scopes,
+                &all_current_scopes,
             )
-            .await?
+            .await?;
+            if referenced_anywhere
+                && crate::asset::current_asset_reference_exists_in_workspace(
+                    &attempt,
+                    asset_id,
+                    relation_scopes,
+                )
+                .await?
             {
                 return Err(anyhow!("Asset '{}' is referenced by an entry", asset_id));
+            }
+            if referenced_anywhere {
+                // The reference is deliberately not named: the caller is not
+                // authorized to learn which Entry protects the bytes. The
+                // all-current query above still makes deletion fail closed.
+                return Err(anyhow!("Asset cannot be deleted while it is in use"));
+            }
+            #[cfg(debug_assertions)]
+            if let Some(gate) = &self.validation_gate {
+                gate.pause().await;
             }
             match attempt.mark_asset_deleted(asset_id).await {
                 Ok(()) => return Ok(()),
@@ -1991,7 +2107,7 @@ fn typed_list_array(
             if let Some(FieldValue::List(items)) = value {
                 for item in items {
                     if matches!(item, FieldValue::Null) {
-                        builder.values().append(false);
+                        append_null_asset_reference(builder.values())?;
                     } else {
                         append_asset_reference(builder.values(), item)?;
                     }
@@ -2242,7 +2358,7 @@ fn asset_reference_array(
     let mut builder = StructBuilder::from_fields(fields, values.len());
     for value in values {
         match value {
-            Some(FieldValue::Null) | None => builder.append(false),
+            Some(FieldValue::Null) | None => append_null_asset_reference(&mut builder)?,
             Some(value) => append_asset_reference(&mut builder, value)?,
         }
     }
@@ -2274,6 +2390,31 @@ fn append_asset_reference(builder: &mut StructBuilder, value: &FieldValue) -> Re
         .context("invalid asset checksum field builder")?
         .append_value(&reference.sha256);
     builder.append(true);
+    Ok(())
+}
+
+fn append_null_asset_reference(builder: &mut StructBuilder) -> Result<()> {
+    builder
+        .field_builder::<StringBuilder>(0)
+        .context("invalid asset_id field builder")?
+        .append_null();
+    builder
+        .field_builder::<StringBuilder>(1)
+        .context("invalid asset name field builder")?
+        .append_null();
+    builder
+        .field_builder::<StringBuilder>(2)
+        .context("invalid asset media type field builder")?
+        .append_null();
+    builder
+        .field_builder::<Int64Builder>(3)
+        .context("invalid asset size field builder")?
+        .append_null();
+    builder
+        .field_builder::<StringBuilder>(4)
+        .context("invalid asset checksum field builder")?
+        .append_null();
+    builder.append(false);
     Ok(())
 }
 

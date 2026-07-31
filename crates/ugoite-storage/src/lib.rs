@@ -387,6 +387,47 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
+    /// Creates the deterministic lifecycle marker for one Asset.  The marker
+    /// is deliberately outside Catalog Head: Head size must not grow with the
+    /// number of deleted blobs.  `if_not_exists` also makes two deletion
+    /// attempts contend at the storage boundary.
+    pub async fn create_asset_lifecycle_marker(
+        &self,
+        asset_id: &str,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
+        self.operator
+            .write_options(
+                &path,
+                bytes,
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn read_asset_lifecycle_marker(&self, asset_id: &str) -> Result<Option<Vec<u8>>> {
+        let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
+        match self.operator.read(&path).await {
+            Ok(bytes) => Ok(Some(bytes.to_vec())),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub async fn delete_asset_lifecycle_marker(&self, asset_id: &str) -> Result<()> {
+        let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
+        match self.operator.delete(&path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub async fn create_publication(&self, path: &str, bytes: Vec<u8>) -> Result<()> {
         self.operator
             .write_options(

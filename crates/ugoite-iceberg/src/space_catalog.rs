@@ -116,6 +116,11 @@ struct PublicationAttempt {
     expected_previous_publication: Option<String>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+struct AssetLifecycleMarker {
+    command_id: String,
+}
+
 impl PublicationAttempt {
     fn from_exact(
         publication: &PublicationContext,
@@ -162,6 +167,11 @@ pub struct SpaceCatalog {
     runtime: Runtime,
     publication: PublicationContext,
     mutation_claimed: Arc<AtomicBool>,
+    /// When present, every read and mutation on this catalog is evaluated
+    /// against this exact Head.  A coordinator creates one of these for an
+    /// operation so validation and publication cannot silently switch to a
+    /// newer base Head between the two steps.
+    bound_attempt: Option<Arc<PublicationAttempt>>,
 }
 
 impl std::fmt::Debug for SpaceCatalog {
@@ -202,6 +212,7 @@ impl SpaceCatalog {
             runtime: Runtime::current(),
             publication: PublicationContext::generated(),
             mutation_claimed: Arc::new(AtomicBool::new(false)),
+            bound_attempt: None,
         })
     }
 
@@ -222,7 +233,37 @@ impl SpaceCatalog {
             runtime: self.runtime.clone(),
             publication: PublicationContext::generated(),
             mutation_claimed: Arc::new(AtomicBool::new(false)),
+            bound_attempt: None,
         }
+    }
+
+    /// Captures one immutable publication attempt.  The same attempt is used
+    /// by all Iceberg table reads and by the eventual Catalog Head CAS.
+    pub(crate) async fn bind_exact_head(mut self) -> Result<Self> {
+        let exact = self.exact_head().await?;
+        self.bound_attempt = Some(Arc::new(PublicationAttempt::from_exact(
+            &self.publication,
+            exact,
+        )));
+        Ok(self)
+    }
+
+    async fn publication_attempt(&self) -> Result<PublicationAttempt> {
+        if let Some(attempt) = &self.bound_attempt {
+            return Ok((**attempt).clone());
+        }
+        Ok(PublicationAttempt::from_exact(
+            &self.publication,
+            self.exact_head().await?,
+        ))
+    }
+
+    async fn load_live_table(&self, table: &TableIdent) -> Result<iceberg::table::Table> {
+        let (head, _) = self
+            .exact_head()
+            .await?
+            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        self.load_head_table(table, &head).await
     }
 
     #[cfg(test)]
@@ -1204,7 +1245,7 @@ impl SpaceCatalog {
         } else {
             None
         };
-        let attempt = PublicationAttempt::from_exact(&self.publication, self.exact_head().await?);
+        let attempt = self.publication_attempt().await?;
         let head = attempt
             .expected_head
             .as_ref()
@@ -1253,19 +1294,48 @@ impl SpaceCatalog {
             )
             .await;
         match publication {
-            Ok(()) => self.load_table(table).await,
+            Ok(()) => self.load_live_table(table).await,
             Err(_error) if self.resolve_unknown_outcome(&attempt).await? => {
-                self.load_table(table).await
+                self.load_live_table(table).await
             }
             Err(error) => Err(error),
         }
     }
 
+    async fn asset_marker(&self, asset_id: &str) -> Result<Option<AssetLifecycleMarker>> {
+        let bytes = self
+            .store
+            .read_asset_lifecycle_marker(asset_id)
+            .await
+            .map_err(storage_error)?;
+        bytes
+            .map(|bytes| serde_json::from_slice(&bytes).map_err(json_error))
+            .transpose()
+    }
+
+    async fn cleanup_uncommitted_asset_marker(
+        &self,
+        asset_id: &str,
+        command_id: &str,
+    ) -> Result<()> {
+        let Some(marker) = self.asset_marker(asset_id).await? else {
+            return Ok(());
+        };
+        if marker.command_id == command_id {
+            self.store
+                .delete_asset_lifecycle_marker(asset_id)
+                .await
+                .map_err(storage_error)?;
+        }
+        Ok(())
+    }
+
     pub(crate) async fn asset_is_deleted(&self, asset_id: &str) -> Result<bool> {
-        Ok(self
-            .exact_head()
-            .await?
-            .is_some_and(|(head, _)| head.deleted_assets.contains(asset_id)))
+        // A marker is conservative by design: it covers both an in-flight
+        // deletion and a committed deletion. The owner removes it only when
+        // its exact Head CAS loses, so no reference can pass through the
+        // validation/publication interval.
+        Ok(self.asset_marker(asset_id).await?.is_some())
     }
 
     /// Publishes an Asset lifecycle state transition through the same
@@ -1278,19 +1348,36 @@ impl SpaceCatalog {
         } else {
             None
         };
-        let attempt = PublicationAttempt::from_exact(&self.publication, self.exact_head().await?);
+        let attempt = self.publication_attempt().await?;
         let head = attempt
             .expected_head
             .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
-        if head.deleted_assets.contains(asset_id) {
+        if self.asset_marker(asset_id).await?.is_some() {
             return Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Asset is already marked deleted",
             ));
         }
-        let mut next = head.next_generation();
-        next.deleted_assets.insert(asset_id.to_string());
+        let marker = serde_json::to_vec(&AssetLifecycleMarker {
+            command_id: self.publication.command_id.clone(),
+        })
+        .map_err(json_error)?;
+        match self
+            .store
+            .create_asset_lifecycle_marker(asset_id, marker)
+            .await
+        {
+            Ok(()) => {}
+            Err(error) if is_condition_conflict(&error) => {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head changed while claiming the Asset lifecycle marker",
+                ));
+            }
+            Err(error) => return Err(storage_error(error)),
+        }
+        let next = head.next_generation();
         let publication = self
             .publish_new_head(
                 &attempt,
@@ -1312,7 +1399,11 @@ impl SpaceCatalog {
         match publication {
             Ok(()) => Ok(()),
             Err(_error) if self.resolve_unknown_outcome(&attempt).await? => Ok(()),
-            Err(error) => Err(error),
+            Err(error) => {
+                self.cleanup_uncommitted_asset_marker(asset_id, &self.publication.command_id)
+                    .await?;
+                Err(error)
+            }
         }
     }
 
@@ -1385,6 +1476,21 @@ impl SpaceCatalog {
                 ErrorKind::DataInvalid,
                 "Catalog Head exceeds its 1 MiB safety limit",
             ));
+        }
+        if self.store.write_mode() == CatalogWriteMode::SingleProcess
+            && attempt.expected_head.is_some()
+        {
+            // Single-process OpenDAL backends do not expose an ETag CAS. The
+            // serializer above still gives us a safe publication boundary;
+            // compare the exact captured Head while holding that serializer
+            // before replacing it.
+            let current = self.exact_head().await?.map(|(head, _)| head);
+            if current != attempt.expected_head {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head changed before this publication could be committed",
+                ));
+            }
         }
         let result = if attempt.expected_head.is_some() {
             self.store
@@ -1674,7 +1780,12 @@ impl Catalog for SpaceCatalog {
         if namespace != &self.namespace {
             return Ok(Vec::new());
         }
-        let Some((head, _)) = self.exact_head().await? else {
+        let head = if let Some(attempt) = &self.bound_attempt {
+            attempt.expected_head.clone()
+        } else {
+            self.exact_head().await?.map(|(head, _)| head)
+        };
+        let Some(head) = head else {
             return Ok(Vec::new());
         };
         Ok(head
@@ -1702,7 +1813,7 @@ impl Catalog for SpaceCatalog {
             ));
         }
         let table = TableIdent::new(namespace.clone(), creation.name.clone());
-        let attempt = PublicationAttempt::from_exact(&self.publication, self.exact_head().await?);
+        let attempt = self.publication_attempt().await?;
         if let Some(head) = &attempt.expected_head {
             if head.tables.contains_key(&Self::table_key(&table)) {
                 return Err(Error::new(
@@ -1771,18 +1882,22 @@ impl Catalog for SpaceCatalog {
         match publish {
             Ok(()) => Ok(created),
             Err(_error) if self.resolve_unknown_outcome(&attempt).await? => {
-                self.load_table(&table).await
+                self.load_live_table(&table).await
             }
             Err(error) => Err(error),
         }
     }
 
     async fn load_table(&self, table: &TableIdent) -> Result<iceberg::table::Table> {
-        let (head, _) = self
-            .exact_head()
-            .await?
-            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
-        self.load_head_table(table, &head).await
+        if let Some(attempt) = &self.bound_attempt {
+            let head = attempt
+                .expected_head
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+            self.load_head_table(table, head).await
+        } else {
+            self.load_live_table(table).await
+        }
     }
 
     async fn drop_table(&self, _table: &TableIdent) -> Result<()> {
@@ -1794,6 +1909,12 @@ impl Catalog for SpaceCatalog {
     }
 
     async fn table_exists(&self, table: &TableIdent) -> Result<bool> {
+        if let Some(attempt) = &self.bound_attempt {
+            return Ok(attempt
+                .expected_head
+                .as_ref()
+                .is_some_and(|head| head.tables.contains_key(&Self::table_key(table))));
+        }
         Ok(self
             .exact_head()
             .await?
@@ -1822,7 +1943,7 @@ impl Catalog for SpaceCatalog {
             None
         };
         let table = commit.identifier().clone();
-        let attempt = PublicationAttempt::from_exact(&self.publication, self.exact_head().await?);
+        let attempt = self.publication_attempt().await?;
         let head = attempt
             .expected_head
             .as_ref()
@@ -1863,7 +1984,7 @@ impl Catalog for SpaceCatalog {
         match publication {
             Ok(()) => Ok(staged),
             Err(_error) if self.resolve_unknown_outcome(&attempt).await? => {
-                self.load_table(&table).await
+                self.load_live_table(&table).await
             }
             Err(error) => Err(error),
         }
@@ -1878,8 +1999,6 @@ struct CatalogHead {
     generation: u64,
     form_registry_generation: u64,
     tables: BTreeMap<String, TableReference>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    deleted_assets: BTreeSet<String>,
     publication_location: Option<String>,
     publication_command_id: Option<String>,
     checksum: String,
@@ -1894,7 +2013,6 @@ impl CatalogHead {
             generation: 0,
             form_registry_generation: 0,
             tables: BTreeMap::new(),
-            deleted_assets: BTreeSet::new(),
             publication_location: None,
             publication_command_id: None,
             checksum: String::new(),

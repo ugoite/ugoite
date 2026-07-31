@@ -1,5 +1,6 @@
 mod common;
 use common::setup_operator;
+use ugoite_iceberg::asset;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::index;
@@ -78,6 +79,106 @@ async fn row_reference_values_must_target_current_entries_in_the_declared_form(
     .await
     .expect_err("references must resolve to the declared target Form");
     assert!(error.to_string().contains("does not belong to Form"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn restore_replays_historical_references_even_when_targets_are_unavailable(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "restore-unavailable-targets", "/tmp").await?;
+    let ws_path = "spaces/restore-unavailable-targets";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Target",
+            "fields": {"Name": {"type": "string"}}
+        }),
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Source",
+            "fields": {
+                "Target": {"type": "row_reference", "target_form": "Target"},
+                "Targets": {"type": "list", "items": {"type": "row_reference", "target_form": "Target"}},
+                "Attachment": {"type": "asset_reference"},
+                "Attachments": {"type": "list", "items": {"type": "asset_reference"}}
+            }
+        }),
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "target-1",
+        "---\nform: Target\nName: Target\n---\n# Target",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    let reference = asset::save_asset(&op, ws_path, "restore.bin", b"restore bytes").await?;
+    let reference_json = serde_json::to_string(&reference)?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "source-1",
+        &format!(
+            "---\nform: Source\nTarget: target-1\nTargets: [target-1]\nAttachment: {reference_json}\nAttachments: [{reference_json}]\n---\n# Source"
+        ),
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    let historical_revision = entry::get_entry_content(&op, ws_path, "source-1")
+        .await?
+        .revision_id;
+
+    // Remove the references from the current value first. This is the only
+    // state from which deleting the target Asset is valid.
+    entry::update_entry(
+        &op,
+        ws_path,
+        "source-1",
+        "---\nform: Source\n---\n# Source without references",
+        Some(&historical_revision),
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    entry::delete_entry(&op, ws_path, "target-1", false).await?;
+    asset::delete_asset(&op, ws_path, &reference.asset_id, &Default::default()).await?;
+
+    entry::restore_entry(
+        &op,
+        ws_path,
+        "source-1",
+        &historical_revision,
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    let restored = entry::list_entries(&op, ws_path)
+        .await?
+        .into_iter()
+        .find(|entry| entry["id"] == "source-1")
+        .expect("restored Entry");
+    assert_eq!(restored["properties"]["Target"], "target-1");
+    assert_eq!(restored["properties"]["Targets"][0], "target-1");
+    assert_eq!(
+        restored["properties"]["Attachment"]["asset_id"],
+        reference.asset_id
+    );
+    assert_eq!(
+        restored["properties"]["Attachments"][0]["asset_id"],
+        reference.asset_id
+    );
+    assert!(asset::read_asset(&op, ws_path, &reference.asset_id)
+        .await
+        .is_err());
     Ok(())
 }
 
