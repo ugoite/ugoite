@@ -31,6 +31,8 @@ describe("sqlApi", () => {
           {
             id: "query-1",
             name: "Recent Query",
+            kind: "user-query",
+            metadata: null,
             sql: "SELECT 1",
             variables: [],
             created_at: 1772960822.056,
@@ -52,7 +54,9 @@ describe("sqlApi", () => {
   it("creates a SQL entry and returns id/revisionId", async () => {
     const result = await sqlApi.create("sql-ws", {
       name: "My Query",
+      kind: "user-query",
       sql: "SELECT 1",
+      variables: [],
     });
     expect(result.id).toBeDefined();
     expect(result.revisionId).toBeDefined();
@@ -61,7 +65,9 @@ describe("sqlApi", () => {
   it("gets a SQL entry by id", async () => {
     const created = await sqlApi.create("sql-ws", {
       name: "Get Test",
+      kind: "user-query",
       sql: "SELECT 2",
+      variables: [],
     });
     const fetched = await sqlApi.get("sql-ws", created.id);
     expect(fetched.name).toBe("Get Test");
@@ -71,11 +77,15 @@ describe("sqlApi", () => {
   it("updates a SQL entry", async () => {
     const created = await sqlApi.create("sql-ws", {
       name: "Orig",
+      kind: "user-query",
       sql: "SELECT 1",
+      variables: [],
     });
     const result = await sqlApi.update("sql-ws", created.id, {
       name: "Updated",
+      kind: "user-query",
       sql: "SELECT 2",
+      variables: [],
     });
     expect(result.id).toBe(created.id);
     expect(result.revisionId).toBeDefined();
@@ -84,7 +94,9 @@ describe("sqlApi", () => {
   it("deletes a SQL entry", async () => {
     const created = await sqlApi.create("sql-ws", {
       name: "ToDelete",
+      kind: "user-query",
       sql: "SELECT 1",
+      variables: [],
     });
     await expect(sqlApi.delete("sql-ws", created.id)).resolves.toBeUndefined();
   });
@@ -120,7 +132,12 @@ describe("sqlApi", () => {
         () => HttpResponse.json({ detail: "Invalid SQL" }, { status: 422 }),
       ),
     );
-    await expect(sqlApi.create("sql-ws", { name: "Bad", sql: "SELECT" }))
+    await expect(sqlApi.create("sql-ws", {
+      name: "Bad",
+      kind: "user-query",
+      sql: "SELECT",
+      variables: [],
+    }))
       .rejects.toThrow(
         "Invalid SQL",
       );
@@ -133,8 +150,12 @@ describe("sqlApi", () => {
         () => HttpResponse.json({ detail: "Update failed" }, { status: 500 }),
       ),
     );
-    await expect(sqlApi.update("sql-ws", "bad-id", { name: "X" })).rejects
-      .toThrow("Update failed");
+    await expect(sqlApi.update("sql-ws", "bad-id", {
+      name: "X",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+    })).rejects.toThrow("Update failed");
   });
 
   it("throws on delete failure", async () => {

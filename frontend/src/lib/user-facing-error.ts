@@ -32,6 +32,7 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   INVALID_TOTP: "errors.code.invalidTotp",
   TOTP_ENROLLMENT_FAILED: "errors.code.totpEnrollmentFailed",
   AUTHENTICATION_FAILED: "errors.code.authenticationFailed",
+  PASSKEY_CANCELLED: "securityPage.passkeyCancelled",
 };
 
 const OPERATION_KEYS: Partial<Record<UgoiteApiOperation | string, TranslationKey>> = {

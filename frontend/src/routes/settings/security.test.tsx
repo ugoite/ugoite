@@ -102,6 +102,23 @@ describe("SecuritySettingsRoute", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("credential-1");
   });
 
+  it("localizes a client-side passkey cancellation", async () => {
+    setLocale("ja");
+    vi.mocked(authApi.addPasskey).mockRejectedValue(new UgoiteApiError({
+      kind: "cancelled",
+      code: "PASSKEY_CANCELLED",
+      operation: "auth.passkey",
+      message: "",
+    }));
+
+    render(() => <SecuritySettingsRoute />);
+    fireEvent.click(await screen.findByRole("button", { name: "パスキーを追加" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("パスキーの操作をキャンセルしました。");
+    expect(alert).not.toHaveTextContent("Passkey");
+  });
+
   it("routes session, device, OIDC, and TOTP failures through the same action state", async () => {
     setLocale("ja");
     const failure = new UgoiteApiError({

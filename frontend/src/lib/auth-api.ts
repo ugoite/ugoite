@@ -97,6 +97,20 @@ const requestOptions = (
   })),
 });
 
+const passkeyCancelledError = (): UgoiteApiError =>
+  new UgoiteApiError({
+    kind: "cancelled",
+    code: "PASSKEY_CANCELLED",
+    operation: "auth.passkey",
+    message: "",
+  });
+
+const isPasskeyCancellation = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  return "name" in error &&
+    (error as { name?: unknown }).name === "NotAllowedError";
+};
+
 const serializeCredential = (
   credential: PublicKeyCredential,
 ): Record<string, unknown> => {
@@ -132,13 +146,19 @@ const serializeCredential = (
 const createPasskey = async (
   challenge: ChallengeEnvelope,
 ): Promise<Record<string, unknown>> => {
-  const credential = await navigator.credentials.create({
-    publicKey: creationOptions(
-      challenge.public_key.publicKey as PublicKeyCredentialCreationOptions,
-    ),
-  });
+  let credential: Credential | null;
+  try {
+    credential = await navigator.credentials.create({
+      publicKey: creationOptions(
+        challenge.public_key.publicKey as PublicKeyCredentialCreationOptions,
+      ),
+    });
+  } catch (error) {
+    if (isPasskeyCancellation(error)) throw passkeyCancelledError();
+    throw error;
+  }
   if (!(credential instanceof PublicKeyCredential)) {
-    throw new Error("Passkey registration was cancelled.");
+    throw passkeyCancelledError();
   }
   return serializeCredential(credential);
 };
@@ -177,14 +197,20 @@ export const authApi = {
       method: "POST",
       body: "{}",
     });
-    const credential = await navigator.credentials.get({
-      publicKey: requestOptions(
-        challenge.public_key.publicKey as PublicKeyCredentialRequestOptions,
-      ),
-      mediation: "optional",
-    });
+    let credential: Credential | null;
+    try {
+      credential = await navigator.credentials.get({
+        publicKey: requestOptions(
+          challenge.public_key.publicKey as PublicKeyCredentialRequestOptions,
+        ),
+        mediation: "optional",
+      });
+    } catch (error) {
+      if (isPasskeyCancellation(error)) throw passkeyCancelledError();
+      throw error;
+    }
     if (!(credential instanceof PublicKeyCredential)) {
-      throw new Error("Passkey login was cancelled.");
+      throw passkeyCancelledError();
     }
     await request("/auth/passkey/finish", {
       method: "POST",

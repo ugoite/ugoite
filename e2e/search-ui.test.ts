@@ -145,8 +145,18 @@ async function cleanupSavedSearchesByPrefix(
 	if (!response.ok()) {
 		return;
 	}
-	const list = (await response.json()) as Array<{ id: string; name: string }>;
-	for (const entry of list.filter((item) => item.name.startsWith(namePrefix))) {
+	const list = (await response.json()) as Array<{
+		id: string;
+		name: string | null;
+		kind: "user-query" | "search-history";
+	}>;
+	for (
+		const entry of list.filter((item) =>
+			item.kind === "user-query" &&
+			item.name !== null &&
+			item.name.startsWith(namePrefix)
+		)
+	) {
 		await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${entry.id}`));
 	}
 }

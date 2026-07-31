@@ -39,6 +39,7 @@ test.describe("Saved SQL route", () => {
 		const sqlCreate = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
 			data: {
 				name: `Saved Detail Query ${Date.now()}`,
+				kind: "user-query",
 				sql: "SELECT * FROM entries LIMIT 1",
 				variables: [],
 			},

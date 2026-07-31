@@ -44,6 +44,7 @@ test.describe("UI page screenshot export @screenshot", () => {
         data: {
           id: sqlId,
           name: `E2E Screenshot Query ${Date.now()}`,
+          kind: "user-query",
           sql: "SELECT * FROM entries LIMIT 10",
           variables: [],
         },

@@ -3,7 +3,9 @@ mod common;
 use common::setup_operator;
 use serde_json::json;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
-use ugoite_iceberg::saved_sql::{self, SqlKind, SqlMetadata, SqlPayload};
+use ugoite_iceberg::saved_sql::{
+    self, SearchHistoryOperator, SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload,
+};
 use ugoite_iceberg::space;
 use ugoite_iceberg::sql_session;
 
@@ -127,6 +129,129 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     space::create_space(&op, "sql-validate", "/tmp").await?;
     let ws_path = "spaces/sql-validate";
     let integrity = FakeIntegrityProvider;
+
+    let invalid_operator = serde_json::from_value::<SqlPayload>(json!({
+        "name": null,
+        "kind": "search-history",
+        "metadata": {
+            "searchCriteria": {
+                "formName": "Meeting",
+                "tags": [],
+                "updatedFrom": "",
+                "updatedTo": "",
+                "fieldConditions": [{
+                    "field": "Status",
+                    "operator": "starts-with",
+                    "value": "Active"
+                }]
+            }
+        },
+        "sql": "SELECT 1",
+        "variables": []
+    }));
+    assert!(invalid_operator.is_err());
+
+    let blank_name = SqlPayload {
+        name: Some("  ".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
+        sql: "SELECT 1".to_string(),
+        variables: json!([]),
+    };
+    let blank_name_err = saved_sql::create_sql(
+        &op,
+        ws_path,
+        "sql-blank-name",
+        &blank_name,
+        "author",
+        &integrity,
+    )
+    .await
+    .unwrap_err();
+    assert!(blank_name_err.to_string().contains("non-blank"));
+
+    let named_with_generated_name = SqlPayload {
+        name: Some("Named query".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: Some(SqlMetadata {
+            search_criteria: None,
+            generated_name: Some(SqlGeneratedName::Untitled),
+        }),
+        sql: "SELECT 1".to_string(),
+        variables: json!([]),
+    };
+    let named_with_generated_name_err = saved_sql::create_sql(
+        &op,
+        ws_path,
+        "sql-named-generated",
+        &named_with_generated_name,
+        "author",
+        &integrity,
+    )
+    .await
+    .unwrap_err();
+    assert!(named_with_generated_name_err
+        .to_string()
+        .contains("named user-query"));
+
+    let empty_metadata = SqlPayload {
+        name: Some("Named query".to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: Some(SqlMetadata {
+            search_criteria: None,
+            generated_name: None,
+        }),
+        sql: "SELECT 1".to_string(),
+        variables: json!([]),
+    };
+    let empty_metadata_err = saved_sql::create_sql(
+        &op,
+        ws_path,
+        "sql-empty-metadata",
+        &empty_metadata,
+        "author",
+        &integrity,
+    )
+    .await
+    .unwrap_err();
+    assert!(empty_metadata_err
+        .to_string()
+        .contains("metadata must be omitted"));
+
+    let search_history_with_generated_name = SqlPayload {
+        name: None,
+        kind: SqlKind::SearchHistory,
+        metadata: Some(SqlMetadata {
+            search_criteria: Some(ugoite_iceberg::saved_sql::SearchHistoryCriteria {
+                form_name: "Meeting".to_string(),
+                tags: vec![],
+                updated_from: "".to_string(),
+                updated_to: "".to_string(),
+                field_conditions: vec![],
+            }),
+            generated_name: Some(SqlGeneratedName::Untitled),
+        }),
+        sql: "SELECT 1".to_string(),
+        variables: json!([]),
+    };
+    let search_history_with_generated_name_err = saved_sql::create_sql(
+        &op,
+        ws_path,
+        "sql-history-generated",
+        &search_history_with_generated_name,
+        "author",
+        &integrity,
+    )
+    .await
+    .unwrap_err();
+    assert!(search_history_with_generated_name_err
+        .to_string()
+        .contains("only search_criteria"));
+
+    assert_eq!(
+        serde_json::to_value(SearchHistoryOperator::Equals)?,
+        json!("equals")
+    );
 
     let missing_placeholder = SqlPayload {
         name: Some("Missing placeholder".to_string()),

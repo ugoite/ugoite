@@ -38,6 +38,93 @@ let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
 
+const validateMockSqlPayload = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") return "payload must be an object";
+  const body = payload as Record<string, unknown>;
+  if (!("name" in body)) return "name is required";
+  if (body.name !== null && typeof body.name !== "string") {
+    return "name must be a string or null";
+  }
+  if (typeof body.name === "string" && !body.name.trim()) {
+    return "name must not be blank";
+  }
+  if (body.kind !== "user-query" && body.kind !== "search-history") {
+    return "kind must be user-query or search-history";
+  }
+  if (typeof body.sql !== "string") return "sql is required";
+  if (!Array.isArray(body.variables)) return "variables must be an array";
+  for (const variable of body.variables) {
+    if (!variable || typeof variable !== "object") {
+      return "variables items must be objects";
+    }
+    const item = variable as Record<string, unknown>;
+    if (
+      typeof item.type !== "string" ||
+      typeof item.name !== "string" ||
+      typeof item.description !== "string"
+    ) {
+      return "variables items require type, name, and description";
+    }
+  }
+
+  const metadata = body.metadata;
+  if (metadata === undefined || metadata === null) {
+    if (body.kind === "search-history") {
+      return "search-history metadata is required";
+    }
+    if (body.name === null) {
+      return "unnamed user-query requires generatedName=untitled";
+    }
+    return null;
+  }
+  if (typeof metadata !== "object" || Array.isArray(metadata)) {
+    return "metadata must be an object";
+  }
+  const metadataObject = metadata as Record<string, unknown>;
+  if (body.kind === "user-query") {
+    if (body.name !== null) return "named user-query cannot have metadata";
+    return metadataObject.generatedName === "untitled" &&
+        metadataObject.searchCriteria === undefined
+      ? null
+      : "unnamed user-query requires generatedName=untitled";
+  }
+
+  const criteria = metadataObject.searchCriteria;
+  if (
+    metadataObject.generatedName !== undefined ||
+    !criteria ||
+    typeof criteria !== "object" ||
+    Array.isArray(criteria)
+  ) {
+    return "search-history metadata must contain only searchCriteria";
+  }
+  const criteriaObject = criteria as Record<string, unknown>;
+  if (
+    typeof criteriaObject.formName !== "string" ||
+    !Array.isArray(criteriaObject.tags) ||
+    !criteriaObject.tags.every((tag) => typeof tag === "string") ||
+    typeof criteriaObject.updatedFrom !== "string" ||
+    typeof criteriaObject.updatedTo !== "string" ||
+    !Array.isArray(criteriaObject.fieldConditions)
+  ) {
+    return "searchCriteria is invalid";
+  }
+  for (const condition of criteriaObject.fieldConditions) {
+    if (!condition || typeof condition !== "object") {
+      return "searchCriteria field conditions are invalid";
+    }
+    const item = condition as Record<string, unknown>;
+    if (
+      typeof item.field !== "string" ||
+      (item.operator !== "equals" && item.operator !== "contains") ||
+      typeof item.value !== "string"
+    ) {
+      return "searchCriteria field conditions are invalid";
+    }
+  }
+  return body.name === null ? null : "search-history cannot have a name";
+};
+
 const normalizeMockEntry = (entry: Entry): Entry => ({
   ...entry,
   content: entry.content ?? entry.markdown ?? "",
@@ -632,22 +719,21 @@ export const handlers = [
   }),
   testHttp.post("/spaces/:spaceId/sql", async ({ params, request }) => {
     const spaceId = params.spaceId as string;
-    const body = (await request.json()) as {
-      name: string | null;
-      kind: "user-query" | "search-history";
-      metadata?: Record<string, unknown>;
-      sql: string;
-      variables?: string[];
-    };
+    const body = await request.json();
+    const validationError = validateMockSqlPayload(body);
+    if (validationError) {
+      return HttpResponse.json({ detail: validationError }, { status: 422 });
+    }
+    const payload = body as Record<string, unknown>;
     const id = crypto.randomUUID();
     const revisionId = generateRevisionId();
     const entry = {
       id,
-      name: body.name,
-      kind: body.kind,
-      metadata: body.metadata,
-      sql: body.sql,
-      variables: body.variables || [],
+      name: payload.name,
+      kind: payload.kind,
+      metadata: payload.metadata,
+      sql: payload.sql,
+      variables: payload.variables,
       space_id: spaceId,
     };
     if (!mockSqlEntries.has(spaceId)) mockSqlEntries.set(spaceId, new Map());
@@ -661,12 +747,11 @@ export const handlers = [
     if (!entry) {
       return HttpResponse.json({ detail: "Not found" }, { status: 404 });
     }
-    const body = (await request.json()) as {
-      name?: string | null;
-      kind?: "user-query" | "search-history";
-      metadata?: Record<string, unknown>;
-      sql?: string;
-    };
+    const body = await request.json();
+    const validationError = validateMockSqlPayload(body);
+    if (validationError) {
+      return HttpResponse.json({ detail: validationError }, { status: 422 });
+    }
     Object.assign(entry, body);
     const revisionId = generateRevisionId();
     return HttpResponse.json({ id: sqlId, revision_id: revisionId });

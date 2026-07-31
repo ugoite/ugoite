@@ -253,20 +253,25 @@ export interface SqlUpdatePayload {
   parent_revision_id?: string | null;
 }
 
-export interface SqlMetadata {
-  searchCriteria?: {
-    formName: string;
-    tags: string[];
-    updatedFrom: string;
-    updatedTo: string;
-    fieldConditions: Array<{
-      field: string;
-      operator: "equals" | "contains";
-      value: string;
-    }>;
+export type SqlMetadata =
+  | {
+    searchCriteria: {
+      formName: string;
+      tags: string[];
+      updatedFrom: string;
+      updatedTo: string;
+      fieldConditions: Array<{
+        field: string;
+        operator: "equals" | "contains";
+        value: string;
+      }>;
+    };
+    generatedName?: never;
+  }
+  | {
+    searchCriteria?: never;
+    generatedName: "untitled";
   };
-  generatedName?: "untitled";
-}
 
 export interface SqlSession {
   id: string;

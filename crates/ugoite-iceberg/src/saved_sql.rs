@@ -31,15 +31,24 @@ pub enum SqlKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchHistoryOperator {
+    Equals,
+    Contains,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SearchHistoryFieldCondition {
     pub field: String,
-    pub operator: String,
+    pub operator: SearchHistoryOperator,
     pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SearchHistoryCriteria {
     pub form_name: String,
     pub tags: Vec<String>,
@@ -56,6 +65,7 @@ pub enum SqlGeneratedName {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct SqlMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_criteria: Option<SearchHistoryCriteria>,
@@ -75,41 +85,57 @@ pub struct SqlPayload {
 }
 
 fn validate_sql_metadata(payload: &SqlPayload) -> Result<()> {
+    if payload
+        .name
+        .as_ref()
+        .is_some_and(|name| name.trim().is_empty())
+    {
+        return Err(validation_error("name must be null or a non-blank string"));
+    }
+
     match payload.kind {
-        SqlKind::UserQuery => {
-            if payload
-                .metadata
-                .as_ref()
-                .and_then(|metadata| metadata.search_criteria.as_ref())
-                .is_some()
+        SqlKind::UserQuery => match (&payload.name, &payload.metadata) {
+            (Some(_), None) => {}
+            (Some(_), Some(metadata))
+                if metadata.generated_name.is_none() && metadata.search_criteria.is_none() =>
             {
                 return Err(validation_error(
-                    "user-query metadata cannot contain search criteria",
+                    "user-query metadata must be omitted for named queries",
                 ));
             }
-            if payload.name.is_none()
-                && payload
-                    .metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.generated_name.as_ref())
-                    .is_none_or(|name| !matches!(name, SqlGeneratedName::Untitled))
-            {
+            (Some(_), Some(_)) => {
+                return Err(validation_error(
+                    "named user-query cannot declare generated metadata",
+                ));
+            }
+            (None, Some(metadata))
+                if metadata.search_criteria.is_none()
+                    && matches!(metadata.generated_name, Some(SqlGeneratedName::Untitled)) => {}
+            (None, _) => {
                 return Err(validation_error(
                     "unnamed user-query must declare generated_name=untitled",
                 ));
             }
-        }
+        },
         SqlKind::SearchHistory => {
-            if payload.name.is_some()
-                || payload
-                    .metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.search_criteria.as_ref())
-                    .is_none()
-            {
+            if payload.name.is_some() {
                 return Err(validation_error(
                     "search-history requires a structured search_criteria and no name",
                 ));
+            }
+            match payload.metadata.as_ref() {
+                Some(metadata)
+                    if metadata.search_criteria.is_some() && metadata.generated_name.is_none() => {}
+                Some(_) => {
+                    return Err(validation_error(
+                        "search-history metadata must contain only search_criteria",
+                    ));
+                }
+                None => {
+                    return Err(validation_error(
+                        "search-history requires a structured search_criteria and no name",
+                    ));
+                }
             }
         }
     }

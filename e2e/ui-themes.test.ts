@@ -41,6 +41,7 @@ test.describe("UI theme flows", () => {
 					data: {
 						id: variableQueryId,
 						name: variableQueryName,
+						kind: "user-query",
 						sql: "SELECT * FROM entries WHERE title = {{title}} LIMIT 10",
 						variables: [
 							{ type: "string", name: "title", description: "Title" },
@@ -145,7 +146,11 @@ async function waitForQueryButton(
 	for (let attempt = 0; attempt < 20; attempt += 1) {
 		const response = await request.get(getBackendUrl(`/spaces/${space}/sql`));
 		if (response.ok()) {
-			const list = (await response.json()) as Array<{ id: string; name: string }>;
+			const list = (await response.json()) as Array<{
+				id: string;
+				name: string | null;
+				kind: "user-query" | "search-history";
+			}>;
 			if (list.some((item) => item.name === name)) {
 				return;
 			}
@@ -166,9 +171,17 @@ async function cleanupThemeQueries(
 		return;
 	}
 
-	const list = (await listRes.json()) as Array<{ id: string; name: string }>;
+	const list = (await listRes.json()) as Array<{
+		id: string;
+		name: string | null;
+		kind: "user-query" | "search-history";
+	}>;
 	const prefixes = [`E2E Theme Query ${theme}`, `E2E Variables ${theme}`];
-	const created = list.filter((item) => prefixes.some((prefix) => item.name.startsWith(prefix)));
+	const created = list.filter((item) =>
+		item.kind === "user-query" &&
+		item.name !== null &&
+		prefixes.some((prefix) => item.name.startsWith(prefix))
+	);
 	for (const item of created) {
 		await request.delete(getBackendUrl(`/spaces/${space}/sql/${item.id}`));
 	}

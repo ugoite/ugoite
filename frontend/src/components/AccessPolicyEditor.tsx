@@ -22,19 +22,42 @@ export function AccessPolicyEditor(props: {
   const [actions, setActions] = createSignal("read");
   const [inherit, setInherit] = createSignal(true);
   const [grants, setGrants] = createSignal<AccessPolicy["grants"]>([]);
-  const [loaded, setLoaded] = createSignal(false);
+  const [loadedKey, setLoadedKey] = createSignal<string | null>(null);
   const [message, setMessage] = createSignal("");
+  const resourceKey = () =>
+    `${props.spaceId}\u0000${props.kind}\u0000${props.resourceId}`;
+  let observedResourceKey = resourceKey();
 
-  const canEdit = () => loaded() && !policy.loading && !policy.error;
+  const canEdit = () =>
+    loadedKey() === resourceKey() && !policy.loading && !policy.error;
 
   createEffect(() => {
+    const currentResourceKey = resourceKey();
+    if (currentResourceKey !== observedResourceKey) {
+      observedResourceKey = currentResourceKey;
+      setLoadedKey(null);
+      setInherit(true);
+      setGrants([]);
+      setPrincipalId("");
+      setActions("read");
+      setMessage("");
+    }
+  });
+
+  createEffect(() => {
+    const currentResourceKey = resourceKey();
     const current = policy();
-    if (loaded() || policy.loading || policy.error || current === undefined) {
+    if (
+      loadedKey() === currentResourceKey ||
+      policy.loading ||
+      policy.error ||
+      current === undefined
+    ) {
       return;
     }
     setInherit(current?.inherit_space_role ?? true);
     setGrants(current?.grants ?? []);
-    setLoaded(true);
+    setLoadedKey(currentResourceKey);
   });
 
   const addGrant = () => {
@@ -62,7 +85,7 @@ export function AccessPolicyEditor(props: {
         grants: grants(),
       });
       setMessage(t("accessPolicy.saved"));
-      setLoaded(false);
+      setLoadedKey(null);
       await refetch();
     } catch (error) {
       setMessage(formatUserFacingError(error, "accessPolicy.failedSave"));
@@ -79,7 +102,7 @@ export function AccessPolicyEditor(props: {
             type="button"
             class="ui-button ui-button-secondary mt-2"
             onClick={() => {
-              setLoaded(false);
+              setLoadedKey(null);
               void refetch();
             }}
           >

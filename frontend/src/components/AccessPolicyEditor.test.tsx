@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
@@ -83,5 +84,58 @@ describe("AccessPolicyEditor", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "アクセス設定を保存" }));
     await waitFor(() => expect(accessApi.put).toHaveBeenCalledOnce());
+  });
+
+  it("resets policy state when the reactive resource changes", async () => {
+    const [resourceId, setResourceId] = createSignal("entry-a");
+    vi.mocked(accessApi.get).mockImplementation(async (_spaceId, _kind, id) =>
+      id === "entry-a"
+        ? {
+          policy_id: "policy-a",
+          inherit_space_role: false,
+          grants: [{ principal_id: "principal-a", actions: ["read"] }],
+        }
+        : {
+          policy_id: "policy-b",
+          inherit_space_role: true,
+          grants: [],
+        }
+    );
+    vi.mocked(accessApi.put).mockResolvedValue({
+      policy_id: "policy-b",
+      inherit_space_role: true,
+      grants: [],
+    });
+
+    render(() => (
+      <AccessPolicyEditor
+        spaceId="space-1"
+        kind="entry"
+        resourceId={resourceId()}
+      />
+    ));
+
+    expect(await screen.findByText(/principal-a/)).toBeInTheDocument();
+    setResourceId("entry-b");
+
+    await waitFor(() => {
+      expect(screen.queryByText(/principal-a/)).toBeNull();
+      expect(screen.getByRole("button", { name: "アクセス設定を保存" }))
+        .toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "アクセス設定を保存" }));
+    await waitFor(() => {
+      expect(accessApi.put).toHaveBeenLastCalledWith(
+        "space-1",
+        "entry",
+        "entry-b",
+        {
+          policy_id: "policy-b",
+          inherit_space_role: true,
+          grants: [],
+        },
+      );
+    });
   });
 });
