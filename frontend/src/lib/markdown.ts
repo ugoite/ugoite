@@ -101,6 +101,54 @@ export function renderMarkdownPreview(
     .replace(/\n/g, "<br>");
 }
 
+export type MarkdownH2Section = {
+  title: string;
+  content: string;
+};
+
+/**
+ * Read H2 sections while keeping the field value's whitespace intact.
+ *
+ * `updateH2Section` writes exactly one empty line between a section value and
+ * the next heading (or at the end of the document). Remove only that one
+ * structural line here; any additional empty line belongs to the value.
+ */
+export function parseMarkdownH2Sections(markdown: string): MarkdownH2Section[] {
+  const lines = markdown.split(/\r?\n/);
+  const sections: MarkdownH2Section[] = [];
+  let activeTitle: string | null = null;
+  let buffer: string[] = [];
+
+  const pushActive = () => {
+    if (!activeTitle) return;
+    const contentLines = [...buffer];
+    if (contentLines[contentLines.length - 1] === "") contentLines.pop();
+    sections.push({ title: activeTitle, content: contentLines.join("\n") });
+  };
+
+  for (const line of lines) {
+    const heading = /^##\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      pushActive();
+      activeTitle = heading[1];
+      buffer = [];
+      continue;
+    }
+    // Nested Markdown headings remain source content instead of becoming
+    // field values, matching the server-side Markdown mapping.
+    if (line.startsWith("#")) {
+      pushActive();
+      activeTitle = null;
+      buffer = [];
+      continue;
+    }
+    if (activeTitle) buffer.push(line);
+  }
+
+  pushActive();
+  return sections;
+}
+
 /**
  * Helper to escape regex special characters.
  */
@@ -143,11 +191,16 @@ export function updateH2Section(
     const before = lines.slice(0, sectionIdx + 1);
     const after = nextHeaderIdx === -1 ? [] : lines.slice(nextHeaderIdx);
 
-    return [...before, newValue, ...after].join("\n");
+    // Keep one structural empty line separate from the field value so a
+    // trailing newline in newValue survives the next reactive parse.
+    return [...before, newValue, "", ...after].join("\n");
   }
 
   // Append to end if not found
-  return `${markdown.trimEnd()}\n\n## ${sectionTitle}\n${newValue}\n`;
+  let prefix = markdown;
+  if (!prefix.endsWith("\n")) prefix += "\n\n";
+  else if (!prefix.endsWith("\n\n")) prefix += "\n";
+  return `${prefix}## ${sectionTitle}\n${newValue}\n`;
 }
 
 // Named exports only to match project conventions
