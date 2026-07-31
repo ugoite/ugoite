@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ensureFormFrontmatter,
+  parseMarkdownH2Sections,
   renderMarkdownPreview,
   replaceFirstH1,
   updateH2Section,
@@ -55,6 +56,46 @@ describe("markdown utils", () => {
     const md = "# Title\n\n## Section (Special) [Ref]\nOldValue";
     const out = updateH2Section(md, "Section (Special) [Ref]", "NewValue");
     expect(out).toContain("## Section (Special) [Ref]\nNewValue");
+  });
+
+  it("round-trips trailing whitespace through the section boundary", () => {
+    const md = "# Title\n\n## Section\nOldValue\n\n## Next\nKeepMe";
+
+    for (const value of ["NewValue ", "NewValue\n", " "]) {
+      const out = updateH2Section(md, "Section", value);
+      expect(parseMarkdownH2Sections(out)).toContainEqual({
+        title: "Section",
+        content: value,
+      });
+    }
+  });
+
+  it("drops only the generated separator line", () => {
+    const sections = parseMarkdownH2Sections(
+      "# Title\n\n## Section\nNewValue\n\n\n## Next\nKeepMe",
+    );
+
+    expect(sections).toContainEqual({
+      title: "Section",
+      content: "NewValue\n",
+    });
+  });
+
+  it("preserves existing trailing whitespace when appending a section", () => {
+    const out = updateH2Section(
+      "# Title\n\n## Existing\nKeepMe ",
+      "NewSec",
+      "NewValue\n",
+    );
+
+    expect(parseMarkdownH2Sections(out)).toContainEqual({
+      title: "Existing",
+      content: "KeepMe ",
+    });
+    expect(parseMarkdownH2Sections(out)).toContainEqual({
+      title: "NewSec",
+      content: "NewValue\n",
+    });
   });
 
   it("REQ-FE-005: renderMarkdownPreview escapes raw HTML while keeping markdown formatting", () => {

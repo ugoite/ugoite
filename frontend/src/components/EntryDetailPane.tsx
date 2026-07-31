@@ -15,6 +15,7 @@ import { AssetUploader } from "~/components/AssetUploader";
 import { locale, t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import {
+  parseMarkdownH2Sections,
   renderMarkdownPreview,
   replaceFirstH1,
   updateH2Section,
@@ -115,48 +116,6 @@ function parseValidationErrorMessage(message: string) {
 
 function normalizeFieldName(fieldName: string) {
   return fieldName.trim().toLowerCase();
-}
-
-function parseMarkdownH2Sections(markdown: string) {
-  const lines = markdown.split(/\r?\n/);
-  const sections: Array<{ title: string; content: string }> = [];
-  let activeTitle: string | null = null;
-  let buffer: string[] = [];
-
-  const pushActive = () => {
-    if (!activeTitle) return;
-    let contentEnd = buffer.length;
-    // Empty lines are Markdown section separators, but whitespace on the last
-    // content line is part of the value being edited and must be preserved.
-    while (contentEnd > 0 && buffer[contentEnd - 1] === "") contentEnd -= 1;
-    sections.push({
-      title: activeTitle,
-      content: buffer.slice(0, contentEnd).join("\n"),
-    });
-  };
-
-  for (const line of lines) {
-    const heading = /^##\s+(.+?)\s*$/.exec(line);
-    if (heading) {
-      pushActive();
-      activeTitle = heading[1];
-      buffer = [];
-      continue;
-    }
-    // The server-side Markdown mapping treats every heading as the end of an
-    // H2 field section. Keep the form editor aligned so nested document
-    // headings remain source content instead of becoming field values.
-    if (line.startsWith("#")) {
-      pushActive();
-      activeTitle = null;
-      buffer = [];
-      continue;
-    }
-    if (activeTitle) buffer.push(line);
-  }
-
-  pushActive();
-  return sections;
 }
 
 function readMarkdownTitle(markdown: string, fallback = "") {

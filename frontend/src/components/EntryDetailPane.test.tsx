@@ -48,7 +48,7 @@ describe("EntryDetailPane", () => {
       id: "entry-1",
       title: "Test Entry",
       form: "Meeting",
-      content: "---\nform: Meeting\n---\n\n# Test Entry\n\n## Notes\nhello",
+      content: "---\nform: Meeting\n---\n\n# Test Entry\n\n## Notes\nhello ",
       revision_id: "rev-1",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -77,9 +77,15 @@ describe("EntryDetailPane", () => {
     const dateInput = await screen.findByLabelText("Date");
     expect(dateInput).toHaveValue("");
     expect(screen.getByText("This field is required.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Notes")).toHaveValue("hello");
+    expect(screen.getByLabelText("Notes")).toHaveValue("hello ");
 
+    fireEvent.input(dateInput, { target: { value: " " } });
+    expect(dateInput).toHaveValue(" ");
+    expect(screen.getByText("This field is required.")).toBeInTheDocument();
     fireEvent.input(dateInput, { target: { value: "2026-07-16" } });
+    const notes = screen.getByLabelText("Notes");
+    fireEvent.input(notes, { target: { value: "hello \n" } });
+    expect(notes).toHaveValue("hello \n");
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));
 
     const source = await screen.findByPlaceholderText(
@@ -99,10 +105,11 @@ describe("EntryDetailPane", () => {
     const form: Form = {
       name: "Meeting",
       version: 1,
-      template: "# Meeting\n\n## Summary\n\n## Notes\n",
+      template: "# Meeting\n\n## Summary\n\n## Notes\n\n## Items\n",
       fields: {
         Summary: { type: "string", required: false },
         Notes: { type: "markdown", required: false },
+        Items: { type: "list", required: false },
       },
     };
 
@@ -126,21 +133,20 @@ describe("EntryDetailPane", () => {
     expect(summary).toHaveValue("Project ");
 
     const notes = await screen.findByLabelText("Notes");
-    fireEvent.input(notes, { target: { value: "Details " } });
-    expect(notes).toHaveValue("Details ");
+    fireEvent.input(notes, { target: { value: "Details \n" } });
+    expect(notes).toHaveValue("Details \n");
+
+    const items = await screen.findByLabelText("Items");
+    fireEvent.input(items, { target: { value: "one\ntwo\n" } });
+    expect(items).toHaveValue("one\ntwo\n");
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
     expect(entryApi.create).toHaveBeenCalledWith("default", {
-      markdown: expect.stringContaining("# Planning \n"),
+      markdown:
+        "---\nform: Meeting\n---\n\n# Planning \n\n## Summary\nProject \n\n## Notes\nDetails \n\n\n## Items\none\ntwo\n\n",
     });
-    expect(entryApi.create.mock.calls[0][1].markdown).toContain(
-      "## Summary\nProject ",
-    );
-    expect(entryApi.create.mock.calls[0][1].markdown).toContain(
-      "## Notes\nDetails ",
-    );
     expect(onCreated).toHaveBeenCalledWith("created-entry");
   });
 
@@ -185,7 +191,7 @@ describe("EntryDetailPane", () => {
       "Start writing in Markdown...",
     );
     expect((source as HTMLTextAreaElement).value).toContain(
-      "## Notes\nupdated\n### Details\nkeep this",
+      "## Notes\nupdated\n\n### Details\nkeep this",
     );
     expect(
       ((source as HTMLTextAreaElement).value.match(/### Details/g) || [])
