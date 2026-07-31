@@ -50,8 +50,9 @@ Form-level ACL fields are not persisted or enforced in this release. Field names
 
 Each Form has an immutable UUID and one physical `form_<uuid>` Iceberg table.
 The display name is mutable metadata. Field IDs are stable Iceberg field IDs;
-rename keeps the ID, optional additions do not rewrite data, and destructive
-changes require an explicit migration.
+rename keeps the ID, optional additions do not rewrite data, and changing the
+type of an existing field is rejected. Before v1, create a new field when a
+different type is needed; no migration compatibility path is exposed.
 
 The table is an append-only revision log. Common columns include `entry_id`,
 `revision_id`, `parent_revision_id`, `entry_version`, `operation`,

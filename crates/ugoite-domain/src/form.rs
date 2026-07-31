@@ -48,13 +48,28 @@ pub enum FieldType {
 }
 
 impl FieldType {
-    pub fn can_widen_to(&self, target: &Self) -> bool {
-        self == target
-            || matches!(
-                (self, target),
-                (Self::Integer, Self::Long)
-                    | (Self::Integer | Self::Long | Self::Float, Self::Double)
-            )
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Markdown => "markdown",
+            Self::Sql => "sql",
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Long => "long",
+            Self::Float => "float",
+            Self::Double => "double",
+            Self::Date => "date",
+            Self::Time => "time",
+            Self::Timestamp => "timestamp",
+            Self::TimestampTz => "timestamp_tz",
+            Self::TimestampNs => "timestamp_ns",
+            Self::TimestampTzNs => "timestamp_tz_ns",
+            Self::Uuid => "uuid",
+            Self::Binary => "binary",
+            Self::List => "list",
+            Self::ObjectList => "object_list",
+            Self::RowReference => "row_reference",
+        }
     }
 }
 
@@ -216,20 +231,13 @@ impl FormChangeSet {
                 | FormChange::DeprecateField { .. }
                 | FormChange::RestoreField { .. } => Compatibility::Compatible,
                 FormChange::ChangeRequired { .. } => Compatibility::Compatible,
-                FormChange::ChangeFieldType {
-                    field_id,
-                    field_type,
-                } => {
-                    let source = current
+                FormChange::ChangeFieldType { field_id, .. } => {
+                    current
                         .fields
                         .iter()
                         .find(|field| field.id == *field_id)
                         .ok_or(DomainError::UnknownField(*field_id))?;
-                    if source.field_type.can_widen_to(field_type) {
-                        Compatibility::Compatible
-                    } else {
-                        Compatibility::Breaking
-                    }
+                    Compatibility::Breaking
                 }
             };
             result = result.max(compatibility);
