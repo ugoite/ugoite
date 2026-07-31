@@ -3744,6 +3744,22 @@
           },
           {
             "$ref": "#/components/parameters/AssetId"
+          },
+          {
+            "name": "form",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entry_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

@@ -1261,6 +1261,61 @@ impl SpaceCatalog {
         }
     }
 
+    pub(crate) async fn asset_is_deleted(&self, asset_id: &str) -> Result<bool> {
+        Ok(self
+            .exact_head()
+            .await?
+            .is_some_and(|(head, _)| head.deleted_assets.contains(asset_id)))
+    }
+
+    /// Publishes an Asset lifecycle state transition through the same
+    /// optimistic Catalog Head boundary as Form and Entry mutations. The
+    /// physical blob is removed only after this marker wins the CAS.
+    pub(crate) async fn mark_asset_deleted(&self, asset_id: &str) -> Result<()> {
+        self.claim_mutation()?;
+        let _write_guard = if self.store.write_mode() == CatalogWriteMode::SingleProcess {
+            Some(self.store.single_process_serializer().lock_owned().await)
+        } else {
+            None
+        };
+        let attempt = PublicationAttempt::from_exact(&self.publication, self.exact_head().await?);
+        let head = attempt
+            .expected_head
+            .as_ref()
+            .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
+        if head.deleted_assets.contains(asset_id) {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Asset is already marked deleted",
+            ));
+        }
+        let mut next = head.next_generation();
+        next.deleted_assets.insert(asset_id.to_string());
+        let publication = self
+            .publish_new_head(
+                &attempt,
+                next,
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: head.namespace.clone(),
+                        table: format!("_asset_delete_{asset_id}"),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: format!("asset://deleted/{asset_id}"),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await;
+        match publication {
+            Ok(()) => Ok(()),
+            Err(_error) if self.resolve_unknown_outcome(&attempt).await? => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
     async fn write_publication(&self, publication: &PublicationRecord) -> Result<String> {
         let path = self
             .store
@@ -1823,6 +1878,8 @@ struct CatalogHead {
     generation: u64,
     form_registry_generation: u64,
     tables: BTreeMap<String, TableReference>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    deleted_assets: BTreeSet<String>,
     publication_location: Option<String>,
     publication_command_id: Option<String>,
     checksum: String,
@@ -1837,6 +1894,7 @@ impl CatalogHead {
             generation: 0,
             form_registry_generation: 0,
             tables: BTreeMap::new(),
+            deleted_assets: BTreeSet::new(),
             publication_location: None,
             publication_command_id: None,
             checksum: String::new(),

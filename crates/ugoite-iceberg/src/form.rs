@@ -60,23 +60,30 @@ pub async fn get_form(op: &Operator, ws_path: &str, form_name: &str) -> Result<V
 }
 
 pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
-    let mut normalized = normalize_form_definition(form_def)?;
-    let form_name = normalized
+    let form_name = form_def
         .get("name")
-        .and_then(|v| v.as_str())
+        .and_then(|value| value.as_str())
         .context("Form definition missing 'name' field")?
         .to_string();
-    validate_row_reference_targets(op, ws_path, &form_name, &mut normalized).await?;
-    let existing = iceberg_store::load_form_definition(op, ws_path, &form_name)
-        .await
-        .ok();
-    if let Some(existing_def) = existing {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let known_forms = workspace.list_forms().await?;
+    let existing_domain = known_forms
+        .iter()
+        .find(|form| form.name == form_name)
+        .cloned();
+    let mut normalized = normalize_form_definition(form_def)?;
+    if let Some(existing_domain) = &existing_domain {
+        // Resolve the persisted identity before translating authoring names
+        // into target UUIDs. In particular, a self-reference must never point
+        // at normalize_form_definition's transient UUID.
+        let existing_def = from_domain_form(existing_domain);
         preserve_stable_identities(&mut normalized, &existing_def)?;
-        let current_domain = to_domain_form(&existing_def)?;
+    }
+    validate_row_reference_targets(&form_name, &mut normalized, &known_forms)?;
+    if let Some(current_domain) = existing_domain {
         let desired_domain = to_domain_form(&normalized)?;
         let changes = form_changes(&current_domain, &desired_domain)?;
         if !changes.is_empty() {
-            let workspace = iceberg_store::native_workspace(op, ws_path).await?;
             let command = crate::publication_context(
                 format!(
                     "form-evolve:{}:{}",
@@ -214,8 +221,6 @@ pub async fn migrate_form<I: IntegrityProvider>(
         .as_str()
         .context("Form name required")?
         .to_string();
-    let mut normalized = normalized;
-    validate_row_reference_targets(op, ws_path, &form_name, &mut normalized).await?;
     let existing_def = iceberg_store::load_form_definition(op, ws_path, &form_name)
         .await
         .ok();
@@ -683,27 +688,19 @@ fn validate_row_reference_field_defs(field_map: &Map<String, Value>) -> Result<(
     Ok(())
 }
 
-async fn validate_row_reference_targets(
-    op: &Operator,
-    ws_path: &str,
+fn validate_row_reference_targets(
     form_name: &str,
     form_def: &mut Value,
+    known_forms: &[FormDefinition],
 ) -> Result<()> {
     let Some(field_map) = form_def.get("fields").and_then(|v| v.as_object()) else {
         return Ok(());
     };
 
-    let mut available = HashMap::new();
-    for name in list_form_names(op, ws_path)
-        .await
-        .with_context(|| format!("failed to list forms for workspace '{}'", ws_path))?
-    {
-        if let Ok(definition) = read_form_definition(op, ws_path, &name).await {
-            if let Some(id) = definition.get("id").and_then(Value::as_str) {
-                available.insert(name, id.to_string());
-            }
-        }
-    }
+    let mut available = known_forms
+        .iter()
+        .map(|form| (form.name.clone(), form.id.to_string()))
+        .collect::<HashMap<_, _>>();
     if let Some(id) = form_def.get("id").and_then(Value::as_str) {
         available.insert(form_name.to_string(), id.to_string());
     }
@@ -731,6 +728,15 @@ async fn validate_row_reference_targets(
             return Err(anyhow!("reference field '{}' requires target_form", name));
         };
         let target_id = if let Ok(id) = Uuid::parse_str(target_form) {
+            if !known_forms.iter().any(|form| form.id == FormId::from(id))
+                && form_def.get("id").and_then(Value::as_str) != Some(target_form)
+            {
+                return Err(anyhow!(
+                    "reference field '{}' target_form '{}' not found",
+                    name,
+                    target_form
+                ));
+            }
             id.to_string()
         } else {
             let Some(id) = available.get(target_form) else {

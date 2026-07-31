@@ -34,11 +34,13 @@ pub use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 
 use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{
-    BinaryBuilder, FixedSizeBinaryBuilder, Int64Builder, ListBuilder, StringBuilder, StructBuilder,
+    BooleanBuilder, Date32Builder, FixedSizeBinaryBuilder, Float32Builder, Float64Builder,
+    Int32Builder, Int64Builder, LargeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder,
+    Time64MicrosecondBuilder, TimestampMicrosecondBuilder, TimestampNanosecondBuilder,
 };
 use arrow_array::{
-    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array,
-    Float64Array, Int32Array, Int64Array, ListArray, RecordBatch, StringArray, StructArray,
+    Array, ArrayRef, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array, Float64Array,
+    Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray, StructArray,
     Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -689,6 +691,7 @@ impl IcebergWorkspace {
         &self,
         form_id: FormId,
         revisions: &[EntryRevision],
+        relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<()> {
         let form = self.load_form(form_id).await?;
         let target_forms = self
@@ -753,6 +756,51 @@ impl IcebergWorkspace {
                 }
             }
         }
+        if references.is_empty() {
+            return Ok(());
+        }
+
+        let mut authorized_forms = BTreeMap::new();
+        for (target_form_id, _) in &references {
+            let target_form = target_forms.get(target_form_id).ok_or_else(|| {
+                anyhow!("row_reference target Form {target_form_id} does not exist")
+            })?;
+            let entry_scope = relation_scopes
+                .and_then(|scopes| scopes.get(&target_form.name.to_ascii_lowercase()).cloned())
+                .unwrap_or_else(|| {
+                    if relation_scopes.is_some() {
+                        EntryScope::Only(BTreeSet::new())
+                    } else {
+                        EntryScope::AllCurrent
+                    }
+                });
+            authorized_forms.insert(
+                target_form.id,
+                AuthorizedQueryForm {
+                    relation: target_form.name.to_ascii_lowercase(),
+                    entry_scope,
+                    columns: target_form
+                        .fields
+                        .iter()
+                        .map(|field| field.name.clone())
+                        .collect(),
+                    system_columns: BTreeSet::from([QuerySystemColumn::ExternalId]),
+                },
+            );
+        }
+        let context = self
+            .authorized_query_context(AuthorizedQueryPolicy {
+                forms: authorized_forms,
+                checkpoint: None,
+                limits: QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: 1,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+            })
+            .await?;
 
         for (target_form_id, entry_id) in references {
             if pending_entry_ids.contains(&(target_form_id, entry_id.clone())) {
@@ -761,31 +809,6 @@ impl IcebergWorkspace {
             let target_form = target_forms.get(&target_form_id).ok_or_else(|| {
                 anyhow!("row_reference target Form {target_form_id} does not exist")
             })?;
-            let context = self
-                .authorized_query_context(AuthorizedQueryPolicy {
-                    forms: BTreeMap::from([(
-                        target_form.id,
-                        AuthorizedQueryForm {
-                            relation: target_form.name.to_ascii_lowercase(),
-                            entry_scope: EntryScope::AllCurrent,
-                            columns: target_form
-                                .fields
-                                .iter()
-                                .map(|field| field.name.clone())
-                                .collect(),
-                            system_columns: BTreeSet::from([QuerySystemColumn::ExternalId]),
-                        },
-                    )]),
-                    checkpoint: None,
-                    limits: QueryLimits {
-                        max_memory_bytes: 64 * 1024 * 1024,
-                        max_rows: 1,
-                        timeout: Duration::from_secs(30),
-                        max_concurrency: 1,
-                        allowed_functions: BTreeSet::new(),
-                    },
-                })
-                .await?;
             let relation = format!(
                 "\"{}\"",
                 target_form.name.to_ascii_lowercase().replace('"', "\"\"")
@@ -805,6 +828,73 @@ impl IcebergWorkspace {
             }
         }
         Ok(())
+    }
+
+    async fn validate_asset_references_not_deleted(
+        &self,
+        form_id: FormId,
+        revisions: &[EntryRevision],
+    ) -> Result<()> {
+        let form = self.load_form(form_id).await?;
+        for revision in revisions {
+            if revision.operation == EntryOperation::Delete {
+                continue;
+            }
+            for field in &form.fields {
+                let Some(value) = revision.values.get(&field.id) else {
+                    continue;
+                };
+                let asset_ids = match (&field.field_type, value) {
+                    (FieldType::AssetReference, FieldValue::AssetReference(reference)) => {
+                        vec![reference.asset_id.as_str()]
+                    }
+                    (FieldType::List, FieldValue::List(values))
+                        if field
+                            .list_item
+                            .as_ref()
+                            .is_some_and(|item| item.field_type == FieldType::AssetReference) =>
+                    {
+                        values
+                            .iter()
+                            .filter_map(|value| match value {
+                                FieldValue::AssetReference(reference) => {
+                                    Some(reference.asset_id.as_str())
+                                }
+                                _ => None,
+                            })
+                            .collect()
+                    }
+                    _ => Vec::new(),
+                };
+                for asset_id in asset_ids {
+                    if self.asset_is_deleted(asset_id).await? {
+                        return Err(anyhow!(
+                            "Asset '{}' is unavailable because it was deleted",
+                            asset_id
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn asset_is_deleted(&self, asset_id: &str) -> Result<bool> {
+        self.space_catalog
+            .as_ref()
+            .context("Asset lifecycle requires the OpenDAL-backed SpaceCatalog")?
+            .asset_is_deleted(asset_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn mark_asset_deleted(&self, asset_id: &str) -> Result<()> {
+        self.space_catalog
+            .as_ref()
+            .context("Asset lifecycle requires the OpenDAL-backed SpaceCatalog")?
+            .mark_asset_deleted(asset_id)
+            .await
+            .map_err(Into::into)
     }
 
     pub(crate) async fn append_record_batches(
@@ -1295,6 +1385,16 @@ impl SpaceCommitCoordinator {
         form_id: FormId,
         revisions: Vec<EntryRevision>,
     ) -> Result<CommitReceipt> {
+        self.append_revisions_authorized(form_id, revisions, None)
+            .await
+    }
+
+    pub async fn append_revisions_authorized(
+        &self,
+        form_id: FormId,
+        revisions: Vec<EntryRevision>,
+        relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    ) -> Result<CommitReceipt> {
         if let Some(receipt) = self.publication_receipt().await? {
             return Ok(CommitReceipt {
                 command_id: receipt.command_id,
@@ -1336,7 +1436,10 @@ impl SpaceCommitCoordinator {
             }
             let attempt = self.attempt_workspace()?;
             attempt
-                .validate_row_reference_targets(form_id, &revisions)
+                .validate_asset_references_not_deleted(form_id, &revisions)
+                .await?;
+            attempt
+                .validate_row_reference_targets(form_id, &revisions, relation_scopes)
                 .await?;
             let mut receipt = match attempt.append_revisions(form_id, revisions.clone()).await {
                 Ok(receipt) => receipt,
@@ -1357,6 +1460,42 @@ impl SpaceCommitCoordinator {
             return Ok(receipt);
         }
         Err(anyhow!("Catalog Head changed during every append attempt"))
+    }
+
+    pub async fn delete_asset(
+        &self,
+        asset_id: &str,
+        relation_scopes: &BTreeMap<String, ugoite_core::query::EntryScope>,
+    ) -> Result<()> {
+        if self.publication_receipt().await?.is_some() {
+            return Ok(());
+        }
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            if self.publication_receipt().await?.is_some() {
+                return Ok(());
+            }
+            let attempt = self.attempt_workspace()?;
+            if attempt.asset_is_deleted(asset_id).await? {
+                return Err(anyhow!("Asset '{}' is already unavailable", asset_id));
+            }
+            if crate::asset::current_asset_reference_exists_in_workspace(
+                &attempt,
+                asset_id,
+                relation_scopes,
+            )
+            .await?
+            {
+                return Err(anyhow!("Asset '{}' is referenced by an entry", asset_id));
+            }
+            match attempt.mark_asset_deleted(asset_id).await {
+                Ok(()) => return Ok(()),
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(anyhow!(
+            "Catalog Head changed during every asset delete attempt"
+        ))
     }
 }
 
@@ -1851,7 +1990,11 @@ fn typed_list_array(
         for value in values {
             if let Some(FieldValue::List(items)) = value {
                 for item in items {
-                    append_asset_reference(builder.values(), item)?;
+                    if matches!(item, FieldValue::Null) {
+                        builder.values().append(false);
+                    } else {
+                        append_asset_reference(builder.values(), item)?;
+                    }
                 }
                 builder.append(true);
             } else {
@@ -1861,27 +2004,231 @@ fn typed_list_array(
         return Ok(Arc::new(builder.finish()));
     }
 
-    let mut builder = ListBuilder::new(StringBuilder::new()).with_field(element_field);
-    for value in values {
-        if let Some(FieldValue::List(items)) = value {
-            for item in items {
-                match item {
-                    FieldValue::String(value) => builder.values().append_value(value),
-                    FieldValue::Null => builder.values().append_null(),
-                    _ => {
-                        return Err(anyhow!(
-                            "typed list field '{}' contains an invalid item",
-                            field.name
-                        ))
+    macro_rules! build_list {
+        ($builder:expr, $handler:expr) => {{
+            let mut builder = ListBuilder::new($builder).with_field(element_field.clone());
+            for value in values {
+                if let Some(FieldValue::List(items)) = value {
+                    for item in items {
+                        if matches!(item, FieldValue::Null) {
+                            builder.values().append_null();
+                        } else {
+                            ($handler)(builder.values(), item)?;
+                        }
                     }
+                    builder.append(true);
+                } else {
+                    builder.append(false);
                 }
             }
-            builder.append(true);
-        } else {
-            builder.append(false);
-        }
+            return Ok(Arc::new(builder.finish()));
+        }};
     }
-    Ok(Arc::new(builder.finish()))
+
+    match item_kind {
+        FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
+            build_list!(
+                StringBuilder::new(),
+                |builder: &mut StringBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid string item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Boolean => {
+            build_list!(
+                BooleanBuilder::new(),
+                |builder: &mut BooleanBuilder, item: &FieldValue| {
+                    let FieldValue::Boolean(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid boolean item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(*value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Integer => {
+            build_list!(
+                Int32Builder::new(),
+                |builder: &mut Int32Builder, item: &FieldValue| {
+                    let FieldValue::Integer(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid integer item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(i32::try_from(*value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Long => {
+            build_list!(
+                Int64Builder::new(),
+                |builder: &mut Int64Builder, item: &FieldValue| {
+                    let FieldValue::Integer(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid long item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(*value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Float => {
+            build_list!(
+                Float32Builder::new(),
+                |builder: &mut Float32Builder, item: &FieldValue| {
+                    let value = match item {
+                        FieldValue::Integer(value) => *value as f32,
+                        FieldValue::Number(value) => *value as f32,
+                        _ => {
+                            return Err(anyhow!(
+                                "typed list field '{}' contains an invalid float item",
+                                field.name
+                            ))
+                        }
+                    };
+                    builder.append_value(value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Double => {
+            build_list!(
+                Float64Builder::new(),
+                |builder: &mut Float64Builder, item: &FieldValue| {
+                    let value = match item {
+                        FieldValue::Integer(value) => *value as f64,
+                        FieldValue::Number(value) => *value,
+                        _ => {
+                            return Err(anyhow!(
+                                "typed list field '{}' contains an invalid double item",
+                                field.name
+                            ))
+                        }
+                    };
+                    builder.append_value(value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Date => {
+            build_list!(
+                Date32Builder::new(),
+                |builder: &mut Date32Builder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid date item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_date(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Time => {
+            build_list!(
+                Time64MicrosecondBuilder::new(),
+                |builder: &mut Time64MicrosecondBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid time item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_time_micros(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Timestamp | FieldType::TimestampTz => {
+            let builder = if matches!(item_kind, FieldType::TimestampTz) {
+                TimestampMicrosecondBuilder::new().with_timezone("+00:00")
+            } else {
+                TimestampMicrosecondBuilder::new()
+            };
+            build_list!(
+                builder,
+                |builder: &mut TimestampMicrosecondBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid timestamp item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_timestamp_micros(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::TimestampNs | FieldType::TimestampTzNs => {
+            let builder = if matches!(item_kind, FieldType::TimestampTzNs) {
+                TimestampNanosecondBuilder::new().with_timezone("+00:00")
+            } else {
+                TimestampNanosecondBuilder::new()
+            };
+            build_list!(
+                builder,
+                |builder: &mut TimestampNanosecondBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid nanosecond timestamp item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_timestamp_nanos(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Uuid => {
+            build_list!(
+                FixedSizeBinaryBuilder::with_capacity(values.len(), 16),
+                |builder: &mut FixedSizeBinaryBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid UUID item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(Uuid::parse_str(value)?.as_bytes())?;
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Binary => {
+            build_list!(
+                LargeBinaryBuilder::new(),
+                |builder: &mut LargeBinaryBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid binary item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(BASE64.decode(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::List | FieldType::ObjectList | FieldType::AssetReference => Err(anyhow!(
+            "typed list field '{}' has an unsupported nested item type",
+            field.name
+        )),
+    }
 }
 
 fn asset_reference_array(
@@ -2119,7 +2466,7 @@ fn field_array(
             Ok(Arc::new(builder.finish()))
         }
         FieldType::Binary => {
-            let mut builder = BinaryBuilder::with_capacity(values.len(), 0);
+            let mut builder = LargeBinaryBuilder::with_capacity(values.len(), 0);
             for value in values {
                 match value {
                     Some(FieldValue::String(value)) => builder.append_value(BASE64.decode(value)?),
@@ -2511,7 +2858,7 @@ fn field_value_at(
             BASE64.encode(
                 column
                     .as_any()
-                    .downcast_ref::<BinaryArray>()
+                    .downcast_ref::<LargeBinaryArray>()
                     .ok_or_else(invalid)?
                     .value(row),
             ),
@@ -2560,20 +2907,18 @@ fn typed_list_at(
     if array.is_null(row) {
         return Ok(Vec::new());
     }
-    if item.is_some_and(|item| matches!(&item.field_type, FieldType::AssetReference)) {
-        let values = metadata_rows_at(array, row)?;
-        let values = values
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .context("asset reference list has invalid element type")?;
-        return (0..values.len())
-            .map(|index| asset_reference_at(values, index))
-            .collect();
-    }
-    Ok(string_list_at(array, row)?
-        .into_iter()
-        .map(FieldValue::String)
-        .collect())
+    let values = array.value(row);
+    let item_kind = item
+        .map(|item| &item.field_type)
+        .unwrap_or(&FieldType::String);
+    (0..values.len())
+        .map(|index| {
+            Ok(
+                field_value_at(values.as_ref(), index, item_kind, None)?
+                    .unwrap_or(FieldValue::Null),
+            )
+        })
+        .collect()
 }
 
 fn object_list_at(array: &ListArray, row: usize) -> Result<Vec<FieldValue>> {

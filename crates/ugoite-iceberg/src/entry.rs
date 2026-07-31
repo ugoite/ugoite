@@ -8,13 +8,13 @@ use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{FieldType, FormField};
-use ugoite_domain::id::{FieldId, FormId, RevisionId};
+use ugoite_domain::id::{FieldId, RevisionId};
 use uuid::Uuid;
 
 pub const MAX_ENTRY_CREATE_BATCH_SIZE: usize = 256;
@@ -455,6 +455,16 @@ async fn append_revision_rows_to_workspace(
     rows: &[RevisionRow],
     form_def: &Value,
 ) -> Result<()> {
+    append_revision_rows_to_workspace_authorized(op, ws_path, rows, form_def, None).await
+}
+
+async fn append_revision_rows_to_workspace_authorized(
+    op: &Operator,
+    ws_path: &str,
+    rows: &[RevisionRow],
+    form_def: &Value,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<()> {
     if rows.is_empty() {
         return Err(anyhow!("revision batch must not be empty"));
     }
@@ -463,7 +473,6 @@ async fn append_revision_rows_to_workspace(
         .iter()
         .map(|row| revision_row_to_domain(row, &domain_form))
         .collect::<Result<Vec<_>>>()?;
-    validate_row_reference_targets(op, ws_path, &domain_form, &revisions).await?;
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
     let command = crate::publication_context(
         format!(
@@ -479,79 +488,8 @@ async fn append_revision_rows_to_workspace(
     )?;
     workspace
         .commit(command)?
-        .append_revisions(domain_form.id, revisions)
+        .append_revisions_authorized(domain_form.id, revisions, relation_scopes)
         .await?;
-    Ok(())
-}
-
-async fn validate_row_reference_targets(
-    op: &Operator,
-    ws_path: &str,
-    form: &ugoite_domain::form::FormDefinition,
-    revisions: &[EntryRevision],
-) -> Result<()> {
-    let mut target_forms = HashMap::new();
-    for form_name in form::list_form_names(op, ws_path).await? {
-        let definition = form::read_form_definition(op, ws_path, &form_name).await?;
-        let definition = form::to_domain_form(&definition)?;
-        target_forms.insert(definition.id, form_name);
-    }
-
-    let mut references = HashSet::<(FormId, String)>::new();
-    for revision in revisions {
-        if revision.operation == EntryOperation::Delete {
-            continue;
-        }
-        for field in &form.fields {
-            let Some(value) = revision.values.get(&field.id) else {
-                continue;
-            };
-            match (&field.field_type, value) {
-                (FieldType::RowReference, FieldValue::String(entry_id)) => {
-                    let target_form = field.reference_form.ok_or_else(|| {
-                        anyhow!("row_reference field '{}' has no target Form", field.name)
-                    })?;
-                    references.insert((target_form, entry_id.clone()));
-                }
-                (FieldType::List, FieldValue::List(values))
-                    if field
-                        .list_item
-                        .as_ref()
-                        .is_some_and(|item| item.field_type == FieldType::RowReference) =>
-                {
-                    let target_form = field
-                        .list_item
-                        .as_ref()
-                        .and_then(|item| item.reference_form)
-                        .ok_or_else(|| {
-                            anyhow!(
-                                "row_reference list field '{}' has no target Form",
-                                field.name
-                            )
-                        })?;
-                    for value in values {
-                        if let FieldValue::String(entry_id) = value {
-                            references.insert((target_form, entry_id.clone()));
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    for (target_form, entry_id) in references {
-        let target_form_name = target_forms
-            .get(&target_form)
-            .ok_or_else(|| anyhow!("row_reference target Form {target_form} does not exist"))?;
-        if !index::current_entry_exists_in_form(op, ws_path, target_form_name, &entry_id).await? {
-            return Err(anyhow!(
-                "row_reference target Entry '{}' does not belong to Form '{}'",
-                entry_id,
-                target_form_name
-            ));
-        }
-    }
     Ok(())
 }
 
@@ -973,12 +911,25 @@ pub async fn create_entry<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<EntryMeta> {
-    let mut entries = create_entries(
+    create_entry_with_scopes(op, ws_path, entry_id, content, author, integrity, None).await
+}
+
+pub async fn create_entry_with_scopes<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    content: &str,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<EntryMeta> {
+    let mut entries = create_entries_with_scopes(
         op,
         ws_path,
         vec![EntryCreateRequest::new(entry_id, content)],
         author,
         integrity,
+        relation_scopes,
     )
     .await?;
     Ok(entries
@@ -994,6 +945,17 @@ pub async fn create_entries<I: IntegrityProvider>(
     requests: Vec<EntryCreateRequest>,
     author: &str,
     integrity: &I,
+) -> Result<Vec<EntryMeta>> {
+    create_entries_with_scopes(op, ws_path, requests, author, integrity, None).await
+}
+
+pub async fn create_entries_with_scopes<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    requests: Vec<EntryCreateRequest>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Vec<EntryMeta>> {
     if requests.is_empty() {
         return Ok(Vec::new());
@@ -1030,10 +992,88 @@ pub async fn create_entries<I: IntegrityProvider>(
         }
         entries.push(entry);
     }
+    reject_cross_form_forward_references(&batches)?;
     for (_, (form_def, revisions)) in batches {
-        append_revision_rows_to_workspace(op, ws_path, &revisions, &form_def).await?;
+        append_revision_rows_to_workspace_authorized(
+            op,
+            ws_path,
+            &revisions,
+            &form_def,
+            relation_scopes,
+        )
+        .await?;
     }
     Ok(entries)
+}
+
+fn reject_cross_form_forward_references(
+    batches: &BTreeMap<String, (Value, Vec<RevisionRow>)>,
+) -> Result<()> {
+    let pending = batches
+        .values()
+        .flat_map(|(form_def, revisions)| {
+            let form_id = form::to_domain_form(form_def).ok().map(|form| form.id);
+            revisions.iter().flat_map(move |revision| {
+                form_id
+                    .into_iter()
+                    .map(move |form_id| (form_id, revision.entry_id.clone()))
+            })
+        })
+        .collect::<BTreeSet<_>>();
+
+    for (source_form_def, revisions) in batches.values() {
+        let source_form = form::to_domain_form(source_form_def)?;
+        for revision in revisions {
+            for field in &source_form.fields {
+                let Some(value) = revision
+                    .state
+                    .as_ref()
+                    .and_then(|state| state.fields.get(&field.name))
+                else {
+                    continue;
+                };
+                let references = match (&field.field_type, value) {
+                    (FieldType::RowReference, Value::String(entry_id)) => field
+                        .reference_form
+                        .map(|form| vec![(form, entry_id.clone())])
+                        .unwrap_or_default(),
+                    (FieldType::List, Value::Array(items))
+                        if field
+                            .list_item
+                            .as_ref()
+                            .is_some_and(|item| item.field_type == FieldType::RowReference) =>
+                    {
+                        field
+                            .list_item
+                            .as_ref()
+                            .and_then(|item| {
+                                item.reference_form.map(|form| {
+                                    items
+                                        .iter()
+                                        .filter_map(Value::as_str)
+                                        .map(|entry_id| (form, entry_id.to_string()))
+                                        .collect()
+                                })
+                            })
+                            .unwrap_or_default()
+                    }
+                    _ => Vec::new(),
+                };
+                for (target_form, entry_id) in references {
+                    if target_form != source_form.id
+                        && pending.contains(&(target_form, entry_id.clone()))
+                    {
+                        return Err(anyhow!(
+                            "cross-Form forward references in one create batch are unsupported: '{}' -> '{}'",
+                            source_form.name,
+                            entry_id
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn prepare_entry<I: IntegrityProvider>(

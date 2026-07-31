@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use opendal::Operator;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use uuid::Uuid;
 
 use crate::integrity::RealIntegrityProvider;
@@ -14,7 +14,8 @@ use crate::{
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
     storage::operator_from_uri,
 };
-use ugoite_core::error::AppError;
+use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::EntryScope;
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
     validate_space_id, validate_sql_id, validate_sql_session_id,
@@ -204,6 +205,34 @@ impl UgoiteService {
             markdown,
             author,
             &integrity,
+        )
+        .await?;
+        entry::get_entry(&self.operator, &workspace, entry_id).await
+    }
+
+    pub async fn create_entry_authorized(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        author: &str,
+        principal_id: Uuid,
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let scopes = self
+            .authorized_form_entry_scopes(space_id, principal_id)
+            .await?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let workspace = self.workspace_path(space_id);
+        entry::create_entry_with_scopes(
+            &self.operator,
+            &workspace,
+            entry_id,
+            markdown,
+            author,
+            &integrity,
+            Some(&scopes),
         )
         .await?;
         entry::get_entry(&self.operator, &workspace, entry_id).await
@@ -468,6 +497,80 @@ impl UgoiteService {
             }
         }
         Ok(by_form)
+    }
+
+    /// The only scope accepted by reference/existence checks. It is derived
+    /// from the caller's authorization state before a closed DataFusion
+    /// context is built; an omitted Form is not an all-rows fallback.
+    pub async fn authorized_form_entry_scopes(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+    ) -> Result<BTreeMap<String, EntryScope>> {
+        self.authorized_form_entry_scopes_for_principals(space_id, &[principal_id])
+            .await
+    }
+
+    /// Derives the provider-side Entry scope from one authorization snapshot.
+    /// Entry policies are sparse: Space read is inherited by every current
+    /// Entry unless a policy removes it, so the closed query context can use
+    /// `AllExcept` without listing or scanning Entry rows in Rust.
+    pub async fn authorized_form_entry_scopes_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<BTreeMap<String, EntryScope>> {
+        if principal_ids.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Ok(BTreeMap::new());
+            }
+        }
+        let mut denied_entry_ids = BTreeSet::new();
+        for resource_key in state.policies.keys() {
+            let Some(entry_id) = resource_key.strip_prefix("entry:") else {
+                continue;
+            };
+            let resource = ResourceRef {
+                kind: ResourceKind::Entry,
+                id: entry_id.to_string(),
+                parent: None,
+            };
+            let mut readable_by_every_principal = true;
+            for principal_id in principal_ids {
+                if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+                    .contains(&Action::Read)
+                {
+                    readable_by_every_principal = false;
+                    break;
+                }
+            }
+            if !readable_by_every_principal {
+                denied_entry_ids.insert(
+                    Uuid::parse_str(entry_id)
+                        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
+                        .into(),
+                );
+            }
+        }
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let entry_scope = if denied_entry_ids.is_empty() {
+            EntryScope::AllCurrent
+        } else {
+            EntryScope::AllExcept(denied_entry_ids)
+        };
+        Ok(workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .map(|form| (form.name.to_ascii_lowercase(), entry_scope.clone()))
+            .collect())
     }
 
     pub async fn authorized_entry_ids_for_principals(
@@ -874,10 +977,88 @@ impl UgoiteService {
         asset::read_asset(&self.operator, &self.workspace_path(space_id), asset_id).await
     }
 
+    pub async fn ensure_asset_reference_is_readable(
+        &self,
+        space_id: &str,
+        form_name: &str,
+        entry_id: &str,
+        asset_id: &str,
+    ) -> Result<()> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_form_name(form_name))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_asset_id(asset_id))?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let form = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .find(|form| form.name == form_name)
+            .ok_or_else(|| {
+                AppError::not_found(
+                    ErrorCode::AssetNotFound,
+                    format!("Asset {asset_id} not found"),
+                )
+            })?;
+        let entry_uuid = Uuid::parse_str(entry_id)
+            .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()));
+        if !asset::current_asset_reference_exists_in_workspace(
+            &workspace,
+            asset_id,
+            &BTreeMap::from([(
+                form.name.to_ascii_lowercase(),
+                EntryScope::Only(BTreeSet::from([entry_uuid.into()])),
+            )]),
+        )
+        .await?
+        {
+            return Err(AppError::not_found(
+                ErrorCode::AssetNotFound,
+                format!("Asset {asset_id} not found"),
+            )
+            .into());
+        }
+        Ok(())
+    }
+
     pub async fn delete_asset(&self, space_id: &str, asset_id: &str) -> Result<()> {
+        self.delete_asset_with_principal(space_id, asset_id, None)
+            .await
+    }
+
+    pub async fn delete_asset_with_principal(
+        &self,
+        space_id: &str,
+        asset_id: &str,
+        principal_id: Option<Uuid>,
+    ) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_asset_id(asset_id))?;
-        asset::delete_asset(&self.operator, &self.workspace_path(space_id), asset_id).await
+        let scopes = match principal_id {
+            Some(principal_id) => {
+                self.authorized_form_entry_scopes(space_id, principal_id)
+                    .await?
+            }
+            None => {
+                let workspace =
+                    iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
+                        .await?;
+                workspace
+                    .list_forms()
+                    .await?
+                    .into_iter()
+                    .map(|form| (form.name.to_ascii_lowercase(), EntryScope::AllCurrent))
+                    .collect()
+            }
+        };
+        asset::delete_asset(
+            &self.operator,
+            &self.workspace_path(space_id),
+            asset_id,
+            &scopes,
+        )
+        .await
     }
 
     pub async fn get_user_preferences(

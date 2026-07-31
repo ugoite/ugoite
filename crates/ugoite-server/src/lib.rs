@@ -3561,11 +3561,12 @@ async fn create_entry(
     validate_id(&entry_id, "entry_id")?;
     let created = state
         .service
-        .create_entry(
+        .create_entry_authorized(
             &space_id,
             &entry_id,
             &payload.markdown,
             &principal_id.to_string(),
+            principal_id,
         )
         .await
         .map_err(ApiError::from_core)?;
@@ -4144,21 +4145,79 @@ async fn upload_asset(
     ))
 }
 
+#[derive(Deserialize)]
+struct AssetReadQuery {
+    form: Option<String>,
+    entry_id: Option<String>,
+}
+
 async fn get_asset(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, asset_id)): Path<(String, String)>,
+    Query(query): Query<AssetReadQuery>,
 ) -> ApiResult<Response> {
-    require_resource_action(
+    let form_name = query.form.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            "asset reads require a containing Form and Entry context",
+        )
+    })?;
+    let entry_id = query.entry_id.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            "asset reads require a containing Form and Entry context",
+        )
+    })?;
+    validate_id(&asset_id, "asset_id")?;
+    validate_id(&entry_id, "entry_id")?;
+    let principal_id = require_resource_action(
         &state,
         &space_id,
         &identity,
         Action::Read,
-        ResourceKind::Asset,
-        &asset_id,
+        ResourceKind::Entry,
+        &entry_id,
     )
     .await?;
-    validate_id(&asset_id, "asset_id")?;
+    let entry_parent = ugoite_iceberg::authorization::ResourceRef {
+        kind: ResourceKind::Entry,
+        id: entry_id.clone(),
+        parent: None,
+    };
+    state
+        .service
+        .require_resource_action(
+            &space_id,
+            principal_id,
+            Action::Read,
+            ResourceKind::Asset,
+            &asset_id,
+            Some(entry_parent.clone()),
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    if let Some(actor_principal_id) = identity.token_actor_principal_id {
+        if actor_principal_id != principal_id {
+            state
+                .service
+                .require_resource_action(
+                    &space_id,
+                    actor_principal_id,
+                    Action::Read,
+                    ResourceKind::Asset,
+                    &asset_id,
+                    Some(entry_parent),
+                )
+                .await
+                .map_err(ApiError::from_core)?;
+        }
+    }
+    state
+        .service
+        .ensure_asset_reference_is_readable(&space_id, &form_name, &entry_id, &asset_id)
+        .await
+        .map_err(ApiError::from_core)?;
     let content = state
         .service
         .read_asset(&space_id, &asset_id)
@@ -4177,7 +4236,7 @@ async fn delete_asset(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, asset_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
+    let principal_id = require_resource_action(
         &state,
         &space_id,
         &identity,
@@ -4189,7 +4248,7 @@ async fn delete_asset(
     validate_id(&asset_id, "asset_id")?;
     state
         .service
-        .delete_asset(&space_id, &asset_id)
+        .delete_asset_with_principal(&space_id, &asset_id, Some(principal_id))
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(json!({"id": asset_id, "status": "deleted"})))

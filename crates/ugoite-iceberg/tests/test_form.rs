@@ -209,3 +209,51 @@ async fn test_form_req_form_007_row_reference_requires_target() -> anyhow::Resul
 
     Ok(())
 }
+
+#[tokio::test]
+async fn self_reference_reupsert_preserves_the_persisted_form_id() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "self-reference-form", "/tmp").await?;
+    let ws_path = "spaces/self-reference-form";
+    let definition = serde_json::json!({
+        "name": "Task",
+        "fields": {
+            "Parent": {"type": "row_reference", "target_form": "Task"}
+        }
+    });
+    form::upsert_form(&op, ws_path, &definition).await?;
+    let first = form::get_form(&op, ws_path, "Task").await?;
+    let stable_id = first["id"].as_str().unwrap().to_string();
+
+    form::upsert_form(&op, ws_path, &definition).await?;
+    let second = form::get_form(&op, ws_path, "Task").await?;
+    assert_eq!(second["id"].as_str(), Some(stable_id.as_str()));
+    assert_eq!(
+        second["fields"]["Parent"]["target_form"].as_str(),
+        Some(stable_id.as_str())
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn unknown_uuid_reference_target_is_rejected() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "unknown-reference-form", "/tmp").await?;
+    let ws_path = "spaces/unknown-reference-form";
+    let result = form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Task",
+            "fields": {
+                "Parent": {
+                    "type": "row_reference",
+                    "target_form": "00000000-0000-0000-0000-000000000099"
+                }
+            }
+        }),
+    )
+    .await;
+    assert!(result.unwrap_err().to_string().contains("not found"));
+    Ok(())
+}

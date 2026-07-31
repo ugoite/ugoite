@@ -4,6 +4,7 @@ use ugoite_domain::entry::{
 };
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
+    ListItemDefinition,
 };
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
@@ -865,6 +866,150 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
     };
     append_revisions(&workspace, form.id, vec![revision.clone()]).await?;
     assert_eq!(workspace.read_revisions(form.id).await?, vec![revision]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(73)),
+        "memory://iceberg-all-typed-lists",
+    )
+    .await?;
+    let mut form = form();
+    let list_types = [
+        (101, "booleans", FieldType::Boolean),
+        (102, "integers", FieldType::Integer),
+        (103, "longs", FieldType::Long),
+        (104, "floats", FieldType::Float),
+        (105, "doubles", FieldType::Double),
+        (106, "dates", FieldType::Date),
+        (107, "times", FieldType::Time),
+        (108, "timestamps", FieldType::Timestamp),
+        (109, "timestamp_tzs", FieldType::TimestampTz),
+        (110, "timestamp_nss", FieldType::TimestampNs),
+        (111, "timestamp_tz_nss", FieldType::TimestampTzNs),
+        (112, "uuids", FieldType::Uuid),
+        (113, "binaries", FieldType::Binary),
+    ];
+    form.fields
+        .extend(list_types.iter().map(|(id, name, item_type)| FormField {
+            id: FieldId::new(*id).unwrap(),
+            name: (*name).into(),
+            field_type: FieldType::List,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            list_item: Some(ListItemDefinition {
+                field_type: item_type.clone(),
+                reference_form: None,
+            }),
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        }));
+    create_form(&workspace, &form).await?;
+    let revision = EntryRevision {
+        form_id: form.id,
+        entry_id: Uuid::from_u128(74).into(),
+        revision_id: Uuid::from_u128(75).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata {
+            external_id: "typed-lists".into(),
+            ..Default::default()
+        },
+        values: BTreeMap::from([
+            (FieldId::new(100).unwrap(), FieldValue::String("all".into())),
+            (
+                FieldId::new(101).unwrap(),
+                FieldValue::List(vec![FieldValue::Boolean(true), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(102).unwrap(),
+                FieldValue::List(vec![FieldValue::Integer(7), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(103).unwrap(),
+                FieldValue::List(vec![FieldValue::Integer(7), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(104).unwrap(),
+                FieldValue::List(vec![FieldValue::Number(1.25), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(105).unwrap(),
+                FieldValue::List(vec![FieldValue::Number(2.5), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(106).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(107).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("12:34:56.123456".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(108).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02T03:04:05.123456+00:00".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(109).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02T03:04:05.123456+00:00".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(110).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02T03:04:05.123456789Z".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(111).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02T03:04:05.123456789Z".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(112).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("00000000-0000-0000-0000-000000000001".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(113).unwrap(),
+                FieldValue::List(vec![FieldValue::String("AQI=".into()), FieldValue::Null]),
+            ),
+        ]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    append_revisions(&workspace, form.id, vec![revision.clone()]).await?;
+    let restored = workspace.read_revisions(form.id).await?;
+    assert_eq!(restored, vec![revision]);
     Ok(())
 }
 

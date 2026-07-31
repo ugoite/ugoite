@@ -137,6 +137,83 @@ async fn explicit_entry_batch_creates_all_entries() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn same_form_batch_may_reference_another_pending_entry() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "same-batch-reference-space", "/tmp").await?;
+    let ws_path = "spaces/same-batch-reference-space";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Task",
+            "fields": {
+                "Parent": {"type": "row_reference", "target_form": "Task"}
+            }
+        }),
+    )
+    .await?;
+    let integrity = FakeIntegrityProvider;
+    let entries = entry::create_entries(
+        &op,
+        ws_path,
+        vec![
+            entry::EntryCreateRequest::new(
+                "task-child",
+                "---\nform: Task\nParent: task-parent\n---\n# Child",
+            ),
+            entry::EntryCreateRequest::new("task-parent", "---\nform: Task\n---\n# Parent"),
+        ],
+        "test-author",
+        &integrity,
+    )
+    .await?;
+    assert_eq!(entries.len(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn cross_form_forward_references_are_rejected_deterministically() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "cross-batch-reference-space", "/tmp").await?;
+    let ws_path = "spaces/cross-batch-reference-space";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({"name": "Project", "fields": {"Name": {"type": "string"}}}),
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Task",
+            "fields": {"Project": {"type": "row_reference", "target_form": "Project"}}
+        }),
+    )
+    .await?;
+    let error = entry::create_entries(
+        &op,
+        ws_path,
+        vec![
+            entry::EntryCreateRequest::new(
+                "task-forward",
+                "---\nform: Task\nProject: project-forward\n---\n# Task",
+            ),
+            entry::EntryCreateRequest::new(
+                "project-forward",
+                "---\nform: Project\nName: Project\n---\n# Project",
+            ),
+        ],
+        "test-author",
+        &FakeIntegrityProvider,
+    )
+    .await
+    .expect_err("cross-Form forward references need a coherent multi-Form commit");
+    assert!(error.to_string().contains("cross-Form forward references"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn explicit_entry_batch_rejects_unbounded_input() -> anyhow::Result<()> {
     let op = setup_operator()?;
     let integrity = FakeIntegrityProvider;

@@ -1,11 +1,19 @@
 mod common;
+use chrono::Utc;
 use common::setup_operator;
+use std::collections::{BTreeMap, BTreeSet};
+use ugoite_core::query::EntryScope;
+use ugoite_domain::identity::{
+    AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
+};
 use ugoite_iceberg::asset;
+use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
-use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
+use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::space;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn upload_returns_a_typed_reference_without_creating_an_entry() -> anyhow::Result<()> {
@@ -35,10 +43,9 @@ async fn read_and_delete_use_the_exact_asset_id_key() -> anyhow::Result<()> {
     let reference = asset::save_asset(&op, ws_path, "file.txt", b"data").await?;
 
     let content = asset::read_asset(&op, ws_path, &reference.asset_id).await?;
-    assert_eq!(content.reference.asset_id, reference.asset_id);
     assert_eq!(content.bytes, b"data");
 
-    asset::delete_asset(&op, ws_path, &reference.asset_id).await?;
+    asset::delete_asset(&op, ws_path, &reference.asset_id, &BTreeMap::new()).await?;
     assert!(
         !op.exists(&format!("{ws_path}/assets/{}", reference.asset_id))
             .await?
@@ -111,22 +118,229 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
         entries[0]["properties"]["Attachments"][0]["asset_id"],
         reference.asset_id
     );
-    let scalar_fields = ["Attachment".to_string()];
-    let list_fields = ["Attachments".to_string()];
+    let workspace = ugoite_iceberg::iceberg_store::native_workspace(&op, ws_path).await?;
     assert!(
-        index::current_asset_reference_exists(
-            &op,
-            ws_path,
-            "Media",
-            &scalar_fields,
-            &list_fields,
+        asset::current_asset_reference_exists_in_workspace(
+            &workspace,
             &reference.asset_id,
+            &BTreeMap::from([("media".to_string(), EntryScope::AllCurrent)]),
         )
         .await?
     );
-    let error = asset::delete_asset(&op, ws_path, &reference.asset_id)
-        .await
-        .expect_err("current typed Form values must guard the asset");
+    let hidden_entry_scope = EntryScope::Only(BTreeSet::from([uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_URL,
+        b"unreadable-entry",
+    )
+    .into()]));
+    assert!(
+        !asset::current_asset_reference_exists_in_workspace(
+            &workspace,
+            &reference.asset_id,
+            &BTreeMap::from([("media".to_string(), hidden_entry_scope)]),
+        )
+        .await?
+    );
+    let error = asset::delete_asset(
+        &op,
+        ws_path,
+        &reference.asset_id,
+        &BTreeMap::from([("media".to_string(), EntryScope::AllCurrent)]),
+    )
+    .await
+    .expect_err("current typed Form values must guard the asset");
     assert!(error.to_string().contains("referenced"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn asset_deletion_and_reference_creation_share_the_catalog_head_boundary(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-race", "/tmp").await?;
+    let ws_path = "spaces/asset-race";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Media",
+            "fields": {
+                "Attachment": {"type": "asset_reference"},
+                "Attachments": {
+                    "type": "list",
+                    "items": {"type": "asset_reference"}
+                }
+            }
+        }),
+    )
+    .await?;
+    let scopes = BTreeMap::from([("media".to_string(), EntryScope::AllCurrent)]);
+
+    // Reference publication wins first: deletion must observe the current
+    // reference and never remove its bytes.
+    let first = asset::save_asset(&op, ws_path, "first.bin", b"first").await?;
+    let first_json = serde_json::to_string(&first)?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "reference-first",
+        &format!(
+            "---\nform: Media\nAttachment: {first_json}\nAttachments: [{first_json}]\n---\n# First"
+        ),
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    assert!(asset::delete_asset(&op, ws_path, &first.asset_id, &scopes)
+        .await
+        .is_err());
+    assert_eq!(
+        asset::read_asset(&op, ws_path, &first.asset_id)
+            .await?
+            .bytes,
+        b"first"
+    );
+
+    // Deletion marker wins first: a later Entry publication must conflict at
+    // the same Catalog Head boundary instead of creating a dangling reference.
+    let second = asset::save_asset(&op, ws_path, "second.bin", b"second").await?;
+    asset::delete_asset(&op, ws_path, &second.asset_id, &scopes).await?;
+    let second_json = serde_json::to_string(&second)?;
+    assert!(entry::create_entry(
+        &op,
+        ws_path,
+        "reference-after-delete",
+        &format!(
+            "---\nform: Media\nAttachment: {second_json}\nAttachments: [{second_json}]\n---\n# Second"
+        ),
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await
+    .is_err());
+    assert!(asset::read_asset(&op, ws_path, &second.asset_id)
+        .await
+        .is_err());
+
+    // The same two operations are also exercised concurrently. Whichever
+    // publication wins, the other must lose the optimistic Head comparison.
+    let third = asset::save_asset(&op, ws_path, "third.bin", b"third").await?;
+    let third_json = serde_json::to_string(&third)?;
+    let third_content = format!(
+        "---\nform: Media\nAttachment: {third_json}\nAttachments: [{third_json}]\n---\n# Third"
+    );
+    let delete = asset::delete_asset(&op, ws_path, &third.asset_id, &scopes);
+    let create = entry::create_entry(
+        &op,
+        ws_path,
+        "reference-concurrent",
+        &third_content,
+        "author",
+        &FakeIntegrityProvider,
+    );
+    let (delete_result, create_result) = tokio::join!(delete, create);
+    assert_ne!(delete_result.is_ok(), create_result.is_ok());
+    if delete_result.is_ok() {
+        assert!(asset::read_asset(&op, ws_path, &third.asset_id)
+            .await
+            .is_err());
+    } else {
+        assert_eq!(
+            asset::read_asset(&op, ws_path, &third.asset_id)
+                .await?
+                .bytes,
+            b"third"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn authorization_state_hides_scalar_and_list_asset_references() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op.clone(), "memory://asset-auth-scope");
+    let owner = Uuid::from_u128(101);
+    let viewer = Uuid::from_u128(102);
+    let space_id = service
+        .create_space_for_principal("asset-auth-scope", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Media",
+                "fields": {
+                    "Attachment": {"type": "asset_reference"},
+                    "Attachments": {
+                        "type": "list",
+                        "items": {"type": "asset_reference"}
+                    }
+                }
+            }),
+        )
+        .await?;
+    let reference = service
+        .save_asset(&space_id, "private.bin", b"private")
+        .await?;
+    let reference_json = serde_json::to_string(&reference)?;
+    service
+        .create_entry(
+            &space_id,
+            "hidden",
+            &format!(
+                "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}]\n---\n# Hidden"
+            ),
+            "owner",
+        )
+        .await?;
+
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Entry,
+                id: "hidden".to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+
+    let scopes = service
+        .authorized_form_entry_scopes(&space_id, viewer)
+        .await?;
+    let workspace = ugoite_iceberg::iceberg_store::native_workspace(
+        service.operator(),
+        &format!("spaces/{space_id}"),
+    )
+    .await?;
+    assert!(
+        !asset::current_asset_reference_exists_in_workspace(
+            &workspace,
+            &reference.asset_id,
+            &scopes,
+        )
+        .await?
+    );
     Ok(())
 }

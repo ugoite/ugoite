@@ -2,16 +2,17 @@ use anyhow::Result;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
-use crate::form;
-use crate::index;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::{
+    AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+};
 pub use ugoite_domain::entry::AssetReference;
 use ugoite_domain::id::validate_asset_id;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AssetContent {
-    pub reference: AssetReference,
     pub bytes: Vec<u8>,
 }
 
@@ -39,10 +40,6 @@ fn normalize_asset_filename(filename: &str, fallback_name: &str) -> String {
         .find(|segment| !segment.is_empty())
         .unwrap_or("");
     normalize_asset_basename(basename).unwrap_or_else(|| fallback_name.to_string())
-}
-
-fn reference(asset_id: String, name: String, bytes: &[u8]) -> AssetReference {
-    reference_with_media_type(asset_id, name, "application/octet-stream", bytes)
 }
 
 fn reference_with_media_type(
@@ -91,57 +88,149 @@ pub async fn save_asset_with_media_type(
 
 pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<AssetContent> {
     validate_asset_id(asset_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
-    let path = asset_path(ws_path, asset_id);
-    let bytes = op.read(&path).await.map_err(|_| {
-        AppError::not_found(
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    if workspace.asset_is_deleted(asset_id).await? {
+        return Err(AppError::not_found(
             ErrorCode::AssetNotFound,
             format!("Asset {asset_id} not found"),
         )
+        .into());
+    }
+    let path = asset_path(ws_path, asset_id);
+    let bytes = op.read(&path).await.map_err(|error| {
+        if error.kind() == opendal::ErrorKind::NotFound {
+            AppError::not_found(
+                ErrorCode::AssetNotFound,
+                format!("Asset {asset_id} not found"),
+            )
+            .into()
+        } else {
+            anyhow::Error::from(error)
+        }
     })?;
     let bytes = bytes.to_vec();
-    Ok(AssetContent {
-        reference: reference(asset_id.to_string(), asset_id.to_string(), &bytes),
-        bytes,
-    })
+    // The exact object key carries no logical name or media type. Those
+    // values belong to the Form-owned reference and must not be fabricated.
+    Ok(AssetContent { bytes })
 }
 
-async fn is_asset_referenced(op: &Operator, ws_path: &str, asset_id: &str) -> Result<bool> {
-    for form_name in form::list_form_names(op, ws_path).await? {
-        let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
-        let Some(fields) = form_def
-            .get("fields")
-            .and_then(serde_json::Value::as_object)
+pub async fn current_asset_reference_exists(
+    op: &Operator,
+    ws_path: &str,
+    asset_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<bool> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    current_asset_reference_exists_in_workspace(&workspace, asset_id, relation_scopes).await
+}
+
+/// Evaluates Asset references against one exact workspace/catalog view and one
+/// closed DataFusion context. The caller supplies the already-derived
+/// relation scopes; absent Forms are not registered as empty discoverable
+/// relations.
+pub async fn current_asset_reference_exists_in_workspace(
+    workspace: &crate::IcebergWorkspace,
+    asset_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<bool> {
+    let forms = workspace.list_forms().await?;
+    let mut policy_forms = BTreeMap::new();
+    let mut queries = Vec::new();
+    let mut list_queries = Vec::new();
+    for form_def in forms {
+        let Some(entry_scope) = relation_scopes
+            .get(&form_def.name.to_ascii_lowercase())
+            .cloned()
         else {
             continue;
         };
-        let scalar_fields = fields
+        let scalar_fields = form_def
+            .fields
             .iter()
-            .filter(|(_, field)| {
-                field.get("type").and_then(serde_json::Value::as_str) == Some("asset_reference")
-            })
-            .map(|(name, _)| name.clone())
+            .filter(|field| field.field_type == ugoite_domain::form::FieldType::AssetReference)
+            .map(|field| field.name.clone())
             .collect::<Vec<_>>();
-        let list_fields = fields
+        let list_fields = form_def
+            .fields
             .iter()
-            .filter(|(_, field)| {
-                field.get("type").and_then(serde_json::Value::as_str) == Some("list")
-                    && field
-                        .get("items")
-                        .and_then(|items| items.get("type"))
-                        .and_then(serde_json::Value::as_str)
-                        == Some("asset_reference")
+            .filter(|field| {
+                field.field_type == ugoite_domain::form::FieldType::List
+                    && field.list_item.as_ref().is_some_and(|item| {
+                        item.field_type == ugoite_domain::form::FieldType::AssetReference
+                    })
             })
-            .map(|(name, _)| name.clone())
+            .map(|field| field.name.clone())
             .collect::<Vec<_>>();
-        if index::current_asset_reference_exists(
-            op,
-            ws_path,
-            &form_name,
-            &scalar_fields,
-            &list_fields,
-            asset_id,
-        )
-        .await?
+        let relation = format!(
+            "\"{}\"",
+            form_def.name.to_ascii_lowercase().replace('"', "\"\"")
+        );
+        let literal = format!("'{}'", asset_id.replace('\\', "\\\\").replace('\'', "''"));
+        let scalar = scalar_fields.iter().map(|field| {
+            format!(
+                "\"{}\".asset_id = {literal}",
+                field.to_ascii_lowercase().replace('"', "\"\"")
+            )
+        });
+        let predicates = scalar.collect::<Vec<_>>();
+        if !predicates.is_empty() {
+            queries.push(format!(
+                "SELECT 1 FROM {} WHERE ({})",
+                relation,
+                predicates.join(" OR ")
+            ));
+        }
+        for field in list_fields {
+            list_queries.push((
+                form_def.name.to_ascii_lowercase(),
+                field.to_ascii_lowercase(),
+            ));
+        }
+        policy_forms.insert(
+            form_def.id,
+            AuthorizedQueryForm {
+                relation: form_def.name.to_ascii_lowercase(),
+                entry_scope,
+                columns: form_def
+                    .fields
+                    .iter()
+                    .map(|field| field.name.clone())
+                    .collect(),
+                system_columns: BTreeSet::from([QuerySystemColumn::ExternalId]),
+            },
+        );
+    }
+    if queries.is_empty() && list_queries.is_empty() {
+        return Ok(false);
+    }
+    let context = workspace
+        .authorized_query_context(AuthorizedQueryPolicy {
+            forms: policy_forms,
+            checkpoint: None,
+            limits: QueryLimits {
+                max_memory_bytes: 64 * 1024 * 1024,
+                max_rows: 1,
+                timeout: std::time::Duration::from_secs(30),
+                max_concurrency: 1,
+                allowed_functions: BTreeSet::new(),
+            },
+        })
+        .await?;
+    if !queries.is_empty() {
+        let sql = format!("{} LIMIT 1", queries.join(" UNION ALL "));
+        if context
+            .execute(&sql)
+            .await?
+            .iter()
+            .any(|batch| batch.num_rows() > 0)
+        {
+            return Ok(true);
+        }
+    }
+    for (relation, field) in list_queries {
+        if context
+            .contains_struct_list_value(&relation, &field, "asset_id", asset_id)
+            .await?
         {
             return Ok(true);
         }
@@ -149,15 +238,13 @@ async fn is_asset_referenced(op: &Operator, ws_path: &str, asset_id: &str) -> Re
     Ok(false)
 }
 
-pub async fn delete_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<()> {
+pub async fn delete_asset(
+    op: &Operator,
+    ws_path: &str,
+    asset_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<()> {
     validate_asset_id(asset_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
-    if is_asset_referenced(op, ws_path, asset_id).await? {
-        return Err(AppError::conflict(
-            ErrorCode::AssetReferenced,
-            format!("Asset {asset_id} is referenced by an entry"),
-        )
-        .into());
-    }
     let path = asset_path(ws_path, asset_id);
     if !op.exists(&path).await? {
         return Err(AppError::not_found(
@@ -166,6 +253,16 @@ pub async fn delete_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Resul
         )
         .into());
     }
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let publication = crate::publication_context(
+        format!("asset-delete:{asset_id}"),
+        "asset.delete",
+        &serde_json::json!({"asset_id": asset_id}),
+    )?;
+    workspace
+        .commit(publication)?
+        .delete_asset(asset_id, relation_scopes)
+        .await?;
     op.delete(&path).await?;
     Ok(())
 }

@@ -43,7 +43,6 @@ async fn test_service_boundary_covers_primary_adapter_operations() -> Result<()>
 
     let asset = service.save_asset("demo", "hello.txt", b"hello").await?;
     let content = service.read_asset("demo", &asset.asset_id).await?;
-    assert_eq!(content.reference.asset_id, asset.asset_id);
     assert_eq!(content.bytes, b"hello");
 
     service.delete_asset("demo", &asset.asset_id).await?;

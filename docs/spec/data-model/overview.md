@@ -100,12 +100,16 @@ alternate Catalog or result store. See
 
 ## Assets and integrity
 
-Assets are a low-level byte lifecycle, not a system Form. Upload allocates a
-stable Asset ID and writes `assets/{asset_id}`; the response is an
+Asset bytes have a low-level lifecycle independent of Form definitions. Upload
+allocates a stable Asset ID and writes `assets/{asset_id}`; the response is an
 `AssetReference` value containing only `asset_id`, `name`, `media_type`,
 `size_bytes`, and `sha256`. A Form owns any reference through an
-`asset_reference` field or a typed list of those values. Deletion checks current
-non-deleted typed Form values and is rejected while the ID is referenced.
+`asset_reference` field or a typed list of those values. Byte reads require an
+explicit containing Form/Entry context; the exact-ID operation cannot
+reconstruct logical name or media type. Deletion publishes an Asset lifecycle
+marker through the Catalog Head CAS before removing the byte, so a concurrent
+reference commit or deletion conflicts rather than leaving a current reference
+to missing bytes.
 
 Entry content and revisions carry checksums and HMAC signatures generated from
 Space-local integrity material. Response-signing material may also be written
