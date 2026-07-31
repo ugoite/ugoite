@@ -44,7 +44,9 @@ test.describe("Docsite onboarding", () => {
     await page.goto(buildDocsiteUrl("/"), { waitUntil: "networkidle" });
     await page.getByRole("link", { name: "Container quick start" }).click();
 
-    await expect(page).toHaveURL(/\/docs\/guide\/container-quickstart\/$/);
+    await expect(page).toHaveURL(
+      /\/docs\/guide\/start\/container-quickstart\/$/,
+    );
     await expect(
       page.getByRole("heading", { level: 1, name: /container quickstart/i }),
     ).toBeVisible();

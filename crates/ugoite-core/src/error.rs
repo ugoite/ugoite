@@ -33,6 +33,7 @@ pub enum ErrorCode {
     SqlSessionExpired,
     ReindexNotImplemented,
     StorageConnectionFailed,
+    FormFieldTypeChangeNotSupported,
     InvalidInput,
 }
 
@@ -58,6 +59,7 @@ impl ErrorCode {
             Self::SqlSessionExpired => "SQL_SESSION_EXPIRED",
             Self::ReindexNotImplemented => "REINDEX_NOT_IMPLEMENTED",
             Self::StorageConnectionFailed => "STORAGE_CONNECTION_FAILED",
+            Self::FormFieldTypeChangeNotSupported => "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED",
             Self::InvalidInput => "INVALID_INPUT",
         }
     }
@@ -90,6 +92,22 @@ impl AppError {
 
     pub fn invalid_input(code: ErrorCode, message: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidInput, code, message)
+    }
+
+    pub fn form_field_type_change_not_supported(
+        field_name: impl Into<String>,
+        source_type: impl Into<String>,
+        target_type: impl Into<String>,
+    ) -> Self {
+        let field_name = field_name.into();
+        let source_type = source_type.into();
+        let target_type = target_type.into();
+        Self::invalid_input(
+            ErrorCode::FormFieldTypeChangeNotSupported,
+            format!(
+                "Changing the type of existing Form field '{field_name}' from '{source_type}' to '{target_type}' is not supported; create a new field instead"
+            ),
+        )
     }
 
     pub fn forbidden(message: impl Into<String>) -> Self {

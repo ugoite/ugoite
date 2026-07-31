@@ -136,7 +136,9 @@ export function SpaceShell(props: SpaceShellProps) {
             <UiIcon name="menu" />
           </button>
           <div class="crumbTop">{crumb()}</div>
-          <AccountMenu />
+          <AccountMenu
+            settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
+          />
         </header>
         <div class="content">{props.children}</div>
       </section>

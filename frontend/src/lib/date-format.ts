@@ -1,3 +1,5 @@
+import type { EntryRecord } from "./types";
+
 const numericTimestampPattern = /^-?\d+(?:\.\d+)?$/;
 
 const numericTimestampToDate = (value: number): Date | null => {
@@ -32,6 +34,14 @@ export const normalizeTimestamp = (
   }
   return timestampToDate(value)?.toISOString() ?? String(value ?? "");
 };
+
+export const normalizeEntryRecord = (entry: EntryRecord): EntryRecord => ({
+  ...entry,
+  ...(entry.created_at === undefined
+    ? {}
+    : { created_at: normalizeTimestamp(entry.created_at) }),
+  updated_at: normalizeTimestamp(entry.updated_at),
+});
 
 export const formatDateLabel = (
   value: string | number | null | undefined,

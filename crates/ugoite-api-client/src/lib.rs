@@ -1386,6 +1386,37 @@ mod tests {
     }
 
     #[test]
+    fn test_api_req_api_001_preserves_unsupported_form_type_change_details() {
+        let error = decode_response(
+            "form.upsert",
+            ApiResponse {
+                status: 422,
+                status_text: "Unprocessable Entity".into(),
+                headers: vec![],
+                body: json!({
+                    "code": "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED",
+                    "message": "Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead"
+                })
+                .to_string(),
+            },
+        )
+        .expect_err("unsupported Form type changes must fail");
+
+        assert_eq!(
+            error.message,
+            "Failed to create form: Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead"
+        );
+        assert_eq!(
+            error
+                .payload
+                .as_deref()
+                .and_then(|payload| payload.get("code"))
+                .and_then(Value::as_str),
+            Some("FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED")
+        );
+    }
+
+    #[test]
     fn test_api_req_api_001_uses_status_text_for_non_message_detail_values() {
         let error = decode_response(
             "auth.get_config",

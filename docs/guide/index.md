@@ -1,24 +1,36 @@
 ---
 title: "Guides"
-description: Task-oriented guides for installing, developing, operating, and troubleshooting Ugoite.
+description: Task-oriented paths for starting, deploying, operating, automating, developing, and troubleshooting Ugoite.
 sidebar:
   order: 1
 ---
 
-Use these task-oriented guides to install, develop, operate, and troubleshoot
-Ugoite.
+These guides are organized around what you are trying to do, not around which
+crate or service implements it. Start with one path, then move deeper only when
+the task calls for it.
 
-## Start here
+## Choose a path
 
-- [Container quick start](container-quickstart.md) for the shortest operator
-  path.
-- [Local development login](local-dev-auth-login.md) for source development.
-- [CLI guide](cli.md) for local core mode and remote API mode.
-- [Core concepts](concepts.md) for Spaces, Forms, Entries, Assets, and derived
-  data.
+- **Start here:** learn the Space model, launch the smallest useful deployment,
+  and create the first browser Entry in [Start here](start/index.md).
+- **Deploy:** choose source Compose, release Compose, Helm, and the environment
+  variables that shape a deployment in [Deploy Ugoite](deploy/index.md).
+- **Operate:** keep a running node healthy, manage identities, and protect the
+  authoritative Space data in [Operate Ugoite](operate/index.md).
+- **Automate:** use the local or server-backed CLI and Agent Principals from
+  [Automate Ugoite](automate/index.md).
+- **Develop:** run Ugoite from source and complete local authentication in
+  [Develop Ugoite](develop/index.md).
+- **Troubleshoot:** follow the shortest diagnostic path in
+  [Troubleshoot Ugoite](troubleshoot/index.md).
 
-## Operate and troubleshoot
+## How the guide tree works
 
-Continue with [operations](operations.md), the
-[environment matrix](env-matrix.md), and the troubleshooting guides in this
-section.
+Each group begins with an overview page that explains when to use that group.
+The pages below it are the focused procedures and references for that task. The
+sidebar mirrors this filesystem hierarchy, so a new page belongs beside the
+other pages that answer the same question rather than in one long list.
+
+For the shortest path, read [Core concepts](start/concepts.md), run the
+[container quick start](start/container-quickstart.md), and then create the
+[first browser Entry](start/browser-first-entry.md).

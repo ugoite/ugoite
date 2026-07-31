@@ -13,7 +13,9 @@ describe("documentation single source of truth", () => {
       path.join(process.cwd(), "src/content.config.ts"),
       "utf8",
     );
-    expect(config).toContain('import { docsSourceDirectory } from "./docs-ssot.mjs"');
+    expect(config).toContain(
+      'import { docsSourceDirectory } from "./docs-ssot.mjs"',
+    );
     expect(config).toContain("base: docsSourceDirectory");
     expect(config).toContain("docsSchema()");
   });
@@ -33,9 +35,10 @@ describe("documentation single source of truth", () => {
       'import { docsSidebarDirectory, docsSourceDirectory } from "./src/docs-ssot.mjs"',
     );
     expect(config).toContain("processedDirs: [docsSourceDirectory]");
-    expect(config).toContain('docsSidebarDirectory("guide")');
-    expect(config).toContain('docsSidebarDirectory("architecture")');
-    expect(config).toContain('docsSidebarDirectory("spec")');
+    expect(config).toContain('docsSidebarDirectory("guide/start")');
+    expect(config).toContain('docsSidebarDirectory("guide/operate/auth")');
+    expect(config).toContain('docsSidebarDirectory("architecture/principles")');
+    expect(config).toContain('docsSidebarDirectory("spec/data-model")');
     expect(config).not.toContain("@astrojs/markdown-remark");
     expect(config).not.toContain("GITHUB_ACTIONS");
     expect(config).not.toContain("http://localhost");
@@ -43,9 +46,13 @@ describe("documentation single source of truth", () => {
 
   test("shared docs path helpers keep loader and sidebar namespaces aligned", () => {
     expect(docsSourceDirectory).toBe("../docs");
-    expect(docsSidebarDirectory("guide")).toBe("../docs/guide");
-    expect(docsSidebarDirectory("architecture")).toBe("../docs/architecture");
-    expect(docsSidebarDirectory("spec")).toBe("../docs/spec");
+    expect(docsSidebarDirectory("guide/start")).toBe("../docs/guide/start");
+    expect(docsSidebarDirectory("architecture/principles")).toBe(
+      "../docs/architecture/principles",
+    );
+    expect(docsSidebarDirectory("spec/data-model")).toBe(
+      "../docs/spec/data-model",
+    );
   });
 
   test("docsite contains no hand-authored route tree", async () => {
@@ -56,18 +63,18 @@ describe("documentation single source of truth", () => {
   test("GitHub Markdown links become Starlight routes at build time", () => {
     expect(
       rewriteDocLink(
-        "../guide/cli.md#core-mode",
+        "../guide/automate/cli.md#core-mode",
         "/repo/docs/spec/index.md",
       ),
-    ).toBe("../guide/cli/#core-mode");
+    ).toBe("../guide/automate/cli/#core-mode");
     expect(
       rewriteDocLink("features/index.md", "/repo/docs/spec/index.md"),
     ).toBe("features/");
     expect(
       rewriteDocLink("https://example.com/file.md", "/repo/docs/index.md"),
     ).toBe("https://example.com/file.md");
-    expect(rewriteDocLink("guide/cli.md", "/repo/docs/index.md")).toBe(
-      "docs/guide/cli/",
+    expect(rewriteDocLink("guide/automate/cli.md", "/repo/docs/index.md")).toBe(
+      "docs/guide/automate/cli/",
     );
     expect(
       rewriteDocLink(

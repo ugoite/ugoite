@@ -12,6 +12,7 @@ import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { locale, t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import {
+  parseMarkdownH2Sections,
   renderMarkdownPreview,
   replaceFirstH1,
   updateH2Section,
@@ -113,45 +114,10 @@ function normalizeFieldName(fieldName: string) {
   return fieldName.trim().toLowerCase();
 }
 
-function parseMarkdownH2Sections(markdown: string) {
-  const lines = markdown.split(/\r?\n/);
-  const sections: Array<{ title: string; content: string }> = [];
-  let activeTitle: string | null = null;
-  let buffer: string[] = [];
-
-  const pushActive = () => {
-    if (!activeTitle) return;
-    sections.push({ title: activeTitle, content: buffer.join("\n").trim() });
-  };
-
-  for (const line of lines) {
-    const heading = /^##\s+(.+?)\s*$/.exec(line);
-    if (heading) {
-      pushActive();
-      activeTitle = heading[1];
-      buffer = [];
-      continue;
-    }
-    // The server-side Markdown mapping treats every heading as the end of an
-    // H2 field section. Keep the form editor aligned so nested document
-    // headings remain source content instead of becoming field values.
-    if (line.startsWith("#")) {
-      pushActive();
-      activeTitle = null;
-      buffer = [];
-      continue;
-    }
-    if (activeTitle) buffer.push(line);
-  }
-
-  pushActive();
-  return sections;
-}
-
 function readMarkdownTitle(markdown: string, fallback = "") {
   const heading = markdown.split(/\r?\n/).find((line) => /^#\s+/.test(line));
   if (!heading) return fallback;
-  return heading.replace(/^#\s+/, "").trim();
+  return heading.replace(/^#\s+/, "");
 }
 
 function buildEditorGuidance(form: Form | null, markdown: string) {

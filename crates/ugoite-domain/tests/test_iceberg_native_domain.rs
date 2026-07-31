@@ -98,6 +98,31 @@ fn required_addition_is_forward_compatible_and_narrowing_is_breaking() {
 }
 
 #[test]
+fn every_existing_form_field_type_change_is_breaking_before_v1() {
+    for (source, target) in [
+        (FieldType::Integer, FieldType::Long),
+        (FieldType::Integer, FieldType::Double),
+        (FieldType::Long, FieldType::Double),
+        (FieldType::Float, FieldType::Double),
+    ] {
+        let mut original = form();
+        original.fields[0].field_type = source;
+        let changes = FormChangeSet {
+            form_id: original.id,
+            expected_version: Some(original.version),
+            changes: vec![FormChange::ChangeFieldType {
+                field_id: field_id(100),
+                field_type: target,
+            }],
+        };
+        assert_eq!(
+            changes.compatibility(&original).unwrap(),
+            Compatibility::Breaking
+        );
+    }
+}
+
+#[test]
 fn revision_validation_enforces_versions_parent_and_tombstones() {
     let form = form();
     let first = EntryRevision {

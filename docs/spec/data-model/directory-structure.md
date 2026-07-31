@@ -100,8 +100,10 @@ latest non-conflicting revision provides current Entry responses.
 
 ## Portability
 
-A complete storage root can be backed up or moved as an operator-controlled
-unit. Object versioning or operator backups protect Catalog Head for disaster
-recovery. Copying only one Space preserves that Space’s content and metadata but
-not user-scoped preferences stored under `users/`. PATCHing a Space storage
+A complete Space prefix can be backed up or moved as an operator-controlled,
+portable unit. Stop writes and use a complete prefix copy or backend-native
+consistent snapshot; object listing must not be used to reconstruct Catalog
+Head or Iceberg state. Node control state is node-local and is not part of a
+Space move. A complete Node recovery set also preserves the configured Node
+control-store prefix and the node secret separately. PATCHing a Space storage
 descriptor does not move existing files.
