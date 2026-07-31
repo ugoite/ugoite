@@ -125,7 +125,14 @@ function parseMarkdownH2Sections(markdown: string) {
 
   const pushActive = () => {
     if (!activeTitle) return;
-    sections.push({ title: activeTitle, content: buffer.join("\n").trim() });
+    let contentEnd = buffer.length;
+    // Empty lines are Markdown section separators, but whitespace on the last
+    // content line is part of the value being edited and must be preserved.
+    while (contentEnd > 0 && buffer[contentEnd - 1] === "") contentEnd -= 1;
+    sections.push({
+      title: activeTitle,
+      content: buffer.slice(0, contentEnd).join("\n"),
+    });
   };
 
   for (const line of lines) {
@@ -155,7 +162,7 @@ function parseMarkdownH2Sections(markdown: string) {
 function readMarkdownTitle(markdown: string, fallback = "") {
   const heading = markdown.split(/\r?\n/).find((line) => /^#\s+/.test(line));
   if (!heading) return fallback;
-  return heading.replace(/^#\s+/, "").trim();
+  return heading.replace(/^#\s+/, "");
 }
 
 function buildEditorGuidance(form: Form | null, markdown: string) {

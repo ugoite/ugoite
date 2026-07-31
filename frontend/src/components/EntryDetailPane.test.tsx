@@ -99,8 +99,9 @@ describe("EntryDetailPane", () => {
     const form: Form = {
       name: "Meeting",
       version: 1,
-      template: "# Meeting\n\n## Notes\n",
+      template: "# Meeting\n\n## Summary\n\n## Notes\n",
       fields: {
+        Summary: { type: "string", required: false },
         Notes: { type: "markdown", required: false },
       },
     };
@@ -117,13 +118,29 @@ describe("EntryDetailPane", () => {
 
     const title = await screen.findByLabelText("Title");
     expect(title).toHaveValue("Meeting");
-    fireEvent.input(title, { target: { value: "Planning" } });
+    fireEvent.input(title, { target: { value: "Planning " } });
+    expect(title).toHaveValue("Planning ");
+
+    const summary = await screen.findByLabelText("Summary");
+    fireEvent.input(summary, { target: { value: "Project " } });
+    expect(summary).toHaveValue("Project ");
+
+    const notes = await screen.findByLabelText("Notes");
+    fireEvent.input(notes, { target: { value: "Details " } });
+    expect(notes).toHaveValue("Details ");
+
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
     expect(entryApi.create).toHaveBeenCalledWith("default", {
-      markdown: expect.stringContaining("# Planning"),
+      markdown: expect.stringContaining("# Planning \n"),
     });
+    expect(entryApi.create.mock.calls[0][1].markdown).toContain(
+      "## Summary\nProject ",
+    );
+    expect(entryApi.create.mock.calls[0][1].markdown).toContain(
+      "## Notes\nDetails ",
+    );
     expect(onCreated).toHaveBeenCalledWith("created-entry");
   });
 
