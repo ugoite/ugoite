@@ -231,10 +231,7 @@ impl FormChangeSet {
                 | FormChange::DeprecateField { .. }
                 | FormChange::RestoreField { .. } => Compatibility::Compatible,
                 FormChange::ChangeRequired { .. } => Compatibility::Compatible,
-                FormChange::ChangeFieldType {
-                    field_id,
-                    ..
-                } => {
+                FormChange::ChangeFieldType { field_id, .. } => {
                     current
                         .fields
                         .iter()
