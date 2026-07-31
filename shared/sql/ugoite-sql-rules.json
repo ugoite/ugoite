@@ -21,32 +21,6 @@
     "OR",
     "NOT"
   ],
-  "base_tables": ["entries", "links", "assets"],
-  "base_columns": [
-    "id",
-    "title",
-    "form",
-    "updated_at",
-    "space_id",
-    "word_count",
-    "tags"
-  ],
-  "table_columns": {
-    "entries": [
-      "id",
-      "title",
-      "form",
-      "updated_at",
-      "space_id",
-      "word_count",
-      "tags",
-      "properties",
-      "links",
-      "assets"
-    ],
-    "links": ["id", "source", "target", "kind"],
-    "assets": ["id", "entry_id", "name", "path"]
-  },
   "lint": {
     "require_select": true,
     "require_from": true,

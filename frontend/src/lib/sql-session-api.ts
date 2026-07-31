@@ -1,6 +1,41 @@
 import { normalizeTimestamp } from "./date-format";
-import type { EntryRecord, SqlSession, SqlSessionRows } from "./types";
+import type {
+  EntryRecord,
+  SqlSession,
+  SqlSessionRow,
+  SqlSessionRows,
+} from "./types";
 import { protocolFetch } from "./ugoite-client/protocol";
+
+const isSqlSessionRow = (value: unknown): value is SqlSessionRow =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const timestampValue = (value: unknown): string | undefined => {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  return normalizeTimestamp(value);
+};
+
+/** Convert the backend's Form SQL projection into the Entry card contract. */
+export const sqlSessionRowToEntryRecord = (
+  row: SqlSessionRow,
+): EntryRecord => {
+  const properties = Object.fromEntries(
+    Object.entries(row).filter(([key]) => key.startsWith("field_")),
+  );
+  const form = typeof row.form === "string" ? row.form : undefined;
+  const createdAt = timestampValue(row._ugoite_created_at);
+
+  return {
+    id: String(row._ugoite_id ?? ""),
+    title: String(row._ugoite_title ?? ""),
+    ...(form ? { form } : {}),
+    ...(createdAt ? { created_at: createdAt } : {}),
+    updated_at: timestampValue(row._ugoite_updated_at) ?? "",
+    properties,
+    tags: [],
+    links: [],
+  };
+};
 
 export const sqlSessionApi = {
   async create(
@@ -52,10 +87,9 @@ export const sqlSessionApi = {
       undefined,
       { trackLoading: false },
     );
-    const rows = ((payload.rows ?? []) as EntryRecord[]).map((row) => ({
-      ...row,
-      updated_at: normalizeTimestamp(row.updated_at),
-    }));
+    const rows = Array.isArray(payload.rows)
+      ? payload.rows.filter(isSqlSessionRow)
+      : [];
     return {
       rows,
       offset: Number(payload.offset ?? 0),

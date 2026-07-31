@@ -64,28 +64,28 @@ describe("/spaces/:space_id/entries", () => {
   it("REQ-FE-054: keeps the dedicated SQL session result route", async () => {
     searchParams.session = "session-1";
     server.use(
-      http.get(testApiUrl("/spaces/default/sql-sessions/session-1"), () =>
-        HttpResponse.json({
-          id: "session-1",
-          space_id: "default",
-          sql_id: "query-1",
-          sql: "SELECT 1",
-          status: "ready",
-          created_at: "2026-03-01T00:00:00Z",
-          expires_at: "2026-03-01T01:00:00Z",
-        })),
+      http.get(
+        testApiUrl("/spaces/default/sql-sessions/session-1"),
+        () =>
+          HttpResponse.json({
+            id: "session-1",
+            space_id: "default",
+            sql_id: "query-1",
+            sql: "SELECT 1",
+            status: "ready",
+            created_at: "2026-03-01T00:00:00Z",
+            expires_at: "2026-03-01T01:00:00Z",
+          }),
+      ),
       http.get(
         testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
         () =>
           HttpResponse.json({
             rows: [{
-              id: "query-entry",
-              title: "Query Entry",
-              form: "Meeting",
-              updated_at: 1772960822.056,
-              properties: {},
-              tags: [],
-              links: [],
+              _ugoite_id: "query-entry",
+              _ugoite_title: "Query Entry",
+              _ugoite_updated_at: 1772960822.056,
+              field_100: "Active",
             }],
             offset: 0,
             limit: 24,
@@ -100,21 +100,29 @@ describe("/spaces/:space_id/entries", () => {
     expect(await screen.findByText("Query Entry")).toBeInTheDocument();
     expect(await screen.findByText(`Updated ${expectedDate}`))
       .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Query Entry/ }));
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/default/entries/query-entry",
+    );
   });
 
   it("returns to the Forms workspace when clearing SQL results", async () => {
     searchParams.session = "session-1";
     server.use(
-      http.get(testApiUrl("/spaces/default/sql-sessions/session-1"), () =>
-        HttpResponse.json({
-          id: "session-1",
-          space_id: "default",
-          sql_id: "query-1",
-          sql: "SELECT 1",
-          status: "ready",
-          created_at: "2026-03-01T00:00:00Z",
-          expires_at: "2026-03-01T01:00:00Z",
-        })),
+      http.get(
+        testApiUrl("/spaces/default/sql-sessions/session-1"),
+        () =>
+          HttpResponse.json({
+            id: "session-1",
+            space_id: "default",
+            sql_id: "query-1",
+            sql: "SELECT 1",
+            status: "ready",
+            created_at: "2026-03-01T00:00:00Z",
+            expires_at: "2026-03-01T01:00:00Z",
+          }),
+      ),
       http.get(
         testApiUrl("/spaces/default/sql-sessions/session-1/rows"),
         () =>

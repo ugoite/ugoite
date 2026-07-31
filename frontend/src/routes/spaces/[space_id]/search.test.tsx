@@ -86,6 +86,7 @@ describe("/spaces/:space_id/search", () => {
     };
     seedEntry("default", entry, record);
     let entryListCalls = 0;
+    let sqlSessionCalls = 0;
     server.use(
       http.get(testApiUrl("/spaces/default/entries"), () => {
         entryListCalls += 1;
@@ -95,6 +96,13 @@ describe("/spaces/:space_id/search", () => {
         testApiUrl("/spaces/default/search"),
         () => HttpResponse.json([record]),
       ),
+      http.post(testApiUrl("/spaces/default/sql-sessions"), () => {
+        sqlSessionCalls += 1;
+        return HttpResponse.json(
+          { detail: "Quick search must not create a SQL session" },
+          { status: 500 },
+        );
+      }),
     );
 
     render(() => <SpaceSearchRoute />);
@@ -108,6 +116,7 @@ describe("/spaces/:space_id/search", () => {
       .toBeInTheDocument();
     expect(screen.getByText("1 result")).toBeInTheDocument();
     expect(entryListCalls).toBe(0);
+    expect(sqlSessionCalls).toBe(0);
   });
 
   it("REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session", async () => {

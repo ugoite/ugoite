@@ -5,17 +5,15 @@ import type { Form } from "./types";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
 
-/* v8 ignore start */
-const BASE_COLUMNS = [...(sqlRules.base_columns ?? [])];
-const BASE_TABLES = [...(sqlRules.base_tables ?? ["entries"])];
-/* v8 ignore stop */
+const SQL_SYSTEM_COLUMNS = [
+  "_ugoite_id",
+  "_ugoite_title",
+  "_ugoite_created_at",
+  "_ugoite_updated_at",
+];
 
 export function buildSqlSchema(forms: Form[]): SqlSchema {
   const tables: Record<string, string[]> = {};
-  for (const table of BASE_TABLES) {
-    tables[table] = BASE_COLUMNS;
-  }
-
   for (const item of forms) {
     /* v8 ignore start */
     const relation = item.sql_relation?.trim();
@@ -23,7 +21,7 @@ export function buildSqlSchema(forms: Form[]): SqlSchema {
     const columns = Object.values(item.fields ?? {})
       .map((field) => field.sql_column?.trim())
       .filter((column): column is string => Boolean(column));
-    tables[relation] = [...BASE_COLUMNS, ...columns];
+    tables[relation] = [...SQL_SYSTEM_COLUMNS, ...columns];
     /* v8 ignore stop */
   }
 

@@ -1,7 +1,7 @@
 // REQ-FE-051: SQL session management
 import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { sqlSessionApi } from "./ugoite-client";
+import { sqlSessionApi, sqlSessionRowToEntryRecord } from "./ugoite-client";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
@@ -54,13 +54,10 @@ describe("sqlSessionApi", () => {
           HttpResponse.json({
             rows: [
               {
-                id: "entry-1",
-                title: "Query Entry",
-                form: "Meeting",
-                updated_at: 1772960822.056,
-                properties: {},
-                tags: [],
-                links: [],
+                _ugoite_id: "entry-1",
+                _ugoite_title: "Query Entry",
+                _ugoite_updated_at: 1772960822.056,
+                field_100: "Active",
               },
             ],
             offset: 0,
@@ -71,9 +68,26 @@ describe("sqlSessionApi", () => {
     );
 
     const result = await sqlSessionApi.rows("sess-ws", "sess-1", 0, 25);
-    expect(result.rows[0].updated_at).toBe(
-      new Date(1772960822.056 * 1000).toISOString(),
-    );
+    expect(result.rows[0]._ugoite_id).toBe("entry-1");
+    expect(result.rows[0]._ugoite_updated_at).toBe(1772960822.056);
+  });
+
+  it("maps backend SQL system and field columns into an Entry card record", () => {
+    const record = sqlSessionRowToEntryRecord({
+      _ugoite_id: "entry-1",
+      _ugoite_title: "Query Entry",
+      _ugoite_created_at: "2026-03-01T00:00:00Z",
+      _ugoite_updated_at: 1772960822.056,
+      field_100: "Active",
+    });
+
+    expect(record).toMatchObject({
+      id: "entry-1",
+      title: "Query Entry",
+      created_at: "2026-03-01T00:00:00Z",
+      updated_at: new Date(1772960822.056 * 1000).toISOString(),
+      properties: { field_100: "Active" },
+    });
   });
 
   it("throws on create failure", async () => {

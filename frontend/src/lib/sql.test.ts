@@ -4,20 +4,24 @@ import type { Form } from "./types";
 
 describe("sql helpers", () => {
   it("should flag missing select clause", () => {
-    const diagnostics = sqlLintDiagnostics("FROM entries");
+    const diagnostics = sqlLintDiagnostics(
+      "FROM form_00000000000000000000000000000001",
+    );
     expect(diagnostics.some((diag) => diag.message.includes("SELECT"))).toBe(
       true,
     );
   });
 
   it("should accept valid select queries", () => {
-    const diagnostics = sqlLintDiagnostics("SELECT * FROM entries LIMIT 10");
+    const diagnostics = sqlLintDiagnostics(
+      'SELECT * FROM "form_00000000000000000000000000000001" LIMIT 10',
+    );
     expect(diagnostics).toHaveLength(0);
   });
 
-  it("should include entries table in schema", () => {
+  it("should expose no SQL schema without backend Form metadata", () => {
     const schema = buildSqlSchema([]);
-    expect(schema.tables?.entries).toContain("title");
+    expect(schema.tables).toEqual({});
   });
 
   it("should include form fields in schema", () => {
@@ -34,10 +38,18 @@ describe("sql helpers", () => {
       },
     ];
     const schema = buildSqlSchema(forms);
-    expect(schema.tables?.form_00000000000000000000000000000001).toContain(
+    const columns = schema.tables?.form_00000000000000000000000000000001;
+    expect(columns).toEqual([
+      "_ugoite_id",
+      "_ugoite_title",
+      "_ugoite_created_at",
+      "_ugoite_updated_at",
       "field_104",
-    );
-    expect(schema.tables?.entries).not.toContain("field_104");
+    ]);
+    expect(schema.tables).not.toHaveProperty("entries");
+    expect(columns).not.toContain("id");
+    expect(columns).not.toContain("title");
+    expect(columns).not.toContain("updated_at");
   });
 
   it("should flag empty query", () => {
@@ -52,14 +64,16 @@ describe("sql helpers", () => {
 
   it("should warn about multiple statements", () => {
     const diagnostics = sqlLintDiagnostics(
-      "SELECT * FROM entries; SELECT 1 FROM foo",
+      'SELECT * FROM "form_00000000000000000000000000000001"; SELECT 1 FROM foo',
     );
     expect(diagnostics.some((d) => d.message.includes("single statement")))
       .toBe(true);
   });
 
   it("should flag invalid LIMIT value", () => {
-    const diagnostics = sqlLintDiagnostics("SELECT * FROM entries LIMIT abc");
+    const diagnostics = sqlLintDiagnostics(
+      'SELECT * FROM "form_00000000000000000000000000000001" LIMIT abc',
+    );
     expect(diagnostics.some((d) => d.message.includes("LIMIT"))).toBe(true);
   });
 });

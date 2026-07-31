@@ -688,7 +688,10 @@ impl SpaceCatalog {
             }
             Err(_) => return checkpoint_issue(name, "checkpoint_unreadable", "checkpoint"),
         };
-        let checkpoint: SpaceCheckpoint = match serde_json::from_slice(&bytes) {
+        let checkpoint: SpaceCheckpoint = match serde_json::from_slice::<Value>(&bytes)
+            .map_err(|_| ())
+            .and_then(|value| SpaceCheckpoint::from_json_value(value).map_err(|_| ()))
+        {
             Ok(checkpoint) => checkpoint,
             Err(_) => return checkpoint_issue(name, "checkpoint_decode_failure", "checkpoint"),
         };
@@ -997,8 +1000,10 @@ impl SpaceCatalog {
             .read_checkpoint(name)
             .await
             .map_err(checkpoint_target_error)?;
-        Ok(serde_json::from_slice(&bytes)
-            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?)
+        let value: Value = serde_json::from_slice(&bytes)
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?;
+        SpaceCheckpoint::from_json_value(value)
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()).into())
     }
 
     /// Re-establishes the immutable publication -> canonical Head chain that

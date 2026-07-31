@@ -281,8 +281,11 @@ export interface SqlSession {
   };
 }
 
+/** A row from an arbitrary SQL session projection. */
+export type SqlSessionRow = Record<string, unknown>;
+
 export interface SqlSessionRows {
-  rows: EntryRecord[];
+  rows: SqlSessionRow[];
   offset: number;
   limit: number;
   totalCount: number;
