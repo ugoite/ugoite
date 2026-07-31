@@ -6,7 +6,7 @@ sidebar:
 
 | Variable                  | Purpose                                                            | Default                  |
 | ------------------------- | ------------------------------------------------------------------ | ------------------------ |
-| `UGOITE_ROOT`             | Node state and operator-owned Spaces                               | `./data`                 |
+| `UGOITE_ROOT`             | Operator-owned Space storage and, by default, Node control state    | `./data`                 |
 | `UGOITE_SERVER_ADDRESS`   | HTTP listen address                                                | `127.0.0.1:8000`         |
 | `UGOITE_STATIC_DIR`       | Optional compiled browser directory                                | unset                    |
 | `UGOITE_PUBLIC_ORIGIN`    | Exact public WebAuthn/OAuth issuer origin                          | `http://localhost:8000`  |
@@ -20,4 +20,7 @@ sidebar:
 Remote deployments must use an HTTPS public origin. Authentication credentials
 are generated and persisted by Ugoite; no environment variable accepts a
 password, API key, bearer token, or setup credential. The Node secret encrypts
-recoverable values and must be stored outside the control-store namespace.
+recoverable values and must be stored outside the control-store namespace. A
+separate `UGOITE_NODE_CONTROL_URI` backend and the node secret are separate
+backup inputs; a `/data` snapshot covers them only when they are actually in
+that default local layout.

@@ -70,8 +70,12 @@ docker compose -f docker-compose.release.yaml up -d
 docker compose -f docker-compose.release.yaml logs ugoite
 ```
 
-Both configurations run one image and mount the authoritative workspace at
-`/data`. The supplied image runs as a non-root user.
+Both configurations run one image and mount the default local Space storage and
+Node control store at `/data`. The supplied image runs as a non-root user.
+`UGOITE_NODE_SECRET_KEY` is an external recovery input and is not copied by a
+`/data` snapshot; `UGOITE_NODE_CONTROL_URI` can place the Node control store in
+another backend. Preserve each configured Space prefix, the control-store
+prefix, and the node secret separately as needed.
 
 ## CLI examples
 

@@ -5,7 +5,9 @@ sidebar:
 ---
 
 1. Record the running version, Catalog configuration, and source snapshot IDs.
-2. Stop writes and back up the complete workspace/Catalog metadata.
+2. Stop writes and preserve the complete source Space prefix, including its
+   Catalog Head and reachable publication evidence. The Node control store and
+   node secret are separate node recovery inputs.
 3. Generate a versioned migration manifest and run verification in dry-run mode.
 4. Verify Form/Field ID mapping, entry/revision/tombstone counts, latest values,
    timestamps, author/provenance, asset/ACL references, and representative

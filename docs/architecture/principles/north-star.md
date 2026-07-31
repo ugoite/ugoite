@@ -31,6 +31,17 @@ is reached only through the configured OpenDAL boundary. A server can expose a
 Space, but it never owns a hidden catalog, relational database, or recovery
 index for that Space.
 
+That portable Space boundary is not the complete recovery boundary for a running
+Node. Node accounts, sessions, credentials, and Node-to-Space bindings are
+node-local control state below `_ugoite/nodes/{node-id}` by default, or in the
+separate backend selected by `UGOITE_NODE_CONTROL_URI`. The encryption root
+supplied by `UGOITE_NODE_SECRET_KEY` or `UGOITE_NODE_SECRET_FILE` is kept
+outside that namespace. A complete Node recovery set therefore preserves the
+Space prefix, the configured Node control-store prefix, and the node secret as
+separate inputs. The default `/data` layout contains the two filesystem
+prefixes, but a `/data` copy is complete only when the secret is preserved with
+it too.
+
 `_ugoite/catalog/head.json` is the only mutable catalog root. It is published
 with an actual OpenDAL ETag compare-and-swap. Immutable, checksum-protected
 publication records under `_ugoite/catalog/publications/` link each successful
@@ -52,7 +63,8 @@ not become the mandatory owner of user data.
 
 ## Invariants
 
-1. Filesystem/object-storage-compatible Space content is the source of truth.
+1. Filesystem/object-storage-compatible Space content is the source of truth;
+   the Space prefix is the portable move unit.
 2. Revisions are append-only Iceberg table data; current state is derived from
    one table and recovery never depends on a hidden database.
 3. Catalog Head is the only authoritative mutable root. Object listing never

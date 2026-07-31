@@ -52,6 +52,8 @@ use uuid::Uuid;
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
+const OAUTH_RESOURCE_DOCUMENTATION_URL: &str =
+    "https://ugoite.github.io/ugoite/docs/guide/operate/auth/auth-overview/";
 
 #[derive(Clone)]
 pub struct AppState {
@@ -1715,7 +1717,7 @@ async fn oauth_protected_resource_metadata(
         "authorization_servers": [issuer],
         "scopes_supported": ["read", "create", "update", "delete", "share"],
         "bearer_methods_supported": [],
-        "resource_documentation": "/docs/guide/operate/auth/auth-overview"
+        "resource_documentation": OAUTH_RESOURCE_DOCUMENTATION_URL
     })))
 }
 

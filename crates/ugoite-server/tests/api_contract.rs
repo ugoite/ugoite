@@ -68,7 +68,23 @@ async fn oauth_metadata_describes_device_and_dpop_surface() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(json(response).await["resource"], "http://localhost:8000");
+    let body = json(response).await;
+    assert_eq!(body["resource"], "http://localhost:8000");
+    let documentation = body["resource_documentation"]
+        .as_str()
+        .expect("resource documentation URL");
+    let documentation_url =
+        url::Url::parse(documentation).expect("valid resource documentation URL");
+    assert_eq!(documentation_url.scheme(), "https");
+    assert_eq!(documentation_url.host_str(), Some("ugoite.github.io"));
+    assert_eq!(
+        documentation_url.path(),
+        "/ugoite/docs/guide/operate/auth/auth-overview/"
+    );
+    assert_eq!(
+        documentation,
+        "https://ugoite.github.io/ugoite/docs/guide/operate/auth/auth-overview/"
+    );
     let response = app
         .oneshot(
             Request::get("/.well-known/oauth-authorization-server")

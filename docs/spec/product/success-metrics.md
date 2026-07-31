@@ -23,7 +23,8 @@ browser-local North Star and must not treat planned features as shipped.
 
 - restore and history tests demonstrate append-only revision recovery;
 - checksums and HMAC verification detect changed content;
-- backup/restore drills preserve a complete operator-owned storage root;
+- backup/restore drills preserve every configured recovery input: complete Space
+  prefixes, the Node control-store prefix, and the node secret;
 - no documentation path requires an unpublished artifact or hidden hosted
   service.
 

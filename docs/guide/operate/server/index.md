@@ -8,7 +8,7 @@ sidebar:
 
 This group covers the server as a running node: determine whether it is healthy,
 understand the Node administrator boundary, and perform backups or upgrades
-without splitting the authoritative data root.
+without confusing portable Space storage with node-local recovery state.
 
 ## Pages in this group
 

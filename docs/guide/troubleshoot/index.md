@@ -23,5 +23,6 @@ unknown.
    [storage cleanup](../operate/storage/storage-cleanup.md) or
    [storage migration](../operate/storage/storage-migration.md).
 
-The complete Space directory and the node encryption root are recovery inputs;
-keep both intact while diagnosing a deployment.
+The complete Space prefix, the configured Node control-store prefix, and the
+node encryption root are separate recovery inputs; keep all of them intact
+while diagnosing a deployment.
