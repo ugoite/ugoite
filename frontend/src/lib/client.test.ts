@@ -922,6 +922,31 @@ describe("error paths", () => {
     );
   });
 
+  it("REQ-FE-054: searchApi.query normalizes unix-second timestamps", async () => {
+    server.use(
+      http.post(
+        testApiUrl("/spaces/ws-search-timestamps/query"),
+        () =>
+          HttpResponse.json([
+            {
+              id: "entry-1",
+              title: "Timestamp Entry",
+              updated_at: 1772960822.056,
+              properties: {},
+              tags: [],
+              links: [],
+            },
+          ]),
+      ),
+    );
+
+    const entries = await searchApi.query("ws-search-timestamps", {});
+
+    expect(entries[0].updated_at).toBe(
+      new Date(1772960822.056 * 1000).toISOString(),
+    );
+  });
+
   it("spaceApi.create uses fallback message when error response has no detail", async () => {
     server.use(
       http.post(
