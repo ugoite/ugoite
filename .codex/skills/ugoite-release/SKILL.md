@@ -11,10 +11,10 @@ installed, or deployed.
 ## Read first
 
 - `docs/spec/testing/ci-cd.md`
-- `docs/guide/docker-compose.md`
-- `docs/guide/container-quickstart.md`
-- `docs/guide/helm-chart.md`
-- `docs/guide/cli.md`
+- `docs/guide/deploy/docker-compose.md`
+- `docs/guide/start/container-quickstart.md`
+- `docs/guide/deploy/helm-chart.md`
+- `docs/guide/automate/cli.md`
 - `packages/ugoite/README.md`
 - `.github/workflows/release-*.yml`
 - `.github/workflows/docker-*.yml`

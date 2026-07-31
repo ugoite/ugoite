@@ -23,20 +23,31 @@ authoritative; indexes and query sessions are derived.
   authorization, Agent Principals, Space ACLs, and authorization audit chains
   are operational.
 
-## Navigation
+## Read the specification map
 
-- [Architecture](architecture/overview.md)
-- [REST API](api/rest.md) and
-  [OpenAPI](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml)
-- [MCP](api/mcp.md) and [operator surfaces](api/operator-surfaces.md)
-- [Data model](data-model/overview.md)
-- [Feature registry](features/index.md)
-- [Requirements](requirements/index.md)
-- [UI specifications](ui/index.md)
-- [Security](security/overview.md)
-- [Testing and CI](testing/strategy.md)
-- [Versions](versions/index.md)
-- [Operator guides](../guide/concepts.md)
+The specification is organized by the question it answers. Each group keeps its
+existing source files and machine-readable registries; this page only makes the
+reading order explicit.
+
+- **Core model:** [data model](data-model/overview.md),
+  [features](features/index.md), and the machine-readable
+  [foundation](https://github.com/ugoite/ugoite/blob/main/docs/spec/philosophy/foundation.yaml).
+- **Interfaces:** [REST API](api/rest.md),
+  [OpenAPI](https://github.com/ugoite/ugoite/blob/main/docs/spec/api/openapi.yaml),
+  [MCP](api/mcp.md), [operator surfaces](api/operator-surfaces.md), and
+  [UI specifications](ui/index.md).
+- **Requirements and stories:** [requirements](requirements/index.md) and
+  [user stories](stories/index.md).
+- **Architecture contracts:** [architecture overview](architecture/overview.md),
+  decisions, stack, future-proofing, and the Space catalog.
+- **Operations and quality:** [policies](policies/index.md),
+  [security](security/overview.md), [testing and CI](testing/strategy.md),
+  [quality](quality/error-handling.md),
+  [product metrics](product/success-metrics.md), and
+  [versions](versions/index.md).
+
+Use the [operator guides](../guide/index.md) for procedures. This section is the
+executable contract, not a beginner-first tutorial.
 
 ## Module matrix
 

@@ -1,12 +1,6 @@
 import { A, useNavigate } from "@solidjs/router";
 import { GlobalShell } from "~/components/GlobalShell";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { sortSpaces } from "~/lib/space-list";
@@ -14,12 +8,12 @@ import type { Space } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 
 const localDevAuthGuideUrl = getDocsiteHref(
-  "/docs/guide/local-dev-auth-login",
-  "docs/guide/local-dev-auth-login.md",
+  "/docs/guide/develop/local-dev-auth-login",
+  "docs/guide/develop/local-dev-auth-login.md",
 );
 const browserWalkthroughUrl = getDocsiteHref(
-  "/docs/guide/browser-first-entry",
-  "docs/guide/browser-first-entry.md",
+  "/docs/guide/start/browser-first-entry",
+  "docs/guide/start/browser-first-entry.md",
 );
 
 const toMessage = (value: unknown): string => {

@@ -11,9 +11,9 @@ import SpacesIndexRoute from "./index";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 
 const localDevAuthGuideUrl =
-  "https://ugoite.github.io/ugoite/docs/guide/local-dev-auth-login";
+  "https://ugoite.github.io/ugoite/docs/guide/develop/local-dev-auth-login";
 const browserWalkthroughUrl =
-  "https://ugoite.github.io/ugoite/docs/guide/browser-first-entry";
+  "https://ugoite.github.io/ugoite/docs/guide/start/browser-first-entry";
 
 const navigateMock = vi.fn();
 

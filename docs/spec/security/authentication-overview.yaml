@@ -28,6 +28,7 @@ oauth:
   metadata:
     - /.well-known/oauth-protected-resource
     - /.well-known/oauth-authorization-server
+  resource_documentation: "https://ugoite.github.io/ugoite/docs/guide/operate/auth/auth-overview/"
 agents:
   sponsor_required: true
   autonomous: explicit_agent_grant

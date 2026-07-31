@@ -1,6 +1,6 @@
 /**
- * Keep links in `docs/` GitHub-readable (`guide/cli.md`) while emitting the
- * directory URLs used by Starlight (`docs/guide/cli/`).
+ * Keep links in `docs/` GitHub-readable (`guide/automate/cli.md`) while emitting
+ * the directory URLs used by Starlight (`docs/guide/automate/cli/`).
  *
  * This is a native Sätteri MDAST plugin. Using the default Astro 7 Markdown
  * processor lets Starlight add its own asides, heading links, and code-block

@@ -17,8 +17,8 @@ const copy = {
 } as const;
 
 const browserWalkthroughUrl = getDocsiteHref(
-  "/docs/guide/browser-first-entry",
-  "docs/guide/browser-first-entry.md",
+  "/docs/guide/start/browser-first-entry",
+  "docs/guide/start/browser-first-entry.md",
 );
 
 export default function SpaceDashboardRoute() {

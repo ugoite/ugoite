@@ -1,18 +1,26 @@
 ---
 title: "Architecture"
-description: Current implementation boundaries and the intended local-first architecture of Ugoite.
+description: How Ugoite keeps operator-owned Spaces portable while adapters stay thin.
 sidebar:
   order: 1
 ---
 
-These documents describe the current implementation boundaries and the intended
-local-first direction.
+This section explains how Ugoite is put together and why its boundaries look the
+way they do. Read it after [Core concepts](../guide/start/concepts.md) if you
+are new: architecture names the owners and adapters around the Space model.
 
-- [Architecture North Star](north-star.md)
-- [Space Catalog](../spec/architecture/space-catalog.md)
-- [Authentication and authorization](authentication-authorization.md)
-- [Control surfaces](control-surfaces.md)
-- [Runtime adapters](runtime-adapters.md)
-- [Portable API client](portable-api-client.md)
-- [Frontend client boundary](frontend-client-boundary.md)
-- [Current release scope](release-scope.md)
+## Read the architecture map
+
+- **Principles:** why operator-owned files, append-only history, and thin
+  adapters are non-negotiable in [Architecture principles](principles/index.md).
+- **Boundaries:** where portable Rust behavior ends and runtime-specific
+  transport begins in [System boundaries](boundaries/index.md).
+- **Security:** how node identity and Space authorization stay separate in
+  [Security architecture](security/index.md).
+- **Release:** what is shipped now and what remains future scope in
+  [Release architecture](release/index.md).
+- **Normative contracts:** implementation-facing architecture specifications
+  live under the [architecture specification](../spec/architecture/overview.md).
+
+The groups are intentionally explanatory entry points. The executable
+requirements and implementation references remain in `docs/spec/`.
