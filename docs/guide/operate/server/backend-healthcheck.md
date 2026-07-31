@@ -1,5 +1,7 @@
 ---
 title: "Server health check"
+sidebar:
+  order: 2
 ---
 
 The unauthenticated health endpoint is:

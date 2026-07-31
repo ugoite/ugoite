@@ -1,5 +1,7 @@
 ---
 title: "Current release scope"
+sidebar:
+  order: 2
 ---
 
 This page records the capability boundary of the current release so packaging,

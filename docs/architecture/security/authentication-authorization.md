@@ -1,6 +1,8 @@
 ---
 title: Authentication and authorization architecture
 description: Production identity, portable Space authorization, and constrained access credentials.
+sidebar:
+  order: 2
 ---
 
 Ugoite has one production authentication architecture. There is no selectable

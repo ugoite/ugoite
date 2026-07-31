@@ -1,5 +1,7 @@
 ---
 title: CLI guide
+sidebar:
+  order: 2
 ---
 
 `ugoite` has two endpoint modes. Core mode opens operator-owned Space

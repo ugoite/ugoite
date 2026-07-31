@@ -19,7 +19,7 @@ derived data.
   [Authentication and authorization](auth/index.md), then the
   [Agent identities](auth/service-accounts.md) reference.
 - **Spaces and storage:** use [Space settings and storage](storage/index.md) for
-  moves, cleanup, and migrations.
+  moves, migrations, and cleanup.
 
 ## Safe operating sequence
 

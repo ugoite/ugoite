@@ -1,5 +1,7 @@
 ---
 title: Node administration
+sidebar:
+  order: 3
 ---
 
 Node administration is a Node Identity role and is separate from every Space. A

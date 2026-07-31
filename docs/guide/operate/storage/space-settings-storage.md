@@ -1,5 +1,7 @@
 ---
 title: "Space settings and storage"
+sidebar:
+  order: 2
 ---
 
 A Space lives below `UGOITE_ROOT` and remains operator-owned. REST supports

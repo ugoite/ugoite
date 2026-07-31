@@ -1,5 +1,7 @@
 ---
 title: "Runtime adapters"
+sidebar:
+  order: 2
 ---
 
 Runtime-specific code surrounds the portable Rust model.

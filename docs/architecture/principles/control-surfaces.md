@@ -1,5 +1,7 @@
 ---
 title: "Control surfaces"
+sidebar:
+  order: 3
 ---
 
 Ugoite exposes one application model through several adapters.

@@ -1,5 +1,7 @@
 ---
 title: "Operations"
+sidebar:
+  order: 4
 ---
 
 ```bash

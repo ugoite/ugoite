@@ -1,5 +1,7 @@
 ---
 title: "Architecture North Star"
+sidebar:
+  order: 2
 ---
 
 This document defines the architectural promise, present boundary, target state,

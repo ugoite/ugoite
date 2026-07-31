@@ -1,5 +1,7 @@
 ---
 title: "Portable API client"
+sidebar:
+  order: 3
 ---
 
 `ugoite-api-client` is the shared remote-operation contract for native and

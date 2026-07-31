@@ -1,5 +1,7 @@
 ---
 title: "Storage cleanup"
+sidebar:
+  order: 4
 ---
 
 There is no supported repository task named `cleanup:*` and no command that

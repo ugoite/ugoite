@@ -1,5 +1,7 @@
 ---
 title: "Troubleshooting Compose startup"
+sidebar:
+  order: 2
 ---
 
 Use these checks when the Compose service does not start, cannot be reached,

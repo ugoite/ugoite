@@ -1,5 +1,7 @@
 ---
 title: Local development authentication
+sidebar:
+  order: 2
 ---
 
 Run `mise run dev`, then read the one-use setup URL printed by `ugoite-server`.

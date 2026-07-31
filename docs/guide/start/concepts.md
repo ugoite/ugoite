@@ -1,5 +1,7 @@
 ---
 title: "Core concepts"
+sidebar:
+  order: 2
 ---
 
 A **Space** is Ugoite's ownership and storage boundary. On disk it is a

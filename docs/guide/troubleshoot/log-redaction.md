@@ -1,5 +1,7 @@
 ---
 title: "Log redaction"
+sidebar:
+  order: 4
 ---
 
 Never log credentials or sensitive payloads. Redact:

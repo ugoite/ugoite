@@ -1,5 +1,7 @@
 ---
 title: Container quick start
+sidebar:
+  order: 3
 ---
 
 ```bash

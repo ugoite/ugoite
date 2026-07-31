@@ -76,6 +76,23 @@ test.describe("Docsite navigation layout", () => {
     );
   });
 
+  test("REQ-E2E-005: the beginner path follows its documented learning order", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(buildDocsiteUrl("/docs/guide/"), {
+      waitUntil: "networkidle",
+    });
+
+    const startHereLinks = page.locator(
+      '#starlight__sidebar a[href*="/docs/guide/start/"]',
+    );
+    await expect(startHereLinks).toHaveText([
+      "Overview",
+      "Core concepts",
+      "Container quick start",
+      "Create the first browser entry",
+    ]);
+  });
+
   test("REQ-E2E-005: the homepage keeps the hero and Starlight navigation", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(buildDocsiteUrl(homepagePath), {

@@ -1,5 +1,7 @@
 ---
 title: Helm chart
+sidebar:
+  order: 3
 ---
 
 ```bash

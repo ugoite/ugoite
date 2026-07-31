@@ -1,5 +1,7 @@
 ---
 title: Docker Compose
+sidebar:
+  order: 2
 ---
 
 Generate an encryption root and start the source image:

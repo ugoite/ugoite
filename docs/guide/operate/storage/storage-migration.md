@@ -1,5 +1,7 @@
 ---
 title: "Storage migration"
+sidebar:
+  order: 3
 ---
 
 1. Record the running version, Catalog configuration, and source snapshot IDs.

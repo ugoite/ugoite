@@ -1,5 +1,7 @@
 ---
 title: Authentication and authorization
+sidebar:
+  order: 2
 ---
 
 Ugoite separates identity that belongs to one server from identity that must

@@ -1,5 +1,7 @@
 ---
 title: "Troubleshooting unauthorized Spaces"
+sidebar:
+  order: 3
 ---
 
 HTTP `401` means no valid identity; HTTP `403` means the identity lacks the

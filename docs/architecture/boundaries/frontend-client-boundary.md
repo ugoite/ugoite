@@ -1,5 +1,7 @@
 ---
 title: "Frontend client boundary"
+sidebar:
+  order: 4
 ---
 
 The frontend owns interaction state, rendering, routing, and the runtime HTTP

@@ -1,5 +1,7 @@
 ---
 title: Environment variables
+sidebar:
+  order: 4
 ---
 
 | Variable                  | Purpose                                                            | Default                  |

@@ -1,5 +1,7 @@
 ---
 title: Agent identities
+sidebar:
+  order: 3
 ---
 
 Automation uses Agent Principals with registered P-256 public keys. Shared

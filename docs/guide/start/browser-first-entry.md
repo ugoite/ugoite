@@ -1,5 +1,7 @@
 ---
 title: "Create the first browser entry"
+sidebar:
+  order: 4
 ---
 
 The shipped browser is server-backed.
