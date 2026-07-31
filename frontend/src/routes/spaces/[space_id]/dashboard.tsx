@@ -156,7 +156,7 @@ export default function SpaceDashboardRoute() {
             </span>
             <span>
               <b>{entryForms()[0]?.name || t("dashboard.forms")}</b>
-              <small>{t("dashboard.forms")} / {t("dashboard.entry")}</small>
+              <small>{t("dashboard.formsEntries")}</small>
             </span>
             <span class="chev">›</span>
           </A>

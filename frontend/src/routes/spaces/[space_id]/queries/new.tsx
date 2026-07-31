@@ -9,6 +9,8 @@ import { sqlApi } from "~/lib/ugoite-client";
 import type { Form, SqlVariable } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { UNTITLED_SQL_NAME } from "~/lib/sql-metadata";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 
@@ -23,7 +25,7 @@ function extractVariables(sql: string): SqlVariable[] {
   return Array.from(names).map((name) => ({
     type: "string",
     name,
-    description: t("sqlPage.variableDescription", { name }),
+    description: "",
   }));
 }
 
@@ -47,7 +49,7 @@ export default function SpaceQueryCreateRoute() {
 
   const handleSave = async () => {
     setError(null);
-    const name = queryName().trim() || t("sqlPage.untitledQuery");
+    const name = queryName().trim() || UNTITLED_SQL_NAME;
     const sql = sqlInput().trim();
     if (!sql) {
       setError(t("sqlPage.sqlRequired"));
@@ -63,7 +65,7 @@ export default function SpaceQueryCreateRoute() {
       });
       navigate(`/spaces/${spaceId()}/search`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("sqlPage.failedSave"));
+      setError(formatUserFacingError(err, "sqlPage.failedSave"));
     } finally {
       setIsSaving(false);
     }
@@ -73,7 +75,7 @@ export default function SpaceQueryCreateRoute() {
     <SpaceShell
       spaceId={spaceId()}
       activeNavigation="search"
-      title={`${t("searchPage.nav.savedSql")} / ${t("sqlPage.newSql")}`}
+      title={t("sqlPage.createTitle")}
     >
       <div class="screenHead">
         <div class="screenTitle">

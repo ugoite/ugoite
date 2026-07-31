@@ -4,6 +4,8 @@ import { SpaceShell } from "~/components/SpaceShell";
 import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { displaySqlName } from "~/lib/sql-metadata";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export default function SpaceQueryVariablesRoute() {
   const params = useParams<{ space_id: string; query_id: string }>();
@@ -65,7 +67,7 @@ export default function SpaceQueryVariablesRoute() {
         }`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("querySession.failed"));
+      setError(formatUserFacingError(err, "querySession.failed"));
     }
   };
 
@@ -73,7 +75,7 @@ export default function SpaceQueryVariablesRoute() {
     <SpaceShell
       spaceId={spaceId()}
       activeNavigation="search"
-      title={`${t("sqlPage.savedSql")} / ${t("sqlPage.variables")}`}
+      title={t("sqlPage.variablesTitle")}
     >
       <div class="screenHead">
         <div class="screenTitle">
@@ -87,13 +89,16 @@ export default function SpaceQueryVariablesRoute() {
       </Show>
       <Show when={entry.error}>
         <p class="text-sm ui-text-danger mt-4">
-          {t("sqlPage.failedLoadVariables")}
+          {formatUserFacingError(
+            entry.error,
+            "sqlPage.failedLoadVariables",
+          )}
         </p>
       </Show>
       <Show when={entry()}>
         {(data) => (
           <div class="settingsMain surface">
-            <p class="text-sm ui-muted">{data().name}</p>
+            <p class="text-sm ui-muted">{displaySqlName(data().name)}</p>
             <div class="ui-stack-sm">
               <For each={variables()}>
                 {(variable, index) => {
@@ -109,7 +114,10 @@ export default function SpaceQueryVariablesRoute() {
                       <input
                         id={inputId}
                         class="ui-input"
-                        placeholder={variable.description}
+                        placeholder={variable.description || t(
+                          "sqlPage.variableDescription",
+                          { name: variable.name },
+                        )}
                         value={values()[variable.name] ?? ""}
                         onInput={(e) =>
                           handleInputChange(

@@ -6,6 +6,7 @@ import type {
   SpacePatchPayload,
   StorageConnectionConfig,
 } from "~/lib/types";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export interface SpaceSettingsProps {
   space: Space;
@@ -65,9 +66,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
       setMessage(t("spaceSettings.saved"));
     } catch (error) {
       setMessageType("error");
-      setMessage(
-        error instanceof Error ? error.message : t("spaceSettings.failedSave"),
-      );
+      setMessage(formatUserFacingError(error, "spaceSettings.failedSave"));
     } finally {
       setPending(false);
     }
@@ -85,9 +84,7 @@ export function SpaceSettings(props: SpaceSettingsProps) {
     } catch (error) {
       setMessageType("error");
       setMessage(
-        error instanceof Error
-          ? error.message
-          : t("spaceSettings.connectionFailed"),
+        formatUserFacingError(error, "spaceSettings.connectionFailed"),
       );
     } finally {
       setPending(false);

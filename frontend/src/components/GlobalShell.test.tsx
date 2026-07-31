@@ -59,4 +59,14 @@ describe("GlobalShell account menu", () => {
     );
     expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
   });
+
+  it("keeps the generic settings label in English", () => {
+    render(() => (
+      <GlobalShell title="Spaces">
+        <p>Content</p>
+      </GlobalShell>
+    ));
+
+    expect(screen.getAllByText("Settings")).toHaveLength(2);
+  });
 });

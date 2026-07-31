@@ -5,6 +5,8 @@ import { UiIcon } from "~/components/UiIcon";
 import { sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { displaySqlName } from "~/lib/sql-metadata";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export default function SpaceSqlIndexRoute() {
   const params = useParams<{ space_id: string }>();
@@ -30,7 +32,12 @@ export default function SpaceSqlIndexRoute() {
         <p class="ui-muted">{t("sqlPage.loadingSavedSql")}</p>
       </Show>
       <Show when={queries.error}>
-        <p class="ui-alert ui-alert-error">{t("sqlPage.failedLoadSavedSql")}</p>
+        <p class="ui-alert ui-alert-error">
+          {formatUserFacingError(
+            queries.error,
+            "sqlPage.failedLoadSavedSql",
+          )}
+        </p>
       </Show>
       <div class="rowStack">
         <For
@@ -56,7 +63,7 @@ export default function SpaceSqlIndexRoute() {
                 <UiIcon name="sql" />
               </span>
               <span>
-                <b>{query.name}</b>
+                <b>{displaySqlName(query.name)}</b>
                 <small>{query.updated_at}</small>
               </span>
               <span>›</span>

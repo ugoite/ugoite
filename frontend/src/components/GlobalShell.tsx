@@ -34,7 +34,7 @@ export function GlobalShell(
             </a>
             <a class="navItem" href="/spaces">
               <UiIcon name="settings" />
-              <span>{t("themeMenu.spaceSettings")}</span>
+              <span>{t("globalShell.settings")}</span>
             </a>
           </nav>
           <div class="sideFoot">
@@ -96,7 +96,7 @@ export function GlobalShell(
         </a>
         <a href="/spaces">
           <UiIcon name="settings" />
-          <span>{t("themeMenu.spaceSettings")}</span>
+          <span>{t("globalShell.settings")}</span>
         </a>
       </nav>
     </main>

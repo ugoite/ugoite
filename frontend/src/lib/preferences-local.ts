@@ -1,4 +1,3 @@
-import { isServer } from "solid-js/web";
 import type { UserPreferences, UserPreferencesPatchPayload } from "./types";
 
 const SELECTED_SPACE_STORAGE_KEY = "ugoite-selected-space";
@@ -11,7 +10,7 @@ export const LOCAL_PREFERENCE_KEYS = {
 
 const safeStorage = () => {
   /* v8 ignore start */
-  if (isServer || typeof window === "undefined") return null;
+  if (typeof window === "undefined") return null;
   /* v8 ignore stop */
   const storage = window.localStorage;
   if (

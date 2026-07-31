@@ -4,6 +4,7 @@ import { authApi } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 const credentialTabs = [
   ["passkeys", "securityPage.passkeys"],
@@ -85,6 +86,14 @@ export function CredentialSettings() {
           )}
         </For>
       </div>
+      <Show when={credentials.error}>
+        <p class="ui-alert ui-alert-error">
+          {formatUserFacingError(
+            credentials.error,
+            "securityPage.failedLoad",
+          )}
+        </p>
+      </Show>
       <Show when={activeTab() === "passkeys"}>
         <section
           id="credential-panel-passkeys"
@@ -105,7 +114,7 @@ export function CredentialSettings() {
               {t("securityPage.addPasskey")}
             </button>
           </div>
-          <Show when={credentials()}>
+      <Show when={credentials()}>
             {(value) => (
               <For each={value().passkeys}>
                 {(credential) => (
@@ -132,7 +141,7 @@ export function CredentialSettings() {
                 )}
               </For>
             )}
-          </Show>
+        </Show>
         </section>
       </Show>
       <Show when={activeTab() === "oidc"}>

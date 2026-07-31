@@ -2,7 +2,7 @@ import { useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceSettings } from "~/components/SpaceSettings";
 import { SpaceShell } from "~/components/SpaceShell";
-import { UiIcon, type UiIconName } from "~/components/UiIcon";
+import { UiIcon } from "~/components/UiIcon";
 import { CredentialSettings } from "~/routes/settings/security";
 import { locale, t, type TranslationKey } from "~/lib/i18n";
 import { setLocalePreference } from "~/lib/preferences-store";
@@ -14,42 +14,29 @@ import type {
   StorageConnectionConfig,
 } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import {
+  settingsSections,
+  type SettingsSectionId,
+} from "~/lib/settings-sections";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
-type Section =
-  | "general"
-  | "members"
-  | "agents"
-  | "credentials"
-  | "storage";
-const sections: Array<
-  { id: Section; icon: UiIconName; key: TranslationKey }
-> = [
-  { id: "general", icon: "settings", key: "settings.section.general" },
-  { id: "members", icon: "members", key: "settings.section.members" },
-  { id: "agents", icon: "agent", key: "settings.section.agents" },
-  {
-    id: "credentials",
-    icon: "credential",
-    key: "settings.section.credentials",
-  },
-  { id: "storage", icon: "storage", key: "settings.section.storage" },
-];
+type Section = SettingsSectionId;
 const managedRoles = ["owner", "editor", "viewer"] as const;
 type ManagedRole = typeof managedRoles[number];
 type AgentMode = "autonomous" | "delegated" | "both";
-const message = (error: unknown, fallback: string) =>
-  error instanceof Error && error.message.trim() ? error.message : fallback;
+const message = (error: unknown, fallbackKey: TranslationKey) =>
+  formatUserFacingError(error, fallbackKey);
 
 export default function SpaceSettingsRoute() {
   const params = useParams<{ space_id: string }>();
   const [search, setSearch] = useSearchParams();
   const spaceId = () => params.space_id;
   const active = createMemo<Section>(() =>
-    sections.some((section) => section.id === search.section)
+    settingsSections.some((section) => section.id === search.section)
       ? search.section as Section
       : "general"
   );
-  const label = (section: typeof sections[number]) => t(section.key);
+  const label = (section: typeof settingsSections[number]) => t(section.key);
   const [space, { refetch }] = createResource(spaceId, spaceApi.get);
   const [members, { refetch: refetchMembers }] = createResource(
     () => active() === "members" ? spaceId() : null,
@@ -93,7 +80,7 @@ export default function SpaceSettingsRoute() {
       setMemberError("");
       await refetchMembers();
     } catch (error) {
-      setMemberError(message(error, t("settings.failedInvite")));
+      setMemberError(message(error, "settings.failedInvite"));
     }
   };
   const updateRole = async (principalId: string, role: ManagedRole) => {
@@ -101,7 +88,7 @@ export default function SpaceSettingsRoute() {
       await spaceApi.updateMemberRole(spaceId(), principalId, { role });
       await refetchMembers();
     } catch (error) {
-      setMemberError(message(error, t("settings.failedUpdateRole")));
+      setMemberError(message(error, "settings.failedUpdateRole"));
     }
   };
   const revokeMember = async (principalId: string) => {
@@ -109,7 +96,7 @@ export default function SpaceSettingsRoute() {
       await spaceApi.revokeMember(spaceId(), principalId);
       await refetchMembers();
     } catch (error) {
-      setMemberError(message(error, t("settings.failedRevokeMember")));
+      setMemberError(message(error, "settings.failedRevokeMember"));
     }
   };
   const createAgent = async () => {
@@ -137,7 +124,7 @@ export default function SpaceSettingsRoute() {
       setAgentPublicKey("");
       await refetchAgents();
     } catch (error) {
-      setAgentError(message(error, t("settings.failedCreateAgent")));
+      setAgentError(message(error, "settings.failedCreateAgent"));
     }
   };
   const revokeAgent = async (id: string) => {
@@ -145,7 +132,7 @@ export default function SpaceSettingsRoute() {
       await spaceApi.revokeAgent(spaceId(), id);
       await refetchAgents();
     } catch (error) {
-      setAgentError(message(error, t("settings.failedRevokeAgent")));
+      setAgentError(message(error, "settings.failedRevokeAgent"));
     }
   };
 
@@ -154,8 +141,8 @@ export default function SpaceSettingsRoute() {
       spaceId={spaceId()}
       activeNavigation="settings"
       title={`${t("settings.title")} / ${
-        sections.find((section) => section.id === active())
-          ? label(sections.find((section) => section.id === active())!)
+        settingsSections.find((section) => section.id === active())
+          ? label(settingsSections.find((section) => section.id === active())!)
           : t("settings.section.general")
       }`}
     >
@@ -167,7 +154,7 @@ export default function SpaceSettingsRoute() {
       </div>
       <div class="settingsLayout">
         <aside class="settingsNav surface">
-          <For each={sections}>
+          <For each={settingsSections}>
             {(section) => (
               <button
                 type="button"
@@ -189,7 +176,7 @@ export default function SpaceSettingsRoute() {
           <Show when={space.error}>
             <div class="ui-alert ui-alert-error">
               {t("settings.failedLoadSpace", {
-                error: message(space.error, t("settings.unknownError")),
+                error: message(space.error, "settings.unknownError"),
               })}
             </div>
           </Show>
@@ -259,7 +246,7 @@ export default function SpaceSettingsRoute() {
                     <For each={managedRoles}>
                       {(role) => (
                         <option value={role}>
-                          {t(`settings.role.${role}` as TranslationKey)}
+                          {t(`settings.roleLabel.${role}` as TranslationKey)}
                         </option>
                       )}
                     </For>
@@ -287,7 +274,7 @@ export default function SpaceSettingsRoute() {
               <Show when={members.error}>
                 <p class="ui-alert ui-alert-error">
                   {t("settings.failedLoadMembers", {
-                    error: message(members.error, t("settings.unknownError")),
+                    error: message(members.error, "settings.unknownError"),
                   })}
                 </p>
               </Show>
@@ -322,7 +309,7 @@ export default function SpaceSettingsRoute() {
                           <For each={managedRoles}>
                             {(role) => (
                               <option value={role}>
-                                {t(`settings.role.${role}` as TranslationKey)}
+                            {t(`settings.roleLabel.${role}` as TranslationKey)}
                               </option>
                             )}
                           </For>
@@ -363,12 +350,14 @@ export default function SpaceSettingsRoute() {
                       setAgentMode(e.currentTarget.value as AgentMode)}
                   >
                     <option value="autonomous">
-                      {t("settings.agentMode.autonomous")}
+                      {t("settings.agentModeLabel.autonomous")}
                     </option>
                     <option value="delegated">
-                      {t("settings.agentMode.delegated")}
+                      {t("settings.agentModeLabel.delegated")}
                     </option>
-                    <option value="both">{t("settings.agentMode.both")}</option>
+                    <option value="both">
+                      {t("settings.agentModeLabel.both")}
+                    </option>
                   </select>
                 </label>
                 <label>
@@ -424,7 +413,7 @@ export default function SpaceSettingsRoute() {
               <Show when={agents.error}>
                 <p class="ui-alert ui-alert-error">
                   {t("settings.failedLoadAgents", {
-                    error: message(agents.error, t("settings.unknownError")),
+                    error: message(agents.error, "settings.unknownError"),
                   })}
                 </p>
               </Show>

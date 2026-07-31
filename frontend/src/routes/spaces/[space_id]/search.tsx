@@ -10,6 +10,12 @@ import { sqlApi } from "~/lib/ugoite-client";
 import type { EntryRecord, SearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import {
+  encodeSearchHistoryName,
+  type SearchHistoryCriteria,
+  displaySqlName,
+} from "~/lib/sql-metadata";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 type SearchMode = "keyword" | "advanced";
 type FieldMatchOperator = "equals" | "contains";
@@ -19,18 +25,6 @@ type FieldCondition = {
   field: string;
   operator: FieldMatchOperator;
   value: string;
-};
-
-type AdvancedSearchCriteria = {
-  formName: string;
-  tags: string[];
-  updatedFrom: string;
-  updatedTo: string;
-  fieldConditions: Array<{
-    field: string;
-    operator: FieldMatchOperator;
-    value: string;
-  }>;
 };
 
 const ADVANCED_SEARCH_LIMIT = 50;
@@ -120,7 +114,7 @@ async function enrichKeywordResults(
   );
   if (session.status === "failed") {
     throw new Error(
-      session.error || t("searchPage.error.enrichFailed"),
+      session.error ?? t("searchPage.error.enrichFailed"),
     );
   }
   const metadata = await sqlSessionApi.rows(
@@ -137,7 +131,7 @@ async function enrichKeywordResults(
   );
 }
 
-function buildAdvancedSearchSql(criteria: AdvancedSearchCriteria): string {
+function buildAdvancedSearchSql(criteria: SearchHistoryCriteria): string {
   const conditions: string[] = [];
 
   if (criteria.formName) {
@@ -176,47 +170,6 @@ function buildAdvancedSearchSql(criteria: AdvancedSearchCriteria): string {
   return `SELECT * FROM entries WHERE ${
     conditions.join(" AND ")
   } ORDER BY updated_at DESC LIMIT ${ADVANCED_SEARCH_LIMIT}`;
-}
-
-function buildSearchHistoryName(criteria: AdvancedSearchCriteria): string {
-  const parts: string[] = [];
-
-  if (criteria.formName) {
-    parts.push(t("searchPage.history.form", { value: criteria.formName }));
-  }
-
-  for (const tag of criteria.tags) {
-    parts.push(t("searchPage.history.tag", { value: tag }));
-  }
-
-  if (criteria.updatedFrom) {
-    parts.push(
-      t("searchPage.history.updatedFrom", { value: criteria.updatedFrom }),
-    );
-  }
-
-  if (criteria.updatedTo) {
-    parts.push(
-      t("searchPage.history.updatedTo", { value: criteria.updatedTo }),
-    );
-  }
-
-  for (const condition of criteria.fieldConditions.slice(0, 2)) {
-    const symbol = condition.operator === "contains" ? "~" : "=";
-    parts.push(`${condition.field}${symbol}${condition.value}`);
-  }
-
-  const extraConditions = criteria.fieldConditions.length - 2;
-  if (extraConditions > 0) {
-    parts.push(t("searchPage.history.more", { count: extraConditions }));
-  }
-
-  if (parts.length === 0) {
-    return t("searchPage.advancedSearch");
-  }
-
-  const label = `${t("searchPage.advancedSearch")} - ${parts.join(" - ")}`;
-  return label.length > 120 ? `${label.slice(0, 117)}...` : label;
 }
 
 export default function SpaceSearchRoute() {
@@ -285,7 +238,7 @@ export default function SpaceSearchRoute() {
     )
   );
 
-  const advancedCriteria = createMemo<AdvancedSearchCriteria>(() => ({
+  const advancedCriteria = createMemo<SearchHistoryCriteria>(() => ({
     formName: advancedFormName().trim(),
     tags: advancedTagsInput()
       .split(",")
@@ -348,7 +301,7 @@ export default function SpaceSearchRoute() {
     } catch (err) {
       setKeywordResults([]);
       setActionError(
-        err instanceof Error ? err.message : t("searchPage.error.searchFailed"),
+        formatUserFacingError(err, "searchPage.error.searchFailed"),
       );
     } finally {
       setKeywordLoading(false);
@@ -370,7 +323,9 @@ export default function SpaceSearchRoute() {
     try {
       const session = await sqlSessionApi.create(spaceId(), entry.sql);
       if (session.status === "failed") {
-        setActionError(session.error || t("searchPage.error.searchFailed"));
+        setActionError(
+          formatUserFacingError(session.error, "searchPage.error.searchFailed"),
+        );
         return;
       }
       navigate(
@@ -380,9 +335,7 @@ export default function SpaceSearchRoute() {
       );
     } catch (err) {
       setActionError(
-        err instanceof Error
-          ? err.message
-          : t("searchPage.error.savedSearchFailed"),
+        formatUserFacingError(err, "searchPage.error.savedSearchFailed"),
       );
     } finally {
       setRunningSearchId(null);
@@ -410,7 +363,7 @@ export default function SpaceSearchRoute() {
       );
       if (!existing) {
         await sqlApi.create(spaceId(), {
-          name: buildSearchHistoryName(criteria),
+          name: encodeSearchHistoryName(criteria),
           sql,
           variables: [],
         });
@@ -420,7 +373,10 @@ export default function SpaceSearchRoute() {
       const session = await sqlSessionApi.create(spaceId(), sql);
       if (session.status === "failed") {
         setActionError(
-          session.error || t("searchPage.error.advancedSearchFailed"),
+          formatUserFacingError(
+            session.error,
+            "searchPage.error.advancedSearchFailed",
+          ),
         );
         return;
       }
@@ -431,9 +387,7 @@ export default function SpaceSearchRoute() {
       );
     } catch (err) {
       setActionError(
-        err instanceof Error
-          ? err.message
-          : t("searchPage.error.advancedSearchFailed"),
+        formatUserFacingError(err, "searchPage.error.advancedSearchFailed"),
       );
     } finally {
       setRunningSearchId(null);
@@ -870,7 +824,10 @@ export default function SpaceSearchRoute() {
                   </Show>
                   <Show when={savedSearches.error}>
                     <p class="text-sm ui-text-danger">
-                      {t("searchPage.failedLoadHistory")}
+                      {formatUserFacingError(
+                        savedSearches.error,
+                        "searchPage.failedLoadHistory",
+                      )}
                     </p>
                   </Show>
                   <Show when={forms.loading}>
@@ -880,7 +837,10 @@ export default function SpaceSearchRoute() {
                   </Show>
                   <Show when={forms.error}>
                     <p class="text-sm ui-text-danger">
-                      {t("searchPage.failedLoadForms")}
+                      {formatUserFacingError(
+                        forms.error,
+                        "searchPage.failedLoadForms",
+                      )}
                     </p>
                   </Show>
                   <Show
@@ -899,7 +859,9 @@ export default function SpaceSearchRoute() {
                         onClick={() => void runSavedSearch(entry)}
                       >
                         <div class="flex items-center justify-between gap-2">
-                          <h3 class="text-sm font-semibold">{entry.name}</h3>
+                          <h3 class="text-sm font-semibold">
+                            {displaySqlName(entry.name)}
+                          </h3>
                           <span class="text-xs ui-muted">
                             {runningSearchId() === entry.id
                               ? t("searchPage.runningSaved")

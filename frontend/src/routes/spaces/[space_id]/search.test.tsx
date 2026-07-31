@@ -14,6 +14,7 @@ import { server } from "~/test/mocks/server";
 import type { Entry, EntryRecord, Form, Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
 import { setLocale } from "~/lib/i18n";
+import { encodeSearchHistoryName } from "~/lib/sql-metadata";
 
 const navigateMock = vi.fn();
 
@@ -209,7 +210,17 @@ describe("/spaces/:space_id/search", () => {
 
     await waitFor(() => {
       expect(savedSqlBody?.name).toBe(
-        "Advanced search - form: Meeting - tag: project - updated-from: 2025-03-01 - updated-to: 2025-03-03 - Status=Active",
+        encodeSearchHistoryName({
+          formName: "Meeting",
+          tags: ["project"],
+          updatedFrom: "2025-03-01",
+          updatedTo: "2025-03-03",
+          fieldConditions: [{
+            field: "Status",
+            operator: "equals",
+            value: "Active",
+          }],
+        }),
       );
       expect(savedSqlBody?.sql).toBe(
         "SELECT * FROM entries WHERE form = 'Meeting' AND tags = 'project' AND updated_at >= 1740787200 AND updated_at <= 1741046399 AND properties.\"Status\" = 'Active' ORDER BY updated_at DESC LIMIT 50",
@@ -328,5 +339,33 @@ describe("/spaces/:space_id/search", () => {
     expect(screen.getByText("キーワード検索結果")).toBeInTheDocument();
     expect(screen.getByText("検索履歴")).toBeInTheDocument();
     expect(screen.queryByText("Search")).not.toBeInTheDocument();
+  });
+
+  it("REQ-FE-044: renders generated history in the selected locale", async () => {
+    seedSqlEntry("default", {
+      id: "generated-history",
+      name: encodeSearchHistoryName({
+        formName: "Meeting",
+        tags: ["project"],
+        updatedFrom: "",
+        updatedTo: "",
+        fieldConditions: [],
+      }),
+      sql: "SELECT * FROM entries WHERE form = 'Meeting'",
+      variables: [],
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+      revision_id: "rev-generated",
+    });
+
+    render(() => <SpaceSearchRoute />);
+    expect(
+      await screen.findByRole("button", { name: /Advanced search - form: Meeting/ }),
+    ).toBeInTheDocument();
+
+    setLocale("ja");
+    expect(
+      screen.getByRole("button", { name: /詳細検索 - フォーム: Meeting/ }),
+    ).toBeInTheDocument();
   });
 });

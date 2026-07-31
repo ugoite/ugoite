@@ -23,6 +23,7 @@ describe("v5 space Home", () => {
     expect(screen.getByRole("heading", { name: "Continue" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pinned" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recent" })).toBeInTheDocument();
+    expect(screen.getByText("Forms / Entries")).toBeInTheDocument();
     expect(screen.queryByText(/forms available/i)).not.toBeInTheDocument();
   });
   it("starts the dedicated New Entry route when a creatable Form exists", async () => {

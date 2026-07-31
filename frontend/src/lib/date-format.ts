@@ -1,4 +1,5 @@
 import type { EntryRecord } from "./types";
+import { intlLocale } from "./i18n";
 
 const numericTimestampPattern = /^-?\d+(?:\.\d+)?$/;
 
@@ -47,11 +48,7 @@ export const formatDateLabel = (
   value: string | number | null | undefined,
 ): string => {
   const date = timestampToDate(value);
-  const dateLocale = typeof document !== "undefined" &&
-      document.documentElement.lang === "ja"
-    ? "ja-JP"
-    : "en";
-  if (date) return date.toLocaleDateString(dateLocale);
+  if (date) return date.toLocaleDateString(intlLocale());
   if (typeof value === "string" && value.trim()) return value.trim();
   return "—";
 };

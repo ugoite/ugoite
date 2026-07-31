@@ -8,6 +8,8 @@ import { sqlApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { displaySqlName } from "~/lib/sql-metadata";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 const READ_ONLY_SQL_SCHEMA = buildSqlSchema([]);
 
@@ -35,7 +37,9 @@ export default function SpaceSqlDetailRoute() {
     try {
       const session = await sqlSessionApi.create(spaceId(), current.sql);
       if (session.status === "failed") {
-        setRunError(session.error || t("querySession.failed"));
+        setRunError(
+          formatUserFacingError(session.error, "querySession.failed"),
+        );
         return;
       }
       navigate(
@@ -44,9 +48,7 @@ export default function SpaceSqlDetailRoute() {
         }`,
       );
     } catch (err) {
-      setRunError(
-        err instanceof Error ? err.message : t("querySession.failed"),
-      );
+      setRunError(formatUserFacingError(err, "querySession.failed"));
     } finally {
       setRunning(false);
     }
@@ -67,7 +69,7 @@ export default function SpaceSqlDetailRoute() {
           >
             {(data) => (
               <>
-                <h1>{data().name}</h1>
+                <h1>{displaySqlName(data().name)}</h1>
                 <p class="ui-page-subtitle max-w-2xl">
                   {t("sqlPage.reviewDescription")}
                 </p>
@@ -84,7 +86,10 @@ export default function SpaceSqlDetailRoute() {
           <Match when={entry.error}>
             <div class="ui-stack-sm">
               <p class="text-sm ui-text-danger">
-                {t("sqlPage.failedLoadQuery")}
+                {formatUserFacingError(
+                  entry.error,
+                  "sqlPage.failedLoadQuery",
+                )}
               </p>
               <p class="text-sm ui-muted">
                 {t("sqlPage.failedLoadQueryDescription")}
@@ -148,9 +153,12 @@ export default function SpaceSqlDetailRoute() {
                           <li>
                             <span class="font-medium">{variable.name}</span>
                             <span class="ml-2 text-xs">{variable.type}</span>
-                            <Show when={variable.description}>
-                              <span class="ml-2">{variable.description}</span>
-                            </Show>
+                            <span class="ml-2">
+                              {variable.description || t(
+                                "sqlPage.variableDescription",
+                                { name: variable.name },
+                              )}
+                            </span>
                           </li>
                         )}
                       </For>

@@ -144,7 +144,7 @@ export default function SpaceFormsIndexPane() {
               when={selectedForm()}
               fallback={
                 <div class="surface settingsMain ui-muted">
-                  {t("formsPage.selectPlaceholder")}
+                  {t("formsPage.selectForm")}
                 </div>
               }
             >

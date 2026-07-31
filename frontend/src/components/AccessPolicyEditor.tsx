@@ -6,6 +6,7 @@ import {
 } from "~/lib/access-api";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export function AccessPolicyEditor(props: {
   spaceId: string;
@@ -58,9 +59,7 @@ export function AccessPolicyEditor(props: {
       setLoaded(false);
       await refetch();
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : t("accessPolicy.failedSave"),
-      );
+      setMessage(formatUserFacingError(error, "accessPolicy.failedSave"));
     }
   };
 
