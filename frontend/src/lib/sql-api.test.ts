@@ -119,6 +119,24 @@ describe("sqlApi", () => {
     })).rejects.toMatchObject({ status: 409, code: "REVISION_CONFLICT" });
   });
 
+  it("rejects saved SQL updates without a non-blank parent revision", async () => {
+    const created = await sqlApi.create("sql-ws", {
+      name: "Strict revision",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+    });
+    const payload = {
+      name: "Missing revision",
+      kind: "user-query" as const,
+      sql: "SELECT 2",
+      variables: [],
+    } as unknown as SqlUpdatePayload;
+
+    await expect(sqlApi.update("sql-ws", created.id, payload))
+      .rejects.toThrow("parent_revision_id is required");
+  });
+
   it("rejects unknown top-level saved SQL update fields", async () => {
     const created = await sqlApi.create("sql-ws", {
       name: "Strict payload",
@@ -131,6 +149,7 @@ describe("sqlApi", () => {
       kind: "user-query" as const,
       sql: "SELECT 2",
       variables: [],
+      parent_revision_id: created.revisionId,
       author: "unexpected",
     } as unknown as SqlUpdatePayload;
 
@@ -202,6 +221,7 @@ describe("sqlApi", () => {
       kind: "user-query",
       sql: "SELECT 1",
       variables: [],
+      parent_revision_id: "rev-1",
     })).rejects.toThrow("Update failed");
   });
 

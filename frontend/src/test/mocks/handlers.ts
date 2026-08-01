@@ -68,13 +68,13 @@ const validateMockSqlPayload = (
   }
   if (typeof body.sql !== "string") return "sql is required";
   if (!Array.isArray(body.variables)) return "variables must be an array";
-  if (
-    options.allowParentRevisionId &&
-    body.parent_revision_id !== undefined &&
-    body.parent_revision_id !== null &&
-    typeof body.parent_revision_id !== "string"
-  ) {
-    return "parent_revision_id must be a string or null";
+  if (options.allowParentRevisionId) {
+    if (typeof body.parent_revision_id !== "string") {
+      return "parent_revision_id is required";
+    }
+    if (!body.parent_revision_id.trim()) {
+      return "parent_revision_id must not be blank";
+    }
   }
   for (const variable of body.variables) {
     if (!variable || typeof variable !== "object") {
@@ -785,11 +785,7 @@ export const handlers = [
     if (validationError) {
       return HttpResponse.json({ detail: validationError }, { status: 422 });
     }
-    if (
-      body.parent_revision_id !== undefined &&
-      body.parent_revision_id !== null &&
-      body.parent_revision_id !== entry.revision_id
-    ) {
+    if (body.parent_revision_id !== entry.revision_id) {
       return HttpResponse.json(
         {
           code: "REVISION_CONFLICT",

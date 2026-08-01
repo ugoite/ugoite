@@ -100,8 +100,7 @@ pub struct SqlUpdatePayload {
     pub sql: String,
     #[serde(default)]
     pub variables: Value,
-    #[serde(default)]
-    pub parent_revision_id: Option<String>,
+    pub parent_revision_id: String,
 }
 
 impl SqlUpdatePayload {
@@ -466,7 +465,7 @@ pub async fn update_sql<I: IntegrityProvider>(
     ws_path: &str,
     sql_id: &str,
     payload: &SqlPayload,
-    parent_revision_id: Option<&str>,
+    parent_revision_id: &str,
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
@@ -477,17 +476,22 @@ pub async fn update_sql<I: IntegrityProvider>(
         return Err(anyhow!("SQL entry not found: {}", sql_id));
     }
 
-    if let Some(expected_parent) = parent_revision_id {
-        if row.revision_id != expected_parent {
-            return Err(AppError::conflict(
-                ErrorCode::RevisionConflict,
-                format!(
-                    "Revision conflict: expected {}, got {}",
-                    expected_parent, row.revision_id
-                ),
-            )
-            .into());
-        }
+    if parent_revision_id.trim().is_empty() {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "parent_revision_id must not be blank",
+        )
+        .into());
+    }
+    if row.revision_id != parent_revision_id {
+        return Err(AppError::conflict(
+            ErrorCode::RevisionConflict,
+            format!(
+                "Revision conflict: expected {}, got {}",
+                parent_revision_id, row.revision_id
+            ),
+        )
+        .into());
     }
 
     let variables = normalize_sql_variables(Some(&payload.variables))?;

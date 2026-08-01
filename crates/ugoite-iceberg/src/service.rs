@@ -14,7 +14,7 @@ use crate::{
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
     storage::operator_from_uri,
 };
-use ugoite_core::error::AppError;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
     validate_space_id, validate_sql_id, validate_sql_session_id,
@@ -1047,14 +1047,19 @@ impl UgoiteService {
         space_id: &str,
         sql_id: &str,
         payload: &saved_sql::SqlPayload,
-        parent_revision_id: Option<&str>,
+        parent_revision_id: &str,
         author: &str,
     ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_sql_id(sql_id))?;
-        if let Some(parent_revision_id) = parent_revision_id {
-            validate_storage_id(validate_revision_id(parent_revision_id))?;
+        if parent_revision_id.trim().is_empty() {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "parent_revision_id must not be blank",
+            )
+            .into());
         }
+        validate_storage_id(validate_revision_id(parent_revision_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         saved_sql::update_sql(
             &self.operator,

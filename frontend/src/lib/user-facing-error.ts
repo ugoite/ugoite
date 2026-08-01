@@ -37,7 +37,9 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   PASSKEY_CANCELLED: "securityPage.passkeyCancelled",
 };
 
-const OPERATION_KEYS: Partial<Record<UgoiteApiOperation | string, TranslationKey>> = {
+const OPERATION_KEYS: Partial<
+  Record<UgoiteApiOperation | string, TranslationKey>
+> = {
   "search.keyword": "errors.operation.search",
   "search.query": "errors.operation.search",
   "space.list": "errors.operation.settings",
@@ -106,7 +108,8 @@ const detailText = (value: unknown): string | null => {
 };
 
 const apiDetails = (error: UgoiteApiError): string | null =>
-  detailText(error.detail) ?? detailText(error.payload) ?? detailText(error.message);
+  detailText(error.detail) ?? detailText(error.payload) ??
+    detailText(error.message);
 
 /** Convert transport/domain errors into a localized summary plus optional detail. */
 export const formatUserFacingError = (
@@ -114,24 +117,20 @@ export const formatUserFacingError = (
   fallbackKey: TranslationKey,
   operation?: string,
 ): string => {
-  const apiError = error instanceof UgoiteApiError
-    ? error
-    : typeof error === "string" && operation
-    ? new UgoiteApiError({
-      kind: "internal",
-      operation,
-      status: 500,
-      message: error,
-      detail: error,
-    })
-    : null;
+  const apiError = error instanceof UgoiteApiError ? error : null;
+  const stringOperationKey = typeof error === "string" && operation
+    ? OPERATION_KEYS[operation]
+    : undefined;
   const summaryKey = (apiError?.code && CODE_KEYS[apiError.code]) ??
     (apiError?.operation && OPERATION_KEYS[apiError.operation]) ??
+    stringOperationKey ??
     (apiError?.kind && KIND_KEYS[apiError.kind]) ??
     (apiError?.status && STATUS_KEYS[apiError.status]);
   const summary = t(summaryKey ?? fallbackKey);
   const detail = apiError ? apiDetails(apiError) : detailText(error);
 
-  if (!detail || detail === summary || detail === t(fallbackKey)) return summary;
+  if (!detail || detail === summary || detail === t(fallbackKey)) {
+    return summary;
+  }
   return t("errors.withDetail", { summary, detail });
 };

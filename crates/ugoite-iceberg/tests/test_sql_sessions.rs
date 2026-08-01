@@ -16,13 +16,11 @@ use ugoite_iceberg::{
 };
 use uuid::Uuid;
 
-const ENTRY_RELATION: &str = "form_00000000000000000000000000000001";
-
 fn authorized_entries(form: &str, entry_ids: &[&str]) -> (Uuid, BTreeMap<String, HashSet<String>>) {
     (
         Uuid::from_u128(1),
         [(
-            form.to_ascii_lowercase(),
+            form.to_string(),
             entry_ids
                 .iter()
                 .map(|entry_id| (*entry_id).to_string())
@@ -66,6 +64,10 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         "fields": {"Body": {"type": "markdown"}}
     });
     form::upsert_form(&op, ws_path, &form_def).await?;
+    let entry_relation = form::get_form(&op, ws_path, "Entry").await?["sql_relation"]
+        .as_str()
+        .expect("Form SQL relation")
+        .to_string();
 
     let entry_one = "---\nform: Entry\n---\n# Alpha\n\n## Body\nalpha";
     entry::create_entry(&op, ws_path, "entry-1", entry_one, "author", &MockIntegrity).await?;
@@ -77,7 +79,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         kind: saved_sql::SqlKind::UserQuery,
         metadata: None,
         sql: format!(
-            "SELECT * FROM \"{ENTRY_RELATION}\" WHERE _ugoite_title = $title ORDER BY _ugoite_id"
+            "SELECT * FROM \"{entry_relation}\" WHERE _ugoite_title = $title ORDER BY _ugoite_id"
         ),
         variables: serde_json::json!([{
             "name": "title",
@@ -96,7 +98,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     .await?;
 
     let (principal_id, readable_entries_by_form) =
-        authorized_entries("Entry", &["entry-1", "entry-2"]);
+        authorized_entries(&entry_relation, &["entry-1", "entry-2"]);
     let principal_ids = [principal_id];
     let authorization = sql_session::SqlSessionAuthorization {
         principal_ids: &principal_ids,
@@ -111,7 +113,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let error = sql_session::create_sql_session_authorized_for_principals_by_form(
         &op,
         ws_path,
-        &format!("SELECT * FROM \"{ENTRY_RELATION}\" ORDER BY _ugoite_id"),
+        &format!("SELECT * FROM \"{entry_relation}\" ORDER BY _ugoite_id"),
         sql_session::SqlSessionCreateAuthorization {
             authorization: sql_session::SqlSessionAuthorization {
                 principal_ids: &no_principals,
@@ -127,13 +129,13 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let oversized_entries = (0..=ugoite_iceberg::index::SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS)
         .map(|index| format!("entry-{index}"))
         .collect::<HashSet<_>>();
-    let oversized_scope = [("entry".to_string(), oversized_entries)]
+    let oversized_scope = [(entry_relation.clone(), oversized_entries)]
         .into_iter()
         .collect::<BTreeMap<_, _>>();
     let error = sql_session::create_sql_session_authorized_for_principals_by_form(
         &op,
         ws_path,
-        &format!("SELECT * FROM \"{ENTRY_RELATION}\" ORDER BY _ugoite_id"),
+        &format!("SELECT * FROM \"{entry_relation}\" ORDER BY _ugoite_id"),
         sql_session::SqlSessionCreateAuthorization {
             authorization,
             readable_entries_by_form: &oversized_scope,
@@ -248,6 +250,10 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
         }),
     )
     .await?;
+    let public_task_relation = form::get_form(&op, ws_path, "PublicTask").await?["sql_relation"]
+        .as_str()
+        .expect("Form SQL relation")
+        .to_string();
 
     entry::create_entry(
         &op,
@@ -278,7 +284,7 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     .await?;
 
     let (principal_id, readable_entries_by_form) =
-        authorized_entries("PublicTask", &["public-a", "public-b"]);
+        authorized_entries(&public_task_relation, &["public-a", "public-b"]);
     let principal_ids = [principal_id];
     let authorization = sql_session::SqlSessionAuthorization {
         principal_ids: &principal_ids,
@@ -291,7 +297,7 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
     let session = sql_session::create_sql_session_authorized_for_principals_by_form(
         &op,
         ws_path,
-        "SELECT * FROM publictask ORDER BY _ugoite_id DESC LIMIT 2",
+        &format!("SELECT * FROM \"{public_task_relation}\" ORDER BY _ugoite_id DESC LIMIT 2"),
         create_authorization,
     )
     .await?;
@@ -365,7 +371,11 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         &MockIntegrity,
     )
     .await?;
-    let (principal_id, readable_entries_by_form) = authorized_entries("Task", &["task-1"]);
+    let task_relation = form::get_form(&op, ws_path, "Task").await?["sql_relation"]
+        .as_str()
+        .expect("Form SQL relation")
+        .to_string();
+    let (principal_id, readable_entries_by_form) = authorized_entries(&task_relation, &["task-1"]);
     let principal_ids = [principal_id];
     let authorization = sql_session::SqlSessionAuthorization {
         principal_ids: &principal_ids,
@@ -377,20 +387,20 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
     };
 
     for sql in [
-        "SELECT * FROM task",
-        "SELECT * FROM task ORDER BY _ugoite_updated_at",
-        "SELECT DISTINCT _ugoite_id FROM task ORDER BY _ugoite_id",
-        "SELECT _ugoite_title AS _ugoite_id FROM task ORDER BY _ugoite_id",
-        "SELECT * FROM task WHERE EXISTS (SELECT 1 FROM task t2 WHERE t2._ugoite_id = task._ugoite_id) ORDER BY _ugoite_id",
-        "SELECT (SELECT _ugoite_id FROM task LIMIT 1) FROM task ORDER BY _ugoite_id",
-        "SELECT * FROM task WHERE _ugoite_id IN (SELECT _ugoite_id FROM task) ORDER BY _ugoite_id",
-        "SELECT * FROM task ORDER BY _ugoite_id LIMIT 1 OFFSET 1000000",
+        format!("SELECT * FROM \"{task_relation}\""),
+        format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_updated_at"),
+        format!("SELECT DISTINCT _ugoite_id FROM \"{task_relation}\" ORDER BY _ugoite_id"),
+        format!("SELECT _ugoite_title AS _ugoite_id FROM \"{task_relation}\" ORDER BY _ugoite_id"),
+        format!("SELECT * FROM \"{task_relation}\" WHERE EXISTS (SELECT 1 FROM \"{task_relation}\" t2 WHERE t2._ugoite_id = \"{task_relation}\"._ugoite_id) ORDER BY _ugoite_id"),
+        format!("SELECT (SELECT _ugoite_id FROM \"{task_relation}\" LIMIT 1) FROM \"{task_relation}\" ORDER BY _ugoite_id"),
+        format!("SELECT * FROM \"{task_relation}\" WHERE _ugoite_id IN (SELECT _ugoite_id FROM \"{task_relation}\") ORDER BY _ugoite_id"),
+        format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_id LIMIT 1 OFFSET 1000000"),
     ] {
         assert!(
             sql_session::create_sql_session_authorized_for_principals_by_form(
                 &op,
                 ws_path,
-                sql,
+                &sql,
                 create_authorization,
             )
             .await
@@ -401,7 +411,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
     let session = sql_session::create_sql_session_authorized_for_principals_by_form(
         &op,
         ws_path,
-        "SELECT * FROM task ORDER BY _ugoite_id",
+        &format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_id"),
         create_authorization,
     )
     .await?;
@@ -451,7 +461,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
     let limit_zero = sql_session::create_sql_session_authorized_for_principals_by_form(
         &op,
         ws_path,
-        "SELECT * FROM task ORDER BY _ugoite_id LIMIT 0",
+        &format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_id LIMIT 0"),
         create_authorization,
     )
     .await?;
@@ -520,6 +530,10 @@ async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::R
             }),
         )
         .await?;
+    let task_relation = service.get_form(&space_id, "Task").await?["sql_relation"]
+        .as_str()
+        .expect("Form SQL relation")
+        .to_string();
     for (id, title) in [("task-1", "One"), ("task-2", "Two")] {
         service
             .create_entry(
@@ -554,7 +568,7 @@ async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::R
         .create_sql_session_authorized_for_principals(
             &space_id,
             &principals,
-            "SELECT * FROM task ORDER BY _ugoite_id",
+            &format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_id"),
         )
         .await?;
     let session_id = session["id"].as_str().expect("session ID");
@@ -571,7 +585,7 @@ async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::R
         .create_sql_session_authorized_for_principals(
             &space_id,
             &no_principals,
-            "SELECT * FROM task ORDER BY _ugoite_id",
+            &format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_id"),
         )
         .await
         .expect_err("session creation must reject an empty principal set");
@@ -739,12 +753,16 @@ async fn sql_sessions_apply_sparse_entry_denials_in_the_provider() -> anyhow::Re
         )
         .await?;
 
+    let task_relation = service.get_form(&space_id, "Task").await?["sql_relation"]
+        .as_str()
+        .expect("Form SQL relation")
+        .to_string();
     let principals = [viewer];
     let session = service
         .create_sql_session_authorized_for_principals(
             &space_id,
             &principals,
-            "SELECT * FROM task ORDER BY _ugoite_id",
+            &format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_id"),
         )
         .await?;
     assert_eq!(
@@ -871,5 +889,128 @@ async fn sql_session_rejects_unsupported_sql_before_resolving_a_space_scope() ->
         .await
         .expect_err("unsupported SQL must fail before the Space is opened");
     assert!(error.to_string().contains("does not support joins"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_session_uses_backend_relation_mapping_for_hyphenated_forms() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "test-sql-session-relation", "/tmp").await?;
+    let ws_path = "spaces/test-sql-session-relation";
+    let form_def = serde_json::json!({
+        "name": "Daily-Note",
+        "template": "# Daily-Note\n\n## Count\n",
+        "fields": {
+            "Count": {"type": "integer"},
+            "Enabled": {"type": "boolean"}
+        }
+    });
+    form::upsert_form(&op, ws_path, &form_def).await?;
+    let form = form::get_form(&op, ws_path, "Daily-Note").await?;
+    let relation = form["sql_relation"].as_str().expect("Form SQL relation");
+    let count_column = form["fields"]["Count"]["sql_column"]
+        .as_str()
+        .expect("Form SQL column");
+    let enabled_column = form["fields"]["Enabled"]["sql_column"]
+        .as_str()
+        .expect("Form SQL column");
+
+    let principal_ids = [Uuid::from_u128(92)];
+    let readable_entries_by_form = [(relation.to_string(), HashSet::new())]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    let session = sql_session::create_sql_session_authorized_for_principals_by_form(
+        &op,
+        ws_path,
+        &format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id"),
+        sql_session::SqlSessionCreateAuthorization {
+            authorization: sql_session::SqlSessionAuthorization {
+                principal_ids: &principal_ids,
+                policy_hash: AUTHORIZATION_POLICY_HASH,
+            },
+            readable_entries_by_form: &readable_entries_by_form,
+        },
+    )
+    .await?;
+    assert_eq!(session["status"], "ready");
+    assert_eq!(session["query_policy"]["forms"][0]["relation"], relation);
+
+    let parameters = serde_json::Map::from_iter([
+        ("search_0".to_string(), serde_json::json!(10)),
+        (
+            "search_1".to_string(),
+            serde_json::json!("2025-03-04T00:00:00.000Z"),
+        ),
+        ("search_2".to_string(), serde_json::json!(true)),
+    ]);
+    let parameter_types = BTreeMap::from_iter([
+        ("search_0".to_string(), "integer".to_string()),
+        ("search_1".to_string(), "timestamp".to_string()),
+        ("search_2".to_string(), "boolean".to_string()),
+    ]);
+    let typed_session =
+        sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
+            &op,
+            ws_path,
+            &format!(
+                "SELECT * FROM \"{relation}\" WHERE _ugoite_updated_at < $search_1 AND \"{count_column}\" = $search_0 AND \"{enabled_column}\" = $search_2 ORDER BY _ugoite_updated_at DESC, _ugoite_id"
+            ),
+            parameters,
+            parameter_types,
+            sql_session::SqlSessionCreateAuthorization {
+                authorization: sql_session::SqlSessionAuthorization {
+                    principal_ids: &principal_ids,
+                    policy_hash: AUTHORIZATION_POLICY_HASH,
+                },
+                readable_entries_by_form: &readable_entries_by_form,
+            },
+        )
+        .await?;
+    assert_eq!(typed_session["status"], "ready");
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_relations_are_unique_for_case_distinct_forms() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "case-distinct-forms", "/tmp").await?;
+    let ws_path = "spaces/case-distinct-forms";
+    for name in ["Meeting", "meeting"] {
+        form::upsert_form(
+            &op,
+            ws_path,
+            &serde_json::json!({"name": name, "fields": {}}),
+        )
+        .await?;
+    }
+    let upper = form::get_form(&op, ws_path, "Meeting").await?;
+    let lower = form::get_form(&op, ws_path, "meeting").await?;
+    let upper_relation = upper["sql_relation"].as_str().expect("SQL relation");
+    let lower_relation = lower["sql_relation"].as_str().expect("SQL relation");
+    assert_ne!(upper_relation, lower_relation);
+
+    let principal_ids = [Uuid::from_u128(93)];
+    let readable_entries_by_form = [
+        (upper_relation.to_string(), HashSet::new()),
+        (lower_relation.to_string(), HashSet::new()),
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
+    for relation in [upper_relation, lower_relation] {
+        let session = sql_session::create_sql_session_authorized_for_principals_by_form(
+            &op,
+            ws_path,
+            &format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id"),
+            sql_session::SqlSessionCreateAuthorization {
+                authorization: sql_session::SqlSessionAuthorization {
+                    principal_ids: &principal_ids,
+                    policy_hash: AUTHORIZATION_POLICY_HASH,
+                },
+                readable_entries_by_form: &readable_entries_by_form,
+            },
+        )
+        .await?;
+        assert_eq!(session["status"], "ready");
+    }
     Ok(())
 }

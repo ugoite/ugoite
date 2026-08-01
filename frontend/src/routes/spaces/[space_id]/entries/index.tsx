@@ -115,11 +115,11 @@ export default function SpaceEntriesIndexPane() {
     return ctx.entryStore.loading();
   });
 
-  const error = createMemo(() => {
+  const error = createMemo<unknown>(() => {
     if (sessionId().trim()) {
       return session.error || sessionRows.error || displayEntryState().error;
     }
-    return ctx.entryStore.error();
+    return ctx.entryStore.errorCause();
   });
 
   const errorMessage = createMemo(() => {

@@ -4186,7 +4186,7 @@ async fn update_sql(
                 &space_id,
                 &sql_id,
                 &payload,
-                parent_revision_id.as_deref(),
+                &parent_revision_id,
                 &principal_id.to_string(),
             )
             .await
@@ -4828,17 +4828,14 @@ mod authentication_regression_tests {
             .expect("initial SQL revision")
             .to_string();
 
-        let update_body = |parent_revision_id: Option<&str>| {
-            let mut body = json!({
+        let update_body = |parent_revision_id: &str| {
+            json!({
                 "name": "Saved query updated",
                 "kind": "user-query",
                 "sql": "SELECT 2",
-                "variables": []
-            });
-            if let Some(parent_revision_id) = parent_revision_id {
-                body["parent_revision_id"] = json!(parent_revision_id);
-            }
-            body
+                "variables": [],
+                "parent_revision_id": parent_revision_id,
+            })
         };
 
         let update_without_revision = route
@@ -4846,12 +4843,45 @@ mod authentication_regression_tests {
             .oneshot(
                 Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
                     .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(update_body(None).to_string()))?,
+                    .body(Body::from(
+                        json!({
+                            "name": "Saved query updated",
+                            "kind": "user-query",
+                            "sql": "SELECT 2",
+                            "variables": []
+                        })
+                        .to_string(),
+                    ))?,
             )
             .await?;
-        assert_eq!(update_without_revision.status(), StatusCode::OK);
-        let update_body_bytes =
-            axum::body::to_bytes(update_without_revision.into_body(), usize::MAX).await?;
+        assert_eq!(
+            update_without_revision.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+
+        let update_with_blank_revision = route
+            .clone()
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(update_body("   ").to_string()))?,
+            )
+            .await?;
+        assert_eq!(
+            update_with_blank_revision.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+
+        let first_update = route
+            .clone()
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(update_body(&first_revision).to_string()))?,
+            )
+            .await?;
+        assert_eq!(first_update.status(), StatusCode::OK);
+        let update_body_bytes = axum::body::to_bytes(first_update.into_body(), usize::MAX).await?;
         let update_result: Value = serde_json::from_slice(&update_body_bytes)?;
         let second_revision = update_result["revision_id"]
             .as_str()
@@ -4863,17 +4893,24 @@ mod authentication_regression_tests {
             .oneshot(
                 Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
                     .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(update_body(Some(&second_revision)).to_string()))?,
+                    .body(Body::from(update_body(&second_revision).to_string()))?,
             )
             .await?;
         assert_eq!(update_with_revision.status(), StatusCode::OK);
+        let update_body_bytes =
+            axum::body::to_bytes(update_with_revision.into_body(), usize::MAX).await?;
+        let update_result: Value = serde_json::from_slice(&update_body_bytes)?;
+        let third_revision = update_result["revision_id"]
+            .as_str()
+            .expect("third SQL revision")
+            .to_string();
 
         let stale_update = route
             .clone()
             .oneshot(
                 Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
                     .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(update_body(Some(&first_revision)).to_string()))?,
+                    .body(Body::from(update_body(&first_revision).to_string()))?,
             )
             .await?;
         assert_eq!(stale_update.status(), StatusCode::CONFLICT);
@@ -4891,6 +4928,7 @@ mod authentication_regression_tests {
                             "kind": "user-query",
                             "sql": "SELECT 3",
                             "variables": [],
+                            "parent_revision_id": third_revision,
                             "author": "unexpected"
                         })
                         .to_string(),

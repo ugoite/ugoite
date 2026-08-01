@@ -255,7 +255,7 @@ export interface SqlUpdatePayload {
   metadata?: SqlMetadata;
   sql: string;
   variables: SqlVariable[];
-  parent_revision_id?: string | null;
+  parent_revision_id: string;
 }
 
 export type SqlMetadata =

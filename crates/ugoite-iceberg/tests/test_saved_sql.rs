@@ -67,7 +67,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
         ws_path,
         "sql-1",
         &update_payload,
-        Some(revision_id),
+        revision_id,
         "author",
         &integrity,
     )

@@ -41,7 +41,7 @@ pub enum SqlSubCmd {
         #[arg(long)]
         variables: Option<String>,
         #[arg(long)]
-        parent_revision_id: Option<String>,
+        parent_revision_id: String,
     },
     /// Delete a saved SQL query
     SavedDelete { space_path: String, sql_id: String },
@@ -145,9 +145,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     "sql": sql,
                     "variables": vars,
                 });
-                if let Some(parent_revision_id) = parent_revision_id.as_deref() {
-                    body["parent_revision_id"] = serde_json::json!(parent_revision_id);
-                }
+                body["parent_revision_id"] = serde_json::json!(parent_revision_id);
                 let result = http::execute(
                     &base,
                     "sql.update",
@@ -167,13 +165,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             };
             let service = UgoiteService::new(&root)?;
             let result = service
-                .update_saved_sql(
-                    &space_id,
-                    &sql_id,
-                    &payload,
-                    parent_revision_id.as_deref(),
-                    "cli",
-                )
+                .update_saved_sql(&space_id, &sql_id, &payload, &parent_revision_id, "cli")
                 .await?;
             print_json(&result);
         }
