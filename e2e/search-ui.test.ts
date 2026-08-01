@@ -54,7 +54,7 @@ test.describe("Search UI", () => {
 		const entryContent = `---\nform: ${formName}\ntags:\n  - release\n  - search-ui\n---\n# ${entryTitle}\n\n## Owner Name\nalice\n\n## Body\nAdvanced search history should stay reusable.\n`;
 		let entryId: string | null = null;
 
-		await cleanupSavedSearchesByPrefix(request, historyPrefix);
+		await cleanupSavedSearchesByForm(request, formName);
 
 		try {
 			await ensureSearchForm(request, formName);
@@ -86,7 +86,7 @@ test.describe("Search UI", () => {
 			if (entryId) {
 				await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
 			}
-			await cleanupSavedSearchesByPrefix(request, historyPrefix);
+			await cleanupSavedSearchesByForm(request, formName);
 		}
 	});
 });
@@ -137,9 +137,9 @@ async function waitForKeywordMatch(
 		.toBe(true);
 }
 
-async function cleanupSavedSearchesByPrefix(
+async function cleanupSavedSearchesByForm(
 	request: APIRequestContext,
-	namePrefix: string,
+	formName: string,
 ): Promise<void> {
 	const response = await request.get(getBackendUrl(`/spaces/${spaceId}/sql`));
 	if (!response.ok()) {
@@ -149,12 +149,15 @@ async function cleanupSavedSearchesByPrefix(
 		id: string;
 		name: string | null;
 		kind: "user-query" | "search-history";
+		metadata?: {
+			searchCriteria?: {
+				formName?: string;
+			};
+		} | null;
 	}>;
 	const created = list.filter((item) => {
-		const name = item.name;
-		return item.kind === "user-query" &&
-			name !== null &&
-			name.startsWith(namePrefix);
+		return item.kind === "search-history" &&
+			item.metadata?.searchCriteria?.formName === formName;
 	});
 	for (const entry of created) {
 		await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${entry.id}`));

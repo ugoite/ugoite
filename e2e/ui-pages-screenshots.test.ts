@@ -37,12 +37,10 @@ test.describe("UI page screenshot export @screenshot", () => {
     expect(entryRes.status()).toBe(201);
     const entry = (await entryRes.json()) as { id: string };
 
-    const sqlId = `e2e-ui-shot-${Date.now()}`;
     const sqlCreate = await request.post(
       getBackendUrl(`/spaces/${spaceId}/sql`),
       {
         data: {
-          id: sqlId,
           name: `E2E Screenshot Query ${Date.now()}`,
           kind: "user-query",
           sql: "SELECT * FROM entries LIMIT 10",
@@ -51,6 +49,8 @@ test.describe("UI page screenshot export @screenshot", () => {
       },
     );
     expect([200, 201]).toContain(sqlCreate.status());
+    const savedSql = (await sqlCreate.json()) as { id: string };
+    const sqlId = savedSql.id;
 
     const specs = await loadUiPageSpecs();
     await fs.mkdir(screenshotDir, { recursive: true });

@@ -37,7 +37,6 @@ fn test_saved_sql_req_api_006_crud() {
             "--sql",
             "SELECT * FROM sql",
             &space_path,
-            "my-query",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -47,6 +46,23 @@ fn test_saved_sql_req_api_006_crud() {
         create_output.status.success(),
         "create stderr: {}",
         String::from_utf8_lossy(&create_output.stderr)
+    );
+    let created: serde_json::Value = serde_json::from_slice(&create_output.stdout)
+        .expect("local create should return the generated SQL id");
+    let created_id = created["id"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .expect("local create response should contain a non-empty id");
+
+    let get_output = Command::new(ugoite_bin())
+        .args(["sql", "saved-get", &space_path, created_id])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        get_output.status.success(),
+        "get stderr: {}",
+        String::from_utf8_lossy(&get_output.stderr)
     );
 
     // List saved queries
@@ -87,7 +103,6 @@ fn test_saved_sql_req_api_007_validation() {
             "--sql",
             "THIS IS NOT VALID SQL !!!",
             &space_path,
-            "bad-query",
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()

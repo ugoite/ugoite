@@ -27,6 +27,20 @@ type AgentMode = "autonomous" | "delegated" | "both";
 const message = (error: unknown, fallbackKey: TranslationKey) =>
   formatUserFacingError(error, fallbackKey);
 
+const parseAgentPublicJwk = (
+  value: string,
+): Record<string, unknown> | null => {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
 export default function SpaceSettingsRoute() {
   const params = useParams<{ space_id: string }>();
   const [search, setSearch] = useSearchParams();
@@ -110,11 +124,16 @@ export default function SpaceSettingsRoute() {
       if (!agentName().trim() || !agentExpiresAt() || !actions.length) {
         throw new Error(t("settings.agentValidation"));
       }
+      const publicJwk = parseAgentPublicJwk(agentPublicKey());
+      if (!publicJwk) {
+        setAgentError(t("settings.invalidPublicJwk"));
+        return;
+      }
       const result = await spaceApi.createAgent(spaceId(), {
         display_name: agentName().trim(),
         description: agentDescription().trim(),
         mode: agentMode(),
-        public_key_jwk: JSON.parse(agentPublicKey()),
+        public_key_jwk: publicJwk,
         granted_actions: actions,
         expires_at: new Date(agentExpiresAt()).toISOString(),
       });

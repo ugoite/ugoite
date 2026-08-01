@@ -20,9 +20,9 @@ test.describe("UI theme flows", () => {
 			test.setTimeout(120_000);
 			const runId = Date.now();
 			const entryTitle = `E2E Theme Entry ${theme} ${runId}`;
-			const variableQueryId = `e2e-theme-var-${theme}-${runId}`;
 			const variableQueryName = `E2E Variables ${theme}`;
 			let entryId: string | null = null;
+			let variableQueryId: string | null = null;
 
 			await cleanupThemeQueries(request, theme, spaceId);
 			await resetThemePreferences(request);
@@ -39,7 +39,6 @@ test.describe("UI theme flows", () => {
 
 				const variableQueryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
 					data: {
-						id: variableQueryId,
 						name: variableQueryName,
 						kind: "user-query",
 						sql: "SELECT * FROM entries WHERE title = {{title}} LIMIT 10",
@@ -49,6 +48,8 @@ test.describe("UI theme flows", () => {
 					},
 				});
 				expect([200, 201]).toContain(variableQueryRes.status());
+				const variableQuery = (await variableQueryRes.json()) as { id: string };
+				variableQueryId = variableQuery.id;
 
 				await gotoWithRetry(page, `/spaces/${spaceId}/dashboard`);
 
@@ -114,7 +115,9 @@ test.describe("UI theme flows", () => {
 				if (entryId) {
 					await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
 				}
-				await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${variableQueryId}`));
+				if (variableQueryId) {
+					await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${variableQueryId}`));
+				}
 				await cleanupThemeQueries(request, theme, spaceId);
 			}
 		});

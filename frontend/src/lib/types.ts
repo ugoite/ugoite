@@ -236,7 +236,6 @@ export interface SqlEntry {
 }
 
 export interface SqlCreatePayload {
-  id?: string;
   name: string | null;
   kind: "user-query" | "search-history";
   metadata?: SqlMetadata;

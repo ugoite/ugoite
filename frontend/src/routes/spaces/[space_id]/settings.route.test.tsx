@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceSettingsRoute from "./settings";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
@@ -56,6 +56,7 @@ describe("SpaceSettingsRoute", () => {
     vi.mocked(spaceApi.testConnection).mockResolvedValue({ status: "ok" });
     vi.mocked(spaceApi.listMembers).mockResolvedValue([]);
     vi.mocked(spaceApi.listAgents).mockResolvedValue([]);
+    vi.mocked(spaceApi.createAgent).mockReset();
   });
 
   it("renders the general, language, and storage route surfaces", async () => {
@@ -118,4 +119,30 @@ describe("SpaceSettingsRoute", () => {
     });
     expect(screen.getByText(/members-1/)).toBeInTheDocument();
   });
+
+  it.each(["{invalid json", "[]", "null"])(
+    "validates public JWK JSON objects before creating an agent (%s)",
+    async (invalidPublicJwk) => {
+      setLocale("ja");
+      searchParams.section = "agents";
+      render(() => <SpaceSettingsRoute />);
+
+      await screen.findByRole("heading", { name: "エージェント" });
+      fireEvent.input(screen.getByLabelText("名前"), {
+        target: { value: "Test agent" },
+      });
+      fireEvent.input(screen.getByLabelText("有効期限"), {
+        target: { value: "2026-08-01T12:00" },
+      });
+      fireEvent.input(screen.getByLabelText("公開 JWK"), {
+        target: { value: invalidPublicJwk },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "エージェントを作成" }));
+
+      expect(await screen.findByText("有効な公開 JWK の JSON オブジェクトを入力してください。"))
+        .toBeInTheDocument();
+      expect(screen.queryByText(/SyntaxError|Unexpected token/)).not.toBeInTheDocument();
+      expect(spaceApi.createAgent).not.toHaveBeenCalled();
+    },
+  );
 });

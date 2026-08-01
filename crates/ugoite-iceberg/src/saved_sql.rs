@@ -74,6 +74,7 @@ pub struct SqlMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SqlPayload {
     pub name: Option<String>,
     pub kind: SqlKind,

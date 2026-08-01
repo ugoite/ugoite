@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
+use uuid::Uuid;
 
 #[derive(Args)]
 pub struct SqlCmd {
@@ -22,7 +23,6 @@ pub enum SqlSubCmd {
     /// Create a saved SQL query
     SavedCreate {
         space_path: String,
-        sql_id: String,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -95,7 +95,6 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         }
         SqlSubCmd::SavedCreate {
             space_path,
-            sql_id,
             name,
             sql,
             variables,
@@ -111,12 +110,13 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     &base,
                     "sql.create",
                     serde_json::json!({"space_id": space_id}),
-                    Some(serde_json::json!({"id": sql_id, "name": name, "kind": "user-query", "sql": sql, "variables": vars, "author": author})),
+                    Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
+            let sql_id = Uuid::now_v7().to_string();
             let payload = SqlPayload {
                 name: Some(name),
                 kind: SqlKind::UserQuery,
@@ -149,7 +149,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     &base,
                     "sql.update",
                     serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
-                    Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author})),
+                    Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id})),
                 )
                 .await?;
                 print_json(&result);

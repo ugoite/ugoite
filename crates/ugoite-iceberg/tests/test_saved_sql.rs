@@ -151,6 +151,15 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
     }));
     assert!(invalid_operator.is_err());
 
+    let unknown_create_field = serde_json::from_value::<SqlPayload>(json!({
+        "name": "Query",
+        "kind": "user-query",
+        "sql": "SELECT 1",
+        "variables": [],
+        "id": "client-selected-id"
+    }));
+    assert!(unknown_create_field.is_err());
+
     let blank_name = SqlPayload {
         name: Some("  ".to_string()),
         kind: SqlKind::UserQuery,
