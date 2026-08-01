@@ -105,7 +105,7 @@ export default function NewEntryRoute() {
                 onCreateFormChange={setSelectedFormName}
                 onDeleted={() =>
                   navigate(`/spaces/${spaceId()}/forms`)}
-                onCreated={(entryId) =>
+                onCreated={({ id: entryId }) =>
                   navigate(
                     `/spaces/${spaceId()}/entries/${
                       encodeURIComponent(entryId)

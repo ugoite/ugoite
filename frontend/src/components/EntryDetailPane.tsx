@@ -38,7 +38,7 @@ export interface EntryDetailPaneProps {
   onCreateFormChange?: (formName: string) => void;
   onDeleted: () => void;
   onCancel?: () => void;
-  onCreated?: (entryId: string) => void;
+  onCreated?: (result: { id: string; revision_id: string }) => void;
   onAfterSave?: () => void;
 }
 
@@ -634,6 +634,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   };
 
   const handleSave = async () => {
+    if (isSaving()) return;
     const context = resolveSaveContext();
     /* v8 ignore start */
     if (!context.ok) {
@@ -657,7 +658,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       setLastSavedContent(contentToSave);
       setIsDirty(editorContent() !== contentToSave);
       props.onAfterSave?.();
-      if (context.create) props.onCreated?.(result.id);
+      if (context.create) props.onCreated?.(result);
     } catch (error) {
       handleSaveError(error);
     } finally {

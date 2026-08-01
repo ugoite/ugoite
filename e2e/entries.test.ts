@@ -207,6 +207,110 @@ test.describe("Entries CRUD", () => {
 		await expect(page.locator("#entry-form")).toHaveValue("Entry");
 	});
 
+	test("REQ-ENTRY-1872: form entry creation is one POST and one clean revision", async ({
+		page,
+		request,
+	}) => {
+		const timestamp = Date.now();
+		const formName = `EntryCreateFields-${timestamp}`;
+		const title = `Entry create boundary ${timestamp}`;
+		const formResponse = await request.post(
+			getBackendUrl("/spaces/default/forms"),
+			{
+				data: {
+					name: formName,
+					version: 1,
+					template: `# ${formName}\n\n## Body\n\n## test number\n\n## ts\n`,
+					fields: {
+						Body: { type: "markdown", required: false },
+						"test number": { type: "double", required: false },
+						ts: { type: "timestamp", required: false },
+					},
+				},
+			},
+		);
+		expect(formResponse.status()).toBe(201);
+
+		let entryPostCount = 0;
+		let entryPutCount = 0;
+		page.on("request", (requestEvent) => {
+			const url = new URL(requestEvent.url());
+			if (
+				requestEvent.method() === "POST" &&
+				url.pathname === "/api/spaces/default/entries"
+			) entryPostCount += 1;
+			if (
+				requestEvent.method() === "PUT" &&
+				/^\/api\/spaces\/default\/entries\/[^/]+$/.test(url.pathname)
+			) entryPutCount += 1;
+		});
+
+		await page.goto(
+			getFrontendUrl(
+				`/spaces/default/entries/new?form=${encodeURIComponent(formName)}`,
+			),
+			{ waitUntil: "domcontentloaded" },
+		);
+		await settleUiLoading(page);
+		await expect(page.getByLabel("Title")).toHaveValue(formName);
+		await page.getByLabel("Title").fill(title);
+		await page.getByLabel("test number").fill("0");
+		await page.getByLabel("ts").fill("2026-08-21T10:48");
+
+		const createResponsePromise = page.waitForResponse((response) => {
+			const url = new URL(response.url());
+			return response.request().method() === "POST" &&
+				url.pathname === "/api/spaces/default/entries";
+		});
+		const detailResponsePromise = page.waitForResponse((response) => {
+			const url = new URL(response.url());
+			return response.request().method() === "GET" &&
+				/^\/api\/spaces\/default\/entries\/[^/]+$/.test(url.pathname);
+		});
+		await page.getByRole("button", { name: "Save" }).click();
+		const createResponse = await createResponsePromise;
+		expect(createResponse.status()).toBe(201);
+		const created = (await createResponse.json()) as {
+			id: string;
+			revision_id: string;
+		};
+		const detailResponse = await detailResponsePromise;
+		expect(detailResponse.status()).toBe(200);
+		const detail = (await detailResponse.json()) as { revision_id: string };
+
+		await expect(page).toHaveURL(
+			new RegExp(`/spaces/default/entries/${created.id}$`),
+		);
+		await expect(page.getByText("All changes saved")).toBeVisible();
+		await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+		await expect(page.locator(".ui-alert-error")).toHaveCount(0);
+		expect(entryPostCount).toBe(1);
+		expect(entryPutCount).toBe(0);
+		expect(detail.revision_id).toBe(created.revision_id);
+
+		const historyResponse = await request.get(
+			getBackendUrl(`/spaces/default/entries/${created.id}/history`),
+		);
+		expect(historyResponse.ok()).toBeTruthy();
+		const history = (await historyResponse.json()) as {
+			revisions: Array<{ revision_id: string }>;
+		};
+		expect(history.revisions).toHaveLength(1);
+		expect(history.revisions[0]?.revision_id).toBe(created.revision_id);
+
+		const entryResponse = await request.get(
+			getBackendUrl(`/spaces/default/entries/${created.id}`),
+		);
+		expect(entryResponse.ok()).toBeTruthy();
+		const entry = (await entryResponse.json()) as { content: string };
+		expect(entry.content).toContain("## test number\n0");
+		expect(entry.content).toContain("## ts\n2026-08-21T10:48:00");
+
+		await request.delete(
+			getBackendUrl(`/spaces/default/entries/${created.id}`),
+		);
+	});
+
 	test("REQ-FE-065: create-entry uses a searchable row_reference picker and stores the selected entry_id", async ({
 		page,
 		request,
