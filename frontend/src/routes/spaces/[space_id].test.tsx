@@ -24,6 +24,7 @@ vi.mock("~/lib/space-store", () => ({
 }));
 
 const formsRoute = spaceRoute({ navigation: "forms" });
+const dashboardRoute = spaceRoute({ navigation: "home" });
 const newEntryRoute = spaceRoute({ navigation: "forms", title: "newEntry" });
 const testConnectionRoute = spaceRoute({
   navigation: "settings",
@@ -40,6 +41,10 @@ function FormsPage() {
   );
 }
 
+function DashboardPage() {
+  return <p>Dashboard route</p>;
+}
+
 function NewEntryPage() {
   return <p>New Entry route</p>;
 }
@@ -53,6 +58,7 @@ const routes: RouteDefinition[] = [{
   component: SpaceLayout,
   info: spaceLayoutRoute.info,
   children: [
+    { path: "/dashboard", component: DashboardPage, ...dashboardRoute },
     { path: "/forms", component: FormsPage, ...formsRoute },
     { path: "/entries/new", component: NewEntryPage, ...newEntryRoute },
     {
@@ -68,6 +74,13 @@ function renderAt(path: string) {
   history.set({ value: path, replace: true, scroll: false });
   render(() => <MemoryRouter history={history}>{routes}</MemoryRouter>);
   return history;
+}
+
+function expectNotCurrent(name: string) {
+  for (const link of screen.getAllByRole("link", { name })) {
+    expect(link).not.toHaveClass("active");
+    expect(link).not.toHaveAttribute("aria-current", "page");
+  }
 }
 
 describe("/spaces/:space_id persistent layout", () => {
@@ -94,8 +107,20 @@ describe("/spaces/:space_id persistent layout", () => {
         .toHaveClass("active");
       expect(screen.getAllByRole("link", { name: "Forms" })[0])
         .toHaveAttribute("aria-current", "page");
+      expectNotCurrent("Spaces");
     });
     expect(screen.getByRole("main")).toBe(shell);
+  });
+
+  it("does not mark the Spaces action current on the dashboard", async () => {
+    renderAt("/spaces/demo/dashboard");
+
+    await waitFor(() => {
+      expect(screen.getByText("Dashboard route")).toBeInTheDocument();
+      expect(document.querySelector(".crumbTop")).toHaveTextContent("Home");
+    });
+
+    expectNotCurrent("Spaces");
   });
 
   it("derives Settings navigation from the matched route metadata", async () => {

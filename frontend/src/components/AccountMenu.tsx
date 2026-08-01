@@ -1,4 +1,4 @@
-import { A, useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
 import { locale } from "~/lib/i18n";
@@ -46,13 +46,13 @@ export function AccountMenu() {
       <Show when={open()}>
         <div class="accountMenuPanel" role="menu">
           <div class="accountMenuTitle">{copy().account}</div>
-          <A
+          <a
             href={settingsHref()}
             role="menuitem"
             onClick={() => setOpen(false)}
           >
             {copy().settings}
-          </A>
+          </a>
           <button
             type="button"
             role="menuitem"

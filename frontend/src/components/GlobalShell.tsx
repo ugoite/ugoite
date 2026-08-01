@@ -1,4 +1,4 @@
-import { A, useNavigate } from "@solidjs/router";
+import { A } from "@solidjs/router";
 import { type JSX, Show } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
@@ -31,56 +31,42 @@ export function GlobalShell(
   props: {
     title: string;
     children: JSX.Element;
-    active?: "spaces" | "about";
     authenticated?: boolean;
   },
 ) {
-  const navigate = useNavigate();
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
-  const navigateLink = (href: string) => (event: MouseEvent) => {
-    event.preventDefault();
-    navigate(href);
-  };
   return (
     <main class="app workspaceApp">
       <div class="desktopSidebar">
         <aside class="sidebar">
-          <a
-            class="brand"
-            href="/spaces"
-            onClick={navigateLink("/spaces")}
-          >
+          <a class="brand" href="/spaces">
             <span class="brandMark">U</span>
             <span>Ugoite</span>
           </a>
           <nav class="navGroup">
-            <a class="navItem" href="/spaces" onClick={navigateLink("/spaces")}>
+            <a class="navItem" href="/spaces">
               <UiIcon name="home" />
               <span>{copy().home}</span>
             </a>
-            <a class="navItem" href="/spaces" onClick={navigateLink("/spaces")}>
+            <a class="navItem" href="/spaces">
               <UiIcon name="forms" />
               <span>{copy().forms}</span>
             </a>
-            <a class="navItem" href="/spaces" onClick={navigateLink("/spaces")}>
+            <a class="navItem" href="/spaces">
               <UiIcon name="search" />
               <span>{copy().search}</span>
             </a>
-            <a class="navItem" href="/spaces" onClick={navigateLink("/spaces")}>
+            <a class="navItem" href="/spaces">
               <UiIcon name="settings" />
               <span>{copy().settings}</span>
             </a>
           </nav>
           <div class="sideFoot">
-            <A class="navItem" href="/spaces">
+            <A class="navItem" href="/spaces" end>
               <UiIcon name="spaces" />
               <span>{copy().spaces}</span>
             </A>
-            <A
-              class="navItem"
-              classList={{ active: props.active === "about" }}
-              href="/about"
-            >
+            <A class="navItem" href="/about" end>
               <UiIcon name="about" />
               <span>{copy().about}</span>
             </A>
@@ -89,21 +75,20 @@ export function GlobalShell(
       </div>
       <section class="main">
         <header class="topbar">
-          <button
+          <a
             class="btn iconBtn mobileMenu"
-            type="button"
+            href="/spaces"
             aria-label={copy().menu}
-            onClick={() => navigate("/spaces")}
           >
             <UiIcon name="menu" />
-          </button>
+          </a>
           <select class="spaceSelect" aria-label="Space">
             <option>Ugoite</option>
           </select>
           <div class="crumbTop">{props.title}</div>
           <Show
             when={props.authenticated !== false}
-            fallback={<A class="btn" href="/login">{copy().signIn}</A>}
+            fallback={<a class="btn" href="/login">{copy().signIn}</a>}
           >
             <AccountMenu />
           </Show>
@@ -111,19 +96,19 @@ export function GlobalShell(
         <div class="content">{props.children}</div>
       </section>
       <nav class="bottomNav">
-        <a href="/spaces" onClick={navigateLink("/spaces")}>
+        <a href="/spaces">
           <UiIcon name="home" />
           <span>{copy().home}</span>
         </a>
-        <a href="/spaces" onClick={navigateLink("/spaces")}>
+        <a href="/spaces">
           <UiIcon name="forms" />
           <span>{copy().forms}</span>
         </a>
-        <a href="/spaces" onClick={navigateLink("/spaces")}>
+        <a href="/spaces">
           <UiIcon name="search" />
           <span>{copy().search}</span>
         </a>
-        <a href="/spaces" onClick={navigateLink("/spaces")}>
+        <a href="/spaces">
           <UiIcon name="settings" />
           <span>{copy().settings}</span>
         </a>

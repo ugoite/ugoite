@@ -126,10 +126,10 @@ export function SpaceShell(props: SpaceShellProps) {
   function sidebar() {
     return (
       <aside class="sidebar">
-        <A class="brand" href={`/spaces/${props.spaceId}/dashboard`}>
+        <a class="brand" href={`/spaces/${props.spaceId}/dashboard`}>
           <span class="brandMark">U</span>
           <span>Ugoite</span>
-        </A>
+        </a>
         <label class="sidebarSpaceSelect">
           <span class="ui-sr-only">Space</span>
           <select
@@ -155,14 +155,14 @@ export function SpaceShell(props: SpaceShellProps) {
         </label>
         {navigation()}
         <div class="sideFoot">
-          <A class="navItem" href="/spaces">
+          <a class="navItem" href="/spaces">
             <UiIcon name="spaces" />
             <span>{copy().spaces}</span>
-          </A>
-          <A class="navItem" href="/about">
+          </a>
+          <a class="navItem" href="/about">
             <UiIcon name="about" />
             <span>{copy().about}</span>
-          </A>
+          </a>
         </div>
       </aside>
     );

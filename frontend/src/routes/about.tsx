@@ -1,4 +1,3 @@
-import { A } from "@solidjs/router";
 import { createMemo, createSignal, onMount } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
@@ -57,7 +56,6 @@ export default function About() {
   return (
     <GlobalShell
       title="About"
-      active="about"
       authenticated={authSession().authenticated}
     >
       <div>
@@ -68,12 +66,12 @@ export default function About() {
             <p class="ui-muted">{copy().subtitle}</p>
           </div>
           <div class="actions">
-            <A href={openSpacesHref()} class="btn primary">
+            <a href={openSpacesHref()} class="btn primary">
               {copy().openSpaces}
-            </A>
-            <A href="/" class="btn">
+            </a>
+            <a href="/" class="btn">
               {copy().backHome}
-            </A>
+            </a>
           </div>
         </div>
         <h2 class="sr-only">{copy().whatMakesDifferent}</h2>
