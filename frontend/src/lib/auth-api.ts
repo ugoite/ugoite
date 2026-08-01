@@ -27,6 +27,10 @@ type ChallengeEnvelope = {
   };
 };
 
+type InvitationRegistrationStart =
+  | ChallengeEnvelope & { status: "register" }
+  | { status: "resume" };
+
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`/api${path}`, {
     ...init,
@@ -210,13 +214,18 @@ export const authApi = {
     });
   },
   async registerInvitation(invitationToken: string): Promise<void> {
-    const challenge = await request<ChallengeEnvelope>(
+    const challenge = await request<InvitationRegistrationStart>(
       "/auth/invitations/start",
       {
         method: "POST",
         body: JSON.stringify({ invitation_token: invitationToken }),
       },
     );
+    if (challenge.status === "resume") {
+      await authApi.loginWithPasskey();
+      await authApi.acceptInvitation(invitationToken);
+      return;
+    }
     const credential = await createPasskey(challenge);
     await request("/auth/invitations/finish", {
       method: "POST",

@@ -14,7 +14,11 @@ CI.
 - `POST /auth/passkey/start|finish`: discoverable Passkey login and opaque
   session issuance.
 - `GET|DELETE /auth/session`: inspect or revoke the current browser session.
-- `POST /auth/invitations/start|finish`: invited Passkey registration.
+- `POST /auth/invitations/start|finish`: invited Passkey registration. The
+  start response can request a retry after a previous registration claim; the
+  browser must complete normal Passkey login and then use authenticated
+  acceptance to converge the Node binding and Space membership. The invitation
+  token alone never creates a session or authenticates an account.
 - `GET /auth/oidc/{provider_id}/start` and `GET /auth/oidc/callback`: OIDC
   authorization code + PKCE.
 - `GET|POST /auth/oidc/providers`: Node administrator provider configuration.

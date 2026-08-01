@@ -879,6 +879,17 @@ async fn auth_invitation_finish(
         BindingMethod::Invite,
     )
     .await?;
+    state
+        .identity
+        .complete_invitation_acceptance(
+            result.invitation.invitation_id,
+            result.account.account_id,
+            result.invitation.accepted_principal_id().ok_or_else(|| {
+                ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+            })?,
+        )
+        .await
+        .map_err(auth_error)?;
     Ok((
         StatusCode::CREATED,
         [(
@@ -901,12 +912,23 @@ async fn auth_invitation_accept_existing(
         .await
         .map_err(auth_error)?;
     bind_invited_account(&state, &account, &invitation, BindingMethod::Invite).await?;
+    state
+        .identity
+        .complete_invitation_acceptance(
+            invitation.invitation_id,
+            account.account_id,
+            invitation.accepted_principal_id().ok_or_else(|| {
+                ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+            })?,
+        )
+        .await
+        .map_err(auth_error)?;
     Ok((
         StatusCode::CREATED,
         Json(json!({
             "account": account,
             "space_uid": invitation.space_uid,
-            "principal_id": invitation.accepted_principal_id,
+            "principal_id": invitation.accepted_principal_id(),
         })),
     ))
 }
@@ -1584,6 +1606,17 @@ async fn oidc_callback(
         .map_err(auth_error)?;
     if let Some(invitation) = invitation {
         bind_invited_account(&state, &account, &invitation, BindingMethod::Oidc).await?;
+        state
+            .identity
+            .complete_invitation_acceptance(
+                invitation.invitation_id,
+                account.account_id,
+                invitation.accepted_principal_id().ok_or_else(|| {
+                    ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+                })?,
+            )
+            .await
+            .map_err(auth_error)?;
     }
     state
         .identity
@@ -1661,29 +1694,89 @@ async fn bind_invited_account(
         return Ok(());
     };
     let space_id = find_space_id_by_uid(state, space_uid).await?;
-    let inviter = state
-        .identity
-        .principal_for_account(space_uid, invitation.created_by)
-        .await
-        .map_err(auth_error)?;
-    let principal_id = invitation.accepted_principal_id.ok_or_else(|| {
+    let principal_id = invitation.accepted_principal_id().ok_or_else(|| {
         ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
     })?;
-    Authorizer::new(state.service.operator().clone())
-        .add_human_member(
-            &space_id,
-            inviter,
-            SpacePrincipal {
-                principal_id,
-                kind: PrincipalKind::Human,
-                display_name: account.display_name.clone(),
-                state: PrincipalState::Active,
-                created_at: chrono::Utc::now().to_rfc3339(),
-            },
-            parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
-        )
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let authorization = authorizer
+        .state(&space_id)
         .await
         .map_err(ApiError::from_core)?;
+    let active_space_member =
+        authorization
+            .principals
+            .get(&principal_id)
+            .is_some_and(|principal| {
+                matches!(principal.kind, PrincipalKind::Human)
+                    && matches!(principal.state, PrincipalState::Active)
+                    && authorization.memberships.contains_key(&principal_id)
+            });
+    let principal_has_conflicting_space_state = authorization
+        .principals
+        .get(&principal_id)
+        .is_some_and(|principal| {
+            !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
+        });
+    match state
+        .identity
+        .binding_for_account(space_uid, account.account_id)
+        .await
+        .map_err(auth_error)?
+    {
+        Some(existing_principal_id) if existing_principal_id == principal_id => {
+            if active_space_member {
+                return Ok(());
+            }
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "SPACE_MEMBERSHIP_CONFLICT",
+                    "message": "Node binding exists but the Space has no active membership for this principal",
+                }),
+            ));
+        }
+        Some(_) => {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "ACCOUNT_ALREADY_BOUND",
+                    "message": "account is already bound to this Space",
+                }),
+            ));
+        }
+        None => {}
+    }
+    if principal_has_conflicting_space_state {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            json!({
+                "code": "SPACE_MEMBERSHIP_CONFLICT",
+                "message": "Space authorization state conflicts with the invitation principal",
+            }),
+        ));
+    }
+    if !active_space_member {
+        let inviter = state
+            .identity
+            .principal_for_account(space_uid, invitation.created_by)
+            .await
+            .map_err(auth_error)?;
+        authorizer
+            .add_human_member(
+                &space_id,
+                inviter,
+                SpacePrincipal {
+                    principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: account.display_name.clone(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
+            )
+            .await
+            .map_err(ApiError::from_core)?;
+    }
     state
         .identity
         .add_binding(ugoite_domain::identity::PrincipalBinding {
@@ -4533,6 +4626,131 @@ mod authentication_regression_tests {
         );
         let stored = state.service.get_form(&space_id, "Meeting").await?;
         assert_eq!(stored["fields"]["time"]["type"], "timestamp");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invitation_finalization_converges_after_space_membership_commit() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests("memory://server-invitation-saga")?;
+        state.initialize_node().await?;
+        let owner_account_id = Uuid::now_v7();
+        let owner_principal_id = Uuid::now_v7();
+        let invited_account_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("invitation-saga", owner_principal_id, "Owner")
+            .await?;
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid,
+                principal_id: owner_principal_id,
+                node_account_id: owner_account_id,
+                binding_method: BindingMethod::Setup,
+            })
+            .await?;
+        let principal_id = Uuid::now_v7();
+        let backup_owner_principal_id = Uuid::now_v7();
+        let account = HumanAccount {
+            account_id: invited_account_id,
+            display_name: "Invited viewer".to_string(),
+            status: AccountStatus::Active,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            node_roles: BTreeSet::new(),
+        };
+        let invitation = AccountInvitation {
+            invitation_id: Uuid::now_v7(),
+            token_hash: "test".to_string(),
+            display_name: account.display_name.clone(),
+            space_uid: Some(space_uid),
+            role: Some("viewer".to_string()),
+            expires_at: chrono::Utc::now().to_rfc3339(),
+            acceptance: Some(
+                ugoite_identity::node_identity::InvitationAcceptance::Pending {
+                    account_id: invited_account_id,
+                    principal_id,
+                    kind: ugoite_identity::node_identity::InvitationAcceptanceKind::PasskeyRegistration,
+                    claimed_at: chrono::Utc::now().to_rfc3339(),
+                },
+            ),
+            created_by: owner_account_id,
+        };
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        authorizer
+            .add_human_member(
+                &space_uid.to_string(),
+                owner_principal_id,
+                SpacePrincipal {
+                    principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: account.display_name.clone(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        authorizer
+            .add_human_member(
+                &space_uid.to_string(),
+                owner_principal_id,
+                SpacePrincipal {
+                    principal_id: backup_owner_principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Backup owner".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Owner,
+            )
+            .await?;
+        authorizer
+            .change_role(
+                &space_uid.to_string(),
+                owner_principal_id,
+                owner_principal_id,
+                SpaceRole::Viewer,
+            )
+            .await?;
+
+        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+            .await
+            .expect("membership-first finalization");
+        authorizer
+            .revoke_principal(
+                &space_uid.to_string(),
+                backup_owner_principal_id,
+                owner_principal_id,
+            )
+            .await?;
+        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+            .await
+            .expect("idempotent retry after inviter revocation");
+
+        let authorization = authorizer.state(&space_uid.to_string()).await?;
+        assert_eq!(authorization.memberships.len(), 3);
+        let node = state.identity.read_state().await?;
+        assert_eq!(
+            node.bindings
+                .iter()
+                .filter(|binding| binding.space_uid == space_uid)
+                .count(),
+            2
+        );
+
+        authorizer
+            .revoke_principal(
+                &space_uid.to_string(),
+                backup_owner_principal_id,
+                principal_id,
+            )
+            .await?;
+        assert!(
+            bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+                .await
+                .is_err()
+        );
         Ok(())
     }
 }
