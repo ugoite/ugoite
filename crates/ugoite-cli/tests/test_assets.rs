@@ -23,7 +23,7 @@ fn immutable_space_path(root: &str) -> std::path::PathBuf {
         .expect("UUID Space directory")
 }
 
-/// REQ-ASSET-001: Asset upload, list, and delete lifecycle.
+/// REQ-ASSET-001: Asset upload and exact-key lifecycle.
 #[test]
 fn test_asset_lifecycle() {
     let dir = tempfile::tempdir().unwrap();
@@ -55,22 +55,6 @@ fn test_asset_lifecycle() {
         "upload stderr: {}",
         String::from_utf8_lossy(&upload_output.stderr)
     );
-
-    // List assets
-    let list_output = Command::new(ugoite_bin())
-        .args(["asset", "list", &space_path])
-        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
-        .output()
-        .expect("failed to execute");
-
-    assert!(
-        list_output.status.success(),
-        "list stderr: {}",
-        String::from_utf8_lossy(&list_output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&list_output.stdout);
-    let v: serde_json::Value = serde_json::from_str(&stdout).expect("JSON");
-    assert!(v.as_array().map(|a| !a.is_empty()).unwrap_or(false));
 }
 
 /// REQ-ASSET-001: Asset upload strips traversal from explicit filenames.
@@ -112,12 +96,11 @@ fn test_asset_req_asset_001_upload_strips_filename_traversal() {
     let asset: serde_json::Value =
         serde_json::from_slice(&upload_output.stdout).expect("asset upload JSON");
     let asset_name = asset["name"].as_str().expect("asset name");
-    let asset_path = asset["path"].as_str().expect("asset path");
+    let asset_id = asset["asset_id"].as_str().expect("asset id");
 
     assert_eq!(asset_name, "outside.txt");
-    assert!(asset_path.ends_with("_outside.txt"));
     let stored_space = immutable_space_path(&root);
-    assert!(stored_space.join(asset_path).exists());
+    assert!(stored_space.join("assets").join(asset_id).exists());
     assert!(!stored_space.join("outside.txt").exists());
 }
 
@@ -160,11 +143,12 @@ fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
     let asset: serde_json::Value =
         serde_json::from_slice(&upload_output.stdout).expect("asset upload JSON");
     let asset_name = asset["name"].as_str().expect("asset name");
-    let asset_path = asset["path"].as_str().expect("asset path");
 
     assert_eq!(asset_name, "uploaded_at spoofed.txt");
-    assert!(asset_path.ends_with("_uploaded_at spoofed.txt"));
     assert!(!asset_name.contains('\n'));
     assert!(!asset_name.starts_with('#'));
-    assert!(immutable_space_path(&root).join(asset_path).exists());
+    assert!(immutable_space_path(&root)
+        .join("assets")
+        .join(asset["asset_id"].as_str().expect("asset id"))
+        .exists());
 }

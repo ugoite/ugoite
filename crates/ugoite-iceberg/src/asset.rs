@@ -1,61 +1,41 @@
 use anyhow::Result;
-use chrono::Utc;
-use futures::TryStreamExt;
-use opendal::{EntryMode, Operator};
+use opendal::Operator;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
-use crate::entry;
-use crate::form;
-use crate::integrity::RealIntegrityProvider;
 use ugoite_core::error::{AppError, ErrorCode};
-
-const ASSET_FORM_NAME: &str = "Assets";
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct AssetInfo {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-    pub link: String,
-    pub uploaded_at: String,
-}
-
+use ugoite_core::query::{
+    AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+};
+pub use ugoite_domain::entry::AssetReference;
+use ugoite_domain::form::{sql_column_name, sql_relation_name};
+use ugoite_domain::id::validate_asset_id;
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AssetContent {
-    pub info: AssetInfo,
     pub bytes: Vec<u8>,
 }
 
-fn asset_form_definition() -> serde_json::Value {
-    serde_json::json!({
-        "name": ASSET_FORM_NAME,
-        "version": 1,
-        "fields": {
-            "name": {"type": "string", "required": true},
-            "link": {"type": "string", "required": true},
-            "uploaded_at": {"type": "timestamp_tz", "required": true}
-        },
-        "allow_extra_attributes": "deny"
-    })
+#[derive(Debug)]
+pub(crate) enum AssetDeleteConflict {
+    Visible,
+    Hidden,
 }
 
-async fn ensure_asset_form(op: &Operator, ws_path: &str) -> Result<()> {
-    form::upsert_metadata_form(op, ws_path, &asset_form_definition()).await
+impl std::fmt::Display for AssetDeleteConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Visible => formatter.write_str("Asset is referenced by an authorized entry"),
+            Self::Hidden => formatter.write_str("Asset cannot be deleted while it is in use"),
+        }
+    }
 }
 
-fn space_id_from_ws_path(ws_path: &str) -> String {
-    ws_path
-        .trim_end_matches('/')
-        .split('/')
-        .next_back()
-        .unwrap_or(ws_path)
-        .to_string()
-}
+impl std::error::Error for AssetDeleteConflict {}
 
-fn build_asset_entry_content(name: &str, link: &str, uploaded_at: &str) -> String {
-    format!(
-        "---\nform: {ASSET_FORM_NAME}\n---\n# {name}\n\n## name\n{name}\n\n## link\n{link}\n\n## uploaded_at\n{uploaded_at}\n"
-    )
+fn asset_path(ws_path: &str, asset_id: &str) -> String {
+    format!("{ws_path}/assets/{asset_id}")
 }
 
 fn normalize_asset_basename(segment: &str) -> Option<String> {
@@ -63,19 +43,13 @@ fn normalize_asset_basename(segment: &str) -> Option<String> {
     if trimmed.is_empty() || matches!(trimmed, "." | "..") {
         return None;
     }
-
     let flattened = trimmed
         .chars()
         .map(|ch| if ch.is_control() { ' ' } else { ch })
         .collect::<String>();
     let single_line = flattened.split_whitespace().collect::<Vec<_>>().join(" ");
-    let metadata_safe = single_line.trim_start_matches('#').trim_start();
-
-    if metadata_safe.is_empty() {
-        None
-    } else {
-        Some(metadata_safe.to_string())
-    }
+    let safe = single_line.trim_start_matches('#').trim_start();
+    (!safe.is_empty()).then(|| safe.to_string())
 }
 
 fn normalize_asset_filename(filename: &str, fallback_name: &str) -> String {
@@ -86,186 +60,241 @@ fn normalize_asset_filename(filename: &str, fallback_name: &str) -> String {
     normalize_asset_basename(basename).unwrap_or_else(|| fallback_name.to_string())
 }
 
+fn reference_with_media_type(
+    asset_id: String,
+    name: String,
+    media_type: &str,
+    bytes: &[u8],
+) -> AssetReference {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    AssetReference {
+        asset_id,
+        name,
+        media_type: media_type.to_string(),
+        size_bytes: bytes.len() as u64,
+        sha256: hex::encode(hasher.finalize()),
+    }
+}
+
+/// Upload bytes and return a typed value ready to be placed in a Form field.
+/// Uploading never creates an Entry or a system Form row.
 pub async fn save_asset(
     op: &Operator,
     ws_path: &str,
     filename: &str,
     content: &[u8],
-) -> Result<AssetInfo> {
-    ensure_asset_form(op, ws_path).await?;
-    let asset_id = Uuid::new_v4().to_string();
-    let safe_name = normalize_asset_filename(filename, &asset_id);
-    let relative_path = format!("assets/{}_{}", asset_id, safe_name);
-    let asset_path = format!("{}/{}", ws_path, relative_path);
-    let link = format!("ugoite://asset/{asset_id}");
-    let uploaded_at = Utc::now().to_rfc3339();
-    op.write(&asset_path, content.to_vec()).await?;
-
-    let space_id = space_id_from_ws_path(ws_path);
-    let integrity = RealIntegrityProvider::from_space(op, &space_id).await?;
-    let entry_content = build_asset_entry_content(&safe_name, &link, &uploaded_at);
-    if let Err(error) =
-        entry::create_entry(op, ws_path, &asset_id, &entry_content, "system", &integrity).await
-    {
-        if let Err(cleanup_error) = op.delete(&asset_path).await {
-            eprintln!(
-                "failed to cleanup asset file after metadata create failure (asset_id={}, path={}): {}",
-                asset_id, asset_path, cleanup_error
-            );
-        }
-        return Err(error);
-    }
-
-    Ok(AssetInfo {
-        id: asset_id,
-        name: safe_name,
-        path: relative_path,
-        link,
-        uploaded_at,
-    })
+) -> Result<AssetReference> {
+    save_asset_with_media_type(op, ws_path, filename, content, "application/octet-stream").await
 }
 
-pub async fn list_assets(op: &Operator, ws_path: &str) -> Result<Vec<AssetInfo>> {
-    ensure_asset_form(op, ws_path).await?;
-    let mut metadata_by_id = std::collections::HashMap::new();
-    if let Ok(form_def) = form::read_form_definition(op, ws_path, ASSET_FORM_NAME).await {
-        if let Ok(rows) = entry::list_form_entry_rows(op, ws_path, ASSET_FORM_NAME, &form_def).await
-        {
-            for row in rows {
-                if row.deleted {
-                    continue;
-                }
-                let fields = row.fields.as_object();
-                let link = fields
-                    .and_then(|f| f.get("link"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let uploaded_at = fields
-                    .and_then(|f| f.get("uploaded_at"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                metadata_by_id.insert(row.entry_id, (link, uploaded_at));
-            }
-        }
-    }
-
-    let assets_path = format!("{}/assets/", ws_path);
-    if !op.exists(&assets_path).await? {
-        return Ok(vec![]);
-    }
-
-    let mut lister = op.lister(&assets_path).await?;
-    let mut assets = Vec::new();
-
-    while let Some(entry) = lister.try_next().await? {
-        let meta = entry.metadata();
-        if meta.mode() == EntryMode::FILE {
-            let name = entry.name().split('/').next_back().unwrap_or("");
-            if name.is_empty() {
-                continue;
-            }
-            if let Some((id, original)) = name.split_once('_') {
-                let (link, uploaded_at) = metadata_by_id
-                    .get(id)
-                    .cloned()
-                    .unwrap_or((format!("ugoite://asset/{id}"), String::new()));
-                assets.push(AssetInfo {
-                    id: id.to_string(),
-                    name: original.to_string(),
-                    path: format!("assets/{}", name),
-                    link,
-                    uploaded_at,
-                });
-            }
-        }
-    }
-
-    Ok(assets)
+pub async fn save_asset_with_media_type(
+    op: &Operator,
+    ws_path: &str,
+    filename: &str,
+    content: &[u8],
+    media_type: &str,
+) -> Result<AssetReference> {
+    let asset_id = Uuid::now_v7().to_string();
+    let safe_name = normalize_asset_filename(filename, &asset_id);
+    op.write(&asset_path(ws_path, &asset_id), content.to_vec())
+        .await?;
+    Ok(reference_with_media_type(
+        asset_id, safe_name, media_type, content,
+    ))
 }
 
 pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<AssetContent> {
-    let info = list_assets(op, ws_path)
-        .await?
-        .into_iter()
-        .find(|asset| asset.id == asset_id)
-        .ok_or_else(|| {
+    validate_asset_id(asset_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    if workspace.asset_is_deleted(asset_id).await? {
+        return Err(AppError::not_found(
+            ErrorCode::AssetNotFound,
+            format!("Asset {asset_id} not found"),
+        )
+        .into());
+    }
+    let path = asset_path(ws_path, asset_id);
+    let bytes = op.read(&path).await.map_err(|error| {
+        if error.kind() == opendal::ErrorKind::NotFound {
             AppError::not_found(
                 ErrorCode::AssetNotFound,
                 format!("Asset {asset_id} not found"),
             )
-        })?;
-    let path = format!("{ws_path}/{}", info.path);
-    let bytes = op.read(&path).await?.to_vec();
-    Ok(AssetContent { info, bytes })
+            .into()
+        } else {
+            anyhow::Error::from(error)
+        }
+    })?;
+    let bytes = bytes.to_vec();
+    // The exact object key carries no logical name or media type. Those
+    // values belong to the Form-owned reference and must not be fabricated.
+    Ok(AssetContent { bytes })
 }
 
-async fn is_asset_referenced(op: &Operator, ws_path: &str, asset_id: &str) -> Result<bool> {
-    let rows = entry::list_entry_rows(op, ws_path).await?;
-    for (_form_name, row) in rows {
-        if row.deleted {
+pub async fn current_asset_reference_exists(
+    op: &Operator,
+    ws_path: &str,
+    asset_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<bool> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    current_asset_reference_exists_in_workspace(&workspace, asset_id, relation_scopes).await
+}
+
+/// Evaluates Asset references against one exact workspace/catalog view and one
+/// closed DataFusion context. The caller supplies the already-derived
+/// relation scopes; absent Forms are not registered as empty discoverable
+/// relations.
+pub async fn current_asset_reference_exists_in_workspace(
+    workspace: &crate::IcebergWorkspace,
+    asset_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<bool> {
+    let forms = workspace.list_forms().await?;
+    let mut policy_forms = BTreeMap::new();
+    let mut queries = Vec::new();
+    let mut list_queries = Vec::new();
+    for form_def in forms {
+        let Some(entry_scope) = relation_scopes
+            .get(&form_def.name.to_ascii_lowercase())
+            .cloned()
+        else {
             continue;
-        }
-        if row
-            .assets
+        };
+        let scalar_fields = form_def
+            .fields
             .iter()
-            .any(|att| att.get("id").and_then(|v| v.as_str()) == Some(asset_id))
+            .filter(|field| field.field_type == ugoite_domain::form::FieldType::AssetReference)
+            .map(|field| sql_column_name(field.id))
+            .collect::<Vec<_>>();
+        let list_fields = form_def
+            .fields
+            .iter()
+            .filter(|field| {
+                field.field_type == ugoite_domain::form::FieldType::List
+                    && field.list_item.as_ref().is_some_and(|item| {
+                        item.field_type == ugoite_domain::form::FieldType::AssetReference
+                    })
+            })
+            .map(|field| sql_column_name(field.id))
+            .collect::<Vec<_>>();
+        let relation_name = sql_relation_name(form_def.id);
+        let relation = format!("\"{}\"", relation_name.replace('"', "\"\""));
+        let literal = format!("'{}'", asset_id.replace('\\', "\\\\").replace('\'', "''"));
+        let scalar = scalar_fields.iter().map(|field| {
+            format!(
+                "\"{}\".asset_id = {literal}",
+                field.to_ascii_lowercase().replace('"', "\"\"")
+            )
+        });
+        let predicates = scalar.collect::<Vec<_>>();
+        if !predicates.is_empty() {
+            queries.push(format!(
+                "SELECT 1 FROM {} WHERE ({})",
+                relation,
+                predicates.join(" OR ")
+            ));
+        }
+        for field in list_fields {
+            list_queries.push((relation_name.clone(), field));
+        }
+        policy_forms.insert(
+            form_def.id,
+            AuthorizedQueryForm {
+                relation: relation_name,
+                entry_scope,
+                columns: form_def
+                    .fields
+                    .iter()
+                    .map(|field| sql_column_name(field.id))
+                    .collect(),
+                system_columns: BTreeSet::from([QuerySystemColumn::ExternalId]),
+            },
+        );
+    }
+    if queries.is_empty() && list_queries.is_empty() {
+        return Ok(false);
+    }
+    let context = workspace
+        .authorized_query_context(AuthorizedQueryPolicy {
+            forms: policy_forms,
+            checkpoint: None,
+            limits: QueryLimits {
+                max_memory_bytes: 64 * 1024 * 1024,
+                max_rows: 1,
+                timeout: std::time::Duration::from_secs(30),
+                max_concurrency: 1,
+                allowed_functions: BTreeSet::new(),
+            },
+        })
+        .await?;
+    if !queries.is_empty() {
+        let sql = format!("{} LIMIT 1", queries.join(" UNION ALL "));
+        if context
+            .execute(&sql)
+            .await?
+            .iter()
+            .any(|batch| batch.num_rows() > 0)
         {
             return Ok(true);
         }
     }
-
+    for (relation, field) in list_queries {
+        if context
+            .contains_struct_list_value(&relation, &field, "asset_id", asset_id)
+            .await?
+        {
+            return Ok(true);
+        }
+    }
     Ok(false)
 }
 
-pub async fn delete_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<()> {
-    if is_asset_referenced(op, ws_path, asset_id).await? {
-        return Err(AppError::conflict(
-            ErrorCode::AssetReferenced,
-            format!("Asset {asset_id} is referenced by an entry"),
-        )
-        .into());
-    }
-
-    let assets_path = format!("{}/assets/", ws_path);
-    if !op.exists(&assets_path).await? {
+pub async fn delete_asset(
+    op: &Operator,
+    ws_path: &str,
+    asset_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<()> {
+    validate_asset_id(asset_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
+    let path = asset_path(ws_path, asset_id);
+    if !op.exists(&path).await? {
         return Err(AppError::not_found(
             ErrorCode::AssetNotFound,
             format!("Asset {asset_id} not found"),
         )
         .into());
     }
-
-    let mut deleted = false;
-    let mut lister = op.lister(&assets_path).await?;
-    while let Some(entry) = lister.try_next().await? {
-        let meta = entry.metadata();
-        if meta.mode() != EntryMode::FILE {
-            continue;
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let publication = crate::publication_context(
+        format!("asset-delete:{asset_id}"),
+        "asset.delete",
+        &serde_json::json!({"asset_id": asset_id}),
+    )?;
+    let deletion = workspace
+        .commit(publication)?
+        .delete_asset(asset_id, relation_scopes)
+        .await;
+    if let Err(error) = deletion {
+        if error
+            .downcast_ref::<AssetDeleteConflict>()
+            .is_some_and(|conflict| matches!(conflict, AssetDeleteConflict::Visible))
+        {
+            return Err(AppError::conflict(
+                ErrorCode::AssetReferenced,
+                "Asset is referenced by an authorized entry",
+            )
+            .into());
         }
-        let name = entry.name().split('/').next_back().unwrap_or("");
-        if name.starts_with(&format!("{}_", asset_id)) {
-            let entry_path = format!("{}/assets/{}", ws_path, name);
-            op.delete(&entry_path).await?;
-            deleted = true;
+        if error
+            .downcast_ref::<AssetDeleteConflict>()
+            .is_some_and(|conflict| matches!(conflict, AssetDeleteConflict::Hidden))
+        {
+            return Err(AppError::forbidden("Asset deletion is not permitted").into());
         }
+        return Err(error);
     }
-
-    if !deleted {
-        return Err(AppError::not_found(
-            ErrorCode::AssetNotFound,
-            format!("Asset {asset_id} not found"),
-        )
-        .into());
-    }
-
-    if let Err(error) = entry::delete_entry(op, ws_path, asset_id, false).await {
-        eprintln!(
-            "failed to cleanup asset metadata entry after file delete (asset_id={}, ws_path={}): {}",
-            asset_id, ws_path, error
-        );
-    }
-
+    op.delete(&path).await?;
     Ok(())
 }

@@ -1,4 +1,4 @@
-export const RESERVED_METADATA_CLASSES = ["SQL", "Assets"] as const;
+export const RESERVED_METADATA_CLASSES = ["SQL"] as const;
 
 type NamedForm = { name: string };
 

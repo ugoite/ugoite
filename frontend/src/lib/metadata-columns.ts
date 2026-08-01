@@ -4,8 +4,6 @@ export const RESERVED_METADATA_COLUMNS = [
   "title",
   "form",
   "tags",
-  "links",
-  "assets",
   "created_at",
   "updated_at",
   "revision_id",

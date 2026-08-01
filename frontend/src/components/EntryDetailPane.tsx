@@ -1,17 +1,8 @@
 import { A } from "@solidjs/router";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
-import { isServer } from "solid-js/web";
 
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
-import { AssetUploader } from "~/components/AssetUploader";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { formatDateTimeLabel } from "~/lib/date-format";
@@ -23,13 +14,12 @@ import {
 } from "~/lib/markdown";
 import { buildEntryMarkdownFromFields } from "~/lib/entry-input";
 import {
-  assetApi,
   entryApi,
   RevisionConflictError,
   searchApi,
 } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
-import type { Asset, Entry, Form, FormField } from "~/lib/types";
+import type { Entry, Form, FormField } from "~/lib/types";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export interface EntryDetailPaneProps {
@@ -382,7 +372,6 @@ function EntryRowReferenceField(props: {
 }
 
 export function EntryDetailPane(props: EntryDetailPaneProps) {
-  const [assets, setAssets] = createSignal<Asset[]>([]);
   const [editorContent, setEditorContent] = createSignal("");
   const [lastSavedContent, setLastSavedContent] = createSignal("");
   const [isDirty, setIsDirty] = createSignal(false);
@@ -502,31 +491,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     editorGuidance().typeIssues.find((issue) =>
       issue.startsWith(`${fieldName}:`)
     );
-
-  let assetsAbortController: AbortController | null = null;
-  createEffect(() => {
-    /* v8 ignore start */
-    if (isServer) return;
-    const wsId = props.spaceId();
-    if (!wsId) return;
-    /* v8 ignore stop */
-    assetsAbortController?.abort();
-    assetsAbortController = new AbortController();
-    assetApi
-      .list(wsId)
-      .then((nextAssets) => {
-        /* v8 ignore start */
-        if (!assetsAbortController?.signal.aborted) setAssets(nextAssets);
-        /* v8 ignore stop */
-      })
-      /* v8 ignore start */
-      .catch(() => {
-        if (!assetsAbortController?.signal.aborted) setAssets([]);
-      });
-    /* v8 ignore stop */
-  });
-
-  onCleanup(() => assetsAbortController?.abort());
 
   createEffect(() => {
     const loadedEntry = entry();
@@ -711,18 +675,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
     /* v8 ignore stop */
     (props.onCancel ?? props.onDeleted)();
-  };
-
-  const handleAssetUpload = async (file: File): Promise<Asset> => {
-    const wsId = props.spaceId();
-    const asset = await assetApi.upload(wsId, file);
-    try {
-      setAssets(await assetApi.list(wsId));
-    } catch {
-      // Keep the successfully uploaded asset even if the follow-up list fails.
-      setAssets((current) => [...current, asset]);
-    }
-    return asset;
   };
 
   const renderFieldControl = (
@@ -1168,21 +1120,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                       </div>
                     </Show>
                   </dl>
-                </section>
-
-                <section class="ui-card ui-entry-side-card">
-                  <div class="mb-4">
-                    <h2 class="ui-entry-side-heading">
-                      {t("entryDetail.attachmentsHeading")}
-                    </h2>
-                    <p class="mt-1 text-xs ui-muted">
-                      {t("entryDetail.attachmentsDescription")}
-                    </p>
-                  </div>
-                  <AssetUploader
-                    onUpload={handleAssetUpload}
-                    assets={assets()}
-                  />
                 </section>
 
                 <section class="ui-card ui-entry-side-card">

@@ -61,7 +61,6 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "agent.revoke",
     "access.get",
     "access.put",
-    "asset.list",
     "asset.upload",
     "asset.delete",
 ];
@@ -700,15 +699,6 @@ pub fn prepare_request(
                 vec![],
             ),
 
-            "asset.list" => (
-                OperationSpec::get("Failed to list assets"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "assets".into(),
-                ],
-                vec![],
-            ),
             "asset.upload" => (
                 OperationSpec::multipart("Failed to upload asset"),
                 vec![
@@ -1156,11 +1146,6 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             HttpMethod::Put,
             "Failed to update access policy",
             RequestBodyKind::Json,
-        ),
-        "asset.list" => (
-            HttpMethod::Get,
-            "Failed to list assets",
-            RequestBodyKind::None,
         ),
         "asset.upload" => (
             HttpMethod::Post,

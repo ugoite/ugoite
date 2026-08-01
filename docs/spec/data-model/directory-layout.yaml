@@ -61,7 +61,7 @@ space_layout:
     asset_save:
       operation: save_asset
       entries:
-      - path_glob: spaces/{space_id}/assets/{asset_id}_{safe_name}
+      - path_glob: spaces/{space_id}/assets/{asset_id}
         kind: file
 user_layout:
   trigger: patch_user_preferences

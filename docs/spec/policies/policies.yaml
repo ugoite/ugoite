@@ -218,19 +218,18 @@ policies:
   - SPEC-SECURITY-SANDBOX
   - SPEC-API-MCP
 - id: POL-012
-  title: Search and Linking as Core Knowledge Operations
-  summary: Treat search, links, and graph-like traversal as first-class capabilities.
+  title: Search and Form References as Core Knowledge Operations
+  summary: Treat search and typed Form references as first-class capabilities.
   description: |
-    This policy elevates retrieval and cross-reference behavior into core
-    product capabilities rather than optional convenience features. It supports
-    user freedom and durable knowledge rules by making searchable, linkable
-    structure part of the canonical system design.
+    This policy elevates retrieval and Form-owned cross-reference behavior into
+    core product capabilities rather than optional convenience features. It
+    supports user freedom and durable knowledge rules by making searchable,
+    typed structure part of the canonical system design.
   linked_philosophies:
   - PHIL-001
   - PHIL-003
   linked_requirements:
   - REQCAT-SEARCH
-  - REQCAT-LINKS
   - REQCAT-INDEX
   linked_specifications:
   - SPEC-FEATURES-REGISTRY

@@ -935,7 +935,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
       {
         id: "project-beta",
@@ -944,7 +943,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-15T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
     ]);
     const forms: Form[] = [
@@ -1029,7 +1027,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
       {
         id: "project-beta",
@@ -1038,7 +1035,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-15T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
     ]);
     const forms: Form[] = [
@@ -1118,7 +1114,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
     ]);
     const forms: Form[] = [
@@ -1196,7 +1191,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-15T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
       {
         id: "project-blank",
@@ -1205,7 +1199,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-16T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
       {
         id: "project-1",
@@ -1214,7 +1207,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
     ]);
     const forms: Form[] = [
@@ -1501,7 +1493,6 @@ describe("CreateEntryDialog", () => {
         updated_at: "2026-02-14T09:30:00Z",
         properties: {},
         tags: [],
-        links: [],
       },
     ]);
     const forms: Form[] = [
@@ -2099,7 +2090,7 @@ describe("CreateEntryDialog", () => {
     );
   });
 
-  it("REQ-FE-037: excludes reserved metadata forms from entry creation", async () => {
+  it("REQ-FE-037: permits an ordinary user form named Assets", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
     const forms = [
@@ -2129,10 +2120,10 @@ describe("CreateEntryDialog", () => {
     ));
 
     const select = screen.getByRole("combobox");
-    expect(screen.queryByRole("option", { name: "Assets" })).not
-      .toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Assets" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
-    expect((select as HTMLSelectElement).value).toBe("Meeting");
+    fireEvent.change(select, { target: { value: "Assets" } });
+    expect((select as HTMLSelectElement).value).toBe("Assets");
   });
 
   it("REQ-FE-037: closes the create-entry dialog from the backdrop and Escape key", async () => {

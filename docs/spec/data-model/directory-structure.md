@@ -61,7 +61,7 @@ Membership operations add `members`, `member_invitations`, and `membership_versi
 |---|---|---|
 | Response signing | `spaces/{space_id}/hmac.json` | response-signing key material |
 | SQL session creation | `spaces/{space_id}/sql_sessions/{session_id}/meta.json` | query/session metadata |
-| Asset upload | `spaces/{space_id}/assets/{asset_id}_{safe_name}` | binary object |
+| Asset upload | `spaces/{space_id}/assets/{asset_id}` | binary object; the key is derived from the stable asset ID |
 | Preference update | `users/{sha256(user_id)}/preferences.json` | portable user UI preferences |
 
 ## Catalog and Iceberg-managed Form storage

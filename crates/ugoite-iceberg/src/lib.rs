@@ -16,7 +16,6 @@ pub mod health;
 pub mod iceberg_store;
 pub mod index;
 pub mod integrity;
-pub mod link;
 pub mod preferences;
 pub mod query_context;
 pub mod sample_data;
@@ -35,11 +34,13 @@ pub use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 
 use anyhow::{anyhow, Context, Result};
 use arrow_array::builder::{
-    BinaryBuilder, FixedSizeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder,
+    BooleanBuilder, Date32Builder, FixedSizeBinaryBuilder, Float32Builder, Float64Builder,
+    Int32Builder, Int64Builder, LargeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder,
+    Time64MicrosecondBuilder, TimestampMicrosecondBuilder, TimestampNanosecondBuilder,
 };
 use arrow_array::{
-    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array,
-    Float64Array, Int32Array, Int64Array, ListArray, RecordBatch, StringArray, StructArray,
+    Array, ArrayRef, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array, Float64Array,
+    Int32Array, Int64Array, LargeBinaryArray, ListArray, RecordBatch, StringArray, StructArray,
     Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -62,16 +63,20 @@ use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, LazyLock, Mutex};
-use tokio::sync::Semaphore;
+use std::time::Duration;
+use tokio::sync::{Notify, Semaphore};
 use ugoite_core::error::AppError;
+use ugoite_core::query::{
+    AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+};
 use ugoite_domain::entry::{
-    EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+    AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{
-    sql_relation_name, Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition,
-    FormField,
+    sql_column_name, sql_relation_name, Compatibility, FieldType, FormChange, FormChangeSet,
+    FormDefinition, FormField, ListItemDefinition,
 };
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
@@ -217,6 +222,144 @@ pub struct CommitReceipt {
 pub struct SpaceCommitCoordinator {
     workspace: IcebergWorkspace,
     publication: PublicationContext,
+    #[cfg(debug_assertions)]
+    validation_gate: Option<Arc<TestValidationGate>>,
+}
+
+/// Debug-only synchronization used by the deterministic publication race
+/// tests. It is absent from release builds and cannot affect production
+/// scheduling or persistence.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct TestValidationGate {
+    reached: std::sync::atomic::AtomicBool,
+    entered: Notify,
+    release: Notify,
+}
+
+#[cfg(debug_assertions)]
+impl TestValidationGate {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            reached: std::sync::atomic::AtomicBool::new(false),
+            entered: Notify::new(),
+            release: Notify::new(),
+        })
+    }
+
+    pub async fn wait_until_entered(&self) {
+        while !self.reached.load(std::sync::atomic::Ordering::Acquire) {
+            self.entered.notified().await;
+        }
+    }
+
+    pub fn release(&self) {
+        self.release.notify_one();
+    }
+
+    async fn pause(&self) {
+        self.reached
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.entered.notify_waiters();
+        self.release.notified().await;
+    }
+}
+
+#[cfg(debug_assertions)]
+static TEST_VALIDATION_GATE: LazyLock<Mutex<Option<Arc<TestValidationGate>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn install_test_validation_gate(gate: Arc<TestValidationGate>) {
+    *TEST_VALIDATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
+}
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn clear_test_validation_gate() {
+    *TEST_VALIDATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+#[cfg(debug_assertions)]
+fn current_test_validation_gate() -> Option<Arc<TestValidationGate>> {
+    TEST_VALIDATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+/// Debug-only synchronization for proving recovery after an immutable
+/// publication has been written but before its Catalog Head CAS. It is not
+/// compiled into release builds and exposes no production mutation bypass.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct TestPublicationGate {
+    reached: std::sync::atomic::AtomicBool,
+    entered: Notify,
+    release: Notify,
+}
+
+#[cfg(debug_assertions)]
+impl TestPublicationGate {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            reached: std::sync::atomic::AtomicBool::new(false),
+            entered: Notify::new(),
+            release: Notify::new(),
+        })
+    }
+
+    pub async fn wait_until_entered(&self) {
+        while !self.reached.load(std::sync::atomic::Ordering::Acquire) {
+            self.entered.notified().await;
+        }
+    }
+
+    pub fn release(&self) {
+        self.release.notify_one();
+    }
+
+    async fn pause(&self) {
+        self.reached
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.entered.notify_waiters();
+        self.release.notified().await;
+    }
+}
+
+#[cfg(debug_assertions)]
+static TEST_PUBLICATION_GATE: LazyLock<Mutex<Option<Arc<TestPublicationGate>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn install_test_publication_gate(gate: Arc<TestPublicationGate>) {
+    *TEST_PUBLICATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
+}
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn clear_test_publication_gate() {
+    *TEST_PUBLICATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+#[cfg(debug_assertions)]
+fn current_test_publication_gate() -> Option<Arc<TestPublicationGate>> {
+    TEST_PUBLICATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 const MAX_PUBLICATION_ATTEMPTS: usize = 3;
@@ -348,6 +491,8 @@ impl IcebergWorkspace {
         Ok(SpaceCommitCoordinator {
             workspace: self.clone(),
             publication,
+            #[cfg(debug_assertions)]
+            validation_gate: current_test_validation_gate(),
         })
     }
 
@@ -623,7 +768,11 @@ impl IcebergWorkspace {
                 .field_by_id(field.id.get())
                 .context("Iceberg schema is missing a stable Form field ID")?;
             if physical.field_type.as_ref()
-                != &iceberg_type(&evolved_field.field_type, field.id.get())
+                != &iceberg_type(
+                    &evolved_field.field_type,
+                    field.id.get(),
+                    evolved_field.list_item.as_ref(),
+                )
             {
                 return Err(anyhow!(
                     "Iceberg schema is inconsistent with the existing Form definition"
@@ -651,7 +800,7 @@ impl IcebergWorkspace {
                 Arc::new(NestedField::new(
                     field.id.get(),
                     field.name.clone(),
-                    iceberg_type(&field.field_type, field.id.get()),
+                    iceberg_type(&field.field_type, field.id.get(), field.list_item.as_ref()),
                     false,
                 ))
             }));
@@ -670,7 +819,11 @@ impl IcebergWorkspace {
             space_catalog
                 .replace_table_metadata(table.identifier(), metadata)
                 .await?;
-            return self.load_form(changes.form_id).await;
+            // The attempt remains bound to the pre-publication Head.  Its
+            // static providers must not be refreshed behind that boundary;
+            // the value we just derived is the authoritative post-commit
+            // Form returned to the caller.
+            return Ok(evolved);
         }
         if additions.is_empty() {
             let tx = Transaction::new(&table);
@@ -687,7 +840,7 @@ impl IcebergWorkspace {
         for field in additions {
             schema_action = schema_action.add_column(AddColumn::optional(
                 &field.name,
-                iceberg_type(&field.field_type, field.id.get()),
+                iceberg_type(&field.field_type, field.id.get(), field.list_item.as_ref()),
             ));
         }
         let transaction = schema_action.apply(tx)?;
@@ -703,11 +856,241 @@ impl IcebergWorkspace {
         self.load_form(changes.form_id).await
     }
 
+    async fn validate_row_reference_targets(
+        &self,
+        form_id: FormId,
+        revisions: &[EntryRevision],
+        relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    ) -> Result<()> {
+        let form = self.load_form(form_id).await?;
+        let target_forms = self
+            .list_forms()
+            .await?
+            .into_iter()
+            .map(|form| (form.id, form))
+            .collect::<HashMap<_, _>>();
+        let pending_entry_ids = revisions
+            .iter()
+            .filter(|revision| {
+                !matches!(
+                    revision.operation,
+                    EntryOperation::Delete | EntryOperation::Restore
+                )
+            })
+            .flat_map(|revision| {
+                [
+                    (!revision.entry.external_id.is_empty())
+                        .then(|| revision.entry.external_id.clone()),
+                    Some(revision.entry_id.to_string()),
+                ]
+                .into_iter()
+                .flatten()
+                .map(move |entry_id| (revision.form_id, entry_id))
+            })
+            .collect::<BTreeSet<_>>();
+        let mut references = BTreeSet::<(FormId, String)>::new();
+        for revision in revisions {
+            if matches!(
+                revision.operation,
+                EntryOperation::Delete | EntryOperation::Restore
+            ) {
+                continue;
+            }
+            for field in &form.fields {
+                let Some(value) = revision.values.get(&field.id) else {
+                    continue;
+                };
+                match (&field.field_type, value) {
+                    (FieldType::RowReference, FieldValue::String(entry_id)) => {
+                        let target_form = field.reference_form.ok_or_else(|| {
+                            anyhow!("row_reference field '{}' has no target Form", field.name)
+                        })?;
+                        references.insert((target_form, entry_id.clone()));
+                    }
+                    (FieldType::List, FieldValue::List(values))
+                        if field
+                            .list_item
+                            .as_ref()
+                            .is_some_and(|item| item.field_type == FieldType::RowReference) =>
+                    {
+                        let target_form = field
+                            .list_item
+                            .as_ref()
+                            .and_then(|item| item.reference_form)
+                            .ok_or_else(|| {
+                                anyhow!(
+                                    "row_reference list field '{}' has no target Form",
+                                    field.name
+                                )
+                            })?;
+                        for value in values {
+                            if let FieldValue::String(entry_id) = value {
+                                references.insert((target_form, entry_id.clone()));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if references.is_empty() {
+            return Ok(());
+        }
+
+        let mut authorized_forms = BTreeMap::new();
+        for (target_form_id, _) in &references {
+            let target_form = target_forms.get(target_form_id).ok_or_else(|| {
+                anyhow!("row_reference target Form {target_form_id} does not exist")
+            })?;
+            let entry_scope = relation_scopes
+                .and_then(|scopes| scopes.get(&target_form.name.to_ascii_lowercase()).cloned())
+                .unwrap_or_else(|| {
+                    if relation_scopes.is_some() {
+                        EntryScope::Only(BTreeSet::new())
+                    } else {
+                        EntryScope::AllCurrent
+                    }
+                });
+            authorized_forms.insert(
+                target_form.id,
+                AuthorizedQueryForm {
+                    relation: sql_relation_name(target_form.id),
+                    entry_scope,
+                    columns: target_form
+                        .fields
+                        .iter()
+                        .map(|field| sql_column_name(field.id))
+                        .collect(),
+                    system_columns: BTreeSet::from([QuerySystemColumn::ExternalId]),
+                },
+            );
+        }
+        let context = self
+            .authorized_query_context(AuthorizedQueryPolicy {
+                forms: authorized_forms,
+                checkpoint: None,
+                limits: QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: 1,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+            })
+            .await?;
+
+        for (target_form_id, entry_id) in references {
+            if pending_entry_ids.contains(&(target_form_id, entry_id.clone())) {
+                continue;
+            }
+            let target_form = target_forms.get(&target_form_id).ok_or_else(|| {
+                anyhow!("row_reference target Form {target_form_id} does not exist")
+            })?;
+            let relation_name = sql_relation_name(target_form.id);
+            let relation = format!("\"{}\"", relation_name.replace('"', "\"\""));
+            let literal = format!("'{}'", entry_id.replace('\'', "''"));
+            let rows = context
+                .execute(&format!(
+                    "SELECT 1 FROM {relation} WHERE _ugoite_id = {literal} LIMIT 1"
+                ))
+                .await?;
+            if rows.iter().map(|batch| batch.num_rows()).sum::<usize>() == 0 {
+                return Err(anyhow!(
+                    "row_reference target Entry '{}' does not belong to Form '{}'",
+                    entry_id,
+                    target_form.name
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn validate_asset_references_not_deleted(
+        &self,
+        form_id: FormId,
+        revisions: &[EntryRevision],
+    ) -> Result<()> {
+        let form = self.load_form(form_id).await?;
+        for revision in revisions {
+            if matches!(
+                revision.operation,
+                EntryOperation::Delete | EntryOperation::Restore
+            ) {
+                continue;
+            }
+            for field in &form.fields {
+                let Some(value) = revision.values.get(&field.id) else {
+                    continue;
+                };
+                let asset_ids = match (&field.field_type, value) {
+                    (FieldType::AssetReference, FieldValue::AssetReference(reference)) => {
+                        vec![reference.asset_id.as_str()]
+                    }
+                    (FieldType::List, FieldValue::List(values))
+                        if field
+                            .list_item
+                            .as_ref()
+                            .is_some_and(|item| item.field_type == FieldType::AssetReference) =>
+                    {
+                        values
+                            .iter()
+                            .filter_map(|value| match value {
+                                FieldValue::AssetReference(reference) => {
+                                    Some(reference.asset_id.as_str())
+                                }
+                                _ => None,
+                            })
+                            .collect()
+                    }
+                    _ => Vec::new(),
+                };
+                for asset_id in asset_ids {
+                    if self.asset_is_deleted(asset_id).await? {
+                        return Err(anyhow!(
+                            "Asset '{}' is unavailable because it was deleted",
+                            asset_id
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn asset_is_deleted(&self, asset_id: &str) -> Result<bool> {
+        self.space_catalog
+            .as_ref()
+            .context("Asset lifecycle requires the OpenDAL-backed SpaceCatalog")?
+            .asset_is_deleted(asset_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn mark_asset_deleted(&self, asset_id: &str) -> Result<()> {
+        self.space_catalog
+            .as_ref()
+            .context("Asset lifecycle requires the OpenDAL-backed SpaceCatalog")?
+            .mark_asset_deleted(asset_id)
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn append_record_batches(
         &self,
         form_id: FormId,
         batches: Vec<RecordBatch>,
         revisions: &[EntryRevision],
+    ) -> Result<CommitReceipt> {
+        self.append_record_batches_inner(form_id, batches, revisions, true)
+            .await
+    }
+
+    async fn append_record_batches_inner(
+        &self,
+        form_id: FormId,
+        batches: Vec<RecordBatch>,
+        revisions: &[EntryRevision],
+        validate_revision_chain: bool,
     ) -> Result<CommitReceipt> {
         if batches.is_empty() || revisions.is_empty() {
             return Err(anyhow!("append batch must not be empty"));
@@ -725,12 +1108,15 @@ impl IcebergWorkspace {
             .iter()
             .map(|revision| revision.entry_id)
             .collect::<Vec<_>>();
-        let mut current = self
-            .read_latest_revisions_for_entries(form_id, &entry_ids)
-            .await?
-            .into_iter()
-            .map(|revision| (revision.entry_id, revision))
-            .collect::<HashMap<_, _>>();
+        let mut current = if validate_revision_chain {
+            self.read_latest_revisions_for_entries(form_id, &entry_ids)
+                .await?
+                .into_iter()
+                .map(|revision| (revision.entry_id, revision))
+                .collect::<HashMap<_, _>>()
+        } else {
+            HashMap::new()
+        };
         let mut seen = std::collections::HashSet::new();
         for revision in revisions {
             if revision.form_id != form.id || revision.form_version != form.version {
@@ -741,26 +1127,30 @@ impl IcebergWorkspace {
             if !seen.insert(revision.revision_id) {
                 return Err(anyhow!("duplicate revision ID in append batch"));
             }
-            let previous = current.get(&revision.entry_id);
-            if let Some(previous) = previous {
-                if revision.expected_version != Some(previous.entry_version)
-                    || revision.parent_revision_id != Some(previous.revision_id)
-                    || revision.entry_version
-                        != previous
-                            .entry_version
-                            .checked_add(1)
-                            .ok_or_else(|| anyhow!("entry version overflow"))?
+            if validate_revision_chain {
+                let previous = current.get(&revision.entry_id);
+                if let Some(previous) = previous {
+                    if revision.expected_version != Some(previous.entry_version)
+                        || revision.parent_revision_id != Some(previous.revision_id)
+                        || revision.entry_version
+                            != previous
+                                .entry_version
+                                .checked_add(1)
+                                .ok_or_else(|| anyhow!("entry version overflow"))?
+                    {
+                        return Err(anyhow!("entry revision conflict"));
+                    }
+                } else if revision.expected_version.is_some()
+                    || revision.parent_revision_id.is_some()
+                    || revision.entry_version != 1
                 {
                     return Err(anyhow!("entry revision conflict"));
                 }
-            } else if revision.expected_version.is_some()
-                || revision.parent_revision_id.is_some()
-                || revision.entry_version != 1
-            {
-                return Err(anyhow!("entry revision conflict"));
             }
             revision.validate_payload(&form)?;
-            current.insert(revision.entry_id, revision.clone());
+            if validate_revision_chain {
+                current.insert(revision.entry_id, revision.clone());
+            }
         }
         validate_batch_revision_metadata(&batches, revisions)?;
         let table_arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
@@ -1125,17 +1515,19 @@ fn checkpoint_query_error(error: anyhow::Error) -> anyhow::Error {
 }
 
 impl SpaceCommitCoordinator {
-    fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
+    async fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
         let catalog = self
             .workspace
             .space_catalog
             .as_ref()
             .context("coordinator is missing its SpaceCatalog")?;
-        let catalog = Arc::new(
-            catalog
-                .new_attempt()
-                .with_publication_context(self.publication.clone()),
-        );
+        let catalog = catalog
+            .new_attempt()
+            .with_publication_context(self.publication.clone())
+            .bind_exact_head()
+            .await?;
+        catalog.claim_command_receipt().await?;
+        let catalog = Arc::new(catalog);
         Ok(IcebergWorkspace {
             catalog: catalog.clone(),
             space_catalog: Some(catalog),
@@ -1147,13 +1539,21 @@ impl SpaceCommitCoordinator {
     }
 
     async fn publication_receipt(&self) -> Result<Option<space_catalog::PublicationReceipt>> {
-        self.workspace
+        let catalog = self
+            .workspace
             .space_catalog
             .as_ref()
-            .context("coordinator is missing its SpaceCatalog")?
-            .publication_receipt(&self.publication)
-            .await
-            .map_err(Into::into)
+            .context("coordinator is missing its SpaceCatalog")?;
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            match catalog.publication_receipt(&self.publication).await {
+                Ok(receipt) => return Ok(receipt),
+                Err(error) if error.to_string().contains("Catalog Head changed") => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(anyhow!(
+            "Catalog Head changed while resolving the command receipt"
+        ))
     }
 
     pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
@@ -1161,7 +1561,7 @@ impl SpaceCommitCoordinator {
             if self.publication_receipt().await?.is_some() {
                 return Ok(());
             }
-            match self.attempt_workspace()?.create_form(form).await {
+            match self.attempt_workspace().await?.create_form(form).await {
                 Ok(()) => return Ok(()),
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
@@ -1175,7 +1575,7 @@ impl SpaceCommitCoordinator {
             if self.publication_receipt().await?.is_some() {
                 return self.workspace.load_form(changes.form_id).await;
             }
-            match self.attempt_workspace()?.evolve_form(changes).await {
+            match self.attempt_workspace().await?.evolve_form(changes).await {
                 Ok(form) => return Ok(form),
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
@@ -1190,6 +1590,16 @@ impl SpaceCommitCoordinator {
         &self,
         form_id: FormId,
         revisions: Vec<EntryRevision>,
+    ) -> Result<CommitReceipt> {
+        self.append_revisions_authorized(form_id, revisions, None)
+            .await
+    }
+
+    pub async fn append_revisions_authorized(
+        &self,
+        form_id: FormId,
+        revisions: Vec<EntryRevision>,
+        relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<CommitReceipt> {
         if let Some(receipt) = self.publication_receipt().await? {
             return Ok(CommitReceipt {
@@ -1230,11 +1640,18 @@ impl SpaceCommitCoordinator {
                     data_file_count: 0,
                 });
             }
-            let mut receipt = match self
-                .attempt_workspace()?
-                .append_revisions(form_id, revisions.clone())
-                .await
-            {
+            let attempt = self.attempt_workspace().await?;
+            attempt
+                .validate_asset_references_not_deleted(form_id, &revisions)
+                .await?;
+            attempt
+                .validate_row_reference_targets(form_id, &revisions, relation_scopes)
+                .await?;
+            #[cfg(debug_assertions)]
+            if let Some(gate) = &self.validation_gate {
+                gate.pause().await;
+            }
+            let mut receipt = match attempt.append_revisions(form_id, revisions.clone()).await {
                 Ok(receipt) => receipt,
                 Err(error) if is_publication_conflict(&error) => continue,
                 Err(error) => return Err(error),
@@ -1253,6 +1670,87 @@ impl SpaceCommitCoordinator {
             return Ok(receipt);
         }
         Err(anyhow!("Catalog Head changed during every append attempt"))
+    }
+
+    pub async fn delete_asset(
+        &self,
+        asset_id: &str,
+        relation_scopes: &BTreeMap<String, ugoite_core::query::EntryScope>,
+    ) -> Result<()> {
+        if self.publication_receipt().await?.is_some() {
+            return Ok(());
+        }
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            if self.publication_receipt().await?.is_some() {
+                return Ok(());
+            }
+            let attempt = self.attempt_workspace().await?;
+            match attempt.asset_is_deleted(asset_id).await {
+                Ok(true) => {
+                    return Err(anyhow!("Asset '{}' is already unavailable", asset_id));
+                }
+                Ok(false) => {}
+                Err(error)
+                    if error
+                        .to_string()
+                        .contains("Asset deletion publication is still in progress") =>
+                {
+                    // A same-command retry may resume a durable Publishing
+                    // marker. Other commands are rejected by the marker's
+                    // exact command identity when publication begins.
+                }
+                Err(error) => return Err(error),
+            }
+            let all_current_scopes = attempt
+                .list_forms()
+                .await?
+                .into_iter()
+                .map(|form| {
+                    (
+                        form.name.to_ascii_lowercase(),
+                        ugoite_core::query::EntryScope::AllCurrent,
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let referenced_anywhere = crate::asset::current_asset_reference_exists_in_workspace(
+                &attempt,
+                asset_id,
+                &all_current_scopes,
+            )
+            .await?;
+            if referenced_anywhere
+                && crate::asset::current_asset_reference_exists_in_workspace(
+                    &attempt,
+                    asset_id,
+                    relation_scopes,
+                )
+                .await?
+            {
+                return Err(anyhow::Error::new(
+                    crate::asset::AssetDeleteConflict::Visible,
+                ));
+            }
+            if referenced_anywhere {
+                // The reference is deliberately not named: the caller is not
+                // authorized to learn which Entry protects the bytes. The
+                // all-current query above still makes deletion fail closed.
+                return Err(anyhow::Error::new(
+                    crate::asset::AssetDeleteConflict::Hidden,
+                ));
+            }
+            #[cfg(debug_assertions)]
+            if let Some(gate) = &self.validation_gate {
+                gate.pause().await;
+            }
+            match attempt.mark_asset_deleted(asset_id).await {
+                Ok(()) => return Ok(()),
+                Err(error) if is_publication_conflict(&error) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(anyhow!(
+            "Catalog Head changed during every asset delete attempt"
+        ))
     }
 }
 
@@ -1318,7 +1816,9 @@ fn form_from_table(table: &iceberg::table::Table, form_id: FormId) -> Result<For
                 field.id.get()
             ));
         };
-        if physical.field_type.as_ref() != &iceberg_type(&field.field_type, field.id.get()) {
+        if physical.field_type.as_ref()
+            != &iceberg_type(&field.field_type, field.id.get(), field.list_item.as_ref())
+        {
             return Err(anyhow!(
                 "Iceberg field ID {} does not match the Form field type",
                 field.id.get()
@@ -1353,36 +1853,8 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
                 false,
             )))),
         ),
-        required_type(
-            15,
-            "ugoite_entry_links",
-            Type::List(ListType::new(Arc::new(NestedField::new(
-                nested_field_id(15, 0),
-                "element",
-                Type::Struct(StructType::new(vec![
-                    optional(nested_field_id(15, 1), "id", PrimitiveType::String),
-                    optional(nested_field_id(15, 2), "target", PrimitiveType::String),
-                    optional(nested_field_id(15, 3), "kind", PrimitiveType::String),
-                ])),
-                false,
-            )))),
-        ),
         required(16, "ugoite_entry_created_at", PrimitiveType::Timestamptz),
         required(17, "ugoite_entry_updated_at", PrimitiveType::Timestamptz),
-        required_type(
-            18,
-            "ugoite_entry_assets",
-            Type::List(ListType::new(Arc::new(NestedField::new(
-                nested_field_id(18, 0),
-                "element",
-                Type::Struct(StructType::new(vec![
-                    optional(nested_field_id(18, 1), "id", PrimitiveType::String),
-                    optional(nested_field_id(18, 2), "name", PrimitiveType::String),
-                    optional(nested_field_id(18, 3), "path", PrimitiveType::String),
-                ])),
-                false,
-            )))),
-        ),
         required_type(
             19,
             "ugoite_entry_integrity",
@@ -1400,7 +1872,11 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
         fields.push(Arc::new(NestedField::new(
             physical_field_id(field),
             field.name.clone(),
-            iceberg_type(&field.field_type, physical_field_id(field)),
+            iceberg_type(
+                &field.field_type,
+                physical_field_id(field),
+                field.list_item.as_ref(),
+            ),
             // Revision tables also contain tombstones. Requiredness is enforced
             // by EntryRevision validation and Form metadata; physical columns
             // must remain nullable so a delete can carry no value payload.
@@ -1420,7 +1896,7 @@ fn required_type(id: i32, name: &str, kind: Type) -> Arc<NestedField> {
     Arc::new(NestedField::new(id, name, kind, true))
 }
 
-fn iceberg_type(kind: &FieldType, parent_id: i32) -> Type {
+fn iceberg_type(kind: &FieldType, parent_id: i32, list_item: Option<&ListItemDefinition>) -> Type {
     match kind {
         FieldType::Boolean => Type::Primitive(PrimitiveType::Boolean),
         FieldType::Integer => Type::Primitive(PrimitiveType::Int),
@@ -1438,12 +1914,18 @@ fn iceberg_type(kind: &FieldType, parent_id: i32) -> Type {
         FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
             Type::Primitive(PrimitiveType::String)
         }
-        FieldType::List => Type::List(ListType::new(Arc::new(NestedField::new(
-            nested_field_id(parent_id, 0),
-            "element",
-            Type::Primitive(PrimitiveType::String),
-            false,
-        )))),
+        FieldType::AssetReference => asset_reference_type(parent_id),
+        FieldType::List => {
+            let item_kind = list_item
+                .map(|item| &item.field_type)
+                .unwrap_or(&FieldType::String);
+            Type::List(ListType::new(Arc::new(NestedField::new(
+                nested_field_id(parent_id, 0),
+                "element",
+                iceberg_type(item_kind, nested_field_id(parent_id, 0), None),
+                false,
+            ))))
+        }
         FieldType::ObjectList => {
             let fields = vec![
                 Arc::new(NestedField::new(
@@ -1473,6 +1955,32 @@ fn iceberg_type(kind: &FieldType, parent_id: i32) -> Type {
             ))))
         }
     }
+}
+
+fn asset_reference_type(parent_id: i32) -> Type {
+    Type::Struct(StructType::new(vec![
+        optional(
+            nested_field_id(parent_id, 1),
+            "asset_id",
+            PrimitiveType::String,
+        ),
+        optional(nested_field_id(parent_id, 2), "name", PrimitiveType::String),
+        optional(
+            nested_field_id(parent_id, 3),
+            "media_type",
+            PrimitiveType::String,
+        ),
+        optional(
+            nested_field_id(parent_id, 4),
+            "size_bytes",
+            PrimitiveType::Long,
+        ),
+        optional(
+            nested_field_id(parent_id, 5),
+            "sha256",
+            PrimitiveType::String,
+        ),
+    ]))
 }
 
 fn nested_field_id(parent_id: i32, offset: i32) -> i32 {
@@ -1590,12 +2098,6 @@ fn revision_batch_from_values(
             revisions,
             |revision| &revision.entry.tags,
         )?,
-        link_list_array(
-            schema
-                .field_with_name("ugoite_entry_links")
-                .context("missing links metadata field")?,
-            revisions,
-        )?,
         Arc::new(
             TimestampMicrosecondArray::from(
                 revisions
@@ -1614,12 +2116,6 @@ fn revision_batch_from_values(
             )
             .with_timezone("+00:00"),
         ),
-        asset_list_array(
-            schema
-                .field_with_name("ugoite_entry_assets")
-                .context("missing assets metadata field")?,
-            revisions,
-        )?,
         integrity_array(
             schema
                 .field_with_name("ugoite_entry_integrity")
@@ -1685,65 +2181,6 @@ fn string_list_array(
     Ok(Arc::new(builder.finish()))
 }
 
-fn link_list_array(
-    arrow_field: &arrow_schema::Field,
-    revisions: &[EntryRevision],
-) -> Result<ArrayRef> {
-    struct_list_array(arrow_field, revisions, |revision| {
-        revision
-            .entry
-            .links
-            .iter()
-            .map(|link| [&link.id, &link.target, &link.kind])
-            .collect()
-    })
-}
-
-fn asset_list_array(
-    arrow_field: &arrow_schema::Field,
-    revisions: &[EntryRevision],
-) -> Result<ArrayRef> {
-    struct_list_array(arrow_field, revisions, |revision| {
-        revision
-            .entry
-            .assets
-            .iter()
-            .map(|asset| [&asset.id, &asset.name, &asset.path])
-            .collect()
-    })
-}
-
-fn struct_list_array<'a>(
-    arrow_field: &arrow_schema::Field,
-    revisions: &'a [EntryRevision],
-    values: impl Fn(&'a EntryRevision) -> Vec<[&'a String; 3]>,
-) -> Result<ArrayRef> {
-    let element_field = match arrow_field.data_type() {
-        arrow_schema::DataType::List(element) => element.clone(),
-        kind => return Err(anyhow!("metadata list has invalid Arrow type: {kind:?}")),
-    };
-    let fields = match element_field.data_type() {
-        arrow_schema::DataType::Struct(fields) => fields.clone(),
-        kind => return Err(anyhow!("metadata list has invalid element type: {kind:?}")),
-    };
-    let mut builder = ListBuilder::new(StructBuilder::from_fields(fields, revisions.len()))
-        .with_field(element_field);
-    for revision in revisions {
-        for row in values(revision) {
-            for (index, value) in row.into_iter().enumerate() {
-                builder
-                    .values()
-                    .field_builder::<StringBuilder>(index)
-                    .context("invalid metadata struct field builder")?
-                    .append_value(value);
-            }
-            builder.values().append(true);
-        }
-        builder.append(true);
-    }
-    Ok(Arc::new(builder.finish()))
-}
-
 fn integrity_array(
     arrow_field: &arrow_schema::Field,
     revisions: &[EntryRevision],
@@ -1778,6 +2215,366 @@ fn revision_id_array(revisions: Vec<Option<RevisionId>>) -> Result<ArrayRef> {
         }
     }
     Ok(Arc::new(builder.finish()))
+}
+
+fn typed_list_array(
+    field: &FormField,
+    arrow_field: &arrow_schema::Field,
+    values: Vec<Option<&FieldValue>>,
+) -> Result<ArrayRef> {
+    let element_field = match arrow_field.data_type() {
+        arrow_schema::DataType::List(element) => element.clone(),
+        other => return Err(anyhow!("list field has invalid Arrow type: {other:?}")),
+    };
+    let item_kind = field
+        .list_item
+        .as_ref()
+        .map(|item| &item.field_type)
+        .unwrap_or(&FieldType::String);
+    if matches!(item_kind, FieldType::AssetReference) {
+        let fields = match element_field.data_type() {
+            arrow_schema::DataType::Struct(fields) => fields.clone(),
+            other => {
+                return Err(anyhow!(
+                    "asset reference list has invalid element type: {other:?}"
+                ))
+            }
+        };
+        let mut builder = ListBuilder::new(StructBuilder::from_fields(fields, values.len()))
+            .with_field(element_field);
+        for value in values {
+            if let Some(FieldValue::List(items)) = value {
+                for item in items {
+                    if matches!(item, FieldValue::Null) {
+                        append_null_asset_reference(builder.values())?;
+                    } else {
+                        append_asset_reference(builder.values(), item)?;
+                    }
+                }
+                builder.append(true);
+            } else {
+                builder.append(false);
+            }
+        }
+        return Ok(Arc::new(builder.finish()));
+    }
+
+    macro_rules! build_list {
+        ($builder:expr, $handler:expr) => {{
+            let mut builder = ListBuilder::new($builder).with_field(element_field.clone());
+            for value in values {
+                if let Some(FieldValue::List(items)) = value {
+                    for item in items {
+                        if matches!(item, FieldValue::Null) {
+                            builder.values().append_null();
+                        } else {
+                            ($handler)(builder.values(), item)?;
+                        }
+                    }
+                    builder.append(true);
+                } else {
+                    builder.append(false);
+                }
+            }
+            return Ok(Arc::new(builder.finish()));
+        }};
+    }
+
+    match item_kind {
+        FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
+            build_list!(
+                StringBuilder::new(),
+                |builder: &mut StringBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid string item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Boolean => {
+            build_list!(
+                BooleanBuilder::new(),
+                |builder: &mut BooleanBuilder, item: &FieldValue| {
+                    let FieldValue::Boolean(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid boolean item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(*value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Integer => {
+            build_list!(
+                Int32Builder::new(),
+                |builder: &mut Int32Builder, item: &FieldValue| {
+                    let FieldValue::Integer(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid integer item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(i32::try_from(*value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Long => {
+            build_list!(
+                Int64Builder::new(),
+                |builder: &mut Int64Builder, item: &FieldValue| {
+                    let FieldValue::Integer(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid long item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(*value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Float => {
+            build_list!(
+                Float32Builder::new(),
+                |builder: &mut Float32Builder, item: &FieldValue| {
+                    let value = match item {
+                        FieldValue::Integer(value) => *value as f32,
+                        FieldValue::Number(value) => *value as f32,
+                        _ => {
+                            return Err(anyhow!(
+                                "typed list field '{}' contains an invalid float item",
+                                field.name
+                            ))
+                        }
+                    };
+                    builder.append_value(value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Double => {
+            build_list!(
+                Float64Builder::new(),
+                |builder: &mut Float64Builder, item: &FieldValue| {
+                    let value = match item {
+                        FieldValue::Integer(value) => *value as f64,
+                        FieldValue::Number(value) => *value,
+                        _ => {
+                            return Err(anyhow!(
+                                "typed list field '{}' contains an invalid double item",
+                                field.name
+                            ))
+                        }
+                    };
+                    builder.append_value(value);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Date => {
+            build_list!(
+                Date32Builder::new(),
+                |builder: &mut Date32Builder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid date item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_date(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Time => {
+            build_list!(
+                Time64MicrosecondBuilder::new(),
+                |builder: &mut Time64MicrosecondBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid time item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_time_micros(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Timestamp => {
+            build_list!(
+                TimestampMicrosecondBuilder::new(),
+                |builder: &mut TimestampMicrosecondBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid timestamp item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_wall_timestamp_micros(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::TimestampTz => {
+            build_list!(
+                TimestampMicrosecondBuilder::new().with_timezone("+00:00"),
+                |builder: &mut TimestampMicrosecondBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid timestamp item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_zoned_timestamp_micros(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::TimestampNs => {
+            build_list!(
+                TimestampNanosecondBuilder::new(),
+                |builder: &mut TimestampNanosecondBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid nanosecond timestamp item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_wall_timestamp_nanos(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::TimestampTzNs => {
+            build_list!(
+                TimestampNanosecondBuilder::new().with_timezone("+00:00"),
+                |builder: &mut TimestampNanosecondBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid nanosecond timestamp item",
+                            field.name
+                        ));
+                    };
+                    builder.append_option(parse_zoned_timestamp_nanos(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Uuid => {
+            build_list!(
+                FixedSizeBinaryBuilder::with_capacity(values.len(), 16),
+                |builder: &mut FixedSizeBinaryBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid UUID item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(Uuid::parse_str(value)?.as_bytes())?;
+                    Ok(())
+                }
+            );
+        }
+        FieldType::Binary => {
+            build_list!(
+                LargeBinaryBuilder::new(),
+                |builder: &mut LargeBinaryBuilder, item: &FieldValue| {
+                    let FieldValue::String(value) = item else {
+                        return Err(anyhow!(
+                            "typed list field '{}' contains an invalid binary item",
+                            field.name
+                        ));
+                    };
+                    builder.append_value(BASE64.decode(value)?);
+                    Ok(())
+                }
+            );
+        }
+        FieldType::List | FieldType::ObjectList | FieldType::AssetReference => Err(anyhow!(
+            "typed list field '{}' has an unsupported nested item type",
+            field.name
+        )),
+    }
+}
+
+fn asset_reference_array(
+    arrow_field: &arrow_schema::Field,
+    values: Vec<Option<&FieldValue>>,
+) -> Result<ArrayRef> {
+    let fields = match arrow_field.data_type() {
+        arrow_schema::DataType::Struct(fields) => fields.clone(),
+        other => return Err(anyhow!("asset reference has invalid Arrow type: {other:?}")),
+    };
+    let mut builder = StructBuilder::from_fields(fields, values.len());
+    for value in values {
+        match value {
+            Some(FieldValue::Null) | None => append_null_asset_reference(&mut builder)?,
+            Some(value) => append_asset_reference(&mut builder, value)?,
+        }
+    }
+    Ok(Arc::new(builder.finish()))
+}
+
+fn append_asset_reference(builder: &mut StructBuilder, value: &FieldValue) -> Result<()> {
+    let FieldValue::AssetReference(reference) = value else {
+        return Err(anyhow!("asset reference list contains a non-asset value"));
+    };
+    builder
+        .field_builder::<StringBuilder>(0)
+        .context("invalid asset_id field builder")?
+        .append_value(&reference.asset_id);
+    builder
+        .field_builder::<StringBuilder>(1)
+        .context("invalid asset name field builder")?
+        .append_value(&reference.name);
+    builder
+        .field_builder::<StringBuilder>(2)
+        .context("invalid asset media type field builder")?
+        .append_value(&reference.media_type);
+    builder
+        .field_builder::<Int64Builder>(3)
+        .context("invalid asset size field builder")?
+        .append_value(i64::try_from(reference.size_bytes)?);
+    builder
+        .field_builder::<StringBuilder>(4)
+        .context("invalid asset checksum field builder")?
+        .append_value(&reference.sha256);
+    builder.append(true);
+    Ok(())
+}
+
+fn append_null_asset_reference(builder: &mut StructBuilder) -> Result<()> {
+    builder
+        .field_builder::<StringBuilder>(0)
+        .context("invalid asset_id field builder")?
+        .append_null();
+    builder
+        .field_builder::<StringBuilder>(1)
+        .context("invalid asset name field builder")?
+        .append_null();
+    builder
+        .field_builder::<StringBuilder>(2)
+        .context("invalid asset media type field builder")?
+        .append_null();
+    builder
+        .field_builder::<Int64Builder>(3)
+        .context("invalid asset size field builder")?
+        .append_null();
+    builder
+        .field_builder::<StringBuilder>(4)
+        .context("invalid asset checksum field builder")?
+        .append_null();
+    builder.append(false);
+    Ok(())
 }
 
 fn field_array(
@@ -1842,26 +2639,8 @@ fn field_array(
                 })
                 .collect::<Vec<_>>(),
         ))),
-        FieldType::List => {
-            let element_field = match arrow_field.data_type() {
-                arrow_schema::DataType::List(element) => element.clone(),
-                other => return Err(anyhow!("list field has invalid Arrow type: {other:?}")),
-            };
-            let mut builder = ListBuilder::new(StringBuilder::new()).with_field(element_field);
-            for value in values {
-                if let Some(FieldValue::List(items)) = value {
-                    for item in items {
-                        if let FieldValue::String(item) = item {
-                            builder.values().append_value(item);
-                        }
-                    }
-                    builder.append(true);
-                } else {
-                    builder.append(false);
-                }
-            }
-            Ok(Arc::new(builder.finish()))
-        }
+        FieldType::List => Ok(typed_list_array(field, arrow_field, values)?),
+        FieldType::AssetReference => Ok(asset_reference_array(arrow_field, values)?),
         FieldType::ObjectList => {
             let element_field = match arrow_field.data_type() {
                 arrow_schema::DataType::List(element) => element.clone(),
@@ -2016,7 +2795,7 @@ fn field_array(
             Ok(Arc::new(builder.finish()))
         }
         FieldType::Binary => {
-            let mut builder = BinaryBuilder::with_capacity(values.len(), 0);
+            let mut builder = LargeBinaryBuilder::with_capacity(values.len(), 0);
             for value in values {
                 match value {
                     Some(FieldValue::String(value)) => builder.append_value(BASE64.decode(value)?),
@@ -2145,12 +2924,10 @@ fn revisions_from_batch(
     let extra_attributes = required_column::<StringArray>(batch, "extra_attributes")?;
     let titles = required_column::<StringArray>(batch, "ugoite_entry_title")?;
     let tags = required_column::<ListArray>(batch, "ugoite_entry_tags")?;
-    let links = required_column::<ListArray>(batch, "ugoite_entry_links")?;
     let created_at =
         required_column::<TimestampMicrosecondArray>(batch, "ugoite_entry_created_at")?;
     let updated_at =
         required_column::<TimestampMicrosecondArray>(batch, "ugoite_entry_updated_at")?;
-    let assets = required_column::<ListArray>(batch, "ugoite_entry_assets")?;
     let integrity = required_column::<StructArray>(batch, "ugoite_entry_integrity")?;
     let deleted = required_column::<BooleanArray>(batch, "ugoite_entry_deleted")?;
     let deleted_at =
@@ -2170,7 +2947,12 @@ fn revisions_from_batch(
                 // An older file predates this optional Form field.
                 continue;
             };
-            if let Some(value) = field_value_at(column.as_ref(), row, &field.field_type)? {
+            if let Some(value) = field_value_at(
+                column.as_ref(),
+                row,
+                &field.field_type,
+                field.list_item.as_ref(),
+            )? {
                 values.insert(field.id, value);
             }
         }
@@ -2204,10 +2986,8 @@ fn revisions_from_batch(
                     .to_string(),
                 title: required_string(titles, row, "ugoite_entry_title")?.to_string(),
                 tags: string_list_at(tags, row)?,
-                links: links_at(links, row)?,
                 created_at_micros: required_i64(&created_at, row, "ugoite_entry_created_at")?,
                 updated_at_micros: required_i64(&updated_at, row, "ugoite_entry_updated_at")?,
-                assets: assets_at(assets, row)?,
                 integrity: integrity_at(integrity, row)?,
                 deleted: required_bool(deleted, row, "ugoite_entry_deleted")?,
                 deleted_at_micros: optional_i64(&deleted_at, row),
@@ -2313,40 +3093,23 @@ fn struct_string_at(array: &StructArray, name: &str, row: usize) -> String {
         .unwrap_or_default()
 }
 
-fn links_at(array: &ListArray, row: usize) -> Result<Vec<EntryLink>> {
-    if array.is_null(row) {
-        return Ok(Vec::new());
-    }
-    let values = metadata_rows_at(array, row)?;
-    let values = values
-        .as_any()
-        .downcast_ref::<StructArray>()
-        .expect("validated metadata struct array");
-    Ok((0..values.len())
-        .map(|index| EntryLink {
-            id: struct_string_at(values, "id", index),
-            target: struct_string_at(values, "target", index),
-            kind: struct_string_at(values, "kind", index),
-        })
-        .collect())
+fn struct_i64_at(array: &StructArray, name: &str, row: usize) -> i64 {
+    array
+        .column_by_name(name)
+        .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
+        .filter(|column| !column.is_null(row))
+        .map(|column| column.value(row))
+        .unwrap_or_default()
 }
 
-fn assets_at(array: &ListArray, row: usize) -> Result<Vec<EntryAsset>> {
-    if array.is_null(row) {
-        return Ok(Vec::new());
-    }
-    let values = metadata_rows_at(array, row)?;
-    let values = values
-        .as_any()
-        .downcast_ref::<StructArray>()
-        .expect("validated metadata struct array");
-    Ok((0..values.len())
-        .map(|index| EntryAsset {
-            id: struct_string_at(values, "id", index),
-            name: struct_string_at(values, "name", index),
-            path: struct_string_at(values, "path", index),
-        })
-        .collect())
+fn asset_reference_at(array: &StructArray, row: usize) -> Result<FieldValue> {
+    Ok(FieldValue::AssetReference(AssetReference {
+        asset_id: struct_string_at(array, "asset_id", row),
+        name: struct_string_at(array, "name", row),
+        media_type: struct_string_at(array, "media_type", row),
+        size_bytes: u64::try_from(struct_i64_at(array, "size_bytes", row))?,
+        sha256: struct_string_at(array, "sha256", row),
+    }))
 }
 
 fn integrity_at(array: &StructArray, row: usize) -> Result<EntryIntegrity> {
@@ -2359,7 +3122,12 @@ fn integrity_at(array: &StructArray, row: usize) -> Result<EntryIntegrity> {
     })
 }
 
-fn field_value_at(column: &dyn Array, row: usize, kind: &FieldType) -> Result<Option<FieldValue>> {
+fn field_value_at(
+    column: &dyn Array,
+    row: usize,
+    kind: &FieldType,
+    list_item: Option<&ListItemDefinition>,
+) -> Result<Option<FieldValue>> {
     if column.is_null(row) {
         return Ok(None);
     }
@@ -2459,23 +3227,19 @@ fn field_value_at(column: &dyn Array, row: usize, kind: &FieldType) -> Result<Op
             BASE64.encode(
                 column
                     .as_any()
-                    .downcast_ref::<BinaryArray>()
+                    .downcast_ref::<LargeBinaryArray>()
                     .ok_or_else(invalid)?
                     .value(row),
             ),
         ),
-        FieldType::List => FieldValue::List(
-            string_list_at(
-                column
-                    .as_any()
-                    .downcast_ref::<ListArray>()
-                    .ok_or_else(invalid)?,
-                row,
-            )?
-            .into_iter()
-            .map(FieldValue::String)
-            .collect(),
-        ),
+        FieldType::List => FieldValue::List(typed_list_at(
+            column
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .ok_or_else(invalid)?,
+            row,
+            list_item,
+        )?),
         FieldType::ObjectList => FieldValue::List(object_list_at(
             column
                 .as_any()
@@ -2483,6 +3247,13 @@ fn field_value_at(column: &dyn Array, row: usize, kind: &FieldType) -> Result<Op
                 .ok_or_else(invalid)?,
             row,
         )?),
+        FieldType::AssetReference => {
+            let value = column
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .ok_or_else(invalid)?;
+            asset_reference_at(value, row)?
+        }
         FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
             FieldValue::String(
                 column
@@ -2495,6 +3266,28 @@ fn field_value_at(column: &dyn Array, row: usize, kind: &FieldType) -> Result<Op
         }
     };
     Ok(Some(value))
+}
+
+fn typed_list_at(
+    array: &ListArray,
+    row: usize,
+    item: Option<&ListItemDefinition>,
+) -> Result<Vec<FieldValue>> {
+    if array.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = array.value(row);
+    let item_kind = item
+        .map(|item| &item.field_type)
+        .unwrap_or(&FieldType::String);
+    (0..values.len())
+        .map(|index| {
+            Ok(
+                field_value_at(values.as_ref(), index, item_kind, None)?
+                    .unwrap_or(FieldValue::Null),
+            )
+        })
+        .collect()
 }
 
 fn object_list_at(array: &ListArray, row: usize) -> Result<Vec<FieldValue>> {
@@ -2667,4 +3460,125 @@ fn validate_batch_revision_metadata(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod invariant_tests {
+    use super::*;
+    use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision};
+    use ugoite_domain::form::FormVersion;
+    use ugoite_domain::id::{EntryId, FieldId};
+
+    fn form() -> FormDefinition {
+        FormDefinition {
+            id: FormId::from(Uuid::from_u128(18_510)),
+            version: FormVersion::new(1).expect("valid test Form version"),
+            name: "InvariantTest".into(),
+            description: None,
+            fields: vec![FormField {
+                id: FieldId::new(100).expect("valid test field id"),
+                name: "title".into(),
+                field_type: FieldType::String,
+                required: false,
+                label: None,
+                description: None,
+                semantic_role: None,
+                reference_form: None,
+                list_item: None,
+                validation: None,
+                enum_values: Vec::new(),
+                deprecated: false,
+            }],
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    fn revision(form: &FormDefinition, revision_id: u128, title: &str) -> EntryRevision {
+        EntryRevision {
+            form_id: form.id,
+            entry_id: EntryId::from(Uuid::from_u128(18_511)),
+            revision_id: RevisionId::from(Uuid::from_u128(revision_id)),
+            parent_revision_id: None,
+            entry_version: 1,
+            expected_version: None,
+            operation: EntryOperation::Upsert,
+            committed_at_micros: revision_id as i64,
+            author_id: "test".into(),
+            form_version: form.version,
+            source_kind: "test".into(),
+            source_id: None,
+            entry: EntryMetadata::default(),
+            values: BTreeMap::from([(
+                FieldId::new(100).expect("valid test field id"),
+                FieldValue::String(title.into()),
+            )]),
+            extra_attributes: BTreeMap::new(),
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    async fn append_duplicate_without_product_bypass(
+        workspace: &IcebergWorkspace,
+        form_id: FormId,
+        revision: EntryRevision,
+    ) -> Result<()> {
+        let mut attempt_workspace = workspace.clone();
+        let catalog = workspace
+            .space_catalog
+            .as_ref()
+            .context("test fixture requires a SpaceCatalog")?
+            .new_attempt();
+        attempt_workspace.catalog = Arc::new(catalog.clone());
+        attempt_workspace.space_catalog = Some(Arc::new(catalog));
+        let form = attempt_workspace.load_form(form_id).await?;
+        let table = attempt_workspace
+            .catalog
+            .load_table(&attempt_workspace.form_ident(form_id))
+            .await?;
+        let batch = revision_batch_from_values(
+            &form,
+            table.metadata().current_schema(),
+            std::slice::from_ref(&revision),
+        )?;
+        attempt_workspace
+            .append_record_batches_inner(form_id, vec![batch], &[revision], false)
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn duplicate_maximum_versions_are_rejected_by_authorized_reads() -> Result<()> {
+        let workspace = IcebergWorkspace::memory_for_tests(
+            SpaceId::from(Uuid::from_u128(18_512)),
+            "memory://iceberg-private-invariant-fixture",
+        )
+        .await?;
+        let form = form();
+        workspace
+            .commit(publication_context("test-form", "test.form", &form)?)?
+            .create_form(&form)
+            .await?;
+        append_duplicate_without_product_bypass(
+            &workspace,
+            form.id,
+            revision(&form, 18_513, "left"),
+        )
+        .await?;
+        append_duplicate_without_product_bypass(
+            &workspace,
+            form.id,
+            revision(&form, 18_514, "right"),
+        )
+        .await?;
+
+        let error = workspace
+            .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
+            .await
+            .expect_err("duplicate maximum Entry versions must remain a read invariant");
+        assert!(error
+            .to_string()
+            .contains("multiple revisions share a maximum entry_version"));
+        Ok(())
+    }
 }

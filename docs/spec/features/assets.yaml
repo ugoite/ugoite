@@ -2,24 +2,6 @@ version: '0.2'
 updated: '2026-06-23'
 kind: assets
 apis:
-- id: asset.list
-  method: GET
-  status: implemented
-  backend:
-    path: /spaces/{space_id}/assets
-    file: crates/ugoite-server/src/lib.rs
-    function: list_assets
-  frontend:
-    path: /spaces/{space_id}/assets
-    file: frontend/src/lib/asset-api.ts
-    function: assetApi.list
-  ugoite_core:
-    file: crates/ugoite-iceberg/src/service.rs
-    function: list_assets
-  ugoite_cli:
-    command: ugoite asset list
-    file: crates/ugoite-cli/src/commands/asset.rs
-    function: run
 - id: asset.upload
   method: POST
   status: implemented
@@ -38,7 +20,7 @@ apis:
     command: ugoite asset upload
     file: crates/ugoite-cli/src/commands/asset.rs
     function: run
-  notes: REST and browser implemented; remote CLI upload is rejected in this release.
+  notes: Upload returns an AssetReference and does not create an Entry. Remote CLI upload remains rejected in this release.
 - id: asset.delete
   method: DELETE
   status: implemented
@@ -57,3 +39,13 @@ apis:
     command: ugoite asset delete
     file: crates/ugoite-cli/src/commands/asset.rs
     function: run
+- id: asset.read
+  method: GET
+  status: implemented
+  backend:
+    path: /spaces/{space_id}/assets/{asset_id}
+    file: crates/ugoite-server/src/lib.rs
+    function: get_asset
+  notes: Byte reads require the containing Form and Entry query context so
+    Entry policy is evaluated as the Asset parent policy. The byte operation
+    exposes no logical name or media type; those remain Form-owned metadata.

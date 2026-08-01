@@ -49,7 +49,6 @@ export const UGOITE_API_OPERATIONS = [
   "agent.revoke",
   "access.get",
   "access.put",
-  "asset.list",
   "asset.upload",
   "asset.delete",
 ] as const;

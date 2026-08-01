@@ -192,15 +192,6 @@ export default function SpaceDashboardRoute() {
               </A>
             )}
           </For>
-          <A class="tile" href={`/spaces/${spaceId()}/assets`}>
-            <span class="glyph">
-              <UiIcon name="asset" />
-            </span>
-            <span>
-              <b>{t("dashboard.assets")}</b>
-              <small>{t("dashboard.search")}</small>
-            </span>
-          </A>
           <A class="tile" href={`/spaces/${spaceId()}/sql`}>
             <span class="glyph">
               <UiIcon name="sql" />

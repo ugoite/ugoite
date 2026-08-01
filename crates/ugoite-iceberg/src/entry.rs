@@ -2,20 +2,19 @@ use crate::form;
 use crate::iceberg_store;
 use crate::index;
 use crate::integrity::IntegrityProvider;
-use crate::link::Link;
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::entry::{
-    EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+    AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
+use ugoite_domain::form::{FieldType, FormField};
 use ugoite_domain::id::{FieldId, RevisionId};
-use url::Url;
 use uuid::Uuid;
 
 pub const MAX_ENTRY_CREATE_BATCH_SIZE: usize = 256;
@@ -64,8 +63,6 @@ pub struct EntryContent {
     #[serde(default)]
     pub sections: Value,
     #[serde(default)]
-    pub assets: Vec<Value>,
-    #[serde(default)]
     pub computed: Value,
 }
 
@@ -81,8 +78,6 @@ pub struct EntryMeta {
     pub form: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default)]
-    pub links: Vec<Link>,
     #[serde(default)]
     pub created_at: f64,
     #[serde(default)]
@@ -119,8 +114,6 @@ pub struct EntryRow {
     pub form: String,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default)]
-    pub links: Vec<Link>,
     pub created_at: f64,
     pub updated_at: f64,
     #[serde(default)]
@@ -129,8 +122,6 @@ pub struct EntryRow {
     pub extra_attributes: Value,
     pub revision_id: String,
     pub parent_revision_id: Option<String>,
-    #[serde(default)]
-    pub assets: Vec<Value>,
     #[serde(default)]
     pub integrity: IntegrityPayload,
     #[serde(default)]
@@ -263,39 +254,6 @@ fn parse_markdown(content: &str) -> (Value, Value) {
     let (frontmatter, body) = extract_frontmatter(content);
     let sections = extract_sections(&body);
     (frontmatter, sections)
-}
-
-fn normalize_ugoite_links(content: &str) -> String {
-    let re = Regex::new(r#"ugoite://[^\s)]+"#).unwrap();
-    re.replace_all(content, |caps: &regex::Captures| {
-        normalize_ugoite_link(caps.get(0).map(|m| m.as_str()).unwrap_or(""))
-    })
-    .to_string()
-}
-
-fn normalize_ugoite_link(raw: &str) -> String {
-    let Ok(url) = Url::parse(raw) else {
-        return raw.to_string();
-    };
-    let kind = url.host_str().unwrap_or("").to_lowercase();
-    let canonical_kind = match kind.as_str() {
-        "entries" | "entry" => "entry",
-        "assets" | "asset" => "asset",
-        _ => kind.as_str(),
-    };
-    let mut path = url.path().trim_start_matches('/').to_string();
-    if path.is_empty() {
-        for (key, value) in url.query_pairs() {
-            if key.eq_ignore_ascii_case("id") && !value.is_empty() {
-                path = value.to_string();
-                break;
-            }
-        }
-    }
-    if path.is_empty() || canonical_kind.is_empty() {
-        return raw.to_string();
-    }
-    format!("ugoite://{}/{}", canonical_kind, path)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -486,25 +444,31 @@ pub(crate) fn render_markdown_for_form(
     render_markdown(title, form_name, tags, &merged_fields, &field_order)
 }
 
-async fn append_revision_row_to_table(
-    op: &Operator,
-    ws_path: &str,
-    row: &RevisionRow,
-    form_def: &Value,
-) -> Result<()> {
-    append_revision_rows_to_workspace(op, ws_path, std::slice::from_ref(row), form_def).await
-}
-
 async fn append_revision_rows_to_workspace(
     op: &Operator,
     ws_path: &str,
     rows: &[RevisionRow],
     form_def: &Value,
 ) -> Result<()> {
+    append_revision_rows_to_workspace_authorized(op, ws_path, rows, form_def, None).await
+}
+
+async fn append_revision_rows_to_workspace_authorized(
+    op: &Operator,
+    ws_path: &str,
+    rows: &[RevisionRow],
+    form_def: &Value,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<()> {
     if rows.is_empty() {
         return Err(anyhow!("revision batch must not be empty"));
     }
     let domain_form = form::to_domain_form(form_def)?;
+    if let Some(scopes) = relation_scopes {
+        if !scopes.contains_key(&domain_form.name.to_ascii_lowercase()) {
+            return Err(AppError::forbidden("Form is not readable").into());
+        }
+    }
     let revisions = rows
         .iter()
         .map(|row| revision_row_to_domain(row, &domain_form))
@@ -524,7 +488,7 @@ async fn append_revision_rows_to_workspace(
     )?;
     workspace
         .commit(command)?
-        .append_revisions(domain_form.id, revisions)
+        .append_revisions_authorized(domain_form.id, revisions, relation_scopes)
         .await?;
     Ok(())
 }
@@ -599,29 +563,8 @@ fn entry_metadata_from_row(row: &EntryRow) -> EntryMetadata {
         external_id: row.entry_id.clone(),
         title: row.title.clone(),
         tags: row.tags.clone(),
-        links: row
-            .links
-            .iter()
-            .map(|link| EntryLink {
-                id: link.id.clone(),
-                target: link.target.clone(),
-                kind: link.kind.clone(),
-            })
-            .collect(),
         created_at_micros: to_timestamp_micros(row.created_at),
         updated_at_micros: to_timestamp_micros(row.updated_at),
-        assets: row
-            .assets
-            .iter()
-            .filter_map(|asset| {
-                let object = asset.as_object()?;
-                Some(EntryAsset {
-                    id: object.get("id")?.as_str()?.to_string(),
-                    name: object.get("name")?.as_str()?.to_string(),
-                    path: object.get("path")?.as_str()?.to_string(),
-                })
-            })
-            .collect(),
         integrity: EntryIntegrity {
             checksum: row.integrity.checksum.clone(),
             signature: row.integrity.signature.clone(),
@@ -640,10 +583,50 @@ fn form_values_to_domain(
     let mut values = std::collections::BTreeMap::new();
     for field in &form.fields {
         if let Some(value) = object.get(&field.name) {
-            values.insert(field.id, json_to_field_value(value)?);
+            values.insert(field.id, json_to_field_value_for_field(value, field)?);
         }
     }
     Ok(values)
+}
+
+fn json_to_field_value_for_field(value: &Value, field: &FormField) -> Result<FieldValue> {
+    if matches!(value, Value::Null) {
+        return Ok(FieldValue::Null);
+    }
+    if matches!(field.field_type, FieldType::AssetReference) {
+        return Ok(FieldValue::AssetReference(
+            serde_json::from_value::<AssetReference>(value.clone())
+                .context("invalid asset reference value")?,
+        ));
+    }
+    if matches!(field.field_type, FieldType::List)
+        && field
+            .list_item
+            .as_ref()
+            .is_some_and(|item| matches!(item.field_type, FieldType::AssetReference))
+    {
+        let values = value
+            .as_array()
+            .context("typed asset reference list must be an array")?
+            .iter()
+            .map(|value| {
+                if value.is_null() {
+                    Ok(FieldValue::Null)
+                } else if value.is_object() {
+                    Ok(FieldValue::AssetReference(
+                        serde_json::from_value::<AssetReference>(value.clone())
+                            .context("invalid asset reference list item")?,
+                    ))
+                } else {
+                    Err(anyhow!(
+                        "asset reference list items must be objects or null"
+                    ))
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        return Ok(FieldValue::List(values));
+    }
+    json_to_field_value(value)
 }
 
 fn json_to_field_value(value: &Value) -> Result<FieldValue> {
@@ -682,27 +665,6 @@ fn revision_row_from_domain(
                 .map(|value| Ok((field.name.clone(), serde_json::to_value(value)?)))
         })
         .collect::<Result<Map<String, Value>>>()?;
-    let links = revision
-        .entry
-        .links
-        .iter()
-        .map(|link| Link {
-            id: link.id.clone(),
-            source: if revision.entry.external_id.is_empty() {
-                revision.entry_id.to_string()
-            } else {
-                revision.entry.external_id.clone()
-            },
-            target: link.target.clone(),
-            kind: link.kind.clone(),
-        })
-        .collect::<Vec<_>>();
-    let assets = revision
-        .entry
-        .assets
-        .iter()
-        .map(serde_json::to_value)
-        .collect::<Result<Vec<_>, _>>()?;
     let integrity = IntegrityPayload {
         checksum: revision.entry.integrity.checksum.clone(),
         signature: revision.entry.integrity.signature.clone(),
@@ -716,14 +678,12 @@ fn revision_row_from_domain(
         title: revision.entry.title.clone(),
         form: form_name.to_string(),
         tags: revision.entry.tags.clone(),
-        links,
         created_at: from_timestamp_micros(revision.entry.created_at_micros),
         updated_at: from_timestamp_micros(revision.entry.updated_at_micros),
         fields: Value::Object(fields.clone()),
         extra_attributes: serde_json::to_value(&revision.extra_attributes)?,
         revision_id: revision.revision_id.to_string(),
         parent_revision_id: revision.parent_revision_id.map(|id| id.to_string()),
-        assets,
         integrity: integrity.clone(),
         deleted: revision.entry.deleted,
         deleted_at: revision.entry.deleted_at_micros.map(from_timestamp_micros),
@@ -919,8 +879,26 @@ pub(crate) async fn append_revision_row_for_form(
     row: &RevisionRow,
     form_def: &Value,
 ) -> Result<()> {
+    append_revision_row_for_form_authorized(op, ws_path, form_name, row, form_def, None).await
+}
+
+pub(crate) async fn append_revision_row_for_form_authorized(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    row: &RevisionRow,
+    form_def: &Value,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<()> {
     let _ = form_name;
-    append_revision_row_to_table(op, ws_path, row, form_def).await
+    append_revision_rows_to_workspace_authorized(
+        op,
+        ws_path,
+        std::slice::from_ref(row),
+        form_def,
+        relation_scopes,
+    )
+    .await
 }
 
 pub async fn append_revision_batch_for_form(
@@ -959,12 +937,25 @@ pub async fn create_entry<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<EntryMeta> {
-    let mut entries = create_entries(
+    create_entry_with_scopes(op, ws_path, entry_id, content, author, integrity, None).await
+}
+
+pub async fn create_entry_with_scopes<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    content: &str,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<EntryMeta> {
+    let mut entries = create_entries_with_scopes(
         op,
         ws_path,
         vec![EntryCreateRequest::new(entry_id, content)],
         author,
         integrity,
+        relation_scopes,
     )
     .await?;
     Ok(entries
@@ -980,6 +971,17 @@ pub async fn create_entries<I: IntegrityProvider>(
     requests: Vec<EntryCreateRequest>,
     author: &str,
     integrity: &I,
+) -> Result<Vec<EntryMeta>> {
+    create_entries_with_scopes(op, ws_path, requests, author, integrity, None).await
+}
+
+pub async fn create_entries_with_scopes<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    requests: Vec<EntryCreateRequest>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Vec<EntryMeta>> {
     if requests.is_empty() {
         return Ok(Vec::new());
@@ -1016,10 +1018,88 @@ pub async fn create_entries<I: IntegrityProvider>(
         }
         entries.push(entry);
     }
+    reject_cross_form_forward_references(&batches)?;
     for (_, (form_def, revisions)) in batches {
-        append_revision_rows_to_workspace(op, ws_path, &revisions, &form_def).await?;
+        append_revision_rows_to_workspace_authorized(
+            op,
+            ws_path,
+            &revisions,
+            &form_def,
+            relation_scopes,
+        )
+        .await?;
     }
     Ok(entries)
+}
+
+fn reject_cross_form_forward_references(
+    batches: &BTreeMap<String, (Value, Vec<RevisionRow>)>,
+) -> Result<()> {
+    let pending = batches
+        .values()
+        .flat_map(|(form_def, revisions)| {
+            let form_id = form::to_domain_form(form_def).ok().map(|form| form.id);
+            revisions.iter().flat_map(move |revision| {
+                form_id
+                    .into_iter()
+                    .map(move |form_id| (form_id, revision.entry_id.clone()))
+            })
+        })
+        .collect::<BTreeSet<_>>();
+
+    for (source_form_def, revisions) in batches.values() {
+        let source_form = form::to_domain_form(source_form_def)?;
+        for revision in revisions {
+            for field in &source_form.fields {
+                let Some(value) = revision
+                    .state
+                    .as_ref()
+                    .and_then(|state| state.fields.get(&field.name))
+                else {
+                    continue;
+                };
+                let references = match (&field.field_type, value) {
+                    (FieldType::RowReference, Value::String(entry_id)) => field
+                        .reference_form
+                        .map(|form| vec![(form, entry_id.clone())])
+                        .unwrap_or_default(),
+                    (FieldType::List, Value::Array(items))
+                        if field
+                            .list_item
+                            .as_ref()
+                            .is_some_and(|item| item.field_type == FieldType::RowReference) =>
+                    {
+                        field
+                            .list_item
+                            .as_ref()
+                            .and_then(|item| {
+                                item.reference_form.map(|form| {
+                                    items
+                                        .iter()
+                                        .filter_map(Value::as_str)
+                                        .map(|entry_id| (form, entry_id.to_string()))
+                                        .collect()
+                                })
+                            })
+                            .unwrap_or_default()
+                    }
+                    _ => Vec::new(),
+                };
+                for (target_form, entry_id) in references {
+                    if target_form != source_form.id
+                        && pending.contains(&(target_form, entry_id.clone()))
+                    {
+                        return Err(anyhow!(
+                            "cross-Form forward references in one create batch are unsupported: '{}' -> '{}'",
+                            source_form.name,
+                            entry_id
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn prepare_entry<I: IntegrityProvider>(
@@ -1030,8 +1110,7 @@ async fn prepare_entry<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<(EntryMeta, String, Value, RevisionRow)> {
-    let normalized_content = normalize_ugoite_links(content);
-    let (frontmatter, sections) = parse_markdown(&normalized_content);
+    let (frontmatter, sections) = parse_markdown(content);
     let form_name = extract_form(&frontmatter)
         .ok_or_else(|| invalid_entry_input("Form is required for entry creation"))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
@@ -1049,7 +1128,7 @@ async fn prepare_entry<I: IntegrityProvider>(
         .into());
     }
 
-    let properties = index::extract_properties(&normalized_content);
+    let properties = index::extract_properties(content);
     let (casted, warnings) = index::validate_properties(&properties, &form_def)?;
     if !warnings.is_empty() {
         return Err(AppError::invalid_input_with_detail(
@@ -1076,26 +1155,24 @@ async fn prepare_entry<I: IntegrityProvider>(
         }
     }
 
-    let title = extract_title(&normalized_content, entry_id);
+    let title = extract_title(content, entry_id);
     let tags = extract_tags(&frontmatter);
     let timestamp = now_ts();
     let revision_id = Uuid::new_v4().to_string();
-    let checksum = integrity.checksum(&normalized_content);
-    let signature = integrity.signature(&normalized_content);
+    let checksum = integrity.checksum(content);
+    let signature = integrity.signature(content);
 
     let entry_row = EntryRow {
         entry_id: entry_id.to_string(),
         title: title.clone(),
         form: form_name.clone(),
         tags,
-        links: Vec::new(),
         created_at: timestamp,
         updated_at: timestamp,
         fields: Value::Object(fields),
         extra_attributes: extra_attributes.clone(),
         revision_id: revision_id.clone(),
         parent_revision_id: None,
-        assets: Vec::new(),
         integrity: IntegrityPayload {
             checksum: checksum.clone(),
             signature: signature.clone(),
@@ -1139,7 +1216,6 @@ async fn prepare_entry<I: IntegrityProvider>(
         title,
         form: Some(form_name.clone()),
         tags: entry_row.tags.clone(),
-        links: entry_row.links.clone(),
         created_at: timestamp,
         updated_at: timestamp,
         integrity: IntegrityPayload {
@@ -1166,7 +1242,6 @@ pub async fn list_entries(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
             "form": form_name,
             "tags": row.tags,
             "properties": merged_fields,
-            "links": row.links,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
         }));
@@ -1260,12 +1335,10 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
         "content": markdown,
         "frontmatter": frontmatter,
         "sections": sections,
-        "assets": row.assets,
         "computed": Value::Object(Map::new()),
         "title": row.title,
         "form": row.form,
         "tags": row.tags,
-        "links": row.links,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "integrity": serde_json::to_value(row.integrity)?,
@@ -1301,7 +1374,6 @@ pub async fn get_entry_content(
             "tags": row.tags,
         }),
         sections: sections_from_fields(&merged_fields),
-        assets: row.assets,
         computed: Value::Object(Map::new()),
     })
 }
@@ -1345,7 +1417,6 @@ pub async fn get_entry_revision_content(
             "tags": row.tags,
         }),
         sections: sections_from_fields(&merged_fields),
-        assets: Vec::new(),
         computed: Value::Object(Map::new()),
     })
 }
@@ -1358,12 +1429,40 @@ pub async fn update_entry<I: IntegrityProvider>(
     content: &str,
     parent_revision_id: Option<&str>,
     author: &str,
-    assets: Option<Vec<Value>>,
     integrity: &I,
+) -> Result<Value> {
+    update_entry_authorized(
+        op,
+        ws_path,
+        entry_id,
+        content,
+        parent_revision_id,
+        author,
+        integrity,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn update_entry_authorized<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    content: &str,
+    parent_revision_id: Option<&str>,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
+    if let Some(scopes) = relation_scopes {
+        if !scopes.contains_key(&form_name.to_ascii_lowercase()) {
+            return Err(AppError::forbidden("Form is not readable").into());
+        }
+    }
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
 
     if let Some(expected_parent) = parent_revision_id {
@@ -1379,8 +1478,7 @@ pub async fn update_entry<I: IntegrityProvider>(
         }
     }
 
-    let normalized_content = normalize_ugoite_links(content);
-    let (frontmatter, sections) = parse_markdown(&normalized_content);
+    let (frontmatter, sections) = parse_markdown(content);
     let updated_form = extract_form(&frontmatter)
         .ok_or_else(|| invalid_entry_input("Form is required for entry update"))?;
     if updated_form != form_name {
@@ -1401,7 +1499,7 @@ pub async fn update_entry<I: IntegrityProvider>(
         .into());
     }
 
-    let properties = index::extract_properties(&normalized_content);
+    let properties = index::extract_properties(content);
     let (casted, warnings) = index::validate_properties(&properties, &form_def)?;
     if !warnings.is_empty() {
         return Err(AppError::invalid_input_with_detail(
@@ -1433,10 +1531,10 @@ pub async fn update_entry<I: IntegrityProvider>(
         timestamp = row.updated_at + 0.001;
     }
     let revision_id = Uuid::new_v4().to_string();
-    let checksum = integrity.checksum(&normalized_content);
-    let signature = integrity.signature(&normalized_content);
+    let checksum = integrity.checksum(content);
+    let signature = integrity.signature(content);
 
-    row.title = extract_title(&normalized_content, &row.title);
+    row.title = extract_title(content, &row.title);
     row.updated_at = timestamp;
     if frontmatter.get("tags").is_some() {
         row.tags = extract_tags(&frontmatter);
@@ -1451,7 +1549,6 @@ pub async fn update_entry<I: IntegrityProvider>(
         checksum: checksum.clone(),
         signature: signature.clone(),
     };
-    row.assets = assets.unwrap_or_else(|| row.assets.clone());
 
     let revision = RevisionRow {
         revision_id: revision_id.clone(),
@@ -1473,7 +1570,15 @@ pub async fn update_entry<I: IntegrityProvider>(
         source_kind: "api".to_string(),
         source_id: None,
     };
-    append_revision_row_for_form(op, ws_path, &form_name, &revision, &form_def).await?;
+    append_revision_row_for_form_authorized(
+        op,
+        ws_path,
+        &form_name,
+        &revision,
+        &form_def,
+        relation_scopes,
+    )
+    .await?;
 
     get_entry(op, ws_path, entry_id).await
 }
@@ -1580,9 +1685,27 @@ pub async fn restore_entry<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
+    restore_entry_authorized(op, ws_path, entry_id, revision_id, author, integrity, None).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn restore_entry_authorized<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    revision_id: &str,
+    author: &str,
+    integrity: &I,
+    relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
+) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
+    if let Some(scopes) = relation_scopes {
+        if !scopes.contains_key(&form_name.to_ascii_lowercase()) {
+            return Err(AppError::forbidden("Form is not readable").into());
+        }
+    }
     let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
         .into_iter()
@@ -1639,7 +1762,15 @@ pub async fn restore_entry<I: IntegrityProvider>(
         source_kind: "api".to_string(),
         source_id: Some(revision_id.to_string()),
     };
-    append_revision_row_for_form(op, ws_path, &form_name, &restore_revision, &form_def).await?;
+    append_revision_row_for_form_authorized(
+        op,
+        ws_path,
+        &form_name,
+        &restore_revision,
+        &form_def,
+        relation_scopes,
+    )
+    .await?;
 
     Ok(serde_json::json!({
         "revision_id": new_rev_id,

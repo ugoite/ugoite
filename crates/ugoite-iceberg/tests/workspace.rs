@@ -1,3 +1,5 @@
+use opendal::services::Memory;
+use opendal::{EntryMode, Operator};
 use std::collections::BTreeMap;
 use std::time::Duration;
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
@@ -5,17 +7,18 @@ use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
 use ugoite_domain::entry::{
-    EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+    EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{
     sql_column_name, sql_relation_name, FieldType, FormChange, FormChangeSet, FormDefinition,
-    FormField, FormVersion,
+    FormField, FormVersion, ListItemDefinition,
 };
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
     physical_form_name, publication_context, IcebergWorkspace, MigrationFormReport,
-    MigrationManifest, MigrationReport, RevisionView,
+    MigrationManifest, MigrationReport, RevisionView, WriteConfig,
 };
+use ugoite_storage::SpaceCatalogStore;
 use uuid::Uuid;
 
 fn form() -> FormDefinition {
@@ -33,6 +36,7 @@ fn form() -> FormDefinition {
             description: None,
             semantic_role: None,
             reference_form: None,
+            list_item: None,
             validation: None,
             enum_values: Vec::new(),
             deprecated: false,
@@ -164,6 +168,7 @@ async fn nested_fields_have_unique_iceberg_ids_across_form_columns() -> anyhow::
         description: None,
         semantic_role: None,
         reference_form: None,
+        list_item: None,
         validation: None,
         enum_values: Vec::new(),
         deprecated: false,
@@ -224,6 +229,7 @@ async fn native_form_types_are_preserved_in_iceberg_schema() -> anyhow::Result<(
         description: None,
         semantic_role: None,
         reference_form: None,
+        list_item: None,
         validation: None,
         enum_values: Vec::new(),
         deprecated: false,
@@ -380,6 +386,7 @@ async fn local_catalog_evolves_schema_bearing_changes() -> anyhow::Result<()> {
                 description: None,
                 semantic_role: None,
                 reference_form: None,
+                list_item: None,
                 validation: None,
                 enum_values: Vec::new(),
                 deprecated: false,
@@ -427,6 +434,7 @@ async fn existing_form_field_type_changes_are_typed_and_leave_form_unchanged() -
         description: None,
         semantic_role: None,
         reference_form: None,
+        list_item: None,
         validation: None,
         enum_values: Vec::new(),
         deprecated: false,
@@ -697,6 +705,123 @@ async fn coordinator_replays_only_the_same_canonical_command() -> anyhow::Result
     Ok(())
 }
 
+async fn count_files_under(operator: &Operator, prefix: &str) -> anyhow::Result<usize> {
+    Ok(operator
+        .list_with(prefix)
+        .recursive(true)
+        .await?
+        .into_iter()
+        .filter(|entry| entry.metadata().mode() == EntryMode::FILE)
+        .count())
+}
+
+#[tokio::test]
+async fn append_recovery_adopts_existing_publication_without_rewriting_iceberg(
+) -> anyhow::Result<()> {
+    let operator = Operator::new(Memory::default())?.finish();
+    let store = SpaceCatalogStore::new(operator.clone(), "spaces/append-publication-recovery")?
+        .single_process();
+    let workspace = IcebergWorkspace::open_space(
+        store.clone(),
+        SpaceId::from(Uuid::from_u128(18_527)),
+        WriteConfig::default(),
+    )
+    .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    let revision = EntryRevision {
+        form_id: form.id,
+        entry_id: Uuid::from_u128(18_528).into(),
+        revision_id: Uuid::from_u128(18_529).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata::default(),
+        values: BTreeMap::from([(
+            FieldId::new(100).unwrap(),
+            FieldValue::String("recovered append".into()),
+        )]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let command = publication_context(
+        "append-publication-recovery",
+        "test.entry.append",
+        &vec![revision.clone()],
+    )?;
+    let base_head = store.read_exact_head().await?.expect("base Head");
+    let base_head_json: serde_json::Value = serde_json::from_slice(&base_head.bytes)?;
+    let intended = store.publication_path(
+        base_head_json["generation"].as_u64().expect("generation") + 1,
+        &command.command_id,
+    );
+    let forms_prefix = "spaces/append-publication-recovery/forms";
+
+    // Stop the real Iceberg append after it has created Parquet, manifest,
+    // metadata, and the immutable publication, but before Head CAS.
+    let gate = ugoite_iceberg::TestPublicationGate::new();
+    ugoite_iceberg::install_test_publication_gate(gate.clone());
+    let append_workspace = workspace.clone();
+    let append_command = command.clone();
+    let append_revision = revision.clone();
+    let append = tokio::spawn(async move {
+        append_workspace
+            .commit(append_command)
+            .expect("publication context")
+            .append_revisions(form.id, vec![append_revision])
+            .await
+    });
+    gate.wait_until_entered().await;
+    let publication_before = store.read_publication(&intended).await?;
+    let files_before = count_files_under(&operator, forms_prefix).await?;
+    assert_eq!(
+        store.read_exact_head().await?.expect("Head").bytes,
+        base_head.bytes,
+        "the append must still be invisible before Head CAS"
+    );
+    append.abort();
+    let aborted = append.await;
+    assert!(aborted.is_err(), "the original writer must be discarded");
+    ugoite_iceberg::clear_test_publication_gate();
+    gate.release();
+
+    // A fresh coordinator adopts the durable publication. It must not invoke
+    // append_revisions' Iceberg writer a second time, so no new physical file
+    // or alternate publication can appear.
+    let recovered = workspace
+        .commit(command)
+        .expect("publication context")
+        .append_revisions(form.id, vec![revision.clone()])
+        .await?;
+    assert_eq!(recovered.data_file_count, 0);
+    assert_eq!(
+        store.read_publication(&intended).await?,
+        publication_before,
+        "recovery must adopt, not regenerate, the immutable publication"
+    );
+    assert_eq!(
+        count_files_under(&operator, forms_prefix).await?,
+        files_before,
+        "recovery must not write another Parquet/manifest/metadata object"
+    );
+    assert_eq!(workspace.read_revisions(form.id).await?, vec![revision]);
+    let receipt: serde_json::Value = serde_json::from_slice(
+        &store
+            .read_command_receipt(&recovered.command_id)
+            .await?
+            .expect("command receipt")
+            .0,
+    )?;
+    assert_eq!(receipt["state"], "committed");
+    Ok(())
+}
+
 #[tokio::test]
 async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow::Result<()> {
     let workspace = IcebergWorkspace::memory_for_tests(
@@ -813,6 +938,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
                     description: None,
                     semantic_role: None,
                     reference_form: None,
+                    list_item: None,
                     validation: None,
                     enum_values: Vec::new(),
                     deprecated: false,
@@ -898,6 +1024,7 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
             description: None,
             semantic_role: None,
             reference_form: None,
+            list_item: None,
             validation: None,
             enum_values: Vec::new(),
             deprecated: false,
@@ -911,6 +1038,7 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
             description: None,
             semantic_role: None,
             reference_form: None,
+            list_item: None,
             validation: None,
             enum_values: Vec::new(),
             deprecated: false,
@@ -923,7 +1051,8 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
             label: None,
             description: None,
             semantic_role: None,
-            reference_form: None,
+            reference_form: Some(form.id),
+            list_item: None,
             validation: None,
             enum_values: Vec::new(),
             deprecated: false,
@@ -947,18 +1076,8 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
             external_id: "task-71".into(),
             title: "typed metadata".into(),
             tags: vec!["important".into(), "today".into()],
-            links: vec![EntryLink {
-                id: "link-1".into(),
-                target: "https://example.com".into(),
-                kind: "reference".into(),
-            }],
             created_at_micros: 10,
             updated_at_micros: 11,
-            assets: vec![EntryAsset {
-                id: "asset-1".into(),
-                name: "image.png".into(),
-                path: "assets/image.png".into(),
-            }],
             integrity: EntryIntegrity {
                 checksum: "sha256:abc".into(),
                 signature: "sig".into(),
@@ -989,7 +1108,7 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
             ),
             (
                 FieldId::new(103).unwrap(),
-                FieldValue::String("00000000-0000-0000-0000-000000000001".into()),
+                FieldValue::String("task-71".into()),
             ),
         ]),
         extra_attributes: BTreeMap::new(),
@@ -1001,58 +1120,146 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
 }
 
 #[tokio::test]
-async fn concurrent_workspace_writers_surface_duplicate_maximum_versions() -> anyhow::Result<()> {
-    let first = IcebergWorkspace::memory_for_tests(
-        SpaceId::from(Uuid::from_u128(50)),
-        "memory://iceberg-concurrent-writers",
+async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(73)),
+        "memory://iceberg-all-typed-lists",
     )
     .await?;
-    let second = first.clone_for_testing();
-    let form = form();
-    create_form(&first, &form).await?;
-    let entry_id = Uuid::from_u128(51).into();
-    let mut left = EntryRevision {
+    let mut form = form();
+    let list_types = [
+        (101, "booleans", FieldType::Boolean),
+        (102, "integers", FieldType::Integer),
+        (103, "longs", FieldType::Long),
+        (104, "floats", FieldType::Float),
+        (105, "doubles", FieldType::Double),
+        (106, "dates", FieldType::Date),
+        (107, "times", FieldType::Time),
+        (108, "timestamps", FieldType::Timestamp),
+        (109, "timestamp_tzs", FieldType::TimestampTz),
+        (110, "timestamp_nss", FieldType::TimestampNs),
+        (111, "timestamp_tz_nss", FieldType::TimestampTzNs),
+        (112, "uuids", FieldType::Uuid),
+        (113, "binaries", FieldType::Binary),
+    ];
+    form.fields
+        .extend(list_types.iter().map(|(id, name, item_type)| FormField {
+            id: FieldId::new(*id).unwrap(),
+            name: (*name).into(),
+            field_type: FieldType::List,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            list_item: Some(ListItemDefinition {
+                field_type: item_type.clone(),
+                reference_form: None,
+            }),
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        }));
+    create_form(&workspace, &form).await?;
+    let revision = EntryRevision {
         form_id: form.id,
-        entry_id,
-        revision_id: Uuid::from_u128(52).into(),
+        entry_id: Uuid::from_u128(74).into(),
+        revision_id: Uuid::from_u128(75).into(),
         parent_revision_id: None,
         entry_version: 1,
         expected_version: None,
         operation: EntryOperation::Upsert,
         committed_at_micros: 1,
-        author_id: "left".into(),
+        author_id: "human:owner".into(),
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
-        entry: EntryMetadata::default(),
-        values: BTreeMap::new(),
+        entry: EntryMetadata {
+            external_id: "typed-lists".into(),
+            ..Default::default()
+        },
+        values: BTreeMap::from([
+            (FieldId::new(100).unwrap(), FieldValue::String("all".into())),
+            (
+                FieldId::new(101).unwrap(),
+                FieldValue::List(vec![FieldValue::Boolean(true), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(102).unwrap(),
+                FieldValue::List(vec![FieldValue::Integer(7), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(103).unwrap(),
+                FieldValue::List(vec![FieldValue::Integer(7), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(104).unwrap(),
+                FieldValue::List(vec![FieldValue::Number(1.25), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(105).unwrap(),
+                FieldValue::List(vec![FieldValue::Number(2.5), FieldValue::Null]),
+            ),
+            (
+                FieldId::new(106).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(107).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("12:34:56.123456".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(108).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02T03:04:05.123456".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(109).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02T03:04:05.123456+00:00".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(110).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02T03:04:05.123456789".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(111).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("2025-01-02T03:04:05.123456789Z".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(112).unwrap(),
+                FieldValue::List(vec![
+                    FieldValue::String("00000000-0000-0000-0000-000000000001".into()),
+                    FieldValue::Null,
+                ]),
+            ),
+            (
+                FieldId::new(113).unwrap(),
+                FieldValue::List(vec![FieldValue::String("AQI=".into()), FieldValue::Null]),
+            ),
+        ]),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     };
-    left.values.insert(
-        FieldId::new(100).unwrap(),
-        FieldValue::String("left".into()),
-    );
-    let mut right = left.clone();
-    right.revision_id = Uuid::from_u128(53).into();
-    right.author_id = "right".into();
-    right.values.insert(
-        FieldId::new(100).unwrap(),
-        FieldValue::String("right".into()),
-    );
-    let (left_result, right_result) = tokio::join!(
-        append_revisions(&first, form.id, vec![left]),
-        append_revisions(&second, form.id, vec![right.clone()]),
-    );
-    left_result?;
-    right_result?;
-    let error = first
-        .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
-        .await
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("multiple revisions share a maximum entry_version"));
+    append_revisions(&workspace, form.id, vec![revision.clone()]).await?;
+    let restored = workspace.read_revisions(form.id).await?;
+    assert_eq!(restored, vec![revision]);
     Ok(())
 }
 

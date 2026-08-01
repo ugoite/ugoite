@@ -106,8 +106,19 @@ deterministic pagination. Session metadata remains derived state, not an
 alternate Catalog or result store. See
 [sql-sessions.md](sql-sessions.md).
 
-## Assets, links, and integrity
+## Assets and integrity
 
-Assets are stored as runtime-generated `{asset_id}_{safe_original_name}` files under the Space. Deletion is blocked while an Entry still references the Asset.
+Asset bytes have a low-level lifecycle independent of Form definitions. Upload
+allocates a stable Asset ID and writes `assets/{asset_id}`; the response is an
+`AssetReference` value containing only `asset_id`, `name`, `media_type`,
+`size_bytes`, and `sha256`. A Form owns any reference through an
+`asset_reference` field or a typed list of those values. Byte reads require an
+explicit containing Form/Entry context; the exact-ID operation cannot
+reconstruct logical name or media type. Deletion publishes an Asset lifecycle
+marker through the Catalog Head CAS before removing the byte, so a concurrent
+reference commit or deletion conflicts rather than leaving a current reference
+to missing bytes.
 
-Internal links use canonical `ugoite://entry/{entry_id}` and `ugoite://asset/{asset_id}` URIs. Entry content and revisions carry checksums and HMAC signatures generated from Space-local integrity material. Response-signing material may also be written lazily to `hmac.json`.
+Entry content and revisions carry checksums and HMAC signatures generated from
+Space-local integrity material. Response-signing material may also be written
+lazily to `hmac.json`.

@@ -12,17 +12,6 @@ pub struct AssetCmd {
 
 #[derive(Subcommand)]
 pub enum AssetSubCmd {
-    /// List assets in a space
-    #[command(
-        long_about = "List assets in a space.\n\nExamples:\n  # Core mode\n  ugoite asset list /root/spaces/my-space\n\n  # Backend mode\n  ugoite asset list my-space"
-    )]
-    List {
-        #[arg(
-            value_name = "SPACE_ID_OR_PATH",
-            help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
-        )]
-        space_path: String,
-    },
     /// Upload an asset
     #[command(
         long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\n  # Backend mode\n  ugoite asset upload my-space ./logo.png"
@@ -54,23 +43,6 @@ pub enum AssetSubCmd {
 pub async fn run(cmd: AssetCmd) -> Result<()> {
     let config = load_config();
     match cmd.sub {
-        AssetSubCmd::List { space_path } => {
-            let (root, space_id) = resolve_space_reference(&config, &space_path, "asset list")?;
-            if let Some(base) = validated_base_url(&config)? {
-                let result = http::execute(
-                    &base,
-                    "asset.list",
-                    serde_json::json!({"space_id": space_id}),
-                    None,
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
-            }
-            let service = UgoiteService::new(&root)?;
-            let assets = service.list_assets(&space_id).await?;
-            print_json(&assets);
-        }
         AssetSubCmd::Upload {
             space_path,
             file_path,

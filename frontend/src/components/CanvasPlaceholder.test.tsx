@@ -13,7 +13,6 @@ describe("CanvasPlaceholder", () => {
       updated_at: "2025-01-01T00:00:00Z",
       properties: { Status: "Active", Priority: "High" },
       tags: [],
-      links: [],
     },
     {
       id: "entry-2",
@@ -21,7 +20,6 @@ describe("CanvasPlaceholder", () => {
       updated_at: "2025-01-02T00:00:00Z",
       properties: { Category: "Work" },
       tags: [],
-      links: [{ id: "link-1", target: "entry-1", kind: "related" }],
     },
   ];
 
@@ -44,12 +42,6 @@ describe("CanvasPlaceholder", () => {
 
     expect(screen.getByText("Status:")).toBeInTheDocument();
     expect(screen.getByText("Active")).toBeInTheDocument();
-  });
-
-  it("should show links indicator when entry has links", () => {
-    render(() => <CanvasPlaceholder entries={mockEntries} />);
-
-    expect(screen.getByText("1 links")).toBeInTheDocument();
   });
 
   it("should call onSelect when card is clicked", () => {
@@ -89,7 +81,6 @@ describe("CanvasPlaceholder", () => {
       updated_at: "2025-01-01T00:00:00Z",
       properties: {},
       tags: [],
-      links: [],
       canvas_position: { x: 500, y: 300 },
     };
 
@@ -108,7 +99,6 @@ describe("CanvasPlaceholder", () => {
       updated_at: "2025-01-01T00:00:00Z",
       properties: {},
       tags: [],
-      links: [],
     };
     render(() => <CanvasPlaceholder entries={[noTitleEntry]} />);
     expect(screen.getByText("Untitled")).toBeInTheDocument();
@@ -127,7 +117,6 @@ describe("CanvasPlaceholder", () => {
         Extra: "value",
       },
       tags: [],
-      links: [],
     };
     render(() => <CanvasPlaceholder entries={[complexEntry]} />);
     expect(screen.getByText("Report")).toBeInTheDocument();

@@ -372,6 +372,57 @@ impl IcebergWorkspace {
 }
 
 impl AuthorizedQueryContext {
+    /// Evaluates a nested Struct value in a Form-owned list without exposing
+    /// the SessionContext. This keeps list-reference checks inside the same
+    /// closed, Entry-scoped DataFusion boundary as scalar checks.
+    pub async fn contains_struct_list_value(
+        &self,
+        relation: &str,
+        list_field: &str,
+        child_field: &str,
+        expected: &str,
+    ) -> Result<bool> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(self.limits.timeout, async {
+            let frame = self
+                .context
+                .table(relation)
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let frame = frame
+                .unnest_columns_with_options(
+                    &[list_field],
+                    datafusion::common::UnnestOptions::new().with_recursions(
+                        datafusion::common::RecursionUnnestOption {
+                            input_column: list_field.into(),
+                            output_column: "__ugoite_unnested_item".into(),
+                            depth: 1,
+                        },
+                    ),
+                )
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let nested = datafusion::functions::core::expr_fn::get_field(
+                col("__ugoite_unnested_item"),
+                child_field,
+            );
+            let frame = frame
+                .filter(nested.eq(lit(expected)))
+                .and_then(|frame| frame.limit(0, Some(1)))
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let batches = frame
+                .collect()
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            Ok(batches.iter().any(|batch| batch.num_rows() > 0))
+        })
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
     /// Parses a statement through the same closed DataFusion context used for
     /// execution and returns its native named placeholders.
     pub async fn parameter_names(&self, sql: &str) -> Result<BTreeSet<String>> {

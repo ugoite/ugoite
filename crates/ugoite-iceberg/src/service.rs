@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use opendal::Operator;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use uuid::Uuid;
 
 use crate::integrity::RealIntegrityProvider;
@@ -15,6 +15,7 @@ use crate::{
     storage::operator_from_uri,
 };
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::EntryScope;
 use ugoite_domain::id::{
     validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
     validate_space_id, validate_sql_id, validate_sql_session_id,
@@ -227,6 +228,52 @@ impl UgoiteService {
         entry::get_entry(&self.operator, &workspace, entry_id).await
     }
 
+    pub async fn create_entry_authorized(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        author: &str,
+        principal_id: Uuid,
+    ) -> Result<Value> {
+        self.create_entry_authorized_for_principals(
+            space_id,
+            entry_id,
+            markdown,
+            author,
+            &[principal_id],
+        )
+        .await
+    }
+
+    pub async fn create_entry_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let scopes = self
+            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let workspace = self.workspace_path(space_id);
+        entry::create_entry_with_scopes(
+            &self.operator,
+            &workspace,
+            entry_id,
+            markdown,
+            author,
+            &integrity,
+            Some(&scopes),
+        )
+        .await?;
+        entry::get_entry(&self.operator, &workspace, entry_id).await
+    }
+
     pub async fn list_entries(&self, space_id: &str) -> Result<Vec<Value>> {
         validate_storage_id(validate_space_id(space_id))?;
         entry::list_entries(&self.operator, &self.workspace_path(space_id)).await
@@ -245,23 +292,52 @@ impl UgoiteService {
         markdown: &str,
         parent_revision_id: Option<&str>,
         author: &str,
-        assets: Option<Vec<Value>>,
+    ) -> Result<Value> {
+        self.update_entry_authorized_for_principals(
+            space_id,
+            entry_id,
+            markdown,
+            parent_revision_id,
+            author,
+            &[],
+        )
+        .await
+    }
+
+    pub async fn update_entry_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        markdown: &str,
+        parent_revision_id: Option<&str>,
+        author: &str,
+        principal_ids: &[Uuid],
     ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_entry_id(entry_id))?;
         if let Some(parent_revision_id) = parent_revision_id {
             validate_storage_id(validate_revision_id(parent_revision_id))?;
         }
+        self.require_entry_action_for_principals(space_id, entry_id, Action::Update, principal_ids)
+            .await?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        entry::update_entry(
+        let scopes = if principal_ids.is_empty() {
+            None
+        } else {
+            Some(
+                self.authorized_form_entry_scopes_for_principals(space_id, principal_ids)
+                    .await?,
+            )
+        };
+        entry::update_entry_authorized(
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
             markdown,
             parent_revision_id,
             author,
-            assets,
             &integrity,
+            scopes.as_ref(),
         )
         .await
     }
@@ -316,19 +392,70 @@ impl UgoiteService {
         revision_id: &str,
         author: &str,
     ) -> Result<Value> {
+        self.restore_entry_authorized_for_principals(space_id, entry_id, revision_id, author, &[])
+            .await
+    }
+
+    pub async fn restore_entry_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
+        self.require_entry_action_for_principals(space_id, entry_id, Action::Update, principal_ids)
+            .await?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
-        entry::restore_entry(
+        let scopes = if principal_ids.is_empty() {
+            None
+        } else {
+            Some(
+                self.authorized_form_entry_scopes_for_principals(space_id, principal_ids)
+                    .await?,
+            )
+        };
+        entry::restore_entry_authorized(
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
             revision_id,
             author,
             &integrity,
+            scopes.as_ref(),
         )
         .await
+    }
+
+    async fn require_entry_action_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        action: Action,
+        principal_ids: &[Uuid],
+    ) -> Result<()> {
+        if principal_ids.is_empty() {
+            return Ok(());
+        }
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: entry_id.to_string(),
+            parent: None,
+        };
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+                .contains(&action)
+            {
+                return Err(AppError::forbidden("Entry is not writable").into());
+            }
+        }
+        Ok(())
     }
 
     pub async fn list_entry_options(
@@ -427,17 +554,6 @@ impl UgoiteService {
         resource_id: &str,
         parent: Option<ResourceRef>,
     ) -> Result<()> {
-        let parent = if matches!(kind, ResourceKind::Asset) && parent.is_none() {
-            self.asset_parent_entry(space_id, resource_id)
-                .await?
-                .map(|id| ResourceRef {
-                    kind: ResourceKind::Entry,
-                    id,
-                    parent: None,
-                })
-        } else {
-            parent
-        };
         Authorizer::new(self.operator.clone())
             .require(
                 space_id,
@@ -502,6 +618,95 @@ impl UgoiteService {
             }
         }
         Ok(by_form)
+    }
+
+    /// The only scope accepted by reference/existence checks. It is derived
+    /// from the caller's authorization state before a closed DataFusion
+    /// context is built; an omitted Form is not an all-rows fallback.
+    pub async fn authorized_form_entry_scopes(
+        &self,
+        space_id: &str,
+        principal_id: Uuid,
+    ) -> Result<BTreeMap<String, EntryScope>> {
+        self.authorized_form_entry_scopes_for_principals(space_id, &[principal_id])
+            .await
+    }
+
+    /// Derives the provider-side Entry scope from one authorization snapshot.
+    /// Entry policies are sparse: Space read is inherited by every current
+    /// Entry unless a policy removes it, so the closed query context can use
+    /// `AllExcept` without listing or scanning Entry rows in Rust.
+    pub async fn authorized_form_entry_scopes_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<BTreeMap<String, EntryScope>> {
+        if principal_ids.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Ok(BTreeMap::new());
+            }
+        }
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let readable_forms = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .filter(|form| {
+                let resource = ResourceRef {
+                    kind: ResourceKind::Form,
+                    id: form.name.clone(),
+                    parent: None,
+                };
+                principal_ids.iter().all(|principal_id| {
+                    effective_actions_for_state(&state, *principal_id, Some(&resource))
+                        .map(|actions| actions.contains(&Action::Read))
+                        .unwrap_or(false)
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut denied_entry_ids = BTreeSet::new();
+        for resource_key in state.policies.keys() {
+            let Some(entry_id) = resource_key.strip_prefix("entry:") else {
+                continue;
+            };
+            let resource = ResourceRef {
+                kind: ResourceKind::Entry,
+                id: entry_id.to_string(),
+                parent: None,
+            };
+            let mut readable_by_every_principal = true;
+            for principal_id in principal_ids {
+                if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+                    .contains(&Action::Read)
+                {
+                    readable_by_every_principal = false;
+                    break;
+                }
+            }
+            if !readable_by_every_principal {
+                denied_entry_ids.insert(
+                    Uuid::parse_str(entry_id)
+                        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
+                        .into(),
+                );
+            }
+        }
+        let entry_scope = if denied_entry_ids.is_empty() {
+            EntryScope::AllCurrent
+        } else {
+            EntryScope::AllExcept(denied_entry_ids)
+        };
+        Ok(readable_forms
+            .into_iter()
+            .map(|form| (form.name.to_ascii_lowercase(), entry_scope.clone()))
+            .collect())
     }
 
     pub async fn authorized_entry_ids_for_principals(
@@ -603,23 +808,10 @@ impl UgoiteService {
             let Some(id) = value.get(id_field).and_then(Value::as_str) else {
                 continue;
             };
-            let parent = if matches!(kind, ResourceKind::Asset) {
-                self.asset_parent_entry(space_id, id)
-                    .await?
-                    .map(|entry_id| {
-                        Box::new(ResourceRef {
-                            kind: ResourceKind::Entry,
-                            id: entry_id,
-                            parent: None,
-                        })
-                    })
-            } else {
-                None
-            };
             resources.push(ResourceRef {
                 kind: kind.clone(),
                 id: id.to_string(),
-                parent,
+                parent: None,
             });
         }
         let allowed = Authorizer::new(self.operator.clone())
@@ -824,26 +1016,6 @@ impl UgoiteService {
         })
     }
 
-    async fn asset_parent_entry(&self, space_id: &str, asset_id: &str) -> Result<Option<String>> {
-        Ok(self
-            .list_entries(space_id)
-            .await?
-            .into_iter()
-            .find_map(|entry| {
-                let linked = entry
-                    .get("assets")
-                    .and_then(Value::as_array)
-                    .is_some_and(|assets| {
-                        assets
-                            .iter()
-                            .any(|asset| asset.get("id").and_then(Value::as_str) == Some(asset_id))
-                    });
-                linked
-                    .then(|| entry.get("id").and_then(Value::as_str).map(str::to_string))
-                    .flatten()
-            }))
-    }
-
     pub async fn search_entries_authorized(
         &self,
         space_id: &str,
@@ -904,17 +1076,12 @@ impl UgoiteService {
         index::get_space_stats(&self.operator, &self.workspace_path(space_id)).await
     }
 
-    pub async fn list_assets(&self, space_id: &str) -> Result<Vec<asset::AssetInfo>> {
-        validate_storage_id(validate_space_id(space_id))?;
-        asset::list_assets(&self.operator, &self.workspace_path(space_id)).await
-    }
-
     pub async fn save_asset(
         &self,
         space_id: &str,
         filename: &str,
         content: &[u8],
-    ) -> Result<asset::AssetInfo> {
+    ) -> Result<ugoite_domain::entry::AssetReference> {
         validate_storage_id(validate_space_id(space_id))?;
         asset::save_asset(
             &self.operator,
@@ -925,16 +1092,127 @@ impl UgoiteService {
         .await
     }
 
+    pub async fn save_asset_with_media_type(
+        &self,
+        space_id: &str,
+        filename: &str,
+        content: &[u8],
+        media_type: &str,
+    ) -> Result<ugoite_domain::entry::AssetReference> {
+        validate_storage_id(validate_space_id(space_id))?;
+        asset::save_asset_with_media_type(
+            &self.operator,
+            &self.workspace_path(space_id),
+            filename,
+            content,
+            media_type,
+        )
+        .await
+    }
+
     pub async fn read_asset(&self, space_id: &str, asset_id: &str) -> Result<asset::AssetContent> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_asset_id(asset_id))?;
         asset::read_asset(&self.operator, &self.workspace_path(space_id), asset_id).await
     }
 
+    pub async fn ensure_asset_reference_is_readable(
+        &self,
+        space_id: &str,
+        form_name: &str,
+        entry_id: &str,
+        asset_id: &str,
+    ) -> Result<()> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_form_name(form_name))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_asset_id(asset_id))?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let form = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .find(|form| form.name == form_name)
+            .ok_or_else(|| {
+                AppError::not_found(
+                    ErrorCode::AssetNotFound,
+                    format!("Asset {asset_id} not found"),
+                )
+            })?;
+        let entry_uuid = Uuid::parse_str(entry_id)
+            .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()));
+        if !asset::current_asset_reference_exists_in_workspace(
+            &workspace,
+            asset_id,
+            &BTreeMap::from([(
+                form.name.to_ascii_lowercase(),
+                EntryScope::Only(BTreeSet::from([entry_uuid.into()])),
+            )]),
+        )
+        .await?
+        {
+            return Err(AppError::not_found(
+                ErrorCode::AssetNotFound,
+                format!("Asset {asset_id} not found"),
+            )
+            .into());
+        }
+        Ok(())
+    }
+
     pub async fn delete_asset(&self, space_id: &str, asset_id: &str) -> Result<()> {
+        self.delete_asset_with_principal(space_id, asset_id, None)
+            .await
+    }
+
+    pub async fn delete_asset_with_principal(
+        &self,
+        space_id: &str,
+        asset_id: &str,
+        principal_id: Option<Uuid>,
+    ) -> Result<()> {
+        match principal_id {
+            Some(principal_id) => {
+                self.delete_asset_with_principals(space_id, asset_id, &[principal_id])
+                    .await
+            }
+            None => {
+                self.delete_asset_with_principals(space_id, asset_id, &[])
+                    .await
+            }
+        }
+    }
+
+    pub async fn delete_asset_with_principals(
+        &self,
+        space_id: &str,
+        asset_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_asset_id(asset_id))?;
-        asset::delete_asset(&self.operator, &self.workspace_path(space_id), asset_id).await
+        let scopes = if principal_ids.is_empty() {
+            let workspace =
+                iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
+                    .await?;
+            workspace
+                .list_forms()
+                .await?
+                .into_iter()
+                .map(|form| (form.name.to_ascii_lowercase(), EntryScope::AllCurrent))
+                .collect()
+        } else {
+            self.authorized_form_entry_scopes_for_principals(space_id, principal_ids)
+                .await?
+        };
+        asset::delete_asset(
+            &self.operator,
+            &self.workspace_path(space_id),
+            asset_id,
+            &scopes,
+        )
+        .await
     }
 
     pub async fn get_user_preferences(

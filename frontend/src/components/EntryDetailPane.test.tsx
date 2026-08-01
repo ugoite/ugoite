@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
-import { assetApi } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
@@ -20,10 +19,6 @@ vi.mock("@solidjs/router", () => ({
 vi.mock("~/lib/ugoite-client", () => {
   class RevisionConflictError extends Error {}
   return {
-    assetApi: {
-      list: vi.fn(),
-      upload: vi.fn(),
-    },
     entryApi: {
       get: vi.fn(),
       create: vi.fn(),
@@ -41,7 +36,6 @@ describe("EntryDetailPane", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     setLocale("en");
-    (assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   });
 
   it("REQ-FE-052: edits form fields without requiring Markdown knowledge", async () => {
@@ -572,55 +566,14 @@ describe("EntryDetailPane", () => {
     ));
 
     await waitFor(() => {
-      expect(screen.getByText("エントリーが見つかりません。（詳細: Entry not found）"))
+      expect(
+        screen.getByText(
+          "エントリーが見つかりません。（詳細: Entry not found）",
+        ),
+      )
         .toBeInTheDocument();
       expect(screen.getByText("スペース: default / エントリID: missing-entry"))
         .toBeInTheDocument();
-    });
-  });
-
-  it("calls assetApi.upload when file is uploaded", async () => {
-    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: "entry-1",
-      title: "Test Entry",
-      form: null,
-      content: "# Test Entry",
-      revision_id: "rev-1",
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-01T00:00:00Z",
-    });
-    const mockAsset = {
-      id: "asset-1",
-      name: "file.txt",
-      path: "/path/file.txt",
-    };
-    (assetApi.upload as ReturnType<typeof vi.fn>).mockResolvedValue(mockAsset);
-    (assetApi.list as ReturnType<typeof vi.fn>).mockResolvedValue([mockAsset]);
-
-    render(() => (
-      <EntryDetailPane
-        spaceId={() => "default"}
-        entryId={() => "entry-1"}
-        onDeleted={vi.fn()}
-      />
-    ));
-
-    await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
-
-    // Wait for the file input to be present (after entry loads)
-    const fileInput = await waitFor(() => {
-      const el = document.querySelector(
-        'input[type="file"]',
-      ) as HTMLInputElement;
-      if (!el) throw new Error("file input not found");
-      return el;
-    });
-
-    const file = new File(["content"], "file.txt", { type: "text/plain" });
-    fireEvent.change(fileInput, { target: { files: [file] } });
-
-    await waitFor(() => {
-      expect(assetApi.upload).toHaveBeenCalledWith("default", file);
     });
   });
 
@@ -830,7 +783,9 @@ describe("EntryDetailPane", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("Failed to save the entry. (Details: Server unavailable)"),
+        screen.getByText(
+          "Failed to save the entry. (Details: Server unavailable)",
+        ),
       ).toBeInTheDocument();
     });
   });
@@ -905,9 +860,7 @@ describe("EntryDetailPane", () => {
       />
     ));
 
-    await waitFor(() =>
-      screen.getByRole("button", { name: "エントリを削除" })
-    );
+    await waitFor(() => screen.getByRole("button", { name: "エントリを削除" }));
     fireEvent.click(screen.getByRole("button", { name: "エントリを削除" }));
 
     await waitFor(() => {

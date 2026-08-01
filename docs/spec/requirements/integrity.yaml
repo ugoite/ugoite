@@ -19,7 +19,7 @@ requirements:
     '
   related_spec:
   - security/overview.md
-  - data-model/overview.md#assets-links-and-integrity
+  - data-model/overview.md#assets-and-integrity
   priority: high
   status: implemented
   verification: traced
@@ -44,7 +44,7 @@ requirements:
 
     '
   related_spec:
-  - data-model/overview.md#assets-links-and-integrity
+  - data-model/overview.md#assets-and-integrity
   priority: medium
   status: implemented
   verification: untraced

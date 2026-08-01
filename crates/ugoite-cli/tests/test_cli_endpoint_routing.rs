@@ -620,7 +620,6 @@ fn test_cli_help_req_sto_010_describes_space_id_or_path_routing() {
     for args in [
         ["entry", "list", "--help"],
         ["form", "list", "--help"],
-        ["asset", "list", "--help"],
         ["index", "run", "--help"],
         ["search", "keyword", "--help"],
         ["space", "create", "--help"],
@@ -702,8 +701,6 @@ fn test_entry_update_req_ops_006_help_describes_required_inputs() {
         "Updated entry content as a Markdown string",
         "--parent-revision-id <PARENT_REVISION_ID>",
         "optimistic concurrency checks",
-        "--assets <ASSETS>",
-        "JSON array of asset objects",
         "--author <AUTHOR>",
         "Author name to record in the revision history (core mode only)",
     ] {

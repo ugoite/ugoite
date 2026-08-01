@@ -38,7 +38,6 @@ describe("createEntryStore", () => {
       updated_at: "2025-01-01T00:00:00Z",
       properties: {},
       tags: [],
-      links: [],
     };
     seedEntry("store-test-ws", entry, record);
 
@@ -148,7 +147,6 @@ describe("createEntryStore", () => {
       updated_at: "2025-01-01T00:00:00Z",
       properties: {},
       tags: [],
-      links: [],
     };
     seedEntry("store-test-ws", entry, record);
 
@@ -326,30 +324,6 @@ describe("createEntryStore", () => {
       await store.createEntry("# Searchable Entry\nDetails here");
       const results = await store.searchEntries("Searchable");
       expect(results.length).toBeGreaterThan(0);
-      dispose();
-    });
-  });
-
-  it("propagates assets in optimistic update", async () => {
-    await createRoot(async (dispose) => {
-      const store = createEntryStore(() => "store-test-ws");
-
-      const createResult = await store.createEntry("# Asset Entry");
-      const asset = {
-        id: "att-1",
-        name: "voice.m4a",
-        path: "assets/att-1_voice.m4a",
-      };
-
-      await store.updateEntry(createResult.id, {
-        markdown: "# Asset Entry\nupdated",
-        parent_revision_id: createResult.revision_id,
-        assets: [asset],
-      });
-
-      const updated = store.entries().find((n) => n.id === createResult.id);
-      expect(updated?.assets?.[0]?.id).toBe("att-1");
-
       dispose();
     });
   });

@@ -99,9 +99,11 @@ the Node control store. At least one active human owner is mandatory.
 Entry, Asset, Form, Saved SQL, search, link candidates, history, SQL sessions,
 counts, joins, aggregates, and MCP use the same core authorizer. Policies
 inherit the Space role by default and add explicit grants. There are no deny
-rules in this release. Asset authorization inherits its attached Entry before
-applying an Asset policy. Query engines receive the authorized Entry ID set
-before filtering, pagination, joins, or aggregation.
+rules in this release. Typed Form references do not create an inferred ACL
+edge: Asset byte operations require an explicit caller-authorized containing
+Entry context before applying the Asset and Space resource policy. Query
+engines receive the authorized Entry ID set before filtering, pagination, joins,
+or aggregation.
 
 ## CLI, agents, and MCP
 
