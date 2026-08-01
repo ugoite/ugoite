@@ -24,6 +24,7 @@ vi.mock("@solidjs/router", () => ({
       {props.children}
     </a>
   ),
+  useNavigate: () => vi.fn(),
 }));
 
 vi.mock("~/lib/ugoite-client", () => ({

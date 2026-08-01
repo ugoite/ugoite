@@ -12,16 +12,6 @@ vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default" }),
 }));
 
-vi.mock("~/components/SpaceShell", () => ({
-  SpaceShell: (
-    props: { children: unknown; spaceId: string; activeTopTab?: string },
-  ) => (
-    <div data-space-id={props.spaceId} data-active-top-tab={props.activeTopTab}>
-      {props.children}
-    </div>
-  ),
-}));
-
 describe("/spaces/:space_id/query", () => {
   it("REQ-FE-063: legacy query route explains the supported search path", () => {
     const { container } = render(() => <SpaceQueryRoute />);
@@ -46,13 +36,5 @@ describe("/spaces/:space_id/query", () => {
         "href",
         "/spaces/default/dashboard",
       );
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-space-id",
-      "default",
-    );
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-active-top-tab",
-      "search",
-    );
   });
 });

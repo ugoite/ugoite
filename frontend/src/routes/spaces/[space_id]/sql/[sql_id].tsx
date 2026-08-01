@@ -8,7 +8,6 @@ import {
   Switch,
 } from "solid-js";
 import { SqlQueryEditor } from "~/components";
-import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
 import { buildSqlSchema } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
@@ -57,11 +56,7 @@ export default function SpaceSqlDetailRoute() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="search"
-      title="Saved SQL detail"
-    >
+    <>
       <div class="screenHead">
         <div class="ui-stack-sm">
           <p class="eyebrow">Search / Saved SQL</p>
@@ -210,6 +205,6 @@ export default function SpaceSqlDetailRoute() {
           </A>
         </div>
       </section>
-    </SpaceShell>
+    </>
   );
 }

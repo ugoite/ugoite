@@ -1,6 +1,5 @@
 import { A, useParams } from "@solidjs/router";
 import { For, Show } from "solid-js";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { entryApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
@@ -15,11 +14,7 @@ export default function SpaceEntryHistoryRoute() {
   );
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="forms"
-      title="Entry / History"
-    >
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{entryId()}</div>
@@ -63,6 +58,6 @@ export default function SpaceEntryHistoryRoute() {
           </div>
         )}
       </Show>
-    </SpaceShell>
+    </>
   );
 }

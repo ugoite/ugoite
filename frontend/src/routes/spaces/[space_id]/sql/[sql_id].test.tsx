@@ -21,19 +21,6 @@ vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default", sql_id: "saved-query" }),
 }));
 
-vi.mock("~/components/SpaceShell", () => ({
-  SpaceShell: (
-    props: { children: unknown; spaceId: string; activeNavigation?: string },
-  ) => (
-    <div
-      data-space-id={props.spaceId}
-      data-active-navigation={props.activeNavigation}
-    >
-      {props.children}
-    </div>
-  ),
-}));
-
 vi.mock("~/components", () => ({
   SqlQueryEditor: (props: { value: string; disabled?: boolean }) => (
     <pre
@@ -74,7 +61,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       revision_id: "rev-1",
     });
 
-    const { container } = render(() => <SpaceSqlDetailRoute />);
+    render(() => <SpaceSqlDetailRoute />);
 
     expect(await screen.findByRole("heading", { name: "Recent Search" }))
       .toBeInTheDocument();
@@ -100,14 +87,6 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     expect(screen.getByRole("link", { name: "Open Search" })).toHaveAttribute(
       "href",
       "/spaces/default/search",
-    );
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-space-id",
-      "default",
-    );
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-active-navigation",
-      "search",
     );
   });
 

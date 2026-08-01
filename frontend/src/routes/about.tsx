@@ -1,3 +1,4 @@
+import { A } from "@solidjs/router";
 import { createMemo, createSignal, onMount } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
@@ -67,12 +68,12 @@ export default function About() {
             <p class="ui-muted">{copy().subtitle}</p>
           </div>
           <div class="actions">
-            <a href={openSpacesHref()} class="btn primary">
+            <A href={openSpacesHref()} class="btn primary">
               {copy().openSpaces}
-            </a>
-            <a href="/" class="btn">
+            </A>
+            <A href="/" class="btn">
               {copy().backHome}
-            </a>
+            </A>
           </div>
         </div>
         <h2 class="sr-only">{copy().whatMakesDifferent}</h2>

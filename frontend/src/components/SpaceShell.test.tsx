@@ -6,6 +6,14 @@ import { setLocale } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { SpaceShell } from "./SpaceShell";
 
+vi.mock("@solidjs/router", () => ({
+  A: (props: Record<string, unknown>) => {
+    const { children, ...rest } = props;
+    return <a {...(rest as never)}>{children as never}</a>;
+  },
+  useNavigate: () => vi.fn(),
+}));
+
 vi.mock("~/lib/space-store", () => ({
   createSpaceStore: () => ({
     spaces: () => [

@@ -1,6 +1,5 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formApi } from "~/lib/ugoite-client";
@@ -607,7 +606,7 @@ export default function SpaceSearchRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="Search">
+    <>
       <div>
         <div class="screenHead">
           <div class="screenTitle">
@@ -1071,6 +1070,6 @@ export default function SpaceSearchRoute() {
           </main>
         </div>
       </div>
-    </SpaceShell>
+    </>
   );
 }

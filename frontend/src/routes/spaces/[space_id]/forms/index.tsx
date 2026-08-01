@@ -2,7 +2,6 @@ import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { CreateFormDialog, EditFormDialog } from "~/components/create-dialogs";
 import { FormTable } from "~/components/FormTable";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { locale } from "~/lib/i18n";
@@ -82,11 +81,7 @@ export default function SpaceFormsIndexPane() {
   };
 
   return (
-    <SpaceShell
-      spaceId={ctx.spaceId()}
-      activeNavigation="forms"
-      title={c().forms}
-    >
+    <>
       <Show
         when={!ctx.formsError?.()}
         fallback={
@@ -229,6 +224,6 @@ export default function SpaceFormsIndexPane() {
           onSubmit={createForm}
         />
       </Show>
-    </SpaceShell>
+    </>
   );
 }

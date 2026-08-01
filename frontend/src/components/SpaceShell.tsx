@@ -1,3 +1,4 @@
+import { A, useNavigate } from "@solidjs/router";
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { locale } from "~/lib/i18n";
@@ -54,6 +55,7 @@ const labels = {
 
 export function SpaceShell(props: SpaceShellProps) {
   const spaceStore = createSpaceStore();
+  const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   onMount(() => {
     void spaceStore.loadSpaces().catch(() => undefined);
@@ -86,9 +88,7 @@ export function SpaceShell(props: SpaceShellProps) {
   const switchSpace = (spaceId: string) => {
     if (!spaceId || spaceId === props.spaceId) return;
     spaceStore.selectSpace(spaceId);
-    if (typeof window !== "undefined") {
-      window.location.assign(`/spaces/${spaceId}/${activePath()}`);
-    }
+    navigate(`/spaces/${spaceId}/${activePath()}`);
   };
 
   const navigation = (mobile = false) => (
@@ -97,7 +97,7 @@ export function SpaceShell(props: SpaceShellProps) {
       aria-label="Space navigation"
     >
       {navItems.map((item) => (
-        <a
+        <A
           href={`/spaces/${props.spaceId}/${item.path}`}
           class={mobile ? "" : "navItem"}
           classList={{ active: active() === item.id }}
@@ -106,7 +106,7 @@ export function SpaceShell(props: SpaceShellProps) {
         >
           <UiIcon name={item.icon} />
           <span>{copy()[item.id]}</span>
-        </a>
+        </A>
       ))}
     </nav>
   );
@@ -139,6 +139,8 @@ export function SpaceShell(props: SpaceShellProps) {
           <div class="crumbTop">{crumb()}</div>
           <AccountMenu
             settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
+            settingsLink={(linkProps) => <A {...linkProps} />}
+            onSignOut={() => navigate("/login", { replace: true })}
           />
         </header>
         <div class="content">{props.children}</div>
@@ -150,10 +152,10 @@ export function SpaceShell(props: SpaceShellProps) {
   function sidebar() {
     return (
       <aside class="sidebar">
-        <a class="brand" href={`/spaces/${props.spaceId}/dashboard`}>
+        <A class="brand" href={`/spaces/${props.spaceId}/dashboard`}>
           <span class="brandMark">U</span>
           <span>Ugoite</span>
-        </a>
+        </A>
         <label class="sidebarSpaceSelect">
           <span class="ui-sr-only">Space</span>
           <select
@@ -175,14 +177,14 @@ export function SpaceShell(props: SpaceShellProps) {
         </label>
         {navigation()}
         <div class="sideFoot">
-          <a class="navItem" href="/spaces">
+          <A class="navItem" href="/spaces">
             <UiIcon name="spaces" />
             <span>{copy().spaces}</span>
-          </a>
-          <a class="navItem" href="/about">
+          </A>
+          <A class="navItem" href="/about">
             <UiIcon name="about" />
             <span>{copy().about}</span>
-          </a>
+          </A>
         </div>
       </aside>
     );

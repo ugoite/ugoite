@@ -1,3 +1,4 @@
+import { A } from "@solidjs/router";
 import { GlobalShell } from "~/components/GlobalShell";
 
 export default function NotFound() {
@@ -14,18 +15,18 @@ export default function NotFound() {
           </p>
         </div>
         <div class="actions">
-          <a href="/spaces" class="btn primary">
+          <A href="/spaces" class="btn primary">
             Open Spaces
-          </a>
-          <a href="/login" class="btn">
+          </A>
+          <A href="/login" class="btn">
             Go to Login
-          </a>
-          <a href="/" class="btn">
+          </A>
+          <A href="/" class="btn">
             Back to Home
-          </a>
-          <a href="/about" class="btn">
+          </A>
+          <A href="/about" class="btn">
             About Ugoite
-          </a>
+          </A>
         </div>
       </div>
       <p class="ui-muted">

@@ -6,7 +6,6 @@ import {
   Show,
 } from "solid-js";
 import { EntryDetailPane } from "~/components/EntryDetailPane";
-import { SpaceShell } from "~/components/SpaceShell";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
@@ -55,7 +54,7 @@ export default function NewEntryRoute() {
   );
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="forms" title="New Entry">
+    <>
       <Show
         when={!space.loading && !forms.loading}
         fallback={
@@ -117,6 +116,6 @@ export default function NewEntryRoute() {
           </Show>
         </Show>
       </Show>
-    </SpaceShell>
+    </>
   );
 }

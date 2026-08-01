@@ -1,7 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { createEntryStore } from "~/lib/entry-store";
 import { getDocsiteHref } from "~/lib/docsite-links";
@@ -64,7 +63,7 @@ export default function SpaceDashboardRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="home" title={c().home}>
+    <>
       <div class="screenHead">
         <div class="screenTitle"><div class="eyebrow">{spaceName()}</div><h1>{c().home}</h1></div>
         <button class="btn primary" type="button" disabled={!formsAvailable()} onClick={startNewEntry}>
@@ -118,6 +117,6 @@ export default function SpaceDashboardRoute() {
       </section>
 
       <CreateFormDialog open={showFormDialog()} columnTypes={columnTypes() ?? []} formNames={(forms() ?? []).map((form) => form.name)} onClose={() => setShowFormDialog(false)} onSubmit={createForm} />
-    </SpaceShell>
+    </>
   );
 }

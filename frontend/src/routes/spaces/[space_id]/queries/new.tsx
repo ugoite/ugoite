@@ -1,7 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { SpaceShell } from "~/components/SpaceShell";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
 import { buildSqlSchema } from "~/lib/sql";
@@ -78,7 +77,7 @@ export default function SpaceQueryCreateRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="SQL / New">
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Search / Saved SQL</div>
@@ -132,6 +131,6 @@ export default function SpaceQueryCreateRoute() {
           {isSaving() ? "Saving..." : "Save"}
         </button>
       </div>
-    </SpaceShell>
+    </>
   );
 }

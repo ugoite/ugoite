@@ -11,6 +11,14 @@ vi.mock("~/lib/ugoite-client", () => ({
   },
 }));
 
+vi.mock("@solidjs/router", () => ({
+  A: (props: Record<string, unknown>) => {
+    const { children, ...rest } = props;
+    return <a {...(rest as never)}>{children as never}</a>;
+  },
+  useNavigate: () => vi.fn(),
+}));
+
 describe("GlobalShell account menu", () => {
   beforeEach(() => {
     setLocale("en");
