@@ -69,13 +69,13 @@ enum Commands {
     ///
     /// Examples:
     ///   # List all entries in a space (core mode)
-    ///   ugoite query /root/spaces/my-space --sql "SELECT id, title FROM note LIMIT 10"
+    ///   ugoite query /root/spaces/my-space --sql "SELECT _ugoite_id, field_100 FROM \"form_<FormId>\" LIMIT 10"
     ///
     ///   # Filter by form type
-    ///   ugoite query /root/spaces/my-space --sql "SELECT id, title FROM note WHERE title = 'Daily note'"
+    ///   ugoite query /root/spaces/my-space --sql "SELECT _ugoite_id FROM \"form_<FormId>\" WHERE field_100 = 'Daily note'"
     ///
     #[command(
-        long_about = "Query a Space with DataFusion SQL.\n\nEach Form is exposed as a lowercase relation with its Form fields plus id, title, created_at, and updated_at. Only authorized Form relations are resolvable.\n\nExamples:\n  # Core mode (full path)\n  ugoite query /root/spaces/my-space --sql \"SELECT id, title FROM note LIMIT 10\"\n\n  # Backend/API mode (space ID only)\n  ugoite query my-space --sql \"SELECT id, title FROM note WHERE title = 'Daily note'\""
+        long_about = "Query a Space with DataFusion SQL.\n\nThe backend returns a stable Form relation (form_<FormId>) and stable field columns (field_<FieldId>) alongside _ugoite_* metadata columns. Only authorized Form relations are resolvable.\n\nExamples:\n  # Core mode (full path)\n  ugoite query /root/spaces/my-space --sql \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\"\n\n  # Backend/API mode (space ID only)\n  ugoite query my-space --sql \"SELECT _ugoite_id FROM \\\"form_<FormId>\\\" WHERE field_100 = 'Daily note'\""
     )]
     Query {
         #[arg(
@@ -85,7 +85,7 @@ enum Commands {
         space_path: String,
         #[arg(
             long,
-            help = "Read-only DataFusion SQL over authorized Iceberg Form relations. Relations are lowercase Form names and expose Form fields plus id, title, created_at, and updated_at.\n\nExample: \"SELECT id, title FROM note LIMIT 10\""
+            help = "Read-only DataFusion SQL over authorized Iceberg Form relations. Use the backend-provided form_<FormId> relation and field_<FieldId> columns, plus _ugoite_* metadata columns.\n\nExample: \"SELECT _ugoite_id, field_100 FROM \\\"form_<FormId>\\\" LIMIT 10\""
         )]
         sql: String,
     },

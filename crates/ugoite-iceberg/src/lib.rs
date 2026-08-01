@@ -70,7 +70,8 @@ use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{
-    Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition, FormField,
+    sql_relation_name, Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition,
+    FormField,
 };
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
@@ -494,7 +495,7 @@ impl IcebergWorkspace {
         let mut matches = checkpoint
             .tables
             .iter()
-            .filter(|coordinate| coordinate.form_name.eq_ignore_ascii_case(&relation));
+            .filter(|coordinate| sql_relation_name(coordinate.form_id) == relation);
         let coordinate = matches
             .next()
             .ok_or_else(|| CheckpointUnavailable::new(format!("Form relation {relation}")))?;
@@ -511,9 +512,9 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, coordinate.form_id)?;
-        if !form.name.eq_ignore_ascii_case(&relation) || coordinate.form_name != form.name {
+        if sql_relation_name(coordinate.form_id) != relation || coordinate.form_id != form.id {
             return Err(CheckpointIntegrityError::new(
-                "checkpoint Form relation does not match immutable Iceberg metadata",
+                "checkpoint Form ID does not match immutable Iceberg metadata",
             )
             .into());
         }
@@ -1262,7 +1263,7 @@ fn is_publication_conflict(error: &anyhow::Error) -> bool {
 }
 
 pub fn physical_form_name(form_id: FormId) -> String {
-    format!("form_{}", form_id.as_uuid().simple())
+    sql_relation_name(form_id)
 }
 
 pub fn namespace_for_space(space_id: SpaceId) -> NamespaceIdent {

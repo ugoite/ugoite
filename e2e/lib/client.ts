@@ -82,6 +82,26 @@ export async function ensureDefaultForm(
 	}
 }
 
+export async function getDefaultFormRelation(
+	request: APIRequestContext,
+	spaceId?: string,
+): Promise<string> {
+	const resolvedSpaceId = spaceId ?? await getDefaultSpaceId(request);
+	const response = await request.get(
+		getBackendUrl(`/spaces/${resolvedSpaceId}/forms`),
+	);
+	if (!response.ok()) {
+		throw new Error(`Failed to list default Forms: ${response.status()}`);
+	}
+	const forms = await response.json() as Array<{
+		name?: string;
+		sql_relation?: string;
+	}>;
+	const relation = forms.find((form) => form.name === "Entry")?.sql_relation;
+	if (!relation) throw new Error("Default Entry Form has no SQL relation");
+	return relation;
+}
+
 export async function getDefaultSpaceId(
 	request: APIRequestContext,
 ): Promise<string> {

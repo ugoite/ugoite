@@ -1,6 +1,69 @@
 import { normalizeTimestamp } from "./date-format";
-import type { EntryRecord, SqlSession, SqlSessionRows } from "./types";
+import type {
+  EntryRecord,
+  SqlSession,
+  SqlSessionRow,
+  SqlSessionRows,
+} from "./types";
 import { protocolFetch } from "./ugoite-client/protocol";
+
+const isSqlSessionRow = (value: unknown): value is SqlSessionRow =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+export class SqlSessionEntryProjectionError extends Error {
+  constructor() {
+    super(
+      "SQL session result is not an Entry projection: expected _ugoite_id, _ugoite_title, and valid _ugoite_updated_at.",
+    );
+    this.name = "SqlSessionEntryProjectionError";
+  }
+}
+
+const timestampValue = (value: unknown): string | undefined => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? normalizeTimestamp(value) : undefined;
+  }
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric) && Number.isNaN(Date.parse(trimmed))) {
+    return undefined;
+  }
+  return normalizeTimestamp(trimmed);
+};
+
+/** Convert the backend's Form SQL projection into the Entry card contract. */
+export const sqlSessionRowToEntryRecord = (
+  row: SqlSessionRow,
+): EntryRecord => {
+  if (
+    typeof row._ugoite_id !== "string" ||
+    !row._ugoite_id.trim() ||
+    typeof row._ugoite_title !== "string"
+  ) {
+    throw new SqlSessionEntryProjectionError();
+  }
+  const updatedAt = timestampValue(row._ugoite_updated_at);
+  if (!updatedAt) throw new SqlSessionEntryProjectionError();
+
+  const properties = Object.fromEntries(
+    Object.entries(row).filter(([key]) => key.startsWith("field_")),
+  );
+  const form = typeof row.form === "string" ? row.form : undefined;
+  const createdAt = timestampValue(row._ugoite_created_at);
+
+  return {
+    id: row._ugoite_id,
+    title: row._ugoite_title,
+    ...(form ? { form } : {}),
+    ...(createdAt ? { created_at: createdAt } : {}),
+    updated_at: updatedAt,
+    properties,
+    tags: [],
+    links: [],
+  };
+};
 
 export const sqlSessionApi = {
   async create(
@@ -52,10 +115,9 @@ export const sqlSessionApi = {
       undefined,
       { trackLoading: false },
     );
-    const rows = ((payload.rows ?? []) as EntryRecord[]).map((row) => ({
-      ...row,
-      updated_at: normalizeTimestamp(row.updated_at),
-    }));
+    const rows = Array.isArray(payload.rows)
+      ? payload.rows.filter(isSqlSessionRow)
+      : [];
     return {
       rows,
       offset: Number(payload.offset ?? 0),

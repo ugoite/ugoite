@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+	ensureDefaultForm,
+	getBackendUrl,
+	getDefaultFormRelation,
+	getFrontendUrl,
+	waitForServers,
+} from "./lib/client.ts";
 
 const spaceId = "default";
 
@@ -36,10 +42,12 @@ test.describe("Saved SQL route", () => {
 		page,
 		request,
 	}) => {
+		await ensureDefaultForm(request);
+		const relation = await getDefaultFormRelation(request);
 		const sqlCreate = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
 			data: {
 				name: `Saved Detail Query ${Date.now()}`,
-				sql: "SELECT * FROM entries LIMIT 1",
+				sql: `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
 				variables: [],
 			},
 		});
@@ -52,7 +60,9 @@ test.describe("Saved SQL route", () => {
 			});
 
 			await expect(page.getByRole("heading", { level: 1, name: /Saved Detail Query/ })).toBeVisible();
-			await expect(page.locator(".ui-sql-editor")).toContainText("SELECT * FROM entries LIMIT 1");
+			await expect(page.locator(".ui-sql-editor")).toContainText(
+				`SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
+			);
 			await page.getByRole("button", { name: "Run Query" }).click();
 			await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/entries\\?session=`));
 		} finally {

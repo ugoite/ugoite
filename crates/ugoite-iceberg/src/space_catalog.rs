@@ -882,15 +882,6 @@ impl SpaceCatalog {
         }
         Ok(CheckpointTable {
             form_id,
-            form_name: metadata
-                .properties()
-                .get(crate::FORM_NAME_PROPERTY)
-                .cloned()
-                .ok_or_else(|| {
-                    crate::CheckpointIntegrityError::new(
-                        "Iceberg table has no immutable Form relation name",
-                    )
-                })?,
             namespace: reference.identifier.namespace.clone(),
             table: reference.identifier.table.clone(),
             table_uuid: reference.table_uuid.clone(),
@@ -1005,8 +996,8 @@ impl SpaceCatalog {
             .read_checkpoint(name)
             .await
             .map_err(checkpoint_target_error)?;
-        Ok(serde_json::from_slice(&bytes)
-            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()))?)
+        serde_json::from_slice(&bytes)
+            .map_err(|error| crate::CheckpointIntegrityError::new(error.to_string()).into())
     }
 
     /// Re-establishes the immutable publication -> canonical Head chain that

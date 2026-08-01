@@ -1,6 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceShell } from "~/components/SpaceShell";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
@@ -31,15 +31,24 @@ export default function SpaceQueryCreateRoute() {
   const navigate = useNavigate();
   const spaceId = () => params.space_id;
   const [queryName, setQueryName] = createSignal("");
-  const [sqlInput, setSqlInput] = createSignal(
-    "SELECT * FROM entries LIMIT 50",
-  );
+  const [sqlInput, setSqlInput] = createSignal("");
   const [diagnostics, setDiagnostics] = createSignal<Diagnostic[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [isSaving, setIsSaving] = createSignal(false);
 
   const [forms] = createResource(async () => {
     return await formApi.list(spaceId());
+  });
+
+  const defaultSql = createMemo(() => {
+    const relation = forms()?.find((form) => form.sql_relation)?.sql_relation;
+    return relation
+      ? `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50`
+      : "";
+  });
+
+  createEffect(() => {
+    if (!sqlInput().trim() && defaultSql()) setSqlInput(defaultSql());
   });
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);

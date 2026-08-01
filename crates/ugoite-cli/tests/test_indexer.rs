@@ -13,7 +13,9 @@ fn ugoite_bin() -> String {
     path.to_string_lossy().to_string()
 }
 
-fn setup_space_with_entries(dir: &tempfile::TempDir) -> (String, String, std::path::PathBuf) {
+fn setup_space_with_entries(
+    dir: &tempfile::TempDir,
+) -> (String, String, std::path::PathBuf, String) {
     let root = dir.path().to_string_lossy().to_string();
     let config_path = dir.path().join("cli-config.json");
     let space_path = format!("{root}/spaces/idx-space");
@@ -27,7 +29,7 @@ fn setup_space_with_entries(dir: &tempfile::TempDir) -> (String, String, std::pa
     let form_file = dir.path().join("entry-form.json");
     std::fs::write(
         &form_file,
-        r#"{"name":"Entry","fields":{"Body":{"type":"markdown"}}}"#,
+        r#"{"id":"00000000-0000-0000-0000-000000000001","name":"Entry","fields":{"Body":{"id":100,"type":"markdown"}}}"#,
     )
     .unwrap();
 
@@ -36,6 +38,16 @@ fn setup_space_with_entries(dir: &tempfile::TempDir) -> (String, String, std::pa
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
         .expect("create form");
+    let form_output = Command::new(ugoite_bin())
+        .args(["form", "get", &space_path, "Entry"])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("get form");
+    let form_json: serde_json::Value = serde_json::from_slice(&form_output.stdout).unwrap();
+    let relation = form_json["sql_relation"]
+        .as_str()
+        .expect("backend SQL relation")
+        .to_string();
 
     let content1 = "---\nform: Entry\n---\n# Alpha Entry\n\n## Body\n\nsome words here";
     Command::new(ugoite_bin())
@@ -51,14 +63,14 @@ fn setup_space_with_entries(dir: &tempfile::TempDir) -> (String, String, std::pa
         .output()
         .expect("create entry 2");
 
-    (root, space_path, config_path)
+    (root, space_path, config_path, relation)
 }
 
 /// REQ-IDX-001: Indexer run does not report false success in this release.
 #[test]
 fn test_indexer_run_once() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path) = setup_space_with_entries(&dir);
+    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
 
     let output = Command::new(ugoite_bin())
         .args(["index", "run", &space_path])
@@ -78,7 +90,7 @@ fn test_indexer_run_once() {
 #[test]
 fn test_aggregate_stats() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path) = setup_space_with_entries(&dir);
+    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
 
     let output = Command::new(ugoite_bin())
         .args(["index", "stats", &space_path])
@@ -97,7 +109,7 @@ fn test_aggregate_stats() {
 #[test]
 fn test_aggregate_stats_includes_field_usage() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path) = setup_space_with_entries(&dir);
+    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
 
     let output = Command::new(ugoite_bin())
         .args(["index", "stats", &space_path])
@@ -218,14 +230,14 @@ fn test_extract_properties_precedence() {
 #[test]
 fn test_query_index() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path) = setup_space_with_entries(&dir);
+    let (_root, space_path, config_path, relation) = setup_space_with_entries(&dir);
 
     let output = Command::new(ugoite_bin())
         .args([
             "query",
             &space_path,
             "--sql",
-            "SELECT * FROM entry LIMIT 10",
+            &format!("SELECT * FROM \"{relation}\" LIMIT 10"),
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -242,14 +254,14 @@ fn test_query_index() {
 #[test]
 fn test_query_index_by_tag() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path) = setup_space_with_entries(&dir);
+    let (_root, space_path, config_path, relation) = setup_space_with_entries(&dir);
 
     let output = Command::new(ugoite_bin())
         .args([
             "query",
             &space_path,
             "--sql",
-            "SELECT * FROM entry LIMIT 10",
+            &format!("SELECT * FROM \"{relation}\" LIMIT 10"),
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
         .output()
@@ -372,7 +384,7 @@ fn test_validate_properties_valid() {
 #[test]
 fn test_indexer_generates_inverted_index() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path) = setup_space_with_entries(&dir);
+    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
 
     let output = Command::new(ugoite_bin())
         .args(["index", "run", &space_path])
@@ -392,7 +404,7 @@ fn test_indexer_generates_inverted_index() {
 #[test]
 fn test_indexer_computes_word_count() {
     let dir = tempfile::tempdir().unwrap();
-    let (_root, space_path, config_path) = setup_space_with_entries(&dir);
+    let (_root, space_path, config_path, _relation) = setup_space_with_entries(&dir);
 
     let output = Command::new(ugoite_bin())
         .args(["index", "run", &space_path])

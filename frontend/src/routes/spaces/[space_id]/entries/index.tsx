@@ -15,7 +15,7 @@ import { formApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { sqlSessionApi } from "~/lib/ugoite-client";
+import { sqlSessionApi, sqlSessionRowToEntryRecord } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
 
 export default function SpaceEntriesIndexPane() {
@@ -76,12 +76,26 @@ export default function SpaceEntriesIndexPane() {
     }
   });
 
-  const displayEntries = createMemo<EntryRecord[]>(() => {
-    if (sessionId().trim()) {
-      return sessionRows()?.rows || [];
+  const displayEntryState = createMemo<{
+    entries: EntryRecord[];
+    error: Error | null;
+  }>(() => {
+    if (!sessionId().trim()) {
+      return { entries: ctx.entryStore.entries() || [], error: null };
     }
-    return ctx.entryStore.entries() || [];
+    const rows = sessionRows()?.rows;
+    if (!rows) return { entries: [], error: null };
+    try {
+      return { entries: rows.map(sqlSessionRowToEntryRecord), error: null };
+    } catch (error) {
+      return {
+        entries: [],
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
   });
+
+  const displayEntries = createMemo(() => displayEntryState().entries);
 
   const totalCount = createMemo(() =>
     sessionRows()?.totalCount ?? displayEntries().length
@@ -100,7 +114,7 @@ export default function SpaceEntriesIndexPane() {
 
   const error = createMemo(() => {
     if (sessionId().trim()) {
-      return session.error || sessionRows.error;
+      return session.error || sessionRows.error || displayEntryState().error;
     }
     return ctx.entryStore.error();
   });

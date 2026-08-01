@@ -175,6 +175,24 @@ impl UgoiteService {
         form::list_forms(&self.operator, &self.workspace_path(space_id)).await
     }
 
+    async fn form_relations(&self, space_id: &str) -> Result<BTreeMap<String, String>> {
+        self.list_forms(space_id)
+            .await?
+            .into_iter()
+            .map(|form| {
+                let name = form
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| anyhow!("Form is missing its name"))?;
+                let relation = form
+                    .get("sql_relation")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| anyhow!("Form is missing its SQL relation"))?;
+                Ok((name.to_string(), relation.to_string()))
+            })
+            .collect()
+    }
+
     pub async fn get_form(&self, space_id: &str, form_name: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_form_name(form_name))?;
@@ -380,7 +398,7 @@ impl UgoiteService {
         &self,
         space_id: &str,
         query: &str,
-    ) -> Result<Vec<search::SearchResult>> {
+    ) -> Result<Vec<search::KeywordSearchResult>> {
         validate_storage_id(validate_space_id(space_id))?;
         search::search_entries(&self.operator, &self.workspace_path(space_id), query).await
     }
@@ -465,6 +483,7 @@ impl UgoiteService {
         principal_id: Uuid,
     ) -> Result<BTreeMap<String, HashSet<String>>> {
         let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
+        let relations = self.form_relations(space_id).await?;
         let mut by_form = BTreeMap::<String, HashSet<String>>::new();
         for entry in self.list_entries(space_id).await? {
             let Some(entry_id) = entry.get("id").and_then(Value::as_str) else {
@@ -474,10 +493,12 @@ impl UgoiteService {
                 continue;
             };
             if allowed.contains(entry_id) {
-                by_form
-                    .entry(form.to_ascii_lowercase())
-                    .or_default()
-                    .insert(entry_id.to_string());
+                if let Some(relation) = relations.get(form) {
+                    by_form
+                        .entry(relation.clone())
+                        .or_default()
+                        .insert(entry_id.to_string());
+                }
             }
         }
         Ok(by_form)
@@ -508,6 +529,7 @@ impl UgoiteService {
         let allowed = self
             .authorized_entry_ids_for_principals(space_id, principal_ids)
             .await?;
+        let relations = self.form_relations(space_id).await?;
         let mut by_form = BTreeMap::<String, HashSet<String>>::new();
         for entry in self.list_entries(space_id).await? {
             let (Some(entry_id), Some(form)) = (
@@ -517,10 +539,12 @@ impl UgoiteService {
                 continue;
             };
             if allowed.contains(entry_id) {
-                by_form
-                    .entry(form.to_ascii_lowercase())
-                    .or_default()
-                    .insert(entry_id.to_string());
+                if let Some(relation) = relations.get(form) {
+                    by_form
+                        .entry(relation.clone())
+                        .or_default()
+                        .insert(entry_id.to_string());
+                }
             }
         }
         Ok(by_form)
@@ -640,7 +664,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
         query: &str,
-    ) -> Result<Vec<search::SearchResult>> {
+    ) -> Result<Vec<search::KeywordSearchResult>> {
         let allowed = self
             .authorized_entry_ids_for_principals(space_id, principal_ids)
             .await?;
@@ -825,7 +849,7 @@ impl UgoiteService {
         space_id: &str,
         principal_id: Uuid,
         query: &str,
-    ) -> Result<Vec<search::SearchResult>> {
+    ) -> Result<Vec<search::KeywordSearchResult>> {
         let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
         search::search_entries_authorized(
             &self.operator,
