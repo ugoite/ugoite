@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use arrow_json::writer::ArrayWriter;
 use base64::Engine as _;
-use chrono::{DateTime, NaiveDate, NaiveTime, SecondsFormat, Timelike, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, SecondsFormat, Timelike, Utc};
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1086,17 +1086,31 @@ fn parse_boolean(value: &str) -> Option<bool> {
     }
 }
 
+fn parse_timestamp(value: &str) -> Option<DateTime<Utc>> {
+    if let Ok(timestamp) = DateTime::parse_from_rfc3339(value) {
+        return Some(timestamp.with_timezone(&Utc));
+    }
+
+    [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+    ]
+    .into_iter()
+    .find_map(|format| {
+        NaiveDateTime::parse_from_str(value, format)
+            .ok()
+            .map(|timestamp| timestamp.and_utc())
+    })
+}
+
 fn normalize_timestamp(value: &str) -> Option<String> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|dt| dt.with_timezone(&Utc).to_rfc3339())
+    parse_timestamp(value).map(|timestamp| timestamp.to_rfc3339())
 }
 
 fn normalize_timestamp_ns(value: &str) -> Option<String> {
-    DateTime::parse_from_rfc3339(value).ok().map(|dt| {
-        dt.with_timezone(&Utc)
-            .to_rfc3339_opts(SecondsFormat::Nanos, false)
-    })
+    parse_timestamp(value).map(|timestamp| timestamp.to_rfc3339_opts(SecondsFormat::Nanos, false))
 }
 
 fn normalize_time(value: &str) -> Option<String> {

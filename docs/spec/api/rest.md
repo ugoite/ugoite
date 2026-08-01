@@ -59,3 +59,10 @@ Form evolution that changes the type of an existing field is intentionally
 unsupported before v1. The server returns HTTP 422 with code
 `FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED` and a message naming the field and
 recommending a new field; it does not return this expected rejection as a 500.
+
+Entry create and update validate Markdown sections against the selected Form.
+Invalid field values, missing required fields, missing Form metadata, and
+unknown fields return HTTP 422 with code `INVALID_INPUT`; they are not internal
+server failures. Timestamp fields accept RFC3339 values and browser
+`datetime-local` values with minute precision, which are normalized to UTC
+before the append-only revision is published.

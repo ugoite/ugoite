@@ -43,6 +43,86 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn entry_update_after_create_with_numeric_and_timestamp_fields() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "entry-form-fields", "/tmp").await?;
+    let ws_path = "spaces/entry-form-fields";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {
+                "Body": {"type": "markdown"},
+                "test number": {"type": "double"},
+                "ts": {"type": "timestamp"},
+            },
+            "allow_extra_attributes": "allow_columns",
+        }),
+    )
+    .await?;
+    let integrity = FakeIntegrityProvider;
+    let content = "---\nform: Entry\n---\n# Entry\n\n## Body\nmemememo";
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "entry-form-fields-1",
+        content,
+        "author",
+        &integrity,
+    )
+    .await?;
+    let current = entry::get_entry_content(&op, ws_path, "entry-form-fields-1").await?;
+
+    let updated_content = format!(
+        "{}\n\n## test number\n0\n\n## ts\n2026-08-21T10:48",
+        current.markdown.replace("memememo", "memememo updated")
+    );
+    entry::update_entry(
+        &op,
+        ws_path,
+        "entry-form-fields-1",
+        &updated_content,
+        Some(&current.revision_id),
+        "author",
+        None,
+        &integrity,
+    )
+    .await?;
+
+    let updated = entry::get_entry_content(&op, ws_path, "entry-form-fields-1").await?;
+    assert!(updated
+        .markdown
+        .contains("## ts\n2026-08-21T10:48:00+00:00"));
+
+    let invalid_content = updated
+        .markdown
+        .replace("2026-08-21T10:48:00+00:00", "not-a-timestamp");
+    let error = entry::update_entry(
+        &op,
+        ws_path,
+        "entry-form-fields-1",
+        &invalid_content,
+        Some(&updated.revision_id),
+        "author",
+        None,
+        &integrity,
+    )
+    .await
+    .expect_err("invalid timestamp input must be rejected");
+    let app_error = error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("entry validation failures must remain typed application errors");
+    assert_eq!(
+        app_error.code(),
+        ugoite_core::error::ErrorCode::InvalidInput
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn explicit_entry_batch_creates_all_entries() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "batched-entry-space", "/tmp").await?;
