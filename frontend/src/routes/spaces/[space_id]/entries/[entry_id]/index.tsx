@@ -3,7 +3,9 @@ import { Show } from "solid-js";
 import { EntryDetailPane } from "~/components/EntryDetailPane";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { t } from "~/lib/i18n";
-import { SpaceShell } from "~/components/SpaceShell";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceEntryDetailRoute() {
   const navigate = useNavigate();
@@ -14,7 +16,7 @@ export default function SpaceEntryDetailRoute() {
   const entryId = () => params.entry_id ?? "";
 
   return (
-    <SpaceShell spaceId={spaceId()}>
+    <>
       <div class="mx-auto max-w-6xl">
         <Show
           when={!ctx.loadingForms() && !ctx.formsError?.()}
@@ -54,6 +56,6 @@ export default function SpaceEntryDetailRoute() {
           />
         </Show>
       </div>
-    </SpaceShell>
+    </>
   );
 }

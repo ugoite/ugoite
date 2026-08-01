@@ -1,6 +1,5 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formApi } from "~/lib/ugoite-client";
@@ -9,6 +8,9 @@ import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "search" });
 
 type SearchMode = "keyword" | "advanced";
 type FieldMatchOperator = "equals" | "contains" | "lt" | "lte" | "gt" | "gte";
@@ -607,7 +609,7 @@ export default function SpaceSearchRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="Search">
+    <>
       <div>
         <div class="screenHead">
           <div class="screenTitle">
@@ -1071,6 +1073,6 @@ export default function SpaceSearchRoute() {
           </main>
         </div>
       </div>
-    </SpaceShell>
+    </>
   );
 }

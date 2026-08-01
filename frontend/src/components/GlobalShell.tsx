@@ -1,4 +1,5 @@
-import { Show, type JSX } from "solid-js";
+import { A } from "@solidjs/router";
+import { type JSX, Show } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
 import { locale } from "~/lib/i18n";
@@ -30,7 +31,6 @@ export function GlobalShell(
   props: {
     title: string;
     children: JSX.Element;
-    active?: "spaces" | "about";
     authenticated?: boolean;
   },
 ) {
@@ -62,22 +62,14 @@ export function GlobalShell(
             </a>
           </nav>
           <div class="sideFoot">
-            <a
-              class="navItem"
-              classList={{ active: props.active === "spaces" }}
-              href="/spaces"
-            >
+            <A class="navItem" href="/spaces" end>
               <UiIcon name="spaces" />
               <span>{copy().spaces}</span>
-            </a>
-            <a
-              class="navItem"
-              classList={{ active: props.active === "about" }}
-              href="/about"
-            >
+            </A>
+            <A class="navItem" href="/about" end>
               <UiIcon name="about" />
               <span>{copy().about}</span>
-            </a>
+            </A>
           </div>
         </aside>
       </div>
@@ -104,7 +96,7 @@ export function GlobalShell(
         <div class="content">{props.children}</div>
       </section>
       <nav class="bottomNav">
-        <a class="active" href="/spaces">
+        <a href="/spaces">
           <UiIcon name="home" />
           <span>{copy().home}</span>
         </a>

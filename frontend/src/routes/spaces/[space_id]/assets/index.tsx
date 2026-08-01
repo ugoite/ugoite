@@ -1,10 +1,12 @@
 import { A, useParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { AssetUploader } from "~/components/AssetUploader";
-import { SpaceShell } from "~/components/SpaceShell";
 import { assetApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms", title: "assets" });
 import type { Asset } from "~/lib/types";
 
 export default function SpaceAssetsRoute() {
@@ -33,7 +35,7 @@ export default function SpaceAssetsRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="forms" title="Assets">
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Forms</div>
@@ -59,6 +61,6 @@ export default function SpaceAssetsRoute() {
           <p class="ui-alert ui-alert-error">{t("assetsPage.failedLoad")}</p>
         </Show>
       </div>
-    </SpaceShell>
+    </>
   );
 }

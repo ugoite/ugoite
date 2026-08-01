@@ -8,7 +8,6 @@ import {
   Show,
 } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
-import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { formApi } from "~/lib/ugoite-client";
@@ -17,6 +16,9 @@ import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { sqlSessionApi, sqlSessionRowToEntryRecord } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceEntriesIndexPane() {
   const navigate = useNavigate();
@@ -145,14 +147,7 @@ export default function SpaceEntriesIndexPane() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      showBottomTabs
-      activeBottomTab="object"
-      bottomTabHrefSuffix={sessionId().trim()
-        ? `?session=${encodeURIComponent(sessionId())}`
-        : ""}
-    >
+    <>
       <div class="mx-auto max-w-6xl">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -302,6 +297,6 @@ export default function SpaceEntriesIndexPane() {
         onClose={() => setShowCreateFormDialog(false)}
         onSubmit={handleCreateForm}
       />
-    </SpaceShell>
+    </>
   );
 }

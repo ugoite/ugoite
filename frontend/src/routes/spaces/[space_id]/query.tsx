@@ -1,12 +1,14 @@
 import { A, useParams } from "@solidjs/router";
-import { SpaceShell } from "~/components/SpaceShell";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "search" });
 
 export default function SpaceQueryRoute() {
   const params = useParams<{ space_id: string }>();
   const spaceId = () => params.space_id;
 
   return (
-    <SpaceShell spaceId={spaceId()} activeTopTab="search">
+    <>
       <div class="mx-auto max-w-4xl ui-stack">
         <section class="ui-card ui-stack">
           <div class="ui-stack-sm">
@@ -54,6 +56,6 @@ export default function SpaceQueryRoute() {
           </div>
         </section>
       </div>
-    </SpaceShell>
+    </>
   );
 }

@@ -1,8 +1,10 @@
 import { A, useParams } from "@solidjs/router";
 import { For, Show } from "solid-js";
 import { formApi } from "~/lib/ugoite-client";
-import { SpaceShell } from "~/components/SpaceShell";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms", title: "formTypes" });
 
 export default function SpaceFormTypesRoute() {
   const params = useParams<{ space_id: string }>();
@@ -13,11 +15,7 @@ export default function SpaceFormTypesRoute() {
   });
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="forms"
-      title="Forms / Field Types"
-    >
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Forms</div>
@@ -51,6 +49,6 @@ export default function SpaceFormTypesRoute() {
           </div>
         )}
       </Show>
-    </SpaceShell>
+    </>
   );
 }

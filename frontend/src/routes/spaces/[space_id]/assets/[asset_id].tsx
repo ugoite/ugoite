@@ -2,9 +2,11 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, Show } from "solid-js";
 import { assetApi } from "~/lib/ugoite-client";
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
-import { SpaceShell } from "~/components/SpaceShell";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms", title: "asset" });
 
 export default function SpaceAssetDetailRoute() {
   const navigate = useNavigate();
@@ -38,7 +40,7 @@ export default function SpaceAssetDetailRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="forms" title="Asset">
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Forms / Assets</div>
@@ -94,6 +96,6 @@ export default function SpaceAssetDetailRoute() {
           )}
         </Show>
       </div>
-    </SpaceShell>
+    </>
   );
 }
