@@ -40,6 +40,10 @@ fn revision_not_found(entry_id: &str, revision_id: &str) -> AppError {
     )
 }
 
+fn invalid_entry_input(message: impl Into<String>) -> anyhow::Error {
+    AppError::invalid_input(ErrorCode::InvalidInput, message).into()
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct IntegrityPayload {
     #[serde(default)]
@@ -1107,8 +1111,8 @@ async fn prepare_entry<I: IntegrityProvider>(
     integrity: &I,
 ) -> Result<(EntryMeta, String, Value, RevisionRow)> {
     let (frontmatter, sections) = parse_markdown(content);
-    let form_name =
-        extract_form(&frontmatter).ok_or_else(|| anyhow!("Form is required for entry creation"))?;
+    let form_name = extract_form(&frontmatter)
+        .ok_or_else(|| invalid_entry_input("Form is required for entry creation"))?;
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
 
     let form_fields = form_field_names(&form_def);
@@ -1116,16 +1120,19 @@ async fn prepare_entry<I: IntegrityProvider>(
     let policy = extra_attributes_policy(&form_def);
     let (extras, extra_attributes) = collect_extra_attributes(&sections, &form_set);
     if !extras.is_empty() && policy == ExtraAttributesPolicy::Deny {
-        return Err(anyhow!("Unknown form fields: {}", extras.join(", ")));
+        return Err(invalid_entry_input(format!(
+            "Unknown form fields: {}",
+            extras.join(", ")
+        )));
     }
 
     let properties = index::extract_properties(content);
     let (casted, warnings) = index::validate_properties(&properties, &form_def)?;
     if !warnings.is_empty() {
-        return Err(anyhow!(
+        return Err(invalid_entry_input(format!(
             "Form validation failed: {}",
             serde_json::to_string(&warnings)?
-        ));
+        )));
     }
 
     let mut fields = Map::new();
@@ -1468,10 +1475,10 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
     }
 
     let (frontmatter, sections) = parse_markdown(content);
-    let updated_form =
-        extract_form(&frontmatter).ok_or_else(|| anyhow!("Form is required for entry update"))?;
+    let updated_form = extract_form(&frontmatter)
+        .ok_or_else(|| invalid_entry_input("Form is required for entry update"))?;
     if updated_form != form_name {
-        return Err(anyhow!("Form change is not supported"));
+        return Err(invalid_entry_input("Form change is not supported"));
     }
 
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
@@ -1480,16 +1487,19 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
     let policy = extra_attributes_policy(&form_def);
     let (extras, extra_attributes) = collect_extra_attributes(&sections, &form_set);
     if !extras.is_empty() && policy == ExtraAttributesPolicy::Deny {
-        return Err(anyhow!("Unknown form fields: {}", extras.join(", ")));
+        return Err(invalid_entry_input(format!(
+            "Unknown form fields: {}",
+            extras.join(", ")
+        )));
     }
 
     let properties = index::extract_properties(content);
     let (casted, warnings) = index::validate_properties(&properties, &form_def)?;
     if !warnings.is_empty() {
-        return Err(anyhow!(
+        return Err(invalid_entry_input(format!(
             "Form validation failed: {}",
             serde_json::to_string(&warnings)?
-        ));
+        )));
     }
 
     let mut fields = Map::new();

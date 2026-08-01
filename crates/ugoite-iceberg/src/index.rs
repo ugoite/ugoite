@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use arrow_json::writer::ArrayWriter;
 use base64::Engine as _;
-use chrono::{DateTime, NaiveDate, NaiveTime, SecondsFormat, Timelike, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -1178,16 +1178,43 @@ fn parse_boolean(value: &str) -> Option<bool> {
     }
 }
 
-fn normalize_timestamp(value: &str) -> Option<String> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|dt| dt.with_timezone(&Utc).to_rfc3339())
+fn parse_wall_timestamp(value: &str) -> Option<NaiveDateTime> {
+    ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M"]
+        .into_iter()
+        .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
 }
 
-fn normalize_timestamp_ns(value: &str) -> Option<String> {
-    DateTime::parse_from_rfc3339(value).ok().map(|dt| {
-        dt.with_timezone(&Utc)
-            .to_rfc3339_opts(SecondsFormat::Nanos, false)
+fn parse_zoned_timestamp(value: &str) -> Option<DateTime<chrono::FixedOffset>> {
+    DateTime::parse_from_rfc3339(value).ok()
+}
+
+fn format_wall_timestamp(timestamp: NaiveDateTime, nanosecond_precision: bool) -> String {
+    let base = timestamp.format("%Y-%m-%dT%H:%M:%S").to_string();
+    let nanos = if nanosecond_precision {
+        timestamp.nanosecond()
+    } else {
+        (timestamp.nanosecond() / 1_000) * 1_000
+    };
+    if nanos == 0 {
+        return base;
+    }
+    let fraction = format!("{nanos:09}").trim_end_matches('0').to_string();
+    format!("{base}.{fraction}")
+}
+
+fn normalize_wall_timestamp(value: &str, nanosecond_precision: bool) -> Option<String> {
+    parse_wall_timestamp(value)
+        .map(|timestamp| format_wall_timestamp(timestamp, nanosecond_precision))
+}
+
+fn normalize_zoned_timestamp(value: &str, nanosecond_precision: bool) -> Option<String> {
+    parse_zoned_timestamp(value).map(|timestamp| {
+        let timestamp = timestamp.with_timezone(&chrono::Utc);
+        if nanosecond_precision {
+            timestamp.to_rfc3339_opts(chrono::SecondsFormat::Nanos, false)
+        } else {
+            timestamp.to_rfc3339()
+        }
     })
 }
 
@@ -1370,19 +1397,19 @@ pub fn validate_properties(properties: &Value, entry_form: &Value) -> Result<(Va
                 _ => None,
             },
             "timestamp" => match raw_value {
-                Value::String(ref s) => normalize_timestamp(s).map(Value::String),
+                Value::String(ref s) => normalize_wall_timestamp(s, false).map(Value::String),
                 _ => None,
             },
             "timestamp_tz" => match raw_value {
-                Value::String(ref s) => normalize_timestamp(s).map(Value::String),
+                Value::String(ref s) => normalize_zoned_timestamp(s, false).map(Value::String),
                 _ => None,
             },
             "timestamp_ns" => match raw_value {
-                Value::String(ref s) => normalize_timestamp_ns(s).map(Value::String),
+                Value::String(ref s) => normalize_wall_timestamp(s, true).map(Value::String),
                 _ => None,
             },
             "timestamp_tz_ns" => match raw_value {
-                Value::String(ref s) => normalize_timestamp_ns(s).map(Value::String),
+                Value::String(ref s) => normalize_zoned_timestamp(s, true).map(Value::String),
                 _ => None,
             },
             "uuid" => match raw_value {

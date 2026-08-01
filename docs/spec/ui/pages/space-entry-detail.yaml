@@ -51,11 +51,11 @@ components:
             - title
             - typed-form-fields
           field_controls:
-            boolean: select
+            boolean: free-form-text-input
             list: multiline-input
             markdown: multiline-input
             row_reference: searchable-entry-picker
-            scalar: typed-input
+            scalar: free-form-text-input
           validation: inline
         - id: entry-preview
           type: markdown-preview

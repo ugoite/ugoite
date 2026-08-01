@@ -141,7 +141,66 @@ describe("EntryDetailPane", () => {
       markdown:
         "---\nform: Meeting\n---\n\n# Planning \n\n## Summary\nProject \n\n## Notes\nDetails \n\n\n## Items\none\ntwo\n\n",
     });
-    expect(onCreated).toHaveBeenCalledWith("created-entry");
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+  });
+
+  it("REQ-ENTRY-1872: creates numeric and timestamp fields in one clean revision", async () => {
+    const onCreated = vi.fn();
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Entry",
+      version: 1,
+      template: "# Entry\n\n## Body\n\n## test number\n\n## ts\n",
+      fields: {
+        Body: { type: "markdown", required: false },
+        "test number": { type: "double", required: false },
+        ts: { type: "timestamp", required: false },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={onCreated}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    fireEvent.input(await screen.findByLabelText("test number"), {
+      target: { value: "0" },
+    });
+    fireEvent.input(screen.getByLabelText("ts"), {
+      target: { value: "2026-08-21T10:48" },
+    });
+
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalledTimes(1));
+    expect(entryApi.update).not.toHaveBeenCalled();
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown: expect.stringContaining("## test number\n0"),
+    });
+    expect(createMock.mock.calls[0][1].markdown).toContain(
+      "## ts\n2026-08-21T10:48",
+    );
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    expect(screen.getByText("All changes saved")).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
   });
 
   it("keeps nested Markdown headings out of form field values", async () => {
@@ -199,7 +258,7 @@ describe("EntryDetailPane", () => {
       title: "Timestamp Entry",
       form: "Event",
       content:
-        "---\nform: Event\n---\n\n# Timestamp Entry\n\n## Started\n2026-07-18T12:34:56Z\n\n## Observed\n2026-07-18T21:34:56+09:00\n\n## Precise\n2026-07-18T12:34:56.123456789Z",
+        "---\nform: Event\n---\n\n# Timestamp Entry\n\n## Amount\n12.5\n\n## Started\n2026-07-18T12:34:56Z\n\n## Observed\n2026-07-18T21:34:56+09:00\n\n## Precise\n2026-07-18T12:34:56.123456789Z\n\n## Date\n2026-07-\n\n## Time\n12:",
       revision_id: "rev-1",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -215,9 +274,12 @@ describe("EntryDetailPane", () => {
             version: 1,
             template: "# Event\n",
             fields: {
+              Amount: { type: "double", required: false },
               Started: { type: "timestamp", required: false },
               Observed: { type: "timestamp_tz", required: false },
               Precise: { type: "timestamp_ns", required: false },
+              Date: { type: "date", required: false },
+              Time: { type: "time", required: false },
             },
           },
         ]}
@@ -226,9 +288,15 @@ describe("EntryDetailPane", () => {
     ));
 
     const started = await screen.findByLabelText("Started");
-    expect(started).toHaveAttribute("type", "datetime-local");
-    expect(started).toHaveValue("2026-07-18T12:34:56.000");
-    expect(started).toHaveAttribute("step", "any");
+    expect(started).toHaveAttribute("type", "text");
+    expect(started).toHaveValue("2026-07-18T12:34:56Z");
+    expect(started).not.toHaveAttribute("step");
+
+    const amount = screen.getByLabelText("Amount");
+    expect(amount).toHaveAttribute("type", "text");
+    expect(amount).toHaveAttribute("inputmode", "decimal");
+    fireEvent.input(amount, { target: { value: "12." } });
+    expect(amount).toHaveValue("12.");
 
     const observed = screen.getByLabelText("Observed");
     expect(observed).toHaveAttribute("type", "text");
@@ -237,6 +305,14 @@ describe("EntryDetailPane", () => {
     const precise = screen.getByLabelText("Precise");
     expect(precise).toHaveAttribute("type", "text");
     expect(precise).toHaveValue("2026-07-18T12:34:56.123456789Z");
+
+    const date = screen.getByLabelText("Date");
+    expect(date).toHaveAttribute("type", "text");
+    expect(date).toHaveValue("2026-07-");
+
+    const time = screen.getByLabelText("Time");
+    expect(time).toHaveAttribute("type", "text");
+    expect(time).toHaveValue("12:");
   });
 
   it("REQ-FE-052: explains forms that have no structured fields", async () => {
@@ -336,6 +412,7 @@ describe("EntryDetailPane", () => {
     ));
 
     expect(await screen.findByLabelText("Summary")).toHaveValue("hello");
+    expect(screen.getByLabelText("Done")).toHaveAttribute("type", "text");
     expect(screen.getByLabelText("Done")).toHaveValue("maybe");
     expect(
       screen.getByText(

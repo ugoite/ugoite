@@ -563,6 +563,61 @@ describe("CreateEntryDialog", () => {
     expect((countInput as HTMLInputElement).value).toBe("0");
   });
 
+  it("REQ-FE-037: keeps numeric and temporal fields writable while editing", async () => {
+    const onSubmit = vi.fn();
+    const forms = [
+      {
+        name: "Event",
+        version: 1,
+        fields: {
+          Amount: { type: "double", required: false },
+          StartedAt: { type: "timestamp_tz", required: false },
+        },
+        template: "",
+      },
+    ];
+
+    render(() => (
+      <CreateEntryDialog
+        open={true}
+        forms={forms}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+      target: { value: "Writable Event" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Event" },
+    });
+
+    const amount = screen.getByLabelText(/Amount/);
+    expect(amount).toHaveAttribute("type", "text");
+    expect(amount).toHaveAttribute("inputmode", "decimal");
+    fireEvent.input(amount, { target: { value: "12." } });
+    expect(amount).toHaveValue("12.");
+
+    const startedAt = screen.getByLabelText(/StartedAt/);
+    expect(startedAt).toHaveAttribute("type", "text");
+    fireEvent.input(startedAt, {
+      target: { value: "2026-07-18T12:34:56.123456789+09:00" },
+    });
+    expect(startedAt).toHaveValue("2026-07-18T12:34:56.123456789+09:00");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Writable Event",
+      "Event",
+      {
+        Amount: "12.",
+        StartedAt: "2026-07-18T12:34:56.123456789+09:00",
+      },
+      "webform",
+    );
+  });
+
   it("REQ-FE-037: renders optional fields in webform mode", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
