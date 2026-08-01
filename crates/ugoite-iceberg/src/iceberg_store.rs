@@ -1,7 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Error, Result};
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::HashSet;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::entry::EntryRevision;
 use ugoite_domain::form::FormDefinition;
 use ugoite_domain::id::SpaceId;
@@ -68,7 +69,10 @@ async fn domain_form_by_name(
         .into_iter()
         .find(|form| form.name == form_name)
         .ok_or_else(|| {
-            anyhow!("Form is not registered in the authoritative SpaceCatalog: {form_name}")
+            Error::from(AppError::not_found(
+                ErrorCode::FormNotFound,
+                format!("Form not found: {form_name}"),
+            ))
         })?;
     Ok((workspace, form))
 }

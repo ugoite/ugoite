@@ -16,18 +16,6 @@ vi.mock("@solidjs/router", () => ({
   useParams: () => ({ space_id: "default" }),
 }));
 
-vi.mock("~/components/SpaceShell", () => ({
-  SpaceShell: (
-    props: { children: unknown; spaceId: string; activeNavigation?: string },
-  ) => (
-    <div
-      data-space-id={props.spaceId}
-      data-active-navigation={props.activeNavigation}
-    >
-      {props.children}
-    </div>
-  ),
-}));
 vi.mock("~/lib/ugoite-client", () => ({
   sqlApi: { list: vi.fn().mockResolvedValue([]) },
 }));
@@ -39,21 +27,13 @@ describe("/spaces/:space_id/sql", () => {
   });
 
   it("REQ-FE-061: saved SQL route provides the v5 list and create action", async () => {
-    const { container } = render(() => <SpaceSqlRoute />);
+    render(() => <SpaceSqlRoute />);
 
     expect(screen.getByRole("heading", { name: "Saved SQL" }))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "SQL" })).toHaveAttribute(
       "href",
       "/spaces/default/queries/new",
-    );
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-space-id",
-      "default",
-    );
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-active-navigation",
-      "search",
     );
   });
 

@@ -16,6 +16,8 @@ use ugoite_iceberg::{
 };
 use uuid::Uuid;
 
+const ENTRY_RELATION: &str = "form_00000000000000000000000000000001";
+
 fn authorized_entries(form: &str, entry_ids: &[&str]) -> (Uuid, BTreeMap<String, HashSet<String>>) {
     (
         Uuid::from_u128(1),
@@ -74,7 +76,9 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
         name: Some("Alpha Query".to_string()),
         kind: saved_sql::SqlKind::UserQuery,
         metadata: None,
-        sql: "SELECT * FROM entry WHERE _ugoite_title = $title ORDER BY _ugoite_id".to_string(),
+        sql: format!(
+            "SELECT * FROM \"{ENTRY_RELATION}\" WHERE _ugoite_title = $title ORDER BY _ugoite_id"
+        ),
         variables: serde_json::json!([{
             "name": "title",
             "type": "string",
@@ -107,7 +111,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let error = sql_session::create_sql_session_authorized_for_principals_by_form(
         &op,
         ws_path,
-        "SELECT * FROM entry ORDER BY _ugoite_id",
+        &format!("SELECT * FROM \"{ENTRY_RELATION}\" ORDER BY _ugoite_id"),
         sql_session::SqlSessionCreateAuthorization {
             authorization: sql_session::SqlSessionAuthorization {
                 principal_ids: &no_principals,
@@ -129,7 +133,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     let error = sql_session::create_sql_session_authorized_for_principals_by_form(
         &op,
         ws_path,
-        "SELECT * FROM entry ORDER BY _ugoite_id",
+        &format!("SELECT * FROM \"{ENTRY_RELATION}\" ORDER BY _ugoite_id"),
         sql_session::SqlSessionCreateAuthorization {
             authorization,
             readable_entries_by_form: &oversized_scope,

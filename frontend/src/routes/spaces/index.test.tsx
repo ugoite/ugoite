@@ -20,6 +20,7 @@ const navigateMock = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
   useNavigate: () => navigateMock,
+  useParams: () => ({}),
   A: (props: { href: string; class?: string; children: unknown }) => (
     <a href={props.href} class={props.class}>
       {props.children}

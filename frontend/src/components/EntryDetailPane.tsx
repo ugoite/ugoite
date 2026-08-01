@@ -38,7 +38,7 @@ export interface EntryDetailPaneProps {
   onCreateFormChange?: (formName: string) => void;
   onDeleted: () => void;
   onCancel?: () => void;
-  onCreated?: (entryId: string) => void;
+  onCreated?: (result: { id: string; revision_id: string }) => void;
   onAfterSave?: () => void;
 }
 
@@ -186,20 +186,8 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
   return { missingRequired, unknownSections, typeIssues };
 }
 
-function resolveInputType(field: FormField) {
-  if (NUMERIC_FIELD_TYPES.has(field.type)) return "number";
-  if (field.type === "date") return "date";
-  if (field.type === "time") return "time";
-  if (field.type === "timestamp") return "datetime-local";
-  return "text";
-}
-
-function resolveInputValue(field: FormField, value: string) {
-  if (field.type !== "timestamp") return value;
-  const match =
-    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(?:Z|[+-]\d{2}:\d{2})$/
-      .exec(value);
-  return match?.[1] ?? value;
+function resolveInputMode(field: FormField): "decimal" | undefined {
+  return NUMERIC_FIELD_TYPES.has(field.type) ? "decimal" : undefined;
 }
 
 function createFieldInputId(fieldName: string, index: number) {
@@ -646,6 +634,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   };
 
   const handleSave = async () => {
+    if (isSaving()) return;
     const context = resolveSaveContext();
     /* v8 ignore start */
     if (!context.ok) {
@@ -669,7 +658,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       setLastSavedContent(contentToSave);
       setIsDirty(editorContent() !== contentToSave);
       props.onAfterSave?.();
-      if (context.create) props.onCreated?.(result.id);
+      if (context.create) props.onCreated?.(result);
     } catch (error) {
       handleSaveError(error);
     } finally {
@@ -740,28 +729,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   ) => {
     const value = () => fieldValue(fieldName);
 
-    if (fieldDef.type === "boolean") {
-      const currentValue = () => value().trim();
-      const isCanonical = () =>
-        !currentValue() || ["true", "false"].includes(currentValue());
-      return (
-        <select
-          id={fieldId}
-          class="ui-input"
-          value={currentValue()}
-          onChange={(event) =>
-            handleFieldChange(fieldName, event.currentTarget.value)}
-        >
-          <Show when={!isCanonical()}>
-            <option value={currentValue()}>{currentValue()}</option>
-          </Show>
-          <option value="">{t("entryDetail.boolean.unset")}</option>
-          <option value="true">{t("entryDetail.boolean.true")}</option>
-          <option value="false">{t("entryDetail.boolean.false")}</option>
-        </select>
-      );
-    }
-
     if (fieldDef.type === "row_reference" && fieldDef.target_form?.trim()) {
       return (
         <EntryRowReferenceField
@@ -797,9 +764,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       <input
         id={fieldId}
         class="ui-input"
-        type={resolveInputType(fieldDef)}
-        value={resolveInputValue(fieldDef, value())}
-        step={fieldDef.type === "timestamp" ? "any" : undefined}
+        type="text"
+        inputmode={resolveInputMode(fieldDef)}
+        value={value()}
         placeholder={t("entryDetail.fieldPlaceholder")}
         onInput={(event) =>
           handleFieldChange(fieldName, event.currentTarget.value)}

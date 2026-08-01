@@ -1,7 +1,6 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceSettings } from "~/components/SpaceSettings";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { CredentialSettings } from "~/routes/settings/security";
 import { locale, t, type TranslationKey } from "~/lib/i18n";
@@ -19,6 +18,9 @@ import {
   type SettingsSectionId,
 } from "~/lib/settings-sections";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "settings", title: "settings" });
 
 type Section = SettingsSectionId;
 const managedRoles = ["owner", "editor", "viewer"] as const;
@@ -156,15 +158,7 @@ export default function SpaceSettingsRoute() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="settings"
-      title={`${t("settings.title")} / ${
-        settingsSections.find((section) => section.id === active())
-          ? label(settingsSections.find((section) => section.id === active())!)
-          : t("settings.section.general")
-      }`}
-    >
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{space()?.name || spaceId()}</div>
@@ -476,6 +470,6 @@ export default function SpaceSettingsRoute() {
           </Show>
         </main>
       </div>
-    </SpaceShell>
+    </>
   );
 }

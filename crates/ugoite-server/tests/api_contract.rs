@@ -56,6 +56,24 @@ async fn uninitialized_protected_routes_are_locked_for_every_credential_shape() 
 }
 
 #[tokio::test]
+async fn invitation_finish_cannot_issue_a_session_from_token_only() {
+    let app = initialized_app("invitation-token-session").await;
+    let response = app
+        .oneshot(
+            Request::post("/auth/invitations/finish")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"invitation_token":"token-only","resume":true}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response.headers().get("set-cookie").is_none());
+}
+
+#[tokio::test]
 async fn oauth_metadata_describes_device_and_dpop_surface() {
     let app = initialized_app("metadata").await;
     let response = app

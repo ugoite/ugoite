@@ -1,14 +1,18 @@
+import { A, useNavigate } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 
 export function AccountMenu(props: { settingsHref?: string } = {}) {
+  const navigate = useNavigate();
   const [open, setOpen] = createSignal(false);
 
   const signOut = async () => {
     await authApi.clearSession();
-    if (typeof window !== "undefined") window.location.assign("/login");
+    navigate("/login", { replace: true });
   };
+  const settingsHref = () =>
+    props.settingsHref ?? "/settings/security";
 
   return (
     <div class="accountMenu">
@@ -25,13 +29,13 @@ export function AccountMenu(props: { settingsHref?: string } = {}) {
       <Show when={open()}>
         <div class="accountMenuPanel" role="menu">
           <div class="accountMenuTitle">{t("account.title")}</div>
-          <a
-            href={props.settingsHref ?? "/settings/security"}
+          <A
+            href={settingsHref()}
             role="menuitem"
             onClick={() => setOpen(false)}
           >
             {t("account.settings")}
-          </a>
+          </A>
           <button
             type="button"
             role="menuitem"

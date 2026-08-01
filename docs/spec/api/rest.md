@@ -14,7 +14,11 @@ CI.
 - `POST /auth/passkey/start|finish`: discoverable Passkey login and opaque
   session issuance.
 - `GET|DELETE /auth/session`: inspect or revoke the current browser session.
-- `POST /auth/invitations/start|finish`: invited Passkey registration.
+- `POST /auth/invitations/start|finish`: invited Passkey registration. The
+  start response can request a retry after a previous registration claim; the
+  browser must complete normal Passkey login and then use authenticated
+  acceptance to converge the Node binding and Space membership. The invitation
+  token alone never creates a session or authenticates an account.
 - `GET /auth/oidc/{provider_id}/start` and `GET /auth/oidc/callback`: OIDC
   authorization code + PKCE.
 - `GET|POST /auth/oidc/providers`: Node administrator provider configuration.
@@ -55,3 +59,18 @@ Form evolution that changes the type of an existing field is intentionally
 unsupported before v1. The server returns HTTP 422 with code
 `FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED` and a message naming the field and
 recommending a new field; it does not return this expected rejection as a 500.
+
+Entry create and update validate Markdown sections against the selected Form.
+Invalid field values, missing required fields, missing Form metadata, and
+unknown fields return HTTP 422 with code `INVALID_INPUT`; they are not internal
+server failures. A referenced Form that does not exist returns HTTP 404 with
+code `FORM_NOT_FOUND`; storage failures remain internal/dependency failures.
+
+Timestamp field formats follow the Iceberg logical type. `timestamp` and
+`timestamp_ns` are timezone-less wall-clock values in the form
+`YYYY-MM-DDTHH:MM[:SS[.fraction]]`; offsets and RFC3339 timezone markers are
+rejected. `timestamp_tz` and `timestamp_tz_ns` require an offset-bearing
+RFC3339 value and normalize it to UTC before the append-only revision is
+published. Browser `datetime-local` values are used directly for timezone-less
+fields; the frontend adds the browser offset when it submits a timezone-aware
+field.

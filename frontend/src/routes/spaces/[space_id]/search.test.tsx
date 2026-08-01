@@ -5,13 +5,12 @@ import { http, HttpResponse } from "msw";
 import SpaceSearchRoute from "./search";
 import {
   resetMockData,
-  seedEntry,
   seedForm,
   seedSpace,
   seedSqlEntry,
 } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
-import type { Entry, EntryRecord, Form, Space } from "~/lib/types";
+import type { Form, KeywordSearchResult, Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
 import { setLocale } from "~/lib/i18n";
 
@@ -70,61 +69,35 @@ describe("/spaces/:space_id/search", () => {
   });
 
   it("REQ-SRCH-004: runs a direct keyword search and renders matching entries", async () => {
-    const entry: Entry = {
+    const record: KeywordSearchResult = {
       id: "entry-1",
       title: "Alpha Entry",
-      content:
-        "---\nform: Entry\n---\n# Alpha Entry\n\n## Body\nKeyword-first search is easier.",
-      revision_id: "rev-1",
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-02T00:00:00Z",
     };
-    const record: EntryRecord = {
-      id: entry.id,
-      title: entry.title ?? "Alpha Entry",
-      form: "Entry",
-      updated_at: entry.updated_at,
-      properties: { Body: "Keyword-first search is easier." },
-      tags: ["search"],
-      links: [],
-    };
-    seedEntry("default", entry, record);
-    let metadataSql: string | null = null;
+    let entryListCalls = 0;
+    let sqlSessionCalls = 0;
     server.use(
       http.get(
         testApiUrl("/spaces/default/search"),
-        () => HttpResponse.json([{ id: entry.id }]),
+        () => HttpResponse.json([record]),
       ),
       http.get(
         testApiUrl("/spaces/default/entries"),
-        () =>
-          new HttpResponse(
-            "bulk entry list should not be used for keyword search",
-            {
-              status: 500,
-            },
-          ),
+        () => {
+          entryListCalls += 1;
+          return HttpResponse.json([]);
+        },
       ),
       http.post(
         testApiUrl("/spaces/default/sql-sessions"),
-        async ({ request }) => {
-          const body = (await request.json()) as { sql?: string };
-          metadataSql = body.sql ?? null;
+        () => {
+          sqlSessionCalls += 1;
           return HttpResponse.json(
-            { id: "keyword-session", status: "ready", error: null },
-            { status: 201 },
+            { detail: "Quick search must not create a SQL session" },
+            { status: 500 },
           );
         },
-      ),
-      http.get(
-        testApiUrl("/spaces/default/sql-sessions/keyword-session/rows"),
-        () =>
-          HttpResponse.json({
-            rows: [record],
-            offset: 0,
-            limit: 1,
-            total_count: 1,
-          }),
       ),
     );
 
@@ -138,9 +111,8 @@ describe("/spaces/:space_id/search", () => {
     expect(await screen.findByRole("button", { name: /Alpha Entry/ }))
       .toBeInTheDocument();
     expect(screen.getByText("1 result")).toBeInTheDocument();
-    expect(metadataSql).toBe(
-      "SELECT * FROM entries WHERE id IN ('entry-1') LIMIT 1",
-    );
+    expect(entryListCalls).toBe(0);
+    expect(sqlSessionCalls).toBe(0);
   });
 
   it("REQ-SRCH-005: advanced search compiles filters into saved SQL and runs a shared session", async () => {
@@ -149,25 +121,25 @@ describe("/spaces/:space_id/search", () => {
       version: 1,
       template: "# Meeting\n\n## Status\n",
       fields: {
-        Status: { type: "string", required: false },
+        Status: { type: "string", required: false, sql_column: "field_100" },
       },
+      sql_relation: "form_meeting",
     };
     seedForm("default", meetingForm);
 
-    let savedSqlBody: {
-      name?: string | null;
-      kind?: string;
-      metadata?: unknown;
+    let savedSqlBody: { name?: string | null; sql?: string } | null = null;
+    let sessionSqlBody: {
       sql?: string;
+      parameters?: Record<string, unknown>;
+      parameter_types?: Record<string, string>;
     } | null = null;
-    let sessionSqlBody: { sql?: string } | null = null;
+    const postOrder: string[] = [];
 
     server.use(
       http.post(testApiUrl("/spaces/default/sql"), async ({ request }) => {
+        postOrder.push("saved");
         savedSqlBody = (await request.json()) as {
           name?: string | null;
-          kind?: string;
-          metadata?: unknown;
           sql?: string;
         };
         return HttpResponse.json(
@@ -178,7 +150,8 @@ describe("/spaces/:space_id/search", () => {
       http.post(
         testApiUrl("/spaces/default/sql-sessions"),
         async ({ request }) => {
-          sessionSqlBody = (await request.json()) as { sql?: string };
+          postOrder.push("session");
+          sessionSqlBody = (await request.json()) as typeof sessionSqlBody;
           return HttpResponse.json(
             { id: "advanced-session", status: "ready", error: null },
             { status: 201 },
@@ -193,9 +166,6 @@ describe("/spaces/:space_id/search", () => {
     await screen.findByRole("option", { name: "Meeting" });
     fireEvent.change(screen.getByLabelText("Form"), {
       target: { value: "Meeting" },
-    });
-    fireEvent.input(screen.getByLabelText("Tags (comma-separated)"), {
-      target: { value: "project" },
     });
     fireEvent.input(screen.getByLabelText("Updated from"), {
       target: { value: "2025-03-01" },
@@ -216,24 +186,21 @@ describe("/spaces/:space_id/search", () => {
 
     await waitFor(() => {
       expect(savedSqlBody?.name).toBeNull();
-      expect(savedSqlBody?.kind).toBe("search-history");
-      expect(savedSqlBody?.metadata).toEqual({
-        searchCriteria: {
-          formName: "Meeting",
-          tags: ["project"],
-          updatedFrom: "2025-03-01",
-          updatedTo: "2025-03-03",
-          fieldConditions: [{
-            field: "Status",
-            operator: "equals",
-            value: "Active",
-          }],
-        },
-      });
       expect(savedSqlBody?.sql).toBe(
-        "SELECT * FROM entries WHERE form = 'Meeting' AND tags = 'project' AND updated_at >= 1740787200 AND updated_at <= 1741046399 AND properties.\"Status\" = 'Active' ORDER BY updated_at DESC LIMIT 50",
+        "SELECT * FROM \"form_meeting\" WHERE _ugoite_updated_at >= TIMESTAMP '2025-03-01 00:00:00Z' AND _ugoite_updated_at < TIMESTAMP '2025-03-04 00:00:00Z' AND \"field_100\" = 'Active' ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50",
       );
-      expect(sessionSqlBody?.sql).toBe(savedSqlBody?.sql);
+      expect(sessionSqlBody?.sql).toContain('"field_100" = $search_2');
+      expect(sessionSqlBody?.parameters).toEqual({
+        search_0: "2025-03-01T00:00:00.000Z",
+        search_1: "2025-03-04T00:00:00.000Z",
+        search_2: "Active",
+      });
+      expect(sessionSqlBody?.parameter_types).toEqual({
+        search_0: "timestamp",
+        search_1: "timestamp",
+        search_2: "string",
+      });
+      expect(postOrder).toEqual(["session", "saved"]);
       expect(navigateMock).toHaveBeenCalledWith(
         "/spaces/default/entries?session=advanced-session",
       );
@@ -245,7 +212,10 @@ describe("/spaces/:space_id/search", () => {
       name: "Meeting",
       version: 1,
       template: "",
-      fields: { memo: { type: "string", required: false } },
+      fields: {
+        memo: { type: "string", required: false, sql_column: "field_100" },
+      },
+      sql_relation: "form_meeting",
     });
     render(() => <SpaceSearchRoute />);
 
@@ -372,7 +342,9 @@ describe("/spaces/:space_id/search", () => {
 
     render(() => <SpaceSearchRoute />);
     expect(
-      await screen.findByRole("button", { name: /Advanced search - form: Meeting/ }),
+      await screen.findByRole("button", {
+        name: /Advanced search - form: Meeting/,
+      }),
     ).toBeInTheDocument();
 
     setLocale("ja");

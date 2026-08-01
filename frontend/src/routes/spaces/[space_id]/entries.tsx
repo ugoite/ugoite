@@ -6,6 +6,9 @@ import { formApi } from "~/lib/ugoite-client";
 import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceEntriesRoute(props: RouteSectionProps) {
   const params = useParams<{ space_id: string }>();

@@ -1,28 +1,68 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Index, Show } from "solid-js";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { formatDateLabel } from "~/lib/date-format";
 import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
-import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
-import type { EntryRecord, SearchResult, SqlEntry } from "~/lib/types";
+import type { KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
-import { type SearchHistoryCriteria, displaySqlName } from
-  "~/lib/sql-metadata";
+import { displaySqlName, type SearchHistoryCriteria } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "search" });
 
 type SearchMode = "keyword" | "advanced";
-type FieldMatchOperator = "equals" | "contains";
+type FieldMatchOperator = "equals" | "contains" | "lt" | "lte" | "gt" | "gte";
 
 type FieldCondition = {
   id: string;
   field: string;
   operator: FieldMatchOperator;
   value: string;
+};
+
+type SearchFieldType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "float"
+  | "date"
+  | "timestamp"
+  | "unsupported";
+
+type AvailableField = {
+  name: string;
+  sqlColumn: string;
+  type: SearchFieldType;
+  supported: boolean;
+};
+
+type AdvancedSearchCriteria = {
+  formName: string;
+  sqlRelation: string;
+  updatedFrom: string;
+  updatedTo: string;
+  fieldConditions: Array<{
+    field: string;
+    sqlColumn: string;
+    type: SearchFieldType;
+    operator: FieldMatchOperator;
+    value: string;
+    supported: boolean;
+  }>;
+};
+
+type SearchParameterValue = string | number | boolean | null;
+
+type AdvancedSearchQuery = {
+  sql: string;
+  historySql: string;
+  parameters: Record<string, SearchParameterValue>;
+  parameterTypes: Record<string, string>;
 };
 
 const ADVANCED_SEARCH_LIMIT = 50;
@@ -42,136 +82,244 @@ function parseTimestamp(value: string | number | null | undefined): number {
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
-function coerceSearchResult(
-  result: Partial<SearchResult> & { id: string },
-  fallback?: EntryRecord,
-): SearchResult {
-  return {
-    id: result.id,
-    title: result.title || fallback?.title || t("common.untitled"),
-    form: result.form ?? fallback?.form,
-    updated_at: result.updated_at || fallback?.updated_at || "",
-    properties: result.properties ?? fallback?.properties ?? {},
-    tags: result.tags ?? fallback?.tags ?? [],
-    links: result.links ?? fallback?.links ?? [],
-    canvas_position: result.canvas_position ?? fallback?.canvas_position,
-    checksum: result.checksum ?? fallback?.checksum,
-    assets: result.assets ?? fallback?.assets,
-  };
+function normalizeFieldType(type: string): SearchFieldType {
+  switch (type) {
+    case "string":
+    case "markdown":
+      return "string";
+    case "boolean":
+      return "boolean";
+    case "integer":
+      return "integer";
+    case "number":
+    case "float":
+    case "double":
+      return "float";
+    case "date":
+      return "date";
+    case "timestamp":
+      return "timestamp";
+    default:
+      return "unsupported";
+  }
 }
 
-function buildKeywordMetadataSql(entryIds: string[]): string {
-  const ids = entryIds.map(escapeSqlLiteral).join(", ");
-  return `SELECT * FROM entries WHERE id IN (${ids}) LIMIT ${entryIds.length}`;
+function operatorsForFieldType(type: SearchFieldType): FieldMatchOperator[] {
+  if (type === "string") return ["equals", "contains"];
+  if (type === "boolean") return ["equals"];
+  if (
+    type === "integer" || type === "float" || type === "date" ||
+    type === "timestamp"
+  ) {
+    return ["equals", "lt", "lte", "gt", "gte"];
+  }
+  return [];
 }
 
-function dateInputToUnixSeconds(
+function operatorLabel(operator: FieldMatchOperator): string {
+  switch (operator) {
+    case "equals":
+      return t("searchPage.equals");
+    case "contains":
+      return t("searchPage.contains");
+    case "lt":
+      return t("searchPage.lessThan");
+    case "lte":
+      return t("searchPage.lessThanOrEqual");
+    case "gt":
+      return t("searchPage.greaterThan");
+    case "gte":
+      return t("searchPage.greaterThanOrEqual");
+  }
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll(
+    "_",
+    "\\_",
+  );
+}
+
+function dateInput(
   value: string,
   boundary: "start" | "end",
-): number | null {
-  if (!value) return null;
+): { parameter: string; literal: string } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [yearText, monthText, dayText] = value.split("-");
   const year = Number(yearText);
   const month = Number(monthText);
   const day = Number(dayText);
-  if (![year, month, day].every(Number.isInteger)) {
-    return null;
-  }
-  const startOfDay = new Date(Date.UTC(year, month - 1, day));
+  const date = new Date(Date.UTC(year, month - 1, day));
   if (
-    startOfDay.getUTCFullYear() !== year ||
-    startOfDay.getUTCMonth() !== month - 1 ||
-    startOfDay.getUTCDate() !== day
-  ) {
-    return null;
-  }
-  const millis = boundary === "start"
-    ? startOfDay.getTime()
-    : startOfDay.getTime() + 86_400_000 - 1;
-  return Math.floor(millis / 1000);
+    ![year, month, day].every(Number.isInteger) ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) return null;
+  if (boundary === "end") date.setUTCDate(date.getUTCDate() + 1);
+  const dateText = date.toISOString().slice(0, 10);
+  return {
+    parameter: `${dateText}T00:00:00.000Z`,
+    literal: `TIMESTAMP '${dateText} 00:00:00Z'`,
+  };
 }
 
-async function enrichKeywordResults(
-  spaceId: string,
-  results: SearchResult[],
-): Promise<SearchResult[]> {
-  const idsNeedingEnrichment = [
-    ...new Set(
-      results.filter((result) => !result.title || !result.updated_at).map((
-        result,
-      ) => result.id),
-    ),
-  ];
-  if (idsNeedingEnrichment.length === 0) {
-    return results;
+function sqlLiteral(value: SearchParameterValue, type: string): string {
+  if (value === null) return "NULL";
+  if (type === "string") return escapeSqlLiteral(String(value));
+  if (type === "boolean") return value ? "TRUE" : "FALSE";
+  if (type === "integer" || type === "float") return String(value);
+  if (type === "date") return `DATE '${String(value)}'`;
+  if (type === "timestamp") {
+    return `TIMESTAMP '${String(value).replace("T", " ")}'`;
   }
-
-  const session = await sqlSessionApi.create(
-    spaceId,
-    buildKeywordMetadataSql(idsNeedingEnrichment),
-  );
-  if (session.status === "failed") {
-    throw new UgoiteApiError({
-      kind: "internal",
-      operation: "sql_session.create",
-      status: 500,
-      message: session.error ?? t("searchPage.error.enrichFailed"),
-      detail: session.error,
-    });
-  }
-  const metadata = await sqlSessionApi.rows(
-    spaceId,
-    session.id,
-    0,
-    idsNeedingEnrichment.length,
-  );
-  const metadataById = new Map(
-    metadata.rows.map((entry) => [entry.id, entry] as const),
-  );
-  return results.map((result) =>
-    coerceSearchResult(result, metadataById.get(result.id))
-  );
+  return escapeSqlLiteral(String(value));
 }
 
-function buildAdvancedSearchSql(criteria: SearchHistoryCriteria): string {
-  const conditions: string[] = [];
+function buildAdvancedSearchQuery(
+  criteria: AdvancedSearchCriteria,
+): AdvancedSearchQuery | null {
+  if (!criteria.formName || !criteria.sqlRelation) return null;
 
-  if (criteria.formName) {
-    conditions.push(`form = ${escapeSqlLiteral(criteria.formName)}`);
-  }
+  const sessionConditions: string[] = [];
+  const historyConditions: string[] = [];
+  const parameters: Record<string, SearchParameterValue> = {};
+  const parameterTypes: Record<string, string> = {};
+  let parameterIndex = 0;
+  const bind = (
+    value: SearchParameterValue,
+    type: string,
+    literal: string,
+  ) => {
+    const name = `search_${parameterIndex++}`;
+    parameters[name] = value;
+    parameterTypes[name] = type;
+    return { parameter: `$${name}`, literal };
+  };
 
-  for (const tag of criteria.tags) {
-    conditions.push(`tags = ${escapeSqlLiteral(tag)}`);
-  }
+  const addDateCondition = (value: string, operator: ">=" | "<") => {
+    const converted = dateInput(value, operator === ">=" ? "start" : "end");
+    if (!converted) {
+      throw new Error(t("searchPage.error.invalidDate", { value }));
+    }
+    const bound = bind(converted.parameter, "timestamp", converted.literal);
+    sessionConditions.push(`_ugoite_updated_at ${operator} ${bound.parameter}`);
+    historyConditions.push(`_ugoite_updated_at ${operator} ${bound.literal}`);
+  };
 
-  const updatedFrom = dateInputToUnixSeconds(criteria.updatedFrom, "start");
-  if (updatedFrom !== null) {
-    conditions.push(`updated_at >= ${updatedFrom}`);
-  }
-
-  const updatedTo = dateInputToUnixSeconds(criteria.updatedTo, "end");
-  if (updatedTo !== null) {
-    conditions.push(`updated_at <= ${updatedTo}`);
-  }
+  if (criteria.updatedFrom) addDateCondition(criteria.updatedFrom, ">=");
+  if (criteria.updatedTo) addDateCondition(criteria.updatedTo, "<");
 
   for (const condition of criteria.fieldConditions) {
-    const fieldPath = `properties.${quoteSqlIdentifier(condition.field)}`;
-    if (condition.operator === "contains") {
-      conditions.push(
-        `${fieldPath} ILIKE ${escapeSqlLiteral(`%${condition.value}%`)}`,
+    if (!condition.field || !condition.value) {
+      throw new Error(t("searchPage.error.fieldValueRequired"));
+    }
+    if (!condition.supported || !condition.sqlColumn) {
+      throw new Error(
+        t("searchPage.error.unsupportedField", { value: condition.field }),
       );
+    }
+    const fieldPath = quoteSqlIdentifier(condition.sqlColumn);
+    const operator = condition.operator === "equals"
+      ? "="
+      : condition.operator === "contains"
+      ? "ILIKE"
+      : condition.operator === "lt"
+      ? "<"
+      : condition.operator === "lte"
+      ? "<="
+      : condition.operator === "gt"
+      ? ">"
+      : ">=";
+    let value: SearchParameterValue;
+    let type: string;
+    let literalValue: string;
+    if (condition.type === "string") {
+      type = "string";
+      value = condition.operator === "contains"
+        ? `%${escapeLikePattern(condition.value)}%`
+        : condition.value;
+      literalValue = escapeSqlLiteral(String(value));
+    } else if (condition.type === "boolean") {
+      if (condition.value !== "true" && condition.value !== "false") {
+        throw new Error(
+          t("searchPage.error.booleanRequired", { value: condition.field }),
+        );
+      }
+      type = "boolean";
+      value = condition.value === "true";
+      literalValue = value ? "TRUE" : "FALSE";
+    } else if (condition.type === "integer") {
+      if (
+        !/^-?\d+$/.test(condition.value) ||
+        !Number.isSafeInteger(Number(condition.value))
+      ) {
+        throw new Error(
+          t("searchPage.error.integerRequired", { value: condition.field }),
+        );
+      }
+      type = "integer";
+      value = Number(condition.value);
+      literalValue = String(value);
+    } else if (condition.type === "float") {
+      const number = Number(condition.value);
+      if (!Number.isFinite(number)) {
+        throw new Error(
+          t("searchPage.error.numberRequired", { value: condition.field }),
+        );
+      }
+      type = "float";
+      value = number;
+      literalValue = String(number);
+    } else if (condition.type === "date") {
+      const converted = dateInput(condition.value, "start");
+      if (!converted) {
+        throw new Error(
+          t("searchPage.error.dateRequired", { value: condition.field }),
+        );
+      }
+      type = "date";
+      value = converted.parameter.slice(0, 10);
+      literalValue = sqlLiteral(value, type);
+    } else if (condition.type === "timestamp") {
+      const timestamp = new Date(condition.value);
+      if (Number.isNaN(timestamp.getTime())) {
+        throw new Error(
+          t("searchPage.error.timestampRequired", { value: condition.field }),
+        );
+      }
+      type = "timestamp";
+      value = timestamp.toISOString();
+      literalValue = sqlLiteral(value, type);
+    } else {
       continue;
     }
-    conditions.push(`${fieldPath} = ${escapeSqlLiteral(condition.value)}`);
+    const bound = bind(value, type, literalValue);
+    const escape = condition.operator === "contains" ? " ESCAPE '\\'" : "";
+    sessionConditions.push(
+      `${fieldPath} ${operator} ${bound.parameter}${escape}`,
+    );
+    historyConditions.push(
+      `${fieldPath} ${operator} ${bound.literal}${escape}`,
+    );
   }
 
-  if (conditions.length === 0) {
-    return "";
-  }
-
-  return `SELECT * FROM entries WHERE ${
-    conditions.join(" AND ")
-  } ORDER BY updated_at DESC LIMIT ${ADVANCED_SEARCH_LIMIT}`;
+  const sessionWhere = sessionConditions.length > 0
+    ? ` WHERE ${sessionConditions.join(" AND ")}`
+    : "";
+  const historyWhere = historyConditions.length > 0
+    ? ` WHERE ${historyConditions.join(" AND ")}`
+    : "";
+  const render = (where: string) =>
+    `SELECT * FROM ${
+      quoteSqlIdentifier(criteria.sqlRelation)
+    }${where} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT ${ADVANCED_SEARCH_LIMIT}`;
+  return {
+    sql: render(sessionWhere),
+    historySql: render(historyWhere),
+    parameters,
+    parameterTypes,
+  };
 }
 
 export default function SpaceSearchRoute() {
@@ -189,7 +337,9 @@ export default function SpaceSearchRoute() {
 
   const [mode, setMode] = createSignal<SearchMode>("keyword");
   const [keywordQuery, setKeywordQuery] = createSignal("");
-  const [keywordResults, setKeywordResults] = createSignal<SearchResult[]>([]);
+  const [keywordResults, setKeywordResults] = createSignal<
+    KeywordSearchResult[]
+  >([]);
   const [keywordSearchPerformed, setKeywordSearchPerformed] = createSignal(
     false,
   );
@@ -199,7 +349,6 @@ export default function SpaceSearchRoute() {
     null,
   );
   const [advancedFormName, setAdvancedFormName] = createSignal("");
-  const [advancedTagsInput, setAdvancedTagsInput] = createSignal("");
   const [advancedUpdatedFrom, setAdvancedUpdatedFrom] = createSignal("");
   const [advancedUpdatedTo, setAdvancedUpdatedTo] = createSignal("");
   const [fieldConditions, setFieldConditions] = createSignal<FieldCondition[]>([
@@ -221,16 +370,26 @@ export default function SpaceSearchRoute() {
     )
   );
 
+  const selectedForm = createMemo(() =>
+    availableForms().find((entryForm) =>
+      entryForm.name === advancedFormName().trim()
+    )
+  );
+
   const availableFields = createMemo(() => {
-    const formName = advancedFormName().trim();
-    if (!formName) return [] as string[];
-    const selectedForm = availableForms().find((entryForm) =>
-      entryForm.name === formName
-    );
-    if (!selectedForm?.fields) return [] as string[];
-    return Object.keys(selectedForm.fields).sort((left, right) =>
-      left.localeCompare(right)
-    );
+    if (!selectedForm()?.fields) return [] as AvailableField[];
+    return Object.entries(selectedForm()?.fields ?? {})
+      .map(([name, field]) => {
+        const type = normalizeFieldType(field.type);
+        return {
+          name,
+          sqlColumn: field.sql_column?.trim() ?? "",
+          type,
+          supported: Boolean(field.sql_column?.trim()) &&
+            operatorsForFieldType(type).length > 0,
+        };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name));
   });
 
   const searchHistory = createMemo(() =>
@@ -240,21 +399,26 @@ export default function SpaceSearchRoute() {
     )
   );
 
-  const advancedCriteria = createMemo<SearchHistoryCriteria>(() => ({
+  const advancedCriteria = createMemo<AdvancedSearchCriteria>(() => ({
     formName: advancedFormName().trim(),
-    tags: advancedTagsInput()
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean),
+    sqlRelation: selectedForm()?.sql_relation?.trim() ?? "",
     updatedFrom: advancedUpdatedFrom().trim(),
     updatedTo: advancedUpdatedTo().trim(),
     fieldConditions: fieldConditions()
-      .map((condition) => ({
-        field: condition.field.trim(),
-        operator: condition.operator,
-        value: condition.value.trim(),
-      }))
-      .filter((condition) => condition.field && condition.value),
+      .map((condition) => {
+        const field = availableFields().find((item) =>
+          item.name === condition.field.trim()
+        );
+        return {
+          field: condition.field.trim(),
+          sqlColumn: field?.sqlColumn ?? "",
+          type: field?.type ?? "unsupported",
+          operator: condition.operator,
+          value: condition.value.trim(),
+          supported: field?.supported ?? false,
+        };
+      })
+      .filter((condition) => condition.field || condition.value),
   }));
 
   const keywordResultCountLabel = createMemo(() => {
@@ -275,13 +439,27 @@ export default function SpaceSearchRoute() {
     setFieldConditions((current) =>
       current.map((condition) =>
         condition.id === id
-          ? {
-            ...condition,
-            [key]: value,
-          }
+          ? (() => {
+            const next = { ...condition, [key]: value };
+            if (key === "field") {
+              const field = availableFields().find((item) =>
+                item.name === value
+              );
+              const operators = operatorsForFieldType(
+                field?.type ?? "unsupported",
+              );
+              if (!operators.includes(next.operator)) next.operator = "equals";
+            }
+            return next;
+          })()
           : condition
       )
     );
+  };
+
+  const handleAdvancedFormChange = (value: string) => {
+    setAdvancedFormName(value);
+    setFieldConditions([createFieldCondition()]);
   };
 
   const handleKeywordSearch = async () => {
@@ -299,7 +477,7 @@ export default function SpaceSearchRoute() {
     setKeywordLoading(true);
     try {
       const results = await searchApi.keyword(spaceId(), query);
-      setKeywordResults(await enrichKeywordResults(spaceId(), results));
+      setKeywordResults(results);
     } catch (err) {
       setKeywordResults([]);
       setActionError(
@@ -350,11 +528,19 @@ export default function SpaceSearchRoute() {
 
   const handleAdvancedSearch = async () => {
     const criteria = advancedCriteria();
-    const sql = buildAdvancedSearchSql(criteria);
-    if (!sql) {
+    let query: AdvancedSearchQuery | null;
+    try {
+      query = buildAdvancedSearchQuery(criteria);
+    } catch (error) {
       setActionError(
-        t("searchPage.error.advancedFilterRequired"),
+        error instanceof Error
+          ? error.message
+          : t("searchPage.error.advancedSearchFailed"),
       );
+      return;
+    }
+    if (!query) {
+      setActionError(t("searchPage.error.chooseForm"));
       return;
     }
 
@@ -364,21 +550,15 @@ export default function SpaceSearchRoute() {
     try {
       const existing = searchHistory().find(
         (entry) =>
-          entry.sql.trim() === sql.trim() &&
+          entry.sql.trim() === query.historySql.trim() &&
           (!entry.variables || entry.variables.length === 0),
       );
-      if (!existing) {
-        await sqlApi.create(spaceId(), {
-          name: null,
-          kind: "search-history",
-          metadata: { searchCriteria: criteria },
-          sql,
-          variables: [],
-        });
-        await refetchSavedSearches();
-      }
-
-      const session = await sqlSessionApi.create(spaceId(), sql);
+      const session = await sqlSessionApi.create(
+        spaceId(),
+        query.sql,
+        query.parameters,
+        query.parameterTypes,
+      );
       if (session.status === "failed") {
         setActionError(
           formatUserFacingError(
@@ -388,6 +568,33 @@ export default function SpaceSearchRoute() {
           ),
         );
         return;
+      }
+      if (!existing) {
+        const searchCriteria: SearchHistoryCriteria = {
+          formName: criteria.formName,
+          tags: [],
+          updatedFrom: criteria.updatedFrom,
+          updatedTo: criteria.updatedTo,
+          fieldConditions: criteria.fieldConditions.map((
+            { field, operator, value },
+          ) => ({
+            field,
+            operator,
+            value,
+          })),
+        };
+        try {
+          await sqlApi.create(spaceId(), {
+            name: null,
+            kind: "search-history",
+            metadata: { searchCriteria },
+            sql: query.historySql,
+            variables: [],
+          });
+          await refetchSavedSearches();
+        } catch {
+          // A ready session remains usable when history persistence fails.
+        }
       }
       navigate(
         `/spaces/${spaceId()}/entries?session=${
@@ -404,11 +611,7 @@ export default function SpaceSearchRoute() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="search"
-      title={t("searchPage.title")}
-    >
+    <>
       <div>
         <div class="screenHead">
           <div class="screenTitle">
@@ -520,7 +723,7 @@ export default function SpaceSearchRoute() {
                         class="ui-input mt-2 w-full"
                         value={advancedFormName()}
                         onChange={(event) =>
-                          setAdvancedFormName(event.currentTarget.value)}
+                          handleAdvancedFormChange(event.currentTarget.value)}
                       >
                         <option value="">{t("searchPage.anyForm")}</option>
                         <For each={availableForms()}>
@@ -531,20 +734,6 @@ export default function SpaceSearchRoute() {
                           )}
                         </For>
                       </select>
-                    </div>
-                    <div>
-                      <label class="ui-label" for="advanced-tags">
-                        {t("searchPage.tags")}
-                      </label>
-                      <input
-                        id="advanced-tags"
-                        type="text"
-                        class="ui-input mt-2 w-full"
-                        placeholder={t("searchPage.tagsPlaceholder")}
-                        value={advancedTagsInput()}
-                        onInput={(event) =>
-                          setAdvancedTagsInput(event.currentTarget.value)}
-                      />
                     </div>
                     <div>
                       <label class="ui-label" for="advanced-updated-from">
@@ -634,9 +823,15 @@ export default function SpaceSearchRoute() {
                                   {t("searchPage.chooseField")}
                                 </option>
                                 <For each={availableFields()}>
-                                  {(fieldName) => (
-                                    <option value={fieldName}>
-                                      {fieldName}
+                                  {(field) => (
+                                    <option
+                                      value={field.name}
+                                      disabled={!field.supported}
+                                    >
+                                      {field.name}
+                                      {field.supported
+                                        ? ""
+                                        : ` (${t("searchPage.unsupported")})`}
                                     </option>
                                   )}
                                 </For>
@@ -661,12 +856,19 @@ export default function SpaceSearchRoute() {
                                   event.currentTarget.value,
                                 )}
                             >
-                              <option value="equals">
-                                {t("searchPage.equals")}
-                              </option>
-                              <option value="contains">
-                                {t("searchPage.contains")}
-                              </option>
+                              <For
+                                each={operatorsForFieldType(
+                                  availableFields().find((field) =>
+                                    field.name === condition().field
+                                  )?.type ?? "unsupported",
+                                )}
+                              >
+                                {(operator) => (
+                                  <option value={operator}>
+                                    {operatorLabel(operator)}
+                                  </option>
+                                )}
+                              </For>
                             </select>
                           </div>
                           <div>
@@ -893,6 +1095,6 @@ export default function SpaceSearchRoute() {
           </main>
         </div>
       </div>
-    </SpaceShell>
+    </>
   );
 }

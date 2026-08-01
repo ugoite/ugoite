@@ -8,16 +8,18 @@ import {
   Show,
 } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
-import { SpaceShell } from "~/components/SpaceShell";
 import { formatDateLabel } from "~/lib/date-format";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { formApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
-import { sqlSessionApi } from "~/lib/ugoite-client";
+import { sqlSessionApi, sqlSessionRowToEntryRecord } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceEntriesIndexPane() {
   const navigate = useNavigate();
@@ -77,12 +79,26 @@ export default function SpaceEntriesIndexPane() {
     }
   });
 
-  const displayEntries = createMemo<EntryRecord[]>(() => {
-    if (sessionId().trim()) {
-      return sessionRows()?.rows || [];
+  const displayEntryState = createMemo<{
+    entries: EntryRecord[];
+    error: Error | null;
+  }>(() => {
+    if (!sessionId().trim()) {
+      return { entries: ctx.entryStore.entries() || [], error: null };
     }
-    return ctx.entryStore.entries() || [];
+    const rows = sessionRows()?.rows;
+    if (!rows) return { entries: [], error: null };
+    try {
+      return { entries: rows.map(sqlSessionRowToEntryRecord), error: null };
+    } catch (error) {
+      return {
+        entries: [],
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
   });
+
+  const displayEntries = createMemo(() => displayEntryState().entries);
 
   const totalCount = createMemo(() =>
     sessionRows()?.totalCount ?? displayEntries().length
@@ -101,7 +117,7 @@ export default function SpaceEntriesIndexPane() {
 
   const error = createMemo(() => {
     if (sessionId().trim()) {
-      return session.error || sessionRows.error;
+      return session.error || sessionRows.error || displayEntryState().error;
     }
     return ctx.entryStore.error();
   });
@@ -136,14 +152,7 @@ export default function SpaceEntriesIndexPane() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      showBottomTabs
-      activeBottomTab="object"
-      bottomTabHrefSuffix={sessionId().trim()
-        ? `?session=${encodeURIComponent(sessionId())}`
-        : ""}
-    >
+    <>
       <div class="mx-auto max-w-6xl">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -293,6 +302,6 @@ export default function SpaceEntriesIndexPane() {
         onClose={() => setShowCreateFormDialog(false)}
         onSubmit={handleCreateForm}
       />
-    </SpaceShell>
+    </>
   );
 }

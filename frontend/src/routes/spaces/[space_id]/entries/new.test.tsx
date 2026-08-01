@@ -20,7 +20,7 @@ vi.mock("~/components/EntryDetailPane", () => ({
   EntryDetailPane: (props: {
     createForm?: () => Form | undefined;
     onCreateFormChange?: (name: string) => void;
-    onCreated?: (id: string) => void;
+    onCreated?: (result: { id: string; revision_id: string }) => void;
     onDeleted: () => void;
   }) => (
     <div>
@@ -31,7 +31,11 @@ vi.mock("~/components/EntryDetailPane", () => ({
       >
         Select Meeting
       </button>
-      <button type="button" onClick={() => props.onCreated?.("entry-1")}>
+      <button
+        type="button"
+        onClick={() =>
+          props.onCreated?.({ id: "entry-1", revision_id: "revision-1" })}
+      >
         Save entry
       </button>
       <button type="button" onClick={props.onDeleted}>Cancel</button>

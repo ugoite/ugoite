@@ -1,12 +1,14 @@
 import { A, useParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { AssetUploader } from "~/components/AssetUploader";
-import { SpaceShell } from "~/components/SpaceShell";
 import { assetApi } from "~/lib/ugoite-client";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import type { Asset } from "~/lib/types";
 import { formatUserFacingError } from "~/lib/user-facing-error";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms", title: "assets" });
 
 export default function SpaceAssetsRoute() {
   const params = useParams<{ space_id: string }>();
@@ -34,11 +36,7 @@ export default function SpaceAssetsRoute() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="forms"
-      title={t("assetsPage.heading")}
-    >
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{t("spaceShell.bottom.grid")}</div>
@@ -66,6 +64,6 @@ export default function SpaceAssetsRoute() {
           </p>
         </Show>
       </div>
-    </SpaceShell>
+    </>
   );
 }

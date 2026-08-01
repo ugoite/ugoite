@@ -1,3 +1,4 @@
+import { A } from "@solidjs/router";
 import { type JSX, Show } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
@@ -38,22 +39,24 @@ export function GlobalShell(
             </a>
           </nav>
           <div class="sideFoot">
-            <a
+            <A
               class="navItem"
               classList={{ active: props.active === "spaces" }}
               href="/spaces"
+              end
             >
               <UiIcon name="spaces" />
               <span>{t("nav.spaces")}</span>
-            </a>
-            <a
+            </A>
+            <A
               class="navItem"
               classList={{ active: props.active === "about" }}
               href="/about"
+              end
             >
               <UiIcon name="about" />
               <span>{t("nav.about")}</span>
-            </a>
+            </A>
           </div>
         </aside>
       </div>

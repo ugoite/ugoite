@@ -879,6 +879,17 @@ async fn auth_invitation_finish(
         BindingMethod::Invite,
     )
     .await?;
+    state
+        .identity
+        .complete_invitation_acceptance(
+            result.invitation.invitation_id,
+            result.account.account_id,
+            result.invitation.accepted_principal_id().ok_or_else(|| {
+                ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+            })?,
+        )
+        .await
+        .map_err(auth_error)?;
     Ok((
         StatusCode::CREATED,
         [(
@@ -901,12 +912,23 @@ async fn auth_invitation_accept_existing(
         .await
         .map_err(auth_error)?;
     bind_invited_account(&state, &account, &invitation, BindingMethod::Invite).await?;
+    state
+        .identity
+        .complete_invitation_acceptance(
+            invitation.invitation_id,
+            account.account_id,
+            invitation.accepted_principal_id().ok_or_else(|| {
+                ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+            })?,
+        )
+        .await
+        .map_err(auth_error)?;
     Ok((
         StatusCode::CREATED,
         Json(json!({
             "account": account,
             "space_uid": invitation.space_uid,
-            "principal_id": invitation.accepted_principal_id,
+            "principal_id": invitation.accepted_principal_id(),
         })),
     ))
 }
@@ -1584,6 +1606,17 @@ async fn oidc_callback(
         .map_err(auth_error)?;
     if let Some(invitation) = invitation {
         bind_invited_account(&state, &account, &invitation, BindingMethod::Oidc).await?;
+        state
+            .identity
+            .complete_invitation_acceptance(
+                invitation.invitation_id,
+                account.account_id,
+                invitation.accepted_principal_id().ok_or_else(|| {
+                    ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
+                })?,
+            )
+            .await
+            .map_err(auth_error)?;
     }
     state
         .identity
@@ -1661,29 +1694,89 @@ async fn bind_invited_account(
         return Ok(());
     };
     let space_id = find_space_id_by_uid(state, space_uid).await?;
-    let inviter = state
-        .identity
-        .principal_for_account(space_uid, invitation.created_by)
-        .await
-        .map_err(auth_error)?;
-    let principal_id = invitation.accepted_principal_id.ok_or_else(|| {
+    let principal_id = invitation.accepted_principal_id().ok_or_else(|| {
         ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
     })?;
-    Authorizer::new(state.service.operator().clone())
-        .add_human_member(
-            &space_id,
-            inviter,
-            SpacePrincipal {
-                principal_id,
-                kind: PrincipalKind::Human,
-                display_name: account.display_name.clone(),
-                state: PrincipalState::Active,
-                created_at: chrono::Utc::now().to_rfc3339(),
-            },
-            parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
-        )
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let authorization = authorizer
+        .state(&space_id)
         .await
         .map_err(ApiError::from_core)?;
+    let active_space_member =
+        authorization
+            .principals
+            .get(&principal_id)
+            .is_some_and(|principal| {
+                matches!(principal.kind, PrincipalKind::Human)
+                    && matches!(principal.state, PrincipalState::Active)
+                    && authorization.memberships.contains_key(&principal_id)
+            });
+    let principal_has_conflicting_space_state = authorization
+        .principals
+        .get(&principal_id)
+        .is_some_and(|principal| {
+            !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
+        });
+    match state
+        .identity
+        .binding_for_account(space_uid, account.account_id)
+        .await
+        .map_err(auth_error)?
+    {
+        Some(existing_principal_id) if existing_principal_id == principal_id => {
+            if active_space_member {
+                return Ok(());
+            }
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "SPACE_MEMBERSHIP_CONFLICT",
+                    "message": "Node binding exists but the Space has no active membership for this principal",
+                }),
+            ));
+        }
+        Some(_) => {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({
+                    "code": "ACCOUNT_ALREADY_BOUND",
+                    "message": "account is already bound to this Space",
+                }),
+            ));
+        }
+        None => {}
+    }
+    if principal_has_conflicting_space_state {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            json!({
+                "code": "SPACE_MEMBERSHIP_CONFLICT",
+                "message": "Space authorization state conflicts with the invitation principal",
+            }),
+        ));
+    }
+    if !active_space_member {
+        let inviter = state
+            .identity
+            .principal_for_account(space_uid, invitation.created_by)
+            .await
+            .map_err(auth_error)?;
+        authorizer
+            .add_human_member(
+                &space_id,
+                inviter,
+                SpacePrincipal {
+                    principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: account.display_name.clone(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
+            )
+            .await
+            .map_err(ApiError::from_core)?;
+    }
     state
         .identity
         .add_binding(ugoite_domain::identity::PrincipalBinding {
@@ -4367,7 +4460,11 @@ pub fn openapi_snapshot() -> Value {
 #[cfg(test)]
 mod authentication_regression_tests {
     use super::*;
-    use axum::{body::Body, http::Request, routing::post};
+    use axum::{
+        body::Body,
+        http::Request,
+        routing::{get, post, put},
+    };
     use tower::ServiceExt;
 
     fn token_claims(sub: Uuid, actor_principal_id: Option<Uuid>) -> AccessTokenClaims {
@@ -4392,6 +4489,37 @@ mod authentication_regression_tests {
             cnf: Confirmation {
                 jkt: "thumbprint".to_string(),
             },
+        }
+    }
+
+    fn content_identity(principal_id: Uuid, space_uid: Uuid) -> RequestIdentityContext {
+        RequestIdentityContext {
+            request_identity: RequestIdentity {
+                subject: AuthenticatedSubject::HumanAccount {
+                    account_id: principal_id,
+                },
+                actor: Actor::Human {
+                    account_id: principal_id,
+                },
+                credential_id: Uuid::now_v7(),
+                authentication_method: RequestAuthenticationMethod::Passkey,
+                assurance: AssuranceLevel::PhishingResistant,
+                constraints: CredentialConstraints::default(),
+                session_id: None,
+            },
+            account_id: principal_id,
+            display_name: "Route test".into(),
+            node_admin: false,
+            token_principal_id: Some(principal_id),
+            token_actor_principal_id: None,
+            token_space_uid: Some(space_uid),
+            token_actions: Some(
+                ["read", "create", "update"]
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+            ),
+            recent_passkey: true,
         }
     }
 
@@ -4483,34 +4611,7 @@ mod authentication_regression_tests {
             "allow_extra_attributes": "deny"
         });
         let space_uid = state.service.space_uid(&space_id).await?;
-        let identity = RequestIdentityContext {
-            request_identity: RequestIdentity {
-                subject: AuthenticatedSubject::HumanAccount {
-                    account_id: principal_id,
-                },
-                actor: Actor::Human {
-                    account_id: principal_id,
-                },
-                credential_id: Uuid::from_u128(1863),
-                authentication_method: RequestAuthenticationMethod::Passkey,
-                assurance: AssuranceLevel::PhishingResistant,
-                constraints: CredentialConstraints::default(),
-                session_id: None,
-            },
-            account_id: principal_id,
-            display_name: "Route test".into(),
-            node_admin: false,
-            token_principal_id: Some(principal_id),
-            token_actor_principal_id: None,
-            token_space_uid: Some(space_uid),
-            token_actions: Some(
-                ["read", "create", "update"]
-                    .into_iter()
-                    .map(str::to_string)
-                    .collect(),
-            ),
-            recent_passkey: true,
-        };
+        let identity = content_identity(principal_id, space_uid);
         let route = Router::new()
             .route("/spaces/{space_id}/forms", post(upsert_form))
             .layer(Extension(identity))
@@ -4533,6 +4634,276 @@ mod authentication_regression_tests {
         );
         let stored = state.service.get_form(&space_id, "Meeting").await?;
         assert_eq!(stored["fields"]["time"]["type"], "timestamp");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn entry_routes_keep_input_errors_typed_and_create_atomic() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-entry-create-contract")?;
+        let principal_id = Uuid::from_u128(1872);
+        let space_id = state
+            .service
+            .create_space_for_principal("entry-create-contract", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {
+                        "Body": {"type": "markdown"},
+                        "test number": {"type": "double"},
+                        "ts": {"type": "timestamp"}
+                    },
+                    "allow_extra_attributes": "allow_columns"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/entries", post(create_entry))
+            .route("/spaces/{space_id}/entries/{entry_id}", put(update_entry))
+            .route(
+                "/spaces/{space_id}/entries/{entry_id}/history",
+                get(entry_history),
+            )
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state.clone());
+
+        let invalid_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "invalid-entry",
+                            "markdown": "---\nform: Entry\n---\n# Invalid\n\n## Body\nBody\n\n## test number\n0\n\n## ts\nnot-a-timestamp"
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("invalid entry response");
+        assert_eq!(invalid_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let invalid_body = axum::body::to_bytes(invalid_response.into_body(), usize::MAX).await?;
+        let invalid_body: Value = serde_json::from_slice(&invalid_body)?;
+        assert_eq!(invalid_body["code"], "INVALID_INPUT");
+        assert!(state.service.list_entries(&space_id).await?.is_empty());
+
+        let missing_form_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "missing-form-entry",
+                            "markdown": "---\nform: Missing\n---\n# Missing form"
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("missing form response");
+        assert_eq!(missing_form_response.status(), StatusCode::NOT_FOUND);
+        let missing_form_body =
+            axum::body::to_bytes(missing_form_response.into_body(), usize::MAX).await?;
+        let missing_form_body: Value = serde_json::from_slice(&missing_form_body)?;
+        assert_eq!(missing_form_body["code"], "FORM_NOT_FOUND");
+        assert!(state.service.list_entries(&space_id).await?.is_empty());
+
+        let success_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "created-entry",
+                            "markdown": "---\nform: Entry\n---\n# Created\n\n## Body\nBody\n\n## test number\n0\n\n## ts\n2026-08-21T10:48"
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("successful entry response");
+        assert_eq!(success_response.status(), StatusCode::CREATED);
+        let success_body = axum::body::to_bytes(success_response.into_body(), usize::MAX).await?;
+        let success_body: Value = serde_json::from_slice(&success_body)?;
+        assert_eq!(success_body["id"], "created-entry");
+        let created_revision_id = success_body["revision_id"]
+            .as_str()
+            .expect("create response revision id");
+
+        let invalid_update_response = route
+            .clone()
+            .oneshot(
+                Request::put(format!(
+                    "/spaces/{space_id}/entries/created-entry"
+                ))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({
+                        "markdown": "---\nform: Entry\n---\n# Created\n\n## Body\nBody\n\n## test number\n0\n\n## ts\nnot-a-timestamp",
+                        "parent_revision_id": created_revision_id
+                    })
+                    .to_string(),
+                ))?,
+            )
+            .await
+            .expect("invalid entry update response");
+        assert_eq!(
+            invalid_update_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let invalid_update_body =
+            axum::body::to_bytes(invalid_update_response.into_body(), usize::MAX).await?;
+        let invalid_update_body: Value = serde_json::from_slice(&invalid_update_body)?;
+        assert_eq!(invalid_update_body["code"], "INVALID_INPUT");
+
+        let history_response = route
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/entries/created-entry/history"))
+                    .body(Body::empty())?,
+            )
+            .await
+            .expect("entry history response");
+        assert_eq!(history_response.status(), StatusCode::OK);
+        let history_body = axum::body::to_bytes(history_response.into_body(), usize::MAX).await?;
+        let history_body: Value = serde_json::from_slice(&history_body)?;
+        let revisions = history_body["revisions"]
+            .as_array()
+            .expect("revision array");
+        assert_eq!(revisions.len(), 1);
+        assert_eq!(revisions[0]["revision_id"], created_revision_id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invitation_finalization_converges_after_space_membership_commit() -> anyhow::Result<()>
+    {
+        let state = AppState::new_for_tests("memory://server-invitation-saga")?;
+        state.initialize_node().await?;
+        let owner_account_id = Uuid::now_v7();
+        let owner_principal_id = Uuid::now_v7();
+        let invited_account_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("invitation-saga", owner_principal_id, "Owner")
+            .await?;
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid,
+                principal_id: owner_principal_id,
+                node_account_id: owner_account_id,
+                binding_method: BindingMethod::Setup,
+            })
+            .await?;
+        let principal_id = Uuid::now_v7();
+        let backup_owner_principal_id = Uuid::now_v7();
+        let account = HumanAccount {
+            account_id: invited_account_id,
+            display_name: "Invited viewer".to_string(),
+            status: AccountStatus::Active,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            node_roles: BTreeSet::new(),
+        };
+        let invitation = AccountInvitation {
+            invitation_id: Uuid::now_v7(),
+            token_hash: "test".to_string(),
+            display_name: account.display_name.clone(),
+            space_uid: Some(space_uid),
+            role: Some("viewer".to_string()),
+            expires_at: chrono::Utc::now().to_rfc3339(),
+            acceptance: Some(
+                ugoite_identity::node_identity::InvitationAcceptance::Pending {
+                    account_id: invited_account_id,
+                    principal_id,
+                    kind: ugoite_identity::node_identity::InvitationAcceptanceKind::PasskeyRegistration,
+                    claimed_at: chrono::Utc::now().to_rfc3339(),
+                },
+            ),
+            created_by: owner_account_id,
+        };
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        authorizer
+            .add_human_member(
+                &space_uid.to_string(),
+                owner_principal_id,
+                SpacePrincipal {
+                    principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: account.display_name.clone(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        authorizer
+            .add_human_member(
+                &space_uid.to_string(),
+                owner_principal_id,
+                SpacePrincipal {
+                    principal_id: backup_owner_principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Backup owner".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Owner,
+            )
+            .await?;
+        authorizer
+            .change_role(
+                &space_uid.to_string(),
+                owner_principal_id,
+                owner_principal_id,
+                SpaceRole::Viewer,
+            )
+            .await?;
+
+        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+            .await
+            .expect("membership-first finalization");
+        authorizer
+            .revoke_principal(
+                &space_uid.to_string(),
+                backup_owner_principal_id,
+                owner_principal_id,
+            )
+            .await?;
+        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+            .await
+            .expect("idempotent retry after inviter revocation");
+
+        let authorization = authorizer.state(&space_uid.to_string()).await?;
+        assert_eq!(authorization.memberships.len(), 3);
+        let node = state.identity.read_state().await?;
+        assert_eq!(
+            node.bindings
+                .iter()
+                .filter(|binding| binding.space_uid == space_uid)
+                .count(),
+            2
+        );
+
+        authorizer
+            .revoke_principal(
+                &space_uid.to_string(),
+                backup_owner_principal_id,
+                principal_id,
+            )
+            .await?;
+        assert!(
+            bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+                .await
+                .is_err()
+        );
         Ok(())
     }
 }

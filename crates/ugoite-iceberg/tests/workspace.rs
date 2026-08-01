@@ -1,10 +1,15 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
+use ugoite_core::query::{
+    AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
+};
 use ugoite_domain::entry::{
     EntryAsset, EntryIntegrity, EntryLink, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{
-    FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
+    sql_column_name, sql_relation_name, FieldType, FormChange, FormChangeSet, FormDefinition,
+    FormField, FormVersion,
 };
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
@@ -284,6 +289,67 @@ async fn metadata_evolution_keeps_physical_identity() -> anyhow::Result<()> {
             .len(),
         1
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_relation_and_saved_query_survive_form_rename() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(305)),
+        "memory://iceberg-stable-sql-relation",
+    )
+    .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    let relation = sql_relation_name(form.id);
+    let saved_sql = format!("SELECT * FROM \"{relation}\" ORDER BY _ugoite_id");
+    let before = workspace.capture_checkpoint().await?;
+
+    evolve_form(
+        &workspace,
+        &FormChangeSet {
+            form_id: form.id,
+            expected_version: Some(form.version),
+            changes: vec![FormChange::RenameForm {
+                name: "Work item".into(),
+            }],
+        },
+    )
+    .await?;
+    let after = workspace.capture_checkpoint().await?;
+    assert_eq!(
+        workspace.form_at_checkpoint(&before, &relation).await?.name,
+        "Task"
+    );
+    assert_eq!(
+        workspace.form_at_checkpoint(&after, &relation).await?.name,
+        "Work item"
+    );
+
+    let context = workspace
+        .authorized_query_context(AuthorizedQueryPolicy {
+            forms: [(
+                form.id,
+                AuthorizedQueryForm {
+                    relation: relation.clone(),
+                    entry_scope: EntryScope::AllCurrent,
+                    columns: [sql_column_name(form.fields[0].id)].into_iter().collect(),
+                    system_columns: [QuerySystemColumn::ExternalId].into_iter().collect(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            checkpoint: Some(after),
+            limits: QueryLimits {
+                max_memory_bytes: 8 * 1024 * 1024,
+                max_rows: 10,
+                timeout: Duration::from_secs(5),
+                max_concurrency: 1,
+                allowed_functions: Default::default(),
+            },
+        })
+        .await?;
+    context.execute(&saved_sql).await?;
     Ok(())
 }
 

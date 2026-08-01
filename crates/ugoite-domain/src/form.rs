@@ -109,6 +109,23 @@ pub struct FormDefinition {
     pub extension_metadata: BTreeMap<String, Value>,
 }
 
+/// Returns the stable ASCII SQL relation exposed for a Form.
+///
+/// SQL identity follows the immutable Form identity rather than its editable
+/// display name. This keeps the relation unique for every valid Form set and
+/// preserves Saved SQL across Form renames.
+pub fn sql_relation_name(form_id: FormId) -> String {
+    format!("form_{}", form_id.as_uuid().simple())
+}
+
+/// Returns the stable ASCII SQL column exposed for a Form field.
+///
+/// Field names are editable labels. Field IDs are the immutable identity that
+/// Iceberg already uses for schema evolution, so SQL follows that identity.
+pub fn sql_column_name(field_id: FieldId) -> String {
+    format!("field_{}", field_id.get())
+}
+
 impl FormDefinition {
     pub fn validate(&self) -> Result<(), DomainError> {
         if self.name.trim().is_empty() {
@@ -204,6 +221,23 @@ impl FormDefinition {
             .iter_mut()
             .find(|field| field.id == id)
             .ok_or(DomainError::UnknownField(id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sql_column_name, sql_relation_name};
+    use crate::id::{FieldId, FormId};
+    use uuid::Uuid;
+
+    #[test]
+    fn sql_names_follow_immutable_ids() {
+        let form_id = FormId::from(Uuid::from_u128(1));
+        assert_eq!(
+            sql_relation_name(form_id),
+            "form_00000000000000000000000000000001"
+        );
+        assert_eq!(sql_column_name(FieldId::new(104).unwrap()), "field_104");
     }
 }
 

@@ -27,7 +27,14 @@ export const formatSearchHistoryLabel = (
     );
   }
   for (const condition of criteria.fieldConditions.slice(0, 2)) {
-    const symbol = condition.operator === "contains" ? "~" : "=";
+    const symbol = {
+      equals: "=",
+      contains: "~",
+      lt: "<",
+      lte: "<=",
+      gt: ">",
+      gte: ">=",
+    }[condition.operator];
     parts.push(`${condition.field}${symbol}${condition.value}`);
   }
 

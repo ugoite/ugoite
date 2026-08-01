@@ -2,8 +2,10 @@ import { A, useParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { spaceApi } from "~/lib/ugoite-client";
 import type { StorageConnectionConfig } from "~/lib/types";
-import { SpaceShell } from "~/components/SpaceShell";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "settings", title: "settingsStorage" });
 
 export default function SpaceTestConnectionRoute() {
   const params = useParams<{ space_id: string }>();
@@ -50,11 +52,7 @@ export default function SpaceTestConnectionRoute() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="settings"
-      title="Settings / Storage"
-    >
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Settings / Storage</div>
@@ -114,6 +112,6 @@ export default function SpaceTestConnectionRoute() {
           <p class="ui-alert ui-alert-error">{error()}</p>
         </Show>
       </div>
-    </SpaceShell>
+    </>
   );
 }

@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   ensureDefaultForm,
   getBackendUrl,
+  getDefaultFormRelation,
   waitForServers,
 } from "./lib/client.ts";
 
@@ -23,6 +24,7 @@ test.describe("UI page screenshot export @screenshot", () => {
 
   test("REQ-E2E-004: export screenshots for all UI page specs", async ({ page, request }) => {
     test.setTimeout(180_000);
+    const relation = await getDefaultFormRelation(request);
 
     const entryTitle = `E2E Screenshot Entry ${Date.now()}`;
     const entryRes = await request.post(
@@ -43,7 +45,7 @@ test.describe("UI page screenshot export @screenshot", () => {
         data: {
           name: `E2E Screenshot Query ${Date.now()}`,
           kind: "user-query",
-          sql: "SELECT * FROM entries LIMIT 10",
+          sql: `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
           variables: [],
         },
       },

@@ -1,14 +1,14 @@
 import { createSignal } from "solid-js";
-import type { EntryRecord, SearchResult } from "./types";
+import type { EntryRecord, KeywordSearchResult } from "./types";
 import { searchApi } from "./ugoite-client";
 
 export function createSearchStore(spaceId: () => string) {
-  const [results, setResults] = createSignal<SearchResult[]>([]);
+  const [results, setResults] = createSignal<KeywordSearchResult[]>([]);
   const [queryResults, setQueryResults] = createSignal<EntryRecord[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
-  async function searchKeyword(query: string): Promise<SearchResult[]> {
+  async function searchKeyword(query: string): Promise<KeywordSearchResult[]> {
     setLoading(true);
     setError(null);
     try {

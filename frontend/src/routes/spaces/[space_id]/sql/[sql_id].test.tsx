@@ -9,6 +9,7 @@ import type { Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
 
 const navigateMock = vi.fn();
+const entryRelation = "form_00000000000000000000000000000001";
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; class?: string; children: unknown }) => (
@@ -18,19 +19,6 @@ vi.mock("@solidjs/router", () => ({
   ),
   useNavigate: () => navigateMock,
   useParams: () => ({ space_id: "default", sql_id: "saved-query" }),
-}));
-
-vi.mock("~/components/SpaceShell", () => ({
-  SpaceShell: (
-    props: { children: unknown; spaceId: string; activeNavigation?: string },
-  ) => (
-    <div
-      data-space-id={props.spaceId}
-      data-active-navigation={props.activeNavigation}
-    >
-      {props.children}
-    </div>
-  ),
 }));
 
 vi.mock("~/components", () => ({
@@ -61,7 +49,8 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Recent Search",
-      sql: "SELECT * FROM entries LIMIT 10",
+      sql:
+        `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
       variables: [{
         name: "owner",
         type: "string",
@@ -72,7 +61,7 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       revision_id: "rev-1",
     });
 
-    const { container } = render(() => <SpaceSqlDetailRoute />);
+    render(() => <SpaceSqlDetailRoute />);
 
     expect(await screen.findByRole("heading", { name: "Recent Search" }))
       .toBeInTheDocument();
@@ -81,7 +70,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       "data-disabled",
       "true",
     );
-    expect(screen.getByText("SELECT * FROM entries LIMIT 10"))
+    expect(screen.getByText(
+      `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
+    ))
       .toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Variables" }))
       .toHaveAttribute(
@@ -97,21 +88,14 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
       "href",
       "/spaces/default/search",
     );
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-space-id",
-      "default",
-    );
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-active-navigation",
-      "search",
-    );
   });
 
   it("REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions", async () => {
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Runnable Query",
-      sql: "SELECT * FROM entries LIMIT 1",
+      sql:
+        `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
       variables: [],
       created_at: "2025-03-01T00:00:00Z",
       updated_at: "2025-03-02T00:00:00Z",
@@ -122,7 +106,9 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
         testApiUrl("/spaces/default/sql-sessions"),
         async ({ request }) => {
           const body = (await request.json()) as { sql?: string };
-          expect(body.sql).toBe("SELECT * FROM entries LIMIT 1");
+          expect(body.sql).toBe(
+            `SELECT * FROM "${entryRelation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 1`,
+          );
           return HttpResponse.json(
             { id: "session-1", status: "ready", error: null },
             { status: 201 },

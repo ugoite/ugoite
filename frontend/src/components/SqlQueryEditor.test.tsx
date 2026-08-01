@@ -142,7 +142,7 @@ describe("REQ-FE-036: SQL Query Editor", () => {
     const onDiagnostics = vi.fn();
     const result = render(() => (
       <SqlQueryEditor
-        value="SELECT * FROM entries"
+        value='SELECT * FROM "form_00000000000000000000000000000001"'
         onChange={() => undefined}
         schema={buildSqlSchema([])}
         onDiagnostics={onDiagnostics}
@@ -153,7 +153,9 @@ describe("REQ-FE-036: SQL Query Editor", () => {
   });
 
   it("propagates editor updates through the change listener", async () => {
-    const [value, setValue] = createSignal("SELECT * FROM entries");
+    const [value, setValue] = createSignal(
+      'SELECT * FROM "form_00000000000000000000000000000001"',
+    );
     const onChange = vi.fn();
 
     const result = render(() => (
@@ -164,10 +166,14 @@ describe("REQ-FE-036: SQL Query Editor", () => {
       />
     ));
 
-    setValue("SELECT id FROM entries");
+    setValue(
+      'SELECT _ugoite_id FROM "form_00000000000000000000000000000001"',
+    );
 
     await waitFor(() => {
-      expect(onChange).toHaveBeenCalledWith("SELECT id FROM entries");
+      expect(onChange).toHaveBeenCalledWith(
+        'SELECT _ugoite_id FROM "form_00000000000000000000000000000001"',
+      );
     });
 
     result.unmount();

@@ -35,6 +35,10 @@ pub enum SqlKind {
 pub enum SearchHistoryOperator {
     Equals,
     Contains,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

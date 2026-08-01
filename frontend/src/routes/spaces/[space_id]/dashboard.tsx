@@ -1,7 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { createEntryStore } from "~/lib/entry-store";
 import { getDocsiteHref } from "~/lib/docsite-links";
@@ -10,6 +9,9 @@ import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "home" });
 
 const browserWalkthroughUrl = getDocsiteHref(
   "/docs/guide/start/browser-first-entry",
@@ -66,11 +68,7 @@ export default function SpaceDashboardRoute() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="home"
-      title={t("dashboard.home")}
-    >
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{spaceName()}</div>
@@ -262,6 +260,6 @@ export default function SpaceDashboardRoute() {
         onClose={() => setShowFormDialog(false)}
         onSubmit={createForm}
       />
-    </SpaceShell>
+    </>
   );
 }

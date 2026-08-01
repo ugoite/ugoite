@@ -39,7 +39,9 @@ let revisionCounter = 0;
 const generateRevisionId = () => `rev-${++revisionCounter}`;
 
 const validateMockSqlPayload = (payload: unknown): string | null => {
-  if (!payload || typeof payload !== "object") return "payload must be an object";
+  if (!payload || typeof payload !== "object") {
+    return "payload must be an object";
+  }
   const body = payload as Record<string, unknown>;
   if (!("name" in body)) return "name is required";
   if (body.name !== null && typeof body.name !== "string") {
@@ -116,7 +118,9 @@ const validateMockSqlPayload = (payload: unknown): string | null => {
     const item = condition as Record<string, unknown>;
     if (
       typeof item.field !== "string" ||
-      (item.operator !== "equals" && item.operator !== "contains") ||
+      !["equals", "contains", "lt", "lte", "gt", "gte"].includes(
+        item.operator as string,
+      ) ||
       typeof item.value !== "string"
     ) {
       return "searchCriteria field conditions are invalid";
@@ -210,6 +214,11 @@ export const seedEntry = (
 };
 
 export const seedForm = (spaceId: string, entryForm: Form) => {
+  if (!entryForm.sql_relation) {
+    throw new Error(
+      `seedForm requires backend sql_relation for ${entryForm.name}`,
+    );
+  }
   mockForms.get(spaceId)?.set(entryForm.name, entryForm);
 };
 
@@ -773,6 +782,12 @@ export const handlers = [
     async ({ params, request }) => {
       const spaceId = params.spaceId as string;
       const body = (await request.json()) as { sql: string };
+      if (typeof body.sql === "string" && /\bentries\b/i.test(body.sql)) {
+        return HttpResponse.json(
+          { detail: "Legacy SQL relations are unsupported" },
+          { status: 422 },
+        );
+      }
       const id = crypto.randomUUID();
       const session = {
         id,

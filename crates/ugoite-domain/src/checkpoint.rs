@@ -15,10 +15,6 @@ pub const SPACE_CHECKPOINT_FORMAT_VERSION: u32 = 1;
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointTable {
     pub form_id: FormId,
-    /// The Form relation captured from immutable Iceberg metadata. It lets a
-    /// query session resolve one requested Form without loading every Form
-    /// definition from the checkpoint.
-    pub form_name: String,
     pub namespace: Vec<String>,
     pub table: String,
     pub table_uuid: String,
@@ -87,17 +83,10 @@ impl SpaceCheckpoint {
     /// their immutable publication and Catalog Head by the Iceberg adapter.
     pub fn validate_structure(&self) -> Result<(), &'static str> {
         let mut forms = BTreeSet::new();
-        let mut form_names = BTreeSet::new();
         let mut identifiers = BTreeSet::new();
         for table in &self.tables {
             if !forms.insert(table.form_id) {
                 return Err("checkpoint contains a duplicate Form ID");
-            }
-            if table.form_name.trim().is_empty() {
-                return Err("checkpoint Form relation is empty");
-            }
-            if !form_names.insert(table.form_name.to_ascii_lowercase()) {
-                return Err("checkpoint contains duplicate Form relations");
             }
             if table.namespace.is_empty() || table.namespace.iter().any(|part| part.is_empty()) {
                 return Err("checkpoint table namespace is empty or invalid");
@@ -178,7 +167,6 @@ mod tests {
             2,
             vec![CheckpointTable {
                 form_id: FormId::from(Uuid::from_u128(2)),
-                form_name: "form".into(),
                 namespace: vec!["space_1".into()],
                 table: "form_2".into(),
                 table_uuid: "table".into(),
@@ -201,5 +189,11 @@ mod tests {
             second.computed_coordinate_checksum()
         );
         assert!(second.validate_coordinate_checksum());
+    }
+
+    #[test]
+    fn checkpoint_does_not_persist_derived_sql_relation() {
+        let value = serde_json::to_value(checkpoint()).expect("checkpoint serializes");
+        assert!(value["tables"][0].get("form_relation").is_none());
     }
 }

@@ -96,7 +96,7 @@ fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
                         .map(|id| EntryId::from(Uuid::from_u128(*id)))
                         .collect(),
                 ),
-                columns: ["title".into()].into_iter().collect(),
+                columns: ["field_100".into()].into_iter().collect(),
                 system_columns: BTreeSet::new(),
             },
         )]
@@ -133,7 +133,7 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         .authorized_query_context(policy(&tasks, &[10]))
         .await?;
     let batches = context
-        .execute("SELECT * FROM tasks WHERE title IS NOT NULL")
+        .execute("SELECT * FROM tasks WHERE field_100 IS NOT NULL")
         .await?;
     assert_eq!(
         batches.iter().map(|batch| batch.num_rows()).sum::<usize>(),
@@ -149,7 +149,7 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         "SELECT count(*) FROM tasks",
         "SELECT current_schema()",
         "SELECT current_catalog()",
-        "SELECT unregistered_udf(title) FROM tasks",
+        "SELECT unregistered_udf(field_100) FROM tasks",
         "SELECT UNNEST([1, 2])",
         "SELECT array_map([1, 2], x -> x + 1)",
         "SELECT * FROM generate_series(1, 2)",
@@ -160,9 +160,9 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
         );
     }
     for sql in [
-        "SELECT * FROM tasks t JOIN tasks other ON t.title = other.title",
+        "SELECT * FROM tasks t JOIN tasks other ON t.field_100 = other.field_100",
         "SELECT * FROM (SELECT * FROM tasks) nested",
-        "SELECT t.title FROM tasks AS t",
+        "SELECT t.field_100 FROM tasks AS t",
     ] {
         let batches = context.execute(sql).await?;
         assert_eq!(
@@ -172,7 +172,7 @@ async fn context_makes_unapproved_forms_entries_columns_and_system_objects_unres
     }
     assert_eq!(
         context
-            .execute("SELECT title AS entry_id FROM tasks")
+            .execute("SELECT field_100 AS entry_id FROM tasks")
             .await?
             .iter()
             .map(|batch| batch.num_rows())
@@ -204,7 +204,7 @@ async fn context_binds_native_datafusion_parameters_without_sql_substitution() -
 
     let rows = context
         .execute_with_parameters(
-            "SELECT title FROM tasks WHERE title = $title",
+            "SELECT field_100 FROM tasks WHERE field_100 = $title",
             HashMap::from([(
                 "title".to_string(),
                 datafusion::scalar::ScalarValue::Utf8(Some("allowed".into())),
@@ -215,7 +215,7 @@ async fn context_binds_native_datafusion_parameters_without_sql_substitution() -
 
     let injection = context
         .execute_with_parameters(
-            "SELECT title FROM tasks WHERE title = $title",
+            "SELECT field_100 FROM tasks WHERE field_100 = $title",
             HashMap::from([(
                 "title".to_string(),
                 datafusion::scalar::ScalarValue::Utf8(Some("allowed' OR 1=1 --".into())),
@@ -232,14 +232,14 @@ async fn context_binds_native_datafusion_parameters_without_sql_substitution() -
     );
     assert!(context
         .execute_with_parameters(
-            "SELECT title FROM tasks WHERE title = $title",
+            "SELECT field_100 FROM tasks WHERE field_100 = $title",
             HashMap::new()
         )
         .await
         .is_err());
     assert!(context
         .execute_with_parameters(
-            "SELECT title FROM tasks",
+            "SELECT field_100 FROM tasks",
             HashMap::from([(
                 "title".to_string(),
                 datafusion::scalar::ScalarValue::Utf8(Some("allowed".into())),
@@ -276,7 +276,7 @@ async fn duplicate_maximum_versions_fail_every_sql_shape() -> anyhow::Result<()>
     for sql in [
         "SELECT * FROM tasks",
         "SELECT count(*) FROM tasks",
-        "SELECT title FROM tasks LIMIT 1",
+        "SELECT field_100 FROM tasks LIMIT 1",
     ] {
         let error = context.execute(sql).await.expect_err(sql);
         assert!(matches!(
@@ -302,7 +302,9 @@ async fn physical_plan_keeps_iceberg_projection_filter_and_limit_pushdown() -> a
         .authorized_query_context(policy(&tasks, &[112]))
         .await?;
     let plan = context
-        .physical_plan_for_testing("SELECT title FROM tasks WHERE title = 'allowed' LIMIT 1")
+        .physical_plan_for_testing(
+            "SELECT field_100 FROM tasks WHERE field_100 = 'allowed' LIMIT 1",
+        )
         .await?;
     let normalized = plan.to_ascii_lowercase();
     assert!(normalized.contains("iceberg"), "{plan}");
@@ -461,7 +463,7 @@ async fn system_columns_are_queryable_only_when_explicitly_allowlisted() -> anyh
         .insert(QuerySystemColumn::EntryId);
     let context = workspace.authorized_query_context(wildcard).await?;
     let batches = context.execute("SELECT * FROM tasks").await?;
-    assert_eq!(batches[0].schema().field(0).name(), "title");
+    assert_eq!(batches[0].schema().field(0).name(), "field_100");
     assert_eq!(
         batches[0].schema().field(1).name(),
         QuerySystemColumn::EntryId.as_str()
