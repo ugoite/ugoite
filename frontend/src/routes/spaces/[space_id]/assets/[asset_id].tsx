@@ -4,6 +4,9 @@ import { assetApi } from "~/lib/ugoite-client";
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms", title: "asset" });
 
 export default function SpaceAssetDetailRoute() {
   const navigate = useNavigate();

@@ -9,6 +9,9 @@ import { EntryDetailPane } from "~/components/EntryDetailPane";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms", title: "newEntry" });
 
 export default function NewEntryRoute() {
   const params = useParams<{ space_id: string }>();

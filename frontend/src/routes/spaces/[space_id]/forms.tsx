@@ -6,6 +6,9 @@ import { EntriesRouteContext } from "~/lib/entries-route-context";
 import { createEntryStore } from "~/lib/entry-store";
 import { createSpaceStore } from "~/lib/space-store";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceFormsRoute(props: RouteSectionProps) {
   const params = useParams<{ space_id: string }>();

@@ -10,6 +10,7 @@ vi.mock("@solidjs/router", () => ({
     </a>
   ),
   useNavigate: () => vi.fn(),
+  useParams: () => ({}),
 }));
 
 describe("404 route", () => {

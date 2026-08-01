@@ -9,6 +9,9 @@ import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "home" });
 
 const copy = {
   en: { home: "Home", newEntry: "Entry", continue: "Continue", pinned: "Pinned", recent: "Recent", forms: "Forms", search: "Search", assets: "Assets", savedSql: "SQL", noRecent: "Create an entry to start building this Space.", walkthrough: "Create your first entry with the browser walkthrough", form: "Form", entry: "Entry", searchMeta: "Entries · Forms · Assets" },

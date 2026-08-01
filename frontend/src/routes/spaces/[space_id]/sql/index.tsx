@@ -3,6 +3,9 @@ import { For, Show } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { sqlApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "search", title: "savedSql" });
 
 export default function SpaceSqlIndexRoute() {
   const params = useParams<{ space_id: string }>();

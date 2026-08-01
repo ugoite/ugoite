@@ -26,6 +26,11 @@ export default defineConfig({
     // across otherwise isolated tests.
     fileParallelism: false,
     testTimeout: 10000,
+    server: {
+      deps: {
+        inline: ["@solidjs/router"],
+      },
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

@@ -13,6 +13,9 @@ import { buildSqlSchema } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "search", title: "savedSqlDetail" });
 
 const READ_ONLY_SQL_SCHEMA = buildSqlSchema([]);
 

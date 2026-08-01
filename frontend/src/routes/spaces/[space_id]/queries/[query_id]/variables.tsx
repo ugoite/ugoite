@@ -2,6 +2,9 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "search", title: "sqlVariables" });
 
 export default function SpaceQueryVariablesRoute() {
   const params = useParams<{ space_id: string; query_id: string }>();

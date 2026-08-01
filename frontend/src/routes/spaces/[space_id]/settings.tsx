@@ -13,6 +13,9 @@ import type {
   StorageConnectionConfig,
 } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "settings", title: "settings" });
 
 type Section =
   | "general"

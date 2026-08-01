@@ -3,6 +3,9 @@ import { Show } from "solid-js";
 import { EntryDetailPane } from "~/components/EntryDetailPane";
 import { useEntriesRouteContext } from "~/lib/entries-route-context";
 import { t } from "~/lib/i18n";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceEntryDetailRoute() {
   const navigate = useNavigate();

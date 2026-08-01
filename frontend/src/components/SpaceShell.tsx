@@ -7,18 +7,12 @@ import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
 import { createSpaceStore } from "~/lib/space-store";
 
-export type SpaceTopTab = "dashboard" | "search";
-export type SpaceBottomTab = "object" | "grid";
 export type SpaceNavigation = "home" | "forms" | "search" | "settings";
 
 interface SpaceShellProps {
   spaceId: string;
-  activeTopTab?: SpaceTopTab;
-  activeBottomTab?: SpaceBottomTab;
-  activeNavigation?: SpaceNavigation;
+  activeNavigation: SpaceNavigation;
   title?: string;
-  showBottomTabs?: boolean;
-  bottomTabHrefSuffix?: string;
   children: JSX.Element;
 }
 
@@ -61,25 +55,7 @@ export function SpaceShell(props: SpaceShellProps) {
     void spaceStore.loadSpaces().catch(() => undefined);
   });
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
-  const active = createMemo<SpaceNavigation>(() => {
-    if (props.activeNavigation) return props.activeNavigation;
-    if (props.activeTopTab === "dashboard") return "home";
-    if (props.activeTopTab === "search") return "search";
-    if (props.activeBottomTab === "grid") return "forms";
-    const pathname = typeof window === "undefined"
-      ? ""
-      : window.location.pathname;
-    if (pathname.includes("/settings")) return "settings";
-    if (
-      pathname.includes("/search") || pathname.includes("/sql") ||
-      pathname.includes("/queries")
-    ) return "search";
-    if (
-      pathname.includes("/forms") || pathname.includes("/entries") ||
-      pathname.includes("/assets")
-    ) return "forms";
-    return "home";
-  });
+  const active = () => props.activeNavigation;
   const crumb = createMemo(() => props.title ?? copy()[active()]);
   const activePath = createMemo(() =>
     navItems.find((item) => item.id === active())?.path ?? "dashboard"
@@ -100,6 +76,8 @@ export function SpaceShell(props: SpaceShellProps) {
         <A
           href={`/spaces/${props.spaceId}/${item.path}`}
           class={mobile ? "" : "navItem"}
+          activeClass=""
+          inactiveClass=""
           classList={{ active: active() === item.id }}
           aria-current={active() === item.id ? "page" : undefined}
           onClick={() => setDrawerOpen(false)}
@@ -137,11 +115,7 @@ export function SpaceShell(props: SpaceShellProps) {
             <UiIcon name="menu" />
           </button>
           <div class="crumbTop">{crumb()}</div>
-          <AccountMenu
-            settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
-            settingsLink={(linkProps) => <A {...linkProps} />}
-            onSignOut={() => navigate("/login", { replace: true })}
-          />
+          <AccountMenu />
         </header>
         <div class="content">{props.children}</div>
       </section>
@@ -163,7 +137,11 @@ export function SpaceShell(props: SpaceShellProps) {
             value={props.spaceId}
             onChange={(event) => switchSpace(event.currentTarget.value)}
           >
-            <Show when={!spaceStore.spaces().some((space) => space.id === props.spaceId)}>
+            <Show
+              when={!spaceStore.spaces().some((space) =>
+                space.id === props.spaceId
+              )}
+            >
               <option value={props.spaceId}>{props.spaceId}</option>
             </Show>
             <For each={spaceStore.spaces()}>

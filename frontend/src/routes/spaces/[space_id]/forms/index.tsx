@@ -11,6 +11,9 @@ import {
 } from "~/lib/metadata-forms";
 import { formApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms" });
 
 const copy = {
   en: {

@@ -17,6 +17,7 @@ vi.mock("@solidjs/router", () => ({
     return <a {...(rest as never)}>{children as never}</a>;
   },
   useNavigate: () => vi.fn(),
+  useParams: () => ({}),
 }));
 
 describe("GlobalShell account menu", () => {

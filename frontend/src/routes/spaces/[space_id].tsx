@@ -1,70 +1,97 @@
-import { useLocation, useParams } from "@solidjs/router";
+import { useCurrentMatches, useLocation, useParams } from "@solidjs/router";
 import type { RouteSectionProps } from "@solidjs/router";
 import { createMemo } from "solid-js";
-import {
-  SpaceShell,
-  type SpaceNavigation,
-} from "~/components/SpaceShell";
+import { locale } from "~/lib/i18n";
+import { spaceRoute, type SpaceShellRouteInfo } from "~/lib/space-shell-route";
+import { SpaceShell } from "~/components/SpaceShell";
 
-export const routeTitle = (
-  pathname: string,
-  search: string,
-): string | undefined => {
-  if (pathname.endsWith("/entries/new")) return "New Entry";
-  if (/\/entries\/[^/]+\/history\/[^/]+$/.test(pathname)) return "Revision";
-  if (/\/entries\/[^/]+\/history$/.test(pathname)) return "Entry / History";
-  if (/\/entries\/[^/]+\/restore$/.test(pathname)) return "Restore";
-  if (/\/assets\/[^/]+$/.test(pathname)) return "Asset";
-  if (pathname.endsWith("/assets")) return "Assets";
-  if (pathname.endsWith("/sql")) return "Saved SQL";
-  if (/\/sql\/[^/]+$/.test(pathname)) return "Saved SQL detail";
-  if (pathname.endsWith("/queries/new")) return "SQL / New";
-  if (/\/queries\/[^/]+\/variables$/.test(pathname)) {
-    return "SQL / Variables";
-  }
-  if (pathname.endsWith("/test-connection")) return "Settings / Storage";
-  if (pathname.endsWith("/settings")) {
-    const section = new URLSearchParams(search).get("section");
-    const sectionTitle: Record<string, string> = {
-      general: "General",
-      members: "Members",
-      agents: "Agents",
-      credentials: "Credentials",
-      storage: "Storage",
-    };
-    return `Settings / ${sectionTitle[section ?? ""] ?? "General"}`;
-  }
-  if (pathname.endsWith("/search")) return "Search";
-  if (pathname.endsWith("/forms/types")) return "Forms / Field Types";
-  if (pathname.endsWith("/forms")) return "Forms";
-  return undefined;
-};
+export const route = spaceRoute({ navigation: "home" });
 
-export const routeNavigation = (pathname: string): SpaceNavigation => {
-  if (pathname.includes("/settings")) return "settings";
-  if (
-    pathname.includes("/search") || pathname.includes("/sql") ||
-    pathname.includes("/queries") || pathname.includes("/query")
-  ) return "search";
-  if (
-    pathname.includes("/forms") || pathname.includes("/entries") ||
-    pathname.includes("/assets")
-  ) return "forms";
-  return "home";
+const titleCopy = {
+  en: {
+    asset: "Asset",
+    assets: "Assets",
+    entryHistory: "Entry / History",
+    newEntry: "New Entry",
+    restore: "Restore",
+    revision: "Revision",
+    savedSql: "Saved SQL",
+    savedSqlDetail: "Saved SQL detail",
+    settings: "Settings",
+    settingsStorage: "Settings / Storage",
+    sqlNew: "SQL / New",
+    sqlVariables: "SQL / Variables",
+    formTypes: "Forms / Field Types",
+  },
+  ja: {
+    asset: "アセット",
+    assets: "アセット",
+    entryHistory: "エントリー / 履歴",
+    newEntry: "新しいエントリー",
+    restore: "復元",
+    revision: "リビジョン",
+    savedSql: "保存済みSQL",
+    savedSqlDetail: "保存済みSQL詳細",
+    settings: "設定",
+    settingsStorage: "設定 / ストレージ",
+    sqlNew: "SQL / 新規",
+    sqlVariables: "SQL / 変数",
+    formTypes: "フォーム / フィールドタイプ",
+  },
+} as const;
+
+const settingsSectionCopy = {
+  en: {
+    general: "General",
+    members: "Members",
+    agents: "Agents",
+    credentials: "Credentials",
+    storage: "Storage",
+  },
+  ja: {
+    general: "一般",
+    members: "メンバー",
+    agents: "エージェント",
+    credentials: "認証情報",
+    storage: "ストレージ",
+  },
+} as const;
+
+const getRouteInfo = (matches: ReturnType<typeof useCurrentMatches>) => {
+  for (const match of [...matches()].reverse()) {
+    const info = match.route.info?.spaceShell as
+      | SpaceShellRouteInfo
+      | undefined;
+    if (info) return info;
+  }
+  return { navigation: "home" as const };
 };
 
 export default function SpaceLayout(props: RouteSectionProps) {
   const params = useParams<{ space_id: string }>();
+  const matches = useCurrentMatches();
   const location = useLocation();
   const spaceId = () => params.space_id;
-  const pathname = () => location.pathname;
-  const activeNavigation = createMemo(() => routeNavigation(pathname()));
-  const title = createMemo(() => routeTitle(pathname(), location.search));
+  const routeInfo = createMemo(() => getRouteInfo(matches));
+  const title = createMemo(() => {
+    const info = routeInfo();
+    if (!info.title) return undefined;
+    const language = locale() === "ja" ? "ja" : "en";
+    const copy = titleCopy[language];
+    if (info.title !== "settings") return copy[info.title];
+
+    const section = new URLSearchParams(location.search).get("section") ??
+      "general";
+    const sectionCopy = settingsSectionCopy[language];
+    return `${copy.settings} / ${
+      sectionCopy[section as keyof typeof sectionCopy] ?? sectionCopy.general
+    }`;
+  });
 
   return (
     <SpaceShell
       spaceId={spaceId()}
-      activeNavigation={activeNavigation()}
+      activeNavigation={routeInfo().navigation}
       title={title()}
     >
       {props.children}

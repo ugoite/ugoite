@@ -12,6 +12,7 @@ vi.mock("@solidjs/router", () => ({
     return <a {...(rest as never)}>{children as never}</a>;
   },
   useNavigate: () => vi.fn(),
+  useParams: () => ({ space_id: "my-space" }),
 }));
 
 vi.mock("~/lib/space-store", () => ({
@@ -78,7 +79,7 @@ describe("v5 SpaceShell", () => {
   });
   it("offers the other available spaces in the workspace selector", () => {
     render(() => (
-      <SpaceShell spaceId="my-space">
+      <SpaceShell spaceId="my-space" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
@@ -95,7 +96,7 @@ describe("v5 SpaceShell", () => {
   it("localizes navigation", () => {
     setLocale("ja");
     render(() => (
-      <SpaceShell spaceId="my-space">
+      <SpaceShell spaceId="my-space" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
@@ -105,7 +106,7 @@ describe("v5 SpaceShell", () => {
   it("shows the v5 loading indicator", () => {
     loadingState.start();
     const { container } = render(() => (
-      <SpaceShell spaceId="my-space">
+      <SpaceShell spaceId="my-space" activeNavigation="home">
         <p>Content</p>
       </SpaceShell>
     ));
@@ -115,7 +116,9 @@ describe("v5 SpaceShell", () => {
   it("keeps the route space selected when the route changes", () => {
     const [spaceId, setSpaceId] = createSignal("my-space");
     render(() => (
-      <SpaceShell spaceId={spaceId()}><p>Space content</p></SpaceShell>
+      <SpaceShell spaceId={spaceId()} activeNavigation="home">
+        <p>Space content</p>
+      </SpaceShell>
     ));
     setSpaceId("other-space");
     expect(screen.getByRole("combobox", { name: "Space" })).toHaveValue(

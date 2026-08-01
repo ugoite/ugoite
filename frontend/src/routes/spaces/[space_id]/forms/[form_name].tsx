@@ -1,5 +1,8 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { onMount } from "solid-js";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms" });
 
 export default function SpaceFormDetailRoute() {
   const params = useParams<{ space_id: string; form_name: string }>();

@@ -1,4 +1,5 @@
-import { createSignal, type JSX, Show } from "solid-js";
+import { A, useNavigate, useParams } from "@solidjs/router";
+import { createSignal, Show } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
 import { locale } from "~/lib/i18n";
 
@@ -15,30 +16,19 @@ const labels = {
   },
 } as const;
 
-type AccountMenuLinkProps = {
-  href: string;
-  role: "menuitem";
-  onClick: () => void;
-  children: JSX.Element;
-};
-
-type AccountMenuProps = {
-  settingsHref?: string;
-  settingsLink?: (props: AccountMenuLinkProps) => JSX.Element;
-  onSignOut?: () => void | Promise<void>;
-};
-
-export function AccountMenu(props: AccountMenuProps = {}) {
+export function AccountMenu() {
+  const navigate = useNavigate();
+  const params = useParams<{ space_id?: string }>();
   const [open, setOpen] = createSignal(false);
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
+  const settingsHref = () =>
+    params.space_id
+      ? `/spaces/${params.space_id}/settings?section=credentials`
+      : "/settings/security";
 
   const signOut = async () => {
     await authApi.clearSession();
-    if (props.onSignOut) {
-      await props.onSignOut();
-      return;
-    }
-    if (typeof window !== "undefined") window.location.assign("/login");
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -56,22 +46,13 @@ export function AccountMenu(props: AccountMenuProps = {}) {
       <Show when={open()}>
         <div class="accountMenuPanel" role="menu">
           <div class="accountMenuTitle">{copy().account}</div>
-          {props.settingsLink
-            ? props.settingsLink({
-              href: props.settingsHref ?? "/settings/security",
-              role: "menuitem",
-              onClick: () => setOpen(false),
-              children: copy().settings,
-            })
-            : (
-              <a
-                href={props.settingsHref ?? "/settings/security"}
-                role="menuitem"
-                onClick={() => setOpen(false)}
-              >
-                {copy().settings}
-              </a>
-            )}
+          <A
+            href={settingsHref()}
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            {copy().settings}
+          </A>
           <button
             type="button"
             role="menuitem"

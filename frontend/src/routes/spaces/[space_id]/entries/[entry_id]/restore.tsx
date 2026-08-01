@@ -2,6 +2,9 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createSignal, For, Show } from "solid-js";
 import { entryApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms", title: "restore" });
 
 export default function SpaceEntryRestoreRoute() {
   const navigate = useNavigate();

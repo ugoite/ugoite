@@ -3,6 +3,9 @@ import { For, Show } from "solid-js";
 import { UiIcon } from "~/components/UiIcon";
 import { entryApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "forms", title: "entryHistory" });
 
 export default function SpaceEntryHistoryRoute() {
   const params = useParams<{ space_id: string; entry_id: string }>();
