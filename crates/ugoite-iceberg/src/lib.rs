@@ -495,7 +495,7 @@ impl IcebergWorkspace {
         let mut matches = checkpoint
             .tables
             .iter()
-            .filter(|coordinate| coordinate.form_relation == relation);
+            .filter(|coordinate| sql_relation_name(coordinate.form_id) == relation);
         let coordinate = matches
             .next()
             .ok_or_else(|| CheckpointUnavailable::new(format!("Form relation {relation}")))?;
@@ -512,12 +512,9 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, coordinate.form_id)?;
-        if coordinate.form_relation != relation
-            || coordinate.form_relation != sql_relation_name(form.id)
-            || coordinate.form_id != form.id
-        {
+        if sql_relation_name(coordinate.form_id) != relation || coordinate.form_id != form.id {
             return Err(CheckpointIntegrityError::new(
-                "checkpoint Form relation does not match immutable Iceberg metadata",
+                "checkpoint Form ID does not match immutable Iceberg metadata",
             )
             .into());
         }

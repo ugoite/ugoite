@@ -412,6 +412,107 @@ describe("/spaces/:space_id/search", () => {
     });
   });
 
+  it("shows a ready session even when saving search history fails", async () => {
+    seedForm("default", {
+      name: "History failure",
+      sql_relation: entryRelation,
+      version: 1,
+      template: "",
+      fields: {},
+    });
+    let saveCalls = 0;
+    server.use(
+      http.post(testApiUrl("/spaces/default/sql"), () => {
+        saveCalls += 1;
+        return HttpResponse.json({ detail: "history storage unavailable" }, {
+          status: 500,
+        });
+      }),
+      http.post(
+        testApiUrl("/spaces/default/sql-sessions"),
+        () =>
+          HttpResponse.json({
+            id: "history-save-failed-session",
+            status: "ready",
+            error: null,
+          }, { status: 201 }),
+      ),
+    );
+
+    render(() => <SpaceSearchRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    await screen.findByRole("option", { name: "History failure" });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "History failure" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
+
+    await waitFor(() => {
+      expect(saveCalls).toBe(1);
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/default/entries?session=history-save-failed-session",
+      );
+    });
+    expect(screen.queryByText("Failed to run advanced search.")).toBeNull();
+  });
+
+  it("shows a ready session when refreshing search history fails", async () => {
+    seedForm("default", {
+      name: "History refresh failure",
+      sql_relation: entryRelation,
+      version: 1,
+      template: "",
+      fields: {},
+    });
+    let listCalls = 0;
+    server.use(
+      http.get(testApiUrl("/spaces/default/sql"), () => {
+        listCalls += 1;
+        return listCalls === 1
+          ? HttpResponse.json([])
+          : HttpResponse.json({ detail: "history refresh unavailable" }, {
+            status: 500,
+          });
+      }),
+      http.post(
+        testApiUrl("/spaces/default/sql"),
+        () =>
+          HttpResponse.json({ id: "saved-history", revision_id: "rev-history" }, {
+            status: 201,
+          }),
+      ),
+      http.post(
+        testApiUrl("/spaces/default/sql-sessions"),
+        () =>
+          HttpResponse.json({
+            id: "history-refresh-failed-session",
+            status: "ready",
+            error: null,
+          }, { status: 201 }),
+      ),
+    );
+
+    render(() => <SpaceSearchRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    await screen.findByRole("option", { name: "History refresh failure" });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "History refresh failure" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
+
+    await waitFor(() => {
+      expect(listCalls).toBeGreaterThanOrEqual(2);
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/spaces/default/entries?session=history-refresh-failed-session",
+      );
+    });
+    expect(screen.queryByText("Failed to run advanced search.")).toBeNull();
+  });
+
   it("binds string contains values with literal LIKE wildcards", async () => {
     seedForm("default", {
       name: "Notes",

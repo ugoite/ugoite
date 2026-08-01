@@ -882,7 +882,6 @@ impl SpaceCatalog {
         }
         Ok(CheckpointTable {
             form_id,
-            form_relation: crate::sql_relation_name(form_id),
             namespace: reference.identifier.namespace.clone(),
             table: reference.identifier.table.clone(),
             table_uuid: reference.table_uuid.clone(),

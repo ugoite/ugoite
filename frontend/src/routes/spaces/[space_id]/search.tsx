@@ -580,12 +580,17 @@ export default function SpaceSearchRoute() {
         return;
       }
       if (!existing) {
-        await sqlApi.create(spaceId(), {
-          name: buildSearchHistoryName(criteria),
-          sql: query.historySql,
-          variables: [],
-        });
-        await refetchSavedSearches();
+        try {
+          await sqlApi.create(spaceId(), {
+            name: buildSearchHistoryName(criteria),
+            sql: query.historySql,
+            variables: [],
+          });
+          await refetchSavedSearches();
+        } catch {
+          // Search history is a best-effort convenience. A ready session must
+          // remain usable even when persistence or its refresh is unavailable.
+        }
       }
       navigate(
         `/spaces/${spaceId()}/entries?session=${

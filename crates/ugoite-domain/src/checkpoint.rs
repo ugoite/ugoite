@@ -3,7 +3,6 @@
 //! A checkpoint contains storage coordinates only.  It deliberately carries no
 //! authorization, SQL, or query-policy state.
 
-use crate::form::sql_relation_name;
 use crate::id::{FormId, SpaceId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -16,10 +15,6 @@ pub const SPACE_CHECKPOINT_FORMAT_VERSION: u32 = 1;
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointTable {
     pub form_id: FormId,
-    /// The stable SQL relation captured from immutable Iceberg metadata. It lets a
-    /// query session resolve one requested Form without loading every Form
-    /// definition from the checkpoint.
-    pub form_relation: String,
     pub namespace: Vec<String>,
     pub table: String,
     pub table_uuid: String,
@@ -88,20 +83,10 @@ impl SpaceCheckpoint {
     /// their immutable publication and Catalog Head by the Iceberg adapter.
     pub fn validate_structure(&self) -> Result<(), &'static str> {
         let mut forms = BTreeSet::new();
-        let mut form_relations = BTreeSet::new();
         let mut identifiers = BTreeSet::new();
         for table in &self.tables {
             if !forms.insert(table.form_id) {
                 return Err("checkpoint contains a duplicate Form ID");
-            }
-            if table.form_relation.trim().is_empty() {
-                return Err("checkpoint Form relation is empty");
-            }
-            if table.form_relation != sql_relation_name(table.form_id) {
-                return Err("checkpoint Form relation does not match immutable Form ID");
-            }
-            if !form_relations.insert(table.form_relation.clone()) {
-                return Err("checkpoint contains duplicate Form relations");
             }
             if table.namespace.is_empty() || table.namespace.iter().any(|part| part.is_empty()) {
                 return Err("checkpoint table namespace is empty or invalid");
@@ -169,7 +154,6 @@ struct CoordinateIdentity<'a> {
 #[cfg(test)]
 mod tests {
     use super::{CheckpointTable, SpaceCheckpoint};
-    use crate::form::sql_relation_name;
     use crate::id::{FormId, SpaceId};
     use uuid::Uuid;
 
@@ -183,7 +167,6 @@ mod tests {
             2,
             vec![CheckpointTable {
                 form_id: FormId::from(Uuid::from_u128(2)),
-                form_relation: sql_relation_name(FormId::from(Uuid::from_u128(2))),
                 namespace: vec!["space_1".into()],
                 table: "form_2".into(),
                 table_uuid: "table".into(),
@@ -206,5 +189,11 @@ mod tests {
             second.computed_coordinate_checksum()
         );
         assert!(second.validate_coordinate_checksum());
+    }
+
+    #[test]
+    fn checkpoint_does_not_persist_derived_sql_relation() {
+        let value = serde_json::to_value(checkpoint()).expect("checkpoint serializes");
+        assert!(value["tables"][0].get("form_relation").is_none());
     }
 }
