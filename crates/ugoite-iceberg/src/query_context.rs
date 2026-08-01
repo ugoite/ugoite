@@ -20,6 +20,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
+use ugoite_domain::form::sql_column_name;
 
 use crate::{form_from_table, IcebergWorkspace};
 
@@ -1006,27 +1007,21 @@ fn visible_columns(
     let form_columns = form
         .fields
         .iter()
-        .map(|field| field.name.as_str())
-        .collect::<BTreeSet<_>>();
-    if let Some(column) = policy
-        .columns
-        .iter()
-        .find(|column| !form_columns.contains(column.as_str()))
-    {
-        bail!("authorized query policy exposes unknown Form column {column}");
-    }
+        .map(|field| (sql_column_name(field.id), field.name.as_str()))
+        .collect::<HashMap<_, _>>();
     let mut visible = policy
         .columns
         .iter()
-        .map(|column| VisibleColumn {
-            // Form field names are immutable Iceberg column names.
-            source: column.clone(),
-            // Unquoted DataFusion identifiers are lowercase. Preserve the
-            // physical Iceberg name internally while exposing a stable,
-            // case-insensitive SQL surface.
-            name: column.to_ascii_lowercase(),
+        .map(|column| {
+            let source = form_columns.get(column).ok_or_else(|| {
+                anyhow!("authorized query policy exposes unknown Form column {column}")
+            })?;
+            Ok(VisibleColumn {
+                source: (*source).to_string(),
+                name: column.clone(),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
     visible.extend(policy.system_columns.iter().map(system_column));
     let mut exposed = BTreeSet::new();
     if visible

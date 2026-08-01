@@ -1,7 +1,7 @@
 use iceberg::{NamespaceIdent, TableIdent};
 use std::collections::BTreeMap;
 use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
-use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
+use ugoite_domain::form::{sql_relation_name, FieldType, FormDefinition, FormField, FormVersion};
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
     publication_context, CheckpointIntegrityError, CheckpointUnavailable, IcebergWorkspace,
@@ -156,11 +156,13 @@ async fn checkpoint_pins_one_head_and_uses_static_iceberg_coordinates() -> anyho
     );
     assert_eq!(checkpoint.tables.len(), 1);
     assert_eq!(checkpoint.tables[0].form_id, form.id);
-    assert_eq!(checkpoint.tables[0].form_name, "Task");
     assert!(checkpoint.tables[0].snapshot_id.is_some());
     assert!(checkpoint.validate_coordinate_checksum());
     assert_eq!(
-        workspace.form_at_checkpoint(&checkpoint, "task").await?.id,
+        workspace
+            .form_at_checkpoint(&checkpoint, &sql_relation_name(form.id))
+            .await?
+            .id,
         form.id
     );
 

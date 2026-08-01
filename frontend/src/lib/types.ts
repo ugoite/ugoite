@@ -175,6 +175,7 @@ export interface EntryUpdatePayload {
 }
 
 export interface FormField {
+  id?: number;
   type: string;
   required: boolean;
   target_form?: string;
@@ -182,10 +183,15 @@ export interface FormField {
     type: string;
     target_form?: string;
   };
+  /** Backend-owned stable SQL column; never derive this from the field label. */
+  sql_column?: string;
 }
 
 export interface Form {
+  id?: string;
   name: string;
+  /** Backend-owned DataFusion relation; never derive this from the Form name. */
+  sql_relation?: string;
   version: number;
   template: string;
   fields: Record<string, FormField>;
@@ -266,8 +272,11 @@ export interface SqlSession {
   };
 }
 
+/** A row from an arbitrary SQL session projection. */
+export type SqlSessionRow = Record<string, unknown>;
+
 export interface SqlSessionRows {
-  rows: EntryRecord[];
+  rows: SqlSessionRow[];
   offset: number;
   limit: number;
   totalCount: number;
@@ -278,5 +287,11 @@ export interface ApiError {
   detail: string;
 }
 
-/** Search result entry */
-export type SearchResult = EntryRecord;
+/** Minimal keyword-search result returned by the backend Entry scan. */
+export interface KeywordSearchResult {
+  id: string;
+  title: string;
+  form: string;
+  created_at: string | number;
+  updated_at: string | number;
+}

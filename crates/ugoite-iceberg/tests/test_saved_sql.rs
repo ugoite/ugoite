@@ -7,6 +7,8 @@ use ugoite_iceberg::saved_sql::{self, SqlPayload};
 use ugoite_iceberg::space;
 use ugoite_iceberg::sql_session;
 
+const FORM_RELATION: &str = "form_00000000000000000000000000000001";
+
 #[tokio::test]
 /// REQ-API-006
 async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
@@ -17,7 +19,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql: "SELECT * FROM sql WHERE _ugoite_updated_at >= $since".to_string(),
+        sql: format!("SELECT * FROM \"{FORM_RELATION}\" WHERE _ugoite_updated_at >= $since"),
         variables: json!([
             {
                 "type": "date",
@@ -48,9 +50,9 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
 
     let update_payload = SqlPayload {
         name: "Recent Meetings".to_string(),
-        sql:
-            "SELECT * FROM sql WHERE _ugoite_updated_at >= $since ORDER BY _ugoite_updated_at DESC"
-                .to_string(),
+        sql: format!(
+            "SELECT * FROM \"{FORM_RELATION}\" WHERE _ugoite_updated_at >= $since ORDER BY _ugoite_updated_at DESC, _ugoite_id"
+        ),
         variables: payload.variables.clone(),
     };
 
@@ -85,8 +87,9 @@ async fn advanced_search_sql_is_saved_and_materialized() -> anyhow::Result<()> {
     let integrity = FakeIntegrityProvider;
     let payload = SqlPayload {
         name: "Advanced search - form: Meeting - memo=s".to_string(),
-        sql: "SELECT _ugoite_id, _ugoite_title FROM sql ORDER BY _ugoite_updated_at DESC LIMIT 50"
-            .to_string(),
+        sql: format!(
+            "SELECT * FROM \"{FORM_RELATION}\" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50"
+        ),
         variables: json!([]),
     };
 
@@ -113,7 +116,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let missing_placeholder = SqlPayload {
         name: "Missing placeholder".to_string(),
-        sql: "SELECT * FROM sql".to_string(),
+        sql: format!("SELECT * FROM \"{FORM_RELATION}\""),
         variables: json!([
             {
                 "type": "date",
@@ -137,7 +140,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
 
     let undefined_placeholder = SqlPayload {
         name: "Undefined placeholder".to_string(),
-        sql: "SELECT * FROM sql WHERE _ugoite_updated_at >= $since".to_string(),
+        sql: format!("SELECT * FROM \"{FORM_RELATION}\" WHERE _ugoite_updated_at >= $since"),
         variables: json!([]),
     };
 

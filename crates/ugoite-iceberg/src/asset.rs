@@ -10,6 +10,7 @@ use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
 pub use ugoite_domain::entry::AssetReference;
+use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::validate_asset_id;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AssetContent {
@@ -165,7 +166,7 @@ pub async fn current_asset_reference_exists_in_workspace(
             .fields
             .iter()
             .filter(|field| field.field_type == ugoite_domain::form::FieldType::AssetReference)
-            .map(|field| field.name.clone())
+            .map(|field| sql_column_name(field.id))
             .collect::<Vec<_>>();
         let list_fields = form_def
             .fields
@@ -176,12 +177,10 @@ pub async fn current_asset_reference_exists_in_workspace(
                         item.field_type == ugoite_domain::form::FieldType::AssetReference
                     })
             })
-            .map(|field| field.name.clone())
+            .map(|field| sql_column_name(field.id))
             .collect::<Vec<_>>();
-        let relation = format!(
-            "\"{}\"",
-            form_def.name.to_ascii_lowercase().replace('"', "\"\"")
-        );
+        let relation_name = sql_relation_name(form_def.id);
+        let relation = format!("\"{}\"", relation_name.replace('"', "\"\""));
         let literal = format!("'{}'", asset_id.replace('\\', "\\\\").replace('\'', "''"));
         let scalar = scalar_fields.iter().map(|field| {
             format!(
@@ -198,20 +197,17 @@ pub async fn current_asset_reference_exists_in_workspace(
             ));
         }
         for field in list_fields {
-            list_queries.push((
-                form_def.name.to_ascii_lowercase(),
-                field.to_ascii_lowercase(),
-            ));
+            list_queries.push((relation_name.clone(), field));
         }
         policy_forms.insert(
             form_def.id,
             AuthorizedQueryForm {
-                relation: form_def.name.to_ascii_lowercase(),
+                relation: relation_name,
                 entry_scope,
                 columns: form_def
                     .fields
                     .iter()
-                    .map(|field| field.name.clone())
+                    .map(|field| sql_column_name(field.id))
                     .collect(),
                 system_columns: BTreeSet::from([QuerySystemColumn::ExternalId]),
             },

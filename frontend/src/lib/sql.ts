@@ -5,30 +5,23 @@ import type { Form } from "./types";
 
 export type SqlSchema = NonNullable<SQLConfig["schema"]>;
 
-/* v8 ignore start */
-const BASE_COLUMNS = [...(sqlRules.base_columns ?? [])];
-const BASE_TABLES = [...(sqlRules.base_tables ?? ["entries"])];
-/* v8 ignore stop */
+const SQL_SYSTEM_COLUMNS = [
+  "_ugoite_id",
+  "_ugoite_title",
+  "_ugoite_created_at",
+  "_ugoite_updated_at",
+];
 
 export function buildSqlSchema(forms: Form[]): SqlSchema {
-  const formFieldSet = new Set<string>();
-  for (const item of forms) {
-    /* v8 ignore start */
-    for (const field of Object.keys(item.fields ?? {})) {
-      /* v8 ignore stop */
-      formFieldSet.add(field);
-    }
-  }
-
-  const unionFields = [...BASE_COLUMNS, ...formFieldSet];
   const tables: Record<string, string[]> = {};
-  for (const table of BASE_TABLES) {
-    tables[table] = unionFields;
-  }
-
   for (const item of forms) {
     /* v8 ignore start */
-    tables[item.name] = [...BASE_COLUMNS, ...Object.keys(item.fields ?? {})];
+    const relation = item.sql_relation?.trim();
+    if (!relation) continue;
+    const columns = Object.values(item.fields ?? {})
+      .map((field) => field.sql_column?.trim())
+      .filter((column): column is string => Boolean(column));
+    tables[relation] = [...SQL_SYSTEM_COLUMNS, ...columns];
     /* v8 ignore stop */
   }
 

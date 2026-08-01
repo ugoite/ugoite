@@ -12,7 +12,7 @@ test.describe("Space Membership", () => {
     expect(created.status()).toBe(201);
     const invite = await request.post(
       getBackendUrl(`/spaces/${spaceId}/members/invitations`),
-      { data: { display_name: "Invited viewer", role: "viewer" } },
+      { data: { label: "Invited viewer", role: "viewer" } },
     );
     expect(invite.status()).toBe(201);
     const { invitation_url: invitationUrl } = await invite.json() as {
@@ -38,7 +38,7 @@ test.describe("Space Membership", () => {
 
     try {
       await page.goto(invitationUrl);
-      await page.getByRole("button", { name: "Register Passkey and join" })
+      await page.getByRole("button", { name: "Accept invitation" })
         .click();
       await expect(page).toHaveURL(/\/spaces$/);
       const space = await invited.request.get(
@@ -74,5 +74,40 @@ test.describe("Space Membership", () => {
     } finally {
       await invited.close();
     }
+  });
+
+  test("REQ-SEC-007: an existing Space member can retry the same invitation idempotently", async ({ page, request }) => {
+    const spaceId = `e2e-existing-member-${Date.now()}`;
+    const created = await request.post(getBackendUrl("/spaces"), {
+      data: { name: spaceId },
+    });
+    expect(created.status()).toBe(201);
+    const invite = await request.post(
+      getBackendUrl(`/spaces/${spaceId}/members/invitations`),
+      { data: { label: "Existing owner", role: "viewer" } },
+    );
+    expect(invite.status()).toBe(201);
+    const { invitation_url: invitationUrl } = await invite.json() as {
+      invitation_url: string;
+    };
+
+    const before = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/members`),
+    );
+    expect(before.status()).toBe(200);
+    const beforeMembers = await before.json() as unknown[];
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await page.goto(invitationUrl);
+      await page.getByRole("button", { name: "Accept invitation" }).click();
+      await expect(page).toHaveURL(/\/spaces$/);
+    }
+
+    const after = await request.get(
+      getBackendUrl(`/spaces/${spaceId}/members`),
+    );
+    expect(after.status()).toBe(200);
+    const afterMembers = await after.json() as unknown[];
+    expect(afterMembers).toEqual(beforeMembers);
   });
 });

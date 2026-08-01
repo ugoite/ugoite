@@ -49,8 +49,8 @@ test.describe("Search UI", () => {
 		const entryTitle = `Search UI Advanced ${runId}`;
 		const historyPrefix = `Advanced search - form: ${formName}`;
 		const historyName =
-			`${historyPrefix} - tag: release - ` +
-			`updated-from: ${today} - updated-to: ${today} - Owner Name=alice`;
+			`${historyPrefix} - updated-from: ${today} - ` +
+			`updated-to: ${today} - Owner Name=alice`;
 		const entryContent = `---\nform: ${formName}\ntags:\n  - release\n  - search-ui\n---\n# ${entryTitle}\n\n## Owner Name\nalice\n\n## Body\nAdvanced search history should stay reusable.\n`;
 		let entryId: string | null = null;
 
@@ -66,7 +66,6 @@ test.describe("Search UI", () => {
 			});
 			await page.getByRole("button", { name: "Advanced search" }).click();
 			await page.getByLabel("Form").selectOption(formName);
-			await page.getByLabel("Tags (comma-separated)").fill("release");
 			await page.getByLabel("Updated from").fill(today);
 			await page.getByLabel("Updated to").fill(today);
 			await page.getByLabel("Field").selectOption("Owner Name");

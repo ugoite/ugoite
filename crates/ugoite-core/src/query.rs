@@ -25,7 +25,7 @@ pub struct AuthorizedQueryForm {
     /// Entry scope Core authorizes for this Form. The query adapter embeds this
     /// relation-specific boundary in the trusted view before SQL is planned.
     pub entry_scope: EntryScope,
-    /// User-defined Form columns which may be resolved or projected.
+    /// Backend-owned stable SQL columns which may be resolved or projected.
     pub columns: BTreeSet<String>,
     /// System columns which are intentionally part of this query contract.
     pub system_columns: BTreeSet<QuerySystemColumn>,

@@ -23,10 +23,67 @@ async fn test_form_req_form_002_upsert_and_list_forms() -> anyhow::Result<()> {
     form::upsert_form(&op, ws_path, &form_value).await?;
 
     let forms = form::list_forms(&op, ws_path).await?;
-    assert!(forms
+    let meeting = forms
         .iter()
-        .any(|c| c.get("name").and_then(|v| v.as_str()) == Some("meeting")));
+        .find(|c| c.get("name").and_then(|v| v.as_str()) == Some("meeting"))
+        .expect("meeting Form");
+    assert!(meeting["sql_relation"].as_str().is_some());
+    assert_eq!(meeting["fields"]["date"]["sql_column"], "field_100");
+    assert_eq!(meeting["fields"]["summary"]["sql_column"], "field_101");
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn sql_columns_follow_field_ids_across_case_collisions_and_renames() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "stable-sql-columns", "/tmp").await?;
+    let ws_path = "spaces/stable-sql-columns";
+
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "CaseFields",
+            "fields": {
+                "Status": {"type": "string"},
+                "status": {"type": "string"}
+            }
+        }),
+    )
+    .await?;
+    let before = form::get_form(&op, ws_path, "CaseFields").await?;
+    let status_column = before["fields"]["Status"]["sql_column"]
+        .as_str()
+        .expect("Status SQL column")
+        .to_string();
+    let lowercase_status_column = before["fields"]["status"]["sql_column"]
+        .as_str()
+        .expect("status SQL column")
+        .to_string();
+    assert_ne!(status_column, lowercase_status_column);
+
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "CaseFields",
+            "fields": {
+                "RenamedStatus": {"id": 100, "type": "string"},
+                "status": {"id": 101, "type": "string"}
+            }
+        }),
+    )
+    .await?;
+    let after = form::get_form(&op, ws_path, "CaseFields").await?;
+    assert_eq!(
+        after["fields"]["RenamedStatus"]["sql_column"],
+        status_column
+    );
+    assert_eq!(
+        after["fields"]["status"]["sql_column"],
+        lowercase_status_column
+    );
     Ok(())
 }
 

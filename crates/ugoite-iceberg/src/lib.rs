@@ -75,8 +75,8 @@ use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{
-    Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition, FormField,
-    ListItemDefinition,
+    sql_column_name, sql_relation_name, Compatibility, FieldType, FormChange, FormChangeSet,
+    FormDefinition, FormField, ListItemDefinition,
 };
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
@@ -572,7 +572,7 @@ impl IcebergWorkspace {
         let mut matches = checkpoint
             .tables
             .iter()
-            .filter(|coordinate| coordinate.form_name.eq_ignore_ascii_case(&relation));
+            .filter(|coordinate| sql_relation_name(coordinate.form_id) == relation);
         let coordinate = matches
             .next()
             .ok_or_else(|| CheckpointUnavailable::new(format!("Form relation {relation}")))?;
@@ -589,9 +589,9 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, coordinate.form_id)?;
-        if !form.name.eq_ignore_ascii_case(&relation) || coordinate.form_name != form.name {
+        if sql_relation_name(coordinate.form_id) != relation || coordinate.form_id != form.id {
             return Err(CheckpointIntegrityError::new(
-                "checkpoint Form relation does not match immutable Iceberg metadata",
+                "checkpoint Form ID does not match immutable Iceberg metadata",
             )
             .into());
         }
@@ -886,12 +886,12 @@ impl IcebergWorkspace {
             authorized_forms.insert(
                 target_form.id,
                 AuthorizedQueryForm {
-                    relation: target_form.name.to_ascii_lowercase(),
+                    relation: sql_relation_name(target_form.id),
                     entry_scope,
                     columns: target_form
                         .fields
                         .iter()
-                        .map(|field| field.name.clone())
+                        .map(|field| sql_column_name(field.id))
                         .collect(),
                     system_columns: BTreeSet::from([QuerySystemColumn::ExternalId]),
                 },
@@ -918,10 +918,8 @@ impl IcebergWorkspace {
             let target_form = target_forms.get(&target_form_id).ok_or_else(|| {
                 anyhow!("row_reference target Form {target_form_id} does not exist")
             })?;
-            let relation = format!(
-                "\"{}\"",
-                target_form.name.to_ascii_lowercase().replace('"', "\"\"")
-            );
+            let relation_name = sql_relation_name(target_form.id);
+            let relation = format!("\"{}\"", relation_name.replace('"', "\"\""));
             let literal = format!("'{}'", entry_id.replace('\'', "''"));
             let rows = context
                 .execute(&format!(
@@ -1673,7 +1671,7 @@ fn is_publication_conflict(error: &anyhow::Error) -> bool {
 }
 
 pub fn physical_form_name(form_id: FormId) -> String {
-    format!("form_{}", form_id.as_uuid().simple())
+    sql_relation_name(form_id)
 }
 
 pub fn namespace_for_space(space_id: SpaceId) -> NamespaceIdent {
