@@ -4,6 +4,49 @@ import { buildEntryMarkdownByMode } from "~/lib/entry-input";
 import type { Form } from "~/lib/types";
 
 describe("buildEntryMarkdownByMode", () => {
+  it("REQ-ENTRY-1872: adds the browser offset only for timezone-aware fields", () => {
+    const formDef: Form = {
+      name: "Event",
+      version: 1,
+      template: "# Event\n",
+      fields: {
+        Local: { type: "timestamp", required: false },
+        Instant: { type: "timestamp_tz", required: false },
+      },
+    };
+    const result = buildEntryMarkdownByMode(
+      formDef,
+      "Event",
+      {
+        Local: "2026-08-21T10:48",
+        Instant: "2026-08-21T10:48",
+      },
+      "webform",
+    );
+
+    expect(result).toContain("## Local\n2026-08-21T10:48");
+    expect(result).toMatch(
+      /## Instant\n2026-08-21T10:48:00[+-]\d{2}:\d{2}/,
+    );
+  });
+
+  it("REQ-ENTRY-1872: preserves an explicit timezone value", () => {
+    const formDef: Form = {
+      name: "Event",
+      version: 1,
+      template: "# Event\n",
+      fields: { Instant: { type: "timestamp_tz", required: false } },
+    };
+    const result = buildEntryMarkdownByMode(
+      formDef,
+      "Event",
+      { Instant: "2026-08-21T10:48:00+09:00" },
+      "webform",
+    );
+
+    expect(result).toContain("## Instant\n2026-08-21T10:48:00+09:00");
+  });
+
   it("REQ-FE-037: preserves user markdown whitespace in markdown mode", () => {
     const formDef: Form = {
       name: "Meeting",

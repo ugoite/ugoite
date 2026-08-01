@@ -224,7 +224,7 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
         }
     });
 
-    let markdown = "---\nclass: Meeting\n---\n# Title\n\n## Done\ntrue\n\n## Count\n42\n\n## Rate\n3.14\n\n## Event\n2025-01-02T03:04:05Z\n\n## EventTz\n2025-01-02T12:04:05+09:00\n\n## EventNs\n2025-01-02T03:04:05.123456789Z\n\n## EventTzNs\n2025-01-02T12:04:05.123456789+09:00\n\n## Time\n13:45:30.123456\n\n## Uid\nA7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D\n\n## Blob\nhex:64617461\n\n## Items\n- Alpha\n- Beta\n";
+    let markdown = "---\nclass: Meeting\n---\n# Title\n\n## Done\ntrue\n\n## Count\n42\n\n## Rate\n3.14\n\n## Event\n2025-01-02T03:04:05\n\n## EventTz\n2025-01-02T12:04:05+09:00\n\n## EventNs\n2025-01-02T03:04:05.123456789\n\n## EventTzNs\n2025-01-02T12:04:05.123456789+09:00\n\n## Time\n13:45:30.123456\n\n## Uid\nA7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D\n\n## Blob\nhex:64617461\n\n## Items\n- Alpha\n- Beta\n";
     let props = index::extract_properties(markdown);
     let (casted, warnings) = index::validate_properties(&props, &class_def)?;
     assert!(warnings.is_empty());
@@ -236,7 +236,7 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
     assert!((rate - (314.0 / 100.0)).abs() < 0.0001);
     assert_eq!(
         casted_obj.get("Event").and_then(|v| v.as_str()),
-        Some("2025-01-02T03:04:05+00:00")
+        Some("2025-01-02T03:04:05")
     );
     assert_eq!(
         casted_obj.get("EventTz").and_then(|v| v.as_str()),
@@ -244,7 +244,7 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
     );
     assert_eq!(
         casted_obj.get("EventNs").and_then(|v| v.as_str()),
-        Some("2025-01-02T03:04:05.123456789+00:00")
+        Some("2025-01-02T03:04:05.123456789")
     );
     assert_eq!(
         casted_obj.get("EventTzNs").and_then(|v| v.as_str()),
@@ -265,6 +265,45 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
     assert_eq!(items[0].as_str(), Some("Alpha"));
     assert_eq!(items[1].as_str(), Some("Beta"));
 
+    Ok(())
+}
+
+#[test]
+fn timestamp_types_reject_values_with_the_wrong_timezone_contract() -> anyhow::Result<()> {
+    let form_def = serde_json::json!({
+        "name": "Event",
+        "fields": {
+            "Wall": {"type": "timestamp"},
+            "Instant": {"type": "timestamp_tz"},
+            "WallNs": {"type": "timestamp_ns"},
+            "InstantNs": {"type": "timestamp_tz_ns"},
+        }
+    });
+
+    let wall_with_offset = serde_json::json!({
+        "Wall": "2025-01-02T03:04:05+09:00",
+        "Instant": "2025-01-02T03:04:05+09:00",
+        "WallNs": "2025-01-02T03:04:05.123456789+09:00",
+        "InstantNs": "2025-01-02T03:04:05.123456789+09:00",
+    });
+    let (_, warnings) = index::validate_properties(&wall_with_offset, &form_def)?;
+    assert_eq!(warnings.len(), 2);
+    assert!(warnings.iter().all(|warning| {
+        warning["code"] == "invalid_type"
+            && ["Wall", "WallNs"].contains(&warning["field"].as_str().unwrap_or_default())
+    }));
+
+    let naive_timezone_values = serde_json::json!({
+        "Wall": "2025-01-02T03:04:05",
+        "Instant": "2025-01-02T03:04:05",
+        "WallNs": "2025-01-02T03:04:05.123456789",
+        "InstantNs": "2025-01-02T03:04:05.123456789",
+    });
+    let (_, warnings) = index::validate_properties(&naive_timezone_values, &form_def)?;
+    assert_eq!(warnings.len(), 2);
+    assert!(warnings.iter().all(|warning| {
+        ["Instant", "InstantNs"].contains(&warning["field"].as_str().unwrap_or_default())
+    }));
     Ok(())
 }
 

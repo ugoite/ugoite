@@ -67,6 +67,13 @@ Iceberg primitive types. Markdown, SQL, row references, and ordinary strings
 remain Iceberg strings; binary entry values are base64 text at the domain
 boundary and binary data in the table.
 
+The timestamp types retain their distinct logical meanings. `timestamp` and
+`timestamp_ns` are timezone-less wall-clock values and preserve the entered
+local date-time. `timestamp_tz` and `timestamp_tz_ns` represent an instant,
+require an offset-bearing RFC3339 value at the domain boundary, and are stored
+normalized to UTC. The server never infers a timezone for a timezone-less
+value.
+
 ## Markdown mapping
 
 The global template is:
