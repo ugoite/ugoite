@@ -1,13 +1,15 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { SpaceShell } from "~/components/SpaceShell";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
 import { buildSqlSchema } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { Form, SqlVariable } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "search", title: "sqlNew" });
 
 const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 
@@ -78,7 +80,7 @@ export default function SpaceQueryCreateRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="search" title="SQL / New">
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Search / Saved SQL</div>
@@ -132,6 +134,6 @@ export default function SpaceQueryCreateRoute() {
           {isSaving() ? "Saving..." : "Save"}
         </button>
       </div>
-    </SpaceShell>
+    </>
   );
 }

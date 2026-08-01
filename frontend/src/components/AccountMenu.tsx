@@ -1,3 +1,4 @@
+import { useNavigate, useParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { authApi } from "~/lib/ugoite-client";
 import { locale } from "~/lib/i18n";
@@ -15,13 +16,19 @@ const labels = {
   },
 } as const;
 
-export function AccountMenu(props: { settingsHref?: string } = {}) {
+export function AccountMenu() {
+  const navigate = useNavigate();
+  const params = useParams<{ space_id?: string }>();
   const [open, setOpen] = createSignal(false);
   const copy = () => labels[locale() === "ja" ? "ja" : "en"];
+  const settingsHref = () =>
+    params.space_id
+      ? `/spaces/${params.space_id}/settings?section=credentials`
+      : "/settings/security";
 
   const signOut = async () => {
     await authApi.clearSession();
-    if (typeof window !== "undefined") window.location.assign("/login");
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -40,7 +47,7 @@ export function AccountMenu(props: { settingsHref?: string } = {}) {
         <div class="accountMenuPanel" role="menu">
           <div class="accountMenuTitle">{copy().account}</div>
           <a
-            href={props.settingsHref ?? "/settings/security"}
+            href={settingsHref()}
             role="menuitem"
             onClick={() => setOpen(false)}
           >

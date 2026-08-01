@@ -1,7 +1,6 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceSettings } from "~/components/SpaceSettings";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { CredentialSettings } from "~/routes/settings/security";
 import { locale } from "~/lib/i18n";
@@ -14,6 +13,9 @@ import type {
   StorageConnectionConfig,
 } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "settings", title: "settings" });
 
 type Section =
   | "general"
@@ -147,13 +149,7 @@ export default function SpaceSettingsRoute() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="settings"
-      title={`Settings / ${
-        sections.find((section) => section.id === active())?.en ?? "General"
-      }`}
-    >
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{space()?.name || spaceId()}</div>
@@ -432,6 +428,6 @@ export default function SpaceSettingsRoute() {
 
         </main>
       </div>
-    </SpaceShell>
+    </>
   );
 }

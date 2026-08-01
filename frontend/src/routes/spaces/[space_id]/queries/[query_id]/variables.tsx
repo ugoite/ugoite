@@ -1,8 +1,10 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { SpaceShell } from "~/components/SpaceShell";
 import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "search", title: "sqlVariables" });
 
 export default function SpaceQueryVariablesRoute() {
   const params = useParams<{ space_id: string; query_id: string }>();
@@ -65,11 +67,7 @@ export default function SpaceQueryVariablesRoute() {
   };
 
   return (
-    <SpaceShell
-      spaceId={spaceId()}
-      activeNavigation="search"
-      title="SQL / Variables"
-    >
+    <>
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">Search / Saved SQL</div>
@@ -128,6 +126,6 @@ export default function SpaceQueryVariablesRoute() {
           </div>
         )}
       </Show>
-    </SpaceShell>
+    </>
   );
 }

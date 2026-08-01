@@ -1,7 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { CreateFormDialog } from "~/components/create-dialogs";
-import { SpaceShell } from "~/components/SpaceShell";
 import { UiIcon } from "~/components/UiIcon";
 import { createEntryStore } from "~/lib/entry-store";
 import { getDocsiteHref } from "~/lib/docsite-links";
@@ -10,6 +9,9 @@ import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import type { FormCreatePayload } from "~/lib/types";
+import { spaceRoute } from "~/lib/space-shell-route";
+
+export const route = spaceRoute({ navigation: "home" });
 
 const copy = {
   en: { home: "Home", newEntry: "Entry", continue: "Continue", pinned: "Pinned", recent: "Recent", forms: "Forms", search: "Search", savedSql: "SQL", noRecent: "Create an entry to start building this Space.", walkthrough: "Create your first entry with the browser walkthrough", form: "Form", entry: "Entry", searchMeta: "Entries · Forms" },
@@ -64,7 +66,7 @@ export default function SpaceDashboardRoute() {
   };
 
   return (
-    <SpaceShell spaceId={spaceId()} activeNavigation="home" title={c().home}>
+    <>
       <div class="screenHead">
         <div class="screenTitle"><div class="eyebrow">{spaceName()}</div><h1>{c().home}</h1></div>
         <button class="btn primary" type="button" disabled={!formsAvailable()} onClick={startNewEntry}>
@@ -117,6 +119,6 @@ export default function SpaceDashboardRoute() {
       </section>
 
       <CreateFormDialog open={showFormDialog()} columnTypes={columnTypes() ?? []} formNames={(forms() ?? []).map((form) => form.name)} onClose={() => setShowFormDialog(false)} onSubmit={createForm} />
-    </SpaceShell>
+    </>
   );
 }

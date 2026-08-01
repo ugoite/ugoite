@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "~/lib/i18n";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
@@ -9,8 +9,7 @@ import SpaceDashboardRoute from "./dashboard";
 const navigate = vi.fn();
 const { entryStoreMock } = vi.hoisted(() => ({ entryStoreMock: { entries: vi.fn(), loadEntries: vi.fn(), error: vi.fn() } }));
 vi.mock("@solidjs/router", () => ({ useNavigate: () => navigate, useParams: () => ({ space_id: "default" }), A: (props: { href: string; class?: string; children: unknown }) => <a href={props.href} class={props.class}>{props.children}</a> }));
-vi.mock("~/components/SpaceShell", () => ({ SpaceShell: (props: { children: unknown }) => <div>{props.children}</div> }));
-vi.mock("~/components/create-dialogs", () => ({ CreateFormDialog: (props: { open: boolean }) => <Show when={props.open}><div>Create Form Dialog</div></Show> }));
+vi.mock("~/components/create-dialogs", () => ({ CreateFormDialog: (props: { open: boolean }) => { const open = createMemo(() => props.open); return <Show when={open()}><div>Create Form Dialog</div></Show>; } }));
 vi.mock("~/lib/entry-store", () => ({ createEntryStore: () => entryStoreMock }));
 vi.mock("~/lib/ugoite-client", () => ({ formApi: { list: vi.fn(), listTypes: vi.fn(), create: vi.fn() }, spaceApi: { get: vi.fn() } }));
 
