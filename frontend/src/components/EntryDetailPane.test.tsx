@@ -24,6 +24,10 @@ vi.mock("~/lib/ugoite-client", () => {
       update: vi.fn(),
       delete: vi.fn(),
     },
+    assetApi: {
+      upload: vi.fn(),
+      read: vi.fn(),
+    },
     searchApi: {
       rowReferenceOptions: vi.fn(),
     },
@@ -144,6 +148,68 @@ describe("EntryDetailPane", () => {
     expect(onCreated).toHaveBeenCalledWith({
       id: "created-entry",
       revision_id: "created-revision",
+    });
+  });
+
+  it("uploads an AssetReference before creating the Entry and preserves it unchanged", async () => {
+    const onCreated = vi.fn();
+    const uploaded = {
+      asset_id: "01900000-0000-7000-8000-000000000001",
+      name: "contract.pdf",
+      media_type: "application/pdf",
+      size_bytes: 123456,
+      sha256: "a".repeat(64),
+    };
+    const assetUpload = (await import("~/lib/ugoite-client")).assetApi
+      .upload as ReturnType<typeof vi.fn>;
+    assetUpload.mockResolvedValue(uploaded);
+    (entryApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "contract-entry",
+      revision_id: "contract-revision",
+    });
+    const form: Form = {
+      name: "Contract",
+      version: 1,
+      template: "# Contract\n\n## contract\n",
+      fields: {
+        contract: { type: "asset_reference", required: true },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={onCreated}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const fileInput = await screen.findByLabelText("Choose file");
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File(["pdf"], "contract.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    await waitFor(() => expect(assetUpload).toHaveBeenCalled());
+    expect(screen.getByText("Uploaded; entry not saved yet"))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
+    expect(screen.getByText("contract.pdf")).toBeInTheDocument();
+    expect(screen.queryByText(JSON.stringify(uploaded))).not
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown: expect.stringContaining(JSON.stringify(uploaded)),
+    });
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "contract-entry",
+      revision_id: "contract-revision",
     });
   });
 

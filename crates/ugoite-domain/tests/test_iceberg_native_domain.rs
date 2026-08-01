@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 use ugoite_domain::entry::{
-    EntryOperation, EntryRevision, EntryRevisionDraft, FieldValue, RevisionError,
+    AssetReference, EntryOperation, EntryRevision, EntryRevisionDraft, FieldValue, RevisionError,
 };
 use ugoite_domain::form::{
     Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
+    ListItemDefinition,
 };
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
 use uuid::Uuid;
@@ -226,4 +227,76 @@ fn extra_attributes_follow_form_policy() {
     );
     form.allow_extra_attributes = true;
     revision.validate(&form, None).unwrap();
+}
+
+#[test]
+fn asset_reference_lists_are_required_and_unique() {
+    let mut form = form();
+    form.fields.push(FormField {
+        id: field_id(101),
+        name: "documents".into(),
+        field_type: FieldType::List,
+        required: true,
+        label: None,
+        description: None,
+        semantic_role: None,
+        reference_form: None,
+        list_item: Some(ListItemDefinition {
+            field_type: FieldType::AssetReference,
+            reference_form: None,
+        }),
+        validation: None,
+        enum_values: Vec::new(),
+        deprecated: false,
+    });
+
+    let reference = |asset_id: &str| {
+        FieldValue::AssetReference(AssetReference {
+            asset_id: asset_id.into(),
+            name: "document.pdf".into(),
+            media_type: "application/pdf".into(),
+            size_bytes: 1,
+            sha256: "a".repeat(64),
+        })
+    };
+    let base_revision = || EntryRevision {
+        form_id: form.id,
+        entry_id: EntryId::from(Uuid::from_u128(20)),
+        revision_id: RevisionId::from(Uuid::from_u128(21)),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:alice".into(),
+        form_version: form.version,
+        source_kind: "api".into(),
+        source_id: None,
+        entry: Default::default(),
+        values: BTreeMap::new(),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+
+    let mut missing = base_revision();
+    missing
+        .values
+        .insert(field_id(100), FieldValue::String("title".into()));
+    assert_eq!(
+        missing.validate(&form, None),
+        Err(RevisionError::RequiredField(field_id(101)))
+    );
+
+    let mut duplicate = base_revision();
+    duplicate
+        .values
+        .insert(field_id(100), FieldValue::String("title".into()));
+    duplicate.values.insert(
+        field_id(101),
+        FieldValue::List(vec![reference("asset-1"), reference("asset-1")]),
+    );
+    assert_eq!(
+        duplicate.validate(&form, None),
+        Err(RevisionError::WrongType(field_id(101)))
+    );
 }

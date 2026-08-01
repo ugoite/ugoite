@@ -1,14 +1,9 @@
 import { A } from "@solidjs/router";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
+import { AssetField } from "~/components/AssetField";
 import { locale, t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import {
@@ -24,6 +19,12 @@ import {
   searchApi,
 } from "~/lib/ugoite-client";
 import type { Entry, Form, FormField } from "~/lib/types";
+import {
+  hasDuplicateAssetReferences,
+  isAssetReferenceListField,
+  parseAssetReference,
+  parseAssetReferenceList,
+} from "~/lib/asset-reference";
 
 export interface EntryDetailPaneProps {
   spaceId: Accessor<string>;
@@ -114,6 +115,22 @@ function normalizeFieldName(fieldName: string) {
   return fieldName.trim().toLowerCase();
 }
 
+function markdownWithoutAssetSections(
+  markdown: string,
+  assetFieldNames: Set<string>,
+) {
+  const output: string[] = [];
+  let omitSection = false;
+  for (const line of markdown.split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+)$/);
+    if (heading) {
+      omitSection = assetFieldNames.has(normalizeFieldName(heading[1]));
+    }
+    if (!omitSection) output.push(line);
+  }
+  return output.join("\n");
+}
+
 function readMarkdownTitle(markdown: string, fallback = "") {
   const heading = markdown.split(/\r?\n/).find((line) => /^#\s+/.test(line));
   if (!heading) return fallback;
@@ -146,7 +163,15 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
     .filter(([fieldName, fieldDef]) => {
       if (!fieldDef.required) return false;
       const section = sectionMap.get(normalizeFieldName(fieldName));
-      return !section || !section.content.trim();
+      if (!section || !section.content.trim()) return true;
+      if (fieldDef.type === "asset_reference") {
+        return parseAssetReference(section.content.trim()) === null;
+      }
+      if (isAssetReferenceListField(fieldDef)) {
+        return (parseAssetReferenceList(section.content.trim()) ?? [])
+          .length === 0;
+      }
+      return false;
     })
     .map(([fieldName]) => fieldName);
 
@@ -175,6 +200,15 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
       value.includes(",")
     ) {
       typeIssues.push(`${fieldName}: ${t("entryGuidance.listValue")}`);
+    }
+    if (fieldDef.type === "asset_reference" && !parseAssetReference(value)) {
+      typeIssues.push(`${fieldName}: ${t("assetField.error.invalid")}`);
+    }
+    if (isAssetReferenceListField(fieldDef)) {
+      const references = parseAssetReferenceList(value);
+      if (!references || hasDuplicateAssetReferences(references)) {
+        typeIssues.push(`${fieldName}: ${t("assetField.error.invalid")}`);
+      }
     }
     /* v8 ignore stop */
   }
@@ -418,6 +452,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   >(null);
   const [entryError, setEntryError] = createSignal<string | null>(null);
   const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
+  const [pendingAssetFields, setPendingAssetFields] = createSignal<Set<string>>(
+    new Set(),
+  );
 
   const [remoteEntry, { refetch: refetchEntry }] = createResource(
     () => {
@@ -500,6 +537,27 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const fieldValue = (fieldName: string) =>
     parsedSections().get(normalizeFieldName(fieldName)) ?? "";
 
+  const previewAssetFields = createMemo(() =>
+    Object.entries(currentForm()?.fields || {}).filter(([, fieldDef]) =>
+      fieldDef.type === "asset_reference" || isAssetReferenceListField(fieldDef)
+    )
+  );
+
+  const previewContent = createMemo(() => {
+    const assetFieldNames = new Set(
+      previewAssetFields().map(([fieldName]) => normalizeFieldName(fieldName)),
+    );
+    return markdownWithoutAssetSections(editorContent(), assetFieldNames);
+  });
+
+  const persistedFieldValue = (fieldName: string) => {
+    const sections = new Map<string, string>();
+    for (const section of parseMarkdownH2Sections(lastSavedContent())) {
+      sections.set(normalizeFieldName(section.title), section.content);
+    }
+    return sections.get(normalizeFieldName(fieldName)) ?? "";
+  };
+
   const fieldIssue = (fieldName: string) =>
     editorGuidance().typeIssues.find((issue) =>
       issue.startsWith(`${fieldName}:`)
@@ -547,6 +605,59 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const handleFieldChange = (fieldName: string, value: string) => {
     handleContentChange(updateH2Section(editorContent(), fieldName, value));
+  };
+
+  const handleAssetPendingChange = (fieldName: string, pending: boolean) => {
+    setPendingAssetFields((fields) => {
+      const next = new Set(fields);
+      if (pending) next.add(fieldName);
+      else next.delete(fieldName);
+      return next;
+    });
+  };
+
+  const validateAssetFields = (): string[] => {
+    const form = currentForm();
+    if (!form) return [];
+    const issues: string[] = [];
+    for (const [fieldName, fieldDef] of Object.entries(form.fields || {})) {
+      const rawValue = fieldValue(fieldName);
+      if (fieldDef.type === "asset_reference") {
+        const reference = parseAssetReference(rawValue);
+        if (fieldDef.required && !reference) {
+          issues.push(
+            t("entryDetail.validation.assetRequired", { field: fieldName }),
+          );
+        } else if (rawValue.trim() && !reference) {
+          issues.push(
+            t("entryDetail.validation.assetInvalid", { field: fieldName }),
+          );
+        }
+      } else if (isAssetReferenceListField(fieldDef)) {
+        const references = parseAssetReferenceList(rawValue);
+        if (!references) {
+          if (rawValue.trim()) {
+            issues.push(
+              t("entryDetail.validation.assetInvalid", { field: fieldName }),
+            );
+          }
+        } else if (hasDuplicateAssetReferences(references)) {
+          issues.push(
+            t("entryDetail.validation.assetDuplicate", { field: fieldName }),
+          );
+        } else if (fieldDef.required && references.length === 0) {
+          issues.push(
+            t("entryDetail.validation.assetListRequired", {
+              field: fieldName,
+            }),
+          );
+        }
+      }
+    }
+    if (pendingAssetFields().size > 0) {
+      issues.push(t("entryDetail.validation.assetUploadPending"));
+    }
+    return issues;
   };
 
   const handleEditorKeyDown = (event: KeyboardEvent) => {
@@ -612,6 +723,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return;
     }
     /* v8 ignore stop */
+
+    const assetIssues = validateAssetFields();
+    if (assetIssues.length > 0) {
+      setValidationError({
+        title: t("entryDetail.validation.title"),
+        items: assetIssues,
+      });
+      return;
+    }
 
     setIsSaving(true);
     setConflictMessage(null);
@@ -700,8 +820,28 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
 
     if (
+      fieldDef.type === "asset_reference" || isAssetReferenceListField(fieldDef)
+    ) {
+      return (
+        <AssetField
+          fieldId={fieldId}
+          fieldName={fieldName}
+          value={value()}
+          persistedValue={persistedFieldValue(fieldName)}
+          multiple={isAssetReferenceListField(fieldDef)}
+          spaceId={props.spaceId()}
+          formName={entry()?.form ?? currentForm()?.name}
+          entryId={isCreateMode() ? undefined : entry()?.id}
+          onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
+          onPendingChange={(pending) =>
+            handleAssetPendingChange(fieldName, pending)}
+        />
+      );
+    }
+
+    if (
       fieldDef.type === "markdown" ||
-      fieldDef.type === "list" ||
+      (fieldDef.type === "list" && !isAssetReferenceListField(fieldDef)) ||
       fieldDef.type === "object_list"
     ) {
       return (
@@ -1059,10 +1199,40 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 </Show>
 
                 <Show when={viewMode() === "preview"}>
-                  <div
-                    class="ui-preview ui-entry-preview"
-                    innerHTML={renderMarkdownPreview(editorContent())}
-                  />
+                  <div class="ui-stack-lg">
+                    <div
+                      class="ui-preview ui-entry-preview"
+                      innerHTML={renderMarkdownPreview(previewContent())}
+                    />
+                    <Show when={previewAssetFields().length > 0}>
+                      <div
+                        class="ui-stack-md"
+                        aria-label={t("entryDetail.assetFieldsHeading")}
+                      >
+                        <For each={previewAssetFields()}>
+                          {([fieldName, fieldDef], index) => (
+                            <section class="ui-entry-preview-asset-field">
+                              <h3 class="text-sm font-semibold">{fieldName}</h3>
+                              <AssetField
+                                fieldId={`preview-asset-${index()}`}
+                                fieldName={fieldName}
+                                value={fieldValue(fieldName)}
+                                persistedValue={persistedFieldValue(fieldName)}
+                                multiple={isAssetReferenceListField(fieldDef)}
+                                spaceId={props.spaceId()}
+                                formName={entry()?.form ?? currentForm()?.name}
+                                entryId={isCreateMode()
+                                  ? undefined
+                                  : entry()?.id}
+                                readOnly={true}
+                                onChange={() => undefined}
+                              />
+                            </section>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
                 </Show>
 
                 <Show when={viewMode() === "source"}>

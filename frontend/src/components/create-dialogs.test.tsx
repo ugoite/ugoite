@@ -144,6 +144,54 @@ describe("CreateFormDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("configures scalar and typed-list Asset fields without a target Form", () => {
+    const onSubmit = vi.fn();
+
+    render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={["asset_reference", "list"]}
+        formNames={[]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.input(screen.getByPlaceholderText("e.g. Meeting, Task"), {
+      target: { value: "Samples" },
+    });
+    fireEvent.click(screen.getByText("+ Add Column"));
+    fireEvent.input(screen.getByPlaceholderText("Column Name"), {
+      target: { value: "thumbnail" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Field type" }), {
+      target: { value: "asset_reference" },
+    });
+    fireEvent.click(screen.getByText("+ Add Column"));
+    const fieldTypes = screen.getAllByRole("combobox", { name: "Field type" });
+    fireEvent.input(screen.getAllByPlaceholderText("Column Name")[1], {
+      target: { value: "documents" },
+    });
+    fireEvent.change(fieldTypes[1], { target: { value: "list" } });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "List item type" }),
+      { target: { value: "asset_reference" } },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      fields: {
+        thumbnail: { type: "asset_reference", required: false },
+        documents: {
+          type: "list",
+          required: false,
+          items: { type: "asset_reference" },
+        },
+      },
+    }));
+  });
+
   it("REQ-FE-039: blocks reserved metadata column names", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();

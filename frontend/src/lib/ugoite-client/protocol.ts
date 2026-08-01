@@ -50,6 +50,7 @@ export const UGOITE_API_OPERATIONS = [
   "access.get",
   "access.put",
   "asset.upload",
+  "asset.read",
   "asset.delete",
 ] as const;
 
@@ -257,4 +258,28 @@ export const protocolFetch = async <T>(
     body: requestBody,
   });
   return await decodeApiResponse<T>(operation, response);
+};
+
+/** Execute an operation whose successful response is not JSON (for example asset bytes). */
+export const protocolFetchResponse = async (
+  operation: UgoiteApiOperation,
+  argumentsValue: Record<string, unknown> = {},
+  options: ProtocolFetchOptions = {},
+): Promise<Response> => {
+  const prepared = await prepareApiRequest(operation, argumentsValue);
+  const headers = new Headers();
+  for (const header of prepared.headers) {
+    headers.set(header.name, header.value);
+  }
+  const optionHeaders = new Headers(options.headers);
+  optionHeaders.forEach((value, name) => headers.set(name, value));
+  const response = await apiFetch(prepared.path, {
+    ...options,
+    method: prepared.method,
+    headers,
+  });
+  if (!response.ok) {
+    await decodeApiResponse<never>(operation, response);
+  }
+  return response;
 };

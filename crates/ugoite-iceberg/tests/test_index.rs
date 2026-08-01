@@ -269,6 +269,37 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
 }
 
 #[test]
+fn asset_reference_markdown_values_round_trip_as_complete_json() -> anyhow::Result<()> {
+    let reference = serde_json::json!({
+        "asset_id": "01900000-0000-7000-8000-000000000001",
+        "name": "report.pdf",
+        "media_type": "application/pdf",
+        "size_bytes": 123456,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    });
+    let form_def = serde_json::json!({
+        "name": "Contracts",
+        "fields": {
+            "contract": {"type": "asset_reference"},
+            "documents": {
+                "type": "list",
+                "items": {"type": "asset_reference"}
+            }
+        }
+    });
+    let props = serde_json::json!({
+        "contract": serde_json::to_string(&reference)?,
+        "documents": serde_json::to_string(&serde_json::json!([reference.clone()]))?
+    });
+
+    let (casted, warnings) = index::validate_properties(&props, &form_def)?;
+    assert!(warnings.is_empty());
+    assert_eq!(casted["contract"], reference);
+    assert_eq!(casted["documents"][0], reference);
+    Ok(())
+}
+
+#[test]
 fn timestamp_types_reject_values_with_the_wrong_timezone_contract() -> anyhow::Result<()> {
     let form_def = serde_json::json!({
         "name": "Event",

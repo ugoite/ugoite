@@ -26,6 +26,7 @@ export {
   prepareApiRequest,
   protocolFetch,
   type ProtocolFetchOptions,
+  protocolFetchResponse,
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,

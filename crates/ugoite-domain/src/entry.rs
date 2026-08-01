@@ -176,7 +176,12 @@ impl EntryRevision {
                 .iter()
                 .filter(|field| field.required && !field.deprecated)
             {
-                if matches!(self.values.get(&field.id), None | Some(FieldValue::Null)) {
+                let missing = match self.values.get(&field.id) {
+                    None | Some(FieldValue::Null) => true,
+                    Some(FieldValue::List(values)) => values.is_empty(),
+                    Some(_) => false,
+                };
+                if missing {
                     return Err(RevisionError::RequiredField(field.id));
                 }
             }
@@ -188,6 +193,23 @@ impl EntryRevision {
                     .ok_or(RevisionError::UnknownField(*field_id))?;
                 if !value_matches_type(value, field) {
                     return Err(RevisionError::WrongType(*field_id));
+                }
+                if field.field_type == FieldType::List
+                    && field
+                        .list_item
+                        .as_ref()
+                        .is_some_and(|item| item.field_type == FieldType::AssetReference)
+                {
+                    if let FieldValue::List(values) = value {
+                        let mut asset_ids = std::collections::BTreeSet::new();
+                        for value in values {
+                            if let FieldValue::AssetReference(reference) = value {
+                                if !asset_ids.insert(reference.asset_id.as_str()) {
+                                    return Err(RevisionError::WrongType(*field_id));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
