@@ -1617,8 +1617,21 @@ impl SpaceCommitCoordinator {
                 return Ok(());
             }
             let attempt = self.attempt_workspace().await?;
-            if attempt.asset_is_deleted(asset_id).await? {
-                return Err(anyhow!("Asset '{}' is already unavailable", asset_id));
+            match attempt.asset_is_deleted(asset_id).await {
+                Ok(true) => {
+                    return Err(anyhow!("Asset '{}' is already unavailable", asset_id));
+                }
+                Ok(false) => {}
+                Err(error)
+                    if error
+                        .to_string()
+                        .contains("Asset deletion publication is still in progress") =>
+                {
+                    // A same-command retry may resume a durable Publishing
+                    // marker. Other commands are rejected by the marker's
+                    // exact command identity when publication begins.
+                }
+                Err(error) => return Err(error),
             }
             let all_current_scopes = attempt
                 .list_forms()

@@ -1289,6 +1289,17 @@ impl SpaceCatalog {
                 ErrorKind::DataInvalid,
                 "Catalog Head changed while claiming the command receipt",
             )),
+            CommandReceiptState::Publishing
+                if existing.base_generation == pending.base_generation
+                    && existing.base_head_checksum == pending.base_head_checksum
+                    && existing.base_publication == pending.base_publication
+                    && existing.intended_publication == pending.intended_publication =>
+            {
+                // A process restart may resume the exact same immutable
+                // attempt. The command identity and every publication-base
+                // coordinate are already protected by the receipt key.
+                Ok(())
+            }
             CommandReceiptState::Publishing => Err(Error::new(
                 ErrorKind::DataInvalid,
                 "command publication is still in progress",
@@ -1301,7 +1312,11 @@ impl SpaceCatalog {
             {
                 Ok(())
             }
-            CommandReceiptState::Pending | CommandReceiptState::Stale => match self
+            CommandReceiptState::Pending => Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head changed while claiming the command receipt",
+            )),
+            CommandReceiptState::Stale => match self
                 .store
                 .replace_command_receipt(
                     &attempt.publication.command_id,
@@ -1372,10 +1387,11 @@ impl SpaceCatalog {
             && record.base_publication.as_deref() == head.publication_location.as_deref();
         if base_is_current {
             if publishing {
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "command publication is still in progress",
-                ));
+                // Publishing is a durable ownership state, but an owner
+                // crash is indistinguishable from a live owner while the
+                // base Head remains current. A matching retry may resume;
+                // it must not turn the state into Stale or report a commit.
+                return Ok(None);
             }
             self.finalize_command_receipt_stale_if_head_unchanged(
                 record,
@@ -2159,6 +2175,9 @@ impl SpaceCatalog {
         if marker.command_id != attempt.publication.command_id
             || marker.command_kind != attempt.publication.command_kind
             || marker.command_digest != attempt.publication.command_digest
+            || marker.base_generation != attempt.expected_generation
+            || marker.base_head_checksum != attempt.expected_head_checksum
+            || marker.base_publication != attempt.expected_previous_publication
             || !matches!(
                 marker.state,
                 AssetLifecycleState::Pending | AssetLifecycleState::Publishing
@@ -2288,10 +2307,9 @@ impl SpaceCatalog {
         let base_is_current = marker.matches_base(&head);
         if base_is_current {
             if publishing {
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "Asset deletion publication is still in progress",
-                ));
+                // Keep the read barrier fail-closed, while allowing the
+                // matching delete command to resume this durable attempt.
+                return Ok(marker);
             }
             return self
                 .finalize_asset_marker_stale_if_head_unchanged(
@@ -2412,7 +2430,28 @@ impl SpaceCatalog {
             }
             Some((marker, etag)) => match marker.state {
                 AssetLifecycleState::Committed => return Ok(()),
-                AssetLifecycleState::Pending | AssetLifecycleState::Publishing => {
+                AssetLifecycleState::Pending => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Asset lifecycle marker changed while starting deletion",
+                    ));
+                }
+                AssetLifecycleState::Publishing
+                    if marker.command_id == attempt.publication.command_id
+                        && marker.command_kind == attempt.publication.command_kind
+                        && marker.command_digest == attempt.publication.command_digest
+                        && marker.base_generation == attempt.expected_generation
+                        && marker.base_head_checksum == attempt.expected_head_checksum
+                        && marker.base_publication == attempt.expected_previous_publication
+                        && marker.intended_publication.as_deref()
+                            == Some(intended_publication.as_str()) =>
+                {
+                    // A restarted coordinator with the same command may
+                    // resume an existing Publishing attempt. It never takes
+                    // over a different command's lifecycle key.
+                    (marker, etag)
+                }
+                AssetLifecycleState::Publishing => {
                     return Err(Error::new(
                         ErrorKind::DataInvalid,
                         "Asset lifecycle marker changed while starting deletion",
@@ -2573,6 +2612,9 @@ impl SpaceCatalog {
         let mut record: CommandReceiptRecord =
             serde_json::from_slice(&bytes).map_err(json_error)?;
         if !record.matches(&attempt.publication)
+            || record.base_generation != attempt.expected_generation
+            || record.base_head_checksum != attempt.expected_head_checksum
+            || record.base_publication != attempt.expected_previous_publication
             || record.intended_publication.as_deref() != Some(publication_path)
         {
             return Err(Error::new(
@@ -4259,6 +4301,224 @@ mod tests {
         assert!(error.to_string().contains("Catalog Head changed"));
         let (head_after, _) = reverse_catalog.exact_head().await?.expect("Head");
         assert_eq!(head_after, reverse_head);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn publishing_command_receipt_can_resume_after_restart() -> AnyResult<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let store = SpaceCatalogStore::new(operator, "spaces/receipt-restart")?.single_process();
+        let space_id = SpaceId::from(Uuid::from_u128(18_525));
+        publish_test_generation(&store, space_id, "receipt-restart-base").await?;
+
+        let command = PublicationContext::with_command_digest(
+            "receipt-restart-absent",
+            "test.receipt-restart",
+            "receipt-restart-absent-digest",
+        );
+        let writer =
+            SpaceCatalog::new(store.clone(), space_id)?.with_publication_context(command.clone());
+        let (base_head, base_exact) = writer.exact_head().await?.expect("base Head");
+        let attempt =
+            PublicationAttempt::from_exact(&command, Some((base_head.clone(), base_exact.clone())));
+        let intended = store.publication_path(base_head.generation + 1, &command.command_id);
+        store
+            .create_command_receipt(
+                &command.command_id,
+                serde_json::to_vec(&CommandReceiptRecord::pending(&attempt, intended.clone()))?,
+            )
+            .await?;
+        writer
+            .begin_command_publication(&attempt, &intended)
+            .await?;
+
+        // A different command body cannot steal the live exact-key owner.
+        let intruder = SpaceCatalog::new(store.clone(), space_id)?.with_publication_context(
+            PublicationContext::with_command_digest(
+                command.command_id.clone(),
+                command.command_kind.clone(),
+                "different-digest",
+            ),
+        );
+        assert!(intruder.claim_command_receipt().await.is_err());
+
+        // The original writer is gone. A fresh coordinator sees the durable
+        // Publishing attempt, claims the same exact identity, and resumes it
+        // without requiring an unrelated Head mutation.
+        drop(writer);
+        let restarted =
+            SpaceCatalog::new(store.clone(), space_id)?.with_publication_context(command.clone());
+        assert!(restarted.publication_receipt(&command).await?.is_none());
+        restarted.claim_command_receipt().await?;
+        let restarted_attempt = restarted.publication_attempt().await?;
+        let restarted_head = restarted_attempt.expected_head.clone().expect("base Head");
+        restarted
+            .publish_new_head(
+                &restarted_attempt,
+                restarted_head.next_generation(),
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: restarted_head.namespace.clone(),
+                        table: "_receipt_restart_absent".to_string(),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: "test://receipt-restart-absent".to_string(),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await?;
+        assert!(restarted.publication_receipt(&command).await?.is_some());
+
+        // A second restart covers the case where the immutable publication
+        // already exists but its Head CAS was interrupted. The resumed writer
+        // must validate and reuse the exact same bytes rather than create a
+        // different publication at the same command path.
+        let existing = PublicationContext::with_command_digest(
+            "receipt-restart-existing",
+            "test.receipt-restart",
+            "receipt-restart-existing-digest",
+        );
+        let existing_writer =
+            SpaceCatalog::new(store.clone(), space_id)?.with_publication_context(existing.clone());
+        let existing_attempt = existing_writer.publication_attempt().await?;
+        existing_writer.claim_command_receipt().await?;
+        let existing_head = existing_attempt.expected_head.clone().expect("Head");
+        let existing_intended =
+            store.publication_path(existing_head.generation + 1, &existing.command_id);
+        existing_writer
+            .begin_command_publication(&existing_attempt, &existing_intended)
+            .await?;
+        write_asset_publication_without_head_cas(
+            &existing_writer,
+            &existing_attempt,
+            "receipt-restart-existing",
+        )
+        .await?;
+        drop(existing_writer);
+
+        let restarted_existing =
+            SpaceCatalog::new(store.clone(), space_id)?.with_publication_context(existing.clone());
+        assert!(restarted_existing
+            .publication_receipt(&existing)
+            .await?
+            .is_none());
+        restarted_existing.claim_command_receipt().await?;
+        let resumed_attempt = restarted_existing.publication_attempt().await?;
+        let resumed_head = resumed_attempt.expected_head.clone().expect("Head");
+        restarted_existing
+            .publish_new_head(
+                &resumed_attempt,
+                resumed_head.next_generation(),
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: resumed_head.namespace.clone(),
+                        table: "_asset_delete_receipt-restart-existing".to_string(),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: "asset://deleted/receipt-restart-existing".to_string(),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await?;
+        assert!(restarted_existing
+            .publication_receipt(&existing)
+            .await?
+            .is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn publishing_asset_marker_can_resume_after_restart_with_partial_receipt() -> AnyResult<()>
+    {
+        let operator = Operator::new(Memory::default())?.finish();
+        let store = SpaceCatalogStore::new(operator, "spaces/asset-restart")?.single_process();
+        let space_id = SpaceId::from(Uuid::from_u128(18_526));
+        publish_test_generation(&store, space_id, "asset-restart-base").await?;
+
+        let pending_receipt_command = PublicationContext::with_command_digest(
+            "asset-restart-pending-receipt",
+            "asset.delete",
+            "asset-restart-pending-receipt-digest",
+        );
+        let writer = SpaceCatalog::new(store.clone(), space_id)?
+            .with_publication_context(pending_receipt_command.clone());
+        let attempt = writer.publication_attempt().await?;
+        writer.claim_command_receipt().await?;
+        let head = attempt.expected_head.clone().expect("base Head");
+        let intended =
+            store.publication_path(head.generation + 1, &pending_receipt_command.command_id);
+        let marker = writer.pending_asset_marker(&attempt, intended.clone());
+        writer
+            .create_asset_marker("asset-restart-pending", &marker)
+            .await?;
+        writer
+            .begin_asset_marker_publication("asset-restart-pending", &attempt, &intended)
+            .await?;
+        drop(writer);
+
+        let restarted = SpaceCatalog::new(store.clone(), space_id)?
+            .with_publication_context(pending_receipt_command.clone());
+        assert!(restarted
+            .asset_is_deleted("asset-restart-pending")
+            .await
+            .expect_err("Publishing remains a fail-closed read barrier")
+            .to_string()
+            .contains("still in progress"));
+        restarted.claim_command_receipt().await?;
+        restarted
+            .mark_asset_deleted("asset-restart-pending")
+            .await?;
+        assert!(restarted.asset_is_deleted("asset-restart-pending").await?);
+
+        let stale_receipt_command = PublicationContext::with_command_digest(
+            "asset-restart-stale-receipt",
+            "asset.delete",
+            "asset-restart-stale-receipt-digest",
+        );
+        let writer = SpaceCatalog::new(store.clone(), space_id)?
+            .with_publication_context(stale_receipt_command.clone());
+        let attempt = writer.publication_attempt().await?;
+        writer.claim_command_receipt().await?;
+        let head = attempt.expected_head.clone().expect("base Head");
+        let intended =
+            store.publication_path(head.generation + 1, &stale_receipt_command.command_id);
+        let marker = writer.pending_asset_marker(&attempt, intended.clone());
+        writer
+            .create_asset_marker("asset-restart-stale", &marker)
+            .await?;
+        writer
+            .begin_asset_marker_publication("asset-restart-stale", &attempt, &intended)
+            .await?;
+        let (bytes, etag) = store
+            .read_command_receipt(&stale_receipt_command.command_id)
+            .await?
+            .expect("Pending command receipt");
+        let receipt: CommandReceiptRecord = serde_json::from_slice(&bytes)?;
+        writer
+            .finalize_command_receipt(receipt, etag, CommandReceiptState::Stale, None, None)
+            .await?;
+        drop(writer);
+
+        // The marker is still Publishing, but the command receipt was only
+        // partially claimed and became Stale. A fresh coordinator reclaims
+        // the receipt and resumes the marker without an unrelated mutation.
+        let restarted = SpaceCatalog::new(store.clone(), space_id)?
+            .with_publication_context(stale_receipt_command.clone());
+        assert!(restarted
+            .asset_is_deleted("asset-restart-stale")
+            .await
+            .expect_err("Publishing remains a fail-closed read barrier")
+            .to_string()
+            .contains("still in progress"));
+        restarted.claim_command_receipt().await?;
+        restarted.mark_asset_deleted("asset-restart-stale").await?;
+        assert!(restarted.asset_is_deleted("asset-restart-stale").await?);
         Ok(())
     }
 
