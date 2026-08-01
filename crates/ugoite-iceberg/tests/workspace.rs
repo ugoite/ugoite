@@ -1097,7 +1097,7 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
             (
                 FieldId::new(108).unwrap(),
                 FieldValue::List(vec![
-                    FieldValue::String("2025-01-02T03:04:05.123456+00:00".into()),
+                    FieldValue::String("2025-01-02T03:04:05.123456".into()),
                     FieldValue::Null,
                 ]),
             ),
@@ -1111,7 +1111,7 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
             (
                 FieldId::new(110).unwrap(),
                 FieldValue::List(vec![
-                    FieldValue::String("2025-01-02T03:04:05.123456789Z".into()),
+                    FieldValue::String("2025-01-02T03:04:05.123456789".into()),
                     FieldValue::Null,
                 ]),
             ),
