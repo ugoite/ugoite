@@ -428,6 +428,67 @@ fn test_saved_sql_create_req_api_006_uses_server_generated_id() {
     assert_eq!(response["id"].as_str(), Some("remote-sql-1"));
 }
 
+/// REQ-API-006: backend saved SQL updates send the formal optimistic-concurrency field.
+#[test]
+fn test_saved_sql_update_req_api_006_sends_parent_revision_without_author() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.json");
+    let (base_url, request_rx, server_handle) = spawn_recording_server(
+        "HTTP/1.1 200 OK",
+        r#"{"id":"remote-sql-1","revision_id":"rev-2"}"#,
+    );
+
+    let set_output = Command::new(ugoite_bin())
+        .args([
+            "config",
+            "set",
+            "--mode",
+            "backend",
+            "--backend-url",
+            &base_url,
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+    assert!(set_output.status.success());
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "sql",
+            "saved-update",
+            "remote-space",
+            "remote-sql-1",
+            "--name",
+            "Remote query",
+            "--sql",
+            "SELECT 2",
+            "--parent-revision-id",
+            "rev-1",
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("failed to execute");
+
+    server_handle.join().unwrap();
+    let request = request_rx.recv().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        request.starts_with("PUT /spaces/remote-space/sql/remote-sql-1 HTTP/1.1\r\n"),
+        "{request}"
+    );
+    assert!(
+        request.contains(r#""parent_revision_id":"rev-1""#),
+        "{request}"
+    );
+    assert!(request.contains(r#""kind":"user-query""#), "{request}");
+    assert!(!request.contains(r#""author":"#), "{request}");
+}
+
 /// REQ-STO-004: Backend mode returns remote space JSON without Tokio runtime panic.
 #[test]
 fn test_space_list_req_sto_004_returns_remote_json_without_panicking() {
@@ -644,7 +705,7 @@ fn test_entry_update_req_ops_006_help_describes_required_inputs() {
         "--assets <ASSETS>",
         "JSON array of asset objects",
         "--author <AUTHOR>",
-        "Author name to record in the revision history",
+        "Author name to record in the revision history (core mode only)",
     ] {
         assert!(stdout.contains(needle), "{stdout}");
     }

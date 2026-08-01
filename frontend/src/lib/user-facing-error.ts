@@ -13,6 +13,8 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   ENTRY_NOT_FOUND: "errors.code.entryNotFound",
   REVISION_NOT_FOUND: "errors.code.revisionNotFound",
   REVISION_CONFLICT: "errors.code.revisionConflict",
+  FORM_VALIDATION_FAILED: "errors.code.formValidationFailed",
+  UNKNOWN_FORM_FIELDS: "errors.code.unknownFormFields",
   ASSET_NOT_FOUND: "errors.code.assetNotFound",
   INVITATION_EXPIRED: "errors.code.invitationExpired",
   INVITATION_NOT_FOUND: "errors.code.invitationNotFound",

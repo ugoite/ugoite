@@ -1,3 +1,4 @@
+use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -34,6 +35,8 @@ pub enum ErrorCode {
     ReindexNotImplemented,
     StorageConnectionFailed,
     FormFieldTypeChangeNotSupported,
+    FormValidationFailed,
+    UnknownFormFields,
     InvalidInput,
 }
 
@@ -60,6 +63,8 @@ impl ErrorCode {
             Self::ReindexNotImplemented => "REINDEX_NOT_IMPLEMENTED",
             Self::StorageConnectionFailed => "STORAGE_CONNECTION_FAILED",
             Self::FormFieldTypeChangeNotSupported => "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED",
+            Self::FormValidationFailed => "FORM_VALIDATION_FAILED",
+            Self::UnknownFormFields => "UNKNOWN_FORM_FIELDS",
             Self::InvalidInput => "INVALID_INPUT",
         }
     }
@@ -71,6 +76,7 @@ pub struct AppError {
     kind: ErrorKind,
     code: ErrorCode,
     message: String,
+    detail: Option<Value>,
 }
 
 impl AppError {
@@ -79,6 +85,7 @@ impl AppError {
             kind,
             code,
             message: message.into(),
+            detail: None,
         }
     }
 
@@ -92,6 +99,16 @@ impl AppError {
 
     pub fn invalid_input(code: ErrorCode, message: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidInput, code, message)
+    }
+
+    pub fn invalid_input_with_detail(
+        code: ErrorCode,
+        message: impl Into<String>,
+        detail: Value,
+    ) -> Self {
+        let mut error = Self::invalid_input(code, message);
+        error.detail = Some(detail);
+        error
     }
 
     pub fn form_field_type_change_not_supported(
@@ -148,5 +165,9 @@ impl AppError {
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    pub fn detail(&self) -> Option<&Value> {
+        self.detail.as_ref()
     }
 }

@@ -5,6 +5,7 @@ import { sqlApi } from "./ugoite-client";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
+import type { SqlUpdatePayload } from "./types";
 import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
@@ -86,9 +87,55 @@ describe("sqlApi", () => {
       kind: "user-query",
       sql: "SELECT 2",
       variables: [],
+      parent_revision_id: created.revisionId,
     });
     expect(result.id).toBe(created.id);
     expect(result.revisionId).toBeDefined();
+  });
+
+  it("enforces the saved SQL update revision contract in the mock server", async () => {
+    const created = await sqlApi.create("sql-ws", {
+      name: "Revisioned",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+    });
+
+    const updated = await sqlApi.update("sql-ws", created.id, {
+      name: "Revisioned again",
+      kind: "user-query",
+      sql: "SELECT 2",
+      variables: [],
+      parent_revision_id: created.revisionId,
+    });
+    expect(updated.revisionId).not.toBe(created.revisionId);
+
+    await expect(sqlApi.update("sql-ws", created.id, {
+      name: "Stale",
+      kind: "user-query",
+      sql: "SELECT 3",
+      variables: [],
+      parent_revision_id: created.revisionId,
+    })).rejects.toMatchObject({ status: 409, code: "REVISION_CONFLICT" });
+  });
+
+  it("rejects unknown top-level saved SQL update fields", async () => {
+    const created = await sqlApi.create("sql-ws", {
+      name: "Strict payload",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+    });
+    const invalidPayload = {
+      name: "Strict payload",
+      kind: "user-query" as const,
+      sql: "SELECT 2",
+      variables: [],
+      author: "unexpected",
+    } as unknown as SqlUpdatePayload;
+
+    await expect(sqlApi.update("sql-ws", created.id, invalidPayload))
+      .rejects.toThrow("unknown field: author");
   });
 
   it("deletes a SQL entry", async () => {

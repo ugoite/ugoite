@@ -8,7 +8,7 @@ import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
-import { t } from "~/lib/i18n";
+import { t, type TranslationKey } from "~/lib/i18n";
 import { displaySqlName, type SearchHistoryCriteria } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
@@ -131,6 +131,40 @@ function operatorLabel(operator: FieldMatchOperator): string {
     case "gte":
       return t("searchPage.greaterThanOrEqual");
   }
+}
+
+function fieldInputType(type: SearchFieldType):
+  | "text"
+  | "number"
+  | "date"
+  | "datetime-local" {
+  if (type === "integer" || type === "float") return "number";
+  if (type === "date") return "date";
+  if (type === "timestamp") return "datetime-local";
+  return "text";
+}
+
+function fieldInputPlaceholder(type: SearchFieldType): TranslationKey {
+  switch (type) {
+    case "boolean":
+      return "searchPage.booleanPlaceholder";
+    case "integer":
+      return "searchPage.integerPlaceholder";
+    case "float":
+      return "searchPage.numberPlaceholder";
+    case "date":
+      return "searchPage.datePlaceholder";
+    case "timestamp":
+      return "searchPage.timestampPlaceholder";
+    default:
+      return "searchPage.valuePlaceholder";
+  }
+}
+
+function fieldInputStep(type: SearchFieldType): string | undefined {
+  if (type === "integer") return "1";
+  if (type === "float") return "any";
+  return undefined;
 }
 
 function escapeLikePattern(value: string): string {
@@ -725,7 +759,7 @@ export default function SpaceSearchRoute() {
                         onChange={(event) =>
                           handleAdvancedFormChange(event.currentTarget.value)}
                       >
-                        <option value="">{t("searchPage.anyForm")}</option>
+                        <option value="">{t("searchPage.selectForm")}</option>
                         <For each={availableForms()}>
                           {(entryForm) => (
                             <option value={entryForm.name}>
@@ -880,9 +914,22 @@ export default function SpaceSearchRoute() {
                             </label>
                             <input
                               id={`value-${condition().id}`}
-                              type="text"
+                              type={fieldInputType(
+                                availableFields().find((field) =>
+                                  field.name === condition().field
+                                )?.type ?? "unsupported",
+                              )}
                               class="ui-input mt-2 w-full"
-                              placeholder={t("searchPage.valuePlaceholder")}
+                              step={fieldInputStep(
+                                availableFields().find((field) =>
+                                  field.name === condition().field
+                                )?.type ?? "unsupported",
+                              )}
+                              placeholder={t(fieldInputPlaceholder(
+                                availableFields().find((field) =>
+                                  field.name === condition().field
+                                )?.type ?? "unsupported",
+                              ))}
                               value={condition().value}
                               onInput={(event) =>
                                 updateFieldCondition(

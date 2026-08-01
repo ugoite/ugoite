@@ -12,8 +12,9 @@ import { isServer } from "solid-js/web";
 
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { AssetUploader } from "~/components/AssetUploader";
-import { locale, t } from "~/lib/i18n";
+import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
+import { formatDateTimeLabel } from "~/lib/date-format";
 import {
   parseMarkdownH2Sections,
   renderMarkdownPreview,
@@ -27,7 +28,9 @@ import {
   RevisionConflictError,
   searchApi,
 } from "~/lib/ugoite-client";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import type { Asset, Entry, Form, FormField } from "~/lib/types";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export interface EntryDetailPaneProps {
   spaceId: Accessor<string>;
@@ -49,8 +52,6 @@ type RowReferenceOption = {
   title: string;
 };
 
-const CLASS_VALIDATION_MARKER = "Form validation failed:";
-const UNKNOWN_FIELDS_MARKER = "Unknown form fields:";
 const BOOLEAN_VALUE_REGEX = /^(true|false|yes|no|on|off|1|0)$/i;
 const NUMERIC_FIELD_TYPES = new Set([
   "integer",
@@ -61,57 +62,42 @@ const NUMERIC_FIELD_TYPES = new Set([
 ]);
 const ROW_REFERENCE_SUGGESTION_LIMIT = 8;
 
-function parseFormValidationError(message: string) {
-  if (!message.includes(CLASS_VALIDATION_MARKER)) return null;
-  const payload = message.split(CLASS_VALIDATION_MARKER)[1]?.trim();
-  /* v8 ignore start */
-  if (!payload) return null;
-  /* v8 ignore stop */
-  try {
-    const parsed = JSON.parse(payload) as Array<{
-      field?: string;
-      message?: string;
-    }>;
-    const items = parsed
-      /* v8 ignore start */
-      .map((item) => item.message || item.field)
-      /* v8 ignore stop */
-      /* v8 ignore start */
-      .filter((item): item is string => Boolean(item));
-    /* v8 ignore stop */
+function parseEntryValidationError(error: unknown) {
+  if (!(error instanceof UgoiteApiError)) return null;
+  const detail = error.detail && typeof error.detail === "object" &&
+      !Array.isArray(error.detail)
+    ? error.detail as Record<string, unknown>
+    : null;
+  if (error.code === "UNKNOWN_FORM_FIELDS") {
+    const fields = Array.isArray(detail?.fields)
+      ? detail.fields.filter((field): field is string =>
+        typeof field === "string"
+      )
+      : [];
     return {
-      title: "Form validation failed",
-      items: items.length > 0
-        ? items
-        : ["Please review the form requirements."],
-    };
-  } catch {
-    return {
-      title: "Form validation failed",
-      items: [payload],
+      title: t("entryDetail.unknownFormFields"),
+      items: fields.length > 0 ? fields : [t("entryDetail.reviewRequirements")],
     };
   }
-}
-
-function parseUnknownFieldsError(message: string) {
-  if (!message.includes(UNKNOWN_FIELDS_MARKER)) return null;
-  const payload = message.split(UNKNOWN_FIELDS_MARKER)[1]?.trim();
-  /* v8 ignore start */
-  const items = payload
-    ? payload
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean)
-    : [];
-  return {
-    title: "Unknown form fields",
-    items: items.length > 0 ? items : [payload || "Unknown fields found."],
-  };
-  /* v8 ignore stop */
-}
-
-function parseValidationErrorMessage(message: string) {
-  return parseFormValidationError(message) || parseUnknownFieldsError(message);
+  if (error.code === "FORM_VALIDATION_FAILED") {
+    const warnings = Array.isArray(detail?.warnings) ? detail.warnings : [];
+    const items = warnings
+      .map((warning) => {
+        if (!warning || typeof warning !== "object") return null;
+        const item = warning as Record<string, unknown>;
+        return typeof item.message === "string"
+          ? item.message
+          : typeof item.field === "string"
+          ? item.field
+          : null;
+      })
+      .filter((item): item is string => Boolean(item));
+    return {
+      title: t("entryDetail.validationFailed"),
+      items: items.length > 0 ? items : [t("entryDetail.reviewRequirements")],
+    };
+  }
+  return null;
 }
 
 function normalizeFieldName(fieldName: string) {
@@ -200,24 +186,25 @@ function createFieldInputId(fieldName: string, index: number) {
 }
 
 function formatEntryDate(value: string | undefined) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale() === "ja" ? "ja-JP" : "en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return formatDateTimeLabel(value);
+}
+
+class EntryLoadTimeoutError extends Error {
+  constructor() {
+    super("entry load timed out");
+    this.name = "EntryLoadTimeoutError";
+  }
 }
 
 async function fetchWithTimeout<T>(
   promise: Promise<T>,
   ms = 10000,
-  errorMsg = "Operation timed out",
+  error: Error = new EntryLoadTimeoutError(),
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     /* v8 ignore start */
-    timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+    timer = setTimeout(() => reject(error), ms);
     /* v8 ignore stop */
   });
   try {
@@ -441,12 +428,18 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         return await fetchWithTimeout(
           entryApi.get(parameters.wsId, parameters.entryId),
           45_000,
-          "Loading entry timed out",
+          new EntryLoadTimeoutError(),
         );
       } catch (error) {
         /* v8 ignore start */
         setEntryError(
-          error instanceof Error ? error.message : "Failed to load entry",
+          error instanceof EntryLoadTimeoutError
+            ? t("entryDetail.loadTimedOut")
+            : formatUserFacingError(
+              error,
+              "entryDetail.loadFailed",
+              "entry.get",
+            ),
         );
         /* v8 ignore stop */
         return null;
@@ -601,7 +594,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     const entryId = props.entryId?.() ?? "";
     if (isCreateMode()) {
       if (!wsId) {
-        return { ok: false, reason: "Cannot save: Space is not selected." };
+        return { ok: false, reason: t("entryDetail.savePrerequisite") };
       }
       return { ok: true, wsId, create: true };
     }
@@ -610,8 +603,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (!wsId || !entryId || !revisionId) {
       return {
         ok: false,
-        reason:
-          "Cannot save: entry not properly loaded. Please try refreshing.",
+        reason: t("entryDetail.savePrerequisite"),
       };
     }
     /* v8 ignore stop */
@@ -619,18 +611,23 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   };
 
   const handleSaveError = (error: unknown) => {
-    /* v8 ignore start */
-    if (error instanceof RevisionConflictError) {
-      setConflictMessage(
-        "This entry was modified elsewhere. Your draft is still in the editor; refresh to load the latest version.",
-      );
-      return;
-    }
-    const message = error instanceof Error ? error.message : "Failed to save";
-    /* v8 ignore stop */
-    const parsed = parseValidationErrorMessage(message);
+    const parsed = parseEntryValidationError(error);
     if (parsed) setValidationError(parsed);
-    else setConflictMessage(message);
+    else if (error instanceof RevisionConflictError) {
+      setConflictMessage(
+        error.apiError
+          ? formatUserFacingError(
+            error.apiError,
+            "entryDetail.saveFailed",
+            "entry.update",
+          )
+          : t("errors.code.revisionConflict"),
+      );
+    } else {
+      setConflictMessage(
+        formatUserFacingError(error, "entryDetail.saveFailed", "entry.update"),
+      );
+    }
   };
 
   const handleSave = async () => {
@@ -698,7 +695,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       props.onDeleted();
     } catch (error) {
       /* v8 ignore start */
-      alert(error instanceof Error ? error.message : "Failed to delete entry");
+      alert(
+        formatUserFacingError(
+          error,
+          "entryDetail.deleteFailed",
+          "entry.delete",
+        ),
+      );
       /* v8 ignore stop */
     }
   };
@@ -801,7 +804,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               <div class="text-center space-y-3">
                 <p class="ui-alert ui-alert-error text-sm">{entryError()}</p>
                 <p class="text-xs ui-muted">
-                  Space: {props.spaceId()} / Entry: {props.entryId?.() ?? ""}
+                  {t("entryDetail.spaceId")}: {props.spaceId()} / {t(
+                    "entryDetail.entryId",
+                  )}: {props.entryId?.() ?? ""}
                 </p>
                 <div class="flex justify-center gap-2">
                   <button

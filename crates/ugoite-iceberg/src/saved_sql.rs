@@ -6,6 +6,7 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
+use ugoite_core::error::{AppError, ErrorCode};
 use uuid::Uuid;
 
 const SQL_FORM_NAME: &str = "SQL";
@@ -87,6 +88,32 @@ pub struct SqlPayload {
     pub sql: String,
     #[serde(default)]
     pub variables: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlUpdatePayload {
+    pub name: Option<String>,
+    pub kind: SqlKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<SqlMetadata>,
+    pub sql: String,
+    #[serde(default)]
+    pub variables: Value,
+    #[serde(default)]
+    pub parent_revision_id: Option<String>,
+}
+
+impl SqlUpdatePayload {
+    pub fn into_sql_payload(self) -> SqlPayload {
+        SqlPayload {
+            name: self.name,
+            kind: self.kind,
+            metadata: self.metadata,
+            sql: self.sql,
+            variables: self.variables,
+        }
+    }
 }
 
 fn validate_sql_metadata(payload: &SqlPayload) -> Result<()> {
@@ -452,11 +479,14 @@ pub async fn update_sql<I: IntegrityProvider>(
 
     if let Some(expected_parent) = parent_revision_id {
         if row.revision_id != expected_parent {
-            return Err(anyhow!(
-                "Revision conflict: expected {}, got {}",
-                expected_parent,
-                row.revision_id
-            ));
+            return Err(AppError::conflict(
+                ErrorCode::RevisionConflict,
+                format!(
+                    "Revision conflict: expected {}, got {}",
+                    expected_parent, row.revision_id
+                ),
+            )
+            .into());
         }
     }
 

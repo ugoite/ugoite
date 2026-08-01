@@ -38,11 +38,24 @@ let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
 
-const validateMockSqlPayload = (payload: unknown): string | null => {
+const validateMockSqlPayload = (
+  payload: unknown,
+  options: { allowParentRevisionId?: boolean } = {},
+): string | null => {
   if (!payload || typeof payload !== "object") {
     return "payload must be an object";
   }
   const body = payload as Record<string, unknown>;
+  const allowedKeys = new Set([
+    "name",
+    "kind",
+    "metadata",
+    "sql",
+    "variables",
+    ...(options.allowParentRevisionId ? ["parent_revision_id"] : []),
+  ]);
+  const unknownKey = Object.keys(body).find((key) => !allowedKeys.has(key));
+  if (unknownKey) return `unknown field: ${unknownKey}`;
   if (!("name" in body)) return "name is required";
   if (body.name !== null && typeof body.name !== "string") {
     return "name must be a string or null";
@@ -55,6 +68,14 @@ const validateMockSqlPayload = (payload: unknown): string | null => {
   }
   if (typeof body.sql !== "string") return "sql is required";
   if (!Array.isArray(body.variables)) return "variables must be an array";
+  if (
+    options.allowParentRevisionId &&
+    body.parent_revision_id !== undefined &&
+    body.parent_revision_id !== null &&
+    typeof body.parent_revision_id !== "string"
+  ) {
+    return "parent_revision_id must be a string or null";
+  }
   for (const variable of body.variables) {
     if (!variable || typeof variable !== "object") {
       return "variables items must be objects";
@@ -744,6 +765,7 @@ export const handlers = [
       sql: payload.sql,
       variables: payload.variables,
       space_id: spaceId,
+      revision_id: revisionId,
     };
     if (!mockSqlEntries.has(spaceId)) mockSqlEntries.set(spaceId, new Map());
     mockSqlEntries.get(spaceId)?.set(id, entry);
@@ -757,12 +779,30 @@ export const handlers = [
       return HttpResponse.json({ detail: "Not found" }, { status: 404 });
     }
     const body = await request.json();
-    const validationError = validateMockSqlPayload(body);
+    const validationError = validateMockSqlPayload(body, {
+      allowParentRevisionId: true,
+    });
     if (validationError) {
       return HttpResponse.json({ detail: validationError }, { status: 422 });
     }
-    Object.assign(entry, body);
+    if (
+      body.parent_revision_id !== undefined &&
+      body.parent_revision_id !== null &&
+      body.parent_revision_id !== entry.revision_id
+    ) {
+      return HttpResponse.json(
+        {
+          code: "REVISION_CONFLICT",
+          message: "Revision conflict",
+          current_revision_id: entry.revision_id,
+        },
+        { status: 409 },
+      );
+    }
+    const { parent_revision_id: _parentRevisionId, ...payload } = body;
+    Object.assign(entry, payload);
     const revisionId = generateRevisionId();
+    entry.revision_id = revisionId;
     return HttpResponse.json({ id: sqlId, revision_id: revisionId });
   }),
   testHttp.delete("/spaces/:spaceId/sql/:sqlId", ({ params }) => {

@@ -236,6 +236,61 @@ describe("/spaces/:space_id/search", () => {
     expect(value).toHaveValue("se");
   });
 
+  it("restores field-specific search input controls and requires a form", async () => {
+    seedForm("default", {
+      name: "Typed fields",
+      version: 1,
+      template: "",
+      fields: {
+        enabled: { type: "boolean", required: false, sql_column: "enabled" },
+        count: { type: "integer", required: false, sql_column: "count" },
+        score: { type: "number", required: false, sql_column: "score" },
+        due: { type: "date", required: false, sql_column: "due" },
+        happened: {
+          type: "timestamp",
+          required: false,
+          sql_column: "happened",
+        },
+      },
+      sql_relation: "form_typed_fields",
+    });
+
+    render(() => <SpaceSearchRoute />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced search" }));
+    expect(screen.getByRole("option", { name: "Select a form" }))
+      .toBeInTheDocument();
+    await screen.findByRole("option", { name: "Typed fields" });
+    fireEvent.change(screen.getByLabelText("Form"), {
+      target: { value: "Typed fields" },
+    });
+    await screen.findByRole("option", { name: /enabled/ });
+
+    const cases = [
+      ["enabled", "text", "true or false"],
+      ["count", "number", "42"],
+      ["score", "number", "3.14"],
+      ["due", "date", "YYYY-MM-DD"],
+      ["happened", "datetime-local", "YYYY-MM-DDTHH:mm"],
+    ] as const;
+    for (const [field, type, placeholder] of cases) {
+      await screen.findByRole("option", { name: new RegExp(field) });
+      fireEvent.change(screen.getByLabelText("Field"), {
+        target: { value: field },
+      });
+      await waitFor(() => {
+        const input = screen.getByLabelText("Value");
+        expect(input).toHaveAttribute("type", type);
+        expect(input).toHaveAttribute("placeholder", placeholder);
+      });
+    }
+
+    fireEvent.change(screen.getByLabelText("Form"), { target: { value: "" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run advanced search" }),
+    );
+    expect(await screen.findByText(/Choose a Form/)).toBeInTheDocument();
+  });
+
   it("REQ-SRCH-005: saved history entries rerun directly or open variable input when needed", async () => {
     seedSqlEntry("default", {
       id: "saved-ready",

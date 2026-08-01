@@ -29,8 +29,6 @@ pub enum SqlSubCmd {
         sql: String,
         #[arg(long)]
         variables: Option<String>,
-        #[arg(long, default_value = "cli")]
-        author: String,
     },
     /// Update a saved SQL query
     SavedUpdate {
@@ -44,8 +42,6 @@ pub enum SqlSubCmd {
         variables: Option<String>,
         #[arg(long)]
         parent_revision_id: Option<String>,
-        #[arg(long, default_value = "cli")]
-        author: String,
     },
     /// Delete a saved SQL query
     SavedDelete { space_path: String, sql_id: String },
@@ -98,7 +94,6 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             name,
             sql,
             variables,
-            author,
         } => {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-create")?;
@@ -126,7 +121,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             };
             let service = UgoiteService::new(&root)?;
             let result = service
-                .create_saved_sql(&space_id, &sql_id, &payload, &author)
+                .create_saved_sql(&space_id, &sql_id, &payload, "cli")
                 .await?;
             print_json(&result);
         }
@@ -137,7 +132,6 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             sql,
             variables,
             parent_revision_id,
-            author,
         } => {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-update")?;
@@ -145,11 +139,20 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
             if let Some(base) = validated_base_url(&config)? {
+                let mut body = serde_json::json!({
+                    "name": name,
+                    "kind": "user-query",
+                    "sql": sql,
+                    "variables": vars,
+                });
+                if let Some(parent_revision_id) = parent_revision_id.as_deref() {
+                    body["parent_revision_id"] = serde_json::json!(parent_revision_id);
+                }
                 let result = http::execute(
                     &base,
                     "sql.update",
                     serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
-                    Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id})),
+                    Some(body),
                 )
                 .await?;
                 print_json(&result);
@@ -169,7 +172,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     &sql_id,
                     &payload,
                     parent_revision_id.as_deref(),
-                    &author,
+                    "cli",
                 )
                 .await?;
             print_json(&result);
