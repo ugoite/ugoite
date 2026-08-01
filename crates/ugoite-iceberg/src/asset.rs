@@ -16,6 +16,23 @@ pub struct AssetContent {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Debug)]
+pub(crate) enum AssetDeleteConflict {
+    Visible,
+    Hidden,
+}
+
+impl std::fmt::Display for AssetDeleteConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Visible => formatter.write_str("Asset is referenced by an authorized entry"),
+            Self::Hidden => formatter.write_str("Asset cannot be deleted while it is in use"),
+        }
+    }
+}
+
+impl std::error::Error for AssetDeleteConflict {}
+
 fn asset_path(ws_path: &str, asset_id: &str) -> String {
     format!("{ws_path}/assets/{asset_id}")
 }
@@ -259,10 +276,29 @@ pub async fn delete_asset(
         "asset.delete",
         &serde_json::json!({"asset_id": asset_id}),
     )?;
-    workspace
+    let deletion = workspace
         .commit(publication)?
         .delete_asset(asset_id, relation_scopes)
-        .await?;
+        .await;
+    if let Err(error) = deletion {
+        if error
+            .downcast_ref::<AssetDeleteConflict>()
+            .is_some_and(|conflict| matches!(conflict, AssetDeleteConflict::Visible))
+        {
+            return Err(AppError::conflict(
+                ErrorCode::AssetReferenced,
+                "Asset is referenced by an authorized entry",
+            )
+            .into());
+        }
+        if error
+            .downcast_ref::<AssetDeleteConflict>()
+            .is_some_and(|conflict| matches!(conflict, AssetDeleteConflict::Hidden))
+        {
+            return Err(AppError::forbidden("Asset deletion is not permitted").into());
+        }
+        return Err(error);
+    }
     op.delete(&path).await?;
     Ok(())
 }

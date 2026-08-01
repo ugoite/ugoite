@@ -4482,6 +4482,25 @@ mod authentication_regression_tests {
         );
     }
 
+    #[test]
+    fn asset_delete_conflicts_are_stable_non_internal_http_errors() {
+        let visible = ApiError::from_core(
+            AppError::conflict(
+                ugoite_core::error::ErrorCode::AssetReferenced,
+                "Asset is referenced by an authorized entry",
+            )
+            .into(),
+        );
+        assert_eq!(visible.status, StatusCode::CONFLICT);
+        assert_eq!(visible.detail["code"], "ASSET_REFERENCED");
+
+        let hidden =
+            ApiError::from_core(AppError::forbidden("Asset deletion is not permitted").into());
+        assert_eq!(hidden.status, StatusCode::FORBIDDEN);
+        assert_eq!(hidden.detail["code"], "FORBIDDEN");
+        assert_eq!(hidden.detail["message"], "Asset deletion is not permitted");
+    }
+
     #[tokio::test]
     async fn form_type_change_route_returns_422_with_the_workspace_error() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("memory://server-form-type-change-route")?;

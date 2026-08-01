@@ -2,6 +2,7 @@ mod common;
 use chrono::Utc;
 use common::setup_operator;
 use std::collections::{BTreeMap, BTreeSet};
+use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::identity::{
     AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
@@ -149,7 +150,11 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
     )
     .await
     .expect_err("current typed Form values must guard the asset");
-    assert!(error.to_string().contains("referenced"));
+    let app_error = error
+        .downcast_ref::<AppError>()
+        .expect("visible asset conflicts are typed application errors");
+    assert_eq!(app_error.kind(), ErrorKind::Conflict);
+    assert_eq!(app_error.code(), ErrorCode::AssetReferenced);
     Ok(())
 }
 
@@ -465,9 +470,12 @@ async fn authorization_state_hides_scalar_and_list_asset_references() -> anyhow:
         .delete_asset_with_principal(&space_id, &reference.asset_id, Some(viewer))
         .await
         .expect_err("hidden current references must still protect Asset bytes");
-    assert!(delete_error
-        .to_string()
-        .contains("cannot be deleted while it is in use"));
+    let app_error = delete_error
+        .downcast_ref::<AppError>()
+        .expect("hidden asset conflicts are typed application errors");
+    assert_eq!(app_error.kind(), ErrorKind::Forbidden);
+    assert_eq!(app_error.code(), ErrorCode::Forbidden);
+    assert_eq!(app_error.message(), "Asset deletion is not permitted");
     assert_eq!(
         asset::read_asset(
             service.operator(),

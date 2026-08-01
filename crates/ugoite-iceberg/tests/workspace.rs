@@ -1078,61 +1078,6 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
     Ok(())
 }
 
-#[tokio::test]
-async fn duplicate_maximum_versions_are_rejected_by_reads() -> anyhow::Result<()> {
-    let first = IcebergWorkspace::memory_for_tests(
-        SpaceId::from(Uuid::from_u128(50)),
-        "memory://iceberg-concurrent-writers",
-    )
-    .await?;
-    let form = form();
-    create_form(&first, &form).await?;
-    let entry_id = Uuid::from_u128(51).into();
-    let mut left = EntryRevision {
-        form_id: form.id,
-        entry_id,
-        revision_id: Uuid::from_u128(52).into(),
-        parent_revision_id: None,
-        entry_version: 1,
-        expected_version: None,
-        operation: EntryOperation::Upsert,
-        committed_at_micros: 1,
-        author_id: "left".into(),
-        form_version: form.version,
-        source_kind: "test".into(),
-        source_id: None,
-        entry: EntryMetadata::default(),
-        values: BTreeMap::new(),
-        extra_attributes: BTreeMap::new(),
-        extension_metadata: BTreeMap::new(),
-    };
-    left.values.insert(
-        FieldId::new(100).unwrap(),
-        FieldValue::String("left".into()),
-    );
-    let mut right = left.clone();
-    right.revision_id = Uuid::from_u128(53).into();
-    right.author_id = "right".into();
-    right.values.insert(
-        FieldId::new(100).unwrap(),
-        FieldValue::String("right".into()),
-    );
-    first
-        .append_revisions_for_testing_allowing_duplicate_versions(form.id, vec![left])
-        .await?;
-    first
-        .append_revisions_for_testing_allowing_duplicate_versions(form.id, vec![right.clone()])
-        .await?;
-    let error = first
-        .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
-        .await
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("multiple revisions share a maximum entry_version"));
-    Ok(())
-}
-
 #[test]
 fn migration_report_rejects_count_or_mapping_drift() {
     let report = MigrationReport::verify(

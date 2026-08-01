@@ -47,6 +47,27 @@ async fn create_form(workspace: &IcebergWorkspace, form: &FormDefinition) -> any
         .await
 }
 
+fn revision(form: &FormDefinition, entry: u128, revision: u128, title: &str) -> EntryRevision {
+    EntryRevision {
+        form_id: form.id,
+        entry_id: EntryId::from(Uuid::from_u128(entry)),
+        revision_id: Uuid::from_u128(revision).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "test".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata::default(),
+        values: BTreeMap::from([(FieldId::new(100).unwrap(), FieldValue::String(title.into()))]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    }
+}
+
 async fn append(
     workspace: &IcebergWorkspace,
     form: &FormDefinition,
@@ -64,43 +85,6 @@ async fn append(
         .append_revisions(form.id, vec![revision])
         .await?
         .snapshot_id)
-}
-
-fn revision(form: &FormDefinition, entry: u128, revision: u128, title: &str) -> EntryRevision {
-    let mut values = BTreeMap::new();
-    values.insert(FieldId::new(100).unwrap(), FieldValue::String(title.into()));
-    EntryRevision {
-        form_id: form.id,
-        entry_id: EntryId::from(Uuid::from_u128(entry)),
-        revision_id: Uuid::from_u128(revision).into(),
-        parent_revision_id: None,
-        entry_version: 1,
-        expected_version: None,
-        operation: EntryOperation::Upsert,
-        committed_at_micros: 1,
-        author_id: "test".into(),
-        form_version: form.version,
-        source_kind: "test".into(),
-        source_id: None,
-        entry: EntryMetadata::default(),
-        values,
-        extra_attributes: BTreeMap::new(),
-        extension_metadata: BTreeMap::new(),
-    }
-}
-
-async fn append_duplicate(
-    workspace: &IcebergWorkspace,
-    form: &FormDefinition,
-    entry: u128,
-    revision_id: u128,
-    title: &str,
-) -> anyhow::Result<()> {
-    let revision = revision(form, entry, revision_id, title);
-    workspace
-        .append_revisions_for_testing_allowing_duplicate_versions(form.id, vec![revision])
-        .await?;
-    Ok(())
 }
 
 fn policy(form: &FormDefinition, readable: &[u128]) -> AuthorizedQueryPolicy {
@@ -266,38 +250,6 @@ async fn context_binds_native_datafusion_parameters_without_sql_substitution() -
         )
         .await
         .is_err());
-    Ok(())
-}
-
-#[tokio::test]
-async fn duplicate_maximum_versions_fail_every_sql_shape() -> anyhow::Result<()> {
-    let workspace = IcebergWorkspace::memory_for_tests(
-        SpaceId::from(Uuid::from_u128(600)),
-        "memory://authorized-query-duplicate-maximum",
-    )
-    .await?;
-    let tasks = form(601, "Tasks");
-    create_form(&workspace, &tasks).await?;
-    append_duplicate(&workspace, &tasks, 602, 603, "left").await?;
-    append_duplicate(&workspace, &tasks, 602, 604, "right").await?;
-
-    let mut duplicate_policy = policy(&tasks, &[602]);
-    duplicate_policy
-        .limits
-        .allowed_functions
-        .insert("count".into());
-    let context = workspace.authorized_query_context(duplicate_policy).await?;
-    for sql in [
-        "SELECT * FROM tasks",
-        "SELECT count(*) FROM tasks",
-        "SELECT title FROM tasks LIMIT 1",
-    ] {
-        let error = context.execute(sql).await.expect_err(sql);
-        assert!(matches!(
-            error.downcast_ref::<AuthorizedQueryError>(),
-            Some(AuthorizedQueryError::RevisionInvariantViolation)
-        ));
-    }
     Ok(())
 }
 

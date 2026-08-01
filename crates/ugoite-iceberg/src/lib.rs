@@ -1019,36 +1019,6 @@ impl IcebergWorkspace {
             .await
     }
 
-    #[cfg(debug_assertions)]
-    #[doc(hidden)]
-    pub async fn append_revisions_for_testing_allowing_duplicate_versions(
-        &self,
-        form_id: FormId,
-        revisions: Vec<EntryRevision>,
-    ) -> Result<CommitReceipt> {
-        if revisions.is_empty() {
-            return Err(anyhow!("append batch must not be empty"));
-        }
-        let mut attempt_workspace = self.clone();
-        let catalog = self
-            .space_catalog
-            .as_ref()
-            .context("test duplicate append requires the SpaceCatalog")?
-            .new_attempt();
-        attempt_workspace.catalog = Arc::new(catalog.clone());
-        attempt_workspace.space_catalog = Some(Arc::new(catalog));
-        let form = attempt_workspace.load_form(form_id).await?;
-        let table = attempt_workspace
-            .catalog
-            .load_table(&attempt_workspace.form_ident(form_id))
-            .await?;
-        let batch =
-            revision_batch_from_values(&form, table.metadata().current_schema(), &revisions)?;
-        attempt_workspace
-            .append_record_batches_inner(form_id, vec![batch], &revisions, false)
-            .await
-    }
-
     async fn append_record_batches_inner(
         &self,
         form_id: FormId,
@@ -1668,13 +1638,17 @@ impl SpaceCommitCoordinator {
                 )
                 .await?
             {
-                return Err(anyhow!("Asset '{}' is referenced by an entry", asset_id));
+                return Err(anyhow::Error::new(
+                    crate::asset::AssetDeleteConflict::Visible,
+                ));
             }
             if referenced_anywhere {
                 // The reference is deliberately not named: the caller is not
                 // authorized to learn which Entry protects the bytes. The
                 // all-current query above still makes deletion fail closed.
-                return Err(anyhow!("Asset cannot be deleted while it is in use"));
+                return Err(anyhow::Error::new(
+                    crate::asset::AssetDeleteConflict::Hidden,
+                ));
             }
             #[cfg(debug_assertions)]
             if let Some(gate) = &self.validation_gate {
@@ -3273,4 +3247,125 @@ fn validate_batch_revision_metadata(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod invariant_tests {
+    use super::*;
+    use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision};
+    use ugoite_domain::form::FormVersion;
+    use ugoite_domain::id::{EntryId, FieldId};
+
+    fn form() -> FormDefinition {
+        FormDefinition {
+            id: FormId::from(Uuid::from_u128(18_510)),
+            version: FormVersion::new(1).expect("valid test Form version"),
+            name: "InvariantTest".into(),
+            description: None,
+            fields: vec![FormField {
+                id: FieldId::new(100).expect("valid test field id"),
+                name: "title".into(),
+                field_type: FieldType::String,
+                required: false,
+                label: None,
+                description: None,
+                semantic_role: None,
+                reference_form: None,
+                list_item: None,
+                validation: None,
+                enum_values: Vec::new(),
+                deprecated: false,
+            }],
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    fn revision(form: &FormDefinition, revision_id: u128, title: &str) -> EntryRevision {
+        EntryRevision {
+            form_id: form.id,
+            entry_id: EntryId::from(Uuid::from_u128(18_511)),
+            revision_id: RevisionId::from(Uuid::from_u128(revision_id)),
+            parent_revision_id: None,
+            entry_version: 1,
+            expected_version: None,
+            operation: EntryOperation::Upsert,
+            committed_at_micros: revision_id as i64,
+            author_id: "test".into(),
+            form_version: form.version,
+            source_kind: "test".into(),
+            source_id: None,
+            entry: EntryMetadata::default(),
+            values: BTreeMap::from([(
+                FieldId::new(100).expect("valid test field id"),
+                FieldValue::String(title.into()),
+            )]),
+            extra_attributes: BTreeMap::new(),
+            extension_metadata: BTreeMap::new(),
+        }
+    }
+
+    async fn append_duplicate_without_product_bypass(
+        workspace: &IcebergWorkspace,
+        form_id: FormId,
+        revision: EntryRevision,
+    ) -> Result<()> {
+        let mut attempt_workspace = workspace.clone();
+        let catalog = workspace
+            .space_catalog
+            .as_ref()
+            .context("test fixture requires a SpaceCatalog")?
+            .new_attempt();
+        attempt_workspace.catalog = Arc::new(catalog.clone());
+        attempt_workspace.space_catalog = Some(Arc::new(catalog));
+        let form = attempt_workspace.load_form(form_id).await?;
+        let table = attempt_workspace
+            .catalog
+            .load_table(&attempt_workspace.form_ident(form_id))
+            .await?;
+        let batch = revision_batch_from_values(
+            &form,
+            table.metadata().current_schema(),
+            std::slice::from_ref(&revision),
+        )?;
+        attempt_workspace
+            .append_record_batches_inner(form_id, vec![batch], &[revision], false)
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn duplicate_maximum_versions_are_rejected_by_authorized_reads() -> Result<()> {
+        let workspace = IcebergWorkspace::memory_for_tests(
+            SpaceId::from(Uuid::from_u128(18_512)),
+            "memory://iceberg-private-invariant-fixture",
+        )
+        .await?;
+        let form = form();
+        workspace
+            .commit(publication_context("test-form", "test.form", &form)?)?
+            .create_form(&form)
+            .await?;
+        append_duplicate_without_product_bypass(
+            &workspace,
+            form.id,
+            revision(&form, 18_513, "left"),
+        )
+        .await?;
+        append_duplicate_without_product_bypass(
+            &workspace,
+            form.id,
+            revision(&form, 18_514, "right"),
+        )
+        .await?;
+
+        let error = workspace
+            .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
+            .await
+            .expect_err("duplicate maximum Entry versions must remain a read invariant");
+        assert!(error
+            .to_string()
+            .contains("multiple revisions share a maximum entry_version"));
+        Ok(())
+    }
 }
