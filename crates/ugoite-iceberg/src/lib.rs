@@ -1458,6 +1458,7 @@ impl SpaceCommitCoordinator {
             .with_publication_context(self.publication.clone())
             .bind_exact_head()
             .await?;
+        catalog.claim_command_receipt().await?;
         let catalog = Arc::new(catalog);
         Ok(IcebergWorkspace {
             catalog: catalog.clone(),

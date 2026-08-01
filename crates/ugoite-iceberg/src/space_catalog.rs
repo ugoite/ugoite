@@ -71,6 +71,82 @@ pub(crate) struct PublicationReceipt {
     pub snapshot_id: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CommandReceiptState {
+    Pending,
+    Committed,
+    Stale,
+}
+
+/// Exact-key idempotency evidence for one domain command. This is the online
+/// command index; immutable publications remain the audit and crash-recovery
+/// record, but are never searched for an ordinary new command.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+struct CommandReceiptRecord {
+    command_id: String,
+    command_kind: String,
+    command_digest: String,
+    state: CommandReceiptState,
+    base_generation: Option<u64>,
+    base_head_checksum: Option<String>,
+    base_publication: Option<String>,
+    intended_publication: Option<String>,
+    catalog_generation: Option<u64>,
+    snapshot_id: Option<i64>,
+}
+
+impl CommandReceiptRecord {
+    fn pending(attempt: &PublicationAttempt, intended_publication: String) -> Self {
+        Self {
+            command_id: attempt.publication.command_id.clone(),
+            command_kind: attempt.publication.command_kind.clone(),
+            command_digest: attempt.publication.command_digest.clone(),
+            state: CommandReceiptState::Pending,
+            base_generation: attempt.expected_generation,
+            base_head_checksum: attempt.expected_head_checksum.clone(),
+            base_publication: attempt.expected_previous_publication.clone(),
+            intended_publication: Some(intended_publication),
+            catalog_generation: None,
+            snapshot_id: None,
+        }
+    }
+
+    fn matches(&self, publication: &PublicationContext) -> bool {
+        self.command_id == publication.command_id
+            && self.command_kind == publication.command_kind
+            && self.command_digest == publication.command_digest
+    }
+
+    fn attempt(&self) -> PublicationAttempt {
+        PublicationAttempt {
+            publication: PublicationContext::with_command_digest(
+                self.command_id.clone(),
+                self.command_kind.clone(),
+                self.command_digest.clone(),
+            ),
+            expected_generation: self.base_generation,
+            expected_head_checksum: self.base_head_checksum.clone(),
+            expected_previous_publication: self.base_publication.clone(),
+            expected_head: None,
+            expected_head_etag: None,
+        }
+    }
+
+    fn publication_receipt(&self) -> Result<PublicationReceipt> {
+        Ok(PublicationReceipt {
+            command_id: self.command_id.clone(),
+            catalog_generation: self.catalog_generation.ok_or_else(|| {
+                Error::new(
+                    ErrorKind::DataInvalid,
+                    "committed command receipt has no Catalog generation",
+                )
+            })?,
+            snapshot_id: self.snapshot_id,
+        })
+    }
+}
+
 impl PublicationContext {
     pub fn new(command_id: impl Into<String>, command_kind: impl Into<String>) -> Self {
         let command_id = command_id.into();
@@ -116,29 +192,28 @@ struct PublicationAttempt {
     expected_previous_publication: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AssetLifecycleState {
+    Pending,
+    Committed,
+    Stale,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 struct AssetLifecycleMarker {
     command_id: String,
     command_kind: String,
     command_digest: String,
+    state: AssetLifecycleState,
     base_generation: Option<u64>,
     base_head_checksum: Option<String>,
     base_publication: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum AssetLifecycleStatus {
-    Committed,
-    Pending,
-    Stale,
+    intended_publication: Option<String>,
 }
 
 impl AssetLifecycleMarker {
-    fn publication_attempt(
-        &self,
-        expected_head: CatalogHead,
-        etag: Option<String>,
-    ) -> PublicationAttempt {
+    fn recovery_attempt(&self) -> PublicationAttempt {
         PublicationAttempt {
             publication: PublicationContext::with_command_digest(
                 self.command_id.clone(),
@@ -148,8 +223,8 @@ impl AssetLifecycleMarker {
             expected_generation: self.base_generation,
             expected_head_checksum: self.base_head_checksum.clone(),
             expected_previous_publication: self.base_publication.clone(),
-            expected_head: Some(expected_head),
-            expected_head_etag: etag,
+            expected_head: None,
+            expected_head_etag: None,
         }
     }
 
@@ -1133,88 +1208,247 @@ impl SpaceCatalog {
         Ok(())
     }
 
-    /// Finds a completed command through the immutable publication chain.
-    /// Reusing an id with a different kind or digest is an invalid idempotency
-    /// key reuse, rather than a request to replay a different mutation.
+    /// Reads the exact-key command receipt. Immutable publication traversal is
+    /// reserved for a receipt left Pending by an ambiguous crash; a missing,
+    /// stale, or committed receipt is resolved without consulting history.
     pub(crate) async fn publication_receipt(
         &self,
         publication: &PublicationContext,
     ) -> Result<Option<PublicationReceipt>> {
-        let Some((mut head, _)) = self.exact_head().await? else {
+        let Some((bytes, etag)) = self
+            .store
+            .read_command_receipt(&publication.command_id)
+            .await
+            .map_err(storage_error)?
+        else {
             return Ok(None);
         };
-        let mut path = head.publication_location.clone().ok_or_else(|| {
+        let record: CommandReceiptRecord = serde_json::from_slice(&bytes).map_err(json_error)?;
+        if !record.matches(publication) {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "command id was reused with different command content",
+            ));
+        }
+        match record.state {
+            CommandReceiptState::Committed => Ok(Some(record.publication_receipt()?)),
+            CommandReceiptState::Stale => Ok(None),
+            CommandReceiptState::Pending => {
+                self.resolve_pending_command_receipt(record, etag).await
+            }
+        }
+    }
+
+    /// Claims the exact command key for the immutable Head captured by this
+    /// attempt. A competing owner either shares the same base or forces the
+    /// coordinator to retry; neither path searches publication history.
+    pub(crate) async fn claim_command_receipt(&self) -> Result<()> {
+        let attempt = self.publication_attempt().await?;
+        let intended = self.store.publication_path(
+            attempt
+                .expected_head
+                .as_ref()
+                .map_or(0, |head| head.generation + 1),
+            &attempt.publication.command_id,
+        );
+        let pending = CommandReceiptRecord::pending(&attempt, intended);
+        let bytes = serde_json::to_vec(&pending).map_err(json_error)?;
+        let existing = self
+            .store
+            .read_command_receipt(&attempt.publication.command_id)
+            .await
+            .map_err(storage_error)?;
+        let Some((existing_bytes, etag)) = existing else {
+            match self
+                .store
+                .create_command_receipt(&attempt.publication.command_id, bytes)
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(error) if is_condition_conflict(&error) => {
+                    return Err(Error::new(
+                        ErrorKind::DataInvalid,
+                        "Catalog Head changed while claiming the command receipt",
+                    ));
+                }
+                Err(error) => return Err(storage_error(error)),
+            }
+        };
+        let existing: CommandReceiptRecord =
+            serde_json::from_slice(&existing_bytes).map_err(json_error)?;
+        if !existing.matches(&attempt.publication) {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "command id was reused with different command content",
+            ));
+        }
+        match existing.state {
+            CommandReceiptState::Committed => Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Catalog Head changed while claiming the command receipt",
+            )),
+            CommandReceiptState::Pending
+                if existing.base_generation == pending.base_generation
+                    && existing.base_head_checksum == pending.base_head_checksum
+                    && existing.base_publication == pending.base_publication
+                    && existing.intended_publication == pending.intended_publication =>
+            {
+                Ok(())
+            }
+            CommandReceiptState::Pending | CommandReceiptState::Stale => match self
+                .store
+                .replace_command_receipt(
+                    &attempt.publication.command_id,
+                    etag.as_deref(),
+                    serde_json::to_vec(&pending).map_err(json_error)?,
+                )
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(error) if is_condition_conflict(&error) => Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head changed while claiming the command receipt",
+                )),
+                Err(error) => Err(storage_error(error)),
+            },
+        }
+    }
+
+    async fn resolve_pending_command_receipt(
+        &self,
+        record: CommandReceiptRecord,
+        etag: Option<String>,
+    ) -> Result<Option<PublicationReceipt>> {
+        let intended = record.intended_publication.as_deref().ok_or_else(|| {
             Error::new(
                 ErrorKind::DataInvalid,
-                "Catalog Head has no publication record",
+                "pending command receipt has no intended publication",
             )
         })?;
-        let mut visited = BTreeSet::new();
-        loop {
-            if !visited.insert(path.clone()) {
-                return Err(Error::new(
+        let Some((head, _)) = self.exact_head().await? else {
+            return Ok(None);
+        };
+        let publication = match self.store.read_publication(intended).await {
+            Ok(bytes) => Some(decode_publication(&bytes)?),
+            Err(error) if error.kind() == opendal::ErrorKind::NotFound => None,
+            Err(error) => return Err(storage_error(error)),
+        };
+        if head.publication_location.as_deref() == Some(intended) {
+            let publication = publication.ok_or_else(|| {
+                Error::new(
                     ErrorKind::DataInvalid,
-                    "Catalog publication chain contains a cycle",
-                ));
-            }
-            let record = decode_publication(
-                &self
+                    "Catalog Head points to a missing command publication",
+                )
+            })?;
+            self.validate_receipt_publication(&record, &publication, &head)?;
+            let committed = self
+                .finalize_command_receipt(
+                    record,
+                    etag,
+                    CommandReceiptState::Committed,
+                    Some(publication.generation),
+                    publication.new_snapshot_id,
+                )
+                .await?;
+            return (committed.state == CommandReceiptState::Committed)
+                .then(|| committed.publication_receipt())
+                .transpose();
+        }
+        let Some(publication) = publication else {
+            self.finalize_command_receipt(record, etag, CommandReceiptState::Stale, None, None)
+                .await?;
+            return Ok(None);
+        };
+        let base_is_current = record.base_generation == Some(head.generation)
+            && record.base_head_checksum.as_deref() == Some(head.checksum.as_str())
+            && record.base_publication.as_deref() == head.publication_location.as_deref();
+        if base_is_current {
+            self.finalize_command_receipt(record, etag, CommandReceiptState::Stale, None, None)
+                .await?;
+            return Ok(None);
+        }
+
+        // Only a receipt left Pending while the Head advanced can require the
+        // expensive immutable-chain recovery path.
+        let committed = self
+            .resolve_publication_from_head(head, &record.attempt())
+            .await?;
+        let resolved = self
+            .finalize_command_receipt(
+                record,
+                etag,
+                if committed {
+                    CommandReceiptState::Committed
+                } else {
+                    CommandReceiptState::Stale
+                },
+                committed.then_some(publication.generation),
+                committed.then_some(publication.new_snapshot_id).flatten(),
+            )
+            .await?;
+        if resolved.state == CommandReceiptState::Committed {
+            Ok(Some(resolved.publication_receipt()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn validate_receipt_publication(
+        &self,
+        receipt: &CommandReceiptRecord,
+        publication: &PublicationRecord,
+        head: &CatalogHead,
+    ) -> Result<()> {
+        validate_publication_matches_head(publication, head)?;
+        if publication.command_id != receipt.command_id
+            || publication.command_kind != receipt.command_kind
+            || publication.command_digest != receipt.command_digest
+            || publication.previous_generation != receipt.base_generation
+            || publication.previous_publication.as_deref() != receipt.base_publication.as_deref()
+            || publication.previous_head_checksum.as_deref()
+                != receipt.base_head_checksum.as_deref()
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "command receipt does not match its publication evidence",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn finalize_command_receipt(
+        &self,
+        mut record: CommandReceiptRecord,
+        etag: Option<String>,
+        state: CommandReceiptState,
+        catalog_generation: Option<u64>,
+        snapshot_id: Option<i64>,
+    ) -> Result<CommandReceiptRecord> {
+        record.state = state;
+        record.catalog_generation = catalog_generation;
+        record.snapshot_id = snapshot_id;
+        let bytes = serde_json::to_vec(&record).map_err(json_error)?;
+        match self
+            .store
+            .replace_command_receipt(&record.command_id, etag.as_deref(), bytes)
+            .await
+        {
+            Ok(()) => Ok(record),
+            Err(error) if is_condition_conflict(&error) => {
+                let Some((bytes, _)) = self
                     .store
-                    .read_publication(&path)
+                    .read_command_receipt(&record.command_id)
                     .await
-                    .map_err(storage_error)?,
-            )?;
-            validate_publication_matches_head(&record, &head)?;
-            if record.command_id == publication.command_id {
-                if record.command_kind != publication.command_kind
-                    || record.command_digest != publication.command_digest
-                {
+                    .map_err(storage_error)?
+                else {
                     return Err(Error::new(
                         ErrorKind::DataInvalid,
-                        "publication command id was reused with different command content",
+                        "command receipt disappeared during finalization",
                     ));
-                }
-                return Ok(Some(PublicationReceipt {
-                    command_id: record.command_id,
-                    catalog_generation: record.generation,
-                    snapshot_id: record.new_snapshot_id,
-                }));
+                };
+                serde_json::from_slice(&bytes).map_err(json_error)
             }
-            let (previous_generation, previous_path, previous_checksum) = match (
-                record.previous_generation,
-                record.previous_publication,
-                record.previous_head_checksum,
-            ) {
-                (None, None, None) if record.generation == 0 => return Ok(None),
-                (Some(generation), Some(path), Some(checksum))
-                    if generation + 1 == record.generation =>
-                {
-                    (generation, path, checksum)
-                }
-                _ => {
-                    return Err(Error::new(
-                        ErrorKind::DataInvalid,
-                        "Catalog publication chain is incomplete or corrupt",
-                    ));
-                }
-            };
-            let previous = decode_publication(
-                &self
-                    .store
-                    .read_publication(&previous_path)
-                    .await
-                    .map_err(storage_error)?,
-            )?;
-            if previous.generation != previous_generation
-                || previous.next_head_checksum != previous_checksum
-            {
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "Catalog publication predecessor is corrupt",
-                ));
-            }
-            head = previous.next_head.clone();
-            path = previous_path;
+            Err(error) => Err(storage_error(error)),
         }
     }
 
@@ -1332,163 +1566,198 @@ impl SpaceCatalog {
         }
     }
 
-    async fn asset_marker(&self, asset_id: &str) -> Result<Option<AssetLifecycleMarker>> {
-        let bytes = self
+    async fn asset_marker(
+        &self,
+        asset_id: &str,
+    ) -> Result<Option<(AssetLifecycleMarker, Option<String>)>> {
+        let Some((bytes, etag)) = self
             .store
             .read_asset_lifecycle_marker(asset_id)
             .await
-            .map_err(storage_error)?;
-        bytes
-            .map(|bytes| serde_json::from_slice(&bytes).map_err(json_error))
-            .transpose()
+            .map_err(storage_error)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((
+            serde_json::from_slice(&bytes).map_err(json_error)?,
+            etag,
+        )))
     }
 
-    async fn publication_context_reachable(
+    fn pending_asset_marker(
         &self,
-        mut head: CatalogHead,
-        publication: &PublicationContext,
-        stop_generation: Option<u64>,
-    ) -> Result<bool> {
-        let mut path = head.publication_location.clone().ok_or_else(|| {
-            Error::new(
-                ErrorKind::DataInvalid,
-                "Catalog Head has no publication record while resolving an Asset lifecycle marker",
-            )
-        })?;
-        let mut visited = BTreeSet::new();
-        loop {
-            if !visited.insert(path.clone()) {
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "Catalog publication chain contains a cycle",
-                ));
-            }
-            let record = decode_publication(
-                &self
-                    .store
-                    .read_publication(&path)
-                    .await
-                    .map_err(storage_error)?,
-            )?;
-            validate_publication_matches_head(&record, &head)?;
-            if record.command_id == publication.command_id
-                && record.command_kind == publication.command_kind
-                && record.command_digest == publication.command_digest
-            {
-                return Ok(true);
-            }
-            if stop_generation.is_some_and(|generation| record.generation <= generation) {
-                return Ok(false);
-            }
-            let (previous_generation, previous_path, previous_checksum) = match (
-                record.previous_generation,
-                record.previous_publication,
-                record.previous_head_checksum,
-            ) {
-                (None, None, None) if record.generation == 0 => return Ok(false),
-                (Some(generation), Some(path), Some(checksum))
-                    if generation + 1 == record.generation =>
-                {
-                    (generation, path, checksum)
-                }
-                _ => {
-                    return Err(Error::new(
-                        ErrorKind::DataInvalid,
-                        "Catalog publication chain is incomplete or corrupt",
-                    ));
-                }
-            };
-            let previous = decode_publication(
-                &self
-                    .store
-                    .read_publication(&previous_path)
-                    .await
-                    .map_err(storage_error)?,
-            )?;
-            if previous.generation != previous_generation
-                || previous.next_head_checksum != previous_checksum
-            {
-                return Err(Error::new(
-                    ErrorKind::DataInvalid,
-                    "Catalog publication predecessor is corrupt",
-                ));
-            }
-            head = previous.next_head;
-            path = previous_path;
+        attempt: &PublicationAttempt,
+        intended_publication: String,
+    ) -> AssetLifecycleMarker {
+        AssetLifecycleMarker {
+            command_id: attempt.publication.command_id.clone(),
+            command_kind: attempt.publication.command_kind.clone(),
+            command_digest: attempt.publication.command_digest.clone(),
+            state: AssetLifecycleState::Pending,
+            base_generation: attempt.expected_generation,
+            base_head_checksum: attempt.expected_head_checksum.clone(),
+            base_publication: attempt.expected_previous_publication.clone(),
+            intended_publication: Some(intended_publication),
         }
-    }
-
-    async fn asset_lifecycle_status(
-        &self,
-        head: &CatalogHead,
-        marker: &AssetLifecycleMarker,
-    ) -> Result<AssetLifecycleStatus> {
-        let publication = PublicationContext::with_command_digest(
-            marker.command_id.clone(),
-            marker.command_kind.clone(),
-            marker.command_digest.clone(),
-        );
-        if head.publication_location.is_some()
-            && self
-                .publication_context_reachable(head.clone(), &publication, marker.base_generation)
-                .await?
-        {
-            return Ok(AssetLifecycleStatus::Committed);
-        }
-        if marker.matches_base(head) {
-            return Ok(AssetLifecycleStatus::Pending);
-        }
-        Ok(AssetLifecycleStatus::Stale)
     }
 
     async fn create_asset_marker(
         &self,
         asset_id: &str,
-        attempt: &PublicationAttempt,
+        marker: &AssetLifecycleMarker,
     ) -> Result<()> {
-        let marker = serde_json::to_vec(&AssetLifecycleMarker {
-            command_id: attempt.publication.command_id.clone(),
-            command_kind: attempt.publication.command_kind.clone(),
-            command_digest: attempt.publication.command_digest.clone(),
-            base_generation: attempt.expected_generation,
-            base_head_checksum: attempt.expected_head_checksum.clone(),
-            base_publication: attempt.expected_previous_publication.clone(),
-        })
-        .map_err(json_error)?;
         match self
             .store
-            .create_asset_lifecycle_marker(asset_id, marker)
+            .create_asset_lifecycle_marker(
+                asset_id,
+                serde_json::to_vec(marker).map_err(json_error)?,
+            )
             .await
         {
             Ok(()) => Ok(()),
             Err(error) if is_condition_conflict(&error) => Err(Error::new(
                 ErrorKind::DataInvalid,
-                "Asset lifecycle marker is owned by another publication attempt",
+                "Catalog Head changed while claiming the Asset lifecycle marker",
             )),
             Err(error) => Err(storage_error(error)),
         }
     }
 
+    async fn finalize_asset_marker(
+        &self,
+        asset_id: &str,
+        mut marker: AssetLifecycleMarker,
+        etag: Option<String>,
+        state: AssetLifecycleState,
+    ) -> Result<AssetLifecycleMarker> {
+        marker.state = state;
+        let bytes = serde_json::to_vec(&marker).map_err(json_error)?;
+        match self
+            .store
+            .replace_asset_lifecycle_marker(asset_id, etag.as_deref(), bytes)
+            .await
+        {
+            Ok(()) => Ok(marker),
+            Err(error) if is_condition_conflict(&error) => self
+                .asset_marker(asset_id)
+                .await?
+                .map(|(marker, _)| marker)
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::DataInvalid,
+                        "Asset lifecycle marker disappeared during finalization",
+                    )
+                }),
+            Err(error) => Err(storage_error(error)),
+        }
+    }
+
+    fn validate_asset_publication(
+        &self,
+        marker: &AssetLifecycleMarker,
+        publication: &PublicationRecord,
+    ) -> Result<()> {
+        if publication.command_id != marker.command_id
+            || publication.command_kind != marker.command_kind
+            || publication.command_digest != marker.command_digest
+            || publication.previous_generation != marker.base_generation
+            || publication.previous_publication.as_deref() != marker.base_publication.as_deref()
+            || publication.previous_head_checksum.as_deref() != marker.base_head_checksum.as_deref()
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "Asset lifecycle marker does not match its publication evidence",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Resolves Pending only when a process may have crashed during
+    /// publication. Committed and Stale markers are terminal exact-key state,
+    /// so ordinary reads never inspect the immutable publication chain.
+    async fn resolve_pending_asset_marker(
+        &self,
+        asset_id: &str,
+        marker: AssetLifecycleMarker,
+        etag: Option<String>,
+    ) -> Result<AssetLifecycleMarker> {
+        let intended = marker.intended_publication.as_deref().ok_or_else(|| {
+            Error::new(
+                ErrorKind::DataInvalid,
+                "pending Asset lifecycle marker has no intended publication",
+            )
+        })?;
+        let Some((head, _)) = self.exact_head().await? else {
+            return self
+                .finalize_asset_marker(asset_id, marker, etag, AssetLifecycleState::Stale)
+                .await;
+        };
+        let publication = match self.store.read_publication(intended).await {
+            Ok(bytes) => Some(decode_publication(&bytes)?),
+            Err(error) if error.kind() == opendal::ErrorKind::NotFound => None,
+            Err(error) => return Err(storage_error(error)),
+        };
+        if head.publication_location.as_deref() == Some(intended) {
+            let publication = publication.ok_or_else(|| {
+                Error::new(
+                    ErrorKind::DataInvalid,
+                    "Catalog Head points to a missing Asset lifecycle publication",
+                )
+            })?;
+            validate_publication_matches_head(&publication, &head)?;
+            self.validate_asset_publication(&marker, &publication)?;
+            return self
+                .finalize_asset_marker(asset_id, marker, etag, AssetLifecycleState::Committed)
+                .await;
+        }
+        let Some(_) = publication else {
+            return self
+                .finalize_asset_marker(asset_id, marker, etag, AssetLifecycleState::Stale)
+                .await;
+        };
+        let base_is_current = marker.matches_base(&head);
+        if base_is_current {
+            return self
+                .finalize_asset_marker(asset_id, marker, etag, AssetLifecycleState::Stale)
+                .await;
+        }
+
+        let committed = self
+            .resolve_publication_from_head(head, &marker.recovery_attempt())
+            .await?;
+        if committed {
+            self.validate_asset_publication(
+                &marker,
+                publication
+                    .as_ref()
+                    .expect("pending recovery has its intended publication"),
+            )?;
+        }
+        self.finalize_asset_marker(
+            asset_id,
+            marker,
+            etag,
+            if committed {
+                AssetLifecycleState::Committed
+            } else {
+                AssetLifecycleState::Stale
+            },
+        )
+        .await
+    }
+
     pub(crate) async fn asset_is_deleted(&self, asset_id: &str) -> Result<bool> {
-        let Some(marker) = self.asset_marker(asset_id).await? else {
+        let Some((marker, etag)) = self.asset_marker(asset_id).await? else {
             return Ok(false);
         };
-        let head = if let Some(attempt) = &self.bound_attempt {
-            attempt.expected_head.clone()
-        } else {
-            self.exact_head().await?.map(|(head, _)| head)
-        };
-        let Some(head) = head else {
-            return Ok(false);
-        };
-        match self.asset_lifecycle_status(&head, &marker).await? {
-            AssetLifecycleStatus::Committed => Ok(true),
-            AssetLifecycleStatus::Pending => Ok(false),
-            // A stale marker is logically reclaimed but intentionally kept as
-            // an inert per-Asset slot. Physical delete-then-create would
-            // introduce a TOCTOU window in shared storage. A later deletion
-            // reuses its immutable command context and takes the slot over.
-            AssetLifecycleStatus::Stale => Ok(false),
+        match marker.state {
+            AssetLifecycleState::Committed => Ok(true),
+            AssetLifecycleState::Stale => Ok(false),
+            AssetLifecycleState::Pending => Ok(self
+                .resolve_pending_asset_marker(asset_id, marker, etag)
+                .await?
+                .state
+                == AssetLifecycleState::Committed),
         }
     }
 
@@ -1507,37 +1776,107 @@ impl SpaceCatalog {
             .expected_head
             .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::DataInvalid, "Catalog Head is missing"))?;
-        if self.exact_head().await?.map(|(head, _)| head) != Some(head.clone()) {
+        let intended_publication = self
+            .store
+            .publication_path(head.generation + 1, &attempt.publication.command_id);
+        let marker = match self.asset_marker(asset_id).await? {
+            None => {
+                let pending = self.pending_asset_marker(&attempt, intended_publication.clone());
+                self.create_asset_marker(asset_id, &pending).await?;
+                self.asset_marker(asset_id).await?.ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::DataInvalid,
+                        "Asset lifecycle marker disappeared after creation",
+                    )
+                })?
+            }
+            Some((marker, etag)) => match marker.state {
+                AssetLifecycleState::Committed => return Ok(()),
+                AssetLifecycleState::Pending => {
+                    let resolved = self
+                        .resolve_pending_asset_marker(asset_id, marker, etag)
+                        .await?;
+                    if resolved.state == AssetLifecycleState::Committed {
+                        return Ok(());
+                    }
+                    self.asset_marker(asset_id).await?.ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::DataInvalid,
+                            "Asset lifecycle marker disappeared after recovery",
+                        )
+                    })?
+                }
+                AssetLifecycleState::Stale => (marker, etag),
+            },
+        };
+
+        let mut pending = self.pending_asset_marker(&attempt, intended_publication);
+        let marker_etag = match marker.1 {
+            Some(etag) if marker.0.state == AssetLifecycleState::Stale => {
+                let bytes = serde_json::to_vec(&pending).map_err(json_error)?;
+                self.store
+                    .replace_asset_lifecycle_marker(asset_id, Some(&etag), bytes)
+                    .await
+                    .map_err(|error| {
+                        if is_condition_conflict(&error) {
+                            Error::new(
+                                ErrorKind::DataInvalid,
+                                "Catalog Head changed while claiming the Asset lifecycle marker",
+                            )
+                        } else {
+                            storage_error(error)
+                        }
+                    })?;
+                self.asset_marker(asset_id).await?.ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::DataInvalid,
+                        "Asset lifecycle marker disappeared during takeover",
+                    )
+                })?
+            }
+            None if marker.0.state == AssetLifecycleState::Stale => {
+                // Single-process backends do not provide an ETag. The
+                // serializer still makes this replacement safe locally.
+                self.store
+                    .replace_asset_lifecycle_marker(
+                        asset_id,
+                        None,
+                        serde_json::to_vec(&pending).map_err(json_error)?,
+                    )
+                    .await
+                    .map_err(storage_error)?;
+                self.asset_marker(asset_id).await?.ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::DataInvalid,
+                        "Asset lifecycle marker disappeared during takeover",
+                    )
+                })?
+            }
+            current => (pending.clone(), current),
+        };
+
+        pending = marker_etag.0;
+        if pending.command_id != attempt.publication.command_id
+            || pending.command_kind != attempt.publication.command_kind
+            || pending.command_digest != attempt.publication.command_digest
+            || pending.state != AssetLifecycleState::Pending
+            || pending.intended_publication.as_deref()
+                != Some(
+                    self.store
+                        .publication_path(head.generation + 1, &attempt.publication.command_id)
+                        .as_str(),
+                )
+        {
             return Err(Error::new(
                 ErrorKind::DataInvalid,
-                "Catalog Head changed while resolving the Asset lifecycle marker",
+                "Asset lifecycle marker is owned by a different pending command",
             ));
         }
-        let marker = self.asset_marker(asset_id).await?;
-        let publication_attempt = if let Some(marker) = marker {
-            match self.asset_lifecycle_status(head, &marker).await? {
-                AssetLifecycleStatus::Committed => return Ok(()),
-                AssetLifecycleStatus::Pending => {
-                    marker.publication_attempt(head.clone(), attempt.expected_head_etag.clone())
-                }
-                AssetLifecycleStatus::Stale => {
-                    let mut takeover = attempt.clone();
-                    takeover.publication = PublicationContext::with_command_digest(
-                        marker.command_id,
-                        marker.command_kind,
-                        marker.command_digest,
-                    );
-                    takeover
-                }
-            }
-        } else {
-            self.create_asset_marker(asset_id, &attempt).await?;
-            attempt.clone()
-        };
+        let marker_etag = marker_etag.1;
         let next = head.next_generation();
         let publication = self
             .publish_new_head(
-                &publication_attempt,
+                &attempt,
                 next,
                 PublicationUpdate {
                     affected_table: TableCoordinates {
@@ -1554,8 +1893,23 @@ impl SpaceCatalog {
             )
             .await;
         match publication {
-            Ok(()) => Ok(()),
-            Err(_error) if self.resolve_unknown_outcome(&publication_attempt).await? => Ok(()),
+            Ok(()) => {
+                self.finalize_asset_marker(
+                    asset_id,
+                    pending,
+                    marker_etag,
+                    AssetLifecycleState::Committed,
+                )
+                .await?;
+                Ok(())
+            }
+            Err(error) if self.resolve_unknown_outcome(&attempt).await? => {
+                if self.asset_is_deleted(asset_id).await? {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            }
             Err(error) => Err(error),
         }
     }
@@ -1592,13 +1946,14 @@ impl SpaceCatalog {
         mut next: CatalogHead,
         update: PublicationUpdate,
     ) -> Result<()> {
+        let new_snapshot_id = update.new_snapshot_id;
         let previous_generation = attempt.expected_generation;
         let previous_publication = attempt.expected_previous_publication.clone();
         let previous_head_checksum = attempt.expected_head_checksum.clone();
         let publication_path = self
             .store
             .publication_path(next.generation, &attempt.publication.command_id);
-        next.publication_location = Some(publication_path);
+        next.publication_location = Some(publication_path.clone());
         next.publication_command_id = Some(attempt.publication.command_id.clone());
         next.checksum = head_checksum(&next)?;
         let publication = PublicationRecord {
@@ -1614,7 +1969,7 @@ impl SpaceCatalog {
             new_metadata_location: update.new_metadata_location,
             base_snapshot_id: update.base_snapshot_id,
             base_schema_id: update.base_schema_id,
-            new_snapshot_id: update.new_snapshot_id,
+            new_snapshot_id,
             new_schema_id: update.new_schema_id,
             next_head_checksum: next.checksum.clone(),
             next_head: next.clone(),
@@ -1653,13 +2008,60 @@ impl SpaceCatalog {
             self.store.create_head(bytes).await
         };
         match result {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.finalize_command_receipt_after_publication(
+                    attempt,
+                    &publication_path,
+                    next.generation,
+                    new_snapshot_id,
+                )
+                .await?;
+                Ok(())
+            }
             Err(error) if is_condition_conflict(&error) => Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Catalog Head changed before this publication could be committed",
             )),
             Err(error) => Err(storage_error(error)),
         }
+    }
+
+    async fn finalize_command_receipt_after_publication(
+        &self,
+        attempt: &PublicationAttempt,
+        publication_path: &str,
+        catalog_generation: u64,
+        snapshot_id: Option<i64>,
+    ) -> Result<()> {
+        let Some((bytes, etag)) = self
+            .store
+            .read_command_receipt(&attempt.publication.command_id)
+            .await
+            .map_err(storage_error)?
+        else {
+            // Direct SpaceCatalog test fixtures and low-level catalog users do
+            // not claim command receipts; coordinators always do.
+            return Ok(());
+        };
+        let record: CommandReceiptRecord = serde_json::from_slice(&bytes).map_err(json_error)?;
+        if !record.matches(&attempt.publication)
+            || record.state != CommandReceiptState::Pending
+            || record.intended_publication.as_deref() != Some(publication_path)
+        {
+            return Err(Error::new(
+                ErrorKind::DataInvalid,
+                "command receipt does not match the successful publication",
+            ));
+        }
+        self.finalize_command_receipt(
+            record,
+            etag,
+            CommandReceiptState::Committed,
+            Some(catalog_generation),
+            snapshot_id,
+        )
+        .await?;
+        Ok(())
     }
 
     async fn resolve_unknown_outcome(&self, attempt: &PublicationAttempt) -> Result<bool> {
@@ -2714,6 +3116,7 @@ mod tests {
     }
 
     fn asset_marker_for(
+        catalog: &SpaceCatalog,
         publication: &PublicationContext,
         head: &CatalogHead,
     ) -> anyhow::Result<Vec<u8>> {
@@ -2721,10 +3124,169 @@ mod tests {
             command_id: publication.command_id.clone(),
             command_kind: publication.command_kind.clone(),
             command_digest: publication.command_digest.clone(),
+            state: AssetLifecycleState::Pending,
             base_generation: Some(head.generation),
             base_head_checksum: Some(head.checksum.clone()),
             base_publication: head.publication_location.clone(),
+            intended_publication: Some(
+                catalog
+                    .store
+                    .publication_path(head.generation + 1, &publication.command_id),
+            ),
         })?)
+    }
+
+    async fn publish_test_generation(
+        store: &SpaceCatalogStore,
+        space_id: SpaceId,
+        command_id: &str,
+    ) -> AnyResult<()> {
+        let catalog = SpaceCatalog::new(store.clone(), space_id)?.with_publication_context(
+            PublicationContext::with_command_digest(
+                command_id,
+                "test.generation",
+                format!("{command_id}-digest"),
+            ),
+        );
+        let attempt = catalog
+            .publication_attempt()
+            .await
+            .map_err(|error| anyhow::anyhow!("{command_id}: {error}"))?;
+        let head = attempt
+            .expected_head
+            .clone()
+            .unwrap_or_else(|| CatalogHead::genesis(space_id, catalog.namespace()));
+        let next = if attempt.expected_head.is_some() {
+            head.next_generation()
+        } else {
+            head.clone()
+        };
+        catalog
+            .publish_new_head(
+                &attempt,
+                next,
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: head.namespace.clone(),
+                        table: "_test_generation".to_string(),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: format!("test://generation/{command_id}"),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn exact_key_receipts_and_terminal_asset_markers_do_not_replay_history() -> AnyResult<()>
+    {
+        let operator = Operator::new(Memory::default())?.finish();
+        let (store, read_counter) =
+            SpaceCatalogStore::new(operator, "spaces/online-index")?.with_read_counter();
+        let space_id = SpaceId::from(Uuid::from_u128(18_521));
+
+        for generation in 0..64 {
+            publish_test_generation(&store, space_id, &format!("generation-{generation}")).await?;
+        }
+
+        // Starting an unrelated mutation performs only exact Head and
+        // command-receipt work, regardless of the length of the immutable
+        // publication audit chain.
+        let mutation = SpaceCatalog::new(store.clone(), space_id)?
+            .with_publication_context(PublicationContext::with_command_digest(
+                "unrelated-mutation",
+                "test.unrelated",
+                "unrelated-mutation-digest",
+            ))
+            .bind_exact_head()
+            .await?;
+        read_counter.store(0, Ordering::Relaxed);
+        mutation.claim_command_receipt().await?;
+        assert!(read_counter.load(Ordering::Relaxed) <= 3);
+
+        // A normal new command is a single exact-key lookup, regardless of
+        // the length of the immutable publication audit chain.
+        read_counter.store(0, Ordering::Relaxed);
+        let catalog = SpaceCatalog::new(store.clone(), space_id)?;
+        let unrelated = PublicationContext::with_command_digest(
+            "unrelated-command",
+            "test.unrelated",
+            "unrelated-digest",
+        );
+        assert!(catalog.publication_receipt(&unrelated).await?.is_none());
+        assert!(read_counter.load(Ordering::Relaxed) <= 2);
+
+        // A stale marker is terminal state. A live Asset therefore needs no
+        // Head or publication-chain read to answer the normal byte/reference
+        // availability check.
+        let stale = AssetLifecycleMarker {
+            command_id: "stale-asset-command".to_string(),
+            command_kind: "asset.delete".to_string(),
+            command_digest: "stale-asset-digest".to_string(),
+            state: AssetLifecycleState::Stale,
+            base_generation: Some(1),
+            base_head_checksum: Some("old-head".to_string()),
+            base_publication: Some("old-publication".to_string()),
+            intended_publication: Some(store.publication_path(2, "stale-asset-command")),
+        };
+        store
+            .create_asset_lifecycle_marker("live-after-stale-marker", serde_json::to_vec(&stale)?)
+            .await?;
+        read_counter.store(0, Ordering::Relaxed);
+        assert!(!catalog.asset_is_deleted("live-after-stale-marker").await?);
+        assert!(read_counter.load(Ordering::Relaxed) <= 2);
+
+        // A receipt left Pending after the publication has reached Head is
+        // only resolved through the exceptional crash-recovery path. Once
+        // several later publications exist, that path is intentionally the
+        // one case that may walk immutable history.
+        let crash = PublicationContext::with_command_digest(
+            "ambiguous-crash-command",
+            "test.crash",
+            "ambiguous-crash-digest",
+        );
+        let crash_catalog =
+            SpaceCatalog::new(store.clone(), space_id)?.with_publication_context(crash.clone());
+        let crash_attempt = crash_catalog.publication_attempt().await?;
+        let crash_head = crash_attempt
+            .expected_head
+            .clone()
+            .expect("history has a Catalog Head");
+        crash_catalog
+            .publish_new_head(
+                &crash_attempt,
+                crash_head.clone().next_generation(),
+                PublicationUpdate {
+                    affected_table: TableCoordinates {
+                        namespace: crash_head.namespace.clone(),
+                        table: "_test_crash".to_string(),
+                    },
+                    base_metadata_location: None,
+                    new_metadata_location: "test://crash".to_string(),
+                    base_snapshot_id: None,
+                    base_schema_id: None,
+                    new_snapshot_id: None,
+                    new_schema_id: 0,
+                },
+            )
+            .await?;
+        let intended = store.publication_path(crash_head.generation + 1, &crash.command_id);
+        let pending = CommandReceiptRecord::pending(&crash_attempt, intended);
+        store
+            .create_command_receipt(&crash.command_id, serde_json::to_vec(&pending)?)
+            .await?;
+        for generation in 0..16 {
+            publish_test_generation(&store, space_id, &format!("after-crash-{generation}")).await?;
+        }
+        read_counter.store(0, Ordering::Relaxed);
+        assert!(catalog.publication_receipt(&crash).await?.is_some());
+        assert!(read_counter.load(Ordering::Relaxed) > 4);
+        Ok(())
     }
 
     async fn write_asset_publication_without_head_cas(
@@ -2802,7 +3364,7 @@ mod tests {
         base.store
             .create_asset_lifecycle_marker(
                 "before-publication",
-                asset_marker_for(&before_publication, &base_head)?,
+                asset_marker_for(&base, &before_publication, &base_head)?,
             )
             .await?;
         let reopened = SpaceCatalog::new(store.clone(), space_id)?;
@@ -2818,7 +3380,7 @@ mod tests {
         base.store
             .create_asset_lifecycle_marker(
                 "before-head-cas",
-                asset_marker_for(&before_head_cas, &base_head)?,
+                asset_marker_for(&base, &before_head_cas, &base_head)?,
             )
             .await?;
         let publication_catalog = SpaceCatalog::new(store.clone(), space_id)?;
@@ -2842,7 +3404,10 @@ mod tests {
             "asset-recovery-committed-digest",
         );
         base.store
-            .create_asset_lifecycle_marker("committed", asset_marker_for(&committed, &base_head)?)
+            .create_asset_lifecycle_marker(
+                "committed",
+                asset_marker_for(&base, &committed, &base_head)?,
+            )
             .await?;
         let committed_catalog =
             SpaceCatalog::new(store.clone(), space_id)?.with_publication_context(committed);
@@ -2867,7 +3432,11 @@ mod tests {
         base.store
             .create_asset_lifecycle_marker(
                 "reference-wins",
-                asset_marker_for(&before_publication, &reference_base)?,
+                asset_marker_for(
+                    &reference_base_catalog,
+                    &before_publication,
+                    &reference_base,
+                )?,
             )
             .await?;
         let winner =

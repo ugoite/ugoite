@@ -9,6 +9,7 @@ use opendal::{EntryMode, ErrorKind, Operator};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
@@ -87,6 +88,7 @@ pub struct SpaceCatalogStore {
     storage: IcebergStorageConfig,
     write_mode: CatalogWriteMode,
     single_process_serializer: Arc<AsyncMutex<()>>,
+    read_counter: Option<Arc<AtomicUsize>>,
 }
 
 impl std::fmt::Debug for SpaceCatalogStore {
@@ -111,7 +113,17 @@ impl SpaceCatalogStore {
             // the actual backend honors every conditional operation we need.
             write_mode: CatalogWriteMode::SingleProcess,
             single_process_serializer,
+            read_counter: None,
         })
+    }
+
+    /// Attaches a logical object-read counter for deterministic storage
+    /// instrumentation in Catalog scalability tests. The counter is not part
+    /// of the production coordination protocol.
+    pub fn with_read_counter(mut self) -> (Self, Arc<AtomicUsize>) {
+        let counter = Arc::new(AtomicUsize::new(0));
+        self.read_counter = Some(counter.clone());
+        (self, counter)
     }
 
     pub fn single_process(mut self) -> Self {
@@ -290,6 +302,10 @@ impl SpaceCatalogStore {
         self.catalog_path(&format!("publications/{generation}-{command_id}.json"))
     }
 
+    pub fn command_receipt_path(&self, command_id: &str) -> String {
+        self.catalog_path(&format!("command-receipts/{command_id}.json"))
+    }
+
     /// Durable named checkpoints are immutable Space objects. They are not
     /// Catalog authority and never participate in Head publication.
     pub fn checkpoint_path(&self, name: &str) -> String {
@@ -297,9 +313,18 @@ impl SpaceCatalogStore {
     }
 
     pub async fn read_exact_head(&self) -> Result<Option<ExactCatalogHead>> {
-        let path = self.head_path();
+        let Some((bytes, etag)) = self.read_exact_object(&self.head_path()).await? else {
+            return Ok(None);
+        };
+        Ok(Some(ExactCatalogHead { bytes, etag }))
+    }
+
+    async fn read_exact_object(&self, path: &str) -> Result<Option<(Vec<u8>, Option<String>)>> {
+        if let Some(counter) = &self.read_counter {
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
         for attempt in 0..EXACT_HEAD_READ_ATTEMPTS {
-            let metadata = match self.operator.stat(&path).await {
+            let metadata = match self.operator.stat(path).await {
                 Ok(metadata) => metadata,
                 Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
                 Err(error) => return Err(error.into()),
@@ -312,7 +337,7 @@ impl SpaceCatalogStore {
                 Some(etag) => self
                     .operator
                     .read_options(
-                        &path,
+                        path,
                         ReadOptions {
                             if_match: Some(etag.to_string()),
                             ..Default::default()
@@ -321,12 +346,12 @@ impl SpaceCatalogStore {
                     .await
                     .map(|bytes| bytes.to_vec()),
                 None if self.write_mode == CatalogWriteMode::Shared => {
-                    return Err(anyhow!("Catalog Head stat did not return an ETag"));
+                    return Err(anyhow!("exact Catalog object stat did not return an ETag"));
                 }
-                None => self.operator.read(&path).await.map(|bytes| bytes.to_vec()),
+                None => self.operator.read(path).await.map(|bytes| bytes.to_vec()),
             };
             match read {
-                Ok(bytes) => return Ok(Some(ExactCatalogHead { bytes, etag })),
+                Ok(bytes) => return Ok(Some((bytes, etag))),
                 Err(error)
                     if error.kind() == ErrorKind::ConditionNotMatch
                         && attempt + 1 < EXACT_HEAD_READ_ATTEMPTS =>
@@ -337,6 +362,35 @@ impl SpaceCatalogStore {
             }
         }
         unreachable!("exact Head read attempts always return or continue")
+    }
+
+    async fn replace_exact_object(
+        &self,
+        path: &str,
+        etag: Option<&str>,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        match self.write_mode {
+            CatalogWriteMode::Shared => {
+                self.operator
+                    .write_options(
+                        path,
+                        bytes,
+                        WriteOptions {
+                            if_match: Some(
+                                etag.context("shared exact object replacement requires an ETag")?
+                                    .to_string(),
+                            ),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            }
+            CatalogWriteMode::SingleProcess => {
+                self.operator.write(path, bytes).await?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn create_head(&self, bytes: Vec<u8>) -> Result<()> {
@@ -410,13 +464,26 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
-    pub async fn read_asset_lifecycle_marker(&self, asset_id: &str) -> Result<Option<Vec<u8>>> {
-        let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
-        match self.operator.read(&path).await {
-            Ok(bytes) => Ok(Some(bytes.to_vec())),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error.into()),
-        }
+    pub async fn read_asset_lifecycle_marker(
+        &self,
+        asset_id: &str,
+    ) -> Result<Option<(Vec<u8>, Option<String>)>> {
+        self.read_exact_object(&self.catalog_path(&format!("asset-lifecycle/{asset_id}")))
+            .await
+    }
+
+    pub async fn replace_asset_lifecycle_marker(
+        &self,
+        asset_id: &str,
+        etag: Option<&str>,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        self.replace_exact_object(
+            &self.catalog_path(&format!("asset-lifecycle/{asset_id}")),
+            etag,
+            bytes,
+        )
+        .await
     }
 
     pub async fn delete_asset_lifecycle_marker(&self, asset_id: &str) -> Result<()> {
@@ -443,7 +510,42 @@ impl SpaceCatalogStore {
     }
 
     pub async fn read_publication(&self, path: &str) -> opendal::Result<Vec<u8>> {
+        if let Some(counter) = &self.read_counter {
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
         Ok(self.operator.read(path).await?.to_vec())
+    }
+
+    pub async fn create_command_receipt(&self, command_id: &str, bytes: Vec<u8>) -> Result<()> {
+        self.operator
+            .write_options(
+                &self.command_receipt_path(command_id),
+                bytes,
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn read_command_receipt(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<(Vec<u8>, Option<String>)>> {
+        self.read_exact_object(&self.command_receipt_path(command_id))
+            .await
+    }
+
+    pub async fn replace_command_receipt(
+        &self,
+        command_id: &str,
+        etag: Option<&str>,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        self.replace_exact_object(&self.command_receipt_path(command_id), etag, bytes)
+            .await
     }
 
     pub async fn create_checkpoint(&self, name: &str, bytes: Vec<u8>) -> Result<()> {
