@@ -1471,13 +1471,21 @@ impl SpaceCommitCoordinator {
     }
 
     async fn publication_receipt(&self) -> Result<Option<space_catalog::PublicationReceipt>> {
-        self.workspace
+        let catalog = self
+            .workspace
             .space_catalog
             .as_ref()
-            .context("coordinator is missing its SpaceCatalog")?
-            .publication_receipt(&self.publication)
-            .await
-            .map_err(Into::into)
+            .context("coordinator is missing its SpaceCatalog")?;
+        for _ in 0..MAX_PUBLICATION_ATTEMPTS {
+            match catalog.publication_receipt(&self.publication).await {
+                Ok(receipt) => return Ok(receipt),
+                Err(error) if error.to_string().contains("Catalog Head changed") => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(anyhow!(
+            "Catalog Head changed while resolving the command receipt"
+        ))
     }
 
     pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
