@@ -81,14 +81,6 @@ const isLongTextField = (name: string, def: Form["fields"][string]) =>
 const isTextareaField = (name: string, def: Form["fields"][string]) =>
   isLongTextField(name, def) || def.type === "object_list";
 
-const resolveInputType = (def: Form["fields"][string]) => {
-  if (numericFieldTypes.has(def.type)) return "number";
-  if (def.type === "date") return "date";
-  if (def.type === "time") return "time";
-  if (def.type.startsWith("timestamp")) return "datetime-local";
-  return "text";
-};
-
 const createFieldInputId = (prefix: string, name: string, index: number) => {
   const normalized = name
     .trim()
@@ -714,7 +706,6 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     }
 
     const useTextarea = isTextareaField(name, def);
-    const inputType = resolveInputType(def);
     const value = fieldValues()[name] ?? "";
 
     if (useTextarea) {
@@ -732,7 +723,8 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     return (
       <input
         id={fieldId}
-        type={inputType}
+        type="text"
+        inputmode={numericFieldTypes.has(def.type) ? "decimal" : undefined}
         class="ui-input"
         value={value}
         onInput={(event) => setFieldValue(name, event.currentTarget.value)}
