@@ -325,10 +325,7 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/sql/{sql_id}",
             get(get_sql).put(update_sql).delete(delete_sql),
         )
-        .route(
-            "/spaces/{space_id}/assets",
-            get(list_assets).post(upload_asset),
-        )
+        .route("/spaces/{space_id}/assets", post(upload_asset))
         .route(
             "/spaces/{space_id}/assets/{asset_id}",
             get(get_asset).delete(delete_asset),
@@ -3655,15 +3652,17 @@ async fn create_entry(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     validate_id(&entry_id, "entry_id")?;
     let created = state
         .service
-        .create_entry(
+        .create_entry_authorized_for_principals(
             &space_id,
             &entry_id,
             &payload.markdown,
             &principal_id.to_string(),
+            &principals,
         )
         .await
         .map_err(ApiError::from_core)?;
@@ -3752,7 +3751,6 @@ async fn get_entry(
 struct EntryUpdate {
     markdown: String,
     parent_revision_id: Option<String>,
-    assets: Option<Vec<Value>>,
 }
 
 async fn update_entry(
@@ -3770,16 +3768,17 @@ async fn update_entry(
         &entry_id,
     )
     .await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     validate_id(&entry_id, "entry_id")?;
     let value = state
         .service
-        .update_entry(
+        .update_entry_authorized_for_principals(
             &space_id,
             &entry_id,
             &payload.markdown,
             payload.parent_revision_id.as_deref(),
             &principal_id.to_string(),
-            payload.assets,
+            &principals,
         )
         .await
         .map_err(ApiError::from_core)?;
@@ -3927,16 +3926,18 @@ async fn restore_entry(
         &entry_id,
     )
     .await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     validate_id(&entry_id, "entry_id")?;
     validate_id(&payload.revision_id, "revision_id")?;
     Ok(Json(
         state
             .service
-            .restore_entry(
+            .restore_entry_authorized_for_principals(
                 &space_id,
                 &entry_id,
                 &payload.revision_id,
                 &principal_id.to_string(),
+                &principals,
             )
             .await
             .map_err(ApiError::from_core)?,
@@ -4212,40 +4213,6 @@ async fn delete_sql(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn list_assets(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    let values = serde_json::to_value(
-        state
-            .service
-            .list_assets(&space_id)
-            .await
-            .map_err(ApiError::from_core)?,
-    )
-    .map_err(|error| ApiError::from_core(error.into()))?
-    .as_array()
-    .cloned()
-    .unwrap_or_default();
-    Ok(Json(Value::Array(
-        state
-            .service
-            .filter_json_resources_authorized_for_principals(
-                &space_id,
-                &principals,
-                ResourceKind::Asset,
-                "id",
-                values,
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    )))
-}
-
 async fn upload_asset(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -4259,13 +4226,17 @@ async fn upload_asset(
         .map_err(|error| ApiError::new(StatusCode::BAD_REQUEST, error.to_string()))?
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "file is required"))?;
     let name = field.file_name().unwrap_or("asset").to_string();
+    let media_type = field
+        .content_type()
+        .unwrap_or("application/octet-stream")
+        .to_string();
     let bytes = field
         .bytes()
         .await
         .map_err(|error| ApiError::new(StatusCode::BAD_REQUEST, error.to_string()))?;
     let value = state
         .service
-        .save_asset(&space_id, &name, &bytes)
+        .save_asset_with_media_type(&space_id, &name, &bytes, &media_type)
         .await
         .map_err(ApiError::from_core)?;
     Ok((
@@ -4274,21 +4245,79 @@ async fn upload_asset(
     ))
 }
 
+#[derive(Deserialize)]
+struct AssetReadQuery {
+    form: Option<String>,
+    entry_id: Option<String>,
+}
+
 async fn get_asset(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, asset_id)): Path<(String, String)>,
+    Query(query): Query<AssetReadQuery>,
 ) -> ApiResult<Response> {
-    require_resource_action(
+    let form_name = query.form.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            "asset reads require a containing Form and Entry context",
+        )
+    })?;
+    let entry_id = query.entry_id.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            "asset reads require a containing Form and Entry context",
+        )
+    })?;
+    validate_id(&asset_id, "asset_id")?;
+    validate_id(&entry_id, "entry_id")?;
+    let principal_id = require_resource_action(
         &state,
         &space_id,
         &identity,
         Action::Read,
-        ResourceKind::Asset,
-        &asset_id,
+        ResourceKind::Entry,
+        &entry_id,
     )
     .await?;
-    validate_id(&asset_id, "asset_id")?;
+    let entry_parent = ugoite_iceberg::authorization::ResourceRef {
+        kind: ResourceKind::Entry,
+        id: entry_id.clone(),
+        parent: None,
+    };
+    state
+        .service
+        .require_resource_action(
+            &space_id,
+            principal_id,
+            Action::Read,
+            ResourceKind::Asset,
+            &asset_id,
+            Some(entry_parent.clone()),
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+    if let Some(actor_principal_id) = identity.token_actor_principal_id {
+        if actor_principal_id != principal_id {
+            state
+                .service
+                .require_resource_action(
+                    &space_id,
+                    actor_principal_id,
+                    Action::Read,
+                    ResourceKind::Asset,
+                    &asset_id,
+                    Some(entry_parent),
+                )
+                .await
+                .map_err(ApiError::from_core)?;
+        }
+    }
+    state
+        .service
+        .ensure_asset_reference_is_readable(&space_id, &form_name, &entry_id, &asset_id)
+        .await
+        .map_err(ApiError::from_core)?;
     let content = state
         .service
         .read_asset(&space_id, &asset_id)
@@ -4307,7 +4336,7 @@ async fn delete_asset(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, asset_id)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
+    let principal_id = require_resource_action(
         &state,
         &space_id,
         &identity,
@@ -4317,9 +4346,10 @@ async fn delete_asset(
     )
     .await?;
     validate_id(&asset_id, "asset_id")?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     state
         .service
-        .delete_asset(&space_id, &asset_id)
+        .delete_asset_with_principals(&space_id, &asset_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(json!({"id": asset_id, "status": "deleted"})))
@@ -4578,6 +4608,25 @@ mod authentication_regression_tests {
                 "message": "Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead"
             })
         );
+    }
+
+    #[test]
+    fn asset_delete_conflicts_are_stable_non_internal_http_errors() {
+        let visible = ApiError::from_core(
+            AppError::conflict(
+                ugoite_core::error::ErrorCode::AssetReferenced,
+                "Asset is referenced by an authorized entry",
+            )
+            .into(),
+        );
+        assert_eq!(visible.status, StatusCode::CONFLICT);
+        assert_eq!(visible.detail["code"], "ASSET_REFERENCED");
+
+        let hidden =
+            ApiError::from_core(AppError::forbidden("Asset deletion is not permitted").into());
+        assert_eq!(hidden.status, StatusCode::FORBIDDEN);
+        assert_eq!(hidden.detail["code"], "FORBIDDEN");
+        assert_eq!(hidden.detail["message"], "Asset deletion is not permitted");
     }
 
     #[tokio::test]

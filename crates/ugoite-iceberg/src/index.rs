@@ -306,6 +306,43 @@ pub async fn execute_sql_query(
     .await
 }
 
+/// Checks whether an Entry ID is present in a Form's current revision view.
+/// The stable external ID is the public Entry reference value; resolving it
+/// through this view also excludes deleted and historical revisions.
+pub async fn current_entry_exists_in_form(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    entry_id: &str,
+    entry_scope: EntryScope,
+) -> Result<bool> {
+    let sql = format!(
+        "SELECT 1 FROM {} WHERE _ugoite_id = {} LIMIT 1",
+        sql_identifier(&form_name.to_ascii_lowercase()),
+        sql_string_literal(entry_id)
+    );
+    Ok(!execute_datafusion_sql_with_functions(
+        op,
+        ws_path,
+        &sql,
+        entry_scope,
+        None,
+        None,
+        None,
+        BTreeSet::new(),
+    )
+    .await?
+    .is_empty())
+}
+
+fn sql_identifier(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
 pub async fn execute_sql_query_page(
     op: &Operator,
     ws_path: &str,
@@ -819,6 +856,30 @@ async fn execute_datafusion_sql(
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     checkpoint: Option<SpaceCheckpoint>,
 ) -> Result<Vec<Value>> {
+    execute_datafusion_sql_with_functions(
+        op,
+        ws_path,
+        sql,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        BTreeSet::new(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_datafusion_sql_with_functions(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    allowed_functions: BTreeSet<String>,
+) -> Result<Vec<Value>> {
     let context = datafusion_sql_context(
         op,
         ws_path,
@@ -826,6 +887,7 @@ async fn execute_datafusion_sql(
         allowed_relations,
         relation_scopes,
         checkpoint,
+        allowed_functions,
     )
     .await
     .map_err(map_sql_error)?;
@@ -853,6 +915,7 @@ async fn execute_datafusion_sql_page(
         allowed_relations,
         relation_scopes,
         checkpoint,
+        BTreeSet::new(),
     )
     .await
     .map_err(map_sql_error)?;
@@ -870,6 +933,7 @@ async fn datafusion_sql_context(
     allowed_relations: Option<&HashSet<String>>,
     relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     checkpoint: Option<SpaceCheckpoint>,
+    allowed_functions: BTreeSet<String>,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     let forms = workspace.list_forms().await?;
@@ -916,7 +980,7 @@ async fn datafusion_sql_context(
                 max_rows: SQL_SESSION_MAX_ROWS,
                 timeout: SQL_SESSION_TIMEOUT,
                 max_concurrency: 1,
-                allowed_functions: BTreeSet::new(),
+                allowed_functions,
             },
         })
         .await
@@ -1517,8 +1581,6 @@ async fn build_record(
         "properties": properties,
         "word_count": word_count,
         "tags": row.tags,
-        "links": row.links,
-        "assets": row.assets,
         "checksum": row.integrity.checksum,
         "validation_warnings": Value::Array(warnings),
     });

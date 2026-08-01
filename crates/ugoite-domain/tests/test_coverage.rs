@@ -63,9 +63,8 @@ fn test_metadata_req_form_006_reserved_metadata_forms_are_trimmed_case_insensiti
 {
     let forms = metadata_forms();
     assert!(forms.contains("sql"));
-    assert!(forms.contains("assets"));
     assert!(is_reserved_metadata_form("SQL"));
-    assert!(is_reserved_metadata_form("assets"));
+    assert!(!is_reserved_metadata_form("assets"));
     assert!(!is_reserved_metadata_form("issue777_custom_form"));
 
     register_metadata_forms(vec!["  issue777_custom_form  ".to_string()]);

@@ -225,9 +225,9 @@ fn test_markdown_sections_persist() {
     assert!(stdout.contains("entry-sections"));
 }
 
-/// REQ-ENTRY-005: List entries returns properties and links.
+/// REQ-ENTRY-005: List entries returns Form properties.
 #[test]
-fn test_list_entries_returns_properties_and_links() {
+fn test_list_entries_returns_properties() {
     let dir = tempfile::tempdir().unwrap();
     let (root, config_path) = setup_space_with_form(&dir, "test-space");
     let space_path = format!("{root}/spaces/test-space");

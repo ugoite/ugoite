@@ -141,7 +141,6 @@ describe("entryApi", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
-        links: [],
       };
       seedEntry("test-ws", entry, record);
 
@@ -163,7 +162,6 @@ describe("entryApi", () => {
                 updated_at: 1772960822.056,
                 properties: {},
                 tags: [],
-                links: [],
               },
             ]),
         ),
@@ -307,7 +305,7 @@ describe("entryApi", () => {
     });
   });
 
-  describe("search, assets, and links", () => {
+  describe("search and Form-owned references", () => {
     it("searches entries by keyword", async () => {
       const created = await entryApi.create("test-ws", {
         markdown: "# Rocket Project\nEntries about propulsion",
@@ -390,21 +388,11 @@ describe("entryApi", () => {
       );
     });
 
-    it("uploads asset and blocks deletion when referenced", async () => {
-      const { id, revision_id } = await entryApi.create("test-ws", {
-        markdown: "# Audio Entry",
-      });
-
+    it("uploads a typed asset reference and deletes by stable asset id", async () => {
       const file = new File(["data"], "voice.m4a", { type: "audio/m4a" });
       const asset = await assetApi.upload("test-ws", file);
-
-      await entryApi.update("test-ws", id, {
-        markdown: "# Audio Entry\nupdated",
-        parent_revision_id: revision_id,
-        assets: [asset],
-      });
-
-      await expect(assetApi.delete("test-ws", asset.id)).rejects.toThrow();
+      expect(asset.asset_id).toBeTruthy();
+      await assetApi.delete("test-ws", asset.asset_id);
     });
   });
 });
@@ -783,29 +771,6 @@ describe("error paths", () => {
       .toThrow(
         "Failed to get entry revision",
       );
-  });
-
-  it("assetApi.list returns assets", async () => {
-    resetMockData();
-    seedSpace({
-      id: "ws-asset",
-      name: "A",
-      created_at: "2025-01-01T00:00:00Z",
-    });
-    const assets = await assetApi.list("ws-asset");
-    expect(Array.isArray(assets)).toBe(true);
-  });
-
-  it("assetApi.list throws on failure", async () => {
-    server.use(
-      http.get(
-        testApiUrl("/spaces/ws-asset-err/assets"),
-        () => HttpResponse.json({ detail: "Error" }, { status: 500 }),
-      ),
-    );
-    await expect(assetApi.list("ws-asset-err")).rejects.toThrow(
-      "Failed to list assets",
-    );
   });
 
   it("assetApi.upload throws on failure", async () => {

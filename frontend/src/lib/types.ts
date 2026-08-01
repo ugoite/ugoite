@@ -99,13 +99,13 @@ export interface AgentCreatePayload {
   expires_at: string;
 }
 
-/** Asset metadata */
-export interface Asset {
-  id: string;
+/** Stable logical asset metadata stored in an AssetReference Form value. */
+export interface AssetReference {
+  asset_id: string;
   name: string;
-  path: string;
-  link?: string;
-  uploaded_at?: string;
+  media_type: string;
+  size_bytes: number;
+  sha256: string;
 }
 
 /** Entry record (from index) */
@@ -117,18 +117,8 @@ export interface EntryRecord {
   updated_at: string;
   properties: Record<string, unknown>;
   tags: string[];
-  links: EntryLink[];
   canvas_position?: CanvasPosition;
   checksum?: string;
-  assets?: Asset[];
-}
-
-/** Entry link */
-export interface EntryLink {
-  id: string;
-  source?: string;
-  target: string;
-  kind: string;
 }
 
 /** Canvas position for spatial view */
@@ -143,8 +133,6 @@ export interface Entry {
   title?: string;
   frontmatter?: Record<string, unknown>;
   sections?: Record<string, string>;
-  assets?: Asset[];
-  links?: EntryLink[];
   form?: string;
   tags?: string[];
   canvas_position?: CanvasPosition;
@@ -184,7 +172,6 @@ export interface EntryUpdatePayload {
   parent_revision_id: string;
   frontmatter?: Record<string, unknown>;
   canvas_position?: CanvasPosition;
-  assets?: Asset[];
 }
 
 export interface FormField {
@@ -192,6 +179,10 @@ export interface FormField {
   type: string;
   required: boolean;
   target_form?: string;
+  items?: {
+    type: string;
+    target_form?: string;
+  };
   /** Backend-owned stable SQL column; never derive this from the field label. */
   sql_column?: string;
 }

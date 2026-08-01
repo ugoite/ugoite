@@ -146,8 +146,9 @@ Space roles map to actions: owner has read/create/update/delete/share, editor
 has read/create/update, and viewer has read. The first ACL version applies only
 to Entry and Asset. A policy inherits the Space role by default and adds
 explicit grants. Setting `inherit_space_role` to false creates a private
-allow-list without introducing deny rules. Entry-linked Assets inherit the Entry
-policy.
+allow-list without introducing deny rules. Typed Form references do not create
+an inferred ACL edge: Asset byte operations require an explicit authorized
+containing Entry context and then apply Asset and Space resource policy.
 
 The shared Rust Authorizer is called by REST, CLI, MCP, search, structured
 query, and SQL sessions. SQL receives the authorized Entry ID set before tables,

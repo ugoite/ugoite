@@ -34,6 +34,5 @@ about editing and query behavior.
 - **Forms** defines typed fields used by Entries.
 - **Search** performs keyword and structured query workflows.
 - **SQL** stores reusable SQL definitions and opens query results.
-- **Assets** uploads and manages Space-owned files.
 - **Settings** shows Space storage and membership controls allowed by the
   current role.

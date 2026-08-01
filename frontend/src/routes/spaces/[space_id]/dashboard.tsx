@@ -14,8 +14,8 @@ import { spaceRoute } from "~/lib/space-shell-route";
 export const route = spaceRoute({ navigation: "home" });
 
 const copy = {
-  en: { home: "Home", newEntry: "Entry", continue: "Continue", pinned: "Pinned", recent: "Recent", forms: "Forms", search: "Search", assets: "Assets", savedSql: "SQL", noRecent: "Create an entry to start building this Space.", walkthrough: "Create your first entry with the browser walkthrough", form: "Form", entry: "Entry", searchMeta: "Entries · Forms · Assets" },
-  ja: { home: "ホーム", newEntry: "エントリー", continue: "続きから", pinned: "ピン留め", recent: "最近", forms: "フォーム", search: "検索", assets: "アセット", savedSql: "SQL", noRecent: "エントリーを作成して、このスペースを育てましょう。", walkthrough: "ブラウザの使い方で最初のエントリーを作成する", form: "フォーム", entry: "エントリー", searchMeta: "エントリー · フォーム · アセット" },
+  en: { home: "Home", newEntry: "Entry", continue: "Continue", pinned: "Pinned", recent: "Recent", forms: "Forms", search: "Search", savedSql: "SQL", noRecent: "Create an entry to start building this Space.", walkthrough: "Create your first entry with the browser walkthrough", form: "Form", entry: "Entry", searchMeta: "Entries · Forms" },
+  ja: { home: "ホーム", newEntry: "エントリー", continue: "続きから", pinned: "ピン留め", recent: "最近", forms: "フォーム", search: "検索", savedSql: "SQL", noRecent: "エントリーを作成して、このスペースを育てましょう。", walkthrough: "ブラウザの使い方で最初のエントリーを作成する", form: "フォーム", entry: "エントリー", searchMeta: "エントリー · フォーム" },
 } as const;
 
 const browserWalkthroughUrl = getDocsiteHref(
@@ -105,7 +105,6 @@ export default function SpaceDashboardRoute() {
         <div class="sectionHead"><h2>{c().pinned}</h2></div>
         <div class="grid4">
           <For each={entryForms().slice(0, 2)}>{(form) => <A class="tile" href={`/spaces/${spaceId()}/forms?form=${encodeURIComponent(form.name)}`}><span class="glyph">{form.name.slice(0,1).toUpperCase()}</span><span><b>{form.name}</b><small>{c().form}</small></span></A>}</For>
-          <A class="tile" href={`/spaces/${spaceId()}/assets`}><span class="glyph"><UiIcon name="asset" /></span><span><b>{c().assets}</b><small>{c().search}</small></span></A>
           <A class="tile" href={`/spaces/${spaceId()}/sql`}><span class="glyph"><UiIcon name="sql" /></span><span><b>{c().savedSql}</b><small>Saved</small></span></A>
         </div>
       </section>

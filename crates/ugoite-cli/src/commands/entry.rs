@@ -97,11 +97,6 @@ pub enum EntrySubCmd {
         parent_revision_id: Option<String>,
         #[arg(
             long,
-            help = "JSON array of asset objects to persist with the updated entry revision"
-        )]
-        assets: Option<String>,
-        #[arg(
-            long,
             default_value = "cli",
             help = "Author name to record in the revision history"
         )]
@@ -246,7 +241,6 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             entry_id,
             markdown,
             parent_revision_id,
-            assets,
             author,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry update")?;
@@ -254,10 +248,6 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 let mut body = serde_json::json!({"markdown": markdown, "author": author});
                 if let Some(p) = &parent_revision_id {
                     body["parent_revision_id"] = serde_json::json!(p);
-                }
-                if let Some(a) = &assets {
-                    let v: serde_json::Value = serde_json::from_str(a)?;
-                    body["assets"] = v;
                 }
                 let result = http::execute(
                     &base,
@@ -270,11 +260,6 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 return Ok(());
             }
             let service = UgoiteService::new(&root)?;
-            let assets_vec: Option<Vec<serde_json::Value>> = if let Some(a) = assets {
-                Some(serde_json::from_str(&a)?)
-            } else {
-                None
-            };
             let result = service
                 .update_entry(
                     &space_id,
@@ -282,7 +267,6 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                     &markdown,
                     parent_revision_id.as_deref(),
                     &author,
-                    assets_vec,
                 )
                 .await?;
             print_json(&result);

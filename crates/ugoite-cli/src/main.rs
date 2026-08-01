@@ -43,9 +43,6 @@ enum Commands {
     Sql(commands::sql::SqlCmd),
     /// Indexer operations
     Index(commands::index::IndexCmd),
-    /// Link management commands (deprecated: use row_reference fields)
-    #[command(hide = true)]
-    Link(commands::link::LinkCmd),
     /// Create a new space (deprecated: use `space create` instead)
     /// Create a new space
     #[command(
@@ -112,7 +109,6 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Search(cmd) => commands::search::run(cmd).await,
         Commands::Sql(cmd) => commands::sql::run(cmd).await,
         Commands::Index(cmd) => commands::index::run(cmd).await,
-        Commands::Link(cmd) => commands::link::run(cmd).await,
         Commands::CreateSpace {
             root_path,
             space_id,

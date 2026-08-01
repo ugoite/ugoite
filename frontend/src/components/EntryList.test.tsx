@@ -45,7 +45,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
-        links: [],
       };
       const record2: EntryRecord = {
         id: "entry-2",
@@ -53,7 +52,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-02T00:00:00Z",
         properties: { Status: "Active" },
         tags: [],
-        links: [],
       };
 
       const { entries, loading, error } = createControlledProps([
@@ -75,7 +73,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: { Date: "2025-01-15", Status: "Completed" },
         tags: [],
-        links: [],
       };
 
       const { entries, loading, error } = createControlledProps([record]);
@@ -97,7 +94,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: null as unknown as Record<string, unknown>,
         tags: [],
-        links: [],
       } as EntryRecord;
 
       const recordWithUndefinedProperties = {
@@ -105,7 +101,6 @@ describe("EntryList", () => {
         title: "Entry with undefined properties",
         updated_at: "2025-01-02T00:00:00Z",
         tags: [],
-        links: [],
       } as EntryRecord;
 
       const { entries, loading, error } = createControlledProps([
@@ -130,7 +125,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
-        links: [],
       };
 
       const { entries, loading, error } = createControlledProps([record]);
@@ -166,7 +160,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
-        links: [],
       };
 
       const { entries, loading, error } = createControlledProps([record]);
@@ -191,7 +184,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: { Count: 5, Active: true },
         tags: [],
-        links: [],
       };
       const { entries, loading, error } = createControlledProps([record]);
       render(() => (
@@ -226,7 +218,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
-        links: [],
       };
       const entry2: Entry = {
         id: "entry-2",
@@ -241,7 +232,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-02T00:00:00Z",
         properties: { Status: "Active" },
         tags: [],
-        links: [],
       };
 
       seedEntry("ui-test-ws", entry1, record1);
@@ -269,7 +259,6 @@ describe("EntryList", () => {
         updated_at: "2025-01-01T00:00:00Z",
         properties: {},
         tags: [],
-        links: [],
       };
 
       seedEntry("ui-test-ws", entry, record);

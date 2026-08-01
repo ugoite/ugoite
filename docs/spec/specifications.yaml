@@ -54,7 +54,6 @@
   - REQCAT-API
   - REQCAT-ENTRY
   - REQCAT-INDEX
-  - REQCAT-LINKS
   - REQCAT-SEARCH
 - id: SPEC-API-MCP
   source_file: api/mcp.md
@@ -113,7 +112,6 @@
   - POL-012
   linked_requirements:
   - REQCAT-ASSET
-  - REQCAT-LINKS
   - REQCAT-SEARCH
 - id: SPEC-FEATURES-SQL
   source_file: features/sql.md
@@ -135,7 +133,6 @@
   - POL-012
   - POL-013
   linked_requirements:
-  - REQCAT-LINKS
   - REQCAT-SEARCH
 - id: SPEC-STORIES-EXPERIMENTAL
   source_file: stories/experimental.yaml

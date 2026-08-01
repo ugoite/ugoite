@@ -159,7 +159,6 @@ describe("createEntryStore", () => {
       updated_at: "2025-01-01T00:00:00Z",
       properties: {},
       tags: [],
-      links: [],
     };
     seedEntry("es-ws", entry, record);
     await createRoot(async (dispose) => {

@@ -119,7 +119,6 @@ export function createEntryStore(spaceId: () => string) {
       title,
       updated_at: new Date().toISOString(),
       canvas_position: payload.canvas_position || originalEntry.canvas_position,
-      assets: payload.assets ?? originalEntry.assets,
     };
 
     // Store for potential rollback

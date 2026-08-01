@@ -4,12 +4,13 @@ use crate::integrity::IntegrityProvider;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
 use serde_json::{Map, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use ugoite_core::error::AppError;
 use ugoite_core::metadata;
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::form::{
     FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
+    ListItemDefinition,
 };
 use ugoite_domain::id::validate_form_name;
 use ugoite_domain::id::{FieldId, FormId};
@@ -46,6 +47,7 @@ pub async fn list_column_types() -> Result<Vec<String>> {
         "timestamp_tz_ns".to_string(),
         "uuid".to_string(),
         "row_reference".to_string(),
+        "asset_reference".to_string(),
         "binary".to_string(),
         "list".to_string(),
         "object_list".to_string(),
@@ -59,23 +61,30 @@ pub async fn get_form(op: &Operator, ws_path: &str, form_name: &str) -> Result<V
 }
 
 pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
-    let mut normalized = normalize_form_definition(form_def)?;
-    let form_name = normalized
+    let form_name = form_def
         .get("name")
-        .and_then(|v| v.as_str())
+        .and_then(|value| value.as_str())
         .context("Form definition missing 'name' field")?
         .to_string();
-    validate_row_reference_targets(op, ws_path, &form_name, &normalized).await?;
-    let existing = iceberg_store::load_form_definition(op, ws_path, &form_name)
-        .await
-        .ok();
-    if let Some(existing_def) = existing {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let known_forms = workspace.list_forms().await?;
+    let existing_domain = known_forms
+        .iter()
+        .find(|form| form.name == form_name)
+        .cloned();
+    let mut normalized = normalize_form_definition(form_def)?;
+    if let Some(existing_domain) = &existing_domain {
+        // Resolve the persisted identity before translating authoring names
+        // into target UUIDs. In particular, a self-reference must never point
+        // at normalize_form_definition's transient UUID.
+        let existing_def = from_domain_form(existing_domain);
         preserve_stable_identities(&mut normalized, &existing_def)?;
-        let current_domain = to_domain_form(&existing_def)?;
+    }
+    validate_row_reference_targets(&form_name, &mut normalized, &known_forms)?;
+    if let Some(current_domain) = existing_domain {
         let desired_domain = to_domain_form(&normalized)?;
         let changes = form_changes(&current_domain, &desired_domain)?;
         if !changes.is_empty() {
-            let workspace = iceberg_store::native_workspace(op, ws_path).await?;
             let command = crate::publication_context(
                 format!(
                     "form-evolve:{}:{}",
@@ -150,6 +159,8 @@ fn form_changes(current: &FormDefinition, desired: &FormDefinition) -> Result<Ve
         if previous.label != field.label
             || previous.description != field.description
             || previous.semantic_role != field.semantic_role
+            || previous.reference_form != field.reference_form
+            || previous.list_item != field.list_item
             || previous.validation != field.validation
             || previous.enum_values != field.enum_values
         {
@@ -158,6 +169,8 @@ fn form_changes(current: &FormDefinition, desired: &FormDefinition) -> Result<Ve
                 label: field.label.clone(),
                 description: field.description.clone(),
                 semantic_role: field.semantic_role.clone(),
+                reference_form: field.reference_form,
+                list_item: field.list_item.clone(),
                 validation: field.validation.clone(),
                 enum_values: field.enum_values.clone(),
             });
@@ -205,9 +218,11 @@ pub async fn migrate_form<I: IntegrityProvider>(
     integrity: &I,
 ) -> Result<usize> {
     let normalized = normalize_form_definition(form_def)?;
-    let form_name = normalized["name"].as_str().context("Form name required")?;
-    validate_row_reference_targets(op, ws_path, form_name, &normalized).await?;
-    let existing_def = iceberg_store::load_form_definition(op, ws_path, form_name)
+    let form_name = normalized["name"]
+        .as_str()
+        .context("Form name required")?
+        .to_string();
+    let existing_def = iceberg_store::load_form_definition(op, ws_path, &form_name)
         .await
         .ok();
 
@@ -235,7 +250,7 @@ pub async fn migrate_form<I: IntegrityProvider>(
         .iter()
         .filter_map(|val| {
             let entry_form = val.get("form").and_then(|v| v.as_str());
-            if entry_form != Some(form_name) {
+            if entry_form != Some(&form_name) {
                 return None;
             }
             val.get("id")
@@ -252,7 +267,7 @@ pub async fn migrate_form<I: IntegrityProvider>(
         .unwrap_or_default();
 
     for entry_id in entry_ids {
-        let mut row = match entry::read_entry_row(op, ws_path, form_name, &entry_id).await {
+        let mut row = match entry::read_entry_row(op, ws_path, &form_name, &entry_id).await {
             Ok(r) => r,
             Err(_) => continue,
         };
@@ -300,7 +315,7 @@ pub async fn migrate_form<I: IntegrityProvider>(
 
         let markdown = entry::render_markdown_for_form(
             &row.title,
-            form_name,
+            &form_name,
             &row.tags,
             &row.fields,
             &row.extra_attributes,
@@ -330,7 +345,8 @@ pub async fn migrate_form<I: IntegrityProvider>(
             source_kind: "migration".to_string(),
             source_id: None,
         };
-        entry::append_revision_row_for_form(op, ws_path, form_name, &revision, &normalized).await?;
+        entry::append_revision_row_for_form(op, ws_path, &form_name, &revision, &normalized)
+            .await?;
 
         updated_count += 1;
     }
@@ -386,6 +402,27 @@ pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
                     .and_then(Value::as_str)
                     .unwrap_or("string"),
             )?;
+            let list_item = definition
+                .get("items")
+                .filter(|items| !items.is_null())
+                .map(|items| -> Result<ListItemDefinition> {
+                    let items = items
+                        .as_object()
+                        .context("Form list items must be an object")?;
+                    let item_type = items
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .context("Form list items missing type")?;
+                    Ok(ListItemDefinition {
+                        field_type: domain_field_type(item_type)?,
+                        reference_form: items
+                            .get("target_form")
+                            .and_then(Value::as_str)
+                            .and_then(|value| Uuid::parse_str(value).ok())
+                            .map(FormId::from),
+                    })
+                })
+                .transpose()?;
             fields.push(FormField {
                 id: field_id,
                 name: name.clone(),
@@ -411,6 +448,7 @@ pub(crate) fn to_domain_form(form_def: &Value) -> Result<FormDefinition> {
                     .and_then(Value::as_str)
                     .and_then(|value| Uuid::parse_str(value).ok())
                     .map(FormId::from),
+                list_item,
                 validation: definition.get("validation").cloned(),
                 enum_values: definition
                     .get("enum_values")
@@ -481,6 +519,7 @@ fn domain_field_type(value: &str) -> Result<FieldType> {
         "list" => FieldType::List,
         "object_list" => FieldType::ObjectList,
         "row_reference" => FieldType::RowReference,
+        "asset_reference" => FieldType::AssetReference,
         other => return Err(anyhow!("unsupported Form field type: {other}")),
     })
 }
@@ -497,6 +536,11 @@ pub(crate) fn from_domain_form(form: &FormDefinition) -> Value {
                 "label": field.label,
                 "description": field.description,
                 "semantic_role": field.semantic_role,
+                "target_form": field.reference_form.map(|value| value.to_string()),
+                "items": field.list_item.as_ref().map(|item| serde_json::json!({
+                    "type": domain_field_type_name(&item.field_type),
+                    "target_form": item.reference_form.map(|value| value.to_string()),
+                })),
                 "deprecated": field.deprecated,
             }),
         );
@@ -582,62 +626,130 @@ fn normalize_form_definition_with_options(
 fn validate_row_reference_field_defs(field_map: &Map<String, Value>) -> Result<()> {
     for (name, def) in field_map {
         let field_type = def.get("type").and_then(|v| v.as_str()).unwrap_or("string");
-        if field_type != "row_reference" {
-            continue;
-        }
-        let target_form = def
-            .get("target_form")
-            .and_then(|v| v.as_str())
-            .map(|v| v.trim())
-            .filter(|v| !v.is_empty())
-            .ok_or_else(|| anyhow!("row_reference field '{}' requires target_form", name))?;
-        validate_form_path_segment(target_form)?;
-        if is_reserved_metadata_form(target_form) {
-            return Err(anyhow!(
-                "row_reference field '{}' target_form '{}' is reserved",
-                name,
-                target_form
-            ));
+        let target = if field_type == "row_reference" {
+            def.get("target_form")
+        } else if field_type == "list"
+            && def
+                .get("items")
+                .and_then(|items| items.get("type"))
+                .and_then(Value::as_str)
+                == Some("row_reference")
+        {
+            def.get("items").and_then(|items| items.get("target_form"))
+        } else {
+            None
+        };
+        if let Some(target_form) = target.and_then(Value::as_str) {
+            let target_form = target_form.trim();
+            if target_form.is_empty() {
+                return Err(anyhow!("reference field '{}' requires target_form", name));
+            }
+            if Uuid::parse_str(target_form).is_err() {
+                validate_form_path_segment(target_form)?;
+                if is_reserved_metadata_form(target_form) {
+                    return Err(anyhow!(
+                        "reference field '{}' target_form '{}' is reserved",
+                        name,
+                        target_form
+                    ));
+                }
+            }
+        } else if field_type == "row_reference"
+            || (field_type == "list"
+                && def
+                    .get("items")
+                    .and_then(|items| items.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("row_reference"))
+        {
+            return Err(anyhow!("reference field '{}' requires target_form", name));
         }
     }
     Ok(())
 }
 
-async fn validate_row_reference_targets(
-    op: &Operator,
-    ws_path: &str,
+fn validate_row_reference_targets(
     form_name: &str,
-    form_def: &Value,
+    form_def: &mut Value,
+    known_forms: &[FormDefinition],
 ) -> Result<()> {
     let Some(field_map) = form_def.get("fields").and_then(|v| v.as_object()) else {
         return Ok(());
     };
 
-    let mut available: HashSet<String> = list_form_names(op, ws_path)
-        .await
-        .with_context(|| format!("failed to list forms for workspace '{}'", ws_path))?
-        .into_iter()
-        .collect();
-    available.insert(form_name.to_string());
+    let mut available = known_forms
+        .iter()
+        .map(|form| (form.name.clone(), form.id.to_string()))
+        .collect::<HashMap<_, _>>();
+    if let Some(id) = form_def.get("id").and_then(Value::as_str) {
+        available.insert(form_name.to_string(), id.to_string());
+    }
 
-    for (name, def) in field_map {
+    for (name, def) in field_map.clone() {
         let field_type = def.get("type").and_then(|v| v.as_str()).unwrap_or("string");
+        let (target, container) = if field_type == "row_reference" {
+            (def.get("target_form").and_then(Value::as_str), None)
+        } else if field_type == "list"
+            && def
+                .get("items")
+                .and_then(|items| items.get("type"))
+                .and_then(Value::as_str)
+                == Some("row_reference")
+        {
+            (
+                def.get("items")
+                    .and_then(|items| items.get("target_form").and_then(Value::as_str)),
+                Some("items"),
+            )
+        } else {
+            continue;
+        };
+        let Some(target_form) = target.map(str::trim) else {
+            return Err(anyhow!("reference field '{}' requires target_form", name));
+        };
+        let target_id = if let Ok(id) = Uuid::parse_str(target_form) {
+            if !known_forms.iter().any(|form| form.id == FormId::from(id))
+                && form_def.get("id").and_then(Value::as_str) != Some(target_form)
+            {
+                return Err(anyhow!(
+                    "reference field '{}' target_form '{}' not found",
+                    name,
+                    target_form
+                ));
+            }
+            id.to_string()
+        } else {
+            let Some(id) = available.get(target_form) else {
+                return Err(anyhow!(
+                    "reference field '{}' target_form '{}' not found",
+                    name,
+                    target_form
+                ));
+            };
+            id.clone()
+        };
+        let field = form_def
+            .get_mut("fields")
+            .and_then(Value::as_object_mut)
+            .and_then(|fields| fields.get_mut(&name))
+            .context("normalized Form field disappeared")?;
+        if let Some(container) = container {
+            field
+                .get_mut(container)
+                .and_then(Value::as_object_mut)
+                .context("list item definition is not an object")?
+                .insert("target_form".to_string(), Value::String(target_id));
+        } else {
+            field
+                .as_object_mut()
+                .context("Form field is not an object")?
+                .insert("target_form".to_string(), Value::String(target_id));
+        }
         if field_type != "row_reference" {
             continue;
         }
-        let target_form = def
-            .get("target_form")
-            .and_then(|v| v.as_str())
-            .map(|v| v.trim())
-            .filter(|v| !v.is_empty())
-            .ok_or_else(|| anyhow!("row_reference field '{}' requires target_form", name))?;
-        validate_form_path_segment(target_form)?;
-        if !available.contains(target_form) {
-            return Err(anyhow!(
-                "row_reference field '{}' target_form '{}' not found",
-                name,
-                target_form
-            ));
+        if target_form.is_empty() {
+            return Err(anyhow!("reference field '{}' requires target_form", name));
         }
     }
 

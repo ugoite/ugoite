@@ -36,7 +36,8 @@ pub enum ResourceKind {
 pub struct ResourceRef {
     pub kind: ResourceKind,
     pub id: String,
-    /// Asset resources use their Entry as parent when present.
+    /// A caller may provide an explicit parent for policy evaluation. Asset
+    /// references do not cause the service to infer one by scanning Entries.
     pub parent: Option<Box<ResourceRef>>,
 }
 
