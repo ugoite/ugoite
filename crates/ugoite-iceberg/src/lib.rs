@@ -294,6 +294,74 @@ fn current_test_validation_gate() -> Option<Arc<TestValidationGate>> {
         .clone()
 }
 
+/// Debug-only synchronization for proving recovery after an immutable
+/// publication has been written but before its Catalog Head CAS. It is not
+/// compiled into release builds and exposes no production mutation bypass.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct TestPublicationGate {
+    reached: std::sync::atomic::AtomicBool,
+    entered: Notify,
+    release: Notify,
+}
+
+#[cfg(debug_assertions)]
+impl TestPublicationGate {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            reached: std::sync::atomic::AtomicBool::new(false),
+            entered: Notify::new(),
+            release: Notify::new(),
+        })
+    }
+
+    pub async fn wait_until_entered(&self) {
+        while !self.reached.load(std::sync::atomic::Ordering::Acquire) {
+            self.entered.notified().await;
+        }
+    }
+
+    pub fn release(&self) {
+        self.release.notify_one();
+    }
+
+    async fn pause(&self) {
+        self.reached
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.entered.notify_waiters();
+        self.release.notified().await;
+    }
+}
+
+#[cfg(debug_assertions)]
+static TEST_PUBLICATION_GATE: LazyLock<Mutex<Option<Arc<TestPublicationGate>>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn install_test_publication_gate(gate: Arc<TestPublicationGate>) {
+    *TEST_PUBLICATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(gate);
+}
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn clear_test_publication_gate() {
+    *TEST_PUBLICATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+#[cfg(debug_assertions)]
+fn current_test_publication_gate() -> Option<Arc<TestPublicationGate>> {
+    TEST_PUBLICATION_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
 const MAX_PUBLICATION_ATTEMPTS: usize = 3;
 
 /// Builds the immutable identity carried by one domain command. Callers pass

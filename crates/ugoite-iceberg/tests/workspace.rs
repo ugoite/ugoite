@@ -1,3 +1,5 @@
+use opendal::services::Memory;
+use opendal::{EntryMode, Operator};
 use std::collections::BTreeMap;
 use std::time::Duration;
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
@@ -14,8 +16,9 @@ use ugoite_domain::form::{
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
     physical_form_name, publication_context, IcebergWorkspace, MigrationFormReport,
-    MigrationManifest, MigrationReport, RevisionView,
+    MigrationManifest, MigrationReport, RevisionView, WriteConfig,
 };
+use ugoite_storage::SpaceCatalogStore;
 use uuid::Uuid;
 
 fn form() -> FormDefinition {
@@ -699,6 +702,123 @@ async fn coordinator_replays_only_the_same_canonical_command() -> anyhow::Result
         .await
         .unwrap_err();
     assert!(reuse.to_string().contains("reused"));
+    Ok(())
+}
+
+async fn count_files_under(operator: &Operator, prefix: &str) -> anyhow::Result<usize> {
+    Ok(operator
+        .list_with(prefix)
+        .recursive(true)
+        .await?
+        .into_iter()
+        .filter(|entry| entry.metadata().mode() == EntryMode::FILE)
+        .count())
+}
+
+#[tokio::test]
+async fn append_recovery_adopts_existing_publication_without_rewriting_iceberg(
+) -> anyhow::Result<()> {
+    let operator = Operator::new(Memory::default())?.finish();
+    let store = SpaceCatalogStore::new(operator.clone(), "spaces/append-publication-recovery")?
+        .single_process();
+    let workspace = IcebergWorkspace::open_space(
+        store.clone(),
+        SpaceId::from(Uuid::from_u128(18_527)),
+        WriteConfig::default(),
+    )
+    .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    let revision = EntryRevision {
+        form_id: form.id,
+        entry_id: Uuid::from_u128(18_528).into(),
+        revision_id: Uuid::from_u128(18_529).into(),
+        parent_revision_id: None,
+        entry_version: 1,
+        expected_version: None,
+        operation: EntryOperation::Upsert,
+        committed_at_micros: 1,
+        author_id: "human:owner".into(),
+        form_version: form.version,
+        source_kind: "test".into(),
+        source_id: None,
+        entry: EntryMetadata::default(),
+        values: BTreeMap::from([(
+            FieldId::new(100).unwrap(),
+            FieldValue::String("recovered append".into()),
+        )]),
+        extra_attributes: BTreeMap::new(),
+        extension_metadata: BTreeMap::new(),
+    };
+    let command = publication_context(
+        "append-publication-recovery",
+        "test.entry.append",
+        &vec![revision.clone()],
+    )?;
+    let base_head = store.read_exact_head().await?.expect("base Head");
+    let base_head_json: serde_json::Value = serde_json::from_slice(&base_head.bytes)?;
+    let intended = store.publication_path(
+        base_head_json["generation"].as_u64().expect("generation") + 1,
+        &command.command_id,
+    );
+    let forms_prefix = "spaces/append-publication-recovery/forms";
+
+    // Stop the real Iceberg append after it has created Parquet, manifest,
+    // metadata, and the immutable publication, but before Head CAS.
+    let gate = ugoite_iceberg::TestPublicationGate::new();
+    ugoite_iceberg::install_test_publication_gate(gate.clone());
+    let append_workspace = workspace.clone();
+    let append_command = command.clone();
+    let append_revision = revision.clone();
+    let append = tokio::spawn(async move {
+        append_workspace
+            .commit(append_command)
+            .expect("publication context")
+            .append_revisions(form.id, vec![append_revision])
+            .await
+    });
+    gate.wait_until_entered().await;
+    let publication_before = store.read_publication(&intended).await?;
+    let files_before = count_files_under(&operator, forms_prefix).await?;
+    assert_eq!(
+        store.read_exact_head().await?.expect("Head").bytes,
+        base_head.bytes,
+        "the append must still be invisible before Head CAS"
+    );
+    append.abort();
+    let aborted = append.await;
+    assert!(aborted.is_err(), "the original writer must be discarded");
+    ugoite_iceberg::clear_test_publication_gate();
+    gate.release();
+
+    // A fresh coordinator adopts the durable publication. It must not invoke
+    // append_revisions' Iceberg writer a second time, so no new physical file
+    // or alternate publication can appear.
+    let recovered = workspace
+        .commit(command)
+        .expect("publication context")
+        .append_revisions(form.id, vec![revision.clone()])
+        .await?;
+    assert_eq!(recovered.data_file_count, 0);
+    assert_eq!(
+        store.read_publication(&intended).await?,
+        publication_before,
+        "recovery must adopt, not regenerate, the immutable publication"
+    );
+    assert_eq!(
+        count_files_under(&operator, forms_prefix).await?,
+        files_before,
+        "recovery must not write another Parquet/manifest/metadata object"
+    );
+    assert_eq!(workspace.read_revisions(form.id).await?, vec![revision]);
+    let receipt: serde_json::Value = serde_json::from_slice(
+        &store
+            .read_command_receipt(&recovered.command_id)
+            .await?
+            .expect("command receipt")
+            .0,
+    )?;
+    assert_eq!(receipt["state"], "committed");
     Ok(())
 }
 
