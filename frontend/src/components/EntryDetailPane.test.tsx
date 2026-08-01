@@ -147,7 +147,66 @@ describe("EntryDetailPane", () => {
       markdown:
         "---\nform: Meeting\n---\n\n# Planning \n\n## Summary\nProject \n\n## Notes\nDetails \n\n\n## Items\none\ntwo\n\n",
     });
-    expect(onCreated).toHaveBeenCalledWith("created-entry");
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+  });
+
+  it("REQ-ENTRY-1872: creates numeric and timestamp fields in one clean revision", async () => {
+    const onCreated = vi.fn();
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Entry",
+      version: 1,
+      template: "# Entry\n\n## Body\n\n## test number\n\n## ts\n",
+      fields: {
+        Body: { type: "markdown", required: false },
+        "test number": { type: "double", required: false },
+        ts: { type: "timestamp", required: false },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={onCreated}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    fireEvent.input(await screen.findByLabelText("test number"), {
+      target: { value: "0" },
+    });
+    fireEvent.input(screen.getByLabelText("ts"), {
+      target: { value: "2026-08-21T10:48" },
+    });
+
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalledTimes(1));
+    expect(entryApi.update).not.toHaveBeenCalled();
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown: expect.stringContaining("## test number\n0"),
+    });
+    expect(createMock.mock.calls[0][1].markdown).toContain(
+      "## ts\n2026-08-21T10:48",
+    );
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    expect(screen.getByText("All changes saved")).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
   });
 
   it("keeps nested Markdown headings out of form field values", async () => {

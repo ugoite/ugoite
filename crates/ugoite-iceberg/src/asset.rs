@@ -33,7 +33,7 @@ fn asset_form_definition() -> serde_json::Value {
         "fields": {
             "name": {"type": "string", "required": true},
             "link": {"type": "string", "required": true},
-            "uploaded_at": {"type": "timestamp", "required": true}
+            "uploaded_at": {"type": "timestamp_tz", "required": true}
         },
         "allow_extra_attributes": "deny"
     })

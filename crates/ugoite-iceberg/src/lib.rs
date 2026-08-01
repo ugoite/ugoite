@@ -1926,12 +1926,30 @@ fn field_array(
                 })
                 .collect::<Result<Vec<_>>>()?,
         ))),
-        FieldType::Timestamp | FieldType::TimestampTz => {
+        FieldType::Timestamp => {
             let values = values
                 .iter()
                 .map(|value| match value {
                     Some(FieldValue::String(value)) => {
-                        parse_timestamp_micros(value).map_err(|error| {
+                        parse_wall_timestamp_micros(value).map_err(|error| {
+                            anyhow!(
+                                "invalid timestamp value for field '{}': {error}",
+                                field.name
+                            )
+                        })
+                    }
+                    Some(FieldValue::Null) | None => Ok(None),
+                    _ => Err(anyhow!("timestamp field '{}' must be a string", field.name)),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(Arc::new(TimestampMicrosecondArray::from(values)))
+        }
+        FieldType::TimestampTz => {
+            let values = values
+                .iter()
+                .map(|value| match value {
+                    Some(FieldValue::String(value)) => {
+                        parse_zoned_timestamp_micros(value).map_err(|error| {
                             anyhow!(
                                 "invalid timestamp value for field '{}': {error}",
                                 field.name
@@ -1943,18 +1961,14 @@ fn field_array(
                 })
                 .collect::<Result<Vec<_>>>()?;
             let array = TimestampMicrosecondArray::from(values);
-            if matches!(field.field_type, FieldType::TimestampTz) {
-                Ok(Arc::new(array.with_timezone("+00:00")))
-            } else {
-                Ok(Arc::new(array))
-            }
+            Ok(Arc::new(array.with_timezone("+00:00")))
         }
-        FieldType::TimestampNs | FieldType::TimestampTzNs => {
+        FieldType::TimestampNs => {
             let values = values
                 .iter()
                 .map(|value| match value {
                     Some(FieldValue::String(value)) => {
-                        parse_timestamp_nanos(value).map_err(|error| {
+                        parse_wall_timestamp_nanos(value).map_err(|error| {
                             anyhow!(
                                 "invalid nanosecond timestamp for field '{}': {error}",
                                 field.name
@@ -1965,12 +1979,27 @@ fn field_array(
                     _ => Err(anyhow!("timestamp field '{}' must be a string", field.name)),
                 })
                 .collect::<Result<Vec<_>>>()?;
-            let array = TimestampNanosecondArray::from(values);
-            if matches!(field.field_type, FieldType::TimestampTzNs) {
-                Ok(Arc::new(array.with_timezone("+00:00")))
-            } else {
-                Ok(Arc::new(array))
-            }
+            Ok(Arc::new(TimestampNanosecondArray::from(values)))
+        }
+        FieldType::TimestampTzNs => {
+            let values = values
+                .iter()
+                .map(|value| match value {
+                    Some(FieldValue::String(value)) => {
+                        parse_zoned_timestamp_nanos(value).map_err(|error| {
+                            anyhow!(
+                                "invalid nanosecond timestamp for field '{}': {error}",
+                                field.name
+                            )
+                        })
+                    }
+                    Some(FieldValue::Null) | None => Ok(None),
+                    _ => Err(anyhow!("timestamp field '{}' must be a string", field.name)),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(Arc::new(
+                TimestampNanosecondArray::from(values).with_timezone("+00:00"),
+            ))
         }
         FieldType::Uuid => {
             let mut builder = FixedSizeBinaryBuilder::with_capacity(values.len(), 16);
@@ -2027,26 +2056,54 @@ fn parse_time_micros(value: &str) -> Result<Option<i64>> {
     ))
 }
 
-fn parse_timestamp_micros(value: &str) -> Result<Option<i64>> {
-    if let Ok(timestamp) = DateTime::parse_from_rfc3339(value) {
-        return Ok(Some(timestamp.timestamp_micros()));
-    }
+fn parse_wall_timestamp_micros(value: &str) -> Result<Option<i64>> {
     let timestamp = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
-        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f"))?;
-    Ok(Some(timestamp.and_utc().timestamp_micros()))
+        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))?;
+    Ok(Some(wall_timestamp_micros(timestamp)?))
 }
 
-fn parse_timestamp_nanos(value: &str) -> Result<Option<i64>> {
-    if let Ok(timestamp) = DateTime::parse_from_rfc3339(value) {
-        return Ok(Some(timestamp.timestamp_nanos_opt().context(
-            "timestamp is outside the representable nanosecond range",
-        )?));
-    }
+fn parse_zoned_timestamp_micros(value: &str) -> Result<Option<i64>> {
+    Ok(Some(
+        DateTime::parse_from_rfc3339(value)?.timestamp_micros(),
+    ))
+}
+
+fn parse_wall_timestamp_nanos(value: &str) -> Result<Option<i64>> {
     let timestamp = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
-        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f"))?;
-    Ok(Some(timestamp.and_utc().timestamp_nanos_opt().context(
-        "timestamp is outside the representable nanosecond range",
-    )?))
+        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))?;
+    Ok(Some(wall_timestamp_nanos(timestamp)?))
+}
+
+/// Encode a timezone-less Iceberg timestamp as its wall-clock coordinate.
+/// This is numeric encoding only; it does not infer or apply a timezone.
+fn wall_timestamp_micros(timestamp: NaiveDateTime) -> Result<i64> {
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1)
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .expect("valid Unix epoch");
+    timestamp
+        .signed_duration_since(epoch)
+        .num_microseconds()
+        .context("timestamp is outside the representable microsecond range")
+}
+
+/// Encode a timezone-less Iceberg timestamp as its wall-clock coordinate.
+/// This is numeric encoding only; it does not infer or apply a timezone.
+fn wall_timestamp_nanos(timestamp: NaiveDateTime) -> Result<i64> {
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1)
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .expect("valid Unix epoch");
+    timestamp
+        .signed_duration_since(epoch)
+        .num_nanoseconds()
+        .context("timestamp is outside the representable nanosecond range")
+}
+
+fn parse_zoned_timestamp_nanos(value: &str) -> Result<Option<i64>> {
+    Ok(Some(
+        DateTime::parse_from_rfc3339(value)?
+            .timestamp_nanos_opt()
+            .context("timestamp is outside the representable nanosecond range")?,
+    ))
 }
 
 fn uuid_value_at(array: &dyn Array, row: usize) -> Result<Uuid> {
@@ -2359,22 +2416,34 @@ fn field_value_at(column: &dyn Array, row: usize, kind: &FieldType) -> Result<Op
                 .ok_or_else(invalid)?
                 .value(row),
         )?),
-        FieldType::Timestamp | FieldType::TimestampTz => FieldValue::String(timestamp_from_micros(
+        FieldType::Timestamp => FieldValue::String(wall_timestamp_from_micros(
             column
                 .as_any()
                 .downcast_ref::<TimestampMicrosecondArray>()
                 .ok_or_else(invalid)?
                 .value(row),
         )?),
-        FieldType::TimestampNs | FieldType::TimestampTzNs => {
-            FieldValue::String(timestamp_from_nanos(
-                column
-                    .as_any()
-                    .downcast_ref::<TimestampNanosecondArray>()
-                    .ok_or_else(invalid)?
-                    .value(row),
-            )?)
-        }
+        FieldType::TimestampTz => FieldValue::String(timestamp_from_micros(
+            column
+                .as_any()
+                .downcast_ref::<TimestampMicrosecondArray>()
+                .ok_or_else(invalid)?
+                .value(row),
+        )?),
+        FieldType::TimestampNs => FieldValue::String(wall_timestamp_from_nanos(
+            column
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .ok_or_else(invalid)?
+                .value(row),
+        )?),
+        FieldType::TimestampTzNs => FieldValue::String(timestamp_from_nanos(
+            column
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .ok_or_else(invalid)?
+                .value(row),
+        )?),
         FieldType::Uuid => FieldValue::String(
             Uuid::from_slice(
                 column
@@ -2482,6 +2551,23 @@ fn timestamp_from_micros(micros: i64) -> Result<String> {
         .map(|timestamp: DateTime<chrono::Utc>| timestamp.to_rfc3339())
 }
 
+fn wall_timestamp_from_micros(micros: i64) -> Result<String> {
+    DateTime::from_timestamp_micros(micros)
+        .context("timestamp is outside the supported range")
+        .map(|timestamp: DateTime<chrono::Utc>| {
+            let naive = timestamp.naive_utc();
+            let base = naive.format("%Y-%m-%dT%H:%M:%S").to_string();
+            let fraction = format!("{:06}", naive.and_utc().timestamp_subsec_micros())
+                .trim_end_matches('0')
+                .to_string();
+            if fraction.is_empty() {
+                base
+            } else {
+                format!("{base}.{fraction}")
+            }
+        })
+}
+
 fn timestamp_from_nanos(nanos: i64) -> Result<String> {
     let seconds = nanos.div_euclid(1_000_000_000);
     let nanos = u32::try_from(nanos.rem_euclid(1_000_000_000))?;
@@ -2489,6 +2575,25 @@ fn timestamp_from_nanos(nanos: i64) -> Result<String> {
         .context("timestamp is outside the supported range")
         .map(|timestamp: DateTime<chrono::Utc>| {
             timestamp.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+        })
+}
+
+fn wall_timestamp_from_nanos(nanos: i64) -> Result<String> {
+    let seconds = nanos.div_euclid(1_000_000_000);
+    let nanos = u32::try_from(nanos.rem_euclid(1_000_000_000))?;
+    DateTime::from_timestamp(seconds, nanos)
+        .context("timestamp is outside the supported range")
+        .map(|timestamp: DateTime<chrono::Utc>| {
+            let naive = timestamp.naive_utc();
+            let base = naive.format("%Y-%m-%dT%H:%M:%S").to_string();
+            let fraction = format!("{:09}", naive.nanosecond())
+                .trim_end_matches('0')
+                .to_string();
+            if fraction.is_empty() {
+                base
+            } else {
+                format!("{base}.{fraction}")
+            }
         })
 }
 

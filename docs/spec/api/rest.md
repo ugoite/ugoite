@@ -63,6 +63,14 @@ recommending a new field; it does not return this expected rejection as a 500.
 Entry create and update validate Markdown sections against the selected Form.
 Invalid field values, missing required fields, missing Form metadata, and
 unknown fields return HTTP 422 with code `INVALID_INPUT`; they are not internal
-server failures. Timestamp fields accept RFC3339 values and browser
-`datetime-local` values with minute precision, which are normalized to UTC
-before the append-only revision is published.
+server failures. A referenced Form that does not exist returns HTTP 404 with
+code `FORM_NOT_FOUND`; storage failures remain internal/dependency failures.
+
+Timestamp field formats follow the Iceberg logical type. `timestamp` and
+`timestamp_ns` are timezone-less wall-clock values in the form
+`YYYY-MM-DDTHH:MM[:SS[.fraction]]`; offsets and RFC3339 timezone markers are
+rejected. `timestamp_tz` and `timestamp_tz_ns` require an offset-bearing
+RFC3339 value and normalize it to UTC before the append-only revision is
+published. Browser `datetime-local` values are used directly for timezone-less
+fields; the frontend adds the browser offset when it submits a timezone-aware
+field.
