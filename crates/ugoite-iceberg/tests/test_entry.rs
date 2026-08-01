@@ -68,6 +68,22 @@ async fn row_reference_values_must_target_current_entries_in_the_declared_form(
         &integrity,
     )
     .await?;
+    let reviewer_matches = index::query_index(
+        &op,
+        ws_path,
+        &serde_json::json!({"Reviewers": "project-1"}).to_string(),
+    )
+    .await?;
+    assert_eq!(reviewer_matches.len(), 1);
+    assert_eq!(reviewer_matches[0]["id"], "task-1");
+    let parent_matches = index::query_index(
+        &op,
+        ws_path,
+        &serde_json::json!({"Parent": "project-1"}).to_string(),
+    )
+    .await?;
+    assert_eq!(parent_matches.len(), 1);
+    assert_eq!(parent_matches[0]["id"], "task-1");
     let error = entry::create_entry(
         &op,
         ws_path,

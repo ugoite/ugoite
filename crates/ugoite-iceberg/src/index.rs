@@ -252,41 +252,8 @@ pub async fn datafusion_parameter_names(
 }
 
 pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Vec<Value>> {
-    let query_value = if query.trim().is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_str(query).unwrap_or(Value::Null)
-    };
-
-    if let Some(sql_query) = extract_sql_query(&query_value) {
-        return execute_datafusion_sql(
-            op,
-            ws_path,
-            &sql_query,
-            EntryScope::AllCurrent,
-            None,
-            None,
-            None,
-        )
-        .await;
-    }
-
-    let forms = load_forms(op, ws_path).await?;
-    let entries_map = collect_entries(op, ws_path, &forms).await?;
-
-    let filters: Option<Map<String, Value>> = query_value.as_object().cloned();
-
-    let mut results = Vec::new();
-    for entry in entries_map.values() {
-        if let Some(filter_obj) = filters.as_ref() {
-            if !matches_filters(entry, filter_obj)? {
-                continue;
-            }
-        }
-        results.push(entry.clone());
-    }
-
-    Ok(results)
+    let scopes = all_current_form_scopes(op, ws_path).await?;
+    query_index_with_form_scopes(op, ws_path, query, &scopes).await
 }
 
 pub async fn execute_sql_query(
@@ -420,6 +387,24 @@ pub async fn execute_sql_query_authorized_by_form(
         EntryScope::AllCurrent,
         None,
         Some(&relation_scopes),
+        None,
+    )
+    .await
+}
+
+pub async fn execute_sql_query_authorized_by_form_scopes(
+    op: &Operator,
+    ws_path: &str,
+    sql_query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Vec<Value>> {
+    execute_datafusion_sql(
+        op,
+        ws_path,
+        sql_query,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
         None,
     )
     .await
@@ -745,6 +730,30 @@ pub async fn query_index_authorized(
     query: &str,
     readable_entry_ids: &HashSet<String>,
 ) -> Result<Vec<Value>> {
+    let entry_scope = EntryScope::Only(entry_scope(readable_entry_ids));
+    let scopes = all_current_form_scopes(op, ws_path)
+        .await?
+        .into_keys()
+        .map(|relation| (relation, entry_scope.clone()))
+        .collect::<BTreeMap<_, _>>();
+    query_index_with_form_scopes(op, ws_path, query, &scopes).await
+}
+
+pub async fn query_index_authorized_by_form_scopes(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Vec<Value>> {
+    query_index_with_form_scopes(op, ws_path, query, relation_scopes).await
+}
+
+async fn query_index_with_form_scopes(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Vec<Value>> {
     let query_value = if query.trim().is_empty() {
         Value::Null
     } else {
@@ -755,31 +764,23 @@ pub async fn query_index_authorized(
             op,
             ws_path,
             &sql_query,
-            EntryScope::Only(entry_scope(readable_entry_ids)),
+            EntryScope::AllCurrent,
             None,
-            None,
+            Some(relation_scopes),
             None,
         )
         .await;
     }
     let forms = load_forms(op, ws_path).await?;
-    let entries_map: Map<String, Value> = collect_entries(op, ws_path, &forms)
-        .await?
-        .into_iter()
-        .filter(|(entry_id, _)| readable_entry_ids.contains(entry_id))
-        .collect();
     let filters = query_value.as_object();
-    entries_map
-        .into_values()
-        .filter_map(|entry| match filters {
-            Some(filter) => match matches_filters(&entry, filter) {
-                Ok(true) => Some(Ok(entry)),
-                Ok(false) => None,
-                Err(error) => Some(Err(error)),
-            },
-            None => Some(Ok(entry)),
-        })
-        .collect()
+    let entries_map = match filters {
+        Some(filters) => {
+            collect_filtered_entries_with_form_scopes(op, ws_path, &forms, filters, relation_scopes)
+                .await?
+        }
+        None => collect_entries_with_form_scopes(op, ws_path, &forms, relation_scopes).await?,
+    };
+    Ok(entries_map.into_values().collect())
 }
 
 pub async fn execute_sql_query_scoped(
@@ -941,7 +942,10 @@ async fn datafusion_sql_context(
     for form in forms {
         let relation = sql_relation_name(form.id);
         let relation_entry_scope = match relation_scopes {
-            Some(scopes) => match scopes.get(&relation) {
+            Some(scopes) => match scopes
+                .get(&relation)
+                .or_else(|| scopes.get(&form.name.to_ascii_lowercase()))
+            {
                 Some(scope) => scope.clone(),
                 None => continue,
             },
@@ -1027,49 +1031,6 @@ fn extract_sql_query(value: &Value) -> Option<String> {
             .map(|text| text.to_string()),
         _ => None,
     }
-}
-
-fn matches_filters(entry: &Value, filters: &Map<String, Value>) -> Result<bool> {
-    for (key, expected) in filters {
-        let mut entry_value = entry.get(key).cloned();
-        if entry_value.is_none() {
-            entry_value = entry
-                .get("properties")
-                .and_then(|v| v.as_object())
-                .and_then(|props| props.get(key))
-                .cloned();
-        }
-
-        if expected.is_object() {
-            return Err(anyhow!(
-                "Structured operators (e.g., $gt) are not implemented for the local query helper yet."
-            ));
-        }
-
-        if key == "tag" {
-            if let Some(tags) = entry.get("tags").and_then(|v| v.as_array()) {
-                if !tags.iter().any(|v| v == expected) {
-                    return Ok(false);
-                }
-                continue;
-            }
-        }
-
-        match entry_value {
-            Some(Value::Array(list)) => {
-                if !list.iter().any(|v| v == expected) {
-                    return Ok(false);
-                }
-            }
-            Some(value) => {
-                if value != *expected {
-                    return Ok(false);
-                }
-            }
-            None => return Ok(false),
-        }
-    }
-    Ok(true)
 }
 
 pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
@@ -1537,6 +1498,220 @@ async fn load_forms(op: &Operator, ws_path: &str) -> Result<HashMap<String, Valu
     Ok(forms)
 }
 
+async fn collect_filtered_entries_with_form_scopes(
+    op: &Operator,
+    ws_path: &str,
+    forms: &HashMap<String, Value>,
+    filters: &Map<String, Value>,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Map<String, Value>> {
+    let mut entries = Map::new();
+    let mut matched_by_form = BTreeMap::<String, BTreeSet<String>>::new();
+    for (form_name, form) in forms {
+        if !relation_scopes.contains_key(&form_name.to_ascii_lowercase()) {
+            continue;
+        }
+        if let Some(expected_form) = filters.get("form") {
+            if expected_form.as_str() != Some(form_name.as_str()) {
+                continue;
+            }
+        }
+        let relation = form
+            .get("sql_relation")
+            .and_then(Value::as_str)
+            .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+        let FilterPlan {
+            relation: from,
+            predicates,
+            struct_list_predicates,
+        } = filter_sql(form, filters, relation)?;
+        let where_clause = if predicates.is_empty() {
+            "TRUE".to_string()
+        } else {
+            predicates.join(" AND ")
+        };
+        let sql = format!(
+            "SELECT DISTINCT \"_ugoite_id\" FROM {from} WHERE {where_clause} LIMIT {}",
+            crate::MAX_NORMAL_READ_ROWS
+        );
+        let values = execute_datafusion_sql_with_functions(
+            op,
+            ws_path,
+            &sql,
+            EntryScope::AllCurrent,
+            None,
+            Some(relation_scopes),
+            None,
+            BTreeSet::from(["array_has".to_string()]),
+        )
+        .await?;
+        let mut ids = values
+            .into_iter()
+            .filter_map(|value| {
+                value
+                    .get("_ugoite_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .collect::<BTreeSet<_>>();
+        if ids.len() > crate::MAX_NORMAL_READ_ROWS {
+            return Err(anyhow!(
+                "normal Entry reads are limited to {} current rows",
+                crate::MAX_NORMAL_READ_ROWS
+            ));
+        }
+        if !struct_list_predicates.is_empty() && !ids.is_empty() {
+            let context = datafusion_sql_context(
+                op,
+                ws_path,
+                EntryScope::AllCurrent,
+                None,
+                Some(relation_scopes),
+                None,
+                BTreeSet::new(),
+            )
+            .await
+            .map_err(map_sql_error)?;
+            for (field, asset_id) in struct_list_predicates {
+                let matching = context
+                    .entry_ids_containing_struct_list_value(relation, &field, "asset_id", &asset_id)
+                    .await
+                    .map_err(map_sql_error)?;
+                ids.retain(|id| matching.contains(id));
+            }
+        }
+        if !ids.is_empty() {
+            matched_by_form.insert(form_name.clone(), ids);
+        }
+    }
+
+    for (form_name, external_ids) in matched_by_form {
+        let entry_scope = EntryScope::Only(entry_scope_from_ids(&external_ids));
+        let scoped_rows = entry::list_entry_rows_authorized(
+            op,
+            ws_path,
+            &BTreeMap::from([(form_name.to_ascii_lowercase(), entry_scope)]),
+        )
+        .await?;
+        for (_, row) in scoped_rows {
+            if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
+                entries.insert(row.entry_id.clone(), record);
+            }
+        }
+    }
+    Ok(entries)
+}
+
+struct FilterPlan {
+    relation: String,
+    predicates: Vec<String>,
+    struct_list_predicates: Vec<(String, String)>,
+}
+
+fn filter_sql(form: &Value, filters: &Map<String, Value>, relation: &str) -> Result<FilterPlan> {
+    let mut predicates = Vec::new();
+    let mut struct_list_predicates = Vec::new();
+    for (key, expected) in filters {
+        if key == "form" {
+            continue;
+        }
+        let (column, field_type, list_item_type) = match key.as_str() {
+            "id" => ("_ugoite_id".to_string(), "string", None),
+            "title" => ("_ugoite_title".to_string(), "string", None),
+            "tag" => ("_ugoite_tags".to_string(), "list", Some("string")),
+            field_name => {
+                let Some(field) = form
+                    .get("fields")
+                    .and_then(Value::as_object)
+                    .and_then(|fields| fields.get(field_name))
+                else {
+                    predicates.push("FALSE".to_string());
+                    continue;
+                };
+                (
+                    field
+                        .get("sql_column")
+                        .and_then(Value::as_str)
+                        .with_context(|| format!("Form field {field_name} is missing sql_column"))?
+                        .to_string(),
+                    field
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("string"),
+                    field
+                        .get("items")
+                        .and_then(Value::as_object)
+                        .and_then(|items| items.get("type"))
+                        .and_then(Value::as_str),
+                )
+            }
+        };
+        let column = quote_identifier(&column);
+        let predicate = if field_type == "asset_reference" {
+            let asset_id = expected
+                .get("asset_id")
+                .and_then(Value::as_str)
+                .context("asset_reference predicates require asset_id")?;
+            format!("{column}.asset_id = {}", sql_string_literal(asset_id))
+        } else if field_type == "list" {
+            let value = expected.get("$contains").unwrap_or(expected);
+            if list_item_type == Some("asset_reference") {
+                let asset_id = value
+                    .get("asset_id")
+                    .and_then(Value::as_str)
+                    .context("asset_reference list predicates require asset_id")?;
+                struct_list_predicates.push((
+                    column.trim_matches('"').replace("\"\"", "\""),
+                    asset_id.to_string(),
+                ));
+                continue;
+            } else {
+                format!(
+                    "array_has({column}, {})",
+                    sql_literal(value, list_item_type.unwrap_or("string"))?
+                )
+            }
+        } else {
+            scalar_predicate(&column, expected, field_type)?
+        };
+        predicates.push(predicate);
+    }
+    let relation = quote_identifier(relation);
+    Ok(FilterPlan {
+        relation,
+        predicates,
+        struct_list_predicates,
+    })
+}
+
+fn scalar_predicate(column: &str, expected: &Value, field_type: &str) -> Result<String> {
+    if let Some(value) = expected.get("$eq") {
+        return scalar_predicate(column, value, field_type);
+    }
+    if expected.is_object() {
+        return Err(anyhow!(
+            "structured predicate is only supported for asset_reference or $eq"
+        ));
+    }
+    if expected.is_null() {
+        return Ok(format!("{column} IS NULL"));
+    }
+    Ok(format!("{column} = {}", sql_literal(expected, field_type)?))
+}
+
+fn sql_literal(value: &Value, field_type: &str) -> Result<String> {
+    match (field_type, value) {
+        (_, Value::String(value)) => Ok(sql_string_literal(value)),
+        (_, Value::Bool(value)) => Ok(value.to_string()),
+        (_, Value::Number(value)) => Ok(value.to_string()),
+        _ => Err(anyhow!("filter value does not match the typed Form field")),
+    }
+}
+
+fn quote_identifier(value: &str) -> String {
+    sql_identifier(value)
+}
+
 async fn collect_entries(
     op: &Operator,
     ws_path: &str,
@@ -1550,6 +1725,33 @@ async fn collect_entries(
         }
     }
     Ok(entries)
+}
+
+async fn collect_entries_with_form_scopes(
+    op: &Operator,
+    ws_path: &str,
+    forms: &HashMap<String, Value>,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Map<String, Value>> {
+    let mut entries = Map::new();
+    let rows = entry::list_entry_rows_authorized(op, ws_path, relation_scopes).await?;
+    for (form_name, row) in rows {
+        if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
+            entries.insert(row.entry_id.clone(), record);
+        }
+    }
+    Ok(entries)
+}
+
+async fn all_current_form_scopes(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<BTreeMap<String, EntryScope>> {
+    Ok(load_forms(op, ws_path)
+        .await?
+        .into_keys()
+        .map(|name| (name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect())
 }
 
 async fn build_record(

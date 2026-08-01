@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::EntryScope;
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
@@ -741,11 +742,17 @@ pub(crate) async fn find_entry_form(
     ws_path: &str,
     entry_id: &str,
 ) -> Result<Option<String>> {
-    let rows = list_entry_rows(op, ws_path).await?;
-    Ok(rows
-        .into_iter()
-        .find(|(_, row)| row.entry_id == entry_id)
-        .map(|(form_name, _)| form_name))
+    for form_name in list_form_names(op, ws_path).await? {
+        let (_, revisions) =
+            iceberg_store::latest_revisions_for_entry(op, ws_path, &form_name, entry_id).await?;
+        if revisions
+            .into_iter()
+            .any(|revision| revision.entry.external_id == entry_id && !revision.entry.deleted)
+        {
+            return Ok(Some(form_name));
+        }
+    }
+    Ok(None)
 }
 
 pub(crate) async fn read_entry_row(
@@ -765,6 +772,47 @@ pub(crate) async fn read_entry_row(
         .ok_or_else(|| entry_not_found(entry_id))?;
     selected
         .state
+        .ok_or_else(|| entry_not_found(entry_id).into())
+}
+
+fn entry_scope_for_lookup(entry_scope: &EntryScope, entry_id: &str) -> EntryScope {
+    let entry_id = Uuid::parse_str(entry_id)
+        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
+        .into();
+    match entry_scope {
+        EntryScope::AllCurrent => EntryScope::Only(BTreeSet::from([entry_id])),
+        EntryScope::Only(ids) if ids.contains(&entry_id) => {
+            EntryScope::Only(BTreeSet::from([entry_id]))
+        }
+        EntryScope::Only(_) => EntryScope::Only(BTreeSet::new()),
+        EntryScope::AllExcept(ids) if !ids.contains(&entry_id) => {
+            EntryScope::Only(BTreeSet::from([entry_id]))
+        }
+        EntryScope::AllExcept(_) => EntryScope::Only(BTreeSet::new()),
+    }
+}
+
+pub(crate) async fn read_entry_row_authorized(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    entry_id: &str,
+    entry_scope: &EntryScope,
+) -> Result<EntryRow> {
+    let (form, revisions) = iceberg_store::latest_revisions_for_form_authorized(
+        op,
+        ws_path,
+        form_name,
+        entry_scope_for_lookup(entry_scope, entry_id),
+    )
+    .await?;
+    revisions
+        .into_iter()
+        .map(|revision| revision_row_from_domain(revision, form_name, &form))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .find(|revision| revision.entry_id == entry_id)
+        .and_then(|revision| revision.state)
         .ok_or_else(|| entry_not_found(entry_id).into())
 }
 
@@ -842,6 +890,35 @@ pub(crate) async fn list_entry_rows(
         .into_iter()
         .filter_map(|(form_name, revision)| revision.state.map(|row| (form_name, row)))
         .collect())
+}
+
+pub(crate) async fn list_entry_rows_authorized(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Vec<(String, EntryRow)>> {
+    let mut rows = Vec::new();
+    for form_name in list_form_names(op, ws_path).await? {
+        let Some(entry_scope) = relation_scopes.get(&form_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        let (form, revisions) = iceberg_store::latest_revisions_for_form_authorized(
+            op,
+            ws_path,
+            &form_name,
+            entry_scope.clone(),
+        )
+        .await?;
+        rows.extend(
+            revisions
+                .into_iter()
+                .map(|revision| revision_row_from_domain(revision, &form_name, &form))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .filter_map(|revision| revision.state.map(|row| (form_name.clone(), row))),
+        );
+    }
+    Ok(rows)
 }
 
 pub(crate) async fn list_form_entry_rows(
@@ -1226,8 +1303,20 @@ async fn prepare_entry<I: IntegrityProvider>(
 }
 
 pub async fn list_entries(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
+    list_entries_from_rows(list_entry_rows(op, ws_path).await?)
+}
+
+pub async fn list_entries_with_scopes(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Vec<Value>> {
+    list_entries_from_rows(list_entry_rows_authorized(op, ws_path, relation_scopes).await?)
+}
+
+fn list_entries_from_rows(rows: Vec<(String, EntryRow)>) -> Result<Vec<Value>> {
     let mut entries = Vec::new();
-    for (form_name, row) in list_entry_rows(op, ws_path).await? {
+    for (form_name, row) in rows {
         if row.deleted {
             continue;
         }
@@ -1252,26 +1341,15 @@ pub async fn list_entry_summaries(
     query: Option<&str>,
     limit: usize,
 ) -> Result<Vec<EntrySummary>> {
-    list_entry_summaries_authorized(op, ws_path, form_filter, query, limit, None).await
-}
-
-pub async fn list_entry_summaries_authorized(
-    op: &Operator,
-    ws_path: &str,
-    form_filter: Option<&str>,
-    query: Option<&str>,
-    limit: usize,
-    readable_entry_ids: Option<&std::collections::HashSet<String>>,
-) -> Result<Vec<EntrySummary>> {
+    let rows = list_entry_rows(op, ws_path).await?;
     let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
     let normalized_query = query
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_lowercase);
     let mut entries = Vec::new();
-    for (form_name, row) in list_entry_rows(op, ws_path).await? {
-        if row.deleted || readable_entry_ids.is_some_and(|allowed| !allowed.contains(&row.entry_id))
-        {
+    for (form_name, row) in rows {
+        if row.deleted {
             continue;
         }
         if let Some(expected_form) = normalized_form {
@@ -1300,11 +1378,131 @@ pub async fn list_entry_summaries_authorized(
     Ok(entries)
 }
 
+pub async fn list_entry_summaries_with_scopes(
+    op: &Operator,
+    ws_path: &str,
+    form_filter: Option<&str>,
+    query: Option<&str>,
+    limit: usize,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Vec<EntrySummary>> {
+    let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
+    let normalized_query = query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
+    let mut entries = list_entry_rows_authorized(op, ws_path, relation_scopes)
+        .await?
+        .into_iter()
+        .filter(|(form_name, row)| {
+            !row.deleted
+                && normalized_form.is_none_or(|expected| form_name == expected)
+                && normalized_query
+                    .as_deref()
+                    .is_none_or(|expected| row_contains_query(row, expected))
+        })
+        .map(|(form_name, row)| EntrySummary {
+            id: row.entry_id,
+            title: row.title,
+            form: form_name,
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        left.title
+            .cmp(&right.title)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    entries.truncate(limit);
+    Ok(entries)
+}
+
+pub(crate) fn row_contains_query(row: &EntryRow, query: &str) -> bool {
+    row.title.to_lowercase().contains(query)
+        || row.entry_id.to_lowercase().contains(query)
+        || value_contains_query(&row.fields, query)
+        || value_contains_query(&row.extra_attributes, query)
+}
+
+fn value_contains_query(value: &Value, query: &str) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => value.to_string().contains(query),
+        Value::Number(value) => value.to_string().contains(query),
+        Value::String(value) => value.to_lowercase().contains(query),
+        Value::Array(values) => values
+            .iter()
+            .any(|value| value_contains_query(value, query)),
+        Value::Object(values) => values.iter().any(|(key, value)| {
+            key.to_lowercase().contains(query) || value_contains_query(value, query)
+        }),
+    }
+}
+
 pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
+    if row.deleted {
+        return Err(entry_not_found(entry_id).into());
+    }
+
+    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
+    let field_order = form_field_names(&form_def);
+    let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
+    let markdown = render_markdown(
+        &row.title,
+        &form_name,
+        &row.tags,
+        &merged_fields,
+        &field_order,
+    );
+    let frontmatter = serde_json::json!({
+        "form": form_name,
+        "tags": row.tags,
+    });
+    let sections = sections_from_fields(&merged_fields);
+
+    Ok(serde_json::json!({
+        "id": entry_id,
+        "revision_id": row.revision_id,
+        "content": markdown,
+        "frontmatter": frontmatter,
+        "sections": sections,
+        "computed": Value::Object(Map::new()),
+        "title": row.title,
+        "form": row.form,
+        "tags": row.tags,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "integrity": serde_json::to_value(row.integrity)?,
+    }))
+}
+
+pub async fn get_entry_authorized(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Value> {
+    let mut selected = None;
+    for form_name in list_form_names(op, ws_path).await? {
+        let Some(entry_scope) = relation_scopes.get(&form_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        match read_entry_row_authorized(op, ws_path, &form_name, entry_id, entry_scope).await {
+            Ok(row) => {
+                selected = Some((form_name, row));
+                break;
+            }
+            Err(error)
+                if error
+                    .downcast_ref::<AppError>()
+                    .is_some_and(|error| error.code() == ErrorCode::EntryNotFound) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let (form_name, row) = selected.ok_or_else(|| entry_not_found(entry_id))?;
     if row.deleted {
         return Err(entry_not_found(entry_id).into());
     }

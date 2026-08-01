@@ -3736,9 +3736,11 @@ async fn get_entry(
     )
     .await?;
     validate_id(&entry_id, "entry_id")?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     let mut value = state
         .service
-        .get_entry(&space_id, &entry_id)
+        .get_entry_authorized_for_principals(&space_id, &entry_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
     if let Some(content) = value.get("content").cloned() {

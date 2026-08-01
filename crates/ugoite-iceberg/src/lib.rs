@@ -191,6 +191,11 @@ pub enum RevisionView {
     Current,
 }
 
+/// Normal current-state reads are deliberately bounded. History remains an
+/// explicit, separate operation and may materialize its complete revision
+/// stream.
+pub const MAX_NORMAL_READ_ROWS: usize = 10_000;
+
 #[derive(Debug, Clone, Copy)]
 pub struct WriteConfig {
     pub target_file_size_bytes: u64,
@@ -597,9 +602,15 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, form_id)?;
-        self.read_revision_view_from_table(&form, table, view, coordinate.snapshot_id)
-            .await
-            .map_err(checkpoint_query_error)
+        self.read_revision_view_from_table(
+            &form,
+            table,
+            EntryScope::AllCurrent,
+            view,
+            coordinate.snapshot_id,
+        )
+        .await
+        .map_err(checkpoint_query_error)
     }
 
     /// Loads Form definitions from the immutable tables named by one
@@ -1253,15 +1264,7 @@ impl IcebergWorkspace {
     /// column decoding lives in this adapter; callers receive only domain
     /// revisions and never Arrow arrays or Iceberg tables.
     pub async fn read_revisions(&self, form_id: FormId) -> Result<Vec<EntryRevision>> {
-        let form = self.load_form(form_id).await?;
-        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        let table_schema = table.metadata().current_schema().clone();
-        let mut stream = table.scan().build()?.to_arrow().await?;
-        let mut revisions = Vec::new();
-        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
-            revisions.extend(revisions_from_batch(&batch, &form, &table_schema)?);
-        }
-        Ok(revisions)
+        self.read_revision_view(form_id, RevisionView::All).await
     }
 
     /// Reads one of the canonical revision views through the same DataFusion
@@ -1273,7 +1276,22 @@ impl IcebergWorkspace {
         form_id: FormId,
         view: RevisionView,
     ) -> Result<Vec<EntryRevision>> {
-        self.read_revision_view_with_snapshot(form_id, view, None)
+        self.read_revision_view_with_scope(form_id, EntryScope::AllCurrent, view)
+            .await
+    }
+
+    /// Reads a revision view through a provider-side Entry scope. The scope is
+    /// part of the trusted DataFusion plan, so unauthorized rows never cross
+    /// the query boundary into domain decoding.
+    pub async fn read_revision_view_with_scope(
+        &self,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        self.read_revision_view_from_table(&form, table, entry_scope, view, None)
             .await
     }
 
@@ -1298,7 +1316,7 @@ impl IcebergWorkspace {
     ) -> Result<Vec<EntryRevision>> {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        self.read_revision_view_from_table(&form, table, view, snapshot_id)
+        self.read_revision_view_from_table(&form, table, EntryScope::AllCurrent, view, snapshot_id)
             .await
     }
 
@@ -1306,24 +1324,14 @@ impl IcebergWorkspace {
         &self,
         form: &FormDefinition,
         table: iceberg::table::Table,
+        entry_scope: EntryScope,
         view: RevisionView,
         snapshot_id: Option<i64>,
     ) -> Result<Vec<EntryRevision>> {
         let batches = match view {
-            RevisionView::All => {
-                let scan = match snapshot_id {
-                    Some(snapshot_id) => table.scan().snapshot_id(snapshot_id),
-                    None => table.scan(),
-                };
-                let mut stream = scan.build()?.to_arrow().await?;
-                let mut batches = Vec::new();
-                while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
-                    batches.push(batch);
-                }
-                batches
-            }
+            RevisionView::All => self.read_all_revision_batches(&table, snapshot_id).await?,
             RevisionView::LatestIncludingTombstones | RevisionView::Current => {
-                self.read_latest_revision_batches(&table, None, snapshot_id, view)
+                self.read_latest_revision_batches(&table, &entry_scope, snapshot_id, view)
                     .await?
             }
         };
@@ -1358,7 +1366,7 @@ impl IcebergWorkspace {
         let batches = self
             .read_latest_revision_batches(
                 &table,
-                Some(entry_ids),
+                &EntryScope::Only(entry_ids.iter().copied().collect()),
                 None,
                 RevisionView::LatestIncludingTombstones,
             )
@@ -1373,7 +1381,7 @@ impl IcebergWorkspace {
     async fn latest_revision_plan(
         &self,
         table: &iceberg::table::Table,
-        entry_ids: Option<&[ugoite_domain::id::EntryId]>,
+        entry_scope: &EntryScope,
         snapshot_id: Option<i64>,
         view: RevisionView,
     ) -> Result<Vec<RecordBatch>> {
@@ -1386,29 +1394,43 @@ impl IcebergWorkspace {
         };
         context.register_table("revisions", Arc::new(provider))?;
         let revisions = context.table("revisions").await?;
-        let scope = match entry_ids {
-            Some([]) => return Ok(Vec::new()),
-            Some(entry_ids) => {
-                ugoite_core::query::EntryScope::Only(entry_ids.iter().copied().collect())
-            }
-            None => ugoite_core::query::EntryScope::AllCurrent,
+        Ok(
+            crate::query_context::latest_revision_dataframe(revisions, entry_scope, view)?
+                .select_columns(&["entry_id", "revision_id", "entry_version"])?
+                .collect()
+                .await?,
+        )
+    }
+
+    async fn read_all_revision_batches(
+        &self,
+        table: &iceberg::table::Table,
+        snapshot_id: Option<i64>,
+    ) -> Result<Vec<RecordBatch>> {
+        // History is an explicit audit operation, not a normal current-state
+        // read. Keep its schema-evolution-aware Iceberg stream separate from
+        // the bounded DataFusion latest-state path above.
+        let scan = match snapshot_id {
+            Some(snapshot_id) => table.scan().snapshot_id(snapshot_id),
+            None => table.scan(),
         };
-        let heads = crate::query_context::latest_revision_dataframe(revisions, &scope, view)?;
-        Ok(heads
-            .select_columns(&["entry_id", "revision_id", "entry_version"])?
-            .collect()
-            .await?)
+        let mut stream = scan.build()?.to_arrow().await?;
+        let mut batches = Vec::new();
+        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
+            batches.push(batch);
+        }
+        Ok(batches)
     }
 
     async fn read_latest_revision_batches(
         &self,
         table: &iceberg::table::Table,
-        entry_ids: Option<&[ugoite_domain::id::EntryId]>,
+        entry_scope: &EntryScope,
         snapshot_id: Option<i64>,
         view: RevisionView,
     ) -> Result<Vec<RecordBatch>> {
         let ids = self
-            .latest_revision_plan(table, entry_ids, snapshot_id, view)
+            .latest_revision_plan(table, entry_scope, snapshot_id, view)
             .await?;
         let mut revision_ids = Vec::new();
         let mut entry_ids = std::collections::BTreeSet::new();
@@ -1416,18 +1438,22 @@ impl IcebergWorkspace {
             let entry_values = batch
                 .column_by_name("entry_id")
                 .context("latest revision plan is missing entry_id")?;
-            let values = batch
+            let revision_values = batch
                 .column_by_name("revision_id")
                 .context("latest revision plan is missing revision_id")?;
             for row in 0..batch.num_rows() {
-                let entry_id = uuid_at(entry_values, row)?;
-                if !entry_ids.insert(entry_id) {
+                if !entry_ids.insert(uuid_at(entry_values, row)?) {
                     return Err(anyhow!(
                         "entry revision invariant failed: multiple revisions share a maximum entry_version"
                     ));
                 }
-                revision_ids.push(Datum::uuid(uuid_at(values, row)?.as_uuid()));
+                revision_ids.push(Datum::uuid(uuid_at(revision_values, row)?.as_uuid()));
             }
+        }
+        if entry_ids.len() > MAX_NORMAL_READ_ROWS {
+            return Err(anyhow!(
+                "normal Entry reads are limited to {MAX_NORMAL_READ_ROWS} current rows"
+            ));
         }
         if revision_ids.is_empty() {
             return Ok(Vec::new());

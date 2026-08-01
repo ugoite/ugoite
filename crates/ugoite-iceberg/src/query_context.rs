@@ -1,10 +1,11 @@
 //! Closed DataFusion context for authorized Iceberg queries.
 //!
-//! The public type deliberately exposes only `execute`. It never returns a
-//! `SessionContext`, Catalog, provider, or SQL planner that could resolve an
-//! unapproved object.
+//! The public type deliberately exposes only closed query operations. It never
+//! returns a `SessionContext`, Catalog, provider, or SQL planner that could
+//! resolve an unapproved object.
 
 use anyhow::{anyhow, bail, Context, Result};
+use arrow_array::Array;
 use datafusion::catalog::default_table_source::DefaultTableSource;
 use datafusion::datasource::TableProvider;
 use datafusion::execution::context::SessionContext;
@@ -418,6 +419,73 @@ impl AuthorizedQueryContext {
                 .await
                 .map_err(AuthorizedQueryError::execution_failed)?;
             Ok(batches.iter().any(|batch| batch.num_rows() > 0))
+        })
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    /// Returns the authorized Entry IDs whose Form-owned Struct list contains
+    /// the requested child value. This is intentionally a plan result rather
+    /// than a JSON predicate so reverse-reference and asset-reference list
+    /// queries remain inside the same trusted latest-state view.
+    pub async fn entry_ids_containing_struct_list_value(
+        &self,
+        relation: &str,
+        list_field: &str,
+        child_field: &str,
+        expected: &str,
+    ) -> Result<BTreeSet<String>> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(self.limits.timeout, async {
+            let frame = self
+                .context
+                .table(relation)
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?
+                .unnest_columns_with_options(
+                    &[list_field],
+                    datafusion::common::UnnestOptions::new().with_recursions(
+                        datafusion::common::RecursionUnnestOption {
+                            input_column: list_field.into(),
+                            output_column: "__ugoite_unnested_item".into(),
+                            depth: 1,
+                        },
+                    ),
+                )
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let nested = datafusion::functions::core::expr_fn::get_field(
+                col("__ugoite_unnested_item"),
+                child_field,
+            );
+            let frame = frame
+                .filter(nested.eq(lit(expected)))
+                .and_then(|frame| frame.select_columns(&["_ugoite_id"]))
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let batches = frame
+                .collect()
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let mut ids = BTreeSet::new();
+            for batch in batches {
+                let values = batch
+                    .column_by_name("_ugoite_id")
+                    .and_then(|column| column.as_any().downcast_ref::<arrow_array::StringArray>())
+                    .ok_or_else(|| {
+                        AuthorizedQueryError::execution_failed(anyhow!(
+                            "authorized Entry ID projection has an invalid type"
+                        ))
+                    })?;
+                for row in 0..values.len() {
+                    if !values.is_null(row) {
+                        ids.insert(values.value(row).to_string());
+                    }
+                }
+            }
+            Ok(ids)
         })
         .await
         .map_err(|_| AuthorizedQueryError::QueryTimedOut)?

@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use opendal::Operator;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 use crate::integrity::RealIntegrityProvider;
@@ -176,24 +176,6 @@ impl UgoiteService {
         form::list_forms(&self.operator, &self.workspace_path(space_id)).await
     }
 
-    async fn form_relations(&self, space_id: &str) -> Result<BTreeMap<String, String>> {
-        self.list_forms(space_id)
-            .await?
-            .into_iter()
-            .map(|form| {
-                let name = form
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| anyhow!("Form is missing its name"))?;
-                let relation = form
-                    .get("sql_relation")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| anyhow!("Form is missing its SQL relation"))?;
-                Ok((name.to_string(), relation.to_string()))
-            })
-            .collect()
-    }
-
     pub async fn get_form(&self, space_id: &str, form_name: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_form_name(form_name))?;
@@ -283,6 +265,26 @@ impl UgoiteService {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_entry_id(entry_id))?;
         entry::get_entry(&self.operator, &self.workspace_path(space_id), entry_id).await
+    }
+
+    pub async fn get_entry_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let scopes = self
+            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        entry::get_entry_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            &scopes,
+        )
+        .await
     }
 
     pub async fn update_entry(
@@ -487,14 +489,16 @@ impl UgoiteService {
         query: Option<&str>,
         limit: usize,
     ) -> Result<Vec<entry::EntrySummary>> {
-        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
-        entry::list_entry_summaries_authorized(
+        let scopes = self
+            .authorized_form_entry_scopes(space_id, principal_id)
+            .await?;
+        entry::list_entry_summaries_with_scopes(
             &self.operator,
             &self.workspace_path(space_id),
             form,
             query,
             limit,
-            Some(&allowed),
+            &scopes,
         )
         .await
     }
@@ -507,16 +511,16 @@ impl UgoiteService {
         query: Option<&str>,
         limit: usize,
     ) -> Result<Vec<entry::EntrySummary>> {
-        let allowed = self
-            .authorized_entry_ids_for_principals(space_id, principal_ids)
+        let scopes = self
+            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
             .await?;
-        entry::list_entry_summaries_authorized(
+        entry::list_entry_summaries_with_scopes(
             &self.operator,
             &self.workspace_path(space_id),
             form,
             query,
             limit,
-            Some(&allowed),
+            &scopes,
         )
         .await
     }
@@ -566,58 +570,6 @@ impl UgoiteService {
                 }),
             )
             .await
-    }
-
-    pub async fn authorized_entry_ids(
-        &self,
-        space_id: &str,
-        principal_id: Uuid,
-    ) -> Result<HashSet<String>> {
-        let entries = self.list_entries(space_id).await?;
-        let resources: Vec<ResourceRef> = entries
-            .iter()
-            .filter_map(|entry| entry.get("id").and_then(Value::as_str).map(str::to_string))
-            .map(|id| ResourceRef {
-                kind: ResourceKind::Entry,
-                id,
-                parent: None,
-            })
-            .collect();
-        Ok(Authorizer::new(self.operator.clone())
-            .filter_authorized_resources(space_id, principal_id, resources, Action::Read)
-            .await?
-            .into_iter()
-            .collect())
-    }
-
-    /// Build the Core-owned Form → Entry authorization boundary used by the
-    /// DataFusion adapter. A Form absent from this map is deliberately not a
-    /// SQL relation at all; it must not become an empty but discoverable view.
-    pub async fn authorized_form_entry_ids(
-        &self,
-        space_id: &str,
-        principal_id: Uuid,
-    ) -> Result<BTreeMap<String, HashSet<String>>> {
-        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
-        let relations = self.form_relations(space_id).await?;
-        let mut by_form = BTreeMap::<String, HashSet<String>>::new();
-        for entry in self.list_entries(space_id).await? {
-            let Some(entry_id) = entry.get("id").and_then(Value::as_str) else {
-                continue;
-            };
-            let Some(form) = entry.get("form").and_then(Value::as_str) else {
-                continue;
-            };
-            if allowed.contains(entry_id) {
-                if let Some(relation) = relations.get(form) {
-                    by_form
-                        .entry(relation.clone())
-                        .or_default()
-                        .insert(entry_id.to_string());
-                }
-            }
-        }
-        Ok(by_form)
     }
 
     /// The only scope accepted by reference/existence checks. It is derived
@@ -709,71 +661,17 @@ impl UgoiteService {
             .collect())
     }
 
-    pub async fn authorized_entry_ids_for_principals(
-        &self,
-        space_id: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<HashSet<String>> {
-        let mut principals = principal_ids.iter().copied();
-        let Some(first) = principals.next() else {
-            return Ok(HashSet::new());
-        };
-        let mut allowed = self.authorized_entry_ids(space_id, first).await?;
-        for principal_id in principals {
-            let next = self.authorized_entry_ids(space_id, principal_id).await?;
-            allowed.retain(|entry_id| next.contains(entry_id));
-        }
-        Ok(allowed)
-    }
-
-    pub async fn authorized_form_entry_ids_for_principals(
-        &self,
-        space_id: &str,
-        principal_ids: &[Uuid],
-    ) -> Result<BTreeMap<String, HashSet<String>>> {
-        let allowed = self
-            .authorized_entry_ids_for_principals(space_id, principal_ids)
-            .await?;
-        let relations = self.form_relations(space_id).await?;
-        let mut by_form = BTreeMap::<String, HashSet<String>>::new();
-        for entry in self.list_entries(space_id).await? {
-            let (Some(entry_id), Some(form)) = (
-                entry.get("id").and_then(Value::as_str),
-                entry.get("form").and_then(Value::as_str),
-            ) else {
-                continue;
-            };
-            if allowed.contains(entry_id) {
-                if let Some(relation) = relations.get(form) {
-                    by_form
-                        .entry(relation.clone())
-                        .or_default()
-                        .insert(entry_id.to_string());
-                }
-            }
-        }
-        Ok(by_form)
-    }
-
     pub async fn list_entries_authorized_for_principals(
         &self,
         space_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<Vec<Value>> {
-        let allowed = self
-            .authorized_entry_ids_for_principals(space_id, principal_ids)
+        validate_storage_id(validate_space_id(space_id))?;
+        let scopes = self
+            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
             .await?;
-        Ok(self
-            .list_entries(space_id)
-            .await?
-            .into_iter()
-            .filter(|entry| {
-                entry
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| allowed.contains(id))
-            })
-            .collect())
+        entry::list_entries_with_scopes(&self.operator, &self.workspace_path(space_id), &scopes)
+            .await
     }
 
     pub async fn list_entries_authorized(
@@ -781,18 +679,12 @@ impl UgoiteService {
         space_id: &str,
         principal_id: Uuid,
     ) -> Result<Vec<Value>> {
-        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
-        Ok(self
-            .list_entries(space_id)
-            .await?
-            .into_iter()
-            .filter(|entry| {
-                entry
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| allowed.contains(id))
-            })
-            .collect())
+        validate_storage_id(validate_space_id(space_id))?;
+        let scopes = self
+            .authorized_form_entry_scopes(space_id, principal_id)
+            .await?;
+        entry::list_entries_with_scopes(&self.operator, &self.workspace_path(space_id), &scopes)
+            .await
     }
 
     pub async fn filter_json_resources_authorized(
@@ -857,14 +749,14 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         query: &str,
     ) -> Result<Vec<search::KeywordSearchResult>> {
-        let allowed = self
-            .authorized_entry_ids_for_principals(space_id, principal_ids)
+        let scopes = self
+            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
             .await?;
-        search::search_entries_authorized(
+        search::search_entries_with_scopes(
             &self.operator,
             &self.workspace_path(space_id),
             query,
-            &allowed,
+            &scopes,
         )
         .await
     }
@@ -875,14 +767,14 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         filter: &Value,
     ) -> Result<Vec<Value>> {
-        let allowed = self
-            .authorized_entry_ids_for_principals(space_id, principal_ids)
+        let scopes = self
+            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
             .await?;
-        index::query_index_authorized(
+        index::query_index_authorized_by_form_scopes(
             &self.operator,
             &self.workspace_path(space_id),
             &filter.to_string(),
-            &allowed,
+            &scopes,
         )
         .await
     }
@@ -1022,12 +914,14 @@ impl UgoiteService {
         principal_id: Uuid,
         query: &str,
     ) -> Result<Vec<search::KeywordSearchResult>> {
-        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
-        search::search_entries_authorized(
+        let scopes = self
+            .authorized_form_entry_scopes(space_id, principal_id)
+            .await?;
+        search::search_entries_with_scopes(
             &self.operator,
             &self.workspace_path(space_id),
             query,
-            &allowed,
+            &scopes,
         )
         .await
     }
@@ -1038,12 +932,14 @@ impl UgoiteService {
         principal_id: Uuid,
         filter: &Value,
     ) -> Result<Vec<Value>> {
-        let allowed = self.authorized_entry_ids(space_id, principal_id).await?;
-        index::query_index_authorized(
+        let scopes = self
+            .authorized_form_entry_scopes(space_id, principal_id)
+            .await?;
+        index::query_index_authorized_by_form_scopes(
             &self.operator,
             &self.workspace_path(space_id),
             &filter.to_string(),
-            &allowed,
+            &scopes,
         )
         .await
     }
@@ -1054,14 +950,14 @@ impl UgoiteService {
         principal_id: Uuid,
         sql: &str,
     ) -> Result<Vec<Value>> {
-        let allowed = self
-            .authorized_form_entry_ids(space_id, principal_id)
+        let scopes = self
+            .authorized_form_entry_scopes(space_id, principal_id)
             .await?;
-        index::execute_sql_query_authorized_by_form(
+        index::execute_sql_query_authorized_by_form_scopes(
             &self.operator,
             &self.workspace_path(space_id),
             sql,
-            &allowed,
+            &scopes,
         )
         .await
     }
