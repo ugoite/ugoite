@@ -205,7 +205,7 @@ describe("EntryDetailPane", () => {
       title: "Timestamp Entry",
       form: "Event",
       content:
-        "---\nform: Event\n---\n\n# Timestamp Entry\n\n## Started\n2026-07-18T12:34:56Z\n\n## Observed\n2026-07-18T21:34:56+09:00\n\n## Precise\n2026-07-18T12:34:56.123456789Z",
+        "---\nform: Event\n---\n\n# Timestamp Entry\n\n## Amount\n12.5\n\n## Started\n2026-07-18T12:34:56Z\n\n## Observed\n2026-07-18T21:34:56+09:00\n\n## Precise\n2026-07-18T12:34:56.123456789Z\n\n## Date\n2026-07-\n\n## Time\n12:",
       revision_id: "rev-1",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -221,9 +221,12 @@ describe("EntryDetailPane", () => {
             version: 1,
             template: "# Event\n",
             fields: {
+              Amount: { type: "double", required: false },
               Started: { type: "timestamp", required: false },
               Observed: { type: "timestamp_tz", required: false },
               Precise: { type: "timestamp_ns", required: false },
+              Date: { type: "date", required: false },
+              Time: { type: "time", required: false },
             },
           },
         ]}
@@ -232,9 +235,15 @@ describe("EntryDetailPane", () => {
     ));
 
     const started = await screen.findByLabelText("Started");
-    expect(started).toHaveAttribute("type", "datetime-local");
-    expect(started).toHaveValue("2026-07-18T12:34:56.000");
-    expect(started).toHaveAttribute("step", "any");
+    expect(started).toHaveAttribute("type", "text");
+    expect(started).toHaveValue("2026-07-18T12:34:56Z");
+    expect(started).not.toHaveAttribute("step");
+
+    const amount = screen.getByLabelText("Amount");
+    expect(amount).toHaveAttribute("type", "text");
+    expect(amount).toHaveAttribute("inputmode", "decimal");
+    fireEvent.input(amount, { target: { value: "12." } });
+    expect(amount).toHaveValue("12.");
 
     const observed = screen.getByLabelText("Observed");
     expect(observed).toHaveAttribute("type", "text");
@@ -243,6 +252,14 @@ describe("EntryDetailPane", () => {
     const precise = screen.getByLabelText("Precise");
     expect(precise).toHaveAttribute("type", "text");
     expect(precise).toHaveValue("2026-07-18T12:34:56.123456789Z");
+
+    const date = screen.getByLabelText("Date");
+    expect(date).toHaveAttribute("type", "text");
+    expect(date).toHaveValue("2026-07-");
+
+    const time = screen.getByLabelText("Time");
+    expect(time).toHaveAttribute("type", "text");
+    expect(time).toHaveValue("12:");
   });
 
   it("REQ-FE-052: explains forms that have no structured fields", async () => {
@@ -342,6 +359,7 @@ describe("EntryDetailPane", () => {
     ));
 
     expect(await screen.findByLabelText("Summary")).toHaveValue("hello");
+    expect(screen.getByLabelText("Done")).toHaveAttribute("type", "text");
     expect(screen.getByLabelText("Done")).toHaveValue("maybe");
     expect(
       screen.getByText(
