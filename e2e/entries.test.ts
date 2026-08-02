@@ -453,6 +453,7 @@ test.describe("Entries CRUD", () => {
 		};
 
 		try {
+			console.log("asset-owned: create forms");
 			await createForm(mediaForm, {
 				thumbnail: { type: "asset_reference", required: true },
 				microscope_images: {
@@ -469,6 +470,7 @@ test.describe("Entries CRUD", () => {
 					items: { type: "asset_reference" },
 				},
 			});
+			console.log("asset-owned: open media form");
 
 			await page.goto(
 				getFrontendUrl(
@@ -481,6 +483,7 @@ test.describe("Entries CRUD", () => {
 				'[data-field-name="microscope_images"]',
 			);
 			await expect(thumbnail).toBeVisible();
+			console.log("asset-owned: upload media files");
 			await thumbnail.locator('input[type="file"]').setInputFiles({
 				name: "thumbnail.txt",
 				mimeType: "text/plain",
@@ -501,6 +504,7 @@ test.describe("Entries CRUD", () => {
 			await expect(
 				page.getByText("Uploaded; entry not saved yet"),
 			).toHaveCount(3, { timeout: 15_000 });
+			console.log("asset-owned: save media entry");
 
 			const createResponse = page.waitForResponse(
 				(response) =>
@@ -513,6 +517,7 @@ test.describe("Entries CRUD", () => {
 			await expect(page).toHaveURL(
 				new RegExp(`/spaces/${spaceId}/entries/[^/]+$`),
 			);
+			console.log("asset-owned: media entry saved");
 			const mediaEntryId = decodeURIComponent(
 				new URL(page.url()).pathname.split("/").pop() ?? "",
 			);
@@ -529,6 +534,7 @@ test.describe("Entries CRUD", () => {
 
 			await page.reload({ waitUntil: "domcontentloaded" });
 			await expect(page.getByText("thumbnail.txt")).toBeVisible();
+			console.log("asset-owned: read media asset");
 			const readResponse = page.waitForResponse(
 				(response) => {
 					const requestEvent = response.request();
@@ -554,6 +560,7 @@ test.describe("Entries CRUD", () => {
 			await expect(page.getByText("Uploaded; entry not saved yet")).toHaveCount(1, {
 				timeout: 15_000,
 			});
+			console.log("asset-owned: replace thumbnail");
 			const replaceResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "PUT" &&
@@ -562,6 +569,7 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await replaceResponse).ok()).toBeTruthy();
+			console.log("asset-owned: reorder microscope list");
 
 			const orderedList = page.locator('[data-field-name="microscope_images"]');
 			await orderedList.getByRole("button", {
@@ -575,6 +583,7 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await reorderResponse).ok()).toBeTruthy();
+			console.log("asset-owned: remove microscope item");
 
 			mediaEntryResponse = await request.get(
 				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
@@ -603,6 +612,7 @@ test.describe("Entries CRUD", () => {
 			);
 			const contract = page.locator('[data-field-name="contract"]');
 			const rawData = page.locator('[data-field-name="raw_data"]');
+			console.log("asset-owned: upload contract files");
 			await contract.locator('input[type="file"]').setInputFiles({
 				name: "contract.pdf",
 				mimeType: "application/pdf",
@@ -616,6 +626,7 @@ test.describe("Entries CRUD", () => {
 			await expect(
 				page.getByText("Uploaded; entry not saved yet"),
 			).toHaveCount(2, { timeout: 15_000 });
+			console.log("asset-owned: save contracts entry");
 			const secondCreateResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "POST" &&
@@ -624,6 +635,7 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await secondCreateResponse).status()).toBe(201);
+			console.log("asset-owned: contracts entry saved");
 			const contractsEntryId = decodeURIComponent(
 				new URL(page.url()).pathname.split("/").pop() ?? "",
 			);
