@@ -1,8 +1,12 @@
+import { type Accessor, createSignal, type Setter } from "solid-js";
 import {
-  createSignal,
-  type Accessor,
-  type Setter,
-} from "solid-js";
+  isAssetReference,
+  parseAssetReference,
+  parseAssetReferenceList,
+  serializeAssetReference,
+  serializeAssetReferenceList,
+} from "./asset-reference";
+import type { AssetReference } from "./types";
 
 export type PendingAssetUpload = {
   id: string;
@@ -14,6 +18,24 @@ export type PendingAssetUpload = {
   controller: AbortController;
 };
 
+export type AssetDraftBinding = {
+  multiple: boolean;
+  getValue: () => string;
+  setValue: (value: string) => void;
+};
+
+export type AssetUploadMessages = {
+  invalid: string;
+  duplicate: string;
+  replacedItemMissing: string;
+  uploadFailed: string;
+};
+
+export type AssetUpload = (
+  file: File,
+  signal: AbortSignal,
+) => Promise<AssetReference>;
+
 /**
  * Non-serializable state owned by one Entry draft and shared by every view of
  * an asset field. The Entry pane, rather than a conditionally mounted view,
@@ -21,7 +43,6 @@ export type PendingAssetUpload = {
  */
 export interface AssetFieldState {
   pendingUploads: Accessor<PendingAssetUpload[]>;
-  setPendingUploads: Setter<PendingAssetUpload[]>;
   previewUrls: Accessor<Map<string, string>>;
   setPreviewUrls: Setter<Map<string, string>>;
   unavailableIds: Accessor<Set<string>>;
@@ -31,8 +52,21 @@ export interface AssetFieldState {
   localFiles: Accessor<Map<string, File>>;
   setLocalFiles: Setter<Map<string, File>>;
   readControllers: Map<string, AbortController>;
-  uploadQueue: Promise<void>;
-  setUploadQueue: (queue: Promise<void>) => void;
+  bindDraft: (binding: AssetDraftBinding) => void;
+  hasDraftBinding: () => boolean;
+  enqueueUpload: (
+    item: PendingAssetUpload,
+    upload: AssetUpload,
+    messages: AssetUploadMessages,
+  ) => void;
+  retryUpload: (
+    item: PendingAssetUpload,
+    upload: AssetUpload,
+    messages: AssetUploadMessages,
+  ) => void;
+  cancelUpload: (item: PendingAssetUpload) => void;
+  removeReference: (index: number) => void;
+  moveReference: (index: number, delta: -1 | 1) => void;
   resetForGeneration: (generation: number) => void;
   dispose: () => void;
   isActive: (generation: number) => boolean;
@@ -55,6 +89,7 @@ export function createAssetFieldState(): AssetFieldState {
   const readControllers = new Map<string, AbortController>();
   let uploadQueue = Promise.resolve();
   let generation: number | undefined;
+  let draftBinding: AssetDraftBinding | undefined;
 
   const revokePreviewUrls = () => {
     for (const url of previewUrls().values()) URL.revokeObjectURL(url);
@@ -77,9 +112,237 @@ export function createAssetFieldState(): AssetFieldState {
     setLocalFiles(new Map());
   };
 
+  const bindDraft = (binding: AssetDraftBinding) => {
+    draftBinding = binding;
+  };
+
+  const pendingById = (id: string) =>
+    pendingUploads().find((item) => item.id === id);
+
+  const isActiveUpload = (item: PendingAssetUpload) =>
+    !item.controller.signal.aborted && isActive(item.generation);
+
+  const currentReferences = () => {
+    const binding = draftBinding;
+    if (!binding) return [];
+    if (binding.multiple) {
+      return parseAssetReferenceList(binding.getValue()) ?? [];
+    }
+    const reference = parseAssetReference(binding.getValue());
+    return reference ? [reference] : [];
+  };
+
+  const setReferences = (references: AssetReference[]) => {
+    const binding = draftBinding;
+    if (!binding) return;
+    binding.setValue(
+      binding.multiple
+        ? serializeAssetReferenceList(references)
+        : references[0]
+        ? serializeAssetReference(references[0])
+        : "",
+    );
+  };
+
+  const removePendingForAsset = (assetId: string) => {
+    setPendingUploads((items) => {
+      for (const item of items) {
+        if (item.replaceAssetId === assetId) item.controller.abort();
+      }
+      return items.filter((item) => item.replaceAssetId !== assetId);
+    });
+  };
+
+  const removeReference = (index: number) => {
+    const current = currentReferences();
+    const removed = current[index];
+    if (!removed) return;
+    removePendingForAsset(removed.asset_id);
+    setLocalFiles((files) => {
+      const next = new Map(files);
+      next.delete(removed.asset_id);
+      return next;
+    });
+    setPreviewUrls((urls) => {
+      const next = new Map(urls);
+      const preview = next.get(removed.asset_id);
+      if (preview) URL.revokeObjectURL(preview);
+      next.delete(removed.asset_id);
+      return next;
+    });
+    setUnavailableIds((ids) => {
+      const next = new Set(ids);
+      next.delete(removed.asset_id);
+      return next;
+    });
+    setReferences(current.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const moveReference = (index: number, delta: -1 | 1) => {
+    const current = currentReferences();
+    const target = index + delta;
+    if (target < 0 || target >= current.length) return;
+    const next = current.slice();
+    [next[index], next[target]] = [next[target], next[index]];
+    setReferences(next);
+  };
+
+  const runUpload = async (
+    id: string,
+    upload: AssetUpload,
+    messages: AssetUploadMessages,
+  ) => {
+    const item = pendingById(id);
+    if (!item) return;
+    if (!isActiveUpload(item)) {
+      setPendingUploads((items) =>
+        items.filter((candidate) => candidate.id !== id)
+      );
+      return;
+    }
+    setPendingUploads((items) =>
+      items.map((candidate) =>
+        candidate.id === id ? { ...candidate, status: "uploading" } : candidate
+      )
+    );
+    try {
+      const reference = await upload(item.file, item.controller.signal);
+      if (!isAssetReference(reference)) throw new Error(messages.invalid);
+      if (!isActiveUpload(item)) {
+        setPendingUploads((items) =>
+          items.filter((candidate) => candidate.id !== id)
+        );
+        return;
+      }
+
+      // Resolve against the current Entry draft, not a value captured by a
+      // conditionally mounted view. Reorder/remove operations made while a
+      // queued upload is running are therefore preserved.
+      const current = currentReferences();
+      const targetIndex = item.replaceAssetId === undefined
+        ? -1
+        : current.findIndex((candidate) =>
+          candidate.asset_id === item.replaceAssetId
+        );
+      const duplicate = current.some((candidate, candidateIndex) =>
+        candidate.asset_id === reference.asset_id &&
+        candidateIndex !== targetIndex
+      );
+      if (
+        (item.replaceAssetId === undefined && !draftBinding?.multiple &&
+          current.length > 0) ||
+        (item.replaceAssetId !== undefined && targetIndex < 0) ||
+        duplicate
+      ) {
+        setPendingUploads((items) =>
+          items.map((candidate) =>
+            candidate.id === id
+              ? {
+                ...candidate,
+                status: "failed",
+                error: item.replaceAssetId !== undefined && targetIndex < 0
+                  ? messages.replacedItemMissing
+                  : messages.duplicate,
+              }
+              : candidate
+          )
+        );
+        return;
+      }
+
+      const next = current.slice();
+      if (targetIndex >= 0) next[targetIndex] = reference;
+      else next.push(reference);
+      setReferences(next);
+
+      if (item.replaceAssetId) {
+        setPreviewUrls((urls) => {
+          const nextUrls = new Map(urls);
+          const preview = nextUrls.get(item.replaceAssetId!);
+          if (preview) URL.revokeObjectURL(preview);
+          nextUrls.delete(item.replaceAssetId!);
+          return nextUrls;
+        });
+        setUnavailableIds((ids) => {
+          const nextIds = new Set(ids);
+          nextIds.delete(item.replaceAssetId!);
+          return nextIds;
+        });
+      }
+      setLocalFiles((files) => {
+        const nextFiles = new Map(files);
+        if (item.replaceAssetId) nextFiles.delete(item.replaceAssetId);
+        nextFiles.set(reference.asset_id, item.file);
+        return nextFiles;
+      });
+      setPendingUploads((items) =>
+        items.filter((candidate) => candidate.id !== id)
+      );
+    } catch (error) {
+      if (
+        !isActiveUpload(item) ||
+        error instanceof Error && error.name === "AbortError"
+      ) {
+        setPendingUploads((items) =>
+          items.filter((candidate) => candidate.id !== id)
+        );
+        return;
+      }
+      setPendingUploads((items) =>
+        items.map((candidate) =>
+          candidate.id === id
+            ? {
+              ...candidate,
+              status: "failed",
+              error: error instanceof Error
+                ? error.message
+                : messages.uploadFailed,
+            }
+            : candidate
+        )
+      );
+    }
+  };
+
+  const enqueueUpload = (
+    item: PendingAssetUpload,
+    upload: AssetUpload,
+    messages: AssetUploadMessages,
+  ) => {
+    setPendingUploads((items) => [...items, item]);
+    const next = uploadQueue.then(() => runUpload(item.id, upload, messages));
+    uploadQueue = next;
+  };
+
+  const retryUpload = (
+    item: PendingAssetUpload,
+    upload: AssetUpload,
+    messages: AssetUploadMessages,
+  ) => {
+    const controller = new AbortController();
+    setPendingUploads((items) =>
+      items.map((candidate) =>
+        candidate.id === item.id
+          ? { ...candidate, controller, status: "local", error: undefined }
+          : candidate
+      )
+    );
+    const next = uploadQueue.then(() => runUpload(item.id, upload, messages));
+    uploadQueue = next;
+  };
+
+  const cancelUpload = (item: PendingAssetUpload) => {
+    item.controller.abort();
+    setPendingUploads((items) =>
+      items.filter((candidate) => candidate.id !== item.id)
+    );
+  };
+
+  const isActive = (activeGeneration: number) =>
+    generation === activeGeneration;
+
   return {
     pendingUploads,
-    setPendingUploads,
     previewUrls,
     setPreviewUrls,
     unavailableIds,
@@ -89,14 +352,15 @@ export function createAssetFieldState(): AssetFieldState {
     localFiles,
     setLocalFiles,
     readControllers,
-    get uploadQueue() {
-      return uploadQueue;
-    },
-    setUploadQueue: (queue) => {
-      uploadQueue = queue;
-    },
+    bindDraft,
+    hasDraftBinding: () => draftBinding !== undefined,
+    enqueueUpload,
+    retryUpload,
+    cancelUpload,
+    removeReference,
+    moveReference,
     resetForGeneration,
     dispose: () => resetForGeneration((generation ?? 0) + 1),
-    isActive: (activeGeneration) => generation === activeGeneration,
+    isActive,
   };
 }

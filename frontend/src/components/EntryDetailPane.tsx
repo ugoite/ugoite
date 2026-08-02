@@ -12,8 +12,8 @@ import type { Accessor } from "solid-js";
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { AssetField } from "~/components/AssetField";
 import {
-  createAssetFieldState,
   type AssetFieldState,
+  createAssetFieldState,
 } from "~/lib/asset-field-state";
 import { locale, t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
@@ -463,9 +463,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   >(null);
   const [entryError, setEntryError] = createSignal<string | null>(null);
   const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
-  const [pendingAssetFields, setPendingAssetFields] = createSignal<Set<string>>(
-    new Set(),
-  );
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
 
   // Asset upload/read state belongs to this Entry draft. Fields and Preview
@@ -530,17 +527,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       availableForms.find((candidate) => candidate.name === formName) ?? null
     );
   });
-
-  const assetFieldState = (fieldName: string) => {
-    const formName = currentForm()?.name ?? props.createForm?.()?.name ?? "";
-    const key = `${formName}\u0000${fieldName}`;
-    let state = assetFieldStates.get(key);
-    if (!state) {
-      state = createAssetFieldState();
-      assetFieldStates.set(key, state);
-    }
-    return state;
-  };
 
   createEffect(() => {
     const generation = assetEditorGeneration();
@@ -616,7 +602,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setLastLoadedResourceRevisionId(loadedEntry.revision_id);
     setCurrentRevisionId(isCreateMode() ? null : loadedEntry.revision_id);
     setAssetEditorGeneration((generation) => generation + 1);
-    setPendingAssetFields(new Set());
     setEditorContent(content);
     setLastSavedContent(isCreateMode() ? "" : content);
     setIsDirty(isCreateMode());
@@ -648,18 +633,23 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     handleContentChange(updateH2Section(editorContent(), fieldName, value));
   };
 
-  const handleAssetPendingChange = (
-    fieldName: string,
-    pending: boolean,
-    generation = assetEditorGeneration(),
-  ) => {
-    if (generation !== assetEditorGeneration()) return;
-    setPendingAssetFields((fields) => {
-      const next = new Set(fields);
-      if (pending) next.add(fieldName);
-      else next.delete(fieldName);
-      return next;
+  const assetFieldState = (fieldName: string, multiple: boolean) => {
+    const formName = currentForm()?.name ?? props.createForm?.()?.name ?? "";
+    const key = `${formName}\u0000${fieldName}`;
+    let state = assetFieldStates.get(key);
+    if (!state) {
+      state = createAssetFieldState();
+      assetFieldStates.set(key, state);
+    }
+    // The binding belongs to the Entry draft, not either conditionally
+    // mounted AssetField view. Upload completion therefore always resolves
+    // against the latest Markdown draft.
+    state.bindDraft({
+      multiple,
+      getValue: () => fieldValue(fieldName),
+      setValue: (value) => handleFieldChange(fieldName, value),
     });
+    return state;
   };
 
   const validateAssetFields = async (): Promise<string[]> => {
@@ -718,10 +708,9 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         }
       }
     }
-    const hasPendingUpload = pendingAssetFields().size > 0 ||
-      Array.from(assetFieldStates.values()).some((state) =>
-        state.pendingUploads().length > 0
-      );
+    const hasPendingUpload = Array.from(assetFieldStates.values()).some(
+      (state) => state.pendingUploads().length > 0,
+    );
     if (hasPendingUpload) {
       issues.push(t("entryDetail.validation.assetUploadPending"));
     }
@@ -833,7 +822,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore stop */
     setEditorContent(lastSavedContent());
     setAssetEditorGeneration((generation) => generation + 1);
-    setPendingAssetFields(new Set());
     setIsDirty(false);
     setConflictMessage(null);
     setValidationError(null);
@@ -846,7 +834,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setLastLoadedEntryId(null);
     setLastLoadedResourceRevisionId(null);
     setAssetEditorGeneration((generation) => generation + 1);
-    setPendingAssetFields(new Set());
     await refetchEntry();
   };
 
@@ -905,17 +892,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           persistedValue={persistedFieldValue(fieldName)}
           multiple={isAssetReferenceListField(fieldDef)}
           spaceId={props.spaceId()}
-          state={assetFieldState(fieldName)}
+          state={assetFieldState(
+            fieldName,
+            isAssetReferenceListField(fieldDef),
+          )}
           formName={entry()?.form ?? currentForm()?.name}
           entryId={isCreateMode() ? undefined : entry()?.id}
           generation={assetEditorGeneration()}
           onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
-          onPendingChange={(pending, generation) =>
-            handleAssetPendingChange(
-              fieldName,
-              pending,
-              generation,
-            )}
         />
       );
     }
@@ -1301,7 +1285,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                 persistedValue={persistedFieldValue(fieldName)}
                                 multiple={isAssetReferenceListField(fieldDef)}
                                 spaceId={props.spaceId()}
-                                state={assetFieldState(fieldName)}
+                                state={assetFieldState(
+                                  fieldName,
+                                  isAssetReferenceListField(fieldDef),
+                                )}
                                 formName={entry()?.form ?? currentForm()?.name}
                                 entryId={isCreateMode()
                                   ? undefined

@@ -1,25 +1,17 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
 import { assetApi } from "~/lib/ugoite-client";
 import { locale, t } from "~/lib/i18n";
 import {
-  createAssetFieldState,
+  type AssetDraftBinding,
   type AssetFieldState,
+  type AssetUploadMessages,
+  createAssetFieldState,
   type PendingAssetUpload,
 } from "~/lib/asset-field-state";
 import {
   formatAssetSize,
-  isAssetReference,
   parseAssetReference,
   parseAssetReferenceList,
-  serializeAssetReference,
-  serializeAssetReferenceList,
 } from "~/lib/asset-reference";
 import type { AssetReference } from "~/lib/types";
 
@@ -38,7 +30,6 @@ export interface AssetFieldProps {
   generation?: number;
   state?: AssetFieldState;
   onChange: (value: string) => void;
-  onPendingChange?: (pending: boolean, generation?: number) => void;
 }
 
 const createUploadId = () =>
@@ -52,7 +43,6 @@ export function AssetField(props: AssetFieldProps) {
   const state = props.state ?? createAssetFieldState();
   const ownsState = !props.state;
   const pendingUploads = state.pendingUploads;
-  const setPendingUploads = state.setPendingUploads;
   const previewUrls = state.previewUrls;
   const setPreviewUrls = state.setPreviewUrls;
   const unavailableIds = state.unavailableIds;
@@ -62,6 +52,15 @@ export function AssetField(props: AssetFieldProps) {
   const localFiles = state.localFiles;
   const setLocalFiles = state.setLocalFiles;
   let disposed = false;
+
+  if (!state.hasDraftBinding()) {
+    const binding: AssetDraftBinding = {
+      multiple: props.multiple,
+      getValue: () => props.value,
+      setValue: props.onChange,
+    };
+    state.bindDraft(binding);
+  }
 
   const parsedValue = createMemo(() => {
     if (props.multiple) {
@@ -87,10 +86,6 @@ export function AssetField(props: AssetFieldProps) {
     return new Set(persisted.map((reference) => reference.asset_id));
   });
   let observedPersistedIds: Set<string> | undefined;
-
-  createEffect(() =>
-    props.onPendingChange?.(pendingUploads().length > 0, props.generation)
-  );
 
   createEffect(() => {
     // Generation reset is owned by the Entry draft. It is deliberately not
@@ -122,145 +117,15 @@ export function AssetField(props: AssetFieldProps) {
     if (ownsState) state.dispose();
   });
 
-  const pendingById = (id: string) =>
-    pendingUploads().find((item) => item.id === id);
+  const uploadMessages = (): AssetUploadMessages => ({
+    invalid: t("assetField.error.invalid"),
+    duplicate: t("assetField.error.duplicate"),
+    replacedItemMissing: t("assetField.error.replacedItemMissing"),
+    uploadFailed: t("assetField.error.uploadFailed"),
+  });
 
-  const setPending = (
-    id: string,
-    update: (item: PendingUpload) => PendingUpload,
-  ) => {
-    setPendingUploads((items) =>
-      items.map((item) => item.id === id ? update(item) : item)
-    );
-  };
-
-  const removePending = (id: string) => {
-    setPendingUploads((items) => items.filter((item) => item.id !== id));
-  };
-
-  const isActiveUpload = (item: PendingUpload) =>
-    !item.controller.signal.aborted &&
-    state.isActive(item.generation);
-
-  const addReference = (reference: AssetReference) => {
-    const current = parsedValue().references;
-    if (current.some((item) => item.asset_id === reference.asset_id)) {
-      return false;
-    }
-    if (props.multiple) {
-      props.onChange(serializeAssetReferenceList([...current, reference]));
-    } else {
-      props.onChange(serializeAssetReference(reference));
-    }
-    return true;
-  };
-
-  const replaceReference = (
-    reference: AssetReference,
-    targetAssetId: string,
-  ) => {
-    const current = parsedValue().references;
-    const index = current.findIndex((item) => item.asset_id === targetAssetId);
-    if (index < 0) return false;
-    if (
-      current.some((item, itemIndex) =>
-        itemIndex !== index && item.asset_id === reference.asset_id
-      )
-    ) {
-      return false;
-    }
-    if (props.multiple) {
-      const next = current.slice();
-      next[index] = reference;
-      props.onChange(serializeAssetReferenceList(next));
-    } else {
-      props.onChange(serializeAssetReference(reference));
-    }
-    return true;
-  };
-
-  const runUpload = async (id: string) => {
-    const item = pendingById(id);
-    if (!item) return;
-    if (!isActiveUpload(item)) {
-      removePending(id);
-      return;
-    }
-    setPending(id, (current) => ({ ...current, status: "uploading" }));
-    try {
-      const reference = await assetApi.upload(
-        props.spaceId,
-        item.file,
-        item.file.name,
-        item.controller.signal,
-      );
-      if (!isAssetReference(reference)) {
-        throw new Error(t("assetField.error.invalid"));
-      }
-      if (!isActiveUpload(item)) {
-        removePending(id);
-        return;
-      }
-      const accepted = item.replaceAssetId === undefined
-        ? addReference(reference)
-        : replaceReference(reference, item.replaceAssetId);
-      if (!accepted) {
-        setPending(id, (current) => ({
-          ...current,
-          status: "failed",
-          error: item.replaceAssetId &&
-              !parsedValue().references.some((value) =>
-                value.asset_id === item.replaceAssetId
-              )
-            ? t("assetField.error.replacedItemMissing")
-            : t("assetField.error.duplicate"),
-        }));
-        return;
-      }
-      if (item.replaceAssetId) {
-        setPreviewUrls((urls) => {
-          const next = new Map(urls);
-          const preview = next.get(item.replaceAssetId!);
-          if (preview) URL.revokeObjectURL(preview);
-          next.delete(item.replaceAssetId!);
-          return next;
-        });
-        setUnavailableIds((ids) => {
-          const next = new Set(ids);
-          next.delete(item.replaceAssetId!);
-          return next;
-        });
-      }
-      setLocalFiles((files) => {
-        const next = new Map(files);
-        if (item.replaceAssetId) next.delete(item.replaceAssetId);
-        next.set(reference.asset_id, item.file);
-        return next;
-      });
-      removePending(id);
-    } catch (error) {
-      if (!isActiveUpload(item)) {
-        removePending(id);
-        return;
-      }
-      if (isAbortError(error)) {
-        removePending(id);
-        return;
-      }
-      setPending(id, (current) => ({
-        ...current,
-        status: "failed",
-        error: error instanceof Error
-          ? error.message
-          : t("assetField.error.uploadFailed"),
-      }));
-    }
-  };
-
-  const enqueueUpload = (item: PendingUpload) => {
-    setPendingUploads((items) => [...items, item]);
-    state.setUploadQueue(state.uploadQueue.then(() => runUpload(item.id)));
-  };
+  const upload = (file: File, signal: AbortSignal) =>
+    assetApi.upload(props.spaceId, file, file.name, signal);
 
   const chooseFiles = (files: File[], replaceAssetId?: string) => {
     const selected = replaceAssetId || !props.multiple
@@ -268,16 +133,20 @@ export function AssetField(props: AssetFieldProps) {
       : files;
     if (selected.length === 0) return;
     const targetAssetId = replaceAssetId ||
-      (!props.multiple && parsedValue().references[0]?.asset_id);
+      (props.multiple ? undefined : parsedValue().references[0]?.asset_id);
     for (const file of selected) {
-      enqueueUpload({
-        id: createUploadId(),
-        file,
-        replaceAssetId: targetAssetId,
-        generation: props.generation ?? 0,
-        status: "local",
-        controller: new AbortController(),
-      });
+      state.enqueueUpload(
+        {
+          id: createUploadId(),
+          file,
+          replaceAssetId: targetAssetId,
+          generation: props.generation ?? 0,
+          status: "local",
+          controller: new AbortController(),
+        },
+        upload,
+        uploadMessages(),
+      );
     }
   };
 
@@ -288,65 +157,19 @@ export function AssetField(props: AssetFieldProps) {
   };
 
   const retry = (item: PendingUpload) => {
-    const controller = new AbortController();
-    setPending(item.id, (current) => ({
-      ...current,
-      controller,
-      status: "local",
-      error: undefined,
-    }));
-    state.setUploadQueue(state.uploadQueue.then(() => runUpload(item.id)));
+    state.retryUpload(item, upload, uploadMessages());
   };
 
   const cancel = (item: PendingUpload) => {
-    item.controller.abort();
-    removePending(item.id);
+    state.cancelUpload(item);
   };
 
   const removeReference = (index: number) => {
-    const current = parsedValue().references;
-    const removed = current[index];
-    if (!removed) return;
-    removePendingForAsset(removed.asset_id);
-    setLocalFiles((files) => {
-      const next = new Map(files);
-      next.delete(removed.asset_id);
-      return next;
-    });
-    setPreviewUrls((urls) => {
-      const next = new Map(urls);
-      const preview = next.get(removed.asset_id);
-      if (preview) URL.revokeObjectURL(preview);
-      next.delete(removed.asset_id);
-      return next;
-    });
-    if (props.multiple) {
-      props.onChange(
-        serializeAssetReferenceList(
-          current.filter((_, itemIndex) => itemIndex !== index),
-        ),
-      );
-    } else {
-      props.onChange("");
-    }
+    state.removeReference(index);
   };
 
-  function removePendingForAsset(assetId: string) {
-    setPendingUploads((items) => {
-      for (const item of items) {
-        if (item.replaceAssetId === assetId) item.controller.abort();
-      }
-      return items.filter((item) => item.replaceAssetId !== assetId);
-    });
-  }
-
   const moveReference = (index: number, delta: -1 | 1) => {
-    const current = parsedValue().references;
-    const target = index + delta;
-    if (target < 0 || target >= current.length) return;
-    const next = current.slice();
-    [next[index], next[target]] = [next[target], next[index]];
-    props.onChange(serializeAssetReferenceList(next));
+    state.moveReference(index, delta);
   };
 
   const readReference = async (reference: AssetReference) => {
@@ -378,8 +201,10 @@ export function AssetField(props: AssetFieldProps) {
       // A tab switch may unmount this view while the authorized read is in
       // flight. Do not create object URLs or trigger a download from a dead
       // view; a later mount can retry using the shared draft state.
-      if (disposed || controller.signal.aborted ||
-        !state.isActive(activeGeneration)) return;
+      if (
+        disposed || controller.signal.aborted ||
+        !state.isActive(activeGeneration)
+      ) return;
       const url = URL.createObjectURL(blob);
       setPreviewUrls((urls) => {
         const next = new Map(urls);

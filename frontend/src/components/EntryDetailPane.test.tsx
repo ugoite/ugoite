@@ -213,6 +213,62 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("saves from Preview when an upload completes after the Fields view unmounts", async () => {
+    const uploaded = {
+      asset_id: "01900000-0000-7000-8000-000000000013",
+      name: "pending-preview.pdf",
+      media_type: "application/pdf",
+      size_bytes: 123,
+      sha256: "c".repeat(64),
+    };
+    let resolveUpload: ((reference: typeof uploaded) => void) | undefined;
+    const assetUpload = (await import("~/lib/ugoite-client")).assetApi
+      .upload as ReturnType<typeof vi.fn>;
+    assetUpload.mockImplementation(
+      () => new Promise<typeof uploaded>((resolve) => resolveUpload = resolve),
+    );
+    (entryApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "preview-entry",
+      revision_id: "preview-revision",
+    });
+    const form: Form = {
+      name: "PreviewAsset",
+      version: 1,
+      template: "# PreviewAsset\n\n## thumbnail\n",
+      fields: { thumbnail: { type: "asset_reference", required: true } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    fireEvent.change(await screen.findByLabelText("Choose file"), {
+      target: {
+        files: [
+          new File(["pdf"], "pending-preview.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
+    resolveUpload?.(uploaded);
+
+    await screen.findByText("pending-preview.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalledTimes(1));
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown: expect.stringContaining(JSON.stringify(uploaded)),
+    });
+  });
+
   it("reuses the uploaded reference when Entry save is retried", async () => {
     const uploaded = {
       asset_id: "01900000-0000-7000-8000-000000000004",
@@ -227,7 +283,10 @@ describe("EntryDetailPane", () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock
       .mockRejectedValueOnce(new Error("save failed"))
-      .mockResolvedValueOnce({ id: "retry-entry", revision_id: "retry-revision" });
+      .mockResolvedValueOnce({
+        id: "retry-entry",
+        revision_id: "retry-revision",
+      });
     const form: Form = {
       name: "RetryAsset",
       version: 1,

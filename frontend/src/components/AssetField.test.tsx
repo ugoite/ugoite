@@ -35,6 +35,18 @@ const second: AssetReference = {
   sha256: "b".repeat(64),
 };
 
+const queuedFirst: AssetReference = {
+  ...first,
+  asset_id: "01900000-0000-7000-8000-000000000011",
+  name: "queued-first.txt",
+};
+
+const queuedSecond: AssetReference = {
+  ...second,
+  asset_id: "01900000-0000-7000-8000-000000000012",
+  name: "queued-second.txt",
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   setLocale("en");
@@ -54,7 +66,6 @@ describe("AssetField", () => {
         multiple={false}
         spaceId="default"
         onChange={setValue}
-        onPendingChange={vi.fn()}
       />
     ));
 
@@ -91,7 +102,6 @@ describe("AssetField", () => {
         entryId="entry-1"
         formName="Contracts"
         onChange={change}
-        onPendingChange={vi.fn()}
       />
     ));
 
@@ -125,7 +135,6 @@ describe("AssetField", () => {
         entryId="entry-1"
         formName="Contracts"
         onChange={setValue}
-        onPendingChange={vi.fn()}
       />
     ));
 
@@ -154,7 +163,7 @@ describe("AssetField", () => {
     );
     const [value, setValue] = createSignal("");
     const [generation, setGeneration] = createSignal(1);
-    const onPendingChange = vi.fn();
+    const state = createAssetFieldState();
 
     render(() => (
       <AssetField
@@ -165,8 +174,8 @@ describe("AssetField", () => {
         multiple={false}
         spaceId="default"
         generation={generation()}
+        state={state}
         onChange={setValue}
-        onPendingChange={onPendingChange}
       />
     ));
 
@@ -178,9 +187,7 @@ describe("AssetField", () => {
     setGeneration(2);
     resolveUpload?.(first);
 
-    await waitFor(() =>
-      expect(onPendingChange).toHaveBeenLastCalledWith(false, 2)
-    );
+    await waitFor(() => expect(state.pendingUploads()).toHaveLength(0));
     expect(value()).toBe("");
   });
 
@@ -263,6 +270,91 @@ describe("AssetField", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Open or download" }));
     expect(assetApi.read).not.toHaveBeenCalled();
+  });
+
+  it("applies queued list uploads to the latest draft after tab and list edits", async () => {
+    const existing: AssetReference = {
+      ...first,
+      asset_id: "01900000-0000-7000-8000-000000000010",
+      name: "existing.txt",
+    };
+    const resolvers: Array<(reference: AssetReference) => void> = [];
+    (assetApi.upload as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise<AssetReference>((resolve) => resolvers.push(resolve)),
+    );
+    const [value, setValue] = createSignal(
+      serializeAssetReferenceList([existing]),
+    );
+    const [mode, setMode] = createSignal<"fields" | "preview">("fields");
+    const state = createAssetFieldState();
+    state.bindDraft({
+      multiple: true,
+      getValue: () => value(),
+      setValue,
+    });
+
+    render(() => (
+      <Show
+        when={mode() === "fields"}
+        fallback={
+          <AssetField
+            fieldId="preview-documents"
+            fieldName="documents"
+            value={value()}
+            persistedValue={serializeAssetReferenceList([existing])}
+            multiple
+            spaceId="default"
+            state={state}
+            readOnly
+            onChange={setValue}
+          />
+        }
+      >
+        <AssetField
+          fieldId="documents"
+          fieldName="documents"
+          value={value()}
+          persistedValue={serializeAssetReferenceList([existing])}
+          multiple
+          spaceId="default"
+          state={state}
+          onChange={setValue}
+        />
+      </Show>
+    ));
+
+    fireEvent.change(screen.getByLabelText("Choose file"), {
+      target: {
+        files: [
+          new File(["one"], "queued-first.txt"),
+          new File(["two"], "queued-second.txt"),
+        ],
+      },
+    });
+    await waitFor(() => expect(assetApi.upload).toHaveBeenCalledTimes(1));
+    expect(state.pendingUploads()[0]?.replaceAssetId).toBeUndefined();
+    resolvers.shift()?.(queuedFirst);
+    await waitFor(() =>
+      expect(value()).toBe(serializeAssetReferenceList([existing, queuedFirst]))
+    );
+    await waitFor(() => expect(assetApi.upload).toHaveBeenCalledTimes(2));
+
+    // The second upload remains in flight while both conditional views are
+    // remounted and the current list is changed.
+    setMode("preview");
+    await screen.findByText("queued-first.txt");
+    setMode("fields");
+    await screen.findByText("queued-first.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: / up$/ })[1]);
+    fireEvent.click(screen.getAllByRole("button", { name: /^Remove$/ })[1]);
+    expect(value()).toBe(serializeAssetReferenceList([queuedFirst]));
+
+    resolvers.shift()?.(queuedSecond);
+    await waitFor(() =>
+      expect(value()).toBe(
+        serializeAssetReferenceList([queuedFirst, queuedSecond]),
+      )
+    );
   });
 
   it("does not render SVG as an active image preview", async () => {
