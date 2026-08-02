@@ -98,7 +98,7 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
     let reference = asset::save_asset(&op, ws_path, "image.png", b"bytes").await?;
     let reference_json = serde_json::to_string(&reference)?;
     let content = format!(
-            "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}, null]\n---\n# Photo"
+            "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}]\n---\n# Photo"
     );
     entry::create_entry(
         &op,
@@ -119,7 +119,6 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
         entries[0]["properties"]["Attachments"][0]["asset_id"],
         reference.asset_id
     );
-    assert!(entries[0]["properties"]["Attachments"][1].is_null());
     let workspace = ugoite_iceberg::iceberg_store::native_workspace(&op, ws_path).await?;
     assert!(
         asset::current_asset_reference_exists_in_workspace(

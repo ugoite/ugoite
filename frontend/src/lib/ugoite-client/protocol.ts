@@ -226,6 +226,31 @@ export type ProtocolFetchOptions =
     body?: BodyInit | null;
   };
 
+const executeProtocolRequest = async (
+  operation: UgoiteApiOperation,
+  argumentsValue: Record<string, unknown>,
+  body: unknown,
+  options: ProtocolFetchOptions,
+): Promise<Response> => {
+  const prepared = await prepareApiRequest(operation, argumentsValue, body);
+  const headers = new Headers();
+  for (const header of prepared.headers) {
+    headers.set(header.name, header.value);
+  }
+  const optionHeaders = new Headers(options.headers);
+  optionHeaders.forEach((value, name) => headers.set(name, value));
+
+  const requestBody = prepared.body_kind === "json"
+    ? prepared.body
+    : options.body;
+  return await apiFetch(prepared.path, {
+    ...options,
+    method: prepared.method,
+    headers,
+    body: requestBody,
+  });
+};
+
 /**
  * Execute a named Ugoite operation.
  *
@@ -240,23 +265,12 @@ export const protocolFetch = async <T>(
   body?: unknown,
   options: ProtocolFetchOptions = {},
 ): Promise<T> => {
-  const prepared = await prepareApiRequest(operation, argumentsValue, body);
-  const headers = new Headers();
-  for (const header of prepared.headers) {
-    headers.set(header.name, header.value);
-  }
-  const optionHeaders = new Headers(options.headers);
-  optionHeaders.forEach((value, name) => headers.set(name, value));
-
-  const requestBody = prepared.body_kind === "json"
-    ? prepared.body
-    : options.body;
-  const response = await apiFetch(prepared.path, {
-    ...options,
-    method: prepared.method,
-    headers,
-    body: requestBody,
-  });
+  const response = await executeProtocolRequest(
+    operation,
+    argumentsValue,
+    body,
+    options,
+  );
   return await decodeApiResponse<T>(operation, response);
 };
 
@@ -266,18 +280,12 @@ export const protocolFetchResponse = async (
   argumentsValue: Record<string, unknown> = {},
   options: ProtocolFetchOptions = {},
 ): Promise<Response> => {
-  const prepared = await prepareApiRequest(operation, argumentsValue);
-  const headers = new Headers();
-  for (const header of prepared.headers) {
-    headers.set(header.name, header.value);
-  }
-  const optionHeaders = new Headers(options.headers);
-  optionHeaders.forEach((value, name) => headers.set(name, value));
-  const response = await apiFetch(prepared.path, {
-    ...options,
-    method: prepared.method,
-    headers,
-  });
+  const response = await executeProtocolRequest(
+    operation,
+    argumentsValue,
+    undefined,
+    options,
+  );
   if (!response.ok) {
     await decodeApiResponse<never>(operation, response);
   }

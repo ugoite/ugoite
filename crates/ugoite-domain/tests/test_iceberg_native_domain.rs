@@ -249,6 +249,20 @@ fn asset_reference_lists_are_required_and_unique() {
         enum_values: Vec::new(),
         deprecated: false,
     });
+    form.fields.push(FormField {
+        id: field_id(102),
+        name: "thumbnail".into(),
+        field_type: FieldType::AssetReference,
+        required: false,
+        label: None,
+        description: None,
+        semantic_role: None,
+        reference_form: None,
+        list_item: None,
+        validation: None,
+        enum_values: Vec::new(),
+        deprecated: false,
+    });
 
     let reference = |asset_id: &str| {
         FieldValue::AssetReference(AssetReference {
@@ -297,6 +311,69 @@ fn asset_reference_lists_are_required_and_unique() {
     );
     assert_eq!(
         duplicate.validate(&form, None),
+        Err(RevisionError::DuplicateAssetReference(field_id(101)))
+    );
+
+    let mut malformed = base_revision();
+    malformed
+        .values
+        .insert(field_id(100), FieldValue::String("title".into()));
+    malformed.values.insert(
+        field_id(101),
+        FieldValue::List(vec![FieldValue::AssetReference(AssetReference {
+            asset_id: "".into(),
+            name: "document.pdf".into(),
+            media_type: "application/pdf".into(),
+            size_bytes: 1,
+            sha256: "a".repeat(64),
+        })]),
+    );
+    assert_eq!(
+        malformed.validate(&form, None),
+        Err(RevisionError::InvalidAssetReference(field_id(101)))
+    );
+
+    let mut malformed_scalar = base_revision();
+    malformed_scalar
+        .values
+        .insert(field_id(100), FieldValue::String("title".into()));
+    malformed_scalar
+        .values
+        .insert(field_id(101), FieldValue::List(vec![reference("asset-3")]));
+    malformed_scalar.values.insert(
+        field_id(102),
+        FieldValue::AssetReference(AssetReference {
+            asset_id: "asset-2".into(),
+            name: "thumbnail.png".into(),
+            media_type: "image/png".into(),
+            size_bytes: 1,
+            sha256: "not-a-checksum".into(),
+        }),
+    );
+    assert_eq!(
+        malformed_scalar.validate(&form, None),
+        Err(RevisionError::InvalidAssetReference(field_id(102)))
+    );
+
+    let mut null_item = base_revision();
+    null_item
+        .values
+        .insert(field_id(100), FieldValue::String("title".into()));
+    null_item
+        .values
+        .insert(field_id(101), FieldValue::List(vec![FieldValue::Null]));
+    assert_eq!(
+        null_item.validate(&form, None),
         Err(RevisionError::WrongType(field_id(101)))
     );
+
+    let unknown_field = serde_json::from_value::<AssetReference>(serde_json::json!({
+        "asset_id": "asset-1",
+        "name": "document.pdf",
+        "media_type": "application/pdf",
+        "size_bytes": 1,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "object_key": "must-not-be-persisted"
+    }));
+    assert!(unknown_field.is_err());
 }

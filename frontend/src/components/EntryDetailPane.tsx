@@ -165,11 +165,10 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
       const section = sectionMap.get(normalizeFieldName(fieldName));
       if (!section || !section.content.trim()) return true;
       if (fieldDef.type === "asset_reference") {
-        return parseAssetReference(section.content.trim()) === null;
+        return false;
       }
       if (isAssetReferenceListField(fieldDef)) {
-        return (parseAssetReferenceList(section.content.trim()) ?? [])
-          .length === 0;
+        return false;
       }
       return false;
     })
@@ -455,6 +454,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const [pendingAssetFields, setPendingAssetFields] = createSignal<Set<string>>(
     new Set(),
   );
+  const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
 
   const [remoteEntry, { refetch: refetchEntry }] = createResource(
     () => {
@@ -576,6 +576,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setLastLoadedEntryId(loadedEntry.id);
     setLastLoadedResourceRevisionId(loadedEntry.revision_id);
     setCurrentRevisionId(isCreateMode() ? null : loadedEntry.revision_id);
+    setAssetEditorGeneration((generation) => generation + 1);
+    setPendingAssetFields(new Set());
     setEditorContent(content);
     setLastSavedContent(isCreateMode() ? "" : content);
     setIsDirty(isCreateMode());
@@ -607,7 +609,12 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     handleContentChange(updateH2Section(editorContent(), fieldName, value));
   };
 
-  const handleAssetPendingChange = (fieldName: string, pending: boolean) => {
+  const handleAssetPendingChange = (
+    fieldName: string,
+    pending: boolean,
+    generation = assetEditorGeneration(),
+  ) => {
+    if (generation !== assetEditorGeneration()) return;
     setPendingAssetFields((fields) => {
       const next = new Set(fields);
       if (pending) next.add(fieldName);
@@ -624,13 +631,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       const rawValue = fieldValue(fieldName);
       if (fieldDef.type === "asset_reference") {
         const reference = parseAssetReference(rawValue);
-        if (fieldDef.required && !reference) {
-          issues.push(
-            t("entryDetail.validation.assetRequired", { field: fieldName }),
-          );
-        } else if (rawValue.trim() && !reference) {
+        if (rawValue.trim() && !reference) {
           issues.push(
             t("entryDetail.validation.assetInvalid", { field: fieldName }),
+          );
+        } else if (fieldDef.required && !reference) {
+          issues.push(
+            t("entryDetail.validation.assetRequired", { field: fieldName }),
           );
         }
       } else if (isAssetReferenceListField(fieldDef)) {
@@ -761,6 +768,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
     /* v8 ignore stop */
     setEditorContent(lastSavedContent());
+    setAssetEditorGeneration((generation) => generation + 1);
+    setPendingAssetFields(new Set());
     setIsDirty(false);
     setConflictMessage(null);
     setValidationError(null);
@@ -772,6 +781,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore stop */
     setLastLoadedEntryId(null);
     setLastLoadedResourceRevisionId(null);
+    setAssetEditorGeneration((generation) => generation + 1);
+    setPendingAssetFields(new Set());
     await refetchEntry();
   };
 
@@ -832,9 +843,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           spaceId={props.spaceId()}
           formName={entry()?.form ?? currentForm()?.name}
           entryId={isCreateMode() ? undefined : entry()?.id}
+          generation={assetEditorGeneration()}
           onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
-          onPendingChange={(pending) =>
-            handleAssetPendingChange(fieldName, pending)}
+          onPendingChange={(pending, generation) =>
+            handleAssetPendingChange(
+              fieldName,
+              pending,
+              generation,
+            )}
         />
       );
     }
@@ -1224,6 +1240,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                 entryId={isCreateMode()
                                   ? undefined
                                   : entry()?.id}
+                                generation={assetEditorGeneration()}
                                 readOnly={true}
                                 onChange={() => undefined}
                               />

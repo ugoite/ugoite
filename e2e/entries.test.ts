@@ -8,6 +8,7 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+import { Buffer } from "node:buffer";
 import { ensureDefaultForm, getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 async function settleUiLoading(page: Page): Promise<void> {
@@ -414,6 +415,218 @@ test.describe("Entries CRUD", () => {
 		expect(entry.content).toContain("## Project");
 		expect(entry.content).toContain(projectAlphaId);
 		expect(entry.content).not.toContain(projectBetaId);
+	});
+
+	test("REQ-FE-1877: unrelated Forms own independently named scalar and list Assets", async ({
+		page,
+		request,
+	}) => {
+		const timestamp = Date.now();
+		const spaceId = `form-owned-assets-${timestamp}`;
+		const mediaForm = `MediaAssets-${timestamp}`;
+		const contractsForm = `ContractsAssets-${timestamp}`;
+		const entryIds: string[] = [];
+
+		const createSpace = await request.post(getBackendUrl("/spaces"), {
+			data: { name: spaceId },
+		});
+		expect([200, 201, 409]).toContain(createSpace.status());
+
+		const createForm = async (
+			name: string,
+			fields: Record<string, unknown>,
+		) => {
+			const response = await request.post(
+				getBackendUrl(`/spaces/${spaceId}/forms`),
+				{
+					data: {
+						name,
+						template: `# ${name}\n\n${Object.keys(fields).map((field) => `## ${field}\n`).join("\n")}`,
+						fields,
+					},
+				},
+			);
+			expect(response.status()).toBe(201);
+		};
+
+		try {
+			await createForm(mediaForm, {
+				thumbnail: { type: "asset_reference", required: true },
+				microscope_images: {
+					type: "list",
+					required: true,
+					items: { type: "asset_reference" },
+				},
+			});
+			await createForm(contractsForm, {
+				contract: { type: "asset_reference", required: true },
+				raw_data: {
+					type: "list",
+					required: true,
+					items: { type: "asset_reference" },
+				},
+			});
+
+			await page.goto(
+				getFrontendUrl(
+					`/spaces/${spaceId}/entries/new?form=${encodeURIComponent(mediaForm)}`,
+				),
+				{ waitUntil: "domcontentloaded" },
+			);
+			const thumbnail = page.locator('[data-field-name="thumbnail"]');
+			const microscopeImages = page.locator(
+				'[data-field-name="microscope_images"]',
+			);
+			await expect(thumbnail).toBeVisible();
+			await thumbnail.locator('input[type="file"]').setInputFiles({
+				name: "thumbnail.txt",
+				mimeType: "text/plain",
+				buffer: Buffer.from("thumbnail"),
+			});
+			await microscopeImages.locator('input[type="file"]').setInputFiles([
+				{
+					name: "microscope-a.txt",
+					mimeType: "text/plain",
+					buffer: Buffer.from("a"),
+				},
+				{
+					name: "microscope-b.txt",
+					mimeType: "text/plain",
+					buffer: Buffer.from("b"),
+				},
+			]);
+			await expect(
+				page.getByText("Uploaded; entry not saved yet"),
+			).toHaveCount(3, { timeout: 15_000 });
+
+			const createResponse = page.waitForResponse((response) =>
+				response.request().method() === "POST" &&
+				response.url().endsWith(`/api/spaces/${spaceId}/entries`) &&
+				response.status() === 201
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			await createResponse;
+			await expect(page).toHaveURL(
+				new RegExp(`/spaces/${spaceId}/entries/[^/]+$`),
+			);
+			const mediaEntryId = decodeURIComponent(
+				new URL(page.url()).pathname.split("/").pop() ?? "",
+			);
+			entryIds.push(mediaEntryId);
+
+			let mediaEntryResponse = await request.get(
+				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
+			);
+			expect(mediaEntryResponse.ok()).toBeTruthy();
+			let mediaEntry = await mediaEntryResponse.json() as { content: string };
+			expect(mediaEntry.content).toContain('"name":"thumbnail.txt"');
+			expect(mediaEntry.content).toContain('"name":"microscope-a.txt"');
+			expect(mediaEntry.content).toContain('"name":"microscope-b.txt"');
+
+			await page.reload({ waitUntil: "domcontentloaded" });
+			await expect(page.getByText("thumbnail.txt")).toBeVisible();
+			const readRequest = page.waitForRequest((requestEvent) => {
+				const url = new URL(requestEvent.url());
+				return requestEvent.method() === "GET" &&
+					url.pathname.includes(`/api/spaces/${spaceId}/assets/`) &&
+					url.searchParams.get("form") === mediaForm &&
+					url.searchParams.get("entry_id") === mediaEntryId;
+			});
+			await thumbnail.getByRole("button", { name: "Open or download" }).click();
+			await readRequest;
+
+			const replacement = page.locator('[data-field-name="thumbnail"]');
+			await replacement.getByLabel("Replace").setInputFiles({
+				name: "thumbnail-replaced.txt",
+				mimeType: "text/plain",
+				buffer: Buffer.from("replacement"),
+			});
+			await expect(page.getByText("Uploaded; entry not saved yet")).toHaveCount(1, {
+				timeout: 15_000,
+			});
+			const replaceResponse = page.waitForResponse((response) =>
+				response.request().method() === "PUT" &&
+				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`) &&
+				response.ok()
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			await replaceResponse;
+
+			const orderedList = page.locator('[data-field-name="microscope_images"]');
+			await orderedList.getByRole("button", {
+				name: "microscope-b.txt up",
+			}).click();
+			const reorderResponse = page.waitForResponse((response) =>
+				response.request().method() === "PUT" &&
+				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`) &&
+				response.ok()
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			await reorderResponse;
+
+			mediaEntryResponse = await request.get(
+				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
+			);
+			mediaEntry = await mediaEntryResponse.json() as { content: string };
+			expect(mediaEntry.content).toContain('"name":"thumbnail-replaced.txt"');
+			expect(
+				mediaEntry.content.indexOf('"name":"microscope-b.txt"'),
+			).toBeLessThan(mediaEntry.content.indexOf('"name":"microscope-a.txt"'));
+
+			await orderedList.getByRole("button", { name: /^Remove microscope-b\.txt/ }).click();
+			const removeResponse = page.waitForResponse((response) =>
+				response.request().method() === "PUT" &&
+				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`) &&
+				response.ok()
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			await removeResponse;
+
+			await page.goto(
+				getFrontendUrl(
+					`/spaces/${spaceId}/entries/new?form=${encodeURIComponent(contractsForm)}`,
+				),
+				{ waitUntil: "domcontentloaded" },
+			);
+			const contract = page.locator('[data-field-name="contract"]');
+			const rawData = page.locator('[data-field-name="raw_data"]');
+			await contract.locator('input[type="file"]').setInputFiles({
+				name: "contract.pdf",
+				mimeType: "application/pdf",
+				buffer: Buffer.from("contract"),
+			});
+			await rawData.locator('input[type="file"]').setInputFiles({
+				name: "raw-data.csv",
+				mimeType: "text/csv",
+				buffer: Buffer.from("raw"),
+			});
+			await expect(
+				page.getByText("Uploaded; entry not saved yet"),
+			).toHaveCount(2, { timeout: 15_000 });
+			const secondCreateResponse = page.waitForResponse((response) =>
+				response.request().method() === "POST" &&
+				response.url().endsWith(`/api/spaces/${spaceId}/entries`) &&
+				response.status() === 201
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			await secondCreateResponse;
+			const contractsEntryId = decodeURIComponent(
+				new URL(page.url()).pathname.split("/").pop() ?? "",
+			);
+			entryIds.push(contractsEntryId);
+			const contractsEntryResponse = await request.get(
+				getBackendUrl(`/spaces/${spaceId}/entries/${contractsEntryId}`),
+			);
+			const contractsEntry = await contractsEntryResponse.json() as { content: string };
+			expect(contractsEntry.content).toContain('"name":"contract.pdf"');
+			expect(contractsEntry.content).toContain('"name":"raw-data.csv"');
+		} finally {
+			for (const entryId of entryIds) {
+				await request.delete(
+					getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`),
+				);
+			}
+		}
 	});
 
 	test("REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)", async ({ page, request }) => {

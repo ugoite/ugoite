@@ -1,13 +1,44 @@
 import type { AssetReference, FormField } from "./types";
 
-const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const ASSET_REFERENCE_KEYS = [
+  "asset_id",
+  "name",
+  "media_type",
+  "size_bytes",
+  "sha256",
+] as const;
+
+const hasForbiddenAssetIdCharacter = (value: string): boolean =>
+  [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return character === "/" || character === "\\" || code < 0x20 ||
+      code === 0x7f;
+  });
+
+const isValidAssetId = (value: string): boolean => {
+  if (!value || value.length > 128) return false;
+  if (value === "." || value === "..") return false;
+  if (hasForbiddenAssetIdCharacter(value)) return false;
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded !== "." && decoded !== ".." &&
+      !hasForbiddenAssetIdCharacter(decoded);
+  } catch {
+    return false;
+  }
+};
 
 /** Validate the one canonical AssetReference shape at the browser boundary. */
 export const isAssetReference = (value: unknown): value is AssetReference => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const reference = value as Partial<AssetReference>;
-  return typeof reference.asset_id === "string" &&
-    reference.asset_id.trim().length > 0 &&
+  const keys = Object.keys(value).sort();
+  const expectedKeys = [...ASSET_REFERENCE_KEYS].sort();
+  return keys.length === expectedKeys.length &&
+    keys.every((key, index) => key === expectedKeys[index]) &&
+    typeof reference.asset_id === "string" &&
+    isValidAssetId(reference.asset_id) &&
     typeof reference.name === "string" && reference.name.trim().length > 0 &&
     typeof reference.media_type === "string" &&
     reference.media_type.trim().length > 0 &&

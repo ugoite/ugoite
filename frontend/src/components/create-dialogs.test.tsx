@@ -2309,6 +2309,47 @@ describe("EditFormDialog", () => {
     expect(screen.getByPlaceholderText("e.g. Project")).toBeInTheDocument();
   });
 
+  it("preserves a typed list row_reference target on a no-op edit", () => {
+    const onSubmit = vi.fn();
+    const formWithListRowRef: Form = {
+      name: "ProjectTask",
+      version: 1,
+      template: "# ProjectTask\n\n## projects\n\n",
+      fields: {
+        projects: {
+          type: "list",
+          required: false,
+          items: { type: "row_reference", target_form: "Project" },
+        },
+      },
+    };
+
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={formWithListRowRef}
+        columnTypes={["list", "row_reference"]}
+        formNames={["ProjectTask", "Project"]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    expect(screen.getByRole("combobox", { name: "List item type" }))
+      .toHaveValue("row_reference");
+    expect(screen.getByPlaceholderText("e.g. Project")).toHaveValue("Project");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      fields: expect.objectContaining({
+        projects: expect.objectContaining({
+          items: { type: "row_reference", target_form: "Project" },
+        }),
+      }),
+    }));
+  });
+
   it("REQ-FE-055: keeps edit-form column inputs readable on narrow layouts", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();

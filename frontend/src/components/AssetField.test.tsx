@@ -103,4 +103,83 @@ describe("AssetField", () => {
       serializeAssetReferenceList([first]),
     );
   });
+
+  it("replaces an individual typed-list item by Asset ID", async () => {
+    const replacement = { ...second, name: "replacement.txt", size_bytes: 30 };
+    (assetApi.upload as ReturnType<typeof vi.fn>).mockResolvedValue(
+      replacement,
+    );
+    const [value, setValue] = createSignal(
+      serializeAssetReferenceList([first, second]),
+    );
+
+    render(() => (
+      <AssetField
+        fieldId="documents"
+        fieldName="documents"
+        value={value()}
+        persistedValue={serializeAssetReferenceList([first, second])}
+        multiple={true}
+        spaceId="default"
+        entryId="entry-1"
+        formName="Contracts"
+        onChange={setValue}
+        onPendingChange={vi.fn()}
+      />
+    ));
+
+    fireEvent.change(screen.getAllByLabelText("Replace")[1], {
+      target: {
+        files: [
+          new File(["replacement"], "replacement.txt", {
+            type: "text/plain",
+          }),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(value()).toBe(serializeAssetReferenceList([first, replacement]));
+    });
+  });
+
+  it("cancels stale uploads when the editor generation changes", async () => {
+    let resolveUpload: ((reference: AssetReference) => void) | undefined;
+    (assetApi.upload as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise<AssetReference>((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+    const [value, setValue] = createSignal("");
+    const [generation, setGeneration] = createSignal(1);
+    const onPendingChange = vi.fn();
+
+    render(() => (
+      <AssetField
+        fieldId="thumbnail"
+        fieldName="thumbnail"
+        value={value()}
+        persistedValue=""
+        multiple={false}
+        spaceId="default"
+        generation={generation()}
+        onChange={setValue}
+        onPendingChange={onPendingChange}
+      />
+    ));
+
+    fireEvent.change(screen.getByLabelText("Choose file"), {
+      target: { files: [new File(["data"], "stale.txt")] },
+    });
+    await waitFor(() => expect(assetApi.upload).toHaveBeenCalled());
+
+    setGeneration(2);
+    resolveUpload?.(first);
+
+    await waitFor(() =>
+      expect(onPendingChange).toHaveBeenLastCalledWith(false, 2)
+    );
+    expect(value()).toBe("");
+  });
 });

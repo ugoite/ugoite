@@ -40,6 +40,15 @@ describe("AssetReference value helpers", () => {
     expect(isAssetReference({ ...reference, sha256: "not-a-checksum" })).toBe(
       false,
     );
+    expect(isAssetReference({ ...reference, asset_id: "../asset" })).toBe(
+      false,
+    );
+    expect(isAssetReference({ ...reference, sha256: "A".repeat(64) })).toBe(
+      false,
+    );
+    expect(isAssetReference({ ...reference, object_key: "forbidden" })).toBe(
+      false,
+    );
   });
 
   it("detects duplicate references and formats sizes for people", () => {
