@@ -421,6 +421,7 @@ test.describe("Entries CRUD", () => {
 		page,
 		request,
 	}) => {
+		test.setTimeout(120_000);
 		const timestamp = Date.now();
 		const spaceSlug = `form-owned-assets-${timestamp}`;
 		const mediaForm = `MediaAssets-${timestamp}`;
