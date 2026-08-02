@@ -504,11 +504,10 @@ test.describe("Entries CRUD", () => {
 
 			const createResponse = page.waitForResponse((response) =>
 				response.request().method() === "POST" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries`) &&
-				response.status() === 201
+				response.url().endsWith(`/api/spaces/${spaceId}/entries`)
 			);
 			await page.getByRole("button", { name: "Save" }).click();
-			await createResponse;
+			expect((await createResponse).status()).toBe(201);
 			await expect(page).toHaveURL(
 				new RegExp(`/spaces/${spaceId}/entries/[^/]+$`),
 			);
@@ -552,11 +551,10 @@ test.describe("Entries CRUD", () => {
 			});
 			const replaceResponse = page.waitForResponse((response) =>
 				response.request().method() === "PUT" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`) &&
-				response.ok()
+				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`)
 			);
 			await page.getByRole("button", { name: "Save" }).click();
-			await replaceResponse;
+			expect((await replaceResponse).ok()).toBeTruthy();
 
 			const orderedList = page.locator('[data-field-name="microscope_images"]');
 			await orderedList.getByRole("button", {
@@ -564,11 +562,10 @@ test.describe("Entries CRUD", () => {
 			}).click();
 			const reorderResponse = page.waitForResponse((response) =>
 				response.request().method() === "PUT" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`) &&
-				response.ok()
+				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`)
 			);
 			await page.getByRole("button", { name: "Save" }).click();
-			await reorderResponse;
+			expect((await reorderResponse).ok()).toBeTruthy();
 
 			mediaEntryResponse = await request.get(
 				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
@@ -582,11 +579,10 @@ test.describe("Entries CRUD", () => {
 			await orderedList.getByRole("button", { name: /^Remove microscope-b\.txt/ }).click();
 			const removeResponse = page.waitForResponse((response) =>
 				response.request().method() === "PUT" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`) &&
-				response.ok()
+				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`)
 			);
 			await page.getByRole("button", { name: "Save" }).click();
-			await removeResponse;
+			expect((await removeResponse).ok()).toBeTruthy();
 
 			await page.goto(
 				getFrontendUrl(
@@ -611,11 +607,10 @@ test.describe("Entries CRUD", () => {
 			).toHaveCount(2, { timeout: 15_000 });
 			const secondCreateResponse = page.waitForResponse((response) =>
 				response.request().method() === "POST" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries`) &&
-				response.status() === 201
+				response.url().endsWith(`/api/spaces/${spaceId}/entries`)
 			);
 			await page.getByRole("button", { name: "Save" }).click();
-			await secondCreateResponse;
+			expect((await secondCreateResponse).status()).toBe(201);
 			const contractsEntryId = decodeURIComponent(
 				new URL(page.url()).pathname.split("/").pop() ?? "",
 			);
