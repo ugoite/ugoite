@@ -502,9 +502,11 @@ test.describe("Entries CRUD", () => {
 				page.getByText("Uploaded; entry not saved yet"),
 			).toHaveCount(3, { timeout: 15_000 });
 
-			const createResponse = page.waitForResponse((response) =>
-				response.request().method() === "POST" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries`)
+			const createResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "POST" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries`),
+				{ timeout: 15_000 },
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await createResponse).status()).toBe(201);
@@ -527,14 +529,17 @@ test.describe("Entries CRUD", () => {
 
 			await page.reload({ waitUntil: "domcontentloaded" });
 			await expect(page.getByText("thumbnail.txt")).toBeVisible();
-			const readResponse = page.waitForResponse((response) => {
-				const requestEvent = response.request();
-				const url = new URL(response.url());
-				return requestEvent.method() === "GET" &&
-					url.pathname.includes(`/api/spaces/${spaceId}/assets/`) &&
-					url.searchParams.get("form") === mediaForm &&
-					url.searchParams.get("entry_id") === mediaEntryId;
-			});
+			const readResponse = page.waitForResponse(
+				(response) => {
+					const requestEvent = response.request();
+					const url = new URL(response.url());
+					return requestEvent.method() === "GET" &&
+						url.pathname.includes(`/api/spaces/${spaceId}/assets/`) &&
+						url.searchParams.get("form") === mediaForm &&
+						url.searchParams.get("entry_id") === mediaEntryId;
+				},
+				{ timeout: 15_000 },
+			);
 			await thumbnail.getByRole("button", { name: "Open or download" }).click();
 			const assetReadResponse = await readResponse;
 			expect(assetReadResponse.status()).toBe(200);
@@ -549,9 +554,11 @@ test.describe("Entries CRUD", () => {
 			await expect(page.getByText("Uploaded; entry not saved yet")).toHaveCount(1, {
 				timeout: 15_000,
 			});
-			const replaceResponse = page.waitForResponse((response) =>
-				response.request().method() === "PUT" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`)
+			const replaceResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "PUT" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`),
+				{ timeout: 15_000 },
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await replaceResponse).ok()).toBeTruthy();
@@ -560,9 +567,11 @@ test.describe("Entries CRUD", () => {
 			await orderedList.getByRole("button", {
 				name: "microscope-b.txt up",
 			}).click();
-			const reorderResponse = page.waitForResponse((response) =>
-				response.request().method() === "PUT" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`)
+			const reorderResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "PUT" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`),
+				{ timeout: 15_000 },
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await reorderResponse).ok()).toBeTruthy();
@@ -577,9 +586,11 @@ test.describe("Entries CRUD", () => {
 			).toBeLessThan(mediaEntry.content.indexOf('"name":"microscope-a.txt"'));
 
 			await orderedList.getByRole("button", { name: /^Remove microscope-b\.txt/ }).click();
-			const removeResponse = page.waitForResponse((response) =>
-				response.request().method() === "PUT" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`)
+			const removeResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "PUT" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`),
+				{ timeout: 15_000 },
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await removeResponse).ok()).toBeTruthy();
@@ -605,9 +616,11 @@ test.describe("Entries CRUD", () => {
 			await expect(
 				page.getByText("Uploaded; entry not saved yet"),
 			).toHaveCount(2, { timeout: 15_000 });
-			const secondCreateResponse = page.waitForResponse((response) =>
-				response.request().method() === "POST" &&
-				response.url().endsWith(`/api/spaces/${spaceId}/entries`)
+			const secondCreateResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "POST" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries`),
+				{ timeout: 15_000 },
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await secondCreateResponse).status()).toBe(201);
