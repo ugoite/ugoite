@@ -197,6 +197,13 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
     rootMise.includes("${DOCSITE_ORIGIN:-http://localhost:4321}"),
     true,
   );
+  const rootDeno = await Deno.readTextFile("deno.json");
+  assertEquals(
+    rootDeno.includes(
+      '"e2e:asset-owned": "bash e2e/scripts/run-e2e-parity.sh asset-owned"',
+    ),
+    true,
+  );
 });
 
 Deno.test("Pages promotion consumes trusted artifacts without rebuilding", async () => {

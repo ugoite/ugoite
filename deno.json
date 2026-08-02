@@ -19,7 +19,7 @@
     "docsite:e2e:navigation": "deno task --cwd e2e docsite:navigation",
     "e2e:install:browsers": "deno task --cwd e2e install:browsers",
     "e2e:smoke": "bash e2e/scripts/run-e2e-parity.sh smoke",
-    "e2e:asset-owned": "deno task --cwd e2e asset-owned",
+    "e2e:asset-owned": "bash e2e/scripts/run-e2e-parity.sh asset-owned",
     "e2e:full": "bash e2e/scripts/run-e2e-parity.sh full",
     "e2e:static": "E2E_FRONTEND_MODE=static E2E_ENFORCE_CI_GATES=true bash e2e/scripts/run-e2e.sh smoke"
   },
