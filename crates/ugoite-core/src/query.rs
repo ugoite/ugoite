@@ -55,6 +55,13 @@ pub enum QuerySystemColumn {
     EntryId,
     EntryVersion,
     CommittedAt,
+    RevisionId,
+    ParentRevisionId,
+    Author,
+    ExtraAttributes,
+    Integrity,
+    Deleted,
+    DeletedAt,
 }
 
 impl QuerySystemColumn {
@@ -72,6 +79,13 @@ impl QuerySystemColumn {
             Self::EntryId => "_ugoite_entry_id",
             Self::EntryVersion => "_ugoite_entry_version",
             Self::CommittedAt => "_ugoite_committed_at",
+            Self::RevisionId => "_ugoite_revision_id",
+            Self::ParentRevisionId => "_ugoite_parent_revision_id",
+            Self::Author => "_ugoite_author",
+            Self::ExtraAttributes => "_ugoite_extra_attributes",
+            Self::Integrity => "_ugoite_integrity",
+            Self::Deleted => "_ugoite_deleted",
+            Self::DeletedAt => "_ugoite_deleted_at",
         }
     }
 }

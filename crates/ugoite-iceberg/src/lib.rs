@@ -1401,21 +1401,24 @@ impl IcebergWorkspace {
         } else {
             IcebergStaticTableProvider::try_new_from_table(table.clone()).await?
         };
-        crate::query_context::execute_bounded_latest_revision_plan(
-            Arc::new(provider),
-            table.metadata().uuid().to_string(),
-            snapshot_id,
-            entry_scope,
-            view,
-            QueryLimits {
-                max_memory_bytes: 64 * 1024 * 1024,
-                max_rows: MAX_NORMAL_READ_ROWS,
-                timeout: Duration::from_secs(30),
-                max_concurrency: 1,
-                allowed_functions: BTreeSet::new(),
-            },
-        )
-        .await
+        let context = self
+            .authorized_revision_query_context(
+                Arc::new(provider),
+                table.metadata().uuid().to_string(),
+                snapshot_id,
+                entry_scope,
+                QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: MAX_NORMAL_READ_ROWS,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+            )
+            .await?;
+        context
+            .execute_latest_revision_plan(entry_scope, view)
+            .await
     }
 
     async fn read_all_revision_batches(

@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use ugoite_cli::commands;

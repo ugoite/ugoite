@@ -5,8 +5,8 @@ use ugoite_core::query::EntryScope;
 use crate::entry;
 pub use ugoite_domain::search::KeywordSearchResult;
 
-/// Keyword search over the bounded, authorized current-state DataFusion
-/// candidate plan. The final point reads decode only the selected rows.
+/// Keyword search over one bounded, authorized current-state DataFusion
+/// payload plan.
 pub async fn search_entries(
     op: &Operator,
     ws_path: &str,
@@ -32,7 +32,7 @@ pub async fn search_entries_with_scopes(
     relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
     limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
-    let candidates = crate::index::query_entry_candidates_authorized(
+    let rows = crate::index::query_entry_rows_authorized(
         op,
         ws_path,
         relation_scopes,
@@ -41,26 +41,15 @@ pub async fn search_entries_with_scopes(
         limit,
     )
     .await?;
-    let mut results = Vec::new();
-    for candidate in candidates {
-        let Some(scope) = relation_scopes.get(&candidate.form_name.to_ascii_lowercase()) else {
-            continue;
-        };
-        let row = entry::read_entry_row_authorized(
-            op,
-            ws_path,
-            &candidate.form_name,
-            &candidate.entry_id,
-            scope,
-        )
-        .await?;
+    let mut results = Vec::with_capacity(rows.len());
+    for (form_name, row) in rows {
         if row.deleted {
             continue;
         }
         results.push(KeywordSearchResult {
             id: row.entry_id,
             title: row.title,
-            form: candidate.form_name,
+            form: form_name,
             created_at: row.created_at,
             updated_at: row.updated_at,
         });

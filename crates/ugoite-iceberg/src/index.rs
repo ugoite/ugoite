@@ -264,10 +264,7 @@ pub(crate) struct EntryCandidate {
     pub title: String,
 }
 
-/// Selects only the bounded, globally ordered current Entry candidates. The
-/// final payload is intentionally fetched by point lookup after this plan so
-/// a large Space never materializes every Form into Rust just to serve a
-/// small list, option, or search response.
+/// Selects only the bounded, globally ordered current Entry candidates.
 pub(crate) async fn query_entry_candidates_authorized(
     op: &Operator,
     ws_path: &str,
@@ -285,12 +282,44 @@ pub(crate) async fn query_entry_candidates_authorized(
             crate::MAX_NORMAL_READ_ROWS
         ));
     }
+    let forms = load_forms(op, ws_path).await?;
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        None,
+        BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
+        crate::MAX_NORMAL_READ_ROWS,
+        false,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    query_entry_candidates_in_context(
+        &context,
+        &forms,
+        relation_scopes,
+        form_filter,
+        keyword,
+        limit,
+    )
+    .await
+}
+
+async fn query_entry_candidates_in_context(
+    context: &crate::query_context::AuthorizedQueryContext,
+    forms: &HashMap<String, Value>,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    form_filter: Option<&str>,
+    keyword: Option<&str>,
+    limit: usize,
+) -> Result<Vec<EntryCandidate>> {
     let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
     let normalized_keyword = keyword
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_lowercase);
-    let forms = load_forms(op, ws_path).await?;
     let mut branches = Vec::new();
     for (form_name, form) in forms {
         if normalized_form.is_some_and(|expected| expected != form_name) {
@@ -307,14 +336,14 @@ pub(crate) async fn query_entry_candidates_authorized(
         }
         let keyword_predicate = normalized_keyword
             .as_deref()
-            .map(|query| searchable_keyword_predicate(&form, &form_name, query))
+            .map(|query| searchable_keyword_predicate(form, form_name, query))
             .transpose()?;
         let where_clause = keyword_predicate
             .map(|predicate| format!(" WHERE {predicate}"))
             .unwrap_or_default();
         branches.push(format!(
             "SELECT \"_ugoite_id\", \"_ugoite_title\", {} AS \"_ugoite_form\" FROM {}{}",
-            sql_string_literal(&form_name),
+            sql_string_literal(form_name),
             quote_identifier(relation),
             where_clause,
         ));
@@ -325,20 +354,8 @@ pub(crate) async fn query_entry_candidates_authorized(
     let sql = format!(
         "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\" ORDER BY \"_ugoite_title\", \"_ugoite_id\" LIMIT {}",
         branches.join(" UNION ALL "),
-        limit.saturating_add(1),
+        limit,
     );
-    let context = datafusion_sql_context_with_limits(
-        op,
-        ws_path,
-        EntryScope::AllCurrent,
-        None,
-        Some(relation_scopes),
-        None,
-        BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
-        crate::MAX_NORMAL_READ_ROWS,
-    )
-    .await
-    .map_err(map_sql_error)?;
     let values = record_batches_to_values(&context.execute(&sql).await.map_err(map_sql_error)?)?;
     let mut candidates = values
         .into_iter()
@@ -364,6 +381,395 @@ pub(crate) async fn query_entry_candidates_authorized(
         .collect::<Result<Vec<_>>>()?;
     candidates.truncate(limit);
     Ok(candidates)
+}
+
+/// Reads the selected payload through the same authorized context that chose
+/// the candidates. Each Form is projected once, so a list/search response is
+/// bounded by Forms rather than by Entry point reads.
+pub(crate) async fn query_entry_rows_authorized(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    form_filter: Option<&str>,
+    keyword: Option<&str>,
+    limit: usize,
+) -> Result<Vec<(String, entry::EntryRow)>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    if limit > crate::MAX_NORMAL_READ_ROWS {
+        return Err(anyhow!(
+            "normal Entry reads are limited to {} rows",
+            crate::MAX_NORMAL_READ_ROWS
+        ));
+    }
+    let forms = load_forms(op, ws_path).await?;
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        None,
+        BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
+        crate::MAX_NORMAL_READ_ROWS,
+        true,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let candidates = query_entry_candidates_in_context(
+        &context,
+        &forms,
+        relation_scopes,
+        form_filter,
+        keyword,
+        limit,
+    )
+    .await?;
+    let mut by_key = HashMap::<(String, String), entry::EntryRow>::new();
+    for form_name in forms.keys() {
+        let form_candidates = candidates
+            .iter()
+            .filter(|candidate| candidate.form_name == *form_name)
+            .collect::<Vec<_>>();
+        if form_candidates.is_empty() {
+            continue;
+        }
+        let form = forms
+            .get(form_name)
+            .with_context(|| format!("missing Form definition {form_name}"))?;
+        let relation = form
+            .get("sql_relation")
+            .and_then(Value::as_str)
+            .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+        let ids = form_candidates
+            .iter()
+            .map(|candidate| lit(candidate.entry_id.as_str()))
+            .collect::<Vec<_>>();
+        let available_columns = context
+            .relation_columns(relation)
+            .await
+            .map_err(map_sql_error)?;
+        let batches = execute_payload_relation_plan(
+            &context,
+            relation,
+            Vec::new(),
+            vec![col("_ugoite_id").in_list(ids, false)],
+            form,
+            &available_columns,
+            false,
+            form_candidates.len(),
+        )
+        .await?;
+        for value in record_batches_to_values(&batches)? {
+            let entry_id = value
+                .get("_ugoite_id")
+                .and_then(Value::as_str)
+                .context("Entry payload is missing its external ID")?;
+            by_key.insert(
+                (form_name.clone(), entry_id.to_string()),
+                entry_row_from_payload(form_name, form, &value)?,
+            );
+        }
+    }
+    Ok(candidates
+        .into_iter()
+        .filter_map(|candidate| {
+            by_key
+                .remove(&(candidate.form_name.clone(), candidate.entry_id.clone()))
+                .map(|row| (candidate.form_name, row))
+        })
+        .collect::<Vec<_>>())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_payload_relation_plan(
+    context: &crate::query_context::AuthorizedQueryContext,
+    relation: &str,
+    unnest_columns: Vec<(String, String)>,
+    predicates: Vec<Expr>,
+    form: &Value,
+    available_columns: &BTreeSet<String>,
+    distinct: bool,
+    limit: usize,
+) -> Result<Vec<arrow_array::RecordBatch>> {
+    let field_columns = form
+        .get("fields")
+        .and_then(Value::as_object)
+        .map(|fields| {
+            fields
+                .values()
+                .filter_map(|field| field_sql_column(field).ok())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let mut excluded = BTreeSet::new();
+    let preserved_inputs = unnest_columns
+        .iter()
+        .map(|(input, _)| input.clone())
+        .collect::<BTreeSet<_>>();
+    loop {
+        let result = context
+            .execute_relation_plan(
+                relation,
+                &unnest_columns,
+                predicates.clone(),
+                payload_projection(form, available_columns, &excluded, &preserved_inputs)?,
+                Vec::new(),
+                distinct,
+                !preserved_inputs.is_empty(),
+                limit,
+            )
+            .await;
+        match result {
+            Ok(batches) => return Ok(batches),
+            Err(error)
+                if is_missing_physical_column_error(&error)
+                    && excluded.len() < field_columns.len() =>
+            {
+                let next = field_columns
+                    .iter()
+                    .rev()
+                    .find(|column| !excluded.contains(*column))
+                    .cloned();
+                if let Some(column) = next {
+                    excluded.insert(column);
+                    continue;
+                }
+                return Err(map_sql_error(error));
+            }
+            Err(error) => return Err(map_sql_error(error)),
+        }
+    }
+}
+
+fn is_missing_physical_column_error(error: &anyhow::Error) -> bool {
+    let debug = format!("{error:?}");
+    debug.contains("Column ") && debug.contains("not found in table")
+}
+
+fn payload_projection(
+    form: &Value,
+    available_columns: &BTreeSet<String>,
+    excluded_columns: &BTreeSet<String>,
+    preserved_inputs: &BTreeSet<String>,
+) -> Result<Vec<Expr>> {
+    let mut projection = vec![
+        col("_ugoite_id"),
+        col("_ugoite_title"),
+        col("_ugoite_tags"),
+        col("_ugoite_created_at"),
+        col("_ugoite_updated_at"),
+        col("_ugoite_revision_id"),
+        col("_ugoite_parent_revision_id"),
+        col("_ugoite_author"),
+        col("_ugoite_extra_attributes"),
+        col("_ugoite_integrity"),
+        col("_ugoite_deleted"),
+        col("_ugoite_deleted_at"),
+        col("_ugoite_entry_version"),
+    ];
+    if let Some(fields) = form.get("fields").and_then(Value::as_object) {
+        for field in fields.values() {
+            let column = field_sql_column(field)?;
+            if preserved_inputs.contains(&column) {
+                projection.push(
+                    col(crate::query_context::preserved_unnest_column(&column)).alias(column),
+                );
+            } else if available_columns.contains(&column.to_ascii_lowercase())
+                && !excluded_columns.contains(&column)
+            {
+                projection.push(col(column));
+            }
+        }
+    }
+    Ok(projection)
+}
+
+fn entry_row_from_payload(form_name: &str, form: &Value, value: &Value) -> Result<entry::EntryRow> {
+    let fields = form
+        .get("fields")
+        .and_then(Value::as_object)
+        .map(|definitions| {
+            definitions
+                .iter()
+                .filter_map(|(name, definition)| {
+                    let column = field_sql_column(definition).ok()?;
+                    Some((
+                        name.clone(),
+                        value.get(&column).cloned().unwrap_or(Value::Null),
+                    ))
+                })
+                .collect::<Map<_, _>>()
+        })
+        .unwrap_or_default();
+    Ok(entry::EntryRow {
+        entry_id: value
+            .get("_ugoite_id")
+            .and_then(Value::as_str)
+            .context("Entry payload is missing its external ID")?
+            .to_string(),
+        title: value
+            .get("_ugoite_title")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        form: form_name.to_string(),
+        tags: value
+            .get("_ugoite_tags")
+            .and_then(Value::as_array)
+            .map(|tags| {
+                tags.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        created_at: json_timestamp(value.get("_ugoite_created_at"))?,
+        updated_at: json_timestamp(value.get("_ugoite_updated_at"))?,
+        fields: Value::Object(fields),
+        extra_attributes: json_object_or_string(value.get("_ugoite_extra_attributes"))?,
+        revision_id: value
+            .get("_ugoite_revision_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        parent_revision_id: value
+            .get("_ugoite_parent_revision_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        integrity: serde_json::from_value(
+            value
+                .get("_ugoite_integrity")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({})),
+        )
+        .unwrap_or_default(),
+        deleted: value
+            .get("_ugoite_deleted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        deleted_at: value
+            .get("_ugoite_deleted_at")
+            .map(|value| json_timestamp(Some(value)))
+            .transpose()?,
+        author: value
+            .get("_ugoite_author")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        entry_version: value
+            .get("_ugoite_entry_version")
+            .and_then(Value::as_u64)
+            .unwrap_or(1),
+    })
+}
+
+fn field_sql_column(field: &Value) -> Result<String> {
+    if let Some(id) = field.get("id").and_then(Value::as_i64) {
+        return Ok(format!("field_{id}"));
+    }
+    field
+        .get("sql_column")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .context("Form field is missing stable id")
+}
+
+fn json_object_or_string(value: Option<&Value>) -> Result<Value> {
+    match value {
+        Some(Value::String(value)) => {
+            Ok(serde_json::from_str(value).unwrap_or_else(|_| Value::Object(Map::new())))
+        }
+        Some(value @ Value::Object(_)) => Ok(value.clone()),
+        _ => Ok(Value::Object(Map::new())),
+    }
+}
+
+fn json_timestamp(value: Option<&Value>) -> Result<f64> {
+    let Some(value) = value else {
+        return Ok(0.0);
+    };
+    if let Some(number) = value.as_f64() {
+        return Ok(number);
+    }
+    let text = value
+        .as_str()
+        .context("timestamp payload is neither a number nor a string")?;
+    if let Ok(timestamp) = DateTime::parse_from_rfc3339(text) {
+        return Ok(timestamp.timestamp_millis() as f64 / 1000.0);
+    }
+    text.parse::<f64>()
+        .with_context(|| format!("invalid timestamp payload {text}"))
+}
+
+/// Checks only the request's external IDs in the authorized current-state
+/// views. This deliberately replaces the old full-Space Rust scan used by
+/// Entry creation.
+pub(crate) async fn existing_entry_ids_authorized(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    entry_ids: &[String],
+) -> Result<HashSet<String>> {
+    if entry_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let forms = load_forms(op, ws_path).await?;
+    let id_list = entry_ids
+        .iter()
+        .map(|entry_id| sql_string_literal(entry_id))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut branches = Vec::new();
+    for (form_name, form) in &forms {
+        let relation = form
+            .get("sql_relation")
+            .and_then(Value::as_str)
+            .context("Form is missing its SQL relation")?;
+        if let Some(scopes) = relation_scopes {
+            if !scopes.contains_key(&relation.to_ascii_lowercase())
+                && !scopes.contains_key(&form_name.to_ascii_lowercase())
+            {
+                continue;
+            }
+        }
+        branches.push(format!(
+            "SELECT \"_ugoite_id\" FROM {} WHERE \"_ugoite_id\" IN ({id_list})",
+            quote_identifier(relation),
+        ));
+    }
+    if branches.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        relation_scopes,
+        None,
+        BTreeSet::new(),
+        crate::MAX_NORMAL_READ_ROWS,
+        false,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let sql = format!(
+        "SELECT DISTINCT \"_ugoite_id\" FROM ({}) AS \"__ugoite_existing_ids\"",
+        branches.join(" UNION ALL "),
+    );
+    Ok(
+        record_batches_to_values(&context.execute(&sql).await.map_err(map_sql_error)?)?
+            .into_iter()
+            .filter_map(|value| {
+                value
+                    .get("_ugoite_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .collect(),
+    )
 }
 
 fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> Result<String> {
@@ -982,7 +1388,7 @@ async fn query_index_with_form_scopes(
             collect_filtered_entries_with_form_scopes(op, ws_path, &forms, filters, relation_scopes)
                 .await?
         }
-        None => collect_entries_with_form_scopes(op, ws_path, &forms, relation_scopes).await?,
+        None => query_entries_with_form_scopes(op, ws_path, &forms, relation_scopes).await?,
     };
     Ok(entries_map.into_values().collect())
 }
@@ -1149,6 +1555,7 @@ async fn datafusion_sql_context(
         checkpoint,
         allowed_functions,
         SQL_SESSION_MAX_ROWS,
+        false,
     )
     .await
 }
@@ -1163,6 +1570,7 @@ async fn datafusion_sql_context_with_limits(
     checkpoint: Option<SpaceCheckpoint>,
     allowed_functions: BTreeSet<String>,
     max_rows: usize,
+    include_payload: bool,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     let forms = workspace.list_forms().await?;
@@ -1182,6 +1590,25 @@ async fn datafusion_sql_context_with_limits(
         if allowed_relations.is_some_and(|allowed| !allowed.contains(&relation)) {
             continue;
         }
+        let mut system_columns = BTreeSet::from([
+            QuerySystemColumn::ExternalId,
+            QuerySystemColumn::Title,
+            QuerySystemColumn::Tags,
+            QuerySystemColumn::CreatedAt,
+            QuerySystemColumn::UpdatedAt,
+        ]);
+        if include_payload {
+            system_columns.extend([
+                QuerySystemColumn::RevisionId,
+                QuerySystemColumn::ParentRevisionId,
+                QuerySystemColumn::Author,
+                QuerySystemColumn::ExtraAttributes,
+                QuerySystemColumn::Integrity,
+                QuerySystemColumn::Deleted,
+                QuerySystemColumn::DeletedAt,
+                QuerySystemColumn::EntryVersion,
+            ]);
+        }
         policy_forms.insert(
             form.id,
             AuthorizedQueryForm {
@@ -1192,15 +1619,7 @@ async fn datafusion_sql_context_with_limits(
                     .iter()
                     .map(|field| sql_column_name(field.id))
                     .collect(),
-                system_columns: [
-                    QuerySystemColumn::ExternalId,
-                    QuerySystemColumn::Title,
-                    QuerySystemColumn::Tags,
-                    QuerySystemColumn::CreatedAt,
-                    QuerySystemColumn::UpdatedAt,
-                ]
-                .into_iter()
-                .collect(),
+                system_columns,
             },
         );
     }
@@ -1274,8 +1693,123 @@ pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
 
 pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
     let forms = load_forms(op, ws_path).await?;
-    let entries = collect_entries(op, ws_path, &forms).await?;
-    Ok(aggregate_stats(&entries))
+    let relation_scopes = forms
+        .keys()
+        .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect::<BTreeMap<_, _>>();
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
+        None,
+        BTreeSet::new(),
+        crate::MAX_NORMAL_READ_ROWS,
+        true,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let mut entry_count = 0u64;
+    let mut form_stats = Map::new();
+    let mut tag_counts = Map::new();
+    for (form_name, form) in &forms {
+        let relation = form
+            .get("sql_relation")
+            .and_then(Value::as_str)
+            .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+        let mut aggregate_expr =
+            vec![datafusion::functions_aggregate::expr_fn::count(lit(1)).alias("__ugoite_count")];
+        let mut field_aliases = Vec::new();
+        if let Some(fields) = form.get("fields").and_then(Value::as_object) {
+            for (field_name, field) in fields {
+                let column = field
+                    .get("sql_column")
+                    .and_then(Value::as_str)
+                    .with_context(|| format!("Form field {field_name} is missing sql_column"))?;
+                let alias = format!("__ugoite_field_{field_name}");
+                aggregate_expr.push(
+                    datafusion::functions_aggregate::expr_fn::count(col(column)).alias(&alias),
+                );
+                field_aliases.push((field_name, alias));
+            }
+        }
+        let values = record_batches_to_values(
+            &context
+                .execute_relation_aggregate_plan(
+                    relation,
+                    &[],
+                    Vec::new(),
+                    Vec::new(),
+                    aggregate_expr,
+                    1,
+                )
+                .await
+                .map_err(map_sql_error)?,
+        )?;
+        let value = values
+            .first()
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let count = value
+            .get("__ugoite_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        entry_count = entry_count.saturating_add(count);
+        let mut stats = Map::new();
+        stats.insert("count".to_string(), Value::Number(count.into()));
+        let mut fields_json = Map::new();
+        for (field_name, alias) in field_aliases {
+            if let Some(field_count) = value.get(&alias).and_then(Value::as_u64) {
+                if field_count > 0 {
+                    fields_json.insert(field_name.clone(), Value::Number(field_count.into()));
+                }
+            }
+        }
+        if !fields_json.is_empty() {
+            stats.insert("fields".to_string(), Value::Object(fields_json));
+        }
+        form_stats.insert(form_name.clone(), Value::Object(stats));
+
+        let tag_values = record_batches_to_values(
+            &context
+                .execute_relation_aggregate_plan(
+                    relation,
+                    &[("_ugoite_tags".to_string(), "__ugoite_tag".to_string())],
+                    Vec::new(),
+                    vec![col("__ugoite_tag")],
+                    vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                        .alias("__ugoite_tag_count")],
+                    crate::MAX_NORMAL_READ_ROWS,
+                )
+                .await
+                .map_err(map_sql_error)?,
+        )?;
+        for tag_value in tag_values {
+            let Some(tag) = tag_value.get("__ugoite_tag").and_then(Value::as_str) else {
+                continue;
+            };
+            let count = tag_value
+                .get("__ugoite_tag_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let total = tag_counts
+                .get(tag)
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                .saturating_add(count);
+            tag_counts.insert(tag.to_string(), Value::Number(total.into()));
+        }
+    }
+    form_stats.insert(
+        "_uncategorized".to_string(),
+        serde_json::json!({"count": 0}),
+    );
+    Ok(serde_json::json!({
+        "entry_count": entry_count,
+        "form_stats": form_stats,
+        "tag_counts": tag_counts,
+    }))
 }
 
 pub async fn update_entry_index(op: &Operator, ws_path: &str, entry_id: &str) -> Result<()> {
@@ -1735,11 +2269,21 @@ async fn collect_filtered_entries_with_form_scopes(
     relation_scopes: &BTreeMap<String, EntryScope>,
 ) -> Result<Map<String, Value>> {
     let mut entries = Map::new();
-    let mut matched_by_form = BTreeMap::<String, BTreeSet<String>>::new();
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        None,
+        BTreeSet::from(["array_has".to_string()]),
+        crate::MAX_NORMAL_READ_ROWS,
+        true,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let mut rows = Vec::new();
     for (form_name, form) in forms {
-        if !relation_scopes.contains_key(&form_name.to_ascii_lowercase()) {
-            continue;
-        }
         if let Some(expected_form) = filters.get("form") {
             if expected_form.as_str() != Some(form_name.as_str()) {
                 continue;
@@ -1749,6 +2293,11 @@ async fn collect_filtered_entries_with_form_scopes(
             .get("sql_relation")
             .and_then(Value::as_str)
             .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+        if !relation_scopes.contains_key(&form_name.to_ascii_lowercase())
+            && !relation_scopes.contains_key(&relation.to_ascii_lowercase())
+        {
+            continue;
+        }
         let FilterPlan {
             predicates,
             struct_list_predicates,
@@ -1767,72 +2316,42 @@ async fn collect_filtered_entries_with_form_scopes(
                     .eq(lit(asset_id)),
             );
         }
-        let remaining = crate::MAX_NORMAL_READ_ROWS
-            .saturating_sub(matched_by_form.values().map(BTreeSet::len).sum::<usize>());
+        let remaining = crate::MAX_NORMAL_READ_ROWS.saturating_sub(rows.len());
         let per_form_bound = remaining.max(1);
-        let context = datafusion_sql_context_with_limits(
-            op,
-            ws_path,
-            EntryScope::AllCurrent,
-            None,
-            Some(relation_scopes),
-            None,
-            BTreeSet::from(["array_has".to_string()]),
-            crate::MAX_NORMAL_READ_ROWS,
-        )
-        .await
-        .map_err(map_sql_error)?;
-        let batches = context
-            .execute_relation_plan(
-                relation,
-                &unnest_columns,
-                predicates,
-                vec![col("_ugoite_id").alias("_ugoite_id")],
-                Vec::new(),
-                true,
-                per_form_bound.saturating_add(1),
-            )
+        let available_columns = context
+            .relation_columns(relation)
             .await
             .map_err(map_sql_error)?;
-        let values = record_batches_to_values(&batches)?;
-        let ids = values
-            .into_iter()
-            .filter_map(|value| {
-                value
-                    .get("_ugoite_id")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .collect::<BTreeSet<_>>();
-        if remaining == 0 && !ids.is_empty() {
-            return Err(anyhow!(
-                "normal Entry reads are limited to {} current rows",
-                crate::MAX_NORMAL_READ_ROWS
-            ));
-        }
-        if ids.len() > remaining {
-            return Err(anyhow!(
-                "normal Entry reads are limited to {} current rows",
-                crate::MAX_NORMAL_READ_ROWS
-            ));
-        }
-        if !ids.is_empty() {
-            matched_by_form.insert(form_name.clone(), ids);
-        }
-    }
-
-    for (form_name, external_ids) in matched_by_form {
-        let entry_scope = EntryScope::Only(entry_scope_from_ids(&external_ids));
-        let scoped_rows = entry::list_entry_rows_authorized(
-            op,
-            ws_path,
-            &BTreeMap::from([(form_name.to_ascii_lowercase(), entry_scope)]),
+        let batches = execute_payload_relation_plan(
+            &context,
+            relation,
+            unnest_columns,
+            predicates,
+            form,
+            &available_columns,
+            true,
+            per_form_bound,
         )
         .await?;
-        for (_, row) in scoped_rows {
-            if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
+        let values = record_batches_to_values(&batches)?;
+        if remaining == 0 && !values.is_empty() {
+            return Err(anyhow!(
+                "normal Entry reads are limited to {} current rows",
+                crate::MAX_NORMAL_READ_ROWS
+            ));
+        }
+        if values.len() > remaining {
+            return Err(anyhow!(
+                "normal Entry reads are limited to {} current rows",
+                crate::MAX_NORMAL_READ_ROWS
+            ));
+        }
+        for value in values {
+            let row = entry_row_from_payload(form_name, form, &value)?;
+            if let Some(record) = build_record(ws_path, form_name, &row, forms).await? {
                 entries.insert(row.entry_id.clone(), record);
             }
+            rows.push((form_name.clone(), row));
         }
     }
     Ok(entries)
@@ -1948,29 +2467,14 @@ fn quote_identifier(value: &str) -> String {
     sql_identifier(value)
 }
 
-async fn collect_entries(
-    op: &Operator,
-    ws_path: &str,
-    forms: &HashMap<String, Value>,
-) -> Result<Map<String, Value>> {
-    let mut entries = Map::new();
-    let rows = entry::list_entry_rows(op, ws_path).await?;
-    for (form_name, row) in rows {
-        if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
-            entries.insert(row.entry_id.clone(), record);
-        }
-    }
-    Ok(entries)
-}
-
-async fn collect_entries_with_form_scopes(
+async fn query_entries_with_form_scopes(
     op: &Operator,
     ws_path: &str,
     forms: &HashMap<String, Value>,
     relation_scopes: &BTreeMap<String, EntryScope>,
 ) -> Result<Map<String, Value>> {
     let mut entries = Map::new();
-    let candidates = query_entry_candidates_authorized(
+    let rows = query_entry_rows_authorized(
         op,
         ws_path,
         relation_scopes,
@@ -1979,19 +2483,7 @@ async fn collect_entries_with_form_scopes(
         crate::MAX_NORMAL_READ_ROWS,
     )
     .await?;
-    for candidate in candidates {
-        let Some(scope) = relation_scopes.get(&candidate.form_name.to_ascii_lowercase()) else {
-            continue;
-        };
-        let row = entry::read_entry_row_authorized(
-            op,
-            ws_path,
-            &candidate.form_name,
-            &candidate.entry_id,
-            scope,
-        )
-        .await?;
-        let form_name = candidate.form_name;
+    for (form_name, row) in rows {
         if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
             entries.insert(row.entry_id.clone(), record);
         }

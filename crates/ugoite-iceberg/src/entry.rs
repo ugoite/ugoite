@@ -848,79 +848,6 @@ pub(crate) async fn write_entry_row(
     append_revision_row_for_form(op, ws_path, form_name, &revision, &form_def).await
 }
 
-pub(crate) async fn list_entry_rows(
-    op: &Operator,
-    ws_path: &str,
-) -> Result<Vec<(String, EntryRow)>> {
-    let mut latest = Vec::<(String, RevisionRow)>::new();
-    for form_name in list_form_names(op, ws_path).await? {
-        let (form, revisions) =
-            iceberg_store::latest_revisions_for_form(op, ws_path, &form_name).await?;
-        let rows = revisions
-            .into_iter()
-            .map(|revision| revision_row_from_domain(revision, &form_name, &form))
-            .collect::<Result<Vec<_>>>()?;
-        for revision in rows {
-            let Some(row) = revision.state.as_ref() else {
-                continue;
-            };
-            if let Some((current_form_name, existing)) = latest
-                .iter_mut()
-                .find(|(_, existing)| existing.entry_id == row.entry_id)
-            {
-                if revision.entry_version == existing.entry_version
-                    && revision.revision_id != existing.revision_id
-                {
-                    return Err(anyhow!(
-                        "multiple revisions exist for entry {} at version {}",
-                        row.entry_id,
-                        revision.entry_version
-                    ));
-                }
-                if revision.entry_version > existing.entry_version {
-                    *existing = revision;
-                    *current_form_name = form_name.clone();
-                }
-            } else {
-                latest.push((form_name.clone(), revision));
-            }
-        }
-    }
-    Ok(latest
-        .into_iter()
-        .filter_map(|(form_name, revision)| revision.state.map(|row| (form_name, row)))
-        .collect())
-}
-
-pub(crate) async fn list_entry_rows_authorized(
-    op: &Operator,
-    ws_path: &str,
-    relation_scopes: &BTreeMap<String, EntryScope>,
-) -> Result<Vec<(String, EntryRow)>> {
-    let mut rows = Vec::new();
-    for form_name in list_form_names(op, ws_path).await? {
-        let Some(entry_scope) = relation_scopes.get(&form_name.to_ascii_lowercase()) else {
-            continue;
-        };
-        let (form, revisions) = iceberg_store::latest_revisions_for_form_authorized(
-            op,
-            ws_path,
-            &form_name,
-            entry_scope.clone(),
-        )
-        .await?;
-        rows.extend(
-            revisions
-                .into_iter()
-                .map(|revision| revision_row_from_domain(revision, &form_name, &form))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .filter_map(|revision| revision.state.map(|row| (form_name.clone(), row))),
-        );
-    }
-    Ok(rows)
-}
-
 pub(crate) async fn list_form_entry_rows(
     op: &Operator,
     ws_path: &str,
@@ -1068,15 +995,23 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
             "entry create batches are limited to {MAX_ENTRY_CREATE_BATCH_SIZE} requests"
         ));
     }
-    let mut known_entry_ids = list_entry_rows(op, ws_path)
-        .await?
-        .into_iter()
-        .map(|(_, row)| row.entry_id)
-        .collect::<HashSet<_>>();
+    let mut requested_entry_ids = HashSet::new();
+    for request in &requests {
+        if !requested_entry_ids.insert(request.entry_id.clone()) {
+            return Err(anyhow!("Entry already exists: {}", request.entry_id));
+        }
+    }
+    let existing_entry_ids = index::existing_entry_ids_authorized(
+        op,
+        ws_path,
+        relation_scopes,
+        &requested_entry_ids.iter().cloned().collect::<Vec<_>>(),
+    )
+    .await?;
     let mut batches = BTreeMap::<String, (Value, Vec<RevisionRow>)>::new();
     let mut entries = Vec::with_capacity(requests.len());
     for request in requests {
-        if !known_entry_ids.insert(request.entry_id.clone()) {
+        if existing_entry_ids.contains(&request.entry_id) {
             return Err(anyhow!("Entry already exists: {}", request.entry_id));
         }
         let (entry, form_name, form_def, revision) = prepare_entry(
@@ -1317,26 +1252,8 @@ pub async fn list_entries_with_scopes(
     relation_scopes: &BTreeMap<String, EntryScope>,
     limit: usize,
 ) -> Result<Vec<Value>> {
-    let candidates =
-        index::query_entry_candidates_authorized(op, ws_path, relation_scopes, None, None, limit)
-            .await?;
-    let mut rows = Vec::with_capacity(candidates.len());
-    for candidate in candidates {
-        let Some(scope) = relation_scopes.get(&candidate.form_name.to_ascii_lowercase()) else {
-            continue;
-        };
-        rows.push((
-            candidate.form_name.clone(),
-            read_entry_row_authorized(
-                op,
-                ws_path,
-                &candidate.form_name,
-                &candidate.entry_id,
-                scope,
-            )
-            .await?,
-        ));
-    }
+    let rows =
+        index::query_entry_rows_authorized(op, ws_path, relation_scopes, None, None, limit).await?;
     list_entries_from_rows(rows)
 }
 
