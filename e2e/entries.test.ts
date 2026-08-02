@@ -422,15 +422,17 @@ test.describe("Entries CRUD", () => {
 		request,
 	}) => {
 		const timestamp = Date.now();
-		const spaceId = `form-owned-assets-${timestamp}`;
+		const spaceSlug = `form-owned-assets-${timestamp}`;
 		const mediaForm = `MediaAssets-${timestamp}`;
 		const contractsForm = `ContractsAssets-${timestamp}`;
 		const entryIds: string[] = [];
 
 		const createSpace = await request.post(getBackendUrl("/spaces"), {
-			data: { name: spaceId },
+			data: { name: spaceSlug },
 		});
 		expect([200, 201, 409]).toContain(createSpace.status());
+		const createdSpace = (await createSpace.json()) as { id: string };
+		const spaceId = createdSpace.id;
 
 		const createForm = async (
 			name: string,
