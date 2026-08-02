@@ -73,7 +73,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 return Ok(());
             }
             let service = UgoiteService::new(&root)?;
-            let sqls = service.list_saved_sql_unscoped(&space_id).await?;
+            let sqls = service.list_saved_sql_operator_unscoped(&space_id).await?;
             print_json(&sqls);
         }
         SqlSubCmd::SavedGet { space_path, sql_id } => {

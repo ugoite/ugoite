@@ -925,6 +925,24 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         extension_metadata: BTreeMap::new(),
     };
     append_revisions(&workspace, form.id, vec![first.clone()]).await?;
+    let before_evolution = workspace
+        .catalog_for_testing()
+        .load_table(&iceberg::TableIdent::new(
+            workspace.namespace_for_testing().clone(),
+            physical_form_name(form.id),
+        ))
+        .await?;
+    let before_snapshot = before_evolution
+        .metadata()
+        .current_snapshot()
+        .expect("append creates a current snapshot");
+    let before_snapshot_identity = (
+        before_snapshot.snapshot_id(),
+        before_snapshot.sequence_number(),
+        before_snapshot.parent_snapshot_id(),
+        before_snapshot.manifest_list().to_string(),
+    );
+    let before_snapshot_schema_id = before_snapshot.schema_id();
 
     let evolved = evolve_form(
         &workspace,
@@ -969,6 +987,20 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
             .map(|field| field.name.as_str()),
         Some("summary")
     );
+    let after_snapshot = table
+        .metadata()
+        .current_snapshot()
+        .expect("current snapshot remains available after schema evolution");
+    assert_eq!(
+        (
+            after_snapshot.snapshot_id(),
+            after_snapshot.sequence_number(),
+            after_snapshot.parent_snapshot_id(),
+            after_snapshot.manifest_list().to_string(),
+        ),
+        before_snapshot_identity
+    );
+    assert_eq!(after_snapshot.schema_id(), before_snapshot_schema_id);
 
     let second = EntryRevision {
         form_id: evolved.id,

@@ -667,22 +667,28 @@ impl UgoiteService {
             .collect())
     }
 
-    /// Derives the Saved SQL resource ACL as a provider-side Entry scope.
-    /// Saved SQL is stored in the reserved SQL Form, but its resource policy
-    /// is keyed by `saved_sql:<id>` and must be applied before payload decode.
+    /// Derives the Saved SQL resource ACL as a provider-side Entry scope from
+    /// one loaded authorization snapshot.
     pub async fn authorized_saved_sql_entry_scope_for_principals(
         &self,
         space_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<EntryScope> {
-        if principal_ids.is_empty() {
-            return Ok(EntryScope::Only(BTreeSet::new()));
-        }
         let state = Authorizer::new(self.operator.clone())
             .state(space_id)
             .await?;
+        Self::saved_sql_entry_scope_for_state(&state, principal_ids)
+    }
+
+    pub(crate) fn saved_sql_entry_scope_for_state(
+        state: &AuthorizationState,
+        principal_ids: &[Uuid],
+    ) -> Result<EntryScope> {
+        if principal_ids.is_empty() {
+            return Ok(EntryScope::Only(BTreeSet::new()));
+        }
         for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+            if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
                 return Ok(EntryScope::Only(BTreeSet::new()));
             }
         }
@@ -697,7 +703,7 @@ impl UgoiteService {
                 parent: None,
             };
             let readable_by_every_principal = principal_ids.iter().all(|principal_id| {
-                effective_actions_for_state(&state, *principal_id, Some(&resource))
+                effective_actions_for_state(state, *principal_id, Some(&resource))
                     .map(|actions| actions.contains(&Action::Read))
                     .unwrap_or(false)
             });
@@ -887,9 +893,7 @@ impl UgoiteService {
             .state(space_id)
             .await?;
         let entry_scope = sql_session_entry_scope(&state, principal_ids)?;
-        let saved_sql_entry_scope = self
-            .authorized_saved_sql_entry_scope_for_principals(space_id, principal_ids)
-            .await?;
+        let saved_sql_entry_scope = Self::saved_sql_entry_scope_for_state(&state, principal_ids)?;
         let query_policy = index::sql_session_query_policy_at_checkpoint(
             &self.operator,
             &self.workspace_path(space_id),
@@ -1260,7 +1264,7 @@ impl UgoiteService {
 
     /// Lists Saved SQL without resource filtering for operator-local/admin
     /// tooling. Server-backed user requests use the authorized variant below.
-    pub async fn list_saved_sql_unscoped(&self, space_id: &str) -> Result<Vec<Value>> {
+    pub async fn list_saved_sql_operator_unscoped(&self, space_id: &str) -> Result<Vec<Value>> {
         validate_storage_id(validate_space_id(space_id))?;
         saved_sql::list_sql(
             &self.operator,

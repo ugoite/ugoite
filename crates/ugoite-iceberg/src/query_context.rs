@@ -312,6 +312,9 @@ impl IcebergWorkspace {
             if expected_snapshot_id.is_some_and(|expected| Some(expected) != snapshot_id) {
                 bail!("Iceberg table snapshot does not match the authorized coordinate");
             }
+            let table = crate::static_table_with_current_read_schema(&table)
+                .await
+                .context("pin current Iceberg schema for static read")?;
             let authorized_scan = AuthorizedScan {
                 table_uuid: table.metadata().uuid().to_string(),
                 // `try_new_from_table` deliberately uses the table's current

@@ -283,6 +283,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form(
     ws_path: &str,
     sql: &str,
     authorization: SqlSessionCreateAuthorization<'_>,
+    saved_sql_entry_scope: EntryScope,
 ) -> Result<Value> {
     create_sql_session_authorized_for_principals_by_form_with_parameters(
         op,
@@ -291,6 +292,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form(
         serde_json::Map::new(),
         BTreeMap::new(),
         authorization,
+        saved_sql_entry_scope,
     )
     .await
 }
@@ -302,6 +304,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
     parameters: serde_json::Map<String, Value>,
     parameter_types: BTreeMap<String, String>,
     authorization: SqlSessionCreateAuthorization<'_>,
+    saved_sql_entry_scope: EntryScope,
 ) -> Result<Value> {
     authorization.authorization.require_principals()?;
     let relation = index::sql_session_page_relation(sql).map_err(session_query_error)?;
@@ -329,7 +332,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         &checkpoint,
     )
     .await?;
-    create_sql_session_authorized_for_principals_with_frozen_policy_unscoped(
+    create_sql_session_authorized_for_principals_with_frozen_policy_and_saved_sql_scope(
         op,
         ws_path,
         sql,
@@ -339,38 +342,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         bound_parameters,
         checkpoint,
         query_policy,
-    )
-    .await
-}
-
-/// Creates a session from a checkpoint and derived policy that the service
-/// already bound to the same authorization read. This is the production path;
-/// it never resolves Forms or Entry scope from the live head at later use.
-/// Operator-local/test-only constructor. Server-backed user operations must
-/// call the scope-bearing variant below.
-#[allow(clippy::too_many_arguments)]
-pub async fn create_sql_session_authorized_for_principals_with_frozen_policy_unscoped(
-    op: &Operator,
-    ws_path: &str,
-    sql: &str,
-    parameters: serde_json::Map<String, Value>,
-    parameter_types: BTreeMap<String, String>,
-    authorization: SqlSessionAuthorization<'_>,
-    bound_parameters: HashMap<String, datafusion::scalar::ScalarValue>,
-    checkpoint: SpaceCheckpoint,
-    query_policy: index::SqlSessionQueryPolicy,
-) -> Result<Value> {
-    create_sql_session_authorized_for_principals_with_frozen_policy_and_saved_sql_scope(
-        op,
-        ws_path,
-        sql,
-        parameters,
-        parameter_types,
-        authorization,
-        bound_parameters,
-        checkpoint,
-        query_policy,
-        &EntryScope::AllCurrent,
+        &saved_sql_entry_scope,
     )
     .await
 }

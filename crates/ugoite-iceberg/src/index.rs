@@ -1,16 +1,21 @@
 use anyhow::{anyhow, Context, Result};
+use arrow_array::{
+    Array, BooleanArray, Int64Array, ListArray, StringArray, StructArray,
+    TimestampMicrosecondArray, TimestampNanosecondArray,
+};
 use arrow_json::writer::ArrayWriter;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use datafusion::arrow::datatypes::DataType;
-use datafusion::logical_expr::expr_fn::cast;
 use datafusion::prelude::{array_has, col, lit, Expr};
+use datafusion::scalar::ScalarValue;
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::FormId;
@@ -458,15 +463,9 @@ pub(crate) async fn query_entry_rows_authorized(
             form_candidates.len(),
         )
         .await?;
-        for value in record_batches_to_values(&batches)? {
-            let entry_id = value
-                .get("_ugoite_id")
-                .and_then(Value::as_str)
-                .context("Entry payload is missing its external ID")?;
-            by_key.insert(
-                (form_name.clone(), entry_id.to_string()),
-                entry_row_from_payload(form_name, form, &value)?,
-            );
+        for row in entry_rows_from_batches(form_name, form, &batches)? {
+            let entry_id = row.entry_id.clone();
+            by_key.insert((form_name.clone(), entry_id.to_string()), row);
         }
     }
     Ok(candidates
@@ -544,10 +543,7 @@ pub(crate) async fn query_form_entry_rows_authorized(
         limit,
     )
     .await?;
-    record_batches_to_values(&batches)?
-        .iter()
-        .map(|value| entry_row_from_payload(form_name, form, value))
-        .collect()
+    entry_rows_from_batches(form_name, form, &batches)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -607,23 +603,33 @@ fn payload_projection(form: &Value, preserved_inputs: &BTreeSet<String>) -> Resu
                 // projection and typed null materialization for older files.
                 // Keep every current Form column in the plan; do not infer
                 // schema evolution from a relation's physical columns.
-                let value = if field
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .is_some_and(|kind| kind == "time")
-                {
-                    cast(col(&column), DataType::Utf8)
-                } else {
-                    col(&column)
-                };
-                projection.push(value.alias(column));
+                projection.push(col(&column).alias(column));
             }
         }
     }
     Ok(projection)
 }
 
-fn entry_row_from_payload(form_name: &str, form: &Value, value: &Value) -> Result<entry::EntryRow> {
+fn entry_rows_from_batches(
+    form_name: &str,
+    form: &Value,
+    batches: &[arrow_array::RecordBatch],
+) -> Result<Vec<entry::EntryRow>> {
+    let mut rows = Vec::new();
+    for batch in batches {
+        for row in 0..batch.num_rows() {
+            rows.push(entry_row_from_batch(form_name, form, batch, row)?);
+        }
+    }
+    Ok(rows)
+}
+
+fn entry_row_from_batch(
+    form_name: &str,
+    form: &Value,
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+) -> Result<entry::EntryRow> {
     let fields = form
         .get("fields")
         .and_then(Value::as_object)
@@ -631,109 +637,56 @@ fn entry_row_from_payload(form_name: &str, form: &Value, value: &Value) -> Resul
         .iter()
         .map(|(name, definition)| {
             let column = field_sql_column(definition)?;
+            let field = batch
+                .column_by_name(&column)
+                .with_context(|| format!("Entry payload is missing field column {column}"))?;
+            let field_type: ugoite_domain::form::FieldType = serde_json::from_value(
+                definition
+                    .get("type")
+                    .cloned()
+                    .context("Form field is missing its type")?,
+            )?;
+            let list_item = definition
+                .get("items")
+                .filter(|items| !items.is_null())
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()?;
+            let field_value =
+                crate::field_value_at(field.as_ref(), row, &field_type, list_item.as_ref())?
+                    .unwrap_or(ugoite_domain::entry::FieldValue::Null);
             Ok((
                 name.clone(),
-                value.get(&column).cloned().unwrap_or(Value::Null),
+                serde_json::to_value(field_value).context("encode typed Entry field")?,
             ))
         })
         .collect::<Result<Map<_, _>>>()?;
     Ok(entry::EntryRow {
-        entry_id: required_string(value, "_ugoite_id", "external ID")?,
-        title: required_string(value, "_ugoite_title", "title")?,
+        entry_id: required_string_column(batch, row, "_ugoite_id", "external ID")?,
+        title: required_string_column(batch, row, "_ugoite_title", "title")?,
         form: form_name.to_string(),
-        tags: required_string_array(value, "_ugoite_tags", "tags")?,
-        created_at: json_timestamp(Some(required_value(
-            value,
+        tags: required_string_list_column(batch, row, "_ugoite_tags", "tags")?,
+        created_at: required_timestamp_seconds_column(
+            batch,
+            row,
             "_ugoite_created_at",
             "created_at",
-        )?))?,
-        updated_at: json_timestamp(Some(required_value(
-            value,
+        )?,
+        updated_at: required_timestamp_seconds_column(
+            batch,
+            row,
             "_ugoite_updated_at",
             "updated_at",
-        )?))?,
+        )?,
         fields: Value::Object(fields),
-        extra_attributes: json_object_or_string(value.get("_ugoite_extra_attributes"))?,
-        revision_id: required_string(value, "_ugoite_revision_id", "revision ID")?,
-        parent_revision_id: optional_string(value, "_ugoite_parent_revision_id")?,
-        integrity: required_integrity(required_value(value, "_ugoite_integrity", "integrity")?)?,
-        deleted: required_bool(value, "_ugoite_deleted", "deleted")?,
-        deleted_at: match value.get("_ugoite_deleted_at") {
-            None | Some(Value::Null) => None,
-            Some(value) => Some(json_timestamp(Some(value))?),
-        },
-        author: required_string(value, "_ugoite_author", "author")?,
-        entry_version: required_u64(value, "_ugoite_entry_version", "entry version")?,
-    })
-}
-
-fn required_value<'a>(value: &'a Value, key: &str, label: &str) -> Result<&'a Value> {
-    value
-        .get(key)
-        .filter(|value| !value.is_null())
-        .with_context(|| format!("Entry payload is missing {label}"))
-}
-
-fn required_string(value: &Value, key: &str, label: &str) -> Result<String> {
-    required_value(value, key, label)?
-        .as_str()
-        .map(str::to_owned)
-        .with_context(|| format!("Entry payload has invalid {label}"))
-}
-
-fn optional_string(value: &Value, key: &str) -> Result<Option<String>> {
-    match value.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_str()
-            .map(|value| Some(value.to_owned()))
-            .with_context(|| format!("Entry payload has invalid {key}")),
-    }
-}
-
-fn required_string_array(value: &Value, key: &str, label: &str) -> Result<Vec<String>> {
-    required_value(value, key, label)?
-        .as_array()
-        .with_context(|| format!("Entry payload has invalid {label}"))?
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .with_context(|| format!("Entry payload has invalid {label} item"))
-        })
-        .collect()
-}
-
-fn required_bool(value: &Value, key: &str, label: &str) -> Result<bool> {
-    required_value(value, key, label)?
-        .as_bool()
-        .with_context(|| format!("Entry payload has invalid {label}"))
-}
-
-fn required_u64(value: &Value, key: &str, label: &str) -> Result<u64> {
-    required_value(value, key, label)?
-        .as_u64()
-        .with_context(|| format!("Entry payload has invalid {label}"))
-}
-
-fn required_integrity(value: &Value) -> Result<entry::IntegrityPayload> {
-    let object = value
-        .as_object()
-        .context("Entry payload has invalid integrity")?;
-    let checksum = object
-        .get("checksum")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .context("Entry payload integrity is missing checksum")?;
-    let signature = object
-        .get("signature")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .context("Entry payload integrity is missing signature")?;
-    Ok(entry::IntegrityPayload {
-        checksum,
-        signature,
+        extra_attributes: extra_attributes_column(batch, row)?,
+        revision_id: required_uuid_string_column(batch, row, "_ugoite_revision_id", "revision ID")?,
+        parent_revision_id: optional_uuid_string_column(batch, row, "_ugoite_parent_revision_id")?,
+        integrity: required_integrity_column(batch, row)?,
+        deleted: required_bool_column(batch, row, "_ugoite_deleted", "deleted")?,
+        deleted_at: optional_timestamp_seconds_column(batch, row, "_ugoite_deleted_at")?,
+        author: required_string_column(batch, row, "_ugoite_author", "author")?,
+        entry_version: required_u64_column(batch, row)?,
     })
 }
 
@@ -748,38 +701,196 @@ fn field_sql_column(field: &Value) -> Result<String> {
         .context("Form field is missing stable id")
 }
 
-fn json_object_or_string(value: Option<&Value>) -> Result<Value> {
-    match value {
-        Some(Value::String(value)) => {
-            let parsed: Value = serde_json::from_str(value)
-                .context("Entry payload has invalid extra_attributes JSON")?;
-            if !parsed.is_object() {
-                return Err(anyhow!(
-                    "Entry payload extra_attributes JSON must be an object"
-                ));
-            }
-            Ok(parsed)
-        }
-        Some(value @ Value::Object(_)) => Ok(value.clone()),
-        _ => Ok(Value::Object(Map::new())),
-    }
+fn payload_column<'a>(batch: &'a arrow_array::RecordBatch, name: &str) -> Result<&'a dyn Array> {
+    batch
+        .column_by_name(name)
+        .map(|column| column.as_ref())
+        .with_context(|| format!("Entry payload is missing system column {name}"))
 }
 
-fn json_timestamp(value: Option<&Value>) -> Result<f64> {
-    let Some(value) = value else {
-        return Ok(0.0);
-    };
-    if let Some(number) = value.as_f64() {
-        return Ok(number);
+fn required_string_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+    label: &str,
+) -> Result<String> {
+    let column = payload_column(batch, name)?;
+    let values = column
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .with_context(|| format!("Entry payload has invalid {label} Arrow type"))?;
+    if values.is_null(row) {
+        return Err(anyhow!("Entry payload is missing {label}"));
     }
-    let text = value
-        .as_str()
-        .context("timestamp payload is neither a number nor a string")?;
-    if let Ok(timestamp) = DateTime::parse_from_rfc3339(text) {
-        return Ok(timestamp.timestamp_millis() as f64 / 1000.0);
+    Ok(values.value(row).to_owned())
+}
+
+fn required_uuid_string_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+    label: &str,
+) -> Result<String> {
+    let column = payload_column(batch, name)?;
+    Ok(crate::uuid_value_at(column, row)
+        .with_context(|| format!("Entry payload has invalid {label}"))?
+        .to_string())
+}
+
+fn optional_uuid_string_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+) -> Result<Option<String>> {
+    let column = payload_column(batch, name)?;
+    if column.is_null(row) {
+        return Ok(None);
     }
-    text.parse::<f64>()
-        .with_context(|| format!("invalid timestamp payload {text}"))
+    Ok(Some(
+        crate::uuid_value_at(column, row)
+            .with_context(|| format!("Entry payload has invalid {name}"))?
+            .to_string(),
+    ))
+}
+
+fn required_string_list_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+    label: &str,
+) -> Result<Vec<String>> {
+    let column = payload_column(batch, name)?;
+    let values = column
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .with_context(|| format!("Entry payload has invalid {label} Arrow type"))?;
+    if values.is_null(row) {
+        return Err(anyhow!("Entry payload is missing {label}"));
+    }
+    let items = values.value(row);
+    let items = items
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .with_context(|| format!("Entry payload has invalid {label} item Arrow type"))?;
+    (0..items.len())
+        .map(|index| {
+            if items.is_null(index) {
+                return Err(anyhow!("Entry payload has a null {label} item"));
+            }
+            Ok(items.value(index).to_owned())
+        })
+        .collect::<Result<Vec<_>>>()
+}
+
+fn required_timestamp_seconds_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+    label: &str,
+) -> Result<f64> {
+    let column = payload_column(batch, name)?;
+    if column.is_null(row) {
+        return Err(anyhow!("Entry payload is missing {label}"));
+    }
+    if let Some(values) = column.as_any().downcast_ref::<TimestampMicrosecondArray>() {
+        return Ok(values.value(row) as f64 / 1_000_000.0);
+    }
+    if let Some(values) = column.as_any().downcast_ref::<TimestampNanosecondArray>() {
+        return Ok(values.value(row) as f64 / 1_000_000_000.0);
+    }
+    Err(anyhow!("Entry payload has invalid {label} Arrow type"))
+}
+
+fn optional_timestamp_seconds_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+) -> Result<Option<f64>> {
+    let column = payload_column(batch, name)?;
+    if column.is_null(row) {
+        return Ok(None);
+    }
+    Ok(Some(required_timestamp_seconds_column(
+        batch, row, name, name,
+    )?))
+}
+
+fn required_bool_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+    label: &str,
+) -> Result<bool> {
+    let column = payload_column(batch, name)?;
+    let values = column
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .with_context(|| format!("Entry payload has invalid {label} Arrow type"))?;
+    if values.is_null(row) {
+        return Err(anyhow!("Entry payload is missing {label}"));
+    }
+    Ok(values.value(row))
+}
+
+fn required_u64_column(batch: &arrow_array::RecordBatch, row: usize) -> Result<u64> {
+    let column = payload_column(batch, "_ugoite_entry_version")?;
+    let values = column
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .context("Entry payload has invalid entry version Arrow type")?;
+    if values.is_null(row) {
+        return Err(anyhow!("Entry payload is missing entry version"));
+    }
+    u64::try_from(values.value(row)).context("Entry payload has a negative entry version")
+}
+
+fn required_integrity_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+) -> Result<entry::IntegrityPayload> {
+    let column = payload_column(batch, "_ugoite_integrity")?;
+    let values = column
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .context("Entry payload has invalid integrity Arrow type")?;
+    if values.is_null(row) {
+        return Err(anyhow!("Entry payload is missing integrity"));
+    }
+    let checksum = values
+        .column_by_name("checksum")
+        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
+        .filter(|values| !values.is_null(row))
+        .map(|values| values.value(row).to_owned())
+        .context("Entry payload integrity is missing checksum")?;
+    let signature = values
+        .column_by_name("signature")
+        .and_then(|column| column.as_any().downcast_ref::<StringArray>())
+        .filter(|values| !values.is_null(row))
+        .map(|values| values.value(row).to_owned())
+        .context("Entry payload integrity is missing signature")?;
+    Ok(entry::IntegrityPayload {
+        checksum,
+        signature,
+    })
+}
+
+fn extra_attributes_column(batch: &arrow_array::RecordBatch, row: usize) -> Result<Value> {
+    let column = payload_column(batch, "_ugoite_extra_attributes")?;
+    let values = column
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .context("Entry payload has invalid extra_attributes Arrow type")?;
+    if values.is_null(row) {
+        return Ok(Value::Object(Map::new()));
+    }
+    let parsed: Value = serde_json::from_str(values.value(row))
+        .context("Entry payload has invalid extra_attributes JSON")?;
+    if !parsed.is_object() {
+        return Err(anyhow!(
+            "Entry payload extra_attributes JSON must be an object"
+        ));
+    }
+    Ok(parsed)
 }
 
 fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> Result<String> {
@@ -2359,21 +2470,20 @@ async fn collect_filtered_entries_with_form_scopes(
             per_form_bound,
         )
         .await?;
-        let values = record_batches_to_values(&batches)?;
-        if remaining == 0 && !values.is_empty() {
+        let rows_for_form = entry_rows_from_batches(&form_name, form, &batches)?;
+        if remaining == 0 && !rows_for_form.is_empty() {
             return Err(anyhow!(
                 "normal Entry reads are limited to {} current rows",
                 crate::MAX_NORMAL_READ_ROWS
             ));
         }
-        if values.len() > remaining {
+        if rows_for_form.len() > remaining {
             return Err(anyhow!(
                 "normal Entry reads are limited to {} current rows",
                 crate::MAX_NORMAL_READ_ROWS
             ));
         }
-        for value in values {
-            let row = entry_row_from_payload(&form_name, form, &value)?;
+        for row in rows_for_form {
             if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
                 entries.insert(row.entry_id.clone(), record);
             }
@@ -2476,17 +2586,70 @@ fn scalar_predicate(column: Expr, expected: &Value, field_type: &str) -> Result<
 }
 
 fn filter_literal(value: &Value, field_type: &str) -> Result<Expr> {
-    match (field_type, value) {
-        (_, Value::String(value)) => Ok(lit(value)),
-        (_, Value::Bool(value)) => Ok(lit(*value)),
-        (_, Value::Number(value)) if matches!(field_type, "integer" | "long") => Ok(lit(value
-            .as_i64()
-            .context("integer filter value must be an integer")?)),
-        (_, Value::Number(value)) => Ok(lit(value
-            .as_f64()
-            .context("numeric filter value must be a number")?)),
-        _ => Err(anyhow!("filter value does not match the typed Form field")),
-    }
+    let scalar = match (field_type, value) {
+        ("boolean", Value::Bool(value)) => ScalarValue::Boolean(Some(*value)),
+        ("integer", Value::Number(value)) => ScalarValue::Int32(Some(
+            i32::try_from(
+                value
+                    .as_i64()
+                    .context("integer filter value must be an integer")?,
+            )
+            .context("integer filter value is outside the Int32 range")?,
+        )),
+        ("long", Value::Number(value)) => ScalarValue::Int64(Some(
+            value
+                .as_i64()
+                .context("long filter value must be an integer")?,
+        )),
+        ("float", Value::Number(value)) => ScalarValue::Float32(Some(
+            value
+                .as_f64()
+                .context("float filter value must be a number")? as f32,
+        )),
+        ("double", Value::Number(value)) => ScalarValue::Float64(Some(
+            value
+                .as_f64()
+                .context("double filter value must be a number")?,
+        )),
+        ("date", Value::String(value)) => ScalarValue::Date32(Some(
+            crate::parse_date(value)?.context("date filter value is null")?,
+        )),
+        ("time", Value::String(value)) => ScalarValue::Time64Microsecond(Some(
+            crate::parse_time_micros(value)?.context("time filter value is null")?,
+        )),
+        ("timestamp", Value::String(value)) => ScalarValue::TimestampMicrosecond(
+            Some(crate::parse_wall_timestamp_micros(value)?.context("timestamp is null")?),
+            None,
+        ),
+        ("timestamp_tz", Value::String(value)) => ScalarValue::TimestampMicrosecond(
+            Some(crate::parse_zoned_timestamp_micros(value)?.context("timestamp is null")?),
+            Some(Arc::from("+00:00")),
+        ),
+        ("timestamp_ns", Value::String(value)) => ScalarValue::TimestampNanosecond(
+            Some(crate::parse_wall_timestamp_nanos(value)?.context("timestamp is null")?),
+            None,
+        ),
+        ("timestamp_tz_ns", Value::String(value)) => ScalarValue::TimestampNanosecond(
+            Some(crate::parse_zoned_timestamp_nanos(value)?.context("timestamp is null")?),
+            Some(Arc::from("+00:00")),
+        ),
+        ("uuid", Value::String(value)) => {
+            ScalarValue::FixedSizeBinary(16, Some(Uuid::parse_str(value)?.as_bytes().to_vec()))
+        }
+        ("binary", Value::String(value)) => {
+            let encoded = value.strip_prefix("base64:").unwrap_or(value);
+            ScalarValue::LargeBinary(Some(BASE64.decode(encoded)?))
+        }
+        ("string" | "markdown" | "sql" | "row_reference", Value::String(value)) => {
+            ScalarValue::Utf8(Some(value.clone()))
+        }
+        _ => {
+            return Err(anyhow!(
+                "filter value does not match the typed Form field {field_type}"
+            ))
+        }
+    };
+    Ok(lit(scalar))
 }
 
 fn quote_identifier(value: &str) -> String {
@@ -2566,8 +2729,10 @@ async fn build_record(
 
 #[cfg(test)]
 mod tests {
-    use super::{datafusion_parameters, sql_session_page_relation};
+    use super::{datafusion_parameters, filter_literal, sql_session_page_relation};
     use chrono::DateTime;
+    use datafusion::logical_expr::Expr;
+    use datafusion::scalar::ScalarValue;
     use serde_json::{Map, Value};
     use std::collections::BTreeMap;
 
@@ -2606,6 +2771,82 @@ mod tests {
         assert!(matches!(
             parameters.get("day"),
             Some(datafusion::scalar::ScalarValue::Date32(Some(value))) if *value == 20150
+        ));
+    }
+
+    #[test]
+    fn form_filter_literals_preserve_physical_arrow_types() {
+        let literal = |value: &Value, field_type: &str| {
+            let expression = filter_literal(value, field_type).expect("typed filter literal");
+            let Expr::Literal(value, _) = expression else {
+                panic!("filter literal must remain a DataFusion literal")
+            };
+            value
+        };
+
+        assert!(matches!(
+            literal(&Value::Bool(true), "boolean"),
+            ScalarValue::Boolean(Some(true))
+        ));
+        assert!(matches!(
+            literal(&serde_json::json!(7), "integer"),
+            ScalarValue::Int32(Some(7))
+        ));
+        assert!(matches!(
+            literal(&serde_json::json!(7), "long"),
+            ScalarValue::Int64(Some(7))
+        ));
+        assert!(matches!(
+            literal(&serde_json::json!(1.25), "float"),
+            ScalarValue::Float32(Some(value)) if (value - 1.25).abs() < f32::EPSILON
+        ));
+        assert!(matches!(
+            literal(&serde_json::json!(1.25), "double"),
+            ScalarValue::Float64(Some(value)) if (value - 1.25).abs() < f64::EPSILON
+        ));
+        assert!(matches!(
+            literal(&Value::String("a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d".into()), "uuid"),
+            ScalarValue::FixedSizeBinary(16, Some(value)) if value.len() == 16
+        ));
+        assert!(matches!(
+            literal(&Value::String("base64:ZGF0YQ==".into()), "binary"),
+            ScalarValue::LargeBinary(Some(value)) if value == b"data"
+        ));
+        assert!(matches!(
+            literal(&Value::String("2025-01-02".into()), "date"),
+            ScalarValue::Date32(Some(_))
+        ));
+        assert!(matches!(
+            literal(&Value::String("12:34:56.123456".into()), "time"),
+            ScalarValue::Time64Microsecond(Some(_))
+        ));
+        assert!(matches!(
+            literal(
+                &Value::String("2025-01-02T03:04:05.123456".into()),
+                "timestamp"
+            ),
+            ScalarValue::TimestampMicrosecond(Some(_), None)
+        ));
+        assert!(matches!(
+            literal(
+                &Value::String("2025-01-02T03:04:05.123456+00:00".into()),
+                "timestamp_tz"
+            ),
+            ScalarValue::TimestampMicrosecond(Some(_), Some(_))
+        ));
+        assert!(matches!(
+            literal(
+                &Value::String("2025-01-02T03:04:05.123456789".into()),
+                "timestamp_ns"
+            ),
+            ScalarValue::TimestampNanosecond(Some(_), None)
+        ));
+        assert!(matches!(
+            literal(
+                &Value::String("2025-01-02T03:04:05.123456789+00:00".into()),
+                "timestamp_tz_ns"
+            ),
+            ScalarValue::TimestampNanosecond(Some(_), Some(_))
         ));
     }
 }

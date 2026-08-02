@@ -188,6 +188,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
             ws_path,
             &invalid_sql.sql,
             create_authorization,
+            ugoite_core::query::EntryScope::AllCurrent,
         )
         .await
         .is_err()

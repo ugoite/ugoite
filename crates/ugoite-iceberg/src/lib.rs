@@ -46,16 +46,14 @@ use arrow_array::{
     Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
 use iceberg::expr::Reference;
-use iceberg::spec::{
-    DataFileFormat, Datum, Operation, Snapshot, SnapshotReference, SnapshotRetention, Summary,
-    MAIN_BRANCH,
-};
+use iceberg::spec::{DataFileFormat, Datum};
 use iceberg::spec::{
     ListType, NestedField, PrimitiveType, Schema, SortOrder, StructType, Type, UnboundPartitionSpec,
 };
+use iceberg::table::{StaticTable, Table};
 use iceberg::transaction::{AddColumn, ApplyTransactionAction, Transaction};
 use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
 use iceberg::writer::file_writer::location_generator::{
@@ -94,6 +92,63 @@ const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
 const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
 const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
+
+/// Re-open one immutable table coordinate with its current table schema as
+/// the Iceberg read schema.
+///
+/// Iceberg 0.10's DataFusion provider derives the read schema from the
+/// selected snapshot. A metadata-only Form rename/addition must nevertheless
+/// project old data files by stable field ID using the table's current schema.
+/// Keep the snapshot identity and all snapshot metadata unchanged, and alter
+/// only the in-memory schema reference used to construct the static table.
+/// Nothing is committed and the catalog is never refreshed while the query
+/// uses the returned table.
+pub(crate) async fn static_table_with_current_read_schema(table: &Table) -> Result<Table> {
+    let Some(snapshot_id) = table.metadata().current_snapshot_id() else {
+        return Ok(table.clone());
+    };
+    let current_schema_id = table.metadata().current_schema_id();
+    let current_snapshot = table
+        .metadata()
+        .current_snapshot()
+        .context("Iceberg table current snapshot metadata is missing")?;
+    if current_snapshot.schema_id() == Some(current_schema_id) {
+        return Ok(table.clone());
+    }
+
+    let metadata_location = table.metadata_location_result()?;
+    let metadata_bytes = table
+        .file_io()
+        .new_input(metadata_location)?
+        .read()
+        .await
+        .context("read immutable Iceberg metadata for read-schema projection")?;
+    let mut metadata: serde_json::Value = serde_json::from_slice(&metadata_bytes)
+        .context("decode immutable Iceberg metadata for read-schema projection")?;
+    let snapshots = metadata
+        .get_mut("snapshots")
+        .and_then(serde_json::Value::as_array_mut)
+        .context("Iceberg metadata has no snapshots array")?;
+    let snapshot = snapshots
+        .iter_mut()
+        .find(|snapshot| {
+            snapshot
+                .get("snapshot-id")
+                .and_then(serde_json::Value::as_i64)
+                == Some(snapshot_id)
+        })
+        .context("Iceberg metadata is missing the current snapshot")?;
+    snapshot["schema-id"] = serde_json::Value::from(current_schema_id);
+    let metadata: iceberg::spec::TableMetadata = serde_json::from_value(metadata)
+        .context("validate Iceberg current-schema read projection")?;
+    Ok(StaticTable::from_metadata(
+        metadata,
+        table.identifier().clone(),
+        table.file_io().clone(),
+    )
+    .await?
+    .into_table())
+}
 
 fn unsupported_form_field_type_change(
     current: &FormDefinition,
@@ -832,56 +887,11 @@ impl IcebergWorkspace {
                 metadata_builder =
                     metadata_builder.upgrade_format_version(iceberg::spec::FormatVersion::V3)?;
             }
-            let mut metadata = metadata_builder
+            let metadata = metadata_builder
                 .add_current_schema(schema)?
                 .set_properties(form_properties(&evolved, self.write)?)?
                 .build()?
                 .metadata;
-            // Iceberg 0.10 resolves a data scan's field names from the
-            // snapshot schema. A metadata-only Form evolution must therefore
-            // publish a schema-only replacement snapshot so the scan uses the
-            // current stable field-ID schema without any Ugoite-side null
-            // reconstruction or source-column probing.
-            if let Some(current_snapshot) = metadata.current_snapshot().cloned() {
-                if current_snapshot.schema_id() != Some(metadata.current_schema_id()) {
-                    let snapshot_id = loop {
-                        let (left, right) = Uuid::new_v4().as_u64_pair();
-                        let candidate = (left ^ right) as i64;
-                        let candidate = candidate.abs();
-                        if candidate > 0 && metadata.snapshot_by_id(candidate).is_none() {
-                            break candidate;
-                        }
-                    };
-                    let snapshot = Snapshot::builder()
-                        .with_snapshot_id(snapshot_id)
-                        .with_parent_snapshot_id(Some(current_snapshot.snapshot_id()))
-                        .with_sequence_number(metadata.next_sequence_number())
-                        .with_timestamp_ms(Utc::now().timestamp_millis())
-                        .with_manifest_list(current_snapshot.manifest_list().to_string())
-                        .with_summary(Summary {
-                            operation: Operation::Replace,
-                            additional_properties: HashMap::new(),
-                        })
-                        .with_schema_id(metadata.current_schema_id())
-                        .build();
-                    metadata = metadata
-                        .into_builder(Some(table.metadata_location_result()?.to_string()))
-                        .add_snapshot(snapshot)?
-                        .set_ref(
-                            MAIN_BRANCH,
-                            SnapshotReference::new(
-                                snapshot_id,
-                                SnapshotRetention::Branch {
-                                    min_snapshots_to_keep: None,
-                                    max_snapshot_age_ms: None,
-                                    max_ref_age_ms: None,
-                                },
-                            ),
-                        )?
-                        .build()?
-                        .metadata;
-                }
-            }
             space_catalog
                 .replace_table_metadata(table.identifier(), metadata)
                 .await?;
@@ -1485,7 +1495,8 @@ impl IcebergWorkspace {
             IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
                 .await?
         } else {
-            IcebergStaticTableProvider::try_new_from_table(table.clone()).await?
+            let table = static_table_with_current_read_schema(table).await?;
+            IcebergStaticTableProvider::try_new_from_table(table).await?
         };
         let context = self
             .authorized_revision_query_context(
@@ -2945,7 +2956,9 @@ fn field_array(
             let mut builder = LargeBinaryBuilder::with_capacity(values.len(), 0);
             for value in values {
                 match value {
-                    Some(FieldValue::String(value)) => builder.append_value(BASE64.decode(value)?),
+                    Some(FieldValue::String(value)) => builder.append_value(
+                        BASE64.decode(value.strip_prefix("base64:").unwrap_or(value))?,
+                    ),
                     Some(FieldValue::Null) | None => builder.append_null(),
                     _ => return Err(anyhow!("binary field '{}' must be base64 text", field.name)),
                 }
@@ -2966,13 +2979,13 @@ fn field_array(
     }
 }
 
-fn parse_date(value: &str) -> Result<Option<i32>> {
+pub(crate) fn parse_date(value: &str) -> Result<Option<i32>> {
     let date = NaiveDate::parse_from_str(value, "%Y-%m-%d")?;
     let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("valid Unix epoch date");
     Ok(Some(date.signed_duration_since(epoch).num_days() as i32))
 }
 
-fn parse_time_micros(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_time_micros(value: &str) -> Result<Option<i64>> {
     let time = NaiveTime::parse_from_str(value, "%H:%M:%S%.f")
         .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M:%S"))
         // HTML time inputs omit seconds when the value is minute-precise.
@@ -2983,19 +2996,19 @@ fn parse_time_micros(value: &str) -> Result<Option<i64>> {
     ))
 }
 
-fn parse_wall_timestamp_micros(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_wall_timestamp_micros(value: &str) -> Result<Option<i64>> {
     let timestamp = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
         .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))?;
     Ok(Some(wall_timestamp_micros(timestamp)?))
 }
 
-fn parse_zoned_timestamp_micros(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_zoned_timestamp_micros(value: &str) -> Result<Option<i64>> {
     Ok(Some(
         DateTime::parse_from_rfc3339(value)?.timestamp_micros(),
     ))
 }
 
-fn parse_wall_timestamp_nanos(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_wall_timestamp_nanos(value: &str) -> Result<Option<i64>> {
     let timestamp = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
         .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))?;
     Ok(Some(wall_timestamp_nanos(timestamp)?))
@@ -3025,7 +3038,7 @@ fn wall_timestamp_nanos(timestamp: NaiveDateTime) -> Result<i64> {
         .context("timestamp is outside the representable nanosecond range")
 }
 
-fn parse_zoned_timestamp_nanos(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_zoned_timestamp_nanos(value: &str) -> Result<Option<i64>> {
     Ok(Some(
         DateTime::parse_from_rfc3339(value)?
             .timestamp_nanos_opt()

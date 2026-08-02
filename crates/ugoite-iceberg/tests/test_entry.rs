@@ -694,6 +694,57 @@ async fn renamed_field_reads_old_values_through_the_current_schema() -> anyhow::
 }
 
 #[tokio::test]
+async fn typed_uuid_binary_and_list_queries_use_physical_arrow_types() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "typed-query-values", "/tmp").await?;
+    let ws_path = "spaces/typed-query-values";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Typed",
+            "fields": {
+                "Uid": {"type": "uuid"},
+                "Blob": {"type": "binary"},
+                "Labels": {"type": "list", "items": {"type": "string"}},
+            },
+        }),
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "typed-values-1",
+        "---\nform: Typed\n---\n# Typed values\n\n## Uid\nA7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D\n\n## Blob\nhex:64617461\n\n## Labels\n- Alpha\n- Beta",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+
+    let rows = index::query_index(&op, ws_path, r#"{"form":"Typed"}"#).await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0]["properties"]["Uid"],
+        "a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d"
+    );
+    assert_eq!(rows[0]["properties"]["Blob"], "base64:ZGF0YQ==");
+
+    for query in [
+        serde_json::json!({"form": "Typed", "Uid": "a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d"}),
+        serde_json::json!({"form": "Typed", "Blob": "base64:ZGF0YQ=="}),
+        serde_json::json!({"form": "Typed", "Labels": {"$contains": "Alpha"}}),
+    ] {
+        assert_eq!(
+            index::query_index(&op, ws_path, &query.to_string())
+                .await?
+                .len(),
+            1
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-ENTRY-003
 async fn test_entry_req_entry_003_update_entry_success() -> anyhow::Result<()> {
     let op = setup_operator()?;
