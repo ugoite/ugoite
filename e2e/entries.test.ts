@@ -453,7 +453,6 @@ test.describe("Entries CRUD", () => {
 		};
 
 		try {
-			console.log("asset-owned: create forms");
 			await createForm(mediaForm, {
 				thumbnail: { type: "asset_reference", required: true },
 				microscope_images: {
@@ -470,8 +469,6 @@ test.describe("Entries CRUD", () => {
 					items: { type: "asset_reference" },
 				},
 			});
-			console.log("asset-owned: open media form");
-
 			await page.goto(
 				getFrontendUrl(
 					`/spaces/${spaceId}/entries/new?form=${encodeURIComponent(mediaForm)}`,
@@ -483,7 +480,6 @@ test.describe("Entries CRUD", () => {
 				'[data-field-name="microscope_images"]',
 			);
 			await expect(thumbnail).toBeVisible();
-			console.log("asset-owned: upload media files");
 			await thumbnail.locator('input[type="file"]').setInputFiles({
 				name: "thumbnail.txt",
 				mimeType: "text/plain",
@@ -504,8 +500,6 @@ test.describe("Entries CRUD", () => {
 			await expect(
 				page.getByText("Uploaded; entry not saved yet"),
 			).toHaveCount(3, { timeout: 15_000 });
-			console.log("asset-owned: save media entry");
-
 			const createResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "POST" &&
@@ -517,7 +511,6 @@ test.describe("Entries CRUD", () => {
 			await expect(page).toHaveURL(
 				new RegExp(`/spaces/${spaceId}/entries/[^/]+$`),
 			);
-			console.log("asset-owned: media entry saved");
 			const mediaEntryId = decodeURIComponent(
 				new URL(page.url()).pathname.split("/").pop() ?? "",
 			);
@@ -534,7 +527,6 @@ test.describe("Entries CRUD", () => {
 
 			await page.reload({ waitUntil: "domcontentloaded" });
 			await expect(page.getByText("thumbnail.txt")).toBeVisible();
-			console.log("asset-owned: read media asset");
 			const readResponse = page.waitForResponse(
 				(response) => {
 					const requestEvent = response.request();
@@ -560,7 +552,6 @@ test.describe("Entries CRUD", () => {
 			await expect(page.getByText("Uploaded; entry not saved yet")).toHaveCount(1, {
 				timeout: 15_000,
 			});
-			console.log("asset-owned: replace thumbnail");
 			const replaceResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "PUT" &&
@@ -569,8 +560,6 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await replaceResponse).ok()).toBeTruthy();
-			console.log("asset-owned: reorder microscope list");
-
 			const orderedList = page.locator('[data-field-name="microscope_images"]');
 			await orderedList.getByRole("button", {
 				name: "microscope-b.txt up",
@@ -583,7 +572,6 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await reorderResponse).ok()).toBeTruthy();
-			console.log("asset-owned: remove microscope item");
 			await expect(page.getByText("All changes saved")).toBeVisible({
 				timeout: 15_000,
 			});
@@ -597,14 +585,13 @@ test.describe("Entries CRUD", () => {
 				mediaEntry.content.indexOf('"name":"microscope-b.txt"'),
 			).toBeLessThan(mediaEntry.content.indexOf('"name":"microscope-a.txt"'));
 
-			const removeMicroscopeB = orderedList.getByRole("button", {
-				name: /^Remove microscope-b\.txt/,
-			});
+			const removeMicroscopeB = orderedList
+				.locator(".ui-asset-item")
+				.filter({ hasText: "microscope-b.txt" })
+				.getByRole("button", { name: "Remove" });
 			await expect(removeMicroscopeB).toBeVisible({ timeout: 15_000 });
 			await expect(removeMicroscopeB).toBeEnabled({ timeout: 15_000 });
-			console.log("asset-owned: click remove microscope item");
 			await removeMicroscopeB.click({ timeout: 15_000 });
-			console.log("asset-owned: remove item clicked");
 			const removeResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "PUT" &&
@@ -613,15 +600,17 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await removeResponse).ok()).toBeTruthy();
-			console.log("asset-owned: remove saved");
-
-			console.log("asset-owned: verify media entry after remove");
-			mediaEntryResponse = await request.get(
+			const removedMediaEntryResponse = await request.get(
 				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
 				{ timeout: 15_000 },
 			);
+			const removedMediaEntry = await removedMediaEntryResponse.json() as {
+				content: string;
+			};
+			expect(removedMediaEntry.content).not.toContain(
+				'"name":"microscope-b.txt"',
+			);
 
-			console.log("asset-owned: open contracts form");
 			await page.goto(
 				getFrontendUrl(
 					`/spaces/${spaceId}/entries/new?form=${encodeURIComponent(contractsForm)}`,
@@ -631,7 +620,6 @@ test.describe("Entries CRUD", () => {
 			const contract = page.locator('[data-field-name="contract"]');
 			const rawData = page.locator('[data-field-name="raw_data"]');
 			await expect(contract).toBeVisible({ timeout: 15_000 });
-			console.log("asset-owned: upload contract files");
 			await contract.locator('input[type="file"]').setInputFiles({
 				name: "contract.pdf",
 				mimeType: "application/pdf",
@@ -645,7 +633,6 @@ test.describe("Entries CRUD", () => {
 			await expect(
 				page.getByText("Uploaded; entry not saved yet"),
 			).toHaveCount(2, { timeout: 15_000 });
-			console.log("asset-owned: save contracts entry");
 			const secondCreateResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "POST" &&
@@ -654,7 +641,6 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await secondCreateResponse).status()).toBe(201);
-			console.log("asset-owned: contracts entry saved");
 			const contractsEntryId = decodeURIComponent(
 				new URL(page.url()).pathname.split("/").pop() ?? "",
 			);
