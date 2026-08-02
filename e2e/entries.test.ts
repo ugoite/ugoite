@@ -641,6 +641,9 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await secondCreateResponse).status()).toBe(201);
+			await expect(page).toHaveURL(
+				new RegExp(`/spaces/${spaceId}/entries/[^/]+$`),
+			);
 			const contractsEntryId = decodeURIComponent(
 				new URL(page.url()).pathname.split("/").pop() ?? "",
 			);
@@ -648,6 +651,7 @@ test.describe("Entries CRUD", () => {
 			const contractsEntryResponse = await request.get(
 				getBackendUrl(`/spaces/${spaceId}/entries/${contractsEntryId}`),
 			);
+			expect(contractsEntryResponse.ok()).toBeTruthy();
 			const contractsEntry = await contractsEntryResponse.json() as { content: string };
 			expect(contractsEntry.content).toContain('"name":"contract.pdf"');
 			expect(contractsEntry.content).toContain('"name":"raw-data.csv"');
