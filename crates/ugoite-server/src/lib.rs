@@ -4832,6 +4832,155 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn asset_reference_input_errors_are_422_and_do_not_publish_revisions(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-asset-reference-validation")?;
+        let principal_id = Uuid::from_u128(1877);
+        let space_id = state
+            .service
+            .create_space_for_principal("asset-reference-validation", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "AssetReview",
+                    "fields": {
+                        "thumbnail": {"type": "asset_reference", "required": false},
+                        "documents": {
+                            "type": "list",
+                            "required": false,
+                            "items": {"type": "asset_reference"}
+                        }
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/entries", post(create_entry))
+            .route("/spaces/{space_id}/entries/{entry_id}", put(update_entry))
+            .route(
+                "/spaces/{space_id}/entries/{entry_id}/history",
+                get(entry_history),
+            )
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state.clone());
+
+        let reference = json!({
+            "asset_id": "01900000-0000-7000-8000-000000000187",
+            "name": "report.pdf",
+            "media_type": "application/pdf",
+            "size_bytes": 10,
+            "sha256": "a".repeat(64)
+        });
+        let markdown = |entry_id: &str, thumbnail: Value, documents: Value| {
+            format!(
+                "---\nform: AssetReview\n---\n# {entry_id}\n\n## thumbnail\n{}\n\n## documents\n{}\n",
+                serde_json::to_string(&thumbnail).expect("thumbnail JSON"),
+                serde_json::to_string(&documents).expect("documents JSON"),
+            )
+        };
+
+        let invalid_requests = [
+            (
+                "invalid-asset-scalar",
+                json!({
+                    "asset_id": "01900000-0000-7000-8000-000000000187",
+                    "name": "report.pdf",
+                    "media_type": "application/pdf",
+                    "size_bytes": 10,
+                    "sha256": "a".repeat(64),
+                    "object_key": "forbidden"
+                }),
+                json!([]),
+            ),
+            ("invalid-asset-null-item", Value::Null, json!([Value::Null])),
+            (
+                "invalid-asset-duplicate",
+                Value::Null,
+                json!([reference.clone(), reference.clone()]),
+            ),
+        ];
+        for (entry_id, thumbnail, documents) in invalid_requests {
+            let response = route
+                .clone()
+                .oneshot(
+                    Request::post(format!("/spaces/{space_id}/entries"))
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(
+                            json!({"id": entry_id, "markdown": markdown(entry_id, thumbnail, documents)})
+                                .to_string(),
+                        ))?,
+                )
+                .await
+                .expect("invalid AssetReference response");
+            assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+            let body: Value = serde_json::from_slice(&body)?;
+            assert_eq!(body["code"], "INVALID_INPUT");
+            assert!(body["message"].as_str().is_some_and(|message| {
+                message.contains("Field 'thumbnail'") || message.contains("Field 'documents'")
+            }));
+        }
+        assert!(state.service.list_entries(&space_id).await?.is_empty());
+
+        let valid_id = "valid-asset-entry";
+        let created = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/entries"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": valid_id,
+                            "markdown": markdown(valid_id, reference.clone(), json!([reference.clone()]))
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("valid AssetReference response");
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let created_body = axum::body::to_bytes(created.into_body(), usize::MAX).await?;
+        let created_body: Value = serde_json::from_slice(&created_body)?;
+        let revision_id = created_body["revision_id"].as_str().expect("revision id");
+
+        let invalid_update = route
+            .clone()
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/entries/{valid_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "markdown": markdown(valid_id, reference.clone(), json!([Value::Null])),
+                            "parent_revision_id": revision_id
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("invalid AssetReference update response");
+        assert_eq!(invalid_update.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let history = route
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/entries/{valid_id}/history"))
+                    .body(Body::empty())?,
+            )
+            .await
+            .expect("AssetReference history response");
+        assert_eq!(history.status(), StatusCode::OK);
+        let history_body = axum::body::to_bytes(history.into_body(), usize::MAX).await?;
+        let history_body: Value = serde_json::from_slice(&history_body)?;
+        assert_eq!(history_body["revisions"].as_array().map(Vec::len), Some(1));
+        assert_eq!(history_body["revisions"][0]["revision_id"], revision_id);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn invitation_finalization_converges_after_space_membership_commit() -> anyhow::Result<()>
     {
         let state = AppState::new_for_tests("memory://server-invitation-saga")?;

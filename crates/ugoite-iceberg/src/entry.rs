@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+    RevisionError,
 };
 use ugoite_domain::form::{FieldType, FormField};
 use ugoite_domain::id::{FieldId, RevisionId};
@@ -42,6 +43,41 @@ fn revision_not_found(entry_id: &str, revision_id: &str) -> AppError {
 
 fn invalid_entry_input(message: impl Into<String>) -> anyhow::Error {
     AppError::invalid_input(ErrorCode::InvalidInput, message).into()
+}
+
+fn invalid_revision_input(
+    error: RevisionError,
+    form: &ugoite_domain::form::FormDefinition,
+) -> anyhow::Error {
+    let field_name = |field_id: FieldId| {
+        form.fields
+            .iter()
+            .find(|field| field.id == field_id)
+            .map(|field| field.name.as_str())
+            .unwrap_or("unknown")
+    };
+    let message = match error {
+        RevisionError::InvalidAssetReference(field_id) => {
+            format!("Field '{}': invalid AssetReference", field_name(field_id))
+        }
+        RevisionError::DuplicateAssetReference(field_id) => {
+            format!("Field '{}': duplicate AssetReference", field_name(field_id))
+        }
+        RevisionError::RequiredField(field_id) => {
+            format!(
+                "Field '{}': required value is missing",
+                field_name(field_id)
+            )
+        }
+        RevisionError::UnknownField(field_id) => {
+            format!("Field '{}': unknown field", field_name(field_id))
+        }
+        RevisionError::WrongType(field_id) => {
+            format!("Field '{}': value has the wrong type", field_name(field_id))
+        }
+        other => format!("Invalid Entry revision: {other}"),
+    };
+    invalid_entry_input(message)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -473,6 +509,15 @@ async fn append_revision_rows_to_workspace_authorized(
         .iter()
         .map(|row| revision_row_to_domain(row, &domain_form))
         .collect::<Result<Vec<_>>>()?;
+    // Close the JSON-to-domain boundary before creating a publication
+    // command. This keeps malformed Form-owned Asset values and all other
+    // revision validation failures as client input errors, rather than
+    // allowing them to surface as an internal commit failure.
+    for revision in &revisions {
+        revision
+            .validate_payload(&domain_form)
+            .map_err(|error| invalid_revision_input(error, &domain_form))?;
+    }
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
     let command = crate::publication_context(
         format!(
@@ -583,7 +628,12 @@ fn form_values_to_domain(
     let mut values = std::collections::BTreeMap::new();
     for field in &form.fields {
         if let Some(value) = object.get(&field.name) {
-            values.insert(field.id, json_to_field_value_for_field(value, field)?);
+            values.insert(
+                field.id,
+                json_to_field_value_for_field(value, field).map_err(|error| {
+                    invalid_entry_input(format!("Field '{}': {error}", field.name))
+                })?,
+            );
         }
     }
     Ok(values)
@@ -594,10 +644,12 @@ fn json_to_field_value_for_field(value: &Value, field: &FormField) -> Result<Fie
         return Ok(FieldValue::Null);
     }
     if matches!(field.field_type, FieldType::AssetReference) {
-        return Ok(FieldValue::AssetReference(
-            serde_json::from_value::<AssetReference>(value.clone())
-                .context("invalid asset reference value")?,
-        ));
+        let reference = serde_json::from_value::<AssetReference>(value.clone())
+            .map_err(|error| anyhow!("invalid AssetReference value: {error}"))?;
+        reference
+            .validate()
+            .map_err(|error| anyhow!("invalid AssetReference value: {error}"))?;
+        return Ok(FieldValue::AssetReference(reference));
     }
     if matches!(field.field_type, FieldType::List)
         && field
@@ -611,15 +663,19 @@ fn json_to_field_value_for_field(value: &Value, field: &FormField) -> Result<Fie
             .iter()
             .map(|value| {
                 if value.is_null() {
-                    Ok(FieldValue::Null)
-                } else if value.is_object() {
-                    Ok(FieldValue::AssetReference(
-                        serde_json::from_value::<AssetReference>(value.clone())
-                            .context("invalid asset reference list item")?,
+                    Err(anyhow!(
+                        "asset reference list items must be AssetReference objects"
                     ))
+                } else if value.is_object() {
+                    let reference = serde_json::from_value::<AssetReference>(value.clone())
+                        .map_err(|error| anyhow!("invalid AssetReference list item: {error}"))?;
+                    reference
+                        .validate()
+                        .map_err(|error| anyhow!("invalid AssetReference list item: {error}"))?;
+                    Ok(FieldValue::AssetReference(reference))
                 } else {
                     Err(anyhow!(
-                        "asset reference list items must be objects or null"
+                        "asset reference list items must be AssetReference objects"
                     ))
                 }
             })

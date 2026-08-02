@@ -1,4 +1,5 @@
 import type { AssetReference, FormField } from "./types";
+import { validateAssetReference as validateWithDomain } from "./ugoite-client/protocol";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const ASSET_REFERENCE_KEYS = [
@@ -9,27 +10,7 @@ const ASSET_REFERENCE_KEYS = [
   "sha256",
 ] as const;
 
-const hasForbiddenAssetIdCharacter = (value: string): boolean =>
-  [...value].some((character) => {
-    const code = character.charCodeAt(0);
-    return character === "/" || character === "\\" || code < 0x20 ||
-      code === 0x7f;
-  });
-
-const isValidAssetId = (value: string): boolean => {
-  if (!value || value.length > 128) return false;
-  if (value === "." || value === "..") return false;
-  if (hasForbiddenAssetIdCharacter(value)) return false;
-  try {
-    const decoded = decodeURIComponent(value);
-    return decoded !== "." && decoded !== ".." &&
-      !hasForbiddenAssetIdCharacter(decoded);
-  } catch {
-    return false;
-  }
-};
-
-/** Validate the one canonical AssetReference shape at the browser boundary. */
+/** Check only the JSON shape; semantic validation belongs to the Rust domain. */
 export const isAssetReference = (value: unknown): value is AssetReference => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const reference = value as Partial<AssetReference>;
@@ -38,7 +19,7 @@ export const isAssetReference = (value: unknown): value is AssetReference => {
   return keys.length === expectedKeys.length &&
     keys.every((key, index) => key === expectedKeys[index]) &&
     typeof reference.asset_id === "string" &&
-    isValidAssetId(reference.asset_id) &&
+    reference.asset_id.trim().length > 0 &&
     typeof reference.name === "string" && reference.name.trim().length > 0 &&
     typeof reference.media_type === "string" &&
     reference.media_type.trim().length > 0 &&
@@ -46,6 +27,14 @@ export const isAssetReference = (value: unknown): value is AssetReference => {
     Number.isSafeInteger(reference.size_bytes) && reference.size_bytes >= 0 &&
     typeof reference.sha256 === "string" &&
     SHA256_PATTERN.test(reference.sha256);
+};
+
+/** Validate the complete reference through the canonical Rust domain contract. */
+export const validateAssetReference = async (
+  value: unknown,
+): Promise<AssetReference> => {
+  if (!isAssetReference(value)) throw new Error("Invalid AssetReference shape");
+  return await validateWithDomain(value);
 };
 
 export const isAssetReferenceListField = (field: FormField): boolean =>

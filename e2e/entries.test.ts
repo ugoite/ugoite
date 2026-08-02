@@ -525,15 +525,18 @@ test.describe("Entries CRUD", () => {
 
 			await page.reload({ waitUntil: "domcontentloaded" });
 			await expect(page.getByText("thumbnail.txt")).toBeVisible();
-			const readRequest = page.waitForRequest((requestEvent) => {
-				const url = new URL(requestEvent.url());
+			const readResponse = page.waitForResponse((response) => {
+				const requestEvent = response.request();
+				const url = new URL(response.url());
 				return requestEvent.method() === "GET" &&
 					url.pathname.includes(`/api/spaces/${spaceId}/assets/`) &&
 					url.searchParams.get("form") === mediaForm &&
 					url.searchParams.get("entry_id") === mediaEntryId;
 			});
 			await thumbnail.getByRole("button", { name: "Open or download" }).click();
-			await readRequest;
+			const assetReadResponse = await readResponse;
+			expect(assetReadResponse.status()).toBe(200);
+			expect(await assetReadResponse.body()).toEqual(Buffer.from("thumbnail"));
 
 			const replacement = page.locator('[data-field-name="thumbnail"]');
 			await replacement.getByLabel("Replace").setInputFiles({

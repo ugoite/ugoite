@@ -3,7 +3,7 @@
 # Used by local `mise run e2e` and by GitHub Actions e2e-ci.yml.
 #
 # Usage: ./e2e/scripts/run-e2e-compose.sh [test-type]
-#   test-type: "smoke", "entries", "screenshot", or "full" (default)
+#   test-type: "smoke", "asset-owned", "entries", "screenshot", or "full" (default)
 #
 # Environment variables:
 #   E2E_BUILD_IMAGES: "true" (default) to build local images before startup;
@@ -111,6 +111,9 @@ case "$TEST_TYPE" in
   entries)
     cmd=(deno task entries --)
     ;;
+  asset-owned)
+    cmd=(deno task asset-owned --)
+    ;;
   screenshot)
     cmd=(deno task screenshot --)
     ;;
@@ -119,7 +122,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e-compose.sh [smoke|entries|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e-compose.sh [smoke|asset-owned|entries|screenshot|full]"
     exit 1
     ;;
 esac

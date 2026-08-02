@@ -5,6 +5,7 @@
     "docsite:navigation": "bash scripts/run-docsite-navigation.sh",
     "smoke": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test smoke.test.ts",
     "entries": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts",
+    "asset-owned": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test entries.test.ts --grep REQ-FE-1877",
     "forms": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test forms.test.ts",
     "full": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test --grep-invert @screenshot",
     "screenshot": "deno run --node-modules-dir=none -A npm:@playwright/test@^1.60.0 test ui-pages-screenshots.test.ts"

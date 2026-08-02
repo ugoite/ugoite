@@ -40,8 +40,10 @@ describe("AssetReference value helpers", () => {
     expect(isAssetReference({ ...reference, sha256: "not-a-checksum" })).toBe(
       false,
     );
+    // ID semantics are owned by Rust/WASM; this helper only checks the wire
+    // shape needed to safely inspect a draft synchronously.
     expect(isAssetReference({ ...reference, asset_id: "../asset" })).toBe(
-      false,
+      true,
     );
     expect(isAssetReference({ ...reference, sha256: "A".repeat(64) })).toBe(
       false,

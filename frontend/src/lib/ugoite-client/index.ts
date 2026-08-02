@@ -30,5 +30,6 @@ export {
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
   UgoiteApiError,
+  validateAssetReference,
   type UgoiteApiOperation,
 } from "./protocol";

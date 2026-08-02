@@ -1,9 +1,20 @@
 import { A } from "@solidjs/router";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import type { Accessor } from "solid-js";
 
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
 import { AssetField } from "~/components/AssetField";
+import {
+  createAssetFieldState,
+  type AssetFieldState,
+} from "~/lib/asset-field-state";
 import { locale, t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import {
@@ -24,6 +35,7 @@ import {
   isAssetReferenceListField,
   parseAssetReference,
   parseAssetReferenceList,
+  validateAssetReference,
 } from "~/lib/asset-reference";
 
 export interface EntryDetailPaneProps {
@@ -456,6 +468,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   );
   const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
 
+  // Asset upload/read state belongs to this Entry draft. Fields and Preview
+  // are separate conditional subtrees, so keeping this map in either child
+  // would lose provisional Files and read state on a tab switch.
+  const assetFieldStates = new Map<string, AssetFieldState>();
+
   const [remoteEntry, { refetch: refetchEntry }] = createResource(
     () => {
       const wsId = props.spaceId();
@@ -512,6 +529,28 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     return (
       availableForms.find((candidate) => candidate.name === formName) ?? null
     );
+  });
+
+  const assetFieldState = (fieldName: string) => {
+    const formName = currentForm()?.name ?? props.createForm?.()?.name ?? "";
+    const key = `${formName}\u0000${fieldName}`;
+    let state = assetFieldStates.get(key);
+    if (!state) {
+      state = createAssetFieldState();
+      assetFieldStates.set(key, state);
+    }
+    return state;
+  };
+
+  createEffect(() => {
+    const generation = assetEditorGeneration();
+    for (const state of assetFieldStates.values()) {
+      state.resetForGeneration(generation);
+    }
+  });
+
+  onCleanup(() => {
+    for (const state of assetFieldStates.values()) state.dispose();
   });
   const formWorkspaceHref = createMemo(() => {
     const formName = entry()?.form?.trim();
@@ -623,7 +662,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     });
   };
 
-  const validateAssetFields = (): string[] => {
+  const validateAssetFields = async (): Promise<string[]> => {
     const form = currentForm();
     if (!form) return [];
     const issues: string[] = [];
@@ -639,6 +678,14 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           issues.push(
             t("entryDetail.validation.assetRequired", { field: fieldName }),
           );
+        } else if (reference) {
+          try {
+            await validateAssetReference(reference);
+          } catch {
+            issues.push(
+              t("entryDetail.validation.assetInvalid", { field: fieldName }),
+            );
+          }
         }
       } else if (isAssetReferenceListField(fieldDef)) {
         const references = parseAssetReferenceList(rawValue);
@@ -658,10 +705,24 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
               field: fieldName,
             }),
           );
+        } else {
+          try {
+            for (const reference of references) {
+              await validateAssetReference(reference);
+            }
+          } catch {
+            issues.push(
+              t("entryDetail.validation.assetInvalid", { field: fieldName }),
+            );
+          }
         }
       }
     }
-    if (pendingAssetFields().size > 0) {
+    const hasPendingUpload = pendingAssetFields().size > 0 ||
+      Array.from(assetFieldStates.values()).some((state) =>
+        state.pendingUploads().length > 0
+      );
+    if (hasPendingUpload) {
       issues.push(t("entryDetail.validation.assetUploadPending"));
     }
     return issues;
@@ -731,8 +792,12 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
     /* v8 ignore stop */
 
-    const assetIssues = validateAssetFields();
+    // Lock before the async Rust/WASM validation. Two rapid Save actions
+    // must still produce one Entry revision request.
+    setIsSaving(true);
+    const assetIssues = await validateAssetFields();
     if (assetIssues.length > 0) {
+      setIsSaving(false);
       setValidationError({
         title: t("entryDetail.validation.title"),
         items: assetIssues,
@@ -740,7 +805,6 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       return;
     }
 
-    setIsSaving(true);
     setConflictMessage(null);
     setValidationError(null);
     const contentToSave = editorContent();
@@ -841,6 +905,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           persistedValue={persistedFieldValue(fieldName)}
           multiple={isAssetReferenceListField(fieldDef)}
           spaceId={props.spaceId()}
+          state={assetFieldState(fieldName)}
           formName={entry()?.form ?? currentForm()?.name}
           entryId={isCreateMode() ? undefined : entry()?.id}
           generation={assetEditorGeneration()}
@@ -1236,6 +1301,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                 persistedValue={persistedFieldValue(fieldName)}
                                 multiple={isAssetReferenceListField(fieldDef)}
                                 spaceId={props.spaceId()}
+                                state={assetFieldState(fieldName)}
                                 formName={entry()?.form ?? currentForm()?.name}
                                 entryId={isCreateMode()
                                   ? undefined

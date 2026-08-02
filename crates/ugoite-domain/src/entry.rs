@@ -44,6 +44,20 @@ pub enum AssetReferenceError {
     InvalidChecksum,
 }
 
+impl fmt::Display for AssetReferenceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::InvalidAssetId => "asset_id is invalid",
+            Self::EmptyName => "name must not be empty",
+            Self::EmptyMediaType => "media_type must not be empty",
+            Self::InvalidChecksum => "sha256 must be 64 lowercase hexadecimal characters",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl std::error::Error for AssetReferenceError {}
+
 impl AssetReference {
     /// Validate the logical value stored in a Form field.
     ///

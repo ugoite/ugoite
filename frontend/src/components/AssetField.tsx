@@ -5,10 +5,14 @@ import {
   For,
   onCleanup,
   Show,
-  untrack,
 } from "solid-js";
 import { assetApi } from "~/lib/ugoite-client";
 import { locale, t } from "~/lib/i18n";
+import {
+  createAssetFieldState,
+  type AssetFieldState,
+  type PendingAssetUpload,
+} from "~/lib/asset-field-state";
 import {
   formatAssetSize,
   isAssetReference,
@@ -19,15 +23,7 @@ import {
 } from "~/lib/asset-reference";
 import type { AssetReference } from "~/lib/types";
 
-type PendingUpload = {
-  id: string;
-  file: File;
-  replaceAssetId?: string;
-  generation: number;
-  status: "local" | "uploading" | "failed";
-  error?: string;
-  controller: AbortController;
-};
+type PendingUpload = PendingAssetUpload;
 
 export interface AssetFieldProps {
   fieldId: string;
@@ -40,6 +36,7 @@ export interface AssetFieldProps {
   entryId?: string;
   readOnly?: boolean;
   generation?: number;
+  state?: AssetFieldState;
   onChange: (value: string) => void;
   onPendingChange?: (pending: boolean, generation?: number) => void;
 }
@@ -52,20 +49,18 @@ const isAbortError = (error: unknown) =>
 
 /** Form-owned asset_reference/list<asset_reference> editor. */
 export function AssetField(props: AssetFieldProps) {
-  const [pendingUploads, setPendingUploads] = createSignal<PendingUpload[]>(
-    [],
-  );
-  const [previewUrls, setPreviewUrls] = createSignal<Map<string, string>>(
-    new Map(),
-  );
-  const [unavailableIds, setUnavailableIds] = createSignal<Set<string>>(
-    new Set(),
-  );
-  const [readingIds, setReadingIds] = createSignal<Set<string>>(new Set());
-  const [localFiles, setLocalFiles] = createSignal<Map<string, File>>(
-    new Map(),
-  );
-  let uploadQueue = Promise.resolve();
+  const state = props.state ?? createAssetFieldState();
+  const ownsState = !props.state;
+  const pendingUploads = state.pendingUploads;
+  const setPendingUploads = state.setPendingUploads;
+  const previewUrls = state.previewUrls;
+  const setPreviewUrls = state.setPreviewUrls;
+  const unavailableIds = state.unavailableIds;
+  const setUnavailableIds = state.setUnavailableIds;
+  const readingIds = state.readingIds;
+  const setReadingIds = state.setReadingIds;
+  const localFiles = state.localFiles;
+  const setLocalFiles = state.setLocalFiles;
   let disposed = false;
 
   const parsedValue = createMemo(() => {
@@ -91,45 +86,40 @@ export function AssetField(props: AssetFieldProps) {
       );
     return new Set(persisted.map((reference) => reference.asset_id));
   });
+  let observedPersistedIds: Set<string> | undefined;
 
   createEffect(() =>
     props.onPendingChange?.(pendingUploads().length > 0, props.generation)
   );
 
-  const clearPendingUploads = () => {
-    for (const item of untrack(pendingUploads)) item.controller.abort();
-    setPendingUploads([]);
-    props.onPendingChange?.(false, props.generation);
-  };
-
   createEffect(() => {
-    // A new editor generation invalidates every in-flight upload from the
-    // previous draft. The generation is intentionally scoped to this field.
-    void props.generation;
-    untrack(clearPendingUploads);
-    setLocalFiles(new Map());
-    setReadingIds(new Set());
-    setUnavailableIds(new Set());
-    setPreviewUrls((urls) => {
-      for (const url of urls.values()) URL.revokeObjectURL(url);
-      return new Map();
-    });
+    // Generation reset is owned by the Entry draft. It is deliberately not
+    // tied to this component's mount lifetime, because Fields and Preview
+    // are separate conditional views of the same draft state.
+    state.resetForGeneration(props.generation ?? 0);
   });
 
   createEffect(() => {
     const persisted = persistedIds();
+    if (!observedPersistedIds) {
+      observedPersistedIds = new Set(persisted);
+      return;
+    }
     setUnavailableIds((ids) => {
       const next = new Set(ids);
-      for (const id of persisted) next.delete(id);
+      for (const id of persisted) {
+        if (!observedPersistedIds?.has(id)) next.delete(id);
+      }
       return next;
     });
+    observedPersistedIds = new Set(persisted);
   });
 
   onCleanup(() => {
     disposed = true;
-    untrack(clearPendingUploads);
-    for (const url of previewUrls().values()) URL.revokeObjectURL(url);
-    setLocalFiles(new Map());
+    // A shared state survives a Fields/Preview tab switch. Standalone fields
+    // still own and clean up their state when no Entry draft provided one.
+    if (ownsState) state.dispose();
   });
 
   const pendingById = (id: string) =>
@@ -149,8 +139,8 @@ export function AssetField(props: AssetFieldProps) {
   };
 
   const isActiveUpload = (item: PendingUpload) =>
-    !disposed && !item.controller.signal.aborted &&
-    item.generation === (props.generation ?? 0);
+    !item.controller.signal.aborted &&
+    state.isActive(item.generation);
 
   const addReference = (reference: AssetReference) => {
     const current = parsedValue().references;
@@ -269,7 +259,7 @@ export function AssetField(props: AssetFieldProps) {
 
   const enqueueUpload = (item: PendingUpload) => {
     setPendingUploads((items) => [...items, item]);
-    uploadQueue = uploadQueue.then(() => runUpload(item.id));
+    state.setUploadQueue(state.uploadQueue.then(() => runUpload(item.id)));
   };
 
   const chooseFiles = (files: File[], replaceAssetId?: string) => {
@@ -305,7 +295,7 @@ export function AssetField(props: AssetFieldProps) {
       status: "local",
       error: undefined,
     }));
-    uploadQueue = uploadQueue.then(() => runUpload(item.id));
+    state.setUploadQueue(state.uploadQueue.then(() => runUpload(item.id)));
   };
 
   const cancel = (item: PendingUpload) => {
@@ -360,6 +350,9 @@ export function AssetField(props: AssetFieldProps) {
   };
 
   const readReference = async (reference: AssetReference) => {
+    const activeGeneration = props.generation ?? 0;
+    const controller = new AbortController();
+    state.readControllers.set(reference.asset_id, controller);
     setReadingIds((ids) => new Set([...ids, reference.asset_id]));
     try {
       const isPersisted = persistedIds().has(reference.asset_id);
@@ -379,8 +372,14 @@ export function AssetField(props: AssetFieldProps) {
           reference.asset_id,
           formName,
           entryId,
+          controller.signal,
         );
       }
+      // A tab switch may unmount this view while the authorized read is in
+      // flight. Do not create object URLs or trigger a download from a dead
+      // view; a later mount can retry using the shared draft state.
+      if (disposed || controller.signal.aborted ||
+        !state.isActive(activeGeneration)) return;
       const url = URL.createObjectURL(blob);
       setPreviewUrls((urls) => {
         const next = new Map(urls);
@@ -398,14 +397,19 @@ export function AssetField(props: AssetFieldProps) {
       link.href = url;
       link.download = reference.name;
       link.click();
-    } catch {
-      setUnavailableIds((ids) => new Set([...ids, reference.asset_id]));
+    } catch (error) {
+      if (!isAbortError(error) && state.isActive(activeGeneration)) {
+        setUnavailableIds((ids) => new Set([...ids, reference.asset_id]));
+      }
     } finally {
-      setReadingIds((ids) => {
-        const next = new Set(ids);
-        next.delete(reference.asset_id);
-        return next;
-      });
+      if (state.isActive(activeGeneration)) {
+        state.readControllers.delete(reference.asset_id);
+        setReadingIds((ids) => {
+          const next = new Set(ids);
+          next.delete(reference.asset_id);
+          return next;
+        });
+      }
     }
   };
 
@@ -471,7 +475,9 @@ export function AssetField(props: AssetFieldProps) {
                 class="ui-button ui-button-secondary ui-button-sm"
                 onClick={() => void readReference(reference)}
                 disabled={readingIds().has(reference.asset_id) ||
-                  (!props.entryId && !localFiles().has(reference.asset_id))}
+                  (!localFiles().has(reference.asset_id) &&
+                    (!persistedIds().has(reference.asset_id) ||
+                      !props.formName?.trim() || !props.entryId?.trim()))}
               >
                 {readingIds().has(reference.asset_id)
                   ? t("assetField.status.reading")

@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { createSignal } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AssetField } from "./AssetField";
 import { setLocale } from "~/lib/i18n";
@@ -9,6 +9,7 @@ import {
   serializeAssetReference,
   serializeAssetReferenceList,
 } from "~/lib/asset-reference";
+import { createAssetFieldState } from "~/lib/asset-field-state";
 import type { AssetReference } from "~/lib/types";
 
 vi.mock("~/lib/ugoite-client", () => ({
@@ -181,5 +182,204 @@ describe("AssetField", () => {
       expect(onPendingChange).toHaveBeenLastCalledWith(false, 2)
     );
     expect(value()).toBe("");
+  });
+
+  it("retries a failed upload without losing the local file", async () => {
+    (assetApi.upload as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error("network failure"))
+      .mockResolvedValueOnce(first);
+    const [value, setValue] = createSignal("");
+
+    render(() => (
+      <AssetField
+        fieldId="thumbnail"
+        fieldName="thumbnail"
+        value={value()}
+        persistedValue=""
+        multiple={false}
+        spaceId="default"
+        onChange={setValue}
+      />
+    ));
+
+    fireEvent.change(screen.getByLabelText("Choose file"), {
+      target: { files: [new File(["data"], "first.txt")] },
+    });
+    await waitFor(() =>
+      expect(screen.getByText("network failure"))
+        .toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry upload" }));
+    await waitFor(() => expect(value()).toBe(serializeAssetReference(first)));
+    expect(assetApi.upload).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps provisional local bytes across the Fields to Preview mount boundary", async () => {
+    (assetApi.upload as ReturnType<typeof vi.fn>).mockResolvedValue(first);
+    const [value, setValue] = createSignal("");
+    const [mode, setMode] = createSignal<"fields" | "preview">("fields");
+    const state = createAssetFieldState();
+
+    render(() => (
+      <Show
+        when={mode() === "fields"}
+        fallback={
+          <AssetField
+            fieldId="preview-thumbnail"
+            fieldName="thumbnail"
+            value={value()}
+            persistedValue=""
+            multiple={false}
+            spaceId="default"
+            formName="Media"
+            entryId="entry-1"
+            state={state}
+            readOnly
+            onChange={() => undefined}
+          />
+        }
+      >
+        <AssetField
+          fieldId="thumbnail"
+          fieldName="thumbnail"
+          value={value()}
+          persistedValue=""
+          multiple={false}
+          spaceId="default"
+          state={state}
+          onChange={setValue}
+        />
+      </Show>
+    ));
+
+    fireEvent.change(screen.getByLabelText("Choose file"), {
+      target: { files: [new File(["data"], "first.txt")] },
+    });
+    await waitFor(() => expect(value()).toBe(serializeAssetReference(first)));
+    setMode("preview");
+    await waitFor(() =>
+      expect(screen.getByText("first.txt"))
+        .toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open or download" }));
+    expect(assetApi.read).not.toHaveBeenCalled();
+  });
+
+  it("does not render SVG as an active image preview", async () => {
+    const svg = {
+      ...first,
+      asset_id: "01900000-0000-7000-8000-000000000003",
+      name: "diagram.svg",
+      media_type: "image/svg+xml",
+    };
+    const state = createAssetFieldState();
+    render(() => (
+      <AssetField
+        fieldId="raw-data"
+        fieldName="raw_data"
+        value={serializeAssetReference(svg)}
+        persistedValue={serializeAssetReference(svg)}
+        multiple={false}
+        spaceId="default"
+        entryId="entry-1"
+        formName="Media"
+        state={state}
+        onChange={() => undefined}
+      />
+    ));
+    state.setPreviewUrls(new Map([[svg.asset_id, "blob:svg"]]));
+    await waitFor(() =>
+      expect(screen.getByText("diagram.svg"))
+        .toBeInTheDocument()
+    );
+    expect(screen.queryByRole("img", { name: "diagram.svg" })).toBeNull();
+  });
+
+  it("keeps logical metadata visible when persisted bytes are unavailable", async () => {
+    (assetApi.read as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("missing bytes"),
+    );
+    const encoded = serializeAssetReference(first);
+    render(() => (
+      <AssetField
+        fieldId="document"
+        fieldName="document"
+        value={encoded}
+        persistedValue={encoded}
+        multiple={false}
+        spaceId="default"
+        formName="Contracts"
+        entryId="entry-1"
+        onChange={() => undefined}
+      />
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "Open or download" }));
+    await waitFor(() =>
+      expect(screen.getByText("File bytes unavailable; metadata preserved"))
+        .toBeInTheDocument()
+    );
+    expect(screen.getByText("first.txt")).toBeInTheDocument();
+  });
+
+  it("ignores an authorized read completion after the initiating view unmounts", async () => {
+    let resolveRead: ((blob: Blob) => void) | undefined;
+    (assetApi.read as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise<Blob>((resolve) => resolveRead = resolve),
+    );
+    const [mode, setMode] = createSignal<"fields" | "preview">("fields");
+    const state = createAssetFieldState();
+    const encoded = serializeAssetReference(first);
+    const originalCreateObjectURL = URL.createObjectURL;
+    const createObjectURL = vi.fn(() => "blob:should-not-be-created");
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectURL,
+    });
+    try {
+      render(() => (
+        <Show
+          when={mode() === "fields"}
+          fallback={
+            <AssetField
+              fieldId="preview-doc"
+              fieldName="document"
+              value={encoded}
+              persistedValue={encoded}
+              multiple={false}
+              spaceId="default"
+              formName="Contracts"
+              entryId="entry-1"
+              state={state}
+              readOnly
+              onChange={() => undefined}
+            />
+          }
+        >
+          <AssetField
+            fieldId="document"
+            fieldName="document"
+            value={encoded}
+            persistedValue={encoded}
+            multiple={false}
+            spaceId="default"
+            formName="Contracts"
+            entryId="entry-1"
+            state={state}
+            onChange={() => undefined}
+          />
+        </Show>
+      ));
+      fireEvent.click(screen.getByRole("button", { name: "Open or download" }));
+      await waitFor(() => expect(assetApi.read).toHaveBeenCalled());
+      setMode("preview");
+      resolveRead?.(new Blob(["data"], { type: "text/plain" }));
+      await waitFor(() => expect(state.readingIds().size).toBe(0));
+      expect(createObjectURL).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: originalCreateObjectURL,
+      });
+    }
   });
 });

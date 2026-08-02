@@ -34,13 +34,14 @@ export const assetApi = {
     assetId: string,
     formName: string,
     entryId: string,
+    signal?: AbortSignal,
   ): Promise<Blob> {
     const response = await protocolFetchResponse("asset.read", {
       space_id: spaceId,
       asset_id: assetId,
       form: formName,
       entry_id: entryId,
-    });
+    }, { signal });
     return await response.blob();
   },
 };

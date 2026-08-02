@@ -1,5 +1,6 @@
 import initializeWasm from "../generated/ugoite_wasm.wasm?init";
 import { apiFetch, type ApiFetchOptions } from "../api";
+import type { AssetReference } from "../types";
 
 export const UGOITE_API_OPERATIONS = [
   "auth.get_config",
@@ -157,6 +158,15 @@ const invokeProtocol = async <T>(command: unknown): Promise<T> => {
 export const getWasmSupportedOperations = async (): Promise<
   UgoiteApiOperation[]
 > => await invokeProtocol<UgoiteApiOperation[]>({ action: "operations" });
+
+/** Validate an AssetReference with the canonical Rust domain implementation. */
+export const validateAssetReference = async (
+  value: unknown,
+): Promise<AssetReference> =>
+  await invokeProtocol<AssetReference>({
+    action: "domain.validate_asset_reference",
+    value,
+  });
 
 export class UgoiteApiError extends Error {
   readonly kind: string;

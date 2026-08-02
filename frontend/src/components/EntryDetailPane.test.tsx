@@ -213,6 +213,48 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("reuses the uploaded reference when Entry save is retried", async () => {
+    const uploaded = {
+      asset_id: "01900000-0000-7000-8000-000000000004",
+      name: "retry.txt",
+      media_type: "text/plain",
+      size_bytes: 4,
+      sha256: "b".repeat(64),
+    };
+    const assetUpload = (await import("~/lib/ugoite-client")).assetApi
+      .upload as ReturnType<typeof vi.fn>;
+    assetUpload.mockResolvedValue(uploaded);
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce({ id: "retry-entry", revision_id: "retry-revision" });
+    const form: Form = {
+      name: "RetryAsset",
+      version: 1,
+      template: "# RetryAsset\n\n## attachment\n",
+      fields: { attachment: { type: "asset_reference", required: true } },
+    };
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+    fireEvent.change(await screen.findByLabelText("Choose file"), {
+      target: { files: [new File(["data"], "retry.txt")] },
+    });
+    await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("save failed")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(2));
+    expect(assetUpload).toHaveBeenCalledTimes(1);
+  });
+
   it("REQ-ENTRY-1872: creates numeric and timestamp fields in one clean revision", async () => {
     const onCreated = vi.fn();
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;

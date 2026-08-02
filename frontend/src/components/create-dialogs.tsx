@@ -185,8 +185,6 @@ type FieldIssueSource = {
   itemsTargetForm?: string;
 };
 
-const assetListItemTypes = ["string", "row_reference", "asset_reference"];
-
 type FieldIssueContext = {
   availableForms?: string[];
   currentFormName?: string;
@@ -1271,6 +1269,9 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
     if (current) options.add(current);
     return Array.from(options);
   });
+  const listItemTypes = createMemo(() =>
+    props.columnTypes.filter((type) => type !== "list" && type !== "object_list")
+  );
 
   const fieldIssues = createMemo(() =>
     buildFieldIssues(fields(), {
@@ -1582,7 +1583,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                           <option value="">
                             {t("createDialog.form.listItemTypeText")}
                           </option>
-                          <For each={assetListItemTypes}>
+                          <For each={listItemTypes()}>
                             {(type) => (
                               <option value={type}>
                                 {type === "asset_reference"
@@ -1782,6 +1783,9 @@ export function EditFormDialog(props: EditFormDialogProps) {
     /* v8 ignore stop */
     return Array.from(options);
   });
+  const listItemTypes = createMemo(() =>
+    props.columnTypes.filter((type) => type !== "list" && type !== "object_list")
+  );
 
   const fieldIssues = createMemo(() =>
     buildFieldIssues(fields(), {
@@ -2071,7 +2075,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
                           <option value="">
                             {t("createDialog.form.listItemTypeText")}
                           </option>
-                          <For each={assetListItemTypes}>
+                          <For each={listItemTypes()}>
                             {(type) => (
                               <option value={type}>
                                 {type === "asset_reference"
