@@ -397,7 +397,7 @@ pub(crate) async fn query_entry_rows_authorized(
     if limit == 0 {
         return Ok(Vec::new());
     }
-    if limit > crate::MAX_NORMAL_READ_ROWS {
+    if limit > crate::MAX_NORMAL_READ_ROWS.saturating_add(1) {
         return Err(anyhow!(
             "normal Entry reads are limited to {} rows",
             crate::MAX_NORMAL_READ_ROWS
@@ -482,6 +482,82 @@ pub(crate) async fn query_entry_rows_authorized(
         .collect::<Vec<_>>())
 }
 
+/// Reads one Form's current payload projection in a single authorized plan.
+/// This is the typed-field path for Form-owned records such as Saved SQL; it
+/// does not materialize the Form's full revision history in Rust.
+pub(crate) async fn query_form_entry_rows_authorized(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    field_filter: Option<(&str, &Value)>,
+    limit: usize,
+) -> Result<Vec<entry::EntryRow>> {
+    if limit == 0 || limit > crate::MAX_NORMAL_READ_ROWS.saturating_add(1) {
+        return Err(anyhow!(
+            "normal Entry reads are limited to {} rows",
+            crate::MAX_NORMAL_READ_ROWS
+        ));
+    }
+    let forms = load_forms(op, ws_path).await?;
+    let form = forms
+        .get(form_name)
+        .with_context(|| format!("Form {form_name} was not found"))?;
+    let relation = form
+        .get("sql_relation")
+        .and_then(Value::as_str)
+        .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+    let relation_scopes =
+        BTreeMap::from([(form_name.to_ascii_lowercase(), EntryScope::AllCurrent)]);
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(&relation_scopes),
+        None,
+        BTreeSet::new(),
+        crate::MAX_NORMAL_READ_ROWS,
+        true,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let predicates: Vec<Expr> = match field_filter {
+        None => Vec::new(),
+        Some((field_name, expected)) => {
+            let definition = form
+                .get("fields")
+                .and_then(Value::as_object)
+                .and_then(|fields| fields.get(field_name))
+                .with_context(|| format!("Form {form_name} is missing field {field_name}"))?;
+            let column = field_sql_column(definition)?;
+            let field_type = definition
+                .get("type")
+                .and_then(Value::as_str)
+                .context("Form field is missing its type")?;
+            vec![col(column).eq(filter_literal(expected, field_type)?)]
+        }
+    };
+    let available_columns = context
+        .relation_columns(relation)
+        .await
+        .map_err(map_sql_error)?;
+    let batches = execute_payload_relation_plan(
+        &context,
+        relation,
+        Vec::new(),
+        predicates,
+        form,
+        &available_columns,
+        true,
+        limit,
+    )
+    .await?;
+    record_batches_to_values(&batches)?
+        .iter()
+        .map(|value| entry_row_from_payload(form_name, form, value))
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn execute_payload_relation_plan(
     context: &crate::query_context::AuthorizedQueryContext,
@@ -493,65 +569,28 @@ async fn execute_payload_relation_plan(
     distinct: bool,
     limit: usize,
 ) -> Result<Vec<arrow_array::RecordBatch>> {
-    let field_columns = form
-        .get("fields")
-        .and_then(Value::as_object)
-        .map(|fields| {
-            fields
-                .values()
-                .filter_map(|field| field_sql_column(field).ok())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let mut excluded = BTreeSet::new();
     let preserved_inputs = unnest_columns
         .iter()
         .map(|(input, _)| input.clone())
         .collect::<BTreeSet<_>>();
-    loop {
-        let result = context
-            .execute_relation_plan(
-                relation,
-                &unnest_columns,
-                predicates.clone(),
-                payload_projection(form, available_columns, &excluded, &preserved_inputs)?,
-                Vec::new(),
-                distinct,
-                !preserved_inputs.is_empty(),
-                limit,
-            )
-            .await;
-        match result {
-            Ok(batches) => return Ok(batches),
-            Err(error)
-                if is_missing_physical_column_error(&error)
-                    && excluded.len() < field_columns.len() =>
-            {
-                let next = field_columns
-                    .iter()
-                    .rev()
-                    .find(|column| !excluded.contains(*column))
-                    .cloned();
-                if let Some(column) = next {
-                    excluded.insert(column);
-                    continue;
-                }
-                return Err(map_sql_error(error));
-            }
-            Err(error) => return Err(map_sql_error(error)),
-        }
-    }
-}
-
-fn is_missing_physical_column_error(error: &anyhow::Error) -> bool {
-    let debug = format!("{error:?}");
-    debug.contains("Column ") && debug.contains("not found in table")
+    context
+        .execute_relation_plan(
+            relation,
+            &unnest_columns,
+            predicates,
+            payload_projection(form, available_columns, &preserved_inputs)?,
+            Vec::new(),
+            distinct,
+            !preserved_inputs.is_empty(),
+            limit,
+        )
+        .await
+        .map_err(map_sql_error)
 }
 
 fn payload_projection(
     form: &Value,
     available_columns: &BTreeSet<String>,
-    excluded_columns: &BTreeSet<String>,
     preserved_inputs: &BTreeSet<String>,
 ) -> Result<Vec<Expr>> {
     let mut projection = vec![
@@ -576,9 +615,7 @@ fn payload_projection(
                 projection.push(
                     col(crate::query_context::preserved_unnest_column(&column)).alias(column),
                 );
-            } else if available_columns.contains(&column.to_ascii_lowercase())
-                && !excluded_columns.contains(&column)
-            {
+            } else if available_columns.contains(&column.to_ascii_lowercase()) {
                 projection.push(col(column));
             }
         }
@@ -590,78 +627,113 @@ fn entry_row_from_payload(form_name: &str, form: &Value, value: &Value) -> Resul
     let fields = form
         .get("fields")
         .and_then(Value::as_object)
-        .map(|definitions| {
-            definitions
-                .iter()
-                .filter_map(|(name, definition)| {
-                    let column = field_sql_column(definition).ok()?;
-                    Some((
-                        name.clone(),
-                        value.get(&column).cloned().unwrap_or(Value::Null),
-                    ))
-                })
-                .collect::<Map<_, _>>()
+        .context("Form definition is missing fields")?
+        .iter()
+        .map(|(name, definition)| {
+            let column = field_sql_column(definition)?;
+            Ok((
+                name.clone(),
+                value.get(&column).cloned().unwrap_or(Value::Null),
+            ))
         })
-        .unwrap_or_default();
+        .collect::<Result<Map<_, _>>>()?;
     Ok(entry::EntryRow {
-        entry_id: value
-            .get("_ugoite_id")
-            .and_then(Value::as_str)
-            .context("Entry payload is missing its external ID")?
-            .to_string(),
-        title: value
-            .get("_ugoite_title")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
+        entry_id: required_string(value, "_ugoite_id", "external ID")?,
+        title: required_string(value, "_ugoite_title", "title")?,
         form: form_name.to_string(),
-        tags: value
-            .get("_ugoite_tags")
-            .and_then(Value::as_array)
-            .map(|tags| {
-                tags.iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default(),
-        created_at: json_timestamp(value.get("_ugoite_created_at"))?,
-        updated_at: json_timestamp(value.get("_ugoite_updated_at"))?,
+        tags: required_string_array(value, "_ugoite_tags", "tags")?,
+        created_at: json_timestamp(Some(required_value(
+            value,
+            "_ugoite_created_at",
+            "created_at",
+        )?))?,
+        updated_at: json_timestamp(Some(required_value(
+            value,
+            "_ugoite_updated_at",
+            "updated_at",
+        )?))?,
         fields: Value::Object(fields),
         extra_attributes: json_object_or_string(value.get("_ugoite_extra_attributes"))?,
-        revision_id: value
-            .get("_ugoite_revision_id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        parent_revision_id: value
-            .get("_ugoite_parent_revision_id")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        integrity: serde_json::from_value(
+        revision_id: required_string(value, "_ugoite_revision_id", "revision ID")?,
+        parent_revision_id: optional_string(value, "_ugoite_parent_revision_id")?,
+        integrity: required_integrity(required_value(value, "_ugoite_integrity", "integrity")?)?,
+        deleted: required_bool(value, "_ugoite_deleted", "deleted")?,
+        deleted_at: match value.get("_ugoite_deleted_at") {
+            None | Some(Value::Null) => None,
+            Some(value) => Some(json_timestamp(Some(value))?),
+        },
+        author: required_string(value, "_ugoite_author", "author")?,
+        entry_version: required_u64(value, "_ugoite_entry_version", "entry version")?,
+    })
+}
+
+fn required_value<'a>(value: &'a Value, key: &str, label: &str) -> Result<&'a Value> {
+    value
+        .get(key)
+        .filter(|value| !value.is_null())
+        .with_context(|| format!("Entry payload is missing {label}"))
+}
+
+fn required_string(value: &Value, key: &str, label: &str) -> Result<String> {
+    required_value(value, key, label)?
+        .as_str()
+        .map(str::to_owned)
+        .with_context(|| format!("Entry payload has invalid {label}"))
+}
+
+fn optional_string(value: &Value, key: &str) -> Result<Option<String>> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_str()
+            .map(|value| Some(value.to_owned()))
+            .with_context(|| format!("Entry payload has invalid {key}")),
+    }
+}
+
+fn required_string_array(value: &Value, key: &str, label: &str) -> Result<Vec<String>> {
+    required_value(value, key, label)?
+        .as_array()
+        .with_context(|| format!("Entry payload has invalid {label}"))?
+        .iter()
+        .map(|value| {
             value
-                .get("_ugoite_integrity")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({})),
-        )
-        .unwrap_or_default(),
-        deleted: value
-            .get("_ugoite_deleted")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        deleted_at: value
-            .get("_ugoite_deleted_at")
-            .map(|value| json_timestamp(Some(value)))
-            .transpose()?,
-        author: value
-            .get("_ugoite_author")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        entry_version: value
-            .get("_ugoite_entry_version")
-            .and_then(Value::as_u64)
-            .unwrap_or(1),
+                .as_str()
+                .map(str::to_owned)
+                .with_context(|| format!("Entry payload has invalid {label} item"))
+        })
+        .collect()
+}
+
+fn required_bool(value: &Value, key: &str, label: &str) -> Result<bool> {
+    required_value(value, key, label)?
+        .as_bool()
+        .with_context(|| format!("Entry payload has invalid {label}"))
+}
+
+fn required_u64(value: &Value, key: &str, label: &str) -> Result<u64> {
+    required_value(value, key, label)?
+        .as_u64()
+        .with_context(|| format!("Entry payload has invalid {label}"))
+}
+
+fn required_integrity(value: &Value) -> Result<entry::IntegrityPayload> {
+    let object = value
+        .as_object()
+        .context("Entry payload has invalid integrity")?;
+    let checksum = object
+        .get("checksum")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .context("Entry payload integrity is missing checksum")?;
+    let signature = object
+        .get("signature")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .context("Entry payload integrity is missing signature")?;
+    Ok(entry::IntegrityPayload {
+        checksum,
+        signature,
     })
 }
 
@@ -679,7 +751,14 @@ fn field_sql_column(field: &Value) -> Result<String> {
 fn json_object_or_string(value: Option<&Value>) -> Result<Value> {
     match value {
         Some(Value::String(value)) => {
-            Ok(serde_json::from_str(value).unwrap_or_else(|_| Value::Object(Map::new())))
+            let parsed: Value = serde_json::from_str(value)
+                .context("Entry payload has invalid extra_attributes JSON")?;
+            if !parsed.is_object() {
+                return Err(anyhow!(
+                    "Entry payload extra_attributes JSON must be an object"
+                ));
+            }
+            Ok(parsed)
         }
         Some(value @ Value::Object(_)) => Ok(value.clone()),
         _ => Ok(Value::Object(Map::new())),
@@ -703,73 +782,21 @@ fn json_timestamp(value: Option<&Value>) -> Result<f64> {
         .with_context(|| format!("invalid timestamp payload {text}"))
 }
 
-/// Checks only the request's external IDs in the authorized current-state
-/// views. This deliberately replaces the old full-Space Rust scan used by
-/// Entry creation.
-pub(crate) async fn existing_entry_ids_authorized(
+/// Checks only the request's external IDs through DataFusion point plans over
+/// every Form's latest head. Tombstones and authorization scopes are included:
+/// Entry ID availability is a Space write invariant, not a read property.
+pub(crate) async fn existing_entry_ids(
     op: &Operator,
     ws_path: &str,
-    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     entry_ids: &[String],
 ) -> Result<HashSet<String>> {
     if entry_ids.is_empty() {
         return Ok(HashSet::new());
     }
-    let forms = load_forms(op, ws_path).await?;
-    let id_list = entry_ids
-        .iter()
-        .map(|entry_id| sql_string_literal(entry_id))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let mut branches = Vec::new();
-    for (form_name, form) in &forms {
-        let relation = form
-            .get("sql_relation")
-            .and_then(Value::as_str)
-            .context("Form is missing its SQL relation")?;
-        if let Some(scopes) = relation_scopes {
-            if !scopes.contains_key(&relation.to_ascii_lowercase())
-                && !scopes.contains_key(&form_name.to_ascii_lowercase())
-            {
-                continue;
-            }
-        }
-        branches.push(format!(
-            "SELECT \"_ugoite_id\" FROM {} WHERE \"_ugoite_id\" IN ({id_list})",
-            quote_identifier(relation),
-        ));
-    }
-    if branches.is_empty() {
-        return Ok(HashSet::new());
-    }
-    let context = datafusion_sql_context_with_limits(
-        op,
-        ws_path,
-        EntryScope::AllCurrent,
-        None,
-        relation_scopes,
-        None,
-        BTreeSet::new(),
-        crate::MAX_NORMAL_READ_ROWS,
-        false,
-    )
-    .await
-    .map_err(map_sql_error)?;
-    let sql = format!(
-        "SELECT DISTINCT \"_ugoite_id\" FROM ({}) AS \"__ugoite_existing_ids\"",
-        branches.join(" UNION ALL "),
-    );
-    Ok(
-        record_batches_to_values(&context.execute(&sql).await.map_err(map_sql_error)?)?
-            .into_iter()
-            .filter_map(|value| {
-                value
-                    .get("_ugoite_id")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .collect(),
-    )
+    crate::iceberg_store::native_workspace(op, ws_path)
+        .await?
+        .existing_entry_external_ids(entry_ids)
+        .await
 }
 
 fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> Result<String> {
@@ -1728,6 +1755,10 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
                     .and_then(Value::as_str)
                     .with_context(|| format!("Form field {field_name} is missing sql_column"))?;
                 let alias = format!("__ugoite_field_{field_name}");
+                // v1 stats intentionally count non-null typed values. This
+                // is the DataFusion `count(column)` semantics, and is a
+                // breaking clarification from the removed Rust property-key
+                // presence scan.
                 aggregate_expr.push(
                     datafusion::functions_aggregate::expr_fn::count(col(column)).alias(&alias),
                 );
@@ -1780,7 +1811,7 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
                     vec![col("__ugoite_tag")],
                     vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
                         .alias("__ugoite_tag_count")],
-                    crate::MAX_NORMAL_READ_ROWS,
+                    crate::MAX_NORMAL_READ_ROWS.saturating_add(1),
                 )
                 .await
                 .map_err(map_sql_error)?,
@@ -2283,7 +2314,12 @@ async fn collect_filtered_entries_with_form_scopes(
     .await
     .map_err(map_sql_error)?;
     let mut rows = Vec::new();
-    for (form_name, form) in forms {
+    let mut form_names = forms.keys().cloned().collect::<Vec<_>>();
+    form_names.sort();
+    for form_name in form_names {
+        let form = forms
+            .get(&form_name)
+            .with_context(|| format!("missing Form definition {form_name}"))?;
         if let Some(expected_form) = filters.get("form") {
             if expected_form.as_str() != Some(form_name.as_str()) {
                 continue;
@@ -2317,7 +2353,10 @@ async fn collect_filtered_entries_with_form_scopes(
             );
         }
         let remaining = crate::MAX_NORMAL_READ_ROWS.saturating_sub(rows.len());
-        let per_form_bound = remaining.max(1);
+        // This endpoint has no paging contract. Request one sentinel row so
+        // an over-cap result is rejected instead of depending on Form order
+        // and silently returning a partial collection.
+        let per_form_bound = remaining.saturating_add(1);
         let available_columns = context
             .relation_columns(relation)
             .await
@@ -2347,8 +2386,8 @@ async fn collect_filtered_entries_with_form_scopes(
             ));
         }
         for value in values {
-            let row = entry_row_from_payload(form_name, form, &value)?;
-            if let Some(record) = build_record(ws_path, form_name, &row, forms).await? {
+            let row = entry_row_from_payload(&form_name, form, &value)?;
+            if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
                 entries.insert(row.entry_id.clone(), record);
             }
             rows.push((form_name.clone(), row));
@@ -2480,7 +2519,7 @@ async fn query_entries_with_form_scopes(
         relation_scopes,
         None,
         None,
-        crate::MAX_NORMAL_READ_ROWS,
+        crate::MAX_NORMAL_READ_ROWS.saturating_add(1),
     )
     .await?;
     for (form_name, row) in rows {

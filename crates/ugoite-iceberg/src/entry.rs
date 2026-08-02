@@ -742,13 +742,24 @@ pub(crate) async fn find_entry_form(
     ws_path: &str,
     entry_id: &str,
 ) -> Result<Option<String>> {
+    find_entry_form_with_deleted(op, ws_path, entry_id, false).await
+}
+
+/// Resolves the owning Form from the latest head, including a tombstone. This
+/// is deliberately separate from current reads: history and restore must keep
+/// reaching an Entry after its latest revision is a delete.
+pub(crate) async fn find_entry_form_with_deleted(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    include_deleted: bool,
+) -> Result<Option<String>> {
     for form_name in list_form_names(op, ws_path).await? {
         let (_, revisions) =
             iceberg_store::latest_revisions_for_entry(op, ws_path, &form_name, entry_id).await?;
-        if revisions
-            .into_iter()
-            .any(|revision| revision.entry.external_id == entry_id && !revision.entry.deleted)
-        {
+        if revisions.into_iter().any(|revision| {
+            revision.entry.external_id == entry_id && (include_deleted || !revision.entry.deleted)
+        }) {
             return Ok(Some(form_name));
         }
     }
@@ -846,23 +857,6 @@ pub(crate) async fn write_entry_row(
         source_id: None,
     };
     append_revision_row_for_form(op, ws_path, form_name, &revision, &form_def).await
-}
-
-pub(crate) async fn list_form_entry_rows(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-    _form_def: &Value,
-) -> Result<Vec<EntryRow>> {
-    let (form, revisions) =
-        iceberg_store::latest_revisions_for_form(op, ws_path, form_name).await?;
-    Ok(revisions
-        .into_iter()
-        .map(|revision| revision_row_from_domain(revision, form_name, &form))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .filter_map(|revision| revision.state)
-        .collect())
 }
 
 #[allow(dead_code)] // used by migration verification tooling
@@ -1001,10 +995,9 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
             return Err(anyhow!("Entry already exists: {}", request.entry_id));
         }
     }
-    let existing_entry_ids = index::existing_entry_ids_authorized(
+    let existing_entry_ids = index::existing_entry_ids(
         op,
         ws_path,
-        relation_scopes,
         &requested_entry_ids.iter().cloned().collect::<Vec<_>>(),
     )
     .await?;
@@ -1012,7 +1005,7 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
     let mut entries = Vec::with_capacity(requests.len());
     for request in requests {
         if existing_entry_ids.contains(&request.entry_id) {
-            return Err(anyhow!("Entry already exists: {}", request.entry_id));
+            return Err(anyhow!("Entry ID unavailable"));
         }
         let (entry, form_name, form_def, revision) = prepare_entry(
             op,
@@ -1459,13 +1452,10 @@ pub async fn get_entry_revision_content(
     entry_id: &str,
     revision_id: &str,
 ) -> Result<EntryContent> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_content_not_found(entry_id))?;
     let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
-    if row.deleted {
-        return Err(entry_content_not_found(entry_id).into());
-    }
 
     let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
@@ -1700,7 +1690,7 @@ pub async fn delete_entry(
 }
 
 pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
@@ -1736,7 +1726,7 @@ pub async fn get_entry_revision(
     entry_id: &str,
     revision_id: &str,
 ) -> Result<Value> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
@@ -1769,7 +1759,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     integrity: &I,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Value> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     if let Some(scopes) = relation_scopes {
@@ -1808,6 +1798,8 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     row.updated_at = timestamp;
     row.fields = revision.fields.clone();
     row.extra_attributes = revision.extra_attributes.clone();
+    row.deleted = false;
+    row.deleted_at = None;
     row.integrity = IntegrityPayload {
         checksum: checksum.clone(),
         signature: signature.clone(),

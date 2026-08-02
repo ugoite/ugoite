@@ -63,7 +63,7 @@ use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use tokio::sync::{Notify, Semaphore};
@@ -1388,6 +1388,37 @@ impl IcebergWorkspace {
         Ok(revisions)
     }
 
+    /// Checks external IDs against every Form's latest head, including
+    /// tombstones. This is a point query per Form and request ID, rather than
+    /// a caller-scoped current-state scan. The commit coordinator calls it on
+    /// the exact publication attempt so a retry rechecks the winning head.
+    pub(crate) async fn existing_entry_external_ids(
+        &self,
+        external_ids: &[String],
+    ) -> Result<HashSet<String>> {
+        if external_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+        let entry_ids = external_ids
+            .iter()
+            .map(|external_id| {
+                Uuid::parse_str(external_id)
+                    .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, external_id.as_bytes()))
+                    .into()
+            })
+            .collect::<Vec<ugoite_domain::id::EntryId>>();
+        let mut existing = HashSet::new();
+        for form in self.list_forms().await? {
+            existing.extend(
+                self.read_latest_revisions_for_entries(form.id, &entry_ids)
+                    .await?
+                    .into_iter()
+                    .map(|revision| revision.entry.external_id),
+            );
+        }
+        Ok(existing)
+    }
+
     async fn latest_revision_plan(
         &self,
         table: &iceberg::table::Table,
@@ -1686,6 +1717,22 @@ impl SpaceCommitCoordinator {
                 });
             }
             let attempt = self.attempt_workspace().await?;
+            let new_entry_ids = revisions
+                .iter()
+                .filter(|revision| {
+                    revision.entry_version == 1
+                        && revision.expected_version.is_none()
+                        && revision.parent_revision_id.is_none()
+                })
+                .map(|revision| revision.entry.external_id.clone())
+                .collect::<Vec<_>>();
+            let existing_entry_ids = attempt.existing_entry_external_ids(&new_entry_ids).await?;
+            if new_entry_ids
+                .iter()
+                .any(|entry_id| existing_entry_ids.contains(entry_id))
+            {
+                return Err(anyhow!("Entry ID unavailable"));
+            }
             attempt
                 .validate_asset_references_not_deleted(form_id, &revisions)
                 .await?;

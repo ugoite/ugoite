@@ -223,6 +223,105 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn deleted_entry_history_revision_and_restore_remain_reachable() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "deleted-entry-history", "/tmp").await?;
+    let ws_path = "spaces/deleted-entry-history";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "deleted-entry",
+        "---\nform: Entry\n---\n# Deleted entry\n\n## Body\nBefore delete",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let original = entry::get_entry_content(&op, ws_path, "deleted-entry").await?;
+    entry::delete_entry(&op, ws_path, "deleted-entry", false).await?;
+
+    let history = entry::get_entry_history(&op, ws_path, "deleted-entry").await?;
+    assert_eq!(history["revisions"].as_array().map(Vec::len), Some(2));
+    let revision =
+        entry::get_entry_revision(&op, ws_path, "deleted-entry", &original.revision_id).await?;
+    assert_eq!(revision["revision_id"], original.revision_id);
+    let historical_content =
+        entry::get_entry_revision_content(&op, ws_path, "deleted-entry", &original.revision_id)
+            .await?;
+    assert!(historical_content.markdown.contains("Before delete"));
+
+    entry::restore_entry(
+        &op,
+        ws_path,
+        "deleted-entry",
+        &original.revision_id,
+        "author",
+        &integrity,
+    )
+    .await?;
+    let restored = entry::get_entry_content(&op, ws_path, "deleted-entry").await?;
+    assert!(restored.markdown.contains("Before delete"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn entry_ids_are_global_across_forms_and_tombstones() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "global-entry-ids", "/tmp").await?;
+    let ws_path = "spaces/global-entry-ids";
+    for form_name in ["First", "Second"] {
+        form::upsert_form(
+            &op,
+            ws_path,
+            &serde_json::json!({"name": form_name, "fields": {"Body": {"type": "markdown"}}}),
+        )
+        .await?;
+    }
+    let integrity = FakeIntegrityProvider;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "global-id",
+        "---\nform: First\n---\n# First\n\n## Body\nOne",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let scopes = std::collections::BTreeMap::from([(
+        "second".to_string(),
+        ugoite_core::query::EntryScope::AllCurrent,
+    )]);
+    let unreadable_duplicate = entry::create_entry_with_scopes(
+        &op,
+        ws_path,
+        "global-id",
+        "---\nform: Second\n---\n# Second\n\n## Body\nTwo",
+        "author",
+        &integrity,
+        Some(&scopes),
+    )
+    .await
+    .expect_err("global ID availability must not be caller-scoped");
+    assert!(unreadable_duplicate.to_string().contains("ID unavailable"));
+
+    entry::delete_entry(&op, ws_path, "global-id", false).await?;
+    let tombstone_duplicate = entry::create_entry(
+        &op,
+        ws_path,
+        "global-id",
+        "---\nform: Second\n---\n# Second\n\n## Body\nTwo",
+        "author",
+        &integrity,
+    )
+    .await
+    .expect_err("tombstones must retain the global ID reservation");
+    assert!(tombstone_duplicate.to_string().contains("ID unavailable"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn entry_create_with_numeric_and_all_timestamp_fields_publishes_one_revision(
 ) -> anyhow::Result<()> {
     let op = setup_operator()?;

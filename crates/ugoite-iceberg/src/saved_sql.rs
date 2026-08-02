@@ -1,5 +1,6 @@
 use crate::entry;
 use crate::form;
+use crate::index;
 use crate::integrity::IntegrityProvider;
 use anyhow::{anyhow, Context, Result};
 use opendal::Operator;
@@ -173,8 +174,14 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
 
 pub async fn list_sql(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
     ensure_sql_form(op, ws_path).await?;
-    let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
-    let rows = entry::list_form_entry_rows(op, ws_path, SQL_FORM_NAME, &form_def).await?;
+    let rows = index::query_form_entry_rows_authorized(
+        op,
+        ws_path,
+        SQL_FORM_NAME,
+        None,
+        crate::MAX_NORMAL_READ_ROWS.saturating_add(1),
+    )
+    .await?;
     let mut entries = Vec::new();
     for row in rows {
         if row.deleted {
@@ -200,22 +207,18 @@ pub async fn find_sql_id_by_text(
     sql_text: &str,
 ) -> Result<Option<String>> {
     ensure_sql_form(op, ws_path).await?;
-    let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
-    let rows = entry::list_form_entry_rows(op, ws_path, SQL_FORM_NAME, &form_def).await?;
-    for row in rows {
-        if row.deleted {
-            continue;
-        }
-        let fields = row.fields.as_object();
-        let sql_value = fields
-            .and_then(|obj| obj.get("sql"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if sql_value == sql_text {
-            return Ok(Some(row.entry_id));
-        }
-    }
-    Ok(None)
+    let expected = Value::String(sql_text.to_owned());
+    Ok(index::query_form_entry_rows_authorized(
+        op,
+        ws_path,
+        SQL_FORM_NAME,
+        Some(("sql", &expected)),
+        1,
+    )
+    .await?
+    .into_iter()
+    .next()
+    .map(|row| row.entry_id))
 }
 
 pub async fn create_sql<I: IntegrityProvider>(
@@ -226,10 +229,6 @@ pub async fn create_sql<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
-    if entry::find_entry_form(op, ws_path, sql_id).await?.is_some() {
-        return Err(anyhow!("SQL entry already exists: {}", sql_id));
-    }
-
     let form_def = ensure_sql_form(op, ws_path).await?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
     validate_sql_payload(op, ws_path, &payload.sql, &variables).await?;

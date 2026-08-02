@@ -1,5 +1,6 @@
 mod common;
 use common::setup_operator;
+use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::{entry, form, index, space};
 
 #[tokio::test]
@@ -342,5 +343,46 @@ async fn test_index_req_idx_001_get_space_stats() -> anyhow::Result<()> {
     let stats = index::get_space_stats(&op, ws_path).await?;
     assert!(stats.is_object());
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn space_stats_count_non_null_typed_values_without_partial_results() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "stats-null-field", "/tmp").await?;
+    let ws_path = "spaces/stats-null-field";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Note",
+            "fields": {"Body": {"type": "markdown"}},
+        }),
+    )
+    .await?;
+    let integrity = FakeIntegrityProvider;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "with-body",
+        "---\nform: Note\n---\n# With body\n\n## Body\nvalue",
+        "author",
+        &integrity,
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "without-body",
+        "---\nform: Note\n---\n# Without body",
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let stats = index::get_space_stats(&op, ws_path).await?;
+    assert_eq!(stats["entry_count"], 2);
+    assert_eq!(stats["form_stats"]["Note"]["count"], 2);
+    assert_eq!(stats["form_stats"]["Note"]["fields"]["Body"], 1);
     Ok(())
 }

@@ -307,6 +307,13 @@ impl IcebergWorkspace {
                     None,
                 ),
             };
+            // A live table may have an evolved current schema whose latest
+            // snapshot still uses the previous schema (for example, a field
+            // added before the next Entry append). Pin live reads to that
+            // snapshot so Iceberg can materialize newly-added fields as null
+            // from their stable field IDs. Checkpoint reads already carry the
+            // same explicit coordinate.
+            let snapshot_id = snapshot_id.or_else(|| table.metadata().current_snapshot_id());
             let authorized_scan = AuthorizedScan {
                 table_uuid: table.metadata().uuid().to_string(),
                 snapshot_id,
@@ -570,7 +577,7 @@ impl AuthorizedQueryContext {
         aggregate_expr: Vec<Expr>,
         limit: usize,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
-        if limit == 0 || limit > self.limits.max_rows {
+        if limit == 0 || limit > self.limits.max_rows.saturating_add(1) {
             return Err(AuthorizedQueryError::resource_limit(anyhow!(
                 "authorized aggregate plan exceeds its configured row limit"
             ))
