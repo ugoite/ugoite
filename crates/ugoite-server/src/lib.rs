@@ -3676,6 +3676,7 @@ async fn list_entries(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
+    Query(query): Query<EntryListQuery>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
@@ -3683,10 +3684,22 @@ async fn list_entries(
     Ok(Json(Value::Array(
         state
             .service
-            .list_entries_authorized_for_principals(&space_id, &principals)
+            .list_entries_authorized_for_principals(
+                &space_id,
+                &principals,
+                query
+                    .limit
+                    .unwrap_or(100)
+                    .min(ugoite_iceberg::MAX_NORMAL_READ_ROWS),
+            )
             .await
             .map_err(ApiError::from_core)?,
     )))
+}
+
+#[derive(Deserialize)]
+struct EntryListQuery {
+    limit: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -4048,6 +4061,7 @@ async fn upsert_form(
 #[derive(Deserialize)]
 struct SearchQuery {
     q: String,
+    limit: Option<usize>,
 }
 
 async fn search_entries(
@@ -4063,7 +4077,15 @@ async fn search_entries(
         serde_json::to_value(
             state
                 .service
-                .search_entries_authorized_for_principals(&space_id, &principals, &query.q)
+                .search_entries_authorized_for_principals(
+                    &space_id,
+                    &principals,
+                    &query.q,
+                    query
+                        .limit
+                        .unwrap_or(100)
+                        .min(ugoite_iceberg::MAX_NORMAL_READ_ROWS),
+                )
                 .await
                 .map_err(ApiError::from_core)?,
         )
@@ -4367,7 +4389,11 @@ async fn mcp_entries(
     let principals = authorization_principal_ids(&identity, principal_id);
     let entries: Vec<Value> = state
         .service
-        .list_entries_authorized_for_principals(&space_id, &principals)
+        .list_entries_authorized_for_principals(
+            &space_id,
+            &principals,
+            ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+        )
         .await
         .map_err(ApiError::from_core)?
         .into_iter()

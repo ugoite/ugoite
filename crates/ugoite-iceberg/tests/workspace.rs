@@ -543,6 +543,13 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
     .await?;
     let form = form();
     create_form(&workspace, &form).await?;
+    let history_error = workspace
+        .read_revision_view_with_scope(form.id, EntryScope::AllCurrent, RevisionView::All)
+        .await
+        .expect_err("scoped reads must never ignore their Entry scope for history");
+    assert!(history_error
+        .to_string()
+        .contains("scoped revision views do not expose full history"));
 
     let first = EntryRevision {
         form_id: form.id,

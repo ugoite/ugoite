@@ -49,6 +49,7 @@ pub enum EntryScope {
 pub enum QuerySystemColumn {
     ExternalId,
     Title,
+    Tags,
     CreatedAt,
     UpdatedAt,
     EntryId,
@@ -65,6 +66,7 @@ impl QuerySystemColumn {
             // query context fail at runtime.
             Self::ExternalId => "_ugoite_id",
             Self::Title => "_ugoite_title",
+            Self::Tags => "_ugoite_tags",
             Self::CreatedAt => "_ugoite_created_at",
             Self::UpdatedAt => "_ugoite_updated_at",
             Self::EntryId => "_ugoite_entry_id",

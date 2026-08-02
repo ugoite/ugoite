@@ -1303,15 +1303,41 @@ async fn prepare_entry<I: IntegrityProvider>(
 }
 
 pub async fn list_entries(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
-    list_entries_from_rows(list_entry_rows(op, ws_path).await?)
+    let relation_scopes = list_form_names(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect::<BTreeMap<_, _>>();
+    list_entries_with_scopes(op, ws_path, &relation_scopes, crate::MAX_NORMAL_READ_ROWS).await
 }
 
 pub async fn list_entries_with_scopes(
     op: &Operator,
     ws_path: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
+    limit: usize,
 ) -> Result<Vec<Value>> {
-    list_entries_from_rows(list_entry_rows_authorized(op, ws_path, relation_scopes).await?)
+    let candidates =
+        index::query_entry_candidates_authorized(op, ws_path, relation_scopes, None, None, limit)
+            .await?;
+    let mut rows = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let Some(scope) = relation_scopes.get(&candidate.form_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        rows.push((
+            candidate.form_name.clone(),
+            read_entry_row_authorized(
+                op,
+                ws_path,
+                &candidate.form_name,
+                &candidate.entry_id,
+                scope,
+            )
+            .await?,
+        ));
+    }
+    list_entries_from_rows(rows)
 }
 
 fn list_entries_from_rows(rows: Vec<(String, EntryRow)>) -> Result<Vec<Value>> {
@@ -1341,41 +1367,12 @@ pub async fn list_entry_summaries(
     query: Option<&str>,
     limit: usize,
 ) -> Result<Vec<EntrySummary>> {
-    let rows = list_entry_rows(op, ws_path).await?;
-    let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
-    let normalized_query = query
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_lowercase);
-    let mut entries = Vec::new();
-    for (form_name, row) in rows {
-        if row.deleted {
-            continue;
-        }
-        if let Some(expected_form) = normalized_form {
-            if form_name != expected_form {
-                continue;
-            }
-        }
-        if let Some(expected_query) = normalized_query.as_deref() {
-            let search_text = format!("{}\n{}", row.title, row.entry_id).to_lowercase();
-            if !search_text.contains(expected_query) {
-                continue;
-            }
-        }
-        entries.push(EntrySummary {
-            id: row.entry_id,
-            title: row.title,
-            form: form_name,
-        });
-    }
-    entries.sort_by(|left, right| {
-        left.title
-            .cmp(&right.title)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    entries.truncate(limit);
-    Ok(entries)
+    let relation_scopes = list_form_names(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect::<BTreeMap<_, _>>();
+    list_entry_summaries_with_scopes(op, ws_path, form_filter, query, limit, &relation_scopes).await
 }
 
 pub async fn list_entry_summaries_with_scopes(
@@ -1386,56 +1383,23 @@ pub async fn list_entry_summaries_with_scopes(
     limit: usize,
     relation_scopes: &BTreeMap<String, EntryScope>,
 ) -> Result<Vec<EntrySummary>> {
-    let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
-    let normalized_query = query
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_lowercase);
-    let mut entries = list_entry_rows_authorized(op, ws_path, relation_scopes)
-        .await?
+    let candidates = index::query_entry_candidates_authorized(
+        op,
+        ws_path,
+        relation_scopes,
+        form_filter,
+        query,
+        limit,
+    )
+    .await?;
+    Ok(candidates
         .into_iter()
-        .filter(|(form_name, row)| {
-            !row.deleted
-                && normalized_form.is_none_or(|expected| form_name == expected)
-                && normalized_query
-                    .as_deref()
-                    .is_none_or(|expected| row_contains_query(row, expected))
+        .map(|candidate| EntrySummary {
+            id: candidate.entry_id,
+            title: candidate.title,
+            form: candidate.form_name,
         })
-        .map(|(form_name, row)| EntrySummary {
-            id: row.entry_id,
-            title: row.title,
-            form: form_name,
-        })
-        .collect::<Vec<_>>();
-    entries.sort_by(|left, right| {
-        left.title
-            .cmp(&right.title)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    entries.truncate(limit);
-    Ok(entries)
-}
-
-pub(crate) fn row_contains_query(row: &EntryRow, query: &str) -> bool {
-    row.title.to_lowercase().contains(query)
-        || row.entry_id.to_lowercase().contains(query)
-        || value_contains_query(&row.fields, query)
-        || value_contains_query(&row.extra_attributes, query)
-}
-
-fn value_contains_query(value: &Value, query: &str) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => value.to_string().contains(query),
-        Value::Number(value) => value.to_string().contains(query),
-        Value::String(value) => value.to_lowercase().contains(query),
-        Value::Array(values) => values
-            .iter()
-            .any(|value| value_contains_query(value, query)),
-        Value::Object(values) => values.iter().any(|(key, value)| {
-            key.to_lowercase().contains(query) || value_contains_query(value, query)
-        }),
-    }
+        .collect())
 }
 
 pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {

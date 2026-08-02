@@ -5,51 +5,62 @@ use ugoite_core::query::EntryScope;
 use crate::entry;
 pub use ugoite_domain::search::KeywordSearchResult;
 
-/// Hybrid keyword search using index and content fallback.
+/// Keyword search over the bounded, authorized current-state DataFusion
+/// candidate plan. The final point reads decode only the selected rows.
 pub async fn search_entries(
     op: &Operator,
     ws_path: &str,
     query: &str,
+    limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
-    let query = query.to_lowercase();
-    let rows = entry::list_entry_rows(op, ws_path).await?;
-    let mut results = Vec::new();
-    for (_form_name, row) in rows {
-        if row.deleted {
-            continue;
-        }
-        if entry::row_contains_query(&row, &query) {
-            results.push(KeywordSearchResult {
-                id: row.entry_id,
-                title: row.title,
-                form: row.form,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-            });
-        }
-    }
-    Ok(results)
+    let relation_scopes = entry::list_form_names(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect();
+    search_entries_with_scopes(op, ws_path, query, &relation_scopes, limit).await
 }
 
-/// Searches the current, already-authorized typed Entry rows. The DataFusion
-/// latest-state plan and Entry scope run before this small bounded text
-/// predicate; search never serializes a revision or uses a history fallback.
+/// Searches typed/system columns in one globally ordered DataFusion candidate
+/// plan. Search intentionally excludes `extra_attributes` and opaque asset or
+/// object-list structs; the searchable typed column set is defined by the
+/// Form field type in the plan builder.
 pub async fn search_entries_with_scopes(
     op: &Operator,
     ws_path: &str,
     query: &str,
     relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
+    limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
-    let query = query.trim().to_lowercase();
+    let candidates = crate::index::query_entry_candidates_authorized(
+        op,
+        ws_path,
+        relation_scopes,
+        None,
+        Some(query),
+        limit,
+    )
+    .await?;
     let mut results = Vec::new();
-    for (form_name, row) in entry::list_entry_rows_authorized(op, ws_path, relation_scopes).await? {
-        if row.deleted || !entry::row_contains_query(&row, &query) {
+    for candidate in candidates {
+        let Some(scope) = relation_scopes.get(&candidate.form_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        let row = entry::read_entry_row_authorized(
+            op,
+            ws_path,
+            &candidate.form_name,
+            &candidate.entry_id,
+            scope,
+        )
+        .await?;
+        if row.deleted {
             continue;
         }
         results.push(KeywordSearchResult {
             id: row.entry_id,
             title: row.title,
-            form: form_name,
+            form: candidate.form_name,
             created_at: row.created_at,
             updated_at: row.updated_at,
         });

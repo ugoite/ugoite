@@ -32,7 +32,7 @@ pub use space_catalog::PublicationContext;
 use space_catalog::SpaceCatalog;
 pub use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use arrow_array::builder::{
     BooleanBuilder, Date32Builder, FixedSizeBinaryBuilder, Float32Builder, Float64Builder,
     Int32Builder, Int64Builder, LargeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder,
@@ -1276,6 +1276,13 @@ impl IcebergWorkspace {
         form_id: FormId,
         view: RevisionView,
     ) -> Result<Vec<EntryRevision>> {
+        if view == RevisionView::All {
+            let form = self.load_form(form_id).await?;
+            let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+            return self
+                .read_revision_view_from_table(&form, table, EntryScope::AllCurrent, view, None)
+                .await;
+        }
         self.read_revision_view_with_scope(form_id, EntryScope::AllCurrent, view)
             .await
     }
@@ -1289,6 +1296,9 @@ impl IcebergWorkspace {
         entry_scope: EntryScope,
         view: RevisionView,
     ) -> Result<Vec<EntryRevision>> {
+        if view == RevisionView::All {
+            bail!("scoped revision views do not expose full history");
+        }
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
         self.read_revision_view_from_table(&form, table, entry_scope, view, None)
@@ -1385,21 +1395,27 @@ impl IcebergWorkspace {
         snapshot_id: Option<i64>,
         view: RevisionView,
     ) -> Result<Vec<RecordBatch>> {
-        let context = SessionContext::new();
         let provider = if let Some(snapshot_id) = snapshot_id {
             IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
                 .await?
         } else {
             IcebergStaticTableProvider::try_new_from_table(table.clone()).await?
         };
-        context.register_table("revisions", Arc::new(provider))?;
-        let revisions = context.table("revisions").await?;
-        Ok(
-            crate::query_context::latest_revision_dataframe(revisions, entry_scope, view)?
-                .select_columns(&["entry_id", "revision_id", "entry_version"])?
-                .collect()
-                .await?,
+        crate::query_context::execute_bounded_latest_revision_plan(
+            Arc::new(provider),
+            table.metadata().uuid().to_string(),
+            snapshot_id,
+            entry_scope,
+            view,
+            QueryLimits {
+                max_memory_bytes: 64 * 1024 * 1024,
+                max_rows: MAX_NORMAL_READ_ROWS,
+                timeout: Duration::from_secs(30),
+                max_concurrency: 1,
+                allowed_functions: BTreeSet::new(),
+            },
         )
+        .await
     }
 
     async fn read_all_revision_batches(

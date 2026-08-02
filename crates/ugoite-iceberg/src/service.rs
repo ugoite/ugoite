@@ -531,7 +531,13 @@ impl UgoiteService {
         query: &str,
     ) -> Result<Vec<search::KeywordSearchResult>> {
         validate_storage_id(validate_space_id(space_id))?;
-        search::search_entries(&self.operator, &self.workspace_path(space_id), query).await
+        search::search_entries(
+            &self.operator,
+            &self.workspace_path(space_id),
+            query,
+            crate::MAX_NORMAL_READ_ROWS,
+        )
+        .await
     }
 
     pub async fn query_entries(&self, space_id: &str, filter: &Value) -> Result<Vec<Value>> {
@@ -665,13 +671,19 @@ impl UgoiteService {
         &self,
         space_id: &str,
         principal_ids: &[Uuid],
+        limit: usize,
     ) -> Result<Vec<Value>> {
         validate_storage_id(validate_space_id(space_id))?;
         let scopes = self
             .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
             .await?;
-        entry::list_entries_with_scopes(&self.operator, &self.workspace_path(space_id), &scopes)
-            .await
+        entry::list_entries_with_scopes(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &scopes,
+            limit,
+        )
+        .await
     }
 
     pub async fn list_entries_authorized(
@@ -683,8 +695,13 @@ impl UgoiteService {
         let scopes = self
             .authorized_form_entry_scopes(space_id, principal_id)
             .await?;
-        entry::list_entries_with_scopes(&self.operator, &self.workspace_path(space_id), &scopes)
-            .await
+        entry::list_entries_with_scopes(
+            &self.operator,
+            &self.workspace_path(space_id),
+            &scopes,
+            crate::MAX_NORMAL_READ_ROWS,
+        )
+        .await
     }
 
     pub async fn filter_json_resources_authorized(
@@ -748,6 +765,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
         query: &str,
+        limit: usize,
     ) -> Result<Vec<search::KeywordSearchResult>> {
         let scopes = self
             .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
@@ -757,6 +775,7 @@ impl UgoiteService {
             &self.workspace_path(space_id),
             query,
             &scopes,
+            limit,
         )
         .await
     }
@@ -922,6 +941,7 @@ impl UgoiteService {
             &self.workspace_path(space_id),
             query,
             &scopes,
+            crate::MAX_NORMAL_READ_ROWS,
         )
         .await
     }

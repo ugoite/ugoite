@@ -25,9 +25,14 @@ async fn create_test_entry(
         "fields": {"Body": {"type": "markdown"}},
     });
     form::upsert_form(op, ws_path, &form_def).await?;
+    let tags = if entry_id == "entry1" {
+        "tags: [release]"
+    } else {
+        ""
+    };
     let markdown = format!(
-        "---\nform: Entry\n---\n# {}\n\n## Body\n{}",
-        entry_id, content
+        "---\nform: Entry\n{}\n---\n# {}\n\n## Body\n{}",
+        tags, entry_id, content
     );
     entry::create_entry(op, ws_path, entry_id, &markdown, "author", &MockIntegrity).await?;
     Ok(())
@@ -48,7 +53,13 @@ async fn test_search_req_srch_001_keyword_search() -> anyhow::Result<()> {
     create_test_entry(&op, &ws_path, "entry3", "Another project update").await?;
 
     // Search for "project"
-    let results = search::search_entries(&op, &ws_path, "project").await?;
+    let results = search::search_entries(
+        &op,
+        &ws_path,
+        "project",
+        ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+    )
+    .await?;
     assert_eq!(results.len(), 2);
 
     // Check results contain expected entries
@@ -59,6 +70,24 @@ async fn test_search_req_srch_001_keyword_search() -> anyhow::Result<()> {
     let first = results.iter().find(|result| result.id == "entry1").unwrap();
     assert_eq!(first.title, "entry1");
     assert_eq!(first.form, "Entry");
+
+    let tag_results = search::search_entries(
+        &op,
+        &ws_path,
+        "release",
+        ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+    )
+    .await?;
+    assert_eq!(
+        tag_results
+            .iter()
+            .map(|result| &result.id)
+            .collect::<Vec<_>>(),
+        [&"entry1".to_string()]
+    );
+
+    let limited = search::search_entries(&op, &ws_path, "project", 1).await?;
+    assert_eq!(limited.len(), 1);
 
     Ok(())
 }
@@ -77,7 +106,13 @@ async fn test_search_req_srch_002_fallback_scan() -> anyhow::Result<()> {
     create_test_entry(&op, &ws_path, "entry3", "Unicorns and Dragons").await?;
 
     // Search for "Unicorns" (case-insensitive ideally)
-    let results = search::search_entries(&op, &ws_path, "unicorns").await?;
+    let results = search::search_entries(
+        &op,
+        &ws_path,
+        "unicorns",
+        ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+    )
+    .await?;
 
     // Expect entry1 and entry3
     assert_eq!(results.len(), 2);

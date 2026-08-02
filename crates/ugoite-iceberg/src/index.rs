@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use arrow_json::writer::ArrayWriter;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use datafusion::prelude::{array_has, col, lit, Expr};
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -256,6 +257,197 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
     query_index_with_form_scopes(op, ws_path, query, &scopes).await
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct EntryCandidate {
+    pub form_name: String,
+    pub entry_id: String,
+    pub title: String,
+}
+
+/// Selects only the bounded, globally ordered current Entry candidates. The
+/// final payload is intentionally fetched by point lookup after this plan so
+/// a large Space never materializes every Form into Rust just to serve a
+/// small list, option, or search response.
+pub(crate) async fn query_entry_candidates_authorized(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    form_filter: Option<&str>,
+    keyword: Option<&str>,
+    limit: usize,
+) -> Result<Vec<EntryCandidate>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    if limit > crate::MAX_NORMAL_READ_ROWS {
+        return Err(anyhow!(
+            "normal Entry reads are limited to {} rows",
+            crate::MAX_NORMAL_READ_ROWS
+        ));
+    }
+    let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
+    let normalized_keyword = keyword
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
+    let forms = load_forms(op, ws_path).await?;
+    let mut branches = Vec::new();
+    for (form_name, form) in forms {
+        if normalized_form.is_some_and(|expected| expected != form_name) {
+            continue;
+        }
+        let relation = form
+            .get("sql_relation")
+            .and_then(Value::as_str)
+            .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+        if !relation_scopes.contains_key(&form_name.to_ascii_lowercase())
+            && !relation_scopes.contains_key(&relation.to_ascii_lowercase())
+        {
+            continue;
+        }
+        let keyword_predicate = normalized_keyword
+            .as_deref()
+            .map(|query| searchable_keyword_predicate(&form, &form_name, query))
+            .transpose()?;
+        let where_clause = keyword_predicate
+            .map(|predicate| format!(" WHERE {predicate}"))
+            .unwrap_or_default();
+        branches.push(format!(
+            "SELECT \"_ugoite_id\", \"_ugoite_title\", {} AS \"_ugoite_form\" FROM {}{}",
+            sql_string_literal(&form_name),
+            quote_identifier(relation),
+            where_clause,
+        ));
+    }
+    if branches.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\" ORDER BY \"_ugoite_title\", \"_ugoite_id\" LIMIT {}",
+        branches.join(" UNION ALL "),
+        limit.saturating_add(1),
+    );
+    let context = datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        None,
+        BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
+        crate::MAX_NORMAL_READ_ROWS,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let values = record_batches_to_values(&context.execute(&sql).await.map_err(map_sql_error)?)?;
+    let mut candidates = values
+        .into_iter()
+        .map(|value| {
+            Ok(EntryCandidate {
+                form_name: value
+                    .get("_ugoite_form")
+                    .and_then(Value::as_str)
+                    .context("candidate plan is missing Form name")?
+                    .to_string(),
+                entry_id: value
+                    .get("_ugoite_id")
+                    .and_then(Value::as_str)
+                    .context("candidate plan is missing Entry ID")?
+                    .to_string(),
+                title: value
+                    .get("_ugoite_title")
+                    .and_then(Value::as_str)
+                    .context("candidate plan is missing Entry title")?
+                    .to_string(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    candidates.truncate(limit);
+    Ok(candidates)
+}
+
+fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> Result<String> {
+    let pattern = sql_like_literal(query);
+    let mut expressions = vec![
+        format!(
+            "lower(\"_ugoite_id\") LIKE {pattern} ESCAPE {}",
+            sql_string_literal("\\")
+        ),
+        format!(
+            "lower(\"_ugoite_title\") LIKE {pattern} ESCAPE {}",
+            sql_string_literal("\\")
+        ),
+        format!(
+            "lower(array_to_string(\"_ugoite_tags\", ' ')) LIKE {pattern} ESCAPE {}",
+            sql_string_literal("\\")
+        ),
+        format!(
+            "lower({}) LIKE {pattern} ESCAPE {}",
+            sql_string_literal(form_name),
+            sql_string_literal("\\")
+        ),
+    ];
+    if let Some(fields) = form.get("fields").and_then(Value::as_object) {
+        for field in fields.values() {
+            let Some(column) = field.get("sql_column").and_then(Value::as_str) else {
+                continue;
+            };
+            let field_type = field
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("string");
+            let expression = match field_type {
+                "string" | "markdown" | "sql" | "boolean" | "integer" | "long" | "float"
+                | "double" | "date" | "time" | "timestamp" | "timestamp_tz" | "timestamp_ns"
+                | "timestamp_tz_ns" | "uuid" | "row_reference" => format!(
+                    "lower(CAST({} AS VARCHAR)) LIKE {pattern} ESCAPE {}",
+                    quote_identifier(column),
+                    sql_string_literal("\\")
+                ),
+                "list" => {
+                    let item_type = field
+                        .get("items")
+                        .and_then(Value::as_object)
+                        .and_then(|items| items.get("type"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("string");
+                    if matches!(
+                        item_type,
+                        "string"
+                            | "markdown"
+                            | "sql"
+                            | "boolean"
+                            | "integer"
+                            | "long"
+                            | "float"
+                            | "double"
+                            | "date"
+                            | "time"
+                            | "timestamp"
+                            | "timestamp_tz"
+                            | "timestamp_ns"
+                            | "timestamp_tz_ns"
+                            | "uuid"
+                            | "row_reference"
+                    ) {
+                        format!(
+                            "lower(array_to_string({}, ' ')) LIKE {pattern} ESCAPE {}",
+                            quote_identifier(column),
+                            sql_string_literal("\\")
+                        )
+                    } else {
+                        continue;
+                    }
+                }
+                "binary" | "object_list" | "asset_reference" => continue,
+                _ => continue,
+            };
+            expressions.push(expression);
+        }
+    }
+    Ok(expressions.join(" OR "))
+}
+
 pub async fn execute_sql_query(
     op: &Operator,
     ws_path: &str,
@@ -308,6 +500,18 @@ fn sql_identifier(value: &str) -> String {
 
 fn sql_string_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+
+fn sql_like_literal(value: &str) -> String {
+    let mut pattern = String::from("%");
+    for character in value.chars() {
+        if matches!(character, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    sql_string_literal(&pattern)
 }
 
 pub async fn execute_sql_query_page(
@@ -936,6 +1140,30 @@ async fn datafusion_sql_context(
     checkpoint: Option<SpaceCheckpoint>,
     allowed_functions: BTreeSet<String>,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
+    datafusion_sql_context_with_limits(
+        op,
+        ws_path,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        allowed_functions,
+        SQL_SESSION_MAX_ROWS,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn datafusion_sql_context_with_limits(
+    op: &Operator,
+    ws_path: &str,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    allowed_functions: BTreeSet<String>,
+    max_rows: usize,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     let forms = workspace.list_forms().await?;
     let mut policy_forms = BTreeMap::new();
@@ -967,6 +1195,7 @@ async fn datafusion_sql_context(
                 system_columns: [
                     QuerySystemColumn::ExternalId,
                     QuerySystemColumn::Title,
+                    QuerySystemColumn::Tags,
                     QuerySystemColumn::CreatedAt,
                     QuerySystemColumn::UpdatedAt,
                 ]
@@ -981,7 +1210,7 @@ async fn datafusion_sql_context(
             checkpoint,
             limits: QueryLimits {
                 max_memory_bytes: SQL_SESSION_MAX_MEMORY_BYTES,
-                max_rows: SQL_SESSION_MAX_ROWS,
+                max_rows,
                 timeout: SQL_SESSION_TIMEOUT,
                 max_concurrency: 1,
                 allowed_functions,
@@ -1521,31 +1750,52 @@ async fn collect_filtered_entries_with_form_scopes(
             .and_then(Value::as_str)
             .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
         let FilterPlan {
-            relation: from,
             predicates,
             struct_list_predicates,
-        } = filter_sql(form, filters, relation)?;
-        let where_clause = if predicates.is_empty() {
-            "TRUE".to_string()
-        } else {
-            predicates.join(" AND ")
-        };
-        let sql = format!(
-            "SELECT DISTINCT \"_ugoite_id\" FROM {from} WHERE {where_clause} LIMIT {}",
-            crate::MAX_NORMAL_READ_ROWS
-        );
-        let values = execute_datafusion_sql_with_functions(
+        } = filter_sql(form, filters)?;
+        let unnest_columns = struct_list_predicates
+            .iter()
+            .enumerate()
+            .map(|(index, (field, _))| (field.clone(), format!("__ugoite_unnested_item_{index}")))
+            .collect::<Vec<_>>();
+        let mut predicates = predicates;
+        for ((_, asset_id), (_, output_column)) in
+            struct_list_predicates.iter().zip(&unnest_columns)
+        {
+            predicates.push(
+                datafusion::functions::core::expr_fn::get_field(col(output_column), "asset_id")
+                    .eq(lit(asset_id)),
+            );
+        }
+        let remaining = crate::MAX_NORMAL_READ_ROWS
+            .saturating_sub(matched_by_form.values().map(BTreeSet::len).sum::<usize>());
+        let per_form_bound = remaining.max(1);
+        let context = datafusion_sql_context_with_limits(
             op,
             ws_path,
-            &sql,
             EntryScope::AllCurrent,
             None,
             Some(relation_scopes),
             None,
             BTreeSet::from(["array_has".to_string()]),
+            crate::MAX_NORMAL_READ_ROWS,
         )
-        .await?;
-        let mut ids = values
+        .await
+        .map_err(map_sql_error)?;
+        let batches = context
+            .execute_relation_plan(
+                relation,
+                &unnest_columns,
+                predicates,
+                vec![col("_ugoite_id").alias("_ugoite_id")],
+                Vec::new(),
+                true,
+                per_form_bound.saturating_add(1),
+            )
+            .await
+            .map_err(map_sql_error)?;
+        let values = record_batches_to_values(&batches)?;
+        let ids = values
             .into_iter()
             .filter_map(|value| {
                 value
@@ -1554,31 +1804,17 @@ async fn collect_filtered_entries_with_form_scopes(
                     .map(str::to_owned)
             })
             .collect::<BTreeSet<_>>();
-        if ids.len() > crate::MAX_NORMAL_READ_ROWS {
+        if remaining == 0 && !ids.is_empty() {
             return Err(anyhow!(
                 "normal Entry reads are limited to {} current rows",
                 crate::MAX_NORMAL_READ_ROWS
             ));
         }
-        if !struct_list_predicates.is_empty() && !ids.is_empty() {
-            let context = datafusion_sql_context(
-                op,
-                ws_path,
-                EntryScope::AllCurrent,
-                None,
-                Some(relation_scopes),
-                None,
-                BTreeSet::new(),
-            )
-            .await
-            .map_err(map_sql_error)?;
-            for (field, asset_id) in struct_list_predicates {
-                let matching = context
-                    .entry_ids_containing_struct_list_value(relation, &field, "asset_id", &asset_id)
-                    .await
-                    .map_err(map_sql_error)?;
-                ids.retain(|id| matching.contains(id));
-            }
+        if ids.len() > remaining {
+            return Err(anyhow!(
+                "normal Entry reads are limited to {} current rows",
+                crate::MAX_NORMAL_READ_ROWS
+            ));
         }
         if !ids.is_empty() {
             matched_by_form.insert(form_name.clone(), ids);
@@ -1603,12 +1839,11 @@ async fn collect_filtered_entries_with_form_scopes(
 }
 
 struct FilterPlan {
-    relation: String,
-    predicates: Vec<String>,
+    predicates: Vec<Expr>,
     struct_list_predicates: Vec<(String, String)>,
 }
 
-fn filter_sql(form: &Value, filters: &Map<String, Value>, relation: &str) -> Result<FilterPlan> {
+fn filter_sql(form: &Value, filters: &Map<String, Value>) -> Result<FilterPlan> {
     let mut predicates = Vec::new();
     let mut struct_list_predicates = Vec::new();
     for (key, expected) in filters {
@@ -1625,7 +1860,7 @@ fn filter_sql(form: &Value, filters: &Map<String, Value>, relation: &str) -> Res
                     .and_then(Value::as_object)
                     .and_then(|fields| fields.get(field_name))
                 else {
-                    predicates.push("FALSE".to_string());
+                    predicates.push(lit(false));
                     continue;
                 };
                 (
@@ -1646,13 +1881,14 @@ fn filter_sql(form: &Value, filters: &Map<String, Value>, relation: &str) -> Res
                 )
             }
         };
-        let column = quote_identifier(&column);
+        let column_expr = col(&column);
         let predicate = if field_type == "asset_reference" {
             let asset_id = expected
                 .get("asset_id")
                 .and_then(Value::as_str)
                 .context("asset_reference predicates require asset_id")?;
-            format!("{column}.asset_id = {}", sql_string_literal(asset_id))
+            datafusion::functions::core::expr_fn::get_field(column_expr, "asset_id")
+                .eq(lit(asset_id))
         } else if field_type == "list" {
             let value = expected.get("$contains").unwrap_or(expected);
             if list_item_type == Some("asset_reference") {
@@ -1660,31 +1896,26 @@ fn filter_sql(form: &Value, filters: &Map<String, Value>, relation: &str) -> Res
                     .get("asset_id")
                     .and_then(Value::as_str)
                     .context("asset_reference list predicates require asset_id")?;
-                struct_list_predicates.push((
-                    column.trim_matches('"').replace("\"\"", "\""),
-                    asset_id.to_string(),
-                ));
+                struct_list_predicates.push((column, asset_id.to_string()));
                 continue;
             } else {
-                format!(
-                    "array_has({column}, {})",
-                    sql_literal(value, list_item_type.unwrap_or("string"))?
+                array_has(
+                    column_expr,
+                    filter_literal(value, list_item_type.unwrap_or("string"))?,
                 )
             }
         } else {
-            scalar_predicate(&column, expected, field_type)?
+            scalar_predicate(column_expr, expected, field_type)?
         };
         predicates.push(predicate);
     }
-    let relation = quote_identifier(relation);
     Ok(FilterPlan {
-        relation,
         predicates,
         struct_list_predicates,
     })
 }
 
-fn scalar_predicate(column: &str, expected: &Value, field_type: &str) -> Result<String> {
+fn scalar_predicate(column: Expr, expected: &Value, field_type: &str) -> Result<Expr> {
     if let Some(value) = expected.get("$eq") {
         return scalar_predicate(column, value, field_type);
     }
@@ -1694,16 +1925,21 @@ fn scalar_predicate(column: &str, expected: &Value, field_type: &str) -> Result<
         ));
     }
     if expected.is_null() {
-        return Ok(format!("{column} IS NULL"));
+        return Ok(column.is_null());
     }
-    Ok(format!("{column} = {}", sql_literal(expected, field_type)?))
+    Ok(column.eq(filter_literal(expected, field_type)?))
 }
 
-fn sql_literal(value: &Value, field_type: &str) -> Result<String> {
+fn filter_literal(value: &Value, field_type: &str) -> Result<Expr> {
     match (field_type, value) {
-        (_, Value::String(value)) => Ok(sql_string_literal(value)),
-        (_, Value::Bool(value)) => Ok(value.to_string()),
-        (_, Value::Number(value)) => Ok(value.to_string()),
+        (_, Value::String(value)) => Ok(lit(value)),
+        (_, Value::Bool(value)) => Ok(lit(*value)),
+        (_, Value::Number(value)) if matches!(field_type, "integer" | "long") => Ok(lit(value
+            .as_i64()
+            .context("integer filter value must be an integer")?)),
+        (_, Value::Number(value)) => Ok(lit(value
+            .as_f64()
+            .context("numeric filter value must be a number")?)),
         _ => Err(anyhow!("filter value does not match the typed Form field")),
     }
 }
@@ -1734,8 +1970,28 @@ async fn collect_entries_with_form_scopes(
     relation_scopes: &BTreeMap<String, EntryScope>,
 ) -> Result<Map<String, Value>> {
     let mut entries = Map::new();
-    let rows = entry::list_entry_rows_authorized(op, ws_path, relation_scopes).await?;
-    for (form_name, row) in rows {
+    let candidates = query_entry_candidates_authorized(
+        op,
+        ws_path,
+        relation_scopes,
+        None,
+        None,
+        crate::MAX_NORMAL_READ_ROWS,
+    )
+    .await?;
+    for candidate in candidates {
+        let Some(scope) = relation_scopes.get(&candidate.form_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        let row = entry::read_entry_row_authorized(
+            op,
+            ws_path,
+            &candidate.form_name,
+            &candidate.entry_id,
+            scope,
+        )
+        .await?;
+        let form_name = candidate.form_name;
         if let Some(record) = build_record(ws_path, &form_name, &row, forms).await? {
             entries.insert(row.entry_id.clone(), record);
         }
