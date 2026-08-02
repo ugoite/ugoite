@@ -584,6 +584,9 @@ test.describe("Entries CRUD", () => {
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await reorderResponse).ok()).toBeTruthy();
 			console.log("asset-owned: remove microscope item");
+			await expect(page.getByText("All changes saved")).toBeVisible({
+				timeout: 15_000,
+			});
 
 			mediaEntryResponse = await request.get(
 				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
@@ -594,7 +597,14 @@ test.describe("Entries CRUD", () => {
 				mediaEntry.content.indexOf('"name":"microscope-b.txt"'),
 			).toBeLessThan(mediaEntry.content.indexOf('"name":"microscope-a.txt"'));
 
-			await orderedList.getByRole("button", { name: /^Remove microscope-b\.txt/ }).click();
+			const removeMicroscopeB = orderedList.getByRole("button", {
+				name: /^Remove microscope-b\.txt/,
+			});
+			await expect(removeMicroscopeB).toBeVisible({ timeout: 15_000 });
+			await expect(removeMicroscopeB).toBeEnabled({ timeout: 15_000 });
+			console.log("asset-owned: click remove microscope item");
+			await removeMicroscopeB.click({ timeout: 15_000 });
+			console.log("asset-owned: remove item clicked");
 			const removeResponse = page.waitForResponse(
 				(response) =>
 					response.request().method() === "PUT" &&
