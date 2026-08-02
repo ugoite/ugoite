@@ -386,3 +386,46 @@ async fn space_stats_count_non_null_typed_values_without_partial_results() -> an
     assert_eq!(stats["form_stats"]["Note"]["fields"]["Body"], 1);
     Ok(())
 }
+
+#[tokio::test]
+async fn space_stats_aggregates_tags_across_forms_in_datafusion() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "stats-cross-form-tags", "/tmp").await?;
+    let ws_path = "spaces/stats-cross-form-tags";
+    for form_name in ["Alpha", "Beta"] {
+        form::upsert_form(
+            &op,
+            ws_path,
+            &serde_json::json!({
+                "name": form_name,
+                "fields": {"Body": {"type": "markdown"}},
+            }),
+        )
+        .await?;
+    }
+    let integrity = FakeIntegrityProvider;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "alpha-1",
+        "---\nform: Alpha\ntags: [shared, alpha]\n---\n# Alpha\n\n## Body\nvalue",
+        "author",
+        &integrity,
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "beta-1",
+        "---\nform: Beta\ntags: [shared, beta]\n---\n# Beta\n\n## Body\nvalue",
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let stats = index::get_space_stats(&op, ws_path).await?;
+    assert_eq!(stats["tag_counts"]["shared"], 2);
+    assert_eq!(stats["tag_counts"]["alpha"], 1);
+    assert_eq!(stats["tag_counts"]["beta"], 1);
+    Ok(())
+}

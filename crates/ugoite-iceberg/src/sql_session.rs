@@ -9,6 +9,7 @@ use crate::index;
 use crate::saved_sql;
 use crate::SpaceCheckpoint;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::EntryScope;
 
 const SESSION_DIR: &str = "sql_sessions";
 const SESSION_LIFETIME: Duration = Duration::minutes(10);
@@ -328,7 +329,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
         &checkpoint,
     )
     .await?;
-    create_sql_session_authorized_for_principals_with_frozen_policy(
+    create_sql_session_authorized_for_principals_with_frozen_policy_unscoped(
         op,
         ws_path,
         sql,
@@ -345,8 +346,10 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
 /// Creates a session from a checkpoint and derived policy that the service
 /// already bound to the same authorization read. This is the production path;
 /// it never resolves Forms or Entry scope from the live head at later use.
+/// Operator-local/test-only constructor. Server-backed user operations must
+/// call the scope-bearing variant below.
 #[allow(clippy::too_many_arguments)]
-pub async fn create_sql_session_authorized_for_principals_with_frozen_policy(
+pub async fn create_sql_session_authorized_for_principals_with_frozen_policy_unscoped(
     op: &Operator,
     ws_path: &str,
     sql: &str,
@@ -356,6 +359,37 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy(
     bound_parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     checkpoint: SpaceCheckpoint,
     query_policy: index::SqlSessionQueryPolicy,
+) -> Result<Value> {
+    create_sql_session_authorized_for_principals_with_frozen_policy_and_saved_sql_scope(
+        op,
+        ws_path,
+        sql,
+        parameters,
+        parameter_types,
+        authorization,
+        bound_parameters,
+        checkpoint,
+        query_policy,
+        &EntryScope::AllCurrent,
+    )
+    .await
+}
+
+/// Creates a session with the Saved SQL ACL already reduced to a provider
+/// EntryScope. The scope is applied to the SQL Form before its payload is
+/// decoded or used to populate session metadata.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_sql_session_authorized_for_principals_with_frozen_policy_and_saved_sql_scope(
+    op: &Operator,
+    ws_path: &str,
+    sql: &str,
+    parameters: serde_json::Map<String, Value>,
+    parameter_types: BTreeMap<String, String>,
+    authorization: SqlSessionAuthorization<'_>,
+    bound_parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+    checkpoint: SpaceCheckpoint,
+    query_policy: index::SqlSessionQueryPolicy,
+    saved_sql_entry_scope: &EntryScope,
 ) -> Result<Value> {
     authorization.require_principals()?;
     index::validate_sql_session_query_at_checkpoint(
@@ -374,10 +408,13 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy(
     let session_dir = format!("{}/", session_path(ws_path, &session_id));
     op.create_dir(&session_dir).await?;
 
-    let sql_id = match saved_sql::find_sql_id_by_text(op, ws_path, sql).await? {
-        Some(existing_id) => existing_id,
-        None => Uuid::new_v4().to_string(),
-    };
+    let sql_id =
+        match saved_sql::find_sql_id_by_text(op, ws_path, sql, saved_sql_entry_scope.clone())
+            .await?
+        {
+            Some(existing_id) => existing_id,
+            None => Uuid::new_v4().to_string(),
+        };
     let now = Utc::now();
     let space_id = space_id_from_ws_path(ws_path);
     let authorized_principal_ids = authorization

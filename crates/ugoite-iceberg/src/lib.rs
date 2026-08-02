@@ -4,6 +4,8 @@
 //! callers inject a durable Catalog; every built-in test workspace uses the
 //! same OpenDAL-backed SpaceCatalog boundary as production.
 
+#![recursion_limit = "512"]
+
 mod migration;
 mod space_catalog;
 
@@ -44,10 +46,13 @@ use arrow_array::{
     Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
 use datafusion::execution::context::SessionContext;
 use iceberg::expr::Reference;
-use iceberg::spec::{DataFileFormat, Datum};
+use iceberg::spec::{
+    DataFileFormat, Datum, Operation, Snapshot, SnapshotReference, SnapshotRetention, Summary,
+    MAIN_BRANCH,
+};
 use iceberg::spec::{
     ListType, NestedField, PrimitiveType, Schema, SortOrder, StructType, Type, UnboundPartitionSpec,
 };
@@ -819,14 +824,64 @@ impl IcebergWorkspace {
                 .with_fields(fields)
                 .with_identifier_field_ids(current_schema.identifier_field_ids())
                 .build()?;
-            let metadata = table
+            let mut metadata_builder = table
                 .metadata()
                 .clone()
-                .into_builder(Some(table.metadata_location_result()?.to_string()))
+                .into_builder(Some(table.metadata_location_result()?.to_string()));
+            if schema.calc_min_compatible_format() == iceberg::spec::FormatVersion::V3 {
+                metadata_builder =
+                    metadata_builder.upgrade_format_version(iceberg::spec::FormatVersion::V3)?;
+            }
+            let mut metadata = metadata_builder
                 .add_current_schema(schema)?
                 .set_properties(form_properties(&evolved, self.write)?)?
                 .build()?
                 .metadata;
+            // Iceberg 0.10 resolves a data scan's field names from the
+            // snapshot schema. A metadata-only Form evolution must therefore
+            // publish a schema-only replacement snapshot so the scan uses the
+            // current stable field-ID schema without any Ugoite-side null
+            // reconstruction or source-column probing.
+            if let Some(current_snapshot) = metadata.current_snapshot().cloned() {
+                if current_snapshot.schema_id() != Some(metadata.current_schema_id()) {
+                    let snapshot_id = loop {
+                        let (left, right) = Uuid::new_v4().as_u64_pair();
+                        let candidate = (left ^ right) as i64;
+                        let candidate = candidate.abs();
+                        if candidate > 0 && metadata.snapshot_by_id(candidate).is_none() {
+                            break candidate;
+                        }
+                    };
+                    let snapshot = Snapshot::builder()
+                        .with_snapshot_id(snapshot_id)
+                        .with_parent_snapshot_id(Some(current_snapshot.snapshot_id()))
+                        .with_sequence_number(metadata.next_sequence_number())
+                        .with_timestamp_ms(Utc::now().timestamp_millis())
+                        .with_manifest_list(current_snapshot.manifest_list().to_string())
+                        .with_summary(Summary {
+                            operation: Operation::Replace,
+                            additional_properties: HashMap::new(),
+                        })
+                        .with_schema_id(metadata.current_schema_id())
+                        .build();
+                    metadata = metadata
+                        .into_builder(Some(table.metadata_location_result()?.to_string()))
+                        .add_snapshot(snapshot)?
+                        .set_ref(
+                            MAIN_BRANCH,
+                            SnapshotReference::new(
+                                snapshot_id,
+                                SnapshotRetention::Branch {
+                                    min_snapshots_to_keep: None,
+                                    max_snapshot_age_ms: None,
+                                    max_ref_age_ms: None,
+                                },
+                            ),
+                        )?
+                        .build()?
+                        .metadata;
+                }
+            }
             space_catalog
                 .replace_table_metadata(table.identifier(), metadata)
                 .await?;

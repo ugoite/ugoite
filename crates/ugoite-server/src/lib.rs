@@ -4122,22 +4122,10 @@ async fn list_sql(
     let principals = authorization_principal_ids(&identity, principal_id);
     let statements = state
         .service
-        .list_saved_sql(&space_id)
+        .list_saved_sql_authorized_for_principals(&space_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
-    Ok(Json(Value::Array(
-        state
-            .service
-            .filter_json_resources_authorized_for_principals(
-                &space_id,
-                &principals,
-                ResourceKind::SavedSql,
-                "id",
-                statements,
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    )))
+    Ok(Json(Value::Array(statements)))
 }
 
 async fn create_sql(

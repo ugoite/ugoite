@@ -16,6 +16,7 @@ use datafusion::logical_expr::{Expr, LogicalPlan, SortExpr};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
+use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -280,7 +281,7 @@ impl IcebergWorkspace {
                     form_policy.relation
                 );
             }
-            let (form, table, snapshot_id) = match &policy.checkpoint {
+            let (form, table, expected_snapshot_id) = match &policy.checkpoint {
                 Some(checkpoint) => {
                     let coordinate = checkpoint
                         .tables
@@ -307,27 +308,24 @@ impl IcebergWorkspace {
                     None,
                 ),
             };
-            // A live table may have an evolved current schema whose latest
-            // snapshot still uses the previous schema (for example, a field
-            // added before the next Entry append). Pin live reads to that
-            // snapshot so Iceberg can materialize newly-added fields as null
-            // from their stable field IDs. Checkpoint reads already carry the
-            // same explicit coordinate.
-            let snapshot_id = snapshot_id.or_else(|| table.metadata().current_snapshot_id());
+            let snapshot_id = table.metadata().current_snapshot_id();
+            if expected_snapshot_id.is_some_and(|expected| Some(expected) != snapshot_id) {
+                bail!("Iceberg table snapshot does not match the authorized coordinate");
+            }
             let authorized_scan = AuthorizedScan {
                 table_uuid: table.metadata().uuid().to_string(),
-                snapshot_id,
+                // `try_new_from_table` deliberately uses the table's current
+                // snapshot while leaving the provider scan coordinate as
+                // None. The Table object is static, so checkpoint metadata
+                // remains immutable even though the provider uses current
+                // schema projection.
+                snapshot_id: None,
             };
-            let provider: Arc<dyn TableProvider> = Arc::new(match snapshot_id {
-                Some(snapshot_id) => {
-                    IcebergStaticTableProvider::try_new_from_table_snapshot(table, snapshot_id)
-                        .await
-                        .context("open checkpoint-pinned Iceberg provider")?
-                }
-                None => IcebergStaticTableProvider::try_new_from_table(table)
+            let provider: Arc<dyn TableProvider> = Arc::new(
+                IcebergStaticTableProvider::try_new_from_table(table)
                     .await
                     .context("open static Iceberg provider")?,
-            });
+            );
 
             authorized_scans.insert(authorized_scan);
 
@@ -355,24 +353,12 @@ impl IcebergWorkspace {
                 .filter(col("ugoite_latest_head_count").gt(lit(1)))?
                 .limit(0, Some(1))?;
             duplicate_head_checks.push((provider, duplicate_head_check));
-            let source_columns = heads
-                .schema()
-                .fields()
-                .iter()
-                .map(|field| field.name().to_ascii_lowercase())
-                .collect::<BTreeSet<_>>();
             let view = heads
                 .filter(col("operation").not_eq(lit("delete")))?
                 .select(
                     visible
                         .iter()
-                        .map(|column| {
-                            if source_columns.contains(&column.source.to_ascii_lowercase()) {
-                                ident(&column.source).alias(&column.name)
-                            } else {
-                                lit(datafusion::scalar::ScalarValue::Null).alias(&column.name)
-                            }
-                        })
+                        .map(|column| ident(&column.source).alias(&column.name))
                         .collect::<Vec<_>>(),
                 )?
                 .into_view();
@@ -615,18 +601,65 @@ impl AuthorizedQueryContext {
         self.execute_frame(frame, limit).await
     }
 
-    pub(crate) async fn relation_columns(&self, relation: &str) -> Result<BTreeSet<String>> {
-        let frame = self
-            .context
-            .table(relation)
-            .await
-            .map_err(AuthorizedQueryError::execution_failed)?;
-        Ok(frame
-            .schema()
-            .fields()
-            .iter()
-            .map(|field| field.name().to_ascii_lowercase())
-            .collect())
+    /// Runs one aggregate over the union of authorized relation views. This
+    /// keeps cross-Form statistics inside DataFusion so the final Rust decode
+    /// sees only the globally bounded aggregate result.
+    pub(crate) async fn execute_union_relation_aggregate_plan(
+        &self,
+        relations: &[String],
+        unnest_columns: &[(String, String)],
+        group_expr: Vec<Expr>,
+        aggregate_expr: Vec<Expr>,
+        limit: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        if relations.is_empty() || limit == 0 || limit > self.limits.max_rows.saturating_add(1) {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "authorized aggregate plan exceeds its configured row limit"
+            ))
+            .into());
+        }
+        let mut unioned: Option<DataFrame> = None;
+        for relation in relations {
+            let mut frame = self
+                .context
+                .table(relation)
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            for (input_column, output_column) in unnest_columns {
+                frame = frame
+                    .unnest_columns_with_options(
+                        &[input_column.as_str()],
+                        datafusion::common::UnnestOptions::new().with_recursions(
+                            datafusion::common::RecursionUnnestOption {
+                                input_column: input_column.clone().into(),
+                                output_column: output_column.clone().into(),
+                                depth: 1,
+                            },
+                        ),
+                    )
+                    .map_err(AuthorizedQueryError::execution_failed)?;
+            }
+            let projection = unnest_columns
+                .iter()
+                .map(|(_, output_column)| col(output_column).alias(output_column))
+                .collect::<Vec<_>>();
+            frame = frame
+                .select(projection)
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            unioned = Some(match unioned {
+                None => frame,
+                Some(previous) => previous
+                    .union(frame)
+                    .map_err(AuthorizedQueryError::execution_failed)?,
+            });
+        }
+        let frame = unioned
+            .expect("non-empty relation list produces a unioned DataFrame")
+            .aggregate(group_expr, aggregate_expr)
+            .map_err(AuthorizedQueryError::execution_failed)?
+            .limit(0, Some(limit))
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        self.execute_frame(frame, limit).await
     }
 
     async fn execute_frame(
@@ -1087,7 +1120,9 @@ impl AuthorizedQueryContext {
 
 fn collect_scanned_provider_addresses(plan: &LogicalPlan, providers: &mut BTreeSet<usize>) {
     if let LogicalPlan::TableScan(scan) = plan {
-        if let Some(source) = scan.source.as_any().downcast_ref::<DefaultTableSource>() {
+        if let Some(source) =
+            (scan.source.as_ref() as &dyn Any).downcast_ref::<DefaultTableSource>()
+        {
             providers.insert(Arc::as_ptr(&source.table_provider) as *const () as usize);
         }
     }
@@ -1404,8 +1439,7 @@ fn validate_physical_plan(
     plan: &Arc<dyn ExecutionPlan>,
     authorized_scans: &BTreeSet<AuthorizedScan>,
 ) -> Result<()> {
-    if let Some(scan) = plan
-        .as_any()
+    if let Some(scan) = (plan.as_ref() as &dyn Any)
         .downcast_ref::<iceberg_datafusion::physical_plan::IcebergTableScan>()
     {
         let authorized = AuthorizedScan {

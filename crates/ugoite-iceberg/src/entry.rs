@@ -995,18 +995,9 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
             return Err(anyhow!("Entry already exists: {}", request.entry_id));
         }
     }
-    let existing_entry_ids = index::existing_entry_ids(
-        op,
-        ws_path,
-        &requested_entry_ids.iter().cloned().collect::<Vec<_>>(),
-    )
-    .await?;
     let mut batches = BTreeMap::<String, (Value, Vec<RevisionRow>)>::new();
     let mut entries = Vec::with_capacity(requests.len());
     for request in requests {
-        if existing_entry_ids.contains(&request.entry_id) {
-            return Err(anyhow!("Entry ID unavailable"));
-        }
         let (entry, form_name, form_def, revision) = prepare_entry(
             op,
             ws_path,

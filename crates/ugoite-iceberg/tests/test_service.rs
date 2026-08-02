@@ -2,10 +2,12 @@
 
 use anyhow::Result;
 use chrono::Utc;
+use serde_json::json;
 use ugoite_domain::identity::{
     AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
 use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
+use ugoite_iceberg::saved_sql::SqlPayload;
 use ugoite_iceberg::service::UgoiteService;
 use uuid::Uuid;
 
@@ -220,5 +222,80 @@ async fn authorized_entry_writes_apply_form_entry_and_delegated_principal_polici
             &[owner, editor],
         )
         .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
+    let service = UgoiteService::new("memory://saved-sql-acl-boundary")?;
+    let owner = Uuid::from_u128(301);
+    let viewer = Uuid::from_u128(302);
+    let space_id = service
+        .create_space_for_principal("saved-sql-acl", owner, "Owner")
+        .await?
+        .to_string();
+    let payload = |name: &str| SqlPayload {
+        name: name.to_string(),
+        sql: "SELECT 1".to_string(),
+        variables: json!([]),
+    };
+    service
+        .create_saved_sql(&space_id, "visible", &payload("Visible"), "owner")
+        .await?;
+    service
+        .create_saved_sql(&space_id, "hidden", &payload("Hidden"), "owner")
+        .await?;
+    assert_eq!(
+        service
+            .authorized_saved_sql_entry_scope_for_principals(&space_id, &[])
+            .await?,
+        ugoite_core::query::EntryScope::Only(std::collections::BTreeSet::new())
+    );
+
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::SavedSql,
+                id: "hidden".to_string(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+
+    let scope = service
+        .authorized_saved_sql_entry_scope_for_principals(&space_id, &[viewer])
+        .await?;
+    let hidden_entry_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, b"hidden").into();
+    assert!(matches!(
+        &scope,
+        ugoite_core::query::EntryScope::AllExcept(ids) if ids.contains(&hidden_entry_id)
+    ));
+    let listed = service
+        .list_saved_sql_authorized_for_principals(&space_id, &[viewer])
+        .await?;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["id"], "visible");
     Ok(())
 }

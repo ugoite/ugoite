@@ -7,6 +7,7 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
+use ugoite_core::query::EntryScope;
 use uuid::Uuid;
 
 const SQL_FORM_NAME: &str = "SQL";
@@ -172,12 +173,13 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
     }))
 }
 
-pub async fn list_sql(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
+pub async fn list_sql(op: &Operator, ws_path: &str, entry_scope: EntryScope) -> Result<Vec<Value>> {
     ensure_sql_form(op, ws_path).await?;
     let rows = index::query_form_entry_rows_authorized(
         op,
         ws_path,
         SQL_FORM_NAME,
+        entry_scope,
         None,
         crate::MAX_NORMAL_READ_ROWS.saturating_add(1),
     )
@@ -205,6 +207,7 @@ pub async fn find_sql_id_by_text(
     op: &Operator,
     ws_path: &str,
     sql_text: &str,
+    entry_scope: EntryScope,
 ) -> Result<Option<String>> {
     ensure_sql_form(op, ws_path).await?;
     let expected = Value::String(sql_text.to_owned());
@@ -212,6 +215,7 @@ pub async fn find_sql_id_by_text(
         op,
         ws_path,
         SQL_FORM_NAME,
+        entry_scope,
         Some(("sql", &expected)),
         1,
     )

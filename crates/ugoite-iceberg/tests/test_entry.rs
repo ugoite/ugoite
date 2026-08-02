@@ -5,6 +5,7 @@ use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
+use ugoite_iceberg::search;
 use ugoite_iceberg::space;
 
 async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
@@ -646,6 +647,49 @@ async fn querying_entries_survives_adding_a_time_column() -> anyhow::Result<()> 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["id"], "entry-before-time");
     assert_eq!(results[0]["properties"]["Body"], "Existing row");
+    Ok(())
+}
+
+#[tokio::test]
+async fn renamed_field_reads_old_values_through_the_current_schema() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "renamed-entry-field", "/tmp").await?;
+    let ws_path = "spaces/renamed-entry-field";
+    ensure_entry_form(&op, ws_path).await?;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "entry-before-rename",
+        "---\nform: Entry\n---\n# Before rename\n\n## Body\nExisting value",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Entry",
+            "fields": {
+                "Content": {"id": 100, "type": "markdown"}
+            },
+        }),
+    )
+    .await?;
+
+    let all = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
+    assert_eq!(all[0]["properties"]["Content"], "Existing value");
+    let filtered = index::query_index(
+        &op,
+        ws_path,
+        r#"{"form":"Entry","Content":"Existing value"}"#,
+    )
+    .await?;
+    assert_eq!(filtered.len(), 1);
+    let searched = search::search_entries(&op, ws_path, "Existing value", 10).await?;
+    assert_eq!(searched.len(), 1);
+    assert_eq!(searched[0].id, "entry-before-rename");
     Ok(())
 }
 

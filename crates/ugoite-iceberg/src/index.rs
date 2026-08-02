@@ -2,6 +2,8 @@ use anyhow::{anyhow, Context, Result};
 use arrow_json::writer::ArrayWriter;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use datafusion::arrow::datatypes::DataType;
+use datafusion::logical_expr::expr_fn::cast;
 use datafusion::prelude::{array_has, col, lit, Expr};
 use opendal::Operator;
 use regex::Regex;
@@ -446,17 +448,12 @@ pub(crate) async fn query_entry_rows_authorized(
             .iter()
             .map(|candidate| lit(candidate.entry_id.as_str()))
             .collect::<Vec<_>>();
-        let available_columns = context
-            .relation_columns(relation)
-            .await
-            .map_err(map_sql_error)?;
         let batches = execute_payload_relation_plan(
             &context,
             relation,
             Vec::new(),
             vec![col("_ugoite_id").in_list(ids, false)],
             form,
-            &available_columns,
             false,
             form_candidates.len(),
         )
@@ -489,6 +486,7 @@ pub(crate) async fn query_form_entry_rows_authorized(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
+    entry_scope: EntryScope,
     field_filter: Option<(&str, &Value)>,
     limit: usize,
 ) -> Result<Vec<entry::EntryRow>> {
@@ -506,8 +504,7 @@ pub(crate) async fn query_form_entry_rows_authorized(
         .get("sql_relation")
         .and_then(Value::as_str)
         .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
-    let relation_scopes =
-        BTreeMap::from([(form_name.to_ascii_lowercase(), EntryScope::AllCurrent)]);
+    let relation_scopes = BTreeMap::from([(form_name.to_ascii_lowercase(), entry_scope)]);
     let context = datafusion_sql_context_with_limits(
         op,
         ws_path,
@@ -537,17 +534,12 @@ pub(crate) async fn query_form_entry_rows_authorized(
             vec![col(column).eq(filter_literal(expected, field_type)?)]
         }
     };
-    let available_columns = context
-        .relation_columns(relation)
-        .await
-        .map_err(map_sql_error)?;
     let batches = execute_payload_relation_plan(
         &context,
         relation,
         Vec::new(),
         predicates,
         form,
-        &available_columns,
         true,
         limit,
     )
@@ -565,7 +557,6 @@ async fn execute_payload_relation_plan(
     unnest_columns: Vec<(String, String)>,
     predicates: Vec<Expr>,
     form: &Value,
-    available_columns: &BTreeSet<String>,
     distinct: bool,
     limit: usize,
 ) -> Result<Vec<arrow_array::RecordBatch>> {
@@ -578,7 +569,7 @@ async fn execute_payload_relation_plan(
             relation,
             &unnest_columns,
             predicates,
-            payload_projection(form, available_columns, &preserved_inputs)?,
+            payload_projection(form, &preserved_inputs)?,
             Vec::new(),
             distinct,
             !preserved_inputs.is_empty(),
@@ -588,11 +579,7 @@ async fn execute_payload_relation_plan(
         .map_err(map_sql_error)
 }
 
-fn payload_projection(
-    form: &Value,
-    available_columns: &BTreeSet<String>,
-    preserved_inputs: &BTreeSet<String>,
-) -> Result<Vec<Expr>> {
+fn payload_projection(form: &Value, preserved_inputs: &BTreeSet<String>) -> Result<Vec<Expr>> {
     let mut projection = vec![
         col("_ugoite_id"),
         col("_ugoite_title"),
@@ -615,8 +602,21 @@ fn payload_projection(
                 projection.push(
                     col(crate::query_context::preserved_unnest_column(&column)).alias(column),
                 );
-            } else if available_columns.contains(&column.to_ascii_lowercase()) {
-                projection.push(col(column));
+            } else {
+                // Iceberg's current-schema provider owns stable field-ID
+                // projection and typed null materialization for older files.
+                // Keep every current Form column in the plan; do not infer
+                // schema evolution from a relation's physical columns.
+                let value = if field
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| kind == "time")
+                {
+                    cast(col(&column), DataType::Utf8)
+                } else {
+                    col(&column)
+                };
+                projection.push(value.alias(column));
             }
         }
     }
@@ -780,23 +780,6 @@ fn json_timestamp(value: Option<&Value>) -> Result<f64> {
     }
     text.parse::<f64>()
         .with_context(|| format!("invalid timestamp payload {text}"))
-}
-
-/// Checks only the request's external IDs through DataFusion point plans over
-/// every Form's latest head. Tombstones and authorization scopes are included:
-/// Entry ID availability is a Space write invariant, not a read property.
-pub(crate) async fn existing_entry_ids(
-    op: &Operator,
-    ws_path: &str,
-    entry_ids: &[String],
-) -> Result<HashSet<String>> {
-    if entry_ids.is_empty() {
-        return Ok(HashSet::new());
-    }
-    crate::iceberg_store::native_workspace(op, ws_path)
-        .await?
-        .existing_entry_external_ids(entry_ids)
-        .await
 }
 
 fn searchable_keyword_predicate(form: &Value, form_name: &str, query: &str) -> Result<String> {
@@ -1720,6 +1703,12 @@ pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
 
 pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
     let forms = load_forms(op, ws_path).await?;
+    if forms.len() > crate::MAX_NORMAL_READ_ROWS {
+        return Err(anyhow!(
+            "space statistics are limited to {} Forms",
+            crate::MAX_NORMAL_READ_ROWS
+        ));
+    }
     let relation_scopes = forms
         .keys()
         .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
@@ -1739,7 +1728,6 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
     .map_err(map_sql_error)?;
     let mut entry_count = 0u64;
     let mut form_stats = Map::new();
-    let mut tag_counts = Map::new();
     for (form_name, form) in &forms {
         let relation = form
             .get("sql_relation")
@@ -1801,13 +1789,21 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
             stats.insert("fields".to_string(), Value::Object(fields_json));
         }
         form_stats.insert(form_name.clone(), Value::Object(stats));
-
-        let tag_values = record_batches_to_values(
+    }
+    let mut tag_relations = forms
+        .values()
+        .filter_map(|form| form.get("sql_relation").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    tag_relations.sort();
+    let tag_values = if tag_relations.is_empty() {
+        Vec::new()
+    } else {
+        record_batches_to_values(
             &context
-                .execute_relation_aggregate_plan(
-                    relation,
+                .execute_union_relation_aggregate_plan(
+                    &tag_relations,
                     &[("_ugoite_tags".to_string(), "__ugoite_tag".to_string())],
-                    Vec::new(),
                     vec![col("__ugoite_tag")],
                     vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
                         .alias("__ugoite_tag_count")],
@@ -1815,22 +1811,18 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
                 )
                 .await
                 .map_err(map_sql_error)?,
-        )?;
-        for tag_value in tag_values {
-            let Some(tag) = tag_value.get("__ugoite_tag").and_then(Value::as_str) else {
-                continue;
-            };
-            let count = tag_value
-                .get("__ugoite_tag_count")
-                .and_then(Value::as_u64)
-                .unwrap_or(0);
-            let total = tag_counts
-                .get(tag)
-                .and_then(Value::as_u64)
-                .unwrap_or(0)
-                .saturating_add(count);
-            tag_counts.insert(tag.to_string(), Value::Number(total.into()));
-        }
+        )?
+    };
+    let mut tag_counts = Map::new();
+    for tag_value in tag_values {
+        let Some(tag) = tag_value.get("__ugoite_tag").and_then(Value::as_str) else {
+            continue;
+        };
+        let count = tag_value
+            .get("__ugoite_tag_count")
+            .and_then(Value::as_u64)
+            .context("tag aggregate is missing its count")?;
+        tag_counts.insert(tag.to_string(), Value::Number(count.into()));
     }
     form_stats.insert(
         "_uncategorized".to_string(),
@@ -2357,17 +2349,12 @@ async fn collect_filtered_entries_with_form_scopes(
         // an over-cap result is rejected instead of depending on Form order
         // and silently returning a partial collection.
         let per_form_bound = remaining.saturating_add(1);
-        let available_columns = context
-            .relation_columns(relation)
-            .await
-            .map_err(map_sql_error)?;
         let batches = execute_payload_relation_plan(
             &context,
             relation,
             unnest_columns,
             predicates,
             form,
-            &available_columns,
             true,
             per_form_bound,
         )

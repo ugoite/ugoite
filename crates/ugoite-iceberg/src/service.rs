@@ -667,6 +667,56 @@ impl UgoiteService {
             .collect())
     }
 
+    /// Derives the Saved SQL resource ACL as a provider-side Entry scope.
+    /// Saved SQL is stored in the reserved SQL Form, but its resource policy
+    /// is keyed by `saved_sql:<id>` and must be applied before payload decode.
+    pub async fn authorized_saved_sql_entry_scope_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<EntryScope> {
+        if principal_ids.is_empty() {
+            return Ok(EntryScope::Only(BTreeSet::new()));
+        }
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Ok(EntryScope::Only(BTreeSet::new()));
+            }
+        }
+        let mut denied_entry_ids = BTreeSet::new();
+        for resource_key in state.policies.keys() {
+            let Some(sql_id) = resource_key.strip_prefix("saved_sql:") else {
+                continue;
+            };
+            let resource = ResourceRef {
+                kind: ResourceKind::SavedSql,
+                id: sql_id.to_string(),
+                parent: None,
+            };
+            let readable_by_every_principal = principal_ids.iter().all(|principal_id| {
+                effective_actions_for_state(&state, *principal_id, Some(&resource))
+                    .map(|actions| actions.contains(&Action::Read))
+                    .unwrap_or(false)
+            });
+            if !readable_by_every_principal {
+                if denied_entry_ids.len() == crate::MAX_NORMAL_READ_ROWS {
+                    return Err(anyhow!(
+                        "Saved SQL authorization scope exceeds the configured maximum"
+                    ));
+                }
+                denied_entry_ids.insert(
+                    Uuid::parse_str(sql_id)
+                        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, sql_id.as_bytes()))
+                        .into(),
+                );
+            }
+        }
+        Ok(EntryScope::AllExcept(denied_entry_ids))
+    }
+
     pub async fn list_entries_authorized_for_principals(
         &self,
         space_id: &str,
@@ -837,6 +887,9 @@ impl UgoiteService {
             .state(space_id)
             .await?;
         let entry_scope = sql_session_entry_scope(&state, principal_ids)?;
+        let saved_sql_entry_scope = self
+            .authorized_saved_sql_entry_scope_for_principals(space_id, principal_ids)
+            .await?;
         let query_policy = index::sql_session_query_policy_at_checkpoint(
             &self.operator,
             &self.workspace_path(space_id),
@@ -851,7 +904,7 @@ impl UgoiteService {
             policy_hash: &authorization_policy_hash,
         };
         let bound_parameters = index::datafusion_parameters(&parameters, &parameter_types)?;
-        sql_session::create_sql_session_authorized_for_principals_with_frozen_policy(
+        sql_session::create_sql_session_authorized_for_principals_with_frozen_policy_and_saved_sql_scope(
             &self.operator,
             &self.workspace_path(space_id),
             sql,
@@ -861,6 +914,7 @@ impl UgoiteService {
             bound_parameters,
             checkpoint,
             query_policy,
+            &saved_sql_entry_scope,
         )
         .await
     }
@@ -1204,9 +1258,28 @@ impl UgoiteService {
         .await
     }
 
-    pub async fn list_saved_sql(&self, space_id: &str) -> Result<Vec<Value>> {
+    /// Lists Saved SQL without resource filtering for operator-local/admin
+    /// tooling. Server-backed user requests use the authorized variant below.
+    pub async fn list_saved_sql_unscoped(&self, space_id: &str) -> Result<Vec<Value>> {
         validate_storage_id(validate_space_id(space_id))?;
-        saved_sql::list_sql(&self.operator, &self.workspace_path(space_id)).await
+        saved_sql::list_sql(
+            &self.operator,
+            &self.workspace_path(space_id),
+            EntryScope::AllCurrent,
+        )
+        .await
+    }
+
+    pub async fn list_saved_sql_authorized_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Vec<Value>> {
+        validate_storage_id(validate_space_id(space_id))?;
+        let entry_scope = self
+            .authorized_saved_sql_entry_scope_for_principals(space_id, principal_ids)
+            .await?;
+        saved_sql::list_sql(&self.operator, &self.workspace_path(space_id), entry_scope).await
     }
 
     pub async fn create_saved_sql(
