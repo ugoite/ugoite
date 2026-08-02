@@ -603,15 +603,24 @@ test.describe("Entries CRUD", () => {
 			);
 			await page.getByRole("button", { name: "Save" }).click();
 			expect((await removeResponse).ok()).toBeTruthy();
+			console.log("asset-owned: remove saved");
 
+			console.log("asset-owned: verify media entry after remove");
+			mediaEntryResponse = await request.get(
+				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
+				{ timeout: 15_000 },
+			);
+
+			console.log("asset-owned: open contracts form");
 			await page.goto(
 				getFrontendUrl(
 					`/spaces/${spaceId}/entries/new?form=${encodeURIComponent(contractsForm)}`,
 				),
-				{ waitUntil: "domcontentloaded" },
+				{ waitUntil: "domcontentloaded", timeout: 15_000 },
 			);
 			const contract = page.locator('[data-field-name="contract"]');
 			const rawData = page.locator('[data-field-name="raw_data"]');
+			await expect(contract).toBeVisible({ timeout: 15_000 });
 			console.log("asset-owned: upload contract files");
 			await contract.locator('input[type="file"]').setInputFiles({
 				name: "contract.pdf",
