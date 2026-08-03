@@ -2291,7 +2291,8 @@ pub fn validate_properties(properties: &Value, entry_form: &Value) -> Result<(Va
                     Value::Array(_) => Some(raw_value.clone()),
                     Value::String(ref s) => serde_json::from_str::<Value>(s)
                         .ok()
-                        .filter(|value| value.is_array()),
+                        .filter(|value| value.is_array())
+                        .or_else(|| Some(Value::Array(parse_markdown_list(s)))),
                     _ => None,
                 }
             }

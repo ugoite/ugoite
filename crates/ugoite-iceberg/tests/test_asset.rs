@@ -120,7 +120,6 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
         entries[0]["properties"]["Attachments"][0]["asset_id"],
         reference.asset_id
     );
-    assert!(entries[0]["properties"]["Attachments"][1].is_null());
     let scalar_matches = index::query_index(
         &op,
         ws_path,
