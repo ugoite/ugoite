@@ -7,6 +7,7 @@
 #![recursion_limit = "512"]
 
 mod migration;
+mod read_schema_provider;
 mod space_catalog;
 
 pub mod asset;
@@ -48,12 +49,12 @@ use arrow_array::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
-use iceberg::expr::Reference;
-use iceberg::spec::{DataFileFormat, Datum};
+use datafusion::logical_expr::expr_fn::ident;
+use datafusion::prelude::{col, lit};
+use iceberg::spec::DataFileFormat;
 use iceberg::spec::{
     ListType, NestedField, PrimitiveType, Schema, SortOrder, StructType, Type, UnboundPartitionSpec,
 };
-use iceberg::table::{StaticTable, Table};
 use iceberg::transaction::{AddColumn, ApplyTransactionAction, Transaction};
 use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
 use iceberg::writer::file_writer::location_generator::{
@@ -92,63 +93,6 @@ const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
 const TARGET_FILE_SIZE_PROPERTY: &str = "write.target-file-size-bytes";
 const FIRST_FORM_FIELD_ID: i32 = 100;
 const NESTED_FIELD_ID_BASE: i32 = 1_000_000;
-
-/// Re-open one immutable table coordinate with its current table schema as
-/// the Iceberg read schema.
-///
-/// Iceberg 0.10's DataFusion provider derives the read schema from the
-/// selected snapshot. A metadata-only Form rename/addition must nevertheless
-/// project old data files by stable field ID using the table's current schema.
-/// Keep the snapshot identity and all snapshot metadata unchanged, and alter
-/// only the in-memory schema reference used to construct the static table.
-/// Nothing is committed and the catalog is never refreshed while the query
-/// uses the returned table.
-pub(crate) async fn static_table_with_current_read_schema(table: &Table) -> Result<Table> {
-    let Some(snapshot_id) = table.metadata().current_snapshot_id() else {
-        return Ok(table.clone());
-    };
-    let current_schema_id = table.metadata().current_schema_id();
-    let current_snapshot = table
-        .metadata()
-        .current_snapshot()
-        .context("Iceberg table current snapshot metadata is missing")?;
-    if current_snapshot.schema_id() == Some(current_schema_id) {
-        return Ok(table.clone());
-    }
-
-    let metadata_location = table.metadata_location_result()?;
-    let metadata_bytes = table
-        .file_io()
-        .new_input(metadata_location)?
-        .read()
-        .await
-        .context("read immutable Iceberg metadata for read-schema projection")?;
-    let mut metadata: serde_json::Value = serde_json::from_slice(&metadata_bytes)
-        .context("decode immutable Iceberg metadata for read-schema projection")?;
-    let snapshots = metadata
-        .get_mut("snapshots")
-        .and_then(serde_json::Value::as_array_mut)
-        .context("Iceberg metadata has no snapshots array")?;
-    let snapshot = snapshots
-        .iter_mut()
-        .find(|snapshot| {
-            snapshot
-                .get("snapshot-id")
-                .and_then(serde_json::Value::as_i64)
-                == Some(snapshot_id)
-        })
-        .context("Iceberg metadata is missing the current snapshot")?;
-    snapshot["schema-id"] = serde_json::Value::from(current_schema_id);
-    let metadata: iceberg::spec::TableMetadata = serde_json::from_value(metadata)
-        .context("validate Iceberg current-schema read projection")?;
-    Ok(StaticTable::from_metadata(
-        metadata,
-        table.identifier().clone(),
-        table.file_io().clone(),
-    )
-    .await?
-    .into_table())
-}
 
 fn unsupported_form_field_type_change(
     current: &FormDefinition,
@@ -1484,38 +1428,41 @@ impl IcebergWorkspace {
         Ok(existing)
     }
 
-    async fn latest_revision_plan(
+    async fn revision_provider(
         &self,
         table: &iceberg::table::Table,
-        entry_scope: &EntryScope,
         snapshot_id: Option<i64>,
-        view: RevisionView,
-    ) -> Result<Vec<RecordBatch>> {
-        let provider = if let Some(snapshot_id) = snapshot_id {
-            IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
-                .await?
-        } else {
-            let table = static_table_with_current_read_schema(table).await?;
-            IcebergStaticTableProvider::try_new_from_table(table).await?
-        };
-        let context = self
-            .authorized_revision_query_context(
-                Arc::new(provider),
-                table.metadata().uuid().to_string(),
-                snapshot_id,
-                entry_scope,
-                QueryLimits {
-                    max_memory_bytes: 64 * 1024 * 1024,
-                    max_rows: MAX_NORMAL_READ_ROWS,
-                    timeout: Duration::from_secs(30),
-                    max_concurrency: 1,
-                    allowed_functions: BTreeSet::new(),
-                },
-            )
-            .await?;
-        context
-            .execute_latest_revision_plan(entry_scope, view)
-            .await
+    ) -> Result<(Arc<dyn datafusion::datasource::TableProvider>, Option<i64>)> {
+        let (provider, query_snapshot_id): (Arc<dyn datafusion::datasource::TableProvider>, _) =
+            if let Some(snapshot_id) = snapshot_id {
+                (
+                    Arc::new(
+                        IcebergStaticTableProvider::try_new_from_table_snapshot(
+                            table.clone(),
+                            snapshot_id,
+                        )
+                        .await?,
+                    ),
+                    Some(snapshot_id),
+                )
+            } else if let Some(snapshot_id) = table.metadata().current_snapshot_id() {
+                (
+                    Arc::new(
+                        read_schema_provider::CurrentSchemaTableProvider::try_new(
+                            table.clone(),
+                            snapshot_id,
+                        )
+                        .await?,
+                    ),
+                    Some(snapshot_id),
+                )
+            } else {
+                (
+                    Arc::new(IcebergStaticTableProvider::try_new_from_table(table.clone()).await?),
+                    None,
+                )
+            };
+        Ok((provider, query_snapshot_id))
     }
 
     async fn read_all_revision_batches(
@@ -1545,10 +1492,26 @@ impl IcebergWorkspace {
         snapshot_id: Option<i64>,
         view: RevisionView,
     ) -> Result<Vec<RecordBatch>> {
-        let ids = self
-            .latest_revision_plan(table, entry_scope, snapshot_id, view)
+        let (provider, query_snapshot_id) = self.revision_provider(table, snapshot_id).await?;
+        let context = self
+            .authorized_revision_query_context(
+                provider,
+                table.metadata().uuid().to_string(),
+                query_snapshot_id,
+                entry_scope,
+                QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: MAX_NORMAL_READ_ROWS,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+            )
             .await?;
-        let mut revision_ids = Vec::new();
+        let ids = context
+            .execute_latest_revision_plan(entry_scope, view)
+            .await?;
+        let mut revision_ids = Vec::<ugoite_domain::id::EntryId>::new();
         let mut entry_ids = std::collections::BTreeSet::new();
         for batch in ids {
             let entry_values = batch
@@ -1563,7 +1526,7 @@ impl IcebergWorkspace {
                         "entry revision invariant failed: multiple revisions share a maximum entry_version"
                     ));
                 }
-                revision_ids.push(Datum::uuid(uuid_at(revision_values, row)?.as_uuid()));
+                revision_ids.push(uuid_at(revision_values, row)?);
             }
         }
         if entry_ids.len() > MAX_NORMAL_READ_ROWS {
@@ -1574,21 +1537,30 @@ impl IcebergWorkspace {
         if revision_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let scan = table
-            .scan()
-            .with_filter(Reference::new("revision_id").is_in(revision_ids));
-        let mut stream = match snapshot_id {
-            Some(snapshot_id) => scan.snapshot_id(snapshot_id),
-            None => scan,
-        }
-        .build()?
-        .to_arrow()
-        .await?;
-        let mut batches = Vec::new();
-        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
-            batches.push(batch);
-        }
-        Ok(batches)
+        let revision_literals = revision_ids
+            .iter()
+            .map(|revision_id| lit(revision_id.as_uuid().as_bytes().to_vec()))
+            .collect::<Vec<_>>();
+        let projection = table
+            .metadata()
+            .current_schema()
+            .as_struct()
+            .fields()
+            .iter()
+            .map(|field| ident(&field.name))
+            .collect::<Vec<_>>();
+        context
+            .execute_relation_plan(
+                "revisions",
+                &[],
+                vec![col("revision_id").in_list(revision_literals, false)],
+                projection,
+                Vec::new(),
+                false,
+                false,
+                revision_ids.len(),
+            )
+            .await
     }
 
     pub async fn query(&self, sql: &str) -> Result<Vec<RecordBatch>> {
@@ -2652,7 +2624,9 @@ fn typed_list_array(
                             field.name
                         ));
                     };
-                    builder.append_value(BASE64.decode(value)?);
+                    builder.append_value(
+                        BASE64.decode(value.strip_prefix("base64:").unwrap_or(value))?,
+                    );
                     Ok(())
                 }
             );
@@ -3253,22 +3227,40 @@ fn struct_string_at(array: &StructArray, name: &str, row: usize) -> String {
         .unwrap_or_default()
 }
 
-fn struct_i64_at(array: &StructArray, name: &str, row: usize) -> i64 {
-    array
+fn required_struct_string_at(array: &StructArray, name: &str, row: usize) -> Result<String> {
+    let column = array
         .column_by_name(name)
-        .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
-        .filter(|column| !column.is_null(row))
-        .map(|column| column.value(row))
-        .unwrap_or_default()
+        .with_context(|| format!("asset reference is missing {name}"))?
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .with_context(|| format!("asset reference {name} has the wrong Arrow type"))?;
+    if column.is_null(row) {
+        return Err(anyhow!("asset reference {name} is null"));
+    }
+    Ok(column.value(row).to_string())
+}
+
+fn required_struct_i64_at(array: &StructArray, name: &str, row: usize) -> Result<i64> {
+    let column = array
+        .column_by_name(name)
+        .with_context(|| format!("asset reference is missing {name}"))?
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .with_context(|| format!("asset reference {name} has the wrong Arrow type"))?;
+    if column.is_null(row) {
+        return Err(anyhow!("asset reference {name} is null"));
+    }
+    Ok(column.value(row))
 }
 
 fn asset_reference_at(array: &StructArray, row: usize) -> Result<FieldValue> {
     Ok(FieldValue::AssetReference(AssetReference {
-        asset_id: struct_string_at(array, "asset_id", row),
-        name: struct_string_at(array, "name", row),
-        media_type: struct_string_at(array, "media_type", row),
-        size_bytes: u64::try_from(struct_i64_at(array, "size_bytes", row))?,
-        sha256: struct_string_at(array, "sha256", row),
+        asset_id: required_struct_string_at(array, "asset_id", row)?,
+        name: required_struct_string_at(array, "name", row)?,
+        media_type: required_struct_string_at(array, "media_type", row)?,
+        size_bytes: u64::try_from(required_struct_i64_at(array, "size_bytes", row)?)
+            .context("asset reference size_bytes must be non-negative")?,
+        sha256: required_struct_string_at(array, "sha256", row)?,
     }))
 }
 
@@ -3383,15 +3375,16 @@ fn field_value_at(
             )?
             .to_string(),
         ),
-        FieldType::Binary => FieldValue::String(
+        FieldType::Binary => FieldValue::String(format!(
+            "base64:{}",
             BASE64.encode(
                 column
                     .as_any()
                     .downcast_ref::<LargeBinaryArray>()
                     .ok_or_else(invalid)?
                     .value(row),
-            ),
-        ),
+            )
+        )),
         FieldType::List => FieldValue::List(typed_list_at(
             column
                 .as_any()
@@ -3740,5 +3733,116 @@ mod invariant_tests {
             .to_string()
             .contains("multiple revisions share a maximum entry_version"));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod asset_reference_decode_tests {
+    use super::*;
+
+    fn asset_fields() -> arrow_schema::Fields {
+        vec![
+            arrow_schema::Field::new("asset_id", arrow_schema::DataType::Utf8, true),
+            arrow_schema::Field::new("name", arrow_schema::DataType::Utf8, true),
+            arrow_schema::Field::new("media_type", arrow_schema::DataType::Utf8, true),
+            arrow_schema::Field::new("size_bytes", arrow_schema::DataType::Int64, true),
+            arrow_schema::Field::new("sha256", arrow_schema::DataType::Utf8, true),
+        ]
+        .into()
+    }
+
+    fn valid_asset() -> StructArray {
+        StructArray::new(
+            asset_fields(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("asset-1")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        )
+    }
+
+    #[test]
+    fn asset_reference_decode_requires_a_complete_typed_struct() {
+        let value = field_value_at(&valid_asset(), 0, &FieldType::AssetReference, None).unwrap();
+        assert_eq!(
+            value,
+            Some(FieldValue::AssetReference(AssetReference {
+                asset_id: "asset-1".into(),
+                name: "file.txt".into(),
+                media_type: "text/plain".into(),
+                size_bytes: 4,
+                sha256: "sha256:hash".into(),
+            }))
+        );
+
+        let null_parent = StructArray::new_null(asset_fields(), 1);
+        assert_eq!(
+            field_value_at(&null_parent, 0, &FieldType::AssetReference, None).unwrap(),
+            None
+        );
+
+        let mut missing_fields = asset_fields().to_vec();
+        missing_fields.remove(0);
+        let missing = StructArray::new(
+            missing_fields.into(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        );
+        assert!(asset_reference_at(&missing, 0).is_err());
+
+        let null_size = StructArray::new(
+            asset_fields(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("asset-1")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![None])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        );
+        assert!(asset_reference_at(&null_size, 0).is_err());
+
+        let negative_size = StructArray::new(
+            asset_fields(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("asset-1")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![Some(-1)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        );
+        assert!(asset_reference_at(&negative_size, 0).is_err());
+
+        let wrong_type = StructArray::new(
+            vec![
+                arrow_schema::Field::new("asset_id", arrow_schema::DataType::Int64, true),
+                arrow_schema::Field::new("name", arrow_schema::DataType::Utf8, true),
+                arrow_schema::Field::new("media_type", arrow_schema::DataType::Utf8, true),
+                arrow_schema::Field::new("size_bytes", arrow_schema::DataType::Int64, true),
+                arrow_schema::Field::new("sha256", arrow_schema::DataType::Utf8, true),
+            ]
+            .into(),
+            vec![
+                Arc::new(Int64Array::from(vec![Some(1)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        );
+        assert!(asset_reference_at(&wrong_type, 0).is_err());
     }
 }

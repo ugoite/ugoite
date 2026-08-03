@@ -2060,12 +2060,12 @@ fn format_wall_timestamp(timestamp: NaiveDateTime, nanosecond_precision: bool) -
     format!("{base}.{fraction}")
 }
 
-fn normalize_wall_timestamp(value: &str, nanosecond_precision: bool) -> Option<String> {
+pub(crate) fn normalize_wall_timestamp(value: &str, nanosecond_precision: bool) -> Option<String> {
     parse_wall_timestamp(value)
         .map(|timestamp| format_wall_timestamp(timestamp, nanosecond_precision))
 }
 
-fn normalize_zoned_timestamp(value: &str, nanosecond_precision: bool) -> Option<String> {
+pub(crate) fn normalize_zoned_timestamp(value: &str, nanosecond_precision: bool) -> Option<String> {
     parse_zoned_timestamp(value).map(|timestamp| {
         let timestamp = timestamp.with_timezone(&chrono::Utc);
         if nanosecond_precision {
@@ -2076,7 +2076,7 @@ fn normalize_zoned_timestamp(value: &str, nanosecond_precision: bool) -> Option<
     })
 }
 
-fn normalize_time(value: &str) -> Option<String> {
+pub(crate) fn normalize_time(value: &str) -> Option<String> {
     let trimmed = value.trim();
     let formats = ["%H:%M:%S%.f", "%H:%M:%S", "%H:%M"];
     for format in formats {
@@ -2091,7 +2091,7 @@ fn normalize_time(value: &str) -> Option<String> {
     None
 }
 
-fn normalize_binary(value: &str) -> Option<String> {
+pub(crate) fn normalize_binary(value: &str) -> Option<String> {
     let trimmed = value.trim();
     let bytes = if let Some(rest) = trimmed.strip_prefix("base64:") {
         base64::engine::general_purpose::STANDARD

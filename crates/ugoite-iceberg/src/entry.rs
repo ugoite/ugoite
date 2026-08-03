@@ -14,7 +14,7 @@ use ugoite_core::query::EntryScope;
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
-use ugoite_domain::form::{FieldType, FormField};
+use ugoite_domain::form::{FieldType, FormField, ListItemDefinition};
 use ugoite_domain::id::{FieldId, RevisionId};
 use uuid::Uuid;
 
@@ -591,46 +591,129 @@ fn form_values_to_domain(
 }
 
 fn json_to_field_value_for_field(value: &Value, field: &FormField) -> Result<FieldValue> {
-    if matches!(value, Value::Null) {
-        return Ok(FieldValue::Null);
-    }
-    if matches!(field.field_type, FieldType::AssetReference) {
-        return Ok(FieldValue::AssetReference(
-            serde_json::from_value::<AssetReference>(value.clone())
-                .context("invalid asset reference value")?,
-        ));
-    }
-    if matches!(field.field_type, FieldType::List)
-        && field
-            .list_item
-            .as_ref()
-            .is_some_and(|item| matches!(item.field_type, FieldType::AssetReference))
-    {
-        let values = value
-            .as_array()
-            .context("typed asset reference list must be an array")?
-            .iter()
-            .map(|value| {
-                if value.is_null() {
-                    Ok(FieldValue::Null)
-                } else if value.is_object() {
-                    Ok(FieldValue::AssetReference(
-                        serde_json::from_value::<AssetReference>(value.clone())
-                            .context("invalid asset reference list item")?,
-                    ))
-                } else {
-                    Err(anyhow!(
-                        "asset reference list items must be objects or null"
-                    ))
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
-        return Ok(FieldValue::List(values));
-    }
-    json_to_field_value(value)
+    json_to_field_value_for_type(value, &field.field_type, field.list_item.as_ref())
 }
 
-fn json_to_field_value(value: &Value) -> Result<FieldValue> {
+/// Convert transport JSON to the canonical domain value exactly once.
+///
+/// The Form type is part of the conversion boundary: JSON integers remain
+/// `FieldValue::Integer`, while floating fields become `FieldValue::Number`.
+/// List items use the same canonicalization as scalar fields, so writers and
+/// validators do not need a second transport coercion step.
+fn json_to_field_value_for_type(
+    value: &Value,
+    field_type: &FieldType,
+    list_item: Option<&ListItemDefinition>,
+) -> Result<FieldValue> {
+    if value.is_null() {
+        return Ok(FieldValue::Null);
+    }
+    match field_type {
+        FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
+            Ok(FieldValue::String(
+                value
+                    .as_str()
+                    .context("typed string field must be a string")?
+                    .to_string(),
+            ))
+        }
+        FieldType::Boolean => Ok(FieldValue::Boolean(
+            value.as_bool().context("boolean field must be a boolean")?,
+        )),
+        FieldType::Integer => Ok(FieldValue::Integer(i64::from(
+            i32::try_from(value.as_i64().context("integer field must be an integer")?)
+                .context("integer field is outside the Int32 range")?,
+        ))),
+        FieldType::Long => Ok(FieldValue::Integer(
+            value.as_i64().context("long field must be an integer")?,
+        )),
+        FieldType::Float | FieldType::Double => {
+            let value = value.as_f64().context("floating field must be a number")?;
+            if !value.is_finite() {
+                return Err(anyhow!("floating field must be finite"));
+            }
+            Ok(FieldValue::Number(value))
+        }
+        FieldType::Date => {
+            let value = value.as_str().context("date field must be a string")?;
+            let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")?;
+            Ok(FieldValue::String(date.format("%Y-%m-%d").to_string()))
+        }
+        FieldType::Time => Ok(FieldValue::String(
+            index::normalize_time(value.as_str().context("time field must be a string")?)
+                .context("invalid time field")?,
+        )),
+        FieldType::Timestamp => Ok(FieldValue::String(
+            index::normalize_wall_timestamp(
+                value.as_str().context("timestamp field must be a string")?,
+                false,
+            )
+            .context("invalid timestamp field")?,
+        )),
+        FieldType::TimestampTz => Ok(FieldValue::String(
+            index::normalize_zoned_timestamp(
+                value
+                    .as_str()
+                    .context("timestamp_tz field must be a string")?,
+                false,
+            )
+            .context("invalid timestamp_tz field")?,
+        )),
+        FieldType::TimestampNs => Ok(FieldValue::String(
+            index::normalize_wall_timestamp(
+                value
+                    .as_str()
+                    .context("timestamp_ns field must be a string")?,
+                true,
+            )
+            .context("invalid timestamp_ns field")?,
+        )),
+        FieldType::TimestampTzNs => Ok(FieldValue::String(
+            index::normalize_zoned_timestamp(
+                value
+                    .as_str()
+                    .context("timestamp_tz_ns field must be a string")?,
+                true,
+            )
+            .context("invalid timestamp_tz_ns field")?,
+        )),
+        FieldType::Uuid => Ok(FieldValue::String(
+            Uuid::parse_str(value.as_str().context("UUID field must be a string")?)?.to_string(),
+        )),
+        FieldType::Binary => Ok(FieldValue::String(
+            index::normalize_binary(value.as_str().context("binary field must be a string")?)
+                .context("invalid binary field")?,
+        )),
+        FieldType::AssetReference => Ok(FieldValue::AssetReference(
+            serde_json::from_value::<AssetReference>(value.clone())
+                .context("invalid asset reference value")?,
+        )),
+        FieldType::List => {
+            let values = value
+                .as_array()
+                .context("typed list field must be an array")?
+                .iter()
+                .map(|item| {
+                    let item_type = list_item
+                        .map(|item| &item.field_type)
+                        .unwrap_or(&FieldType::String);
+                    json_to_field_value_for_type(item, item_type, None)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(FieldValue::List(values))
+        }
+        FieldType::ObjectList => Ok(FieldValue::List(
+            value
+                .as_array()
+                .context("object list field must be an array")?
+                .iter()
+                .map(json_to_untyped_field_value)
+                .collect::<Result<Vec<_>>>()?,
+        )),
+    }
+}
+
+fn json_to_untyped_field_value(value: &Value) -> Result<FieldValue> {
     Ok(match value {
         Value::Null => FieldValue::Null,
         Value::Bool(value) => FieldValue::Boolean(*value),
@@ -639,13 +722,13 @@ fn json_to_field_value(value: &Value) -> Result<FieldValue> {
         Value::Array(values) => FieldValue::List(
             values
                 .iter()
-                .map(json_to_field_value)
+                .map(json_to_untyped_field_value)
                 .collect::<Result<Vec<_>>>()?,
         ),
         Value::Object(values) => FieldValue::Object(
             values
                 .iter()
-                .map(|(key, value)| Ok((key.clone(), json_to_field_value(value)?)))
+                .map(|(key, value)| Ok((key.clone(), json_to_untyped_field_value(value)?)))
                 .collect::<Result<_>>()?,
         ),
     })
@@ -1831,4 +1914,99 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
         "restored_from": revision_id,
         "timestamp": timestamp,
     }))
+}
+
+#[cfg(test)]
+mod input_conversion_tests {
+    use super::*;
+    use ugoite_domain::form::ListItemDefinition;
+
+    fn field(field_type: FieldType, list_item: Option<FieldType>) -> FormField {
+        FormField {
+            id: ugoite_domain::id::FieldId::new(100).expect("valid test field id"),
+            name: "value".into(),
+            field_type,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            list_item: list_item.map(|field_type| ListItemDefinition {
+                field_type,
+                reference_form: None,
+            }),
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        }
+    }
+
+    #[test]
+    fn transport_json_is_canonicalized_by_scalar_and_list_type() {
+        assert_eq!(
+            json_to_field_value_for_field(&serde_json::json!(7), &field(FieldType::Integer, None))
+                .unwrap(),
+            FieldValue::Integer(7)
+        );
+        assert_eq!(
+            json_to_field_value_for_field(&serde_json::json!(7), &field(FieldType::Long, None))
+                .unwrap(),
+            FieldValue::Integer(7)
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!("A7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D"),
+                &field(FieldType::Uuid, None),
+            )
+            .unwrap(),
+            FieldValue::String("a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d".into())
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!("base64:ZGF0YQ=="),
+                &field(FieldType::Binary, None),
+            )
+            .unwrap(),
+            FieldValue::String("base64:ZGF0YQ==".into())
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!([7, null, 8]),
+                &field(FieldType::List, Some(FieldType::Integer)),
+            )
+            .unwrap(),
+            FieldValue::List(vec![
+                FieldValue::Integer(7),
+                FieldValue::Null,
+                FieldValue::Integer(8),
+            ])
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!(["base64:ZGF0YQ==", null]),
+                &field(FieldType::List, Some(FieldType::Binary)),
+            )
+            .unwrap(),
+            FieldValue::List(vec![
+                FieldValue::String("base64:ZGF0YQ==".into()),
+                FieldValue::Null,
+            ])
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!("12:34"),
+                &field(FieldType::Time, None),
+            )
+            .unwrap(),
+            FieldValue::String("12:34:00".into())
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!("2025-01-02T03:04:05.123456789Z"),
+                &field(FieldType::TimestampTzNs, None),
+            )
+            .unwrap(),
+            FieldValue::String("2025-01-02T03:04:05.123456789+00:00".into())
+        );
+    }
 }

@@ -312,23 +312,26 @@ impl IcebergWorkspace {
             if expected_snapshot_id.is_some_and(|expected| Some(expected) != snapshot_id) {
                 bail!("Iceberg table snapshot does not match the authorized coordinate");
             }
-            let table = crate::static_table_with_current_read_schema(&table)
-                .await
-                .context("pin current Iceberg schema for static read")?;
+            let current_snapshot_id = table.metadata().current_snapshot_id();
             let authorized_scan = AuthorizedScan {
                 table_uuid: table.metadata().uuid().to_string(),
-                // `try_new_from_table` deliberately uses the table's current
-                // snapshot while leaving the provider scan coordinate as
-                // None. The Table object is static, so checkpoint metadata
-                // remains immutable even though the provider uses current
-                // schema projection.
-                snapshot_id: None,
+                snapshot_id: current_snapshot_id,
             };
-            let provider: Arc<dyn TableProvider> = Arc::new(
-                IcebergStaticTableProvider::try_new_from_table(table)
+            let provider: Arc<dyn TableProvider> = match current_snapshot_id {
+                Some(snapshot_id) => Arc::new(
+                    crate::read_schema_provider::CurrentSchemaTableProvider::try_new(
+                        table,
+                        snapshot_id,
+                    )
                     .await
-                    .context("open static Iceberg provider")?,
-            );
+                    .context("open current-schema Iceberg provider")?,
+                ),
+                None => Arc::new(
+                    IcebergStaticTableProvider::try_new_from_table(table)
+                        .await
+                        .context("open static Iceberg provider")?,
+                ),
+            };
 
             authorized_scans.insert(authorized_scan);
 

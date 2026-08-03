@@ -1002,6 +1002,31 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
     );
     assert_eq!(after_snapshot.schema_id(), before_snapshot_schema_id);
 
+    let metadata_location = table.metadata_location_result()?.to_string();
+    let metadata_before_read = table
+        .file_io()
+        .new_input(&metadata_location)?
+        .read()
+        .await?;
+    let current = workspace
+        .read_revision_view_with_scope(form.id, EntryScope::AllCurrent, RevisionView::Current)
+        .await?;
+    assert_eq!(current.len(), 1);
+    assert_eq!(
+        current[0].values.get(&FieldId::new(100).unwrap()),
+        Some(&FieldValue::String("old".into()))
+    );
+    assert!(!current[0].values.contains_key(&FieldId::new(101).unwrap()));
+    let metadata_after_read = table
+        .file_io()
+        .new_input(&metadata_location)?
+        .read()
+        .await?;
+    assert_eq!(
+        metadata_after_read, metadata_before_read,
+        "a read must not rewrite Iceberg metadata"
+    );
+
     let second = EntryRevision {
         form_id: evolved.id,
         entry_id,
@@ -1290,7 +1315,10 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
             ),
             (
                 FieldId::new(113).unwrap(),
-                FieldValue::List(vec![FieldValue::String("AQI=".into()), FieldValue::Null]),
+                FieldValue::List(vec![
+                    FieldValue::String("base64:AQI=".into()),
+                    FieldValue::Null,
+                ]),
             ),
         ]),
         extra_attributes: BTreeMap::new(),
