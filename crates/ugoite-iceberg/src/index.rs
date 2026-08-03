@@ -1422,12 +1422,34 @@ pub fn validate_properties(properties: &Value, entry_form: &Value) -> Result<(Va
                 Value::String(ref s) => normalize_binary(s).map(Value::String),
                 _ => None,
             },
+            "list"
+                if field_def
+                    .get("items")
+                    .and_then(|items| items.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("asset_reference") =>
+            {
+                match raw_value {
+                    Value::Array(_) => Some(raw_value.clone()),
+                    Value::String(ref s) => serde_json::from_str::<Value>(s)
+                        .ok()
+                        .filter(|value| value.is_array()),
+                    _ => None,
+                }
+            }
             "list" => match raw_value {
                 Value::Array(_) => Some(raw_value.clone()),
                 Value::String(ref s) => Some(Value::Array(parse_markdown_list(s))),
                 _ => None,
             },
             "object_list" => parse_object_list(&raw_value),
+            "asset_reference" => match raw_value {
+                Value::Object(_) => Some(raw_value.clone()),
+                Value::String(ref s) => serde_json::from_str::<Value>(s)
+                    .ok()
+                    .filter(|value| value.is_object()),
+                _ => None,
+            },
             "boolean" => match raw_value {
                 Value::Bool(_) => Some(raw_value.clone()),
                 Value::String(ref s) => parse_boolean(s).map(Value::Bool),

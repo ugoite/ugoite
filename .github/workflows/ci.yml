@@ -200,6 +200,10 @@ jobs:
         id: test-e2e
         run: scripts/measure-step.sh test-e2e mise run test:e2e:smoke
 
+      - name: Form-owned Asset E2E
+        id: test-e2e-asset-owned
+        run: scripts/measure-step.sh test-e2e-asset-owned mise run test:e2e:asset-owned
+
       - name: Package runtime image artifact
         id: package-image
         run: scripts/measure-step.sh package-image mise run package:image
@@ -371,6 +375,7 @@ jobs:
             echo "- test:frontend: ${{ steps.test-frontend.outputs.duration_seconds }}s"
             echo "- test:docsite: ${{ steps.test-docsite.outputs.duration_seconds }}s"
             echo "- test:e2e:smoke: ${{ steps.test-e2e.outputs.duration_seconds }}s"
+            echo "- test:e2e:asset-owned: ${{ steps.test-e2e-asset-owned.outputs.duration_seconds }}s"
             echo "- package:docsite: ${{ steps.package-docsite.outputs.duration_seconds }}s"
             echo "- package:cli: ${{ steps.package-cli.outputs.duration_seconds }}s"
             echo "- package:helm: ${{ steps.package-helm.outputs.duration_seconds }}s"

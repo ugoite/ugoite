@@ -242,6 +242,9 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 [tasks."test:e2e:smoke"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke"
 
+[tasks."test:e2e:asset-owned"]
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:asset-owned"
+
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"
 run = "deno task e2e:full"
@@ -249,6 +252,10 @@ run = "deno task e2e:full"
 [tasks."e2e:smoke"]
 description = "Run CI-parity E2E smoke tests"
 run = "deno task e2e:smoke"
+
+[tasks."e2e:asset-owned"]
+description = "Run the required Form-owned Asset acceptance E2E"
+run = "deno task e2e:asset-owned"
 
 [tasks."test:smoke"]
 run = [

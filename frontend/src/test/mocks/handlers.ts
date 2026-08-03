@@ -523,11 +523,31 @@ export const handlers = [
       name,
       media_type: "application/octet-stream",
       size_bytes: 0,
-      sha256: "",
+      sha256: "0".repeat(64),
     };
     const store = mockAssets.get(spaceId);
     store?.set(id, asset);
     return HttpResponse.json(asset, { status: 201 });
+  }),
+
+  // Read an asset only with its containing Form and Entry context.
+  testHttp.get("/spaces/:spaceId/assets/:assetId", ({ params, request }) => {
+    const spaceId = params.spaceId as string;
+    const assetId = params.assetId as string;
+    const url = new URL(request.url);
+    const asset = mockAssets.get(spaceId)?.get(assetId);
+    if (!url.searchParams.get("form") || !url.searchParams.get("entry_id")) {
+      return HttpResponse.json({ detail: "Asset context required" }, {
+        status: 403,
+      });
+    }
+    if (!asset) {
+      return HttpResponse.json({ detail: "Not found" }, { status: 404 });
+    }
+    return new HttpResponse(new Uint8Array(asset.size_bytes), {
+      status: 200,
+      headers: { "Content-Type": asset.media_type },
+    });
   }),
 
   // Delete asset

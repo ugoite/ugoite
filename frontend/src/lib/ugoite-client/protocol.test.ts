@@ -2,11 +2,29 @@ import { describe, expect, it } from "vitest";
 import {
   getWasmSupportedOperations,
   prepareApiRequest,
+  validateAssetReference,
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
 } from "./protocol";
 
+const validReference = {
+  asset_id: "01900000-0000-7000-8000-000000000001",
+  name: "report.pdf",
+  media_type: "application/pdf",
+  size_bytes: 10,
+  sha256: "a".repeat(64),
+};
+
 describe("portable Ugoite API protocol WASM", () => {
+  it("uses the Rust domain contract for AssetReference validation", async () => {
+    await expect(
+      validateAssetReference({ ...validReference, asset_id: "../asset" }),
+    ).rejects.toThrow();
+    await expect(validateAssetReference(validReference)).resolves.toEqual(
+      validReference,
+    );
+  });
+
   it("REQ-API-001: exposes the expected ABI version and operation manifest", async () => {
     expect(UGOITE_WASM_PROTOCOL_VERSION).toBe(1);
     await expect(getWasmSupportedOperations()).resolves.toEqual(

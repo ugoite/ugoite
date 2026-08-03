@@ -53,6 +53,9 @@ const fieldTypeDescriptionKey = (type: string) => {
     return "createDialog.form.fieldType.timestampTzNs";
   }
   if (type === "uuid") return "createDialog.form.fieldType.uuid";
+  if (type === "asset_reference") {
+    return "createDialog.form.fieldType.assetReference";
+  }
   if (type === "row_reference") {
     return "createDialog.form.fieldType.rowReference";
   }
@@ -156,6 +159,9 @@ const appendInputTypeHints = (
       ),
     );
   }
+  if (types.has("asset_reference")) {
+    hints.push(t("entryGuidance.assetReferenceMarkdown"));
+  }
   return hints;
 };
 
@@ -171,7 +177,13 @@ const columnAuxRowClass =
   "ml-1 flex flex-col gap-2 sm:flex-row sm:items-center";
 const columnAuxInputClass = columnSharedInputClass;
 
-type FieldIssueSource = { name: string; type: string; targetForm?: string };
+type FieldIssueSource = {
+  name: string;
+  type: string;
+  targetForm?: string;
+  itemsType?: string;
+  itemsTargetForm?: string;
+};
 
 type FieldIssueContext = {
   availableForms?: string[];
@@ -182,8 +194,11 @@ const getRowReferenceIssue = (
   field: FieldIssueSource,
   context?: FieldIssueContext,
 ) => {
-  if (field.type !== "row_reference") return null;
-  const targetForm = field.targetForm?.trim();
+  const isListRowReference = field.type === "list" &&
+    field.itemsType === "row_reference";
+  if (field.type !== "row_reference" && !isListRowReference) return null;
+  const targetForm =
+    (isListRowReference ? field.itemsTargetForm : field.targetForm)?.trim();
   /* v8 ignore start */
   if (!targetForm) return t("createDialog.validation.targetFormRequired");
   if (isReservedMetadataForm(targetForm)) {
@@ -1235,7 +1250,14 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
   const [name, setName] = createSignal("");
   const [fields, setFields] = createSignal<
     Array<
-      { name: string; type: string; required: boolean; targetForm?: string }
+      {
+        name: string;
+        type: string;
+        required: boolean;
+        targetForm?: string;
+        itemsType?: string;
+        itemsTargetForm?: string;
+      }
     >
   >([]);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
@@ -1247,6 +1269,9 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
     if (current) options.add(current);
     return Array.from(options);
   });
+  const listItemTypes = createMemo(() =>
+    props.columnTypes.filter((type) => type !== "list" && type !== "object_list")
+  );
 
   const fieldIssues = createMemo(() =>
     buildFieldIssues(fields(), {
@@ -1312,7 +1337,12 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 
     const fieldRecord: Record<
       string,
-      { type: string; required: boolean; target_form?: string }
+      {
+        type: string;
+        required: boolean;
+        target_form?: string;
+        items?: { type: string; target_form?: string };
+      }
     > = {};
     let template = `# ${formName}\n\n`;
 
@@ -1323,11 +1353,20 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
         const target_form = f.type === "row_reference"
           ? f.targetForm?.trim()
           : undefined;
+        const items = f.type === "list" && f.itemsType
+          ? {
+            type: f.itemsType,
+            target_form: f.itemsType === "row_reference"
+              ? f.itemsTargetForm?.trim()
+              : undefined,
+          }
+          : undefined;
         /* v8 ignore stop */
         fieldRecord[trimmedName] = {
           type: f.type,
           required: f.required,
           target_form,
+          items,
         };
         template += `## ${trimmedName}\n\n`;
       }
@@ -1350,7 +1389,12 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
 
   const addField = () => {
     setSubmitError(null);
-    setFields([...fields(), { name: "", type: "string", required: false }]);
+    setFields([...fields(), {
+      name: "",
+      type: "string",
+      required: false,
+      itemsType: "",
+    }]);
   };
 
   const removeField = (index: number) => {
@@ -1483,6 +1527,19 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                     >
                       {fieldTypeDescription(field().type)}
                     </p>
+                    <label class="ml-1 inline-flex items-center gap-2 text-xs ui-muted">
+                      <input
+                        type="checkbox"
+                        checked={field().required}
+                        onChange={(event) =>
+                          updateField(
+                            i,
+                            "required",
+                            event.currentTarget.checked,
+                          )}
+                      />
+                      {t("createDialog.form.requiredLabel")}
+                    </label>
                     <Show when={field().type === "row_reference"}>
                       <div class={columnAuxRowClass}>
                         <span class="text-xs ui-muted">
@@ -1506,6 +1563,65 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                           </For>
                         </datalist>
                       </div>
+                    </Show>
+                    <Show when={field().type === "list"}>
+                      <div class={columnAuxRowClass}>
+                        <span class="text-xs ui-muted">
+                          {t("createDialog.form.listItemTypeLabel")}
+                        </span>
+                        <select
+                          class={columnAuxInputClass}
+                          aria-label={t("createDialog.form.listItemTypeLabel")}
+                          value={field().itemsType || ""}
+                          onChange={(event) =>
+                            updateField(
+                              i,
+                              "itemsType",
+                              event.currentTarget.value,
+                            )}
+                        >
+                          <option value="">
+                            {t("createDialog.form.listItemTypeText")}
+                          </option>
+                          <For each={listItemTypes()}>
+                            {(type) => (
+                              <option value={type}>
+                                {type === "asset_reference"
+                                  ? t("createDialog.form.listItemTypeAsset")
+                                  : type}
+                              </option>
+                            )}
+                          </For>
+                        </select>
+                      </div>
+                      <Show when={field().itemsType === "row_reference"}>
+                        <div class={columnAuxRowClass}>
+                          <span class="text-xs ui-muted">
+                            {t("createDialog.form.targetFormLabel")}
+                          </span>
+                          <input
+                            type="text"
+                            list={`list-row-ref-targets-${i}`}
+                            aria-label={t("createDialog.form.targetFormLabel")}
+                            placeholder={t(
+                              "createDialog.form.targetFormPlaceholder",
+                            )}
+                            value={field().itemsTargetForm || ""}
+                            onInput={(event) =>
+                              updateField(
+                                i,
+                                "itemsTargetForm",
+                                event.currentTarget.value,
+                              )}
+                            class={columnAuxInputClass}
+                          />
+                          <datalist id={`list-row-ref-targets-${i}`}>
+                            <For each={targetFormOptions()}>
+                              {(option) => <option value={option} />}
+                            </For>
+                          </datalist>
+                        </div>
+                      </Show>
                     </Show>
                     <Show when={fieldIssues().has(i)}>
                       <span class="text-xs ui-text-danger">
@@ -1574,16 +1690,28 @@ function processFields(
     type: string;
     required: boolean;
     targetForm?: string;
+    itemsType?: string;
+    itemsTargetForm?: string;
     defaultValue?: string;
   }>,
   existingFields: Record<
     string,
-    { type: string; required: boolean; target_form?: string }
+    {
+      type: string;
+      required: boolean;
+      target_form?: string;
+      items?: { type: string; target_form?: string };
+    }
   >,
 ) {
   const fieldRecord: Record<
     string,
-    { type: string; required: boolean; target_form?: string }
+    {
+      type: string;
+      required: boolean;
+      target_form?: string;
+      items?: { type: string; target_form?: string };
+    }
   > = {};
   const strategies: Record<string, string | null> = {};
   const currentNames = new Set<string>();
@@ -1595,11 +1723,20 @@ function processFields(
       const target_form = f.type === "row_reference"
         ? f.targetForm?.trim()
         : undefined;
+      const items = f.type === "list" && f.itemsType
+        ? {
+          type: f.itemsType,
+          target_form: f.itemsType === "row_reference"
+            ? f.itemsTargetForm?.trim()
+            : undefined,
+        }
+        : undefined;
       /* v8 ignore stop */
       fieldRecord[trimmedName] = {
         type: f.type,
         required: f.required,
         target_form,
+        items,
       };
       currentNames.add(trimmedName);
       if (!existingFields[trimmedName] && f.defaultValue) {
@@ -1631,6 +1768,8 @@ export function EditFormDialog(props: EditFormDialogProps) {
       type: string;
       required: boolean;
       targetForm?: string;
+      itemsType?: string;
+      itemsTargetForm?: string;
       defaultValue?: string;
       isNew?: boolean;
     }>
@@ -1644,6 +1783,9 @@ export function EditFormDialog(props: EditFormDialogProps) {
     /* v8 ignore stop */
     return Array.from(options);
   });
+  const listItemTypes = createMemo(() =>
+    props.columnTypes.filter((type) => type !== "list" && type !== "object_list")
+  );
 
   const fieldIssues = createMemo(() =>
     buildFieldIssues(fields(), {
@@ -1694,6 +1836,8 @@ export function EditFormDialog(props: EditFormDialogProps) {
         type: def.type,
         required: def.required,
         targetForm: def.target_form,
+        itemsType: def.items?.type,
+        itemsTargetForm: def.items?.target_form,
         isNew: false,
       }));
       setFields(initialFields);
@@ -1747,6 +1891,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
       name: "",
       type: "string",
       required: false,
+      itemsType: "",
       isNew: true,
     }]);
   };
@@ -1874,6 +2019,19 @@ export function EditFormDialog(props: EditFormDialogProps) {
                     >
                       {fieldTypeDescription(field().type)}
                     </p>
+                    <label class="ml-1 inline-flex items-center gap-2 text-xs ui-muted">
+                      <input
+                        type="checkbox"
+                        checked={field().required}
+                        onChange={(event) =>
+                          updateField(
+                            i,
+                            "required",
+                            event.currentTarget.checked,
+                          )}
+                      />
+                      {t("createDialog.form.requiredLabel")}
+                    </label>
                     <Show when={field().type === "row_reference"}>
                       <div class={columnAuxRowClass}>
                         <span class="text-xs ui-muted">
@@ -1897,6 +2055,65 @@ export function EditFormDialog(props: EditFormDialogProps) {
                           </For>
                         </datalist>
                       </div>
+                    </Show>
+                    <Show when={field().type === "list"}>
+                      <div class={columnAuxRowClass}>
+                        <span class="text-xs ui-muted">
+                          {t("createDialog.form.listItemTypeLabel")}
+                        </span>
+                        <select
+                          class={columnAuxInputClass}
+                          aria-label={t("createDialog.form.listItemTypeLabel")}
+                          value={field().itemsType || ""}
+                          onChange={(event) =>
+                            updateField(
+                              i,
+                              "itemsType",
+                              event.currentTarget.value,
+                            )}
+                        >
+                          <option value="">
+                            {t("createDialog.form.listItemTypeText")}
+                          </option>
+                          <For each={listItemTypes()}>
+                            {(type) => (
+                              <option value={type}>
+                                {type === "asset_reference"
+                                  ? t("createDialog.form.listItemTypeAsset")
+                                  : type}
+                              </option>
+                            )}
+                          </For>
+                        </select>
+                      </div>
+                      <Show when={field().itemsType === "row_reference"}>
+                        <div class={columnAuxRowClass}>
+                          <span class="text-xs ui-muted">
+                            {t("createDialog.form.targetFormLabel")}
+                          </span>
+                          <input
+                            type="text"
+                            list={`list-row-ref-targets-edit-${i}`}
+                            aria-label={t("createDialog.form.targetFormLabel")}
+                            placeholder={t(
+                              "createDialog.form.targetFormPlaceholder",
+                            )}
+                            value={field().itemsTargetForm || ""}
+                            onInput={(event) =>
+                              updateField(
+                                i,
+                                "itemsTargetForm",
+                                event.currentTarget.value,
+                              )}
+                            class={columnAuxInputClass}
+                          />
+                          <datalist id={`list-row-ref-targets-edit-${i}`}>
+                            <For each={targetFormOptions()}>
+                              {(option) => <option value={option} />}
+                            </For>
+                          </datalist>
+                        </div>
+                      </Show>
                     </Show>
                     <Show when={fieldIssues().has(i) && field().isNew}>
                       <span class="text-xs ui-text-danger">
