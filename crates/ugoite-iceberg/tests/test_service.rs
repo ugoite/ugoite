@@ -59,6 +59,104 @@ async fn test_service_boundary_covers_primary_adapter_operations() -> Result<()>
 }
 
 #[tokio::test]
+async fn authorized_entry_reads_find_entries_after_creating_multiple_asset_forms() -> Result<()> {
+    let service = UgoiteService::new("memory://authorized-multiple-asset-forms")?;
+    let owner = Uuid::from_u128(301);
+    let space_id = service
+        .create_space_for_principal("authorized-multiple-asset-forms", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &json!({
+                "name": "MediaAssets",
+                "fields": {
+                    "thumbnail": {"type": "asset_reference", "required": true},
+                    "microscope_images": {
+                        "type": "list",
+                        "required": true,
+                        "items": {"type": "asset_reference"}
+                    }
+                }
+            }),
+        )
+        .await?;
+    service
+        .upsert_form(
+            &space_id,
+            &json!({
+                "name": "ContractsAssets",
+                "fields": {
+                    "contract": {"type": "asset_reference", "required": true},
+                    "raw_data": {
+                        "type": "list",
+                        "required": true,
+                        "items": {"type": "asset_reference"}
+                    }
+                }
+            }),
+        )
+        .await?;
+
+    let thumbnail = service
+        .save_asset(&space_id, "thumbnail.txt", b"thumbnail")
+        .await?;
+    let microscope_a = service
+        .save_asset(&space_id, "microscope-a.txt", b"a")
+        .await?;
+    let contract = service
+        .save_asset(&space_id, "contract.pdf", b"contract")
+        .await?;
+    let raw_data = service
+        .save_asset(&space_id, "raw-data.csv", b"raw")
+        .await?;
+
+    let media_id = "media-entry";
+    service
+        .create_entry_authorized_for_principals(
+            &space_id,
+            media_id,
+            &format!(
+                "---\nform: MediaAssets\nthumbnail: {}\nmicroscope_images: [{}]\n---\n# Media",
+                serde_json::to_string(&thumbnail)?,
+                serde_json::to_string(&microscope_a)?
+            ),
+            "owner",
+            &[owner],
+        )
+        .await?;
+    assert_eq!(
+        service
+            .get_entry_authorized_for_principals(&space_id, media_id, &[owner])
+            .await?["id"],
+        media_id
+    );
+
+    let contracts_id = "contracts-entry";
+    service
+        .create_entry_authorized_for_principals(
+            &space_id,
+            contracts_id,
+            &format!(
+                "---\nform: ContractsAssets\ncontract: {}\nraw_data: [{}]\n---\n# Contracts",
+                serde_json::to_string(&contract)?,
+                serde_json::to_string(&raw_data)?
+            ),
+            "owner",
+            &[owner],
+        )
+        .await?;
+    assert_eq!(
+        service
+            .get_entry_authorized_for_principals(&space_id, contracts_id, &[owner])
+            .await?["id"],
+        contracts_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn authorized_entry_writes_apply_form_entry_and_delegated_principal_policies() -> Result<()> {
     let service = UgoiteService::new("memory://authorized-entry-writes")?;
     let owner = Uuid::from_u128(201);
