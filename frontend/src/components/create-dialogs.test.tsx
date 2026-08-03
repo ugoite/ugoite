@@ -2415,12 +2415,8 @@ describe("EditFormDialog", () => {
     );
   });
 
-  it("REQ-FE-043: displays the shared unsupported field type error", async () => {
-    const onSubmit = vi.fn().mockRejectedValue(
-      new Error(
-        "Failed to create form: Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead",
-      ),
-    );
+  it("REQ-FE-043: blocks unsupported existing field type changes before submit", async () => {
+    const onSubmit = vi.fn();
     const timestampForm: Form = {
       ...mockForm,
       fields: {
@@ -2439,17 +2435,19 @@ describe("EditFormDialog", () => {
       />
     ));
 
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "date" },
-    });
+    expect(screen.getByRole("combobox")).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead",
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: {
+          time: { type: "timestamp", required: false, target_form: undefined },
+        },
+      }),
     );
   });
 
-  it("REQ-FE-032: removes a column from the edit dialog", async () => {
+  it("REQ-FE-043: blocks removing an existing column before submit", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
 
@@ -2464,17 +2462,16 @@ describe("EditFormDialog", () => {
       />
     ));
 
-    // Remove the existing field
     const removeButton = screen.getByRole("button", { name: "Remove column" });
+    expect(removeButton).toBeDisabled();
     fireEvent.click(removeButton);
 
-    // Submit with no fields
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "ExistingForm",
-        fields: {},
+        fields: expect.objectContaining({ field1: expect.any(Object) }),
       }),
     );
   });

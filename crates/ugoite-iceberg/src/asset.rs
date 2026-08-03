@@ -132,6 +132,10 @@ pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<
     Ok(AssetContent { bytes })
 }
 
+pub(crate) async fn asset_exists(op: &Operator, ws_path: &str, asset_id: &str) -> Result<bool> {
+    Ok(op.exists(&asset_path(ws_path, asset_id)).await?)
+}
+
 pub async fn current_asset_reference_exists(
     op: &Operator,
     ws_path: &str,

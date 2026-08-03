@@ -560,7 +560,10 @@ describe("error paths", () => {
       ),
     );
     await expect(
-      spaceApi.inviteMember("nonexistent", { label: "User One", role: "editor" }),
+      spaceApi.inviteMember("nonexistent", {
+        label: "User One",
+        role: "editor",
+      }),
     ).rejects.toThrow();
   });
 
@@ -860,7 +863,7 @@ describe("error paths", () => {
         template: "",
         fields: {},
       }),
-    ).rejects.toThrow("Failed to create form");
+    ).rejects.toThrow("Failed to save form");
   });
 
   it("searchApi.keyword throws on failure", async () => {

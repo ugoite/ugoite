@@ -147,6 +147,42 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("shows field-level validation feedback and keeps the create draft", async () => {
+    (entryApi.create as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error(
+        'Failed to create entry: Form validation failed: [{"field":"amount","message":"Field \'amount\' has invalid type"}]',
+      ),
+    );
+    const form: Form = {
+      name: "Invoice",
+      version: 1,
+      template: "# Invoice\n\n## amount\n",
+      fields: {
+        amount: { type: "double", required: false },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const amount = await screen.findByLabelText("amount");
+    fireEvent.input(amount, { target: { value: "not-a-number" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Form validation failed")).toBeInTheDocument();
+    });
+    expect(amount).toHaveValue("not-a-number");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
   it("REQ-ENTRY-1872: creates numeric and timestamp fields in one clean revision", async () => {
     const onCreated = vi.fn();
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
