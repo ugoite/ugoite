@@ -50,7 +50,6 @@ export function AssetField(props: AssetFieldProps) {
   const readingIds = state.readingIds;
   const setReadingIds = state.setReadingIds;
   const localFiles = state.localFiles;
-  const setLocalFiles = state.setLocalFiles;
   let disposed = false;
 
   if (!state.hasDraftBinding()) {
