@@ -1437,7 +1437,7 @@ impl IcebergWorkspace {
             if let Some(snapshot_id) = snapshot_id {
                 (
                     Arc::new(
-                        IcebergStaticTableProvider::try_new_from_table_snapshot(
+                        read_schema_provider::CurrentSchemaTableProvider::try_new(
                             table.clone(),
                             snapshot_id,
                         )

@@ -277,6 +277,20 @@ async fn physical_plan_keeps_iceberg_projection_filter_and_limit_pushdown() -> a
     assert!(normalized.contains("projection"), "{plan}");
     assert!(normalized.contains("filter"), "{plan}");
     assert!(normalized.contains("limit"), "{plan}");
+    let scan = normalized
+        .find("icebergtablescan")
+        .map(|index| &normalized[index..])
+        .expect("the physical plan must contain the upstream Iceberg scan");
+    let predicates = scan
+        .split_once("predicates: some(")
+        .and_then(|(_, rest)| rest.split_once(", limit:"))
+        .map(|(predicate, _)| predicate)
+        .expect("the upstream scan must expose its pushed predicate");
+    assert!(predicates.contains("operation"), "{plan}");
+    assert!(
+        !predicates.contains("title"),
+        "payload predicates must remain above latest-state selection: {plan}"
+    );
     Ok(())
 }
 

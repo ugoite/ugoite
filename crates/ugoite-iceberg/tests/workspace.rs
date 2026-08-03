@@ -1017,6 +1017,28 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         Some(&FieldValue::String("old".into()))
     );
     assert!(!current[0].values.contains_key(&FieldId::new(101).unwrap()));
+
+    let explicit_snapshot = workspace
+        .read_revision_view_at_snapshot(
+            form.id,
+            RevisionView::Current,
+            after_snapshot.snapshot_id(),
+        )
+        .await?;
+    assert_eq!(explicit_snapshot.len(), 1);
+    assert_eq!(
+        explicit_snapshot[0].values.get(&FieldId::new(100).unwrap()),
+        Some(&FieldValue::String("old".into()))
+    );
+    assert!(!explicit_snapshot[0]
+        .values
+        .contains_key(&FieldId::new(101).unwrap()));
+
+    let checkpoint = workspace.capture_checkpoint().await?;
+    let checkpoint_current = workspace
+        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .await?;
+    assert_eq!(checkpoint_current, explicit_snapshot);
     let metadata_after_read = table
         .file_io()
         .new_input(&metadata_location)?

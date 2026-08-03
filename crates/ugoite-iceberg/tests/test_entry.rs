@@ -745,6 +745,171 @@ async fn typed_uuid_binary_and_list_queries_use_physical_arrow_types() -> anyhow
 }
 
 #[tokio::test]
+async fn markdown_typed_lists_use_the_form_item_type_for_round_trip_and_contains(
+) -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "markdown-typed-lists", "/tmp").await?;
+    let ws_path = "spaces/markdown-typed-lists";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Project",
+            "fields": {"Name": {"type": "string"}},
+        }),
+    )
+    .await?;
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "TypedLists",
+            "fields": {
+                "Integers": {"type": "list", "items": {"type": "integer"}},
+                "Longs": {"type": "list", "items": {"type": "long"}},
+                "Floats": {"type": "list", "items": {"type": "float"}},
+                "Doubles": {"type": "list", "items": {"type": "double"}},
+                "Booleans": {"type": "list", "items": {"type": "boolean"}},
+                "Dates": {"type": "list", "items": {"type": "date"}},
+                "Times": {"type": "list", "items": {"type": "time"}},
+                "Timestamps": {"type": "list", "items": {"type": "timestamp"}},
+                "TimestampTzs": {"type": "list", "items": {"type": "timestamp_tz"}},
+                "TimestampNss": {"type": "list", "items": {"type": "timestamp_ns"}},
+                "TimestampTzNss": {"type": "list", "items": {"type": "timestamp_tz_ns"}},
+                "Uuids": {"type": "list", "items": {"type": "uuid"}},
+                "Binaries": {"type": "list", "items": {"type": "binary"}},
+                "Projects": {
+                    "type": "list",
+                    "items": {"type": "row_reference", "target_form": "Project"},
+                },
+                "Attachments": {"type": "list", "items": {"type": "asset_reference"}},
+            },
+        }),
+    )
+    .await?;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "project-1",
+        "---\nform: Project\n---\n# Project\n\n## Name\nExample",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    let reference = asset::save_asset(&op, ws_path, "typed-list.bin", b"typed list").await?;
+    let reference_json = serde_json::to_string(&reference)?;
+    let content = format!(
+        "---\nform: TypedLists\n---\n# Typed lists\n\n\
+## Integers\n- 1\n- 2\n- null\n\n\
+## Longs\n- 3000000000\n- 4000000000\n\n\
+## Floats\n- 1.25\n- 2.5\n\n\
+## Doubles\n- 3.5\n- 4.75\n\n\
+## Booleans\n- true\n- false\n\n\
+## Dates\n- 2024-01-02\n\n\
+## Times\n- 03:04:05.123456\n\n\
+## Timestamps\n- 2024-01-02T03:04:05.123456\n\n\
+## TimestampTzs\n- 2024-01-02T03:04:05.123456+09:00\n\n\
+## TimestampNss\n- 2024-01-02T03:04:05.123456789\n\n\
+## TimestampTzNss\n- 2024-01-02T03:04:05.123456789+09:00\n\n\
+## Uuids\n- A7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D\n\n\
+## Binaries\n- base64:ZGF0YQ==\n\n\
+## Projects\n- project-1\n\n\
+## Attachments\n- {reference_json}"
+    );
+    entry::create_entry(
+        &op,
+        ws_path,
+        "typed-list-entry",
+        &content,
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+
+    let rows = index::query_index(&op, ws_path, r#"{"form":"TypedLists"}"#).await?;
+    assert_eq!(rows.len(), 1);
+    let properties = &rows[0]["properties"];
+    assert_eq!(properties["Integers"], serde_json::json!([1, 2, null]));
+    assert_eq!(
+        properties["Longs"],
+        serde_json::json!([3000000000_i64, 4000000000_i64])
+    );
+    assert_eq!(properties["Floats"], serde_json::json!([1.25, 2.5]));
+    assert_eq!(properties["Booleans"], serde_json::json!([true, false]));
+    assert_eq!(properties["Dates"], serde_json::json!(["2024-01-02"]));
+    assert_eq!(properties["Times"], serde_json::json!(["03:04:05.123456"]));
+    assert_eq!(
+        properties["TimestampTzs"],
+        serde_json::json!(["2024-01-01T18:04:05.123456+00:00"])
+    );
+    assert_eq!(
+        properties["TimestampTzNss"],
+        serde_json::json!(["2024-01-01T18:04:05.123456789Z"])
+    );
+    assert_eq!(
+        properties["Uuids"],
+        serde_json::json!(["a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d"])
+    );
+    assert_eq!(
+        properties["Binaries"],
+        serde_json::json!(["base64:ZGF0YQ=="])
+    );
+    assert_eq!(properties["Projects"], serde_json::json!(["project-1"]));
+    assert_eq!(
+        properties["Attachments"][0]["asset_id"],
+        reference.asset_id.to_string()
+    );
+
+    for query in [
+        serde_json::json!({"form": "TypedLists", "Integers": {"$contains": 2}}),
+        serde_json::json!({"form": "TypedLists", "Longs": {"$contains": 3000000000_i64}}),
+        serde_json::json!({"form": "TypedLists", "Floats": {"$contains": 1.25}}),
+        serde_json::json!({"form": "TypedLists", "Doubles": {"$contains": 3.5}}),
+        serde_json::json!({"form": "TypedLists", "Booleans": {"$contains": true}}),
+        serde_json::json!({"form": "TypedLists", "Dates": {"$contains": "2024-01-02"}}),
+        serde_json::json!({"form": "TypedLists", "Times": {"$contains": "03:04:05.123456"}}),
+        serde_json::json!({"form": "TypedLists", "Timestamps": {"$contains": "2024-01-02T03:04:05.123456"}}),
+        serde_json::json!({"form": "TypedLists", "TimestampTzs": {"$contains": "2024-01-01T18:04:05.123456+00:00"}}),
+        serde_json::json!({"form": "TypedLists", "TimestampNss": {"$contains": "2024-01-02T03:04:05.123456789"}}),
+        serde_json::json!({"form": "TypedLists", "TimestampTzNss": {"$contains": "2024-01-01T18:04:05.123456789Z"}}),
+        serde_json::json!({"form": "TypedLists", "Uuids": {"$contains": "a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d"}}),
+        serde_json::json!({"form": "TypedLists", "Binaries": {"$contains": "base64:ZGF0YQ=="}}),
+        serde_json::json!({"form": "TypedLists", "Projects": {"$contains": "project-1"}}),
+        serde_json::json!({"form": "TypedLists", "Attachments": {"$contains": {"asset_id": reference.asset_id.to_string()}}}),
+    ] {
+        assert_eq!(
+            index::query_index(&op, ws_path, &query.to_string())
+                .await?
+                .len(),
+            1,
+            "typed-list predicate must use the canonical item type: {query}"
+        );
+    }
+
+    let revision_id = entry::get_entry_content(&op, ws_path, "typed-list-entry")
+        .await?
+        .revision_id;
+    let updated = content.replace("- 2\n- null", "- 3\n- null");
+    entry::update_entry(
+        &op,
+        ws_path,
+        "typed-list-entry",
+        &updated,
+        Some(&revision_id),
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+    let updated_rows = index::query_index(&op, ws_path, r#"{"form":"TypedLists"}"#).await?;
+    assert_eq!(
+        updated_rows[0]["properties"]["Integers"],
+        serde_json::json!([1, 3, null])
+    );
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-ENTRY-003
 async fn test_entry_req_entry_003_update_entry_success() -> anyhow::Result<()> {
     let op = setup_operator()?;

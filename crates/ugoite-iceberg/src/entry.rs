@@ -608,6 +608,19 @@ fn json_to_field_value_for_type(
     if value.is_null() {
         return Ok(FieldValue::Null);
     }
+    // Markdown lists arrive as strings because Markdown has no native JSON
+    // scalar type. Treat the explicit null transport markers as null for
+    // typed items, while preserving the literal string "null" for string
+    // lists.
+    if !matches!(
+        field_type,
+        FieldType::String | FieldType::Markdown | FieldType::Sql
+    ) && value
+        .as_str()
+        .is_some_and(|value| matches!(value.trim(), "null" | "~"))
+    {
+        return Ok(FieldValue::Null);
+    }
     match field_type {
         FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
             Ok(FieldValue::String(
@@ -618,17 +631,37 @@ fn json_to_field_value_for_type(
             ))
         }
         FieldType::Boolean => Ok(FieldValue::Boolean(
-            value.as_bool().context("boolean field must be a boolean")?,
+            value
+                .as_bool()
+                .or_else(|| {
+                    value.as_str().and_then(|value| match value.trim() {
+                        "true" | "True" | "TRUE" => Some(true),
+                        "false" | "False" | "FALSE" => Some(false),
+                        _ => None,
+                    })
+                })
+                .context("boolean field must be a boolean")?,
         )),
         FieldType::Integer => Ok(FieldValue::Integer(i64::from(
-            i32::try_from(value.as_i64().context("integer field must be an integer")?)
-                .context("integer field is outside the Int32 range")?,
+            i32::try_from(
+                value
+                    .as_i64()
+                    .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
+                    .context("integer field must be an integer")?,
+            )
+            .context("integer field is outside the Int32 range")?,
         ))),
         FieldType::Long => Ok(FieldValue::Integer(
-            value.as_i64().context("long field must be an integer")?,
+            value
+                .as_i64()
+                .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
+                .context("long field must be an integer")?,
         )),
         FieldType::Float | FieldType::Double => {
-            let value = value.as_f64().context("floating field must be a number")?;
+            let value = value
+                .as_f64()
+                .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
+                .context("floating field must be a number")?;
             if !value.is_finite() {
                 return Err(anyhow!("floating field must be finite"));
             }
@@ -685,8 +718,12 @@ fn json_to_field_value_for_type(
                 .context("invalid binary field")?,
         )),
         FieldType::AssetReference => Ok(FieldValue::AssetReference(
-            serde_json::from_value::<AssetReference>(value.clone())
-                .context("invalid asset reference value")?,
+            serde_json::from_value::<AssetReference>(match value {
+                Value::String(raw) => serde_json::from_str(raw)
+                    .context("asset reference list item must contain a JSON object")?,
+                value => value.clone(),
+            })
+            .context("invalid asset reference value")?,
         )),
         FieldType::List => {
             let values = value
