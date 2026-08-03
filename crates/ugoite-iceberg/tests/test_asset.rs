@@ -11,6 +11,7 @@ use ugoite_iceberg::asset;
 use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
+use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::service::UgoiteService;
 use ugoite_iceberg::space;
@@ -119,6 +120,28 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
         entries[0]["properties"]["Attachments"][0]["asset_id"],
         reference.asset_id
     );
+    let scalar_matches = index::query_index(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "Attachment": {"asset_id": reference.asset_id}
+        })
+        .to_string(),
+    )
+    .await?;
+    assert_eq!(scalar_matches.len(), 1);
+    assert_eq!(scalar_matches[0]["id"], "media-1");
+    let list_matches = index::query_index(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "Attachments": {"$contains": {"asset_id": reference.asset_id}}
+        })
+        .to_string(),
+    )
+    .await?;
+    assert_eq!(list_matches.len(), 1);
+    assert_eq!(list_matches[0]["id"], "media-1");
     let workspace = ugoite_iceberg::iceberg_store::native_workspace(&op, ws_path).await?;
     assert!(
         asset::current_asset_reference_exists_in_workspace(

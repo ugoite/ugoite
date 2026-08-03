@@ -2,7 +2,7 @@
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use iceberg::io::{FileIO, FileIOBuilder, Storage, StorageConfig, StorageFactory};
-use iceberg::spec::{TableMetadata, TableMetadataBuilder};
+use iceberg::spec::{FormatVersion, TableMetadata, TableMetadataBuilder};
 use iceberg::{
     Catalog, Error, ErrorKind, MetadataLocation, Namespace, NamespaceIdent, Result, Runtime,
     TableCommit, TableCreation, TableIdent,
@@ -1979,7 +1979,7 @@ impl SpaceCatalog {
         let base_metadata_location = base.metadata_location_result()?.to_string();
         let metadata_location = MetadataLocation::from_str(&base_metadata_location)?
             .with_next_version()
-            .with_new_metadata(&metadata)
+            .try_with_new_metadata(&metadata)?
             .to_string();
         metadata
             .write_to(
@@ -3449,24 +3449,24 @@ impl Catalog for SpaceCatalog {
                 ));
             }
         }
-        let location = creation.location.clone().ok_or_else(|| {
-            Error::new(
+        if creation.location.is_none() {
+            return Err(Error::new(
                 ErrorKind::DataInvalid,
                 "Ugoite requires an explicit Iceberg table location",
-            )
-        })?;
+            ));
+        }
         // Iceberg Rust's public table-creation builder intentionally assigns
         // fresh field IDs. Ugoite's Form IDs are already stable Iceberg IDs,
         // so preserve that schema in the resulting standard Iceberg metadata
         // rather than maintaining a second mapping document.
         let requested_schema = creation.schema.clone();
-        let metadata = preserve_schema_field_ids(
-            TableMetadataBuilder::from_table_creation(creation)?
-                .build()?
-                .metadata,
-            requested_schema,
-        )?;
-        let metadata_location = MetadataLocation::new_with_metadata(location, &metadata);
+        let mut metadata_builder = TableMetadataBuilder::from_table_creation(creation)?;
+        if requested_schema.calc_min_compatible_format() == FormatVersion::V3 {
+            metadata_builder = metadata_builder.upgrade_format_version(FormatVersion::V3)?;
+        }
+        let metadata =
+            preserve_schema_field_ids(metadata_builder.build()?.metadata, requested_schema)?;
+        let metadata_location = MetadataLocation::try_new_with_metadata(&metadata)?;
         metadata.write_to(&self.file_io, &metadata_location).await?;
         let metadata_location = metadata_location.to_string();
         let created = iceberg::table::Table::builder()

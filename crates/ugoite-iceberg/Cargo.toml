@@ -12,11 +12,11 @@ arrow-json = "58.4"
 arrow-schema = "58.4"
 base64 = "0.23"
 chrono = { version = "0.4.44", features = ["serde"] }
-datafusion = "53.1.0"
+datafusion = "54.1.0"
 futures = "0.3"
-iceberg = "=0.10.0"
-iceberg-datafusion = "=0.10.0"
-iceberg-storage-opendal = "=0.10.0"
+iceberg = { git = "https://github.com/apache/iceberg-rust.git", rev = "3d84c81", version = "0.10.0" }
+iceberg-datafusion = { git = "https://github.com/apache/iceberg-rust.git", rev = "3d84c81", version = "0.10.0" }
+iceberg-storage-opendal = { git = "https://github.com/apache/iceberg-rust.git", rev = "3d84c81", version = "0.10.0" }
 opendal = { version = "0.57", default-features = false, features = ["executors-tokio", "services-fs", "services-memory", "services-s3", "services-gcs", "services-azdls", "services-oss"] }
 parquet = { version = "58.4", default-features = false, features = ["arrow", "async"] }
 serde = { version = "1.0", features = ["derive"] }

@@ -648,9 +648,14 @@ test.describe("Entries CRUD", () => {
 				new URL(page.url()).pathname.split("/").pop() ?? "",
 			);
 			entryIds.push(contractsEntryId);
-			const contractsEntryResponse = await request.get(
-				getBackendUrl(`/spaces/${spaceId}/entries/${contractsEntryId}`),
+			const contractsEntryUrl = getBackendUrl(
+				`/spaces/${spaceId}/entries/${contractsEntryId}`,
 			);
+			let contractsEntryResponse = await request.get(contractsEntryUrl);
+			for (let attempt = 0; attempt < 10 && !contractsEntryResponse.ok(); attempt++) {
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				contractsEntryResponse = await request.get(contractsEntryUrl);
+			}
 			expect(contractsEntryResponse.ok()).toBeTruthy();
 			const contractsEntry = await contractsEntryResponse.json() as { content: string };
 			expect(contractsEntry.content).toContain('"name":"contract.pdf"');
