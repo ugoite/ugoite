@@ -1,5 +1,6 @@
 import initializeWasm from "../generated/ugoite_wasm.wasm?init";
 import { apiFetch, type ApiFetchOptions } from "../api";
+import type { AssetReference } from "../types";
 
 export const UGOITE_API_OPERATIONS = [
   "auth.get_config",
@@ -50,6 +51,7 @@ export const UGOITE_API_OPERATIONS = [
   "access.get",
   "access.put",
   "asset.upload",
+  "asset.read",
   "asset.delete",
 ] as const;
 
@@ -157,6 +159,15 @@ export const getWasmSupportedOperations = async (): Promise<
   UgoiteApiOperation[]
 > => await invokeProtocol<UgoiteApiOperation[]>({ action: "operations" });
 
+/** Validate an AssetReference with the canonical Rust domain implementation. */
+export const validateAssetReference = async (
+  value: unknown,
+): Promise<AssetReference> =>
+  await invokeProtocol<AssetReference>({
+    action: "domain.validate_asset_reference",
+    value,
+  });
+
 export class UgoiteApiError extends Error {
   readonly kind: string;
   readonly code?: string;
@@ -225,6 +236,31 @@ export type ProtocolFetchOptions =
     body?: BodyInit | null;
   };
 
+const executeProtocolRequest = async (
+  operation: UgoiteApiOperation,
+  argumentsValue: Record<string, unknown>,
+  body: unknown,
+  options: ProtocolFetchOptions,
+): Promise<Response> => {
+  const prepared = await prepareApiRequest(operation, argumentsValue, body);
+  const headers = new Headers();
+  for (const header of prepared.headers) {
+    headers.set(header.name, header.value);
+  }
+  const optionHeaders = new Headers(options.headers);
+  optionHeaders.forEach((value, name) => headers.set(name, value));
+
+  const requestBody = prepared.body_kind === "json"
+    ? prepared.body
+    : options.body;
+  return await apiFetch(prepared.path, {
+    ...options,
+    method: prepared.method,
+    headers,
+    body: requestBody,
+  });
+};
+
 /**
  * Execute a named Ugoite operation.
  *
@@ -239,22 +275,29 @@ export const protocolFetch = async <T>(
   body?: unknown,
   options: ProtocolFetchOptions = {},
 ): Promise<T> => {
-  const prepared = await prepareApiRequest(operation, argumentsValue, body);
-  const headers = new Headers();
-  for (const header of prepared.headers) {
-    headers.set(header.name, header.value);
-  }
-  const optionHeaders = new Headers(options.headers);
-  optionHeaders.forEach((value, name) => headers.set(name, value));
-
-  const requestBody = prepared.body_kind === "json"
-    ? prepared.body
-    : options.body;
-  const response = await apiFetch(prepared.path, {
-    ...options,
-    method: prepared.method,
-    headers,
-    body: requestBody,
-  });
+  const response = await executeProtocolRequest(
+    operation,
+    argumentsValue,
+    body,
+    options,
+  );
   return await decodeApiResponse<T>(operation, response);
+};
+
+/** Execute an operation whose successful response is not JSON (for example asset bytes). */
+export const protocolFetchResponse = async (
+  operation: UgoiteApiOperation,
+  argumentsValue: Record<string, unknown> = {},
+  options: ProtocolFetchOptions = {},
+): Promise<Response> => {
+  const response = await executeProtocolRequest(
+    operation,
+    argumentsValue,
+    undefined,
+    options,
+  );
+  if (!response.ok) {
+    await decodeApiResponse<never>(operation, response);
+  }
+  return response;
 };

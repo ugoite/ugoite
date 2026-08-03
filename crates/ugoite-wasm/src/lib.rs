@@ -32,6 +32,12 @@ fn invoke_domain(request: serde_json::Value) -> String {
             .cloned()
             .ok_or_else(|| "value is required".to_string())?;
         match action {
+            "domain.validate_asset_reference" => {
+                let reference: ugoite_domain::entry::AssetReference =
+                    serde_json::from_value(payload).map_err(|error| error.to_string())?;
+                reference.validate().map_err(|error| error.to_string())?;
+                serde_json::to_value(reference).map_err(|error| error.to_string())
+            }
             "domain.validate_form" => {
                 let form: ugoite_domain::form::FormDefinition =
                     serde_json::from_value(payload).map_err(|error| error.to_string())?;

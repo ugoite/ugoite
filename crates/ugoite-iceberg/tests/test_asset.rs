@@ -99,7 +99,7 @@ async fn typed_form_asset_references_round_trip_and_guard_deletion() -> anyhow::
     let reference = asset::save_asset(&op, ws_path, "image.png", b"bytes").await?;
     let reference_json = serde_json::to_string(&reference)?;
     let content = format!(
-            "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}, null]\n---\n# Photo"
+            "---\nform: Media\nAttachment: {reference_json}\nAttachments: [{reference_json}]\n---\n# Photo"
     );
     entry::create_entry(
         &op,

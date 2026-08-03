@@ -8,6 +8,7 @@
  */
 
 import { expect, test, type Page } from "@playwright/test";
+import { Buffer } from "node:buffer";
 import { ensureDefaultForm, getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 async function settleUiLoading(page: Page): Promise<void> {
@@ -414,6 +415,253 @@ test.describe("Entries CRUD", () => {
 		expect(entry.content).toContain("## Project");
 		expect(entry.content).toContain(projectAlphaId);
 		expect(entry.content).not.toContain(projectBetaId);
+	});
+
+	test("REQ-FE-1877: unrelated Forms own independently named scalar and list Assets", async ({
+		page,
+		request,
+	}) => {
+		test.setTimeout(120_000);
+		const timestamp = Date.now();
+		const spaceSlug = `form-owned-assets-${timestamp}`;
+		const mediaForm = `MediaAssets-${timestamp}`;
+		const contractsForm = `ContractsAssets-${timestamp}`;
+		const entryIds: string[] = [];
+
+		const createSpace = await request.post(getBackendUrl("/spaces"), {
+			data: { name: spaceSlug },
+		});
+		expect([200, 201, 409]).toContain(createSpace.status());
+		const createdSpace = (await createSpace.json()) as { id: string };
+		const spaceId = createdSpace.id;
+
+		const createForm = async (
+			name: string,
+			fields: Record<string, unknown>,
+		) => {
+			const response = await request.post(
+				getBackendUrl(`/spaces/${spaceId}/forms`),
+				{
+					data: {
+						name,
+						template: `# ${name}\n\n${Object.keys(fields).map((field) => `## ${field}\n`).join("\n")}`,
+						fields,
+					},
+				},
+			);
+			expect(response.status()).toBe(201);
+		};
+
+		try {
+			await createForm(mediaForm, {
+				thumbnail: { type: "asset_reference", required: true },
+				microscope_images: {
+					type: "list",
+					required: true,
+					items: { type: "asset_reference" },
+				},
+			});
+			await createForm(contractsForm, {
+				contract: { type: "asset_reference", required: true },
+				raw_data: {
+					type: "list",
+					required: true,
+					items: { type: "asset_reference" },
+				},
+			});
+			await page.goto(
+				getFrontendUrl(
+					`/spaces/${spaceId}/entries/new?form=${encodeURIComponent(mediaForm)}`,
+				),
+				{ waitUntil: "domcontentloaded" },
+			);
+			const thumbnail = page.locator('[data-field-name="thumbnail"]');
+			const microscopeImages = page.locator(
+				'[data-field-name="microscope_images"]',
+			);
+			await expect(thumbnail).toBeVisible();
+			await thumbnail.locator('input[type="file"]').setInputFiles({
+				name: "thumbnail.txt",
+				mimeType: "text/plain",
+				buffer: Buffer.from("thumbnail"),
+			});
+			await microscopeImages.locator('input[type="file"]').setInputFiles([
+				{
+					name: "microscope-a.txt",
+					mimeType: "text/plain",
+					buffer: Buffer.from("a"),
+				},
+				{
+					name: "microscope-b.txt",
+					mimeType: "text/plain",
+					buffer: Buffer.from("b"),
+				},
+			]);
+			await expect(
+				page.getByText("Uploaded; entry not saved yet"),
+			).toHaveCount(3, { timeout: 15_000 });
+			const createResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "POST" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries`),
+				{ timeout: 15_000 },
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			expect((await createResponse).status()).toBe(201);
+			await expect(page).toHaveURL(
+				new RegExp(`/spaces/${spaceId}/entries/[^/]+$`),
+			);
+			const mediaEntryId = decodeURIComponent(
+				new URL(page.url()).pathname.split("/").pop() ?? "",
+			);
+			entryIds.push(mediaEntryId);
+
+			let mediaEntryResponse = await request.get(
+				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
+			);
+			expect(mediaEntryResponse.ok()).toBeTruthy();
+			let mediaEntry = await mediaEntryResponse.json() as { content: string };
+			expect(mediaEntry.content).toContain('"name":"thumbnail.txt"');
+			expect(mediaEntry.content).toContain('"name":"microscope-a.txt"');
+			expect(mediaEntry.content).toContain('"name":"microscope-b.txt"');
+
+			await page.reload({ waitUntil: "domcontentloaded" });
+			await expect(page.getByText("thumbnail.txt")).toBeVisible();
+			const readResponse = page.waitForResponse(
+				(response) => {
+					const requestEvent = response.request();
+					const url = new URL(response.url());
+					return requestEvent.method() === "GET" &&
+						url.pathname.includes(`/api/spaces/${spaceId}/assets/`) &&
+						url.searchParams.get("form") === mediaForm &&
+						url.searchParams.get("entry_id") === mediaEntryId;
+				},
+				{ timeout: 15_000 },
+			);
+			await thumbnail.getByRole("button", { name: "Open or download" }).click();
+			const assetReadResponse = await readResponse;
+			expect(assetReadResponse.status()).toBe(200);
+			expect(await assetReadResponse.body()).toEqual(Buffer.from("thumbnail"));
+
+			const replacement = page.locator('[data-field-name="thumbnail"]');
+			await replacement.getByLabel("Replace").setInputFiles({
+				name: "thumbnail-replaced.txt",
+				mimeType: "text/plain",
+				buffer: Buffer.from("replacement"),
+			});
+			await expect(page.getByText("Uploaded; entry not saved yet")).toHaveCount(1, {
+				timeout: 15_000,
+			});
+			const replaceResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "PUT" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`),
+				{ timeout: 15_000 },
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			expect((await replaceResponse).ok()).toBeTruthy();
+			const orderedList = page.locator('[data-field-name="microscope_images"]');
+			await orderedList.getByRole("button", {
+				name: "microscope-b.txt up",
+			}).click();
+			const reorderResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "PUT" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`),
+				{ timeout: 15_000 },
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			expect((await reorderResponse).ok()).toBeTruthy();
+			await expect(page.getByText("All changes saved")).toBeVisible({
+				timeout: 15_000,
+			});
+
+			mediaEntryResponse = await request.get(
+				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
+			);
+			mediaEntry = await mediaEntryResponse.json() as { content: string };
+			expect(mediaEntry.content).toContain('"name":"thumbnail-replaced.txt"');
+			expect(
+				mediaEntry.content.indexOf('"name":"microscope-b.txt"'),
+			).toBeLessThan(mediaEntry.content.indexOf('"name":"microscope-a.txt"'));
+
+			const removeMicroscopeB = orderedList
+				.locator(".ui-asset-item")
+				.filter({ hasText: "microscope-b.txt" })
+				.getByRole("button", { name: "Remove" });
+			await expect(removeMicroscopeB).toBeVisible({ timeout: 15_000 });
+			await expect(removeMicroscopeB).toBeEnabled({ timeout: 15_000 });
+			await removeMicroscopeB.click({ timeout: 15_000 });
+			const removeResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "PUT" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries/${mediaEntryId}`),
+				{ timeout: 15_000 },
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			expect((await removeResponse).ok()).toBeTruthy();
+			const removedMediaEntryResponse = await request.get(
+				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
+				{ timeout: 15_000 },
+			);
+			const removedMediaEntry = await removedMediaEntryResponse.json() as {
+				content: string;
+			};
+			expect(removedMediaEntry.content).not.toContain(
+				'"name":"microscope-b.txt"',
+			);
+
+			await page.goto(
+				getFrontendUrl(
+					`/spaces/${spaceId}/entries/new?form=${encodeURIComponent(contractsForm)}`,
+				),
+				{ waitUntil: "domcontentloaded", timeout: 15_000 },
+			);
+			const contract = page.locator('[data-field-name="contract"]');
+			const rawData = page.locator('[data-field-name="raw_data"]');
+			await expect(contract).toBeVisible({ timeout: 15_000 });
+			await contract.locator('input[type="file"]').setInputFiles({
+				name: "contract.pdf",
+				mimeType: "application/pdf",
+				buffer: Buffer.from("contract"),
+			});
+			await rawData.locator('input[type="file"]').setInputFiles({
+				name: "raw-data.csv",
+				mimeType: "text/csv",
+				buffer: Buffer.from("raw"),
+			});
+			await expect(
+				page.getByText("Uploaded; entry not saved yet"),
+			).toHaveCount(2, { timeout: 15_000 });
+			const secondCreateResponse = page.waitForResponse(
+				(response) =>
+					response.request().method() === "POST" &&
+					response.url().endsWith(`/api/spaces/${spaceId}/entries`),
+				{ timeout: 15_000 },
+			);
+			await page.getByRole("button", { name: "Save" }).click();
+			expect((await secondCreateResponse).status()).toBe(201);
+			await expect(page).toHaveURL(
+				new RegExp(`/spaces/${spaceId}/entries/[^/]+$`),
+			);
+			const contractsEntryId = decodeURIComponent(
+				new URL(page.url()).pathname.split("/").pop() ?? "",
+			);
+			entryIds.push(contractsEntryId);
+			const contractsEntryResponse = await request.get(
+				getBackendUrl(`/spaces/${spaceId}/entries/${contractsEntryId}`),
+			);
+			expect(contractsEntryResponse.ok()).toBeTruthy();
+			const contractsEntry = await contractsEntryResponse.json() as { content: string };
+			expect(contractsEntry.content).toContain('"name":"contract.pdf"');
+			expect(contractsEntry.content).toContain('"name":"raw-data.csv"');
+		} finally {
+			for (const entryId of entryIds) {
+				await request.delete(
+					getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`),
+				);
+			}
+		}
 	});
 
 	test("REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)", async ({ page, request }) => {
