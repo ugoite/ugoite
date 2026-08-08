@@ -6,7 +6,6 @@ use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
 use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
-use ugoite_iceberg::search;
 use ugoite_iceberg::space;
 
 async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
@@ -339,7 +338,11 @@ async fn entry_ids_are_global_across_forms_and_tombstones() -> anyhow::Result<()
     )
     .await
     .expect_err("global ID availability must not be caller-scoped");
-    assert!(unreadable_duplicate.to_string().contains("ID unavailable"));
+    let unreadable_duplicate = unreadable_duplicate
+        .downcast_ref::<AppError>()
+        .expect("global ID rejection must remain typed");
+    assert_eq!(unreadable_duplicate.code(), ErrorCode::InvalidInput);
+    assert!(unreadable_duplicate.message().contains("global-id"));
 
     entry::delete_entry(&op, ws_path, "global-id", false).await?;
     let tombstone_duplicate = entry::create_entry(
@@ -352,7 +355,11 @@ async fn entry_ids_are_global_across_forms_and_tombstones() -> anyhow::Result<()
     )
     .await
     .expect_err("tombstones must retain the global ID reservation");
-    assert!(tombstone_duplicate.to_string().contains("ID unavailable"));
+    let tombstone_duplicate = tombstone_duplicate
+        .downcast_ref::<AppError>()
+        .expect("tombstone ID rejection must remain typed");
+    assert_eq!(tombstone_duplicate.code(), ErrorCode::InvalidInput);
+    assert!(tombstone_duplicate.message().contains("global-id"));
     Ok(())
 }
 
@@ -736,7 +743,7 @@ async fn querying_entries_survives_adding_a_time_column() -> anyhow::Result<()> 
 }
 
 #[tokio::test]
-async fn renamed_field_reads_old_values_through_the_current_schema() -> anyhow::Result<()> {
+async fn renaming_existing_field_is_rejected_before_v1() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "renamed-entry-field", "/tmp").await?;
     let ws_path = "spaces/renamed-entry-field";
@@ -751,7 +758,7 @@ async fn renamed_field_reads_old_values_through_the_current_schema() -> anyhow::
         &FakeIntegrityProvider,
     )
     .await?;
-    form::upsert_form(
+    let rename_error = form::upsert_form(
         &op,
         ws_path,
         &serde_json::json!({
@@ -761,20 +768,16 @@ async fn renamed_field_reads_old_values_through_the_current_schema() -> anyhow::
             },
         }),
     )
-    .await?;
+    .await
+    .expect_err("pre-v1 Form renames must be rejected");
+    let rename_error = rename_error
+        .downcast_ref::<AppError>()
+        .expect("Form rename rejection must remain typed");
+    assert_eq!(rename_error.code(), ErrorCode::FormFieldRemovalNotSupported);
+    assert!(rename_error.message().contains("Body"));
 
     let all = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
-    assert_eq!(all[0]["properties"]["Content"], "Existing value");
-    let filtered = index::query_index(
-        &op,
-        ws_path,
-        r#"{"form":"Entry","Content":"Existing value"}"#,
-    )
-    .await?;
-    assert_eq!(filtered.len(), 1);
-    let searched = search::search_entries(&op, ws_path, "Existing value", 10).await?;
-    assert_eq!(searched.len(), 1);
-    assert_eq!(searched[0].id, "entry-before-rename");
+    assert_eq!(all[0]["properties"]["Body"], "Existing value");
     Ok(())
 }
 
