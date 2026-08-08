@@ -62,8 +62,9 @@ unnecessary.
 First boot creates a 256-bit, 30-minute setup secret, stores its hash, and shows
 the setup URL once in the local log. Normal APIs return `423 Locked` until setup
 has produced either two Passkeys or one Passkey plus confirmed TOTP and saved
-recovery codes. Setup claims migrated Spaces and creates a UUIDv7 `default`
-Space only when none exist.
+recovery codes. Setup claims existing operator-created Spaces and creates a
+UUIDv7 `default` Space only when none exist. It does not rewrite an older Space
+layout.
 
 Passkeys require discoverable credentials and user verification. Non-loopback
 deployments require HTTPS. Changing the canonical public origin or RP ID after
@@ -133,16 +134,16 @@ single-use, redirect-bound, client-bound, and combined with a registered DPoP
 public key. Input-constrained clients use Device Authorization and autonomous
 agents use private-key client assertions.
 
-## Migration and moving a Space
+## Moving and recovering a Space
 
-Run `ugoite space auth-migration <root>` for a secret-free report, back up every
-reported Space, then run it with `--apply`. The migration assigns UUIDv7 IDs,
-moves directories, creates `security/`, removes legacy membership/invitation
-settings, and never treats an old user string or token as identity proof. The
-server refuses to start while a migration is pending.
+There is no in-place Space migration or owner-claim compatibility flow before
+v1. Move a Space only as a complete operator-controlled prefix or a
+backend-native consistent snapshot, including the Catalog Head, reachable
+publication records, Iceberg metadata/data, assets, SQL metadata, and portable
+authorization state. Catalog Head object versioning is required for disaster
+recovery. An old or incomplete layout fails explicitly instead of being
+rewritten.
 
-Before moving an active Space, an owner creates a one-use owner claim. The
-portable Space stores only its hash and expiry. On the destination node, a
-Passkey-authenticated local account presents that claim to bind the existing
-owner principal. Sessions, invitations, agent credentials, and tokens from the
-old node do not move.
+After restoring a Space on another Node, run normal setup to establish the
+destination Node binding. Node sessions, invitations, agent credentials, and
+tokens remain Node-local.

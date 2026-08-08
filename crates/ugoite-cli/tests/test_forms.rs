@@ -62,9 +62,9 @@ fn test_list_column_types() {
     assert!(!stdout.trim().is_empty(), "Expected non-empty type list");
 }
 
-/// REQ-FORM-002: Add a column to a form with default value.
+/// REQ-FORM-002: Read back the canonical Form definition after an update.
 #[test]
-fn test_migrate_form_add_column_with_default() {
+fn test_form_get_after_update() {
     let dir = tempfile::tempdir().unwrap();
     let (_root, space_path, config_path) = setup_space_with_form(&dir, "form-space");
 

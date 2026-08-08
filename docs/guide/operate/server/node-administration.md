@@ -6,7 +6,7 @@ sidebar:
 
 Node administration is a Node Identity role and is separate from every Space. A
 Node administrator configures OIDC, manages account status, creates Spaces,
-performs owner rebinding after migration, and operates the server. Space owners
+establishes Node-local bindings during setup, and operates the server. Space owners
 manage membership, agents, ACLs, and data only within their Space.
 
 `POST /spaces` requires `node_admin`. A newly created Space receives a distinct

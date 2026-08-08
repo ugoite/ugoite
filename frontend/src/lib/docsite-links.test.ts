@@ -35,35 +35,35 @@ describe("docsite links", () => {
   it("REQ-FE-017: doc links honor explicit docsite origins and GitHub fallbacks when docsite is unavailable", () => {
     expect(
       getDocsiteHref(
-        "/docs/guide/operate/storage/storage-migration",
-        "docs/guide/operate/storage/storage-migration.md",
+        "/docs/guide/operate/storage/space-settings-storage",
+        "docs/guide/operate/storage/space-settings-storage.md",
         {
           DOCSITE_ORIGIN: "https://docs.example.test/base/",
         },
       ),
     ).toBe(
-      "https://docs.example.test/base/docs/guide/operate/storage/storage-migration",
+      "https://docs.example.test/base/docs/guide/operate/storage/space-settings-storage",
     );
     expect(
       getDocsiteHref(
-        "/docs/guide/operate/storage/storage-migration",
-        "docs/guide/operate/storage/storage-migration.md",
+        "/docs/guide/operate/storage/space-settings-storage",
+        "docs/guide/operate/storage/space-settings-storage.md",
         {
           DOCSITE_ORIGIN: "",
         },
       ),
     ).toBe(
-      "https://github.com/ugoite/ugoite/blob/main/docs/guide/operate/storage/storage-migration.md",
+      "https://github.com/ugoite/ugoite/blob/main/docs/guide/operate/storage/space-settings-storage.md",
     );
     expect(
       getDocsiteHref(
-        "docs/guide/operate/storage/storage-migration",
+        "docs/guide/operate/storage/space-settings-storage",
         undefined,
         {
           DOCSITE_ORIGIN: "",
         },
       ),
-    ).toBe("/docs/guide/operate/storage/storage-migration");
+    ).toBe("/docs/guide/operate/storage/space-settings-storage");
   });
 
   it("REQ-FE-056: auth guidance still resolves when process env is unavailable", () => {

@@ -104,10 +104,12 @@ pub struct Membership {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BindingMethod {
+    /// The current setup binding also decodes the pre-v1 owner-rebind value.
+    /// Serialization always emits the canonical current value.
+    #[serde(alias = "migration")]
     Setup,
     Invite,
     Oidc,
-    Migration,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -329,5 +331,22 @@ mod tests {
         assert!(effective.contains(&Action::Delete));
         assert!(effective.contains(&Action::Update));
         assert!(effective.contains(&Action::Share));
+    }
+
+    #[test]
+    fn old_owner_rebind_binding_decodes_to_current_setup_binding() {
+        let binding: PrincipalBinding = serde_json::from_value(serde_json::json!({
+            "space_uid": Uuid::from_u128(1),
+            "principal_id": Uuid::from_u128(2),
+            "node_account_id": Uuid::from_u128(3),
+            "binding_method": "migration"
+        }))
+        .unwrap();
+
+        assert_eq!(binding.binding_method, BindingMethod::Setup);
+        assert_eq!(
+            serde_json::to_value(binding).unwrap()["binding_method"],
+            "setup"
+        );
     }
 }

@@ -33,7 +33,7 @@ describe("CreateFormDialog", () => {
     );
   });
 
-  it("REQ-FE-032: maintains focus on column name input when typing", async () => {
+  it("maintains focus on column name input when typing", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
 
@@ -297,7 +297,7 @@ describe("CreateFormDialog", () => {
     expect(controls).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
   });
 
-  it("REQ-FE-032: creates form with valid name and fields", async () => {
+  it("creates form with valid name and fields", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
 
@@ -361,7 +361,7 @@ describe("CreateFormDialog", () => {
     );
   });
 
-  it("REQ-FE-032: removes a column from create form dialog", async () => {
+  it("removes a column from create form dialog", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
 
@@ -2238,7 +2238,7 @@ describe("EditFormDialog", () => {
     },
   };
 
-  it("REQ-FE-032: maintains focus on column name input when typing in edit dialog", async () => {
+  it("maintains focus on column name input when typing in edit dialog", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
 
@@ -2479,7 +2479,7 @@ describe("EditFormDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("REQ-FE-032: submits the edited form successfully", async () => {
+  it("submits the edited form successfully", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
 
@@ -2603,49 +2603,6 @@ describe("EditFormDialog", () => {
       expect.objectContaining({
         name: "ExistingForm",
         fields: expect.objectContaining({ field1: expect.any(Object) }),
-      }),
-    );
-  });
-
-  it("REQ-FE-032: submits new field with default value (processFields)", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-
-    render(() => (
-      <EditFormDialog
-        open={true}
-        entryForm={mockForm}
-        columnTypes={columnTypes}
-        formNames={["ExistingForm"]}
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    // Add a new column
-    fireEvent.click(screen.getByText("+ Add Column"));
-
-    // Set name for new column
-    const inputs = screen.getAllByPlaceholderText(
-      "Column Name",
-    ) as HTMLInputElement[];
-    const newInput = inputs.find((i) => i.value === "");
-    if (!newInput) throw new Error("new input not found");
-    fireEvent.input(newInput, { target: { value: "newcol" } });
-
-    // Set default value
-    const defaultInput = screen.getByPlaceholderText(
-      "(Optional) e.g. Pending",
-    ) as HTMLInputElement;
-    fireEvent.input(defaultInput, { target: { value: "SomeDefault" } });
-
-    // Submit
-    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
-
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "ExistingForm",
-        strategies: expect.objectContaining({ newcol: "SomeDefault" }),
       }),
     );
   });

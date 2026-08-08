@@ -204,7 +204,6 @@ export interface FormCreatePayload {
   template: string;
   fields: Record<string, FormField>;
   defaults?: Record<string, unknown>;
-  strategies?: Record<string, unknown>;
 }
 
 /** Query request */

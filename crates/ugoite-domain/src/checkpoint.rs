@@ -221,7 +221,7 @@ mod tests {
         let first = checkpoint();
         let mut second = first.clone();
         second.created_at_micros = Some(42);
-        second.name = Some("before-migration".into());
+        second.name = Some("before-restore".into());
 
         assert_eq!(
             first.coordinate_checksum,

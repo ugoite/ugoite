@@ -20,8 +20,9 @@ unknown.
    [authentication guide](../operate/auth/auth-overview.md).
 4. If logs expose too much or too little, use [log redaction](log-redaction.md).
 5. Only then investigate
-   [storage cleanup](../operate/storage/storage-cleanup.md) or
-   [storage migration](../operate/storage/storage-migration.md).
+   [storage cleanup](../operate/storage/storage-cleanup.md). For an old or
+   incomplete Space layout, preserve the complete prefix and report the
+   explicit unsupported-layout error; do not rewrite it in place.
 
 The complete Space prefix, the configured Node control-store prefix, and the
 node encryption root are separate recovery inputs; keep all of them intact

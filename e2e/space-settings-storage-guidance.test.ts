@@ -6,25 +6,17 @@ test.describe("Space settings storage guidance", () => {
     await waitForServers(request);
   });
 
-  test("REQ-FE-017: storage settings explain trade-offs and manual migration before switching backends", async ({ page }) => {
+  test("REQ-FE-017: storage settings explain that configuration does not move the current Space", async ({ page }) => {
     await page.goto(getFrontendUrl("/spaces/default/settings"), {
       waitUntil: "networkidle",
     });
 
-    await expect(page.getByText(/saved uri below is migration metadata/i))
+    await expect(page.getByText(/saved configuration metadata only/i))
       .toBeVisible();
     await expect(
       page.getByText(
-        /local paths keep control and offline access on this machine/i,
+        /does not move existing data or change the backend's current storage root/i,
       ),
-    ).toBeVisible();
-    await expect(
-      page.getByText(
-        /does not migrate existing entries or assets to the new location/i,
-      ),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: /storage migration guide/i }),
     ).toBeVisible();
   });
 });

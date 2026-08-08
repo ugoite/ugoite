@@ -6,7 +6,6 @@
 
 #![recursion_limit = "512"]
 
-mod migration;
 mod read_schema_provider;
 mod space_catalog;
 
@@ -27,10 +26,8 @@ pub mod search;
 pub mod service;
 pub mod space;
 pub mod sql_session;
-pub mod storage;
 
 pub use health::SpaceHealthReport;
-pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
 pub use space_catalog::PublicationContext;
 use space_catalog::SpaceCatalog;
 pub use ugoite_domain::checkpoint::{
@@ -951,9 +948,6 @@ impl IcebergWorkspace {
         match changes.compatibility(&current)? {
             Compatibility::Breaking => {
                 return Err(unsupported_form_field_type_change(&current, changes)?.into())
-            }
-            Compatibility::MigrationRequired => {
-                return Err(anyhow!("Form change requires a populated migration plan"))
             }
             Compatibility::Compatible => {}
         }

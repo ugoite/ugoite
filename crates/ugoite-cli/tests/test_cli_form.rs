@@ -32,7 +32,7 @@ fn test_cli_list_types() {
     assert!(!stdout.trim().is_empty());
 }
 
-/// REQ-FORM-002: CLI form update applies schema migrations.
+/// REQ-FORM-002: CLI form update writes the canonical Form definition.
 #[test]
 fn test_cli_form_update() {
     let dir = tempfile::tempdir().unwrap();

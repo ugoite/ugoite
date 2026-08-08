@@ -1701,17 +1701,7 @@ function processFields(
     targetForm?: string;
     itemsType?: string;
     itemsTargetForm?: string;
-    defaultValue?: string;
   }>,
-  existingFields: Record<
-    string,
-    {
-      type: string;
-      required: boolean;
-      target_form?: string;
-      items?: { type: string; target_form?: string };
-    }
-  >,
 ) {
   const fieldRecord: Record<
     string,
@@ -1722,8 +1712,6 @@ function processFields(
       items?: { type: string; target_form?: string };
     }
   > = {};
-  const strategies: Record<string, string | null> = {};
-
   for (const f of fields) {
     const trimmedName = f.name.trim();
     /* v8 ignore start */
@@ -1746,13 +1734,10 @@ function processFields(
         target_form,
         items,
       };
-      if (!existingFields[trimmedName] && f.defaultValue) {
-        strategies[trimmedName] = f.defaultValue;
-      }
     }
   }
 
-  return { fieldRecord, strategies };
+  return fieldRecord;
 }
 
 const findUnsupportedEditChanges = (
@@ -1808,7 +1793,6 @@ export function EditFormDialog(props: EditFormDialogProps) {
       targetForm?: string;
       itemsType?: string;
       itemsTargetForm?: string;
-      defaultValue?: string;
       isNew?: boolean;
     }>
   >([]);
@@ -1904,10 +1888,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
     /* v8 ignore stop */
     setSubmitError(null);
 
-    const { fieldRecord, strategies } = processFields(
-      fields(),
-      props.entryForm.fields,
-    );
+    const fieldRecord = processFields(fields());
 
     let template = `# ${props.entryForm.name}\n\n`;
     for (const f of fields()) {
@@ -1921,7 +1902,6 @@ export function EditFormDialog(props: EditFormDialogProps) {
         name: props.entryForm.name,
         template,
         fields: fieldRecord,
-        strategies: Object.keys(strategies).length > 0 ? strategies : undefined,
       });
     } catch (error) {
       setSubmitError(
@@ -2170,30 +2150,6 @@ export function EditFormDialog(props: EditFormDialogProps) {
                       <span class="text-xs ui-text-danger">
                         {fieldIssues().get(i)}
                       </span>
-                    </Show>
-                    <Show
-                      when={!props.entryForm.fields[field().name] ||
-                        field().isNew}
-                    >
-                      <div class={columnAuxRowClass}>
-                        <span class="text-xs ui-muted">
-                          {t("createDialog.form.defaultValueLabel")}
-                        </span>
-                        <input
-                          type="text"
-                          placeholder={t(
-                            "createDialog.form.defaultValuePlaceholder",
-                          )}
-                          value={field().defaultValue || ""}
-                          onInput={(e) =>
-                            updateField(
-                              i,
-                              "defaultValue",
-                              e.currentTarget.value,
-                            )}
-                          class={columnAuxInputClass}
-                        />
-                      </div>
                     </Show>
                   </div>
                 )}

@@ -1,6 +1,6 @@
 ---
 title: "Spaces and storage"
-description: Move, verify, migrate, and clean up operator-owned Space data safely.
+description: Move, verify, and clean up operator-owned Space data safely.
 sidebar:
   label: "Spaces & storage"
   order: 3
@@ -16,5 +16,6 @@ or schema of Space data.
   boundary and connection checks.
 - [Storage cleanup](storage-cleanup.md) explains what is derived and what must
   never be removed casually.
-- [Storage migration](storage-migration.md) gives the manifest, verification,
-  and rollback sequence for a format change.
+- A pre-release format migration is not supported. An old or incompatible
+  Space must fail explicitly; preserve the complete Space prefix and restore it
+  with the same current format instead.

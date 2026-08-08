@@ -15,8 +15,7 @@ use ugoite_domain::form::{
 };
 use ugoite_domain::id::{FieldId, FormId, SpaceId};
 use ugoite_iceberg::{
-    physical_form_name, publication_context, IcebergWorkspace, MigrationFormReport,
-    MigrationManifest, MigrationReport, RevisionView, WriteConfig,
+    physical_form_name, publication_context, IcebergWorkspace, RevisionView, WriteConfig,
 };
 use ugoite_storage::SpaceCatalogStore;
 use uuid::Uuid;
@@ -1350,27 +1349,4 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
     let restored = workspace.read_revisions(form.id).await?;
     assert_eq!(restored, vec![revision]);
     Ok(())
-}
-
-#[test]
-fn migration_report_rejects_count_or_mapping_drift() {
-    let report = MigrationReport::verify(
-        MigrationManifest {
-            format_version: 1,
-            space_id: SpaceId::from(Uuid::from_u128(4)),
-            source_backup: "s3://backup/space".into(),
-            forms: vec![MigrationFormReport {
-                form_id: FormId::from(Uuid::from_u128(5)),
-                form_name: "Task".into(),
-                source_entry_count: 2,
-                source_revision_count: 3,
-                migrated_revision_count: 2,
-                tombstone_count: 1,
-                field_mapping_complete: false,
-            }],
-        },
-        true,
-    );
-    assert!(!report.logical_data_matches);
-    assert_eq!(report.errors.len(), 2);
 }

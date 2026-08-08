@@ -102,39 +102,6 @@ async fn test_space_req_sto_005_create_space_idempotency() -> anyhow::Result<()>
 }
 
 #[tokio::test]
-async fn authentication_cutover_dry_run_and_migration_use_uuid_directory() -> anyhow::Result<()> {
-    let op = setup_operator()?;
-    space::create_space(&op, "legacy-space", "/tmp").await?;
-    let settings_path = "spaces/legacy-space/settings.json";
-    let mut settings: Value = serde_json::from_slice(&op.read(settings_path).await?.to_vec())?;
-    settings["members"] = serde_json::json!({"old-user": {"role": "owner"}});
-    settings["member_invitations"] = serde_json::json!({"raw-secret": {}});
-    op.write(settings_path, serde_json::to_vec(&settings)?)
-        .await?;
-
-    let report = space::authentication_cutover_report(&op).await?;
-    assert_eq!(report.len(), 1);
-    assert_eq!(report[0].member_count, 1);
-    assert!(report[0].requires_migration);
-    assert!(!serde_json::to_string(&report)?.contains("raw-secret"));
-
-    let migrated = space::migrate_authentication_cutover(&op).await?;
-    assert_eq!(migrated.len(), 1);
-    assert!(!migrated[0].requires_migration);
-    let id = migrated[0].target_space_id.to_string();
-    assert!(op.exists(&format!("spaces/{id}/meta.json")).await?);
-    assert!(!op.exists("spaces/legacy-space/meta.json").await?);
-    let settings: Value = serde_json::from_slice(
-        &op.read(&format!("spaces/{id}/settings.json"))
-            .await?
-            .to_vec(),
-    )?;
-    assert!(settings.get("members").is_none());
-    assert!(settings.get("member_invitations").is_none());
-    Ok(())
-}
-
-#[tokio::test]
 /// REQ-STO-004
 async fn test_space_req_sto_004_list_spaces_from_directory() -> anyhow::Result<()> {
     let op = setup_operator()?;

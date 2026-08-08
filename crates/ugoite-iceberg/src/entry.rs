@@ -1011,50 +1011,6 @@ pub(crate) async fn read_entry_row_authorized(
         .ok_or_else(|| entry_not_found(entry_id).into())
 }
 
-pub(crate) async fn write_entry_row(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-    entry_id: &str,
-    row: &EntryRow,
-) -> Result<()> {
-    let mut state = row.clone();
-    state.parent_revision_id = Some(row.revision_id.clone());
-    state.revision_id = Uuid::new_v4().to_string();
-    state.entry_version = row.entry_version.saturating_add(1);
-    let form_def = form::read_form_definition(op, ws_path, form_name).await?;
-    let revision = RevisionRow {
-        revision_id: state.revision_id.clone(),
-        entry_id: entry_id.to_string(),
-        parent_revision_id: state.parent_revision_id.clone(),
-        timestamp: state.updated_at,
-        author: state.author.clone(),
-        fields: state.fields.clone(),
-        extra_attributes: state.extra_attributes.clone(),
-        markdown_checksum: state.integrity.checksum.clone(),
-        integrity: state.integrity.clone(),
-        restored_from: None,
-        state: Some(state.clone()),
-        entry_version: state.entry_version,
-        operation: if state.deleted { "delete" } else { "upsert" }.to_string(),
-        source_kind: "application".to_string(),
-        source_id: None,
-        extension_metadata: Value::Object(Map::new()),
-    };
-    append_revision_row_for_form(op, ws_path, form_name, &revision, &form_def).await
-}
-
-#[allow(dead_code)] // used by migration verification tooling
-pub(crate) async fn list_form_revision_rows(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-    _form_def: &Value,
-) -> Result<Vec<RevisionRow>> {
-    let (_, rows) = revision_rows_for_form(op, ws_path, form_name).await?;
-    Ok(rows)
-}
-
 pub(crate) async fn append_revision_row_for_form(
     op: &Operator,
     ws_path: &str,

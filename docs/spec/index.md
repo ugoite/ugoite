@@ -56,7 +56,7 @@ executable contract, not a beginner-first tutorial.
 | `ugoite-domain`     | portable domain types and validation                                 |
 | `ugoite-api-client` | transport-neutral HTTP operation protocol                            |
 | `ugoite-storage`    | OpenDAL-backed storage mechanics                                     |
-| `ugoite-iceberg`    | Catalog-backed Form tables, batch append, query, and migration       |
+| `ugoite-iceberg`    | Catalog-backed Form tables, batch append, query, and checkpoints     |
 | `ugoite-core`       | application service and persistence behavior                         |
 | `ugoite-server`     | REST/MCP/auth/static-hosting adapter                                 |
 | `ugoite-cli`        | local and remote command adapter                                     |
