@@ -319,7 +319,6 @@ pub(crate) fn validate_current_space_metadata(meta: &serde_json::Value) -> Resul
         ("id", metadata.id.as_str()),
         ("name", metadata.name.as_str()),
         ("storage.type", metadata.storage.storage_type.as_str()),
-        ("storage.root", metadata.storage.root.as_str()),
         ("hmac_key_id", metadata.hmac_key_id.as_str()),
         ("hmac_key", metadata.hmac_key.as_str()),
         ("last_rotation", metadata.last_rotation.as_str()),
