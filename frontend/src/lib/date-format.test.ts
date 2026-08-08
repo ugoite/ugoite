@@ -1,8 +1,14 @@
 // REQ-FE-054: Timestamp normalization in query and entry lists
-import { describe, expect, it } from "vitest";
-import { formatDateLabel, normalizeTimestamp } from "./date-format";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  formatDateLabel,
+  formatDateTimeLabel,
+  normalizeTimestamp,
+} from "./date-format";
+import { setLocale } from "./i18n";
 
 describe("date-format", () => {
+  afterEach(() => setLocale("en"));
   it("REQ-FE-054: normalizeTimestamp converts unix-second timestamps from numbers and numeric strings", () => {
     const expected = new Date(1772960822.056 * 1000).toISOString();
 
@@ -29,10 +35,44 @@ describe("date-format", () => {
 
   it("REQ-FE-054: formatDateLabel renders valid timestamps as locale dates", () => {
     const isoTimestamp = new Date(1772960822.056 * 1000).toISOString();
-    const expected = new Date(isoTimestamp).toLocaleDateString();
+    const expected = new Date(isoTimestamp).toLocaleDateString("en-US");
 
     expect(formatDateLabel(isoTimestamp)).toBe(expected);
     expect(formatDateLabel(1772960822.056)).toBe(expected);
+  });
+
+  it("REQ-FE-044: formats dates from the reactive locale state", () => {
+    const isoTimestamp = "2026-07-31T00:00:00.000Z";
+
+    setLocale("en");
+    expect(formatDateLabel(isoTimestamp)).toBe(
+      new Date(isoTimestamp).toLocaleDateString("en-US"),
+    );
+
+    setLocale("ja");
+    expect(formatDateLabel(isoTimestamp)).toBe(
+      new Date(isoTimestamp).toLocaleDateString("ja-JP"),
+    );
+  });
+
+  it("REQ-FE-044: formats date-times from the reactive locale state", () => {
+    const isoTimestamp = "2026-07-31T09:30:00.000Z";
+
+    setLocale("en");
+    expect(formatDateTimeLabel(isoTimestamp)).toBe(
+      new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(isoTimestamp)),
+    );
+
+    setLocale("ja");
+    expect(formatDateTimeLabel(isoTimestamp)).toBe(
+      new Intl.DateTimeFormat("ja-JP", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(isoTimestamp)),
+    );
   });
 
   it("REQ-FE-054: formatDateLabel falls back to trimmed text or em dash", () => {

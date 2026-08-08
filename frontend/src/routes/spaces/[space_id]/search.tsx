@@ -8,6 +8,9 @@ import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { t, type TranslationKey } from "~/lib/i18n";
+import { displaySqlName, type SearchHistoryCriteria } from "~/lib/sql-metadata";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "search" });
@@ -20,6 +23,22 @@ type FieldCondition = {
   field: string;
   operator: FieldMatchOperator;
   value: string;
+};
+
+type SearchFieldType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "float"
+  | "date"
+  | "timestamp"
+  | "unsupported";
+
+type AvailableField = {
+  name: string;
+  sqlColumn: string;
+  type: SearchFieldType;
+  supported: boolean;
 };
 
 type AdvancedSearchCriteria = {
@@ -37,15 +56,6 @@ type AdvancedSearchCriteria = {
   }>;
 };
 
-type SearchFieldType =
-  | "string"
-  | "boolean"
-  | "integer"
-  | "float"
-  | "date"
-  | "timestamp"
-  | "unsupported";
-
 type SearchParameterValue = string | number | boolean | null;
 
 type AdvancedSearchQuery = {
@@ -53,13 +63,6 @@ type AdvancedSearchQuery = {
   historySql: string;
   parameters: Record<string, SearchParameterValue>;
   parameterTypes: Record<string, string>;
-};
-
-type AvailableField = {
-  name: string;
-  sqlColumn: string;
-  type: SearchFieldType;
-  supported: boolean;
 };
 
 const ADVANCED_SEARCH_LIMIT = 50;
@@ -114,23 +117,54 @@ function operatorsForFieldType(type: SearchFieldType): FieldMatchOperator[] {
 }
 
 function operatorLabel(operator: FieldMatchOperator): string {
-  return {
-    equals: "equals",
-    contains: "contains",
-    lt: "less than",
-    lte: "less than or equal",
-    gt: "greater than",
-    gte: "greater than or equal",
-  }[operator];
+  switch (operator) {
+    case "equals":
+      return t("searchPage.equals");
+    case "contains":
+      return t("searchPage.contains");
+    case "lt":
+      return t("searchPage.lessThan");
+    case "lte":
+      return t("searchPage.lessThanOrEqual");
+    case "gt":
+      return t("searchPage.greaterThan");
+    case "gte":
+      return t("searchPage.greaterThanOrEqual");
+  }
 }
 
-function fieldInputType(
-  type: SearchFieldType,
-): "text" | "number" | "date" | "datetime-local" {
+function fieldInputType(type: SearchFieldType):
+  | "text"
+  | "number"
+  | "date"
+  | "datetime-local" {
   if (type === "integer" || type === "float") return "number";
   if (type === "date") return "date";
   if (type === "timestamp") return "datetime-local";
   return "text";
+}
+
+function fieldInputPlaceholder(type: SearchFieldType): TranslationKey {
+  switch (type) {
+    case "boolean":
+      return "searchPage.booleanPlaceholder";
+    case "integer":
+      return "searchPage.integerPlaceholder";
+    case "float":
+      return "searchPage.numberPlaceholder";
+    case "date":
+      return "searchPage.datePlaceholder";
+    case "timestamp":
+      return "searchPage.timestampPlaceholder";
+    default:
+      return "searchPage.valuePlaceholder";
+  }
+}
+
+function fieldInputStep(type: SearchFieldType): string | undefined {
+  if (type === "integer") return "1";
+  if (type === "float") return "any";
+  return undefined;
 }
 
 function escapeLikePattern(value: string): string {
@@ -199,7 +233,9 @@ function buildAdvancedSearchQuery(
 
   const addDateCondition = (value: string, operator: ">=" | "<") => {
     const converted = dateInput(value, operator === ">=" ? "start" : "end");
-    if (!converted) throw new Error(`Invalid date: ${value}`);
+    if (!converted) {
+      throw new Error(t("searchPage.error.invalidDate", { value }));
+    }
     const bound = bind(converted.parameter, "timestamp", converted.literal);
     sessionConditions.push(`_ugoite_updated_at ${operator} ${bound.parameter}`);
     historyConditions.push(`_ugoite_updated_at ${operator} ${bound.literal}`);
@@ -210,11 +246,11 @@ function buildAdvancedSearchQuery(
 
   for (const condition of criteria.fieldConditions) {
     if (!condition.field || !condition.value) {
-      throw new Error("Choose a field and enter a value for every condition.");
+      throw new Error(t("searchPage.error.fieldValueRequired"));
     }
     if (!condition.supported || !condition.sqlColumn) {
       throw new Error(
-        `${condition.field} is not supported by Advanced search.`,
+        t("searchPage.error.unsupportedField", { value: condition.field }),
       );
     }
     const fieldPath = quoteSqlIdentifier(condition.sqlColumn);
@@ -240,7 +276,9 @@ function buildAdvancedSearchQuery(
       literalValue = escapeSqlLiteral(String(value));
     } else if (condition.type === "boolean") {
       if (condition.value !== "true" && condition.value !== "false") {
-        throw new Error(`${condition.field} requires true or false.`);
+        throw new Error(
+          t("searchPage.error.booleanRequired", { value: condition.field }),
+        );
       }
       type = "boolean";
       value = condition.value === "true";
@@ -250,7 +288,9 @@ function buildAdvancedSearchQuery(
         !/^-?\d+$/.test(condition.value) ||
         !Number.isSafeInteger(Number(condition.value))
       ) {
-        throw new Error(`${condition.field} requires an integer.`);
+        throw new Error(
+          t("searchPage.error.integerRequired", { value: condition.field }),
+        );
       }
       type = "integer";
       value = Number(condition.value);
@@ -258,7 +298,9 @@ function buildAdvancedSearchQuery(
     } else if (condition.type === "float") {
       const number = Number(condition.value);
       if (!Number.isFinite(number)) {
-        throw new Error(`${condition.field} requires a number.`);
+        throw new Error(
+          t("searchPage.error.numberRequired", { value: condition.field }),
+        );
       }
       type = "float";
       value = number;
@@ -266,7 +308,9 @@ function buildAdvancedSearchQuery(
     } else if (condition.type === "date") {
       const converted = dateInput(condition.value, "start");
       if (!converted) {
-        throw new Error(`${condition.field} requires YYYY-MM-DD.`);
+        throw new Error(
+          t("searchPage.error.dateRequired", { value: condition.field }),
+        );
       }
       type = "date";
       value = converted.parameter.slice(0, 10);
@@ -274,7 +318,9 @@ function buildAdvancedSearchQuery(
     } else if (condition.type === "timestamp") {
       const timestamp = new Date(condition.value);
       if (Number.isNaN(timestamp.getTime())) {
-        throw new Error(`${condition.field} requires an RFC3339 timestamp.`);
+        throw new Error(
+          t("searchPage.error.timestampRequired", { value: condition.field }),
+        );
       }
       type = "timestamp";
       value = timestamp.toISOString();
@@ -308,46 +354,6 @@ function buildAdvancedSearchQuery(
     parameters,
     parameterTypes,
   };
-}
-
-function buildSearchHistoryName(criteria: AdvancedSearchCriteria): string {
-  const parts: string[] = [];
-
-  if (criteria.formName) {
-    parts.push(`form: ${criteria.formName}`);
-  }
-
-  if (criteria.updatedFrom) {
-    parts.push(`updated-from: ${criteria.updatedFrom}`);
-  }
-
-  if (criteria.updatedTo) {
-    parts.push(`updated-to: ${criteria.updatedTo}`);
-  }
-
-  for (const condition of criteria.fieldConditions.slice(0, 2)) {
-    const symbol = {
-      equals: "=",
-      contains: "~",
-      lt: "<",
-      lte: "<=",
-      gt: ">",
-      gte: ">=",
-    }[condition.operator];
-    parts.push(`${condition.field}${symbol}${condition.value}`);
-  }
-
-  const extraConditions = criteria.fieldConditions.length - 2;
-  if (extraConditions > 0) {
-    parts.push(`+${extraConditions} more`);
-  }
-
-  if (parts.length === 0) {
-    return "Advanced search";
-  }
-
-  const label = `Advanced search - ${parts.join(" - ")}`;
-  return label.length > 120 ? `${label.slice(0, 117)}...` : label;
 }
 
 export default function SpaceSearchRoute() {
@@ -429,7 +435,7 @@ export default function SpaceSearchRoute() {
 
   const advancedCriteria = createMemo<AdvancedSearchCriteria>(() => ({
     formName: advancedFormName().trim(),
-    sqlRelation: selectedForm()?.sql_relation ?? "",
+    sqlRelation: selectedForm()?.sql_relation?.trim() ?? "",
     updatedFrom: advancedUpdatedFrom().trim(),
     updatedTo: advancedUpdatedTo().trim(),
     fieldConditions: fieldConditions()
@@ -446,13 +452,17 @@ export default function SpaceSearchRoute() {
           supported: field?.supported ?? false,
         };
       })
-      .filter((condition) => condition.field || condition.value)
-      .map((condition) => condition),
+      .filter((condition) => condition.field || condition.value),
   }));
 
   const keywordResultCountLabel = createMemo(() => {
     const count = keywordResults().length;
-    return count === 1 ? "1 result" : `${count} results`;
+    return t(
+      count === 1 ? "searchBar.results.one" : "searchBar.results.other",
+      {
+        count,
+      },
+    );
   });
 
   const updateFieldCondition = (
@@ -491,7 +501,7 @@ export default function SpaceSearchRoute() {
     if (!query) {
       setKeywordSearchPerformed(false);
       setKeywordResults([]);
-      setActionError("Enter at least one keyword to search your entries.");
+      setActionError(t("searchPage.error.emptyKeyword"));
       return;
     }
 
@@ -505,7 +515,7 @@ export default function SpaceSearchRoute() {
     } catch (err) {
       setKeywordResults([]);
       setActionError(
-        err instanceof Error ? err.message : "Failed to search entries.",
+        formatUserFacingError(err, "searchPage.error.searchFailed"),
       );
     } finally {
       setKeywordLoading(false);
@@ -527,7 +537,13 @@ export default function SpaceSearchRoute() {
     try {
       const session = await sqlSessionApi.create(spaceId(), entry.sql);
       if (session.status === "failed") {
-        setActionError(session.error || "Search failed.");
+        setActionError(
+          formatUserFacingError(
+            session.error,
+            "searchPage.error.searchFailed",
+            "sql_session.create",
+          ),
+        );
         return;
       }
       navigate(
@@ -537,7 +553,7 @@ export default function SpaceSearchRoute() {
       );
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Failed to run saved search.",
+        formatUserFacingError(err, "searchPage.error.savedSearchFailed"),
       );
     } finally {
       setRunningSearchId(null);
@@ -549,16 +565,16 @@ export default function SpaceSearchRoute() {
     let query: AdvancedSearchQuery | null;
     try {
       query = buildAdvancedSearchQuery(criteria);
-    } catch (err) {
+    } catch (error) {
       setActionError(
-        err instanceof Error ? err.message : "Invalid search condition.",
+        error instanceof Error
+          ? error.message
+          : t("searchPage.error.advancedSearchFailed"),
       );
       return;
     }
     if (!query) {
-      setActionError(
-        "Choose a Form with a backend SQL relation before running an advanced search.",
-      );
+      setActionError(t("searchPage.error.chooseForm"));
       return;
     }
 
@@ -578,20 +594,40 @@ export default function SpaceSearchRoute() {
         query.parameterTypes,
       );
       if (session.status === "failed") {
-        setActionError(session.error || "Advanced search failed.");
+        setActionError(
+          formatUserFacingError(
+            session.error,
+            "searchPage.error.advancedSearchFailed",
+            "sql_session.create",
+          ),
+        );
         return;
       }
       if (!existing) {
+        const searchCriteria: SearchHistoryCriteria = {
+          formName: criteria.formName,
+          tags: [],
+          updatedFrom: criteria.updatedFrom,
+          updatedTo: criteria.updatedTo,
+          fieldConditions: criteria.fieldConditions.map((
+            { field, operator, value },
+          ) => ({
+            field,
+            operator,
+            value,
+          })),
+        };
         try {
           await sqlApi.create(spaceId(), {
-            name: buildSearchHistoryName(criteria),
+            name: null,
+            kind: "search-history",
+            metadata: { searchCriteria },
             sql: query.historySql,
             variables: [],
           });
           await refetchSavedSearches();
         } catch {
-          // Search history is a best-effort convenience. A ready session must
-          // remain usable even when persistence or its refresh is unavailable.
+          // A ready session remains usable when history persistence fails.
         }
       }
       navigate(
@@ -601,7 +637,7 @@ export default function SpaceSearchRoute() {
       );
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Failed to run advanced search.",
+        formatUserFacingError(err, "searchPage.error.advancedSearchFailed"),
       );
     } finally {
       setRunningSearchId(null);
@@ -614,13 +650,13 @@ export default function SpaceSearchRoute() {
         <div class="screenHead">
           <div class="screenTitle">
             <div class="eyebrow">{spaceId()}</div>
-            <h1>Search</h1>
+            <h1>{t("searchPage.title")}</h1>
           </div>
           <A
             href={`/spaces/${spaceId()}/queries/new`}
             class="ui-button ui-button-secondary inline-flex items-center gap-2 text-sm"
           >
-            Open SQL editor
+            {t("searchPage.openSqlEditor")}
           </A>
         </div>
 
@@ -629,24 +665,22 @@ export default function SpaceSearchRoute() {
             <button
               type="button"
               classList={{ active: mode() === "keyword" }}
-              onClick={() =>
-                setMode("keyword")}
+              onClick={() => setMode("keyword")}
             >
-              <UiIcon name="entry" /> Entries
+              <UiIcon name="entry" /> {t("searchPage.nav.entries")}
             </button>
             <button
               type="button"
-              onClick={() =>
-                setMode("advanced")}
+              onClick={() => setMode("advanced")}
               classList={{ active: mode() === "advanced" }}
             >
-              <UiIcon name="forms" /> Forms
+              <UiIcon name="forms" /> {t("searchPage.nav.forms")}
             </button>
             <A href={`/spaces/${spaceId()}/assets`}>
-              <UiIcon name="asset" /> Assets
+              <UiIcon name="asset" /> {t("searchPage.nav.assets")}
             </A>
             <A href={`/spaces/${spaceId()}/sql`}>
-              <UiIcon name="sql" /> Saved SQL
+              <UiIcon name="sql" /> {t("searchPage.nav.savedSql")}
             </A>
           </aside>
           <main>
@@ -657,10 +691,9 @@ export default function SpaceSearchRoute() {
                   class={mode() === "keyword"
                     ? "ui-button ui-button-primary text-sm"
                     : "ui-button ui-button-secondary text-sm"}
-                  onClick={() =>
-                    setMode("keyword")}
+                  onClick={() => setMode("keyword")}
                 >
-                  Quick search
+                  {t("searchPage.quickSearch")}
                 </button>
                 <button
                   type="button"
@@ -669,7 +702,7 @@ export default function SpaceSearchRoute() {
                     : "ui-button ui-button-secondary text-sm"}
                   onClick={() => setMode("advanced")}
                 >
-                  Advanced search
+                  {t("searchPage.advancedSearch")}
                 </button>
               </div>
 
@@ -683,7 +716,7 @@ export default function SpaceSearchRoute() {
                 >
                   <div class="flex-1">
                     <label class="ui-label" for="search-keywords">
-                      Search keywords
+                      {t("searchPage.searchKeywords")}
                     </label>
                     <div class="searchBox">
                       <UiIcon name="search" />
@@ -691,7 +724,7 @@ export default function SpaceSearchRoute() {
                         id="search-keywords"
                         type="text"
                         class=""
-                        placeholder="Search entries by title, fields, tags, or content"
+                        placeholder={t("searchPage.keywordPlaceholder")}
                         value={keywordQuery()}
                         onInput={(event) =>
                           setKeywordQuery(event.currentTarget.value)}
@@ -704,7 +737,9 @@ export default function SpaceSearchRoute() {
                       class="ui-button ui-button-primary text-sm"
                       disabled={keywordLoading()}
                     >
-                      {keywordLoading() ? "Searching..." : "Search entries"}
+                      {keywordLoading()
+                        ? t("searchBar.searching")
+                        : t("searchPage.searchEntries")}
                     </button>
                   </div>
                 </form>
@@ -715,7 +750,7 @@ export default function SpaceSearchRoute() {
                   <div class="grid gap-4 md:grid-cols-2">
                     <div>
                       <label class="ui-label" for="advanced-form">
-                        Form
+                        {t("searchPage.form")}
                       </label>
                       <select
                         id="advanced-form"
@@ -724,7 +759,7 @@ export default function SpaceSearchRoute() {
                         onChange={(event) =>
                           handleAdvancedFormChange(event.currentTarget.value)}
                       >
-                        <option value="">Choose a Form</option>
+                        <option value="">{t("searchPage.selectForm")}</option>
                         <For each={availableForms()}>
                           {(entryForm) => (
                             <option value={entryForm.name}>
@@ -736,7 +771,7 @@ export default function SpaceSearchRoute() {
                     </div>
                     <div>
                       <label class="ui-label" for="advanced-updated-from">
-                        Updated from
+                        {t("searchPage.updatedFrom")}
                       </label>
                       <input
                         id="advanced-updated-from"
@@ -749,7 +784,7 @@ export default function SpaceSearchRoute() {
                     </div>
                     <div>
                       <label class="ui-label" for="advanced-updated-to">
-                        Updated to
+                        {t("searchPage.updatedTo")}
                       </label>
                       <input
                         id="advanced-updated-to"
@@ -764,7 +799,9 @@ export default function SpaceSearchRoute() {
 
                   <div class="mt-4 ui-stack-sm">
                     <div class="flex items-center justify-between gap-2">
-                      <h2 class="text-base font-semibold">Field conditions</h2>
+                      <h2 class="text-base font-semibold">
+                        {t("searchPage.fieldConditions")}
+                      </h2>
                       <button
                         type="button"
                         class="ui-button ui-button-secondary text-sm"
@@ -773,7 +810,7 @@ export default function SpaceSearchRoute() {
                             current,
                           ) => [...current, createFieldCondition()])}
                       >
-                        Add field condition
+                        {t("searchPage.addFieldCondition")}
                       </button>
                     </div>
 
@@ -785,7 +822,7 @@ export default function SpaceSearchRoute() {
                               class="ui-label"
                               for={`field-${condition().id}`}
                             >
-                              Field
+                              {t("searchPage.field")}
                             </label>
                             <Show
                               when={availableFields().length > 0}
@@ -794,7 +831,7 @@ export default function SpaceSearchRoute() {
                                   id={`field-${condition().id}`}
                                   type="text"
                                   class="ui-input mt-2 w-full"
-                                  placeholder="Owner"
+                                  placeholder={t("searchPage.fieldPlaceholder")}
                                   value={condition().field}
                                   onInput={(event) =>
                                     updateFieldCondition(
@@ -816,7 +853,9 @@ export default function SpaceSearchRoute() {
                                     event.currentTarget.value,
                                   )}
                               >
-                                <option value="">Choose a field</option>
+                                <option value="">
+                                  {t("searchPage.chooseField")}
+                                </option>
                                 <For each={availableFields()}>
                                   {(field) => (
                                     <option
@@ -824,7 +863,9 @@ export default function SpaceSearchRoute() {
                                       disabled={!field.supported}
                                     >
                                       {field.name}
-                                      {field.supported ? "" : " (unsupported)"}
+                                      {field.supported
+                                        ? ""
+                                        : ` (${t("searchPage.unsupported")})`}
                                     </option>
                                   )}
                                 </For>
@@ -836,7 +877,7 @@ export default function SpaceSearchRoute() {
                               class="ui-label"
                               for={`operator-${condition().id}`}
                             >
-                              Match
+                              {t("searchPage.match")}
                             </label>
                             <select
                               id={`operator-${condition().id}`}
@@ -869,21 +910,26 @@ export default function SpaceSearchRoute() {
                               class="ui-label"
                               for={`value-${condition().id}`}
                             >
-                              Value
+                              {t("searchPage.value")}
                             </label>
                             <input
                               id={`value-${condition().id}`}
                               type={fieldInputType(
                                 availableFields().find((field) =>
                                   field.name === condition().field
-                                )?.type ?? "string",
+                                )?.type ?? "unsupported",
                               )}
                               class="ui-input mt-2 w-full"
-                              placeholder={availableFields().find((field) =>
+                              step={fieldInputStep(
+                                availableFields().find((field) =>
                                   field.name === condition().field
-                                )?.type === "boolean"
-                                ? "true or false"
-                                : "alice"}
+                                )?.type ?? "unsupported",
+                              )}
+                              placeholder={t(fieldInputPlaceholder(
+                                availableFields().find((field) =>
+                                  field.name === condition().field
+                                )?.type ?? "unsupported",
+                              ))}
                               value={condition().value}
                               onInput={(event) =>
                                 updateFieldCondition(
@@ -907,7 +953,7 @@ export default function SpaceSearchRoute() {
                                   );
                                 })}
                             >
-                              Remove
+                              {t("searchPage.remove")}
                             </button>
                           </div>
                         </div>
@@ -917,8 +963,7 @@ export default function SpaceSearchRoute() {
 
                   <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
                     <p class="text-sm ui-muted">
-                      Advanced searches compile to reusable SQL-backed history
-                      and open the shared query results view.
+                      {t("searchPage.advancedDescription")}
                     </p>
                     <button
                       type="button"
@@ -927,8 +972,8 @@ export default function SpaceSearchRoute() {
                       onClick={() => void handleAdvancedSearch()}
                     >
                       {runningSearchId() === "advanced-search"
-                        ? "Running..."
-                        : "Run advanced search"}
+                        ? t("searchPage.running")
+                        : t("searchPage.runAdvancedSearch")}
                     </button>
                   </div>
                 </div>
@@ -939,7 +984,9 @@ export default function SpaceSearchRoute() {
               <section class="ui-card p-5">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 class="text-lg font-semibold">Keyword results</h2>
+                    <h2 class="text-lg font-semibold">
+                      {t("searchPage.keywordResults")}
+                    </h2>
                     <Show when={keywordSearchPerformed() && !keywordLoading()}>
                       <p class="mt-1 text-sm ui-muted">
                         {keywordResultCountLabel()}
@@ -953,7 +1000,9 @@ export default function SpaceSearchRoute() {
                     <p class="text-sm ui-text-danger">{actionError()}</p>
                   </Show>
                   <Show when={keywordLoading()}>
-                    <p class="text-sm ui-muted">Searching entries...</p>
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.searchingEntries")}
+                    </p>
                   </Show>
                   <Show
                     when={!keywordLoading() &&
@@ -961,15 +1010,16 @@ export default function SpaceSearchRoute() {
                       keywordResults().length === 0 &&
                       !actionError()}
                   >
-                    <p class="text-sm ui-muted">No matching entries found.</p>
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.noMatchingEntries")}
+                    </p>
                   </Show>
                   <Show
                     when={!keywordSearchPerformed() && !keywordLoading() &&
                       !actionError()}
                   >
                     <p class="text-sm ui-muted">
-                      Search results stay here so you can refine your query
-                      without leaving the page.
+                      {t("searchPage.initialHelp")}
                     </p>
                   </Show>
                   <div class="grid gap-4 sm:grid-cols-2">
@@ -987,14 +1037,16 @@ export default function SpaceSearchRoute() {
                         >
                           <div class="flex items-start justify-between gap-2">
                             <h3 class="text-base font-semibold">
-                              {entry.title || "Untitled"}
+                              {entry.title || t("common.untitled")}
                             </h3>
                             <Show when={entry.form}>
                               <span class="ui-pill">{entry.form}</span>
                             </Show>
                           </div>
                           <p class="mt-2 text-xs ui-muted">
-                            Updated {formatDateLabel(entry.updated_at)}
+                            {t("common.updatedAt", {
+                              date: formatDateLabel(entry.updated_at),
+                            })}
                           </p>
                         </button>
                       )}
@@ -1006,10 +1058,11 @@ export default function SpaceSearchRoute() {
               <aside class="ui-card p-5">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 class="text-lg font-semibold">Search history</h2>
+                    <h2 class="text-lg font-semibold">
+                      {t("searchPage.searchHistory")}
+                    </h2>
                     <p class="mt-1 text-sm ui-muted">
-                      Saved searches and power-user SQL queries stay reusable
-                      here.
+                      {t("searchPage.searchHistoryDescription")}
                     </p>
                   </div>
                   <button
@@ -1017,32 +1070,44 @@ export default function SpaceSearchRoute() {
                     class="ui-button ui-button-secondary text-sm"
                     onClick={() => void refetchSavedSearches()}
                   >
-                    Refresh history
+                    {t("searchPage.refreshHistory")}
                   </button>
                 </div>
 
                 <div class="mt-4 ui-stack-sm">
                   <Show when={savedSearches.loading}>
-                    <p class="text-sm ui-muted">Loading search history...</p>
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.loadingHistory")}
+                    </p>
                   </Show>
                   <Show when={savedSearches.error}>
                     <p class="text-sm ui-text-danger">
-                      Failed to load search history.
+                      {formatUserFacingError(
+                        savedSearches.error,
+                        "searchPage.failedLoadHistory",
+                      )}
                     </p>
                   </Show>
                   <Show when={forms.loading}>
-                    <p class="text-sm ui-muted">Loading form filters...</p>
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.loadingFormFilters")}
+                    </p>
                   </Show>
                   <Show when={forms.error}>
                     <p class="text-sm ui-text-danger">
-                      Failed to load forms for advanced search.
+                      {formatUserFacingError(
+                        forms.error,
+                        "searchPage.failedLoadForms",
+                      )}
                     </p>
                   </Show>
                   <Show
                     when={!savedSearches.loading &&
                       searchHistory().length === 0}
                   >
-                    <p class="text-sm ui-muted">No search history yet.</p>
+                    <p class="text-sm ui-muted">
+                      {t("searchPage.noSearchHistory")}
+                    </p>
                   </Show>
                   <For each={searchHistory()}>
                     {(entry) => (
@@ -1052,17 +1117,21 @@ export default function SpaceSearchRoute() {
                         onClick={() => void runSavedSearch(entry)}
                       >
                         <div class="flex items-center justify-between gap-2">
-                          <h3 class="text-sm font-semibold">{entry.name}</h3>
+                          <h3 class="text-sm font-semibold">
+                            {displaySqlName(entry)}
+                          </h3>
                           <span class="text-xs ui-muted">
                             {runningSearchId() === entry.id
-                              ? "Running"
+                              ? t("searchPage.runningSaved")
                               : entry.variables?.length
-                              ? "Variables"
-                              : "Run again"}
+                              ? t("searchPage.variables")
+                              : t("searchPage.runAgain")}
                           </span>
                         </div>
                         <p class="mt-2 text-xs ui-muted">
-                          Updated {formatDateLabel(entry.updated_at)}
+                          {t("common.updatedAt", {
+                            date: formatDateLabel(entry.updated_at),
+                          })}
                         </p>
                       </button>
                     )}

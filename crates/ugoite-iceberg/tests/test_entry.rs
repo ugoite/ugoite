@@ -448,7 +448,7 @@ async fn entry_update_after_create_with_numeric_and_timestamp_fields() -> anyhow
         .expect("entry validation failures must remain typed application errors");
     assert_eq!(
         app_error.code(),
-        ugoite_core::error::ErrorCode::InvalidInput
+        ugoite_core::error::ErrorCode::FormValidationFailed
     );
 
     Ok(())
@@ -1189,11 +1189,15 @@ async fn test_entry_req_form_004_deny_extra_attributes() -> anyhow::Result<()> {
     )
     .await;
 
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("Unknown form fields"));
+    let error = result.expect_err("unknown form fields must be rejected");
+    let app_error = error
+        .downcast_ref::<ugoite_core::error::AppError>()
+        .expect("unknown form fields must remain typed application errors");
+    assert_eq!(
+        app_error.code(),
+        ugoite_core::error::ErrorCode::UnknownFormFields
+    );
+    assert_eq!(app_error.message(), "Entry contains unknown form fields");
 
     Ok(())
 }

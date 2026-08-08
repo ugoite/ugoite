@@ -7,6 +7,7 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use uuid::Uuid;
 
@@ -26,11 +27,152 @@ pub struct SqlVariable {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SqlKind {
+    UserQuery,
+    SearchHistory,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchHistoryOperator {
+    Equals,
+    Contains,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct SearchHistoryFieldCondition {
+    pub field: String,
+    pub operator: SearchHistoryOperator,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct SearchHistoryCriteria {
+    pub form_name: String,
+    pub tags: Vec<String>,
+    pub updated_from: String,
+    pub updated_to: String,
+    pub field_conditions: Vec<SearchHistoryFieldCondition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SqlGeneratedName {
+    Untitled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub struct SqlMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_criteria: Option<SearchHistoryCriteria>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated_name: Option<SqlGeneratedName>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SqlPayload {
-    pub name: String,
+    pub name: Option<String>,
+    pub kind: SqlKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<SqlMetadata>,
     pub sql: String,
     #[serde(default)]
     pub variables: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SqlUpdatePayload {
+    pub name: Option<String>,
+    pub kind: SqlKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<SqlMetadata>,
+    pub sql: String,
+    #[serde(default)]
+    pub variables: Value,
+    pub parent_revision_id: String,
+}
+
+impl SqlUpdatePayload {
+    pub fn into_sql_payload(self) -> SqlPayload {
+        SqlPayload {
+            name: self.name,
+            kind: self.kind,
+            metadata: self.metadata,
+            sql: self.sql,
+            variables: self.variables,
+        }
+    }
+}
+
+fn validate_sql_metadata(payload: &SqlPayload) -> Result<()> {
+    if payload
+        .name
+        .as_ref()
+        .is_some_and(|name| name.trim().is_empty())
+    {
+        return Err(validation_error("name must be null or a non-blank string"));
+    }
+
+    match payload.kind {
+        SqlKind::UserQuery => match (&payload.name, &payload.metadata) {
+            (Some(_), None) => {}
+            (Some(_), Some(metadata))
+                if metadata.generated_name.is_none() && metadata.search_criteria.is_none() =>
+            {
+                return Err(validation_error(
+                    "user-query metadata must be omitted for named queries",
+                ));
+            }
+            (Some(_), Some(_)) => {
+                return Err(validation_error(
+                    "named user-query cannot declare generated metadata",
+                ));
+            }
+            (None, Some(metadata))
+                if metadata.search_criteria.is_none()
+                    && matches!(metadata.generated_name, Some(SqlGeneratedName::Untitled)) => {}
+            (None, _) => {
+                return Err(validation_error(
+                    "unnamed user-query must declare generated_name=untitled",
+                ));
+            }
+        },
+        SqlKind::SearchHistory => {
+            if payload.name.is_some() {
+                return Err(validation_error(
+                    "search-history requires a structured search_criteria and no name",
+                ));
+            }
+            match payload.metadata.as_ref() {
+                Some(metadata)
+                    if metadata.search_criteria.is_some() && metadata.generated_name.is_none() => {}
+                Some(_) => {
+                    return Err(validation_error(
+                        "search-history metadata must contain only search_criteria",
+                    ));
+                }
+                None => {
+                    return Err(validation_error(
+                        "search-history requires a structured search_criteria and no name",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn sql_form_definition() -> Value {
@@ -41,7 +183,7 @@ fn sql_form_definition() -> Value {
             "sql": {"type": "sql", "required": true},
             "variables": {"type": "object_list", "required": false}
         },
-        "allow_extra_attributes": "deny"
+        "allow_extra_attributes": "allow_json"
     })
 }
 
@@ -141,6 +283,8 @@ fn sql_integrity_payload(
 ) -> entry::IntegrityPayload {
     let payload = serde_json::json!({
         "name": payload.name,
+        "kind": payload.kind,
+        "metadata": payload.metadata,
         "sql": payload.sql,
         "variables": variables,
     });
@@ -149,6 +293,13 @@ fn sql_integrity_payload(
         checksum: integrity.checksum(&serialized),
         signature: integrity.signature(&serialized),
     }
+}
+
+fn sql_extra_attributes(payload: &SqlPayload) -> Value {
+    serde_json::json!({
+        "kind": payload.kind,
+        "metadata": payload.metadata,
+    })
 }
 
 fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
@@ -161,10 +312,33 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
         .get("variables")
         .cloned()
         .unwrap_or_else(|| Value::Array(Vec::new()));
+    let extra_attributes = row
+        .extra_attributes
+        .as_object()
+        .context("SQL row extra_attributes must be an object")?;
+    let kind = extra_attributes
+        .get("kind")
+        .cloned()
+        .context("SQL row kind is missing")?;
+    let kind: SqlKind = serde_json::from_value(kind).context("SQL row kind is invalid")?;
+    let metadata = extra_attributes
+        .get("metadata")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let metadata = if metadata.is_null() {
+        None
+    } else {
+        Some(
+            serde_json::from_value::<SqlMetadata>(metadata)
+                .context("SQL row metadata is invalid")?,
+        )
+    };
 
     Ok(serde_json::json!({
         "id": row.entry_id,
-        "name": row.title,
+        "name": if row.title.is_empty() { Value::Null } else { Value::String(row.title.clone()) },
+        "kind": kind,
+        "metadata": metadata,
         "sql": sql_value,
         "variables": variables,
         "created_at": row.created_at,
@@ -234,6 +408,7 @@ pub async fn create_sql<I: IntegrityProvider>(
     integrity: &I,
 ) -> Result<Value> {
     let form_def = ensure_sql_form(op, ws_path).await?;
+    validate_sql_metadata(payload)?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
     validate_sql_payload(op, ws_path, &payload.sql, &variables).await?;
 
@@ -244,16 +419,17 @@ pub async fn create_sql<I: IntegrityProvider>(
     let mut fields = Map::new();
     fields.insert("sql".to_string(), Value::String(payload.sql.to_string()));
     fields.insert("variables".to_string(), variables.clone());
+    let extra_attributes = sql_extra_attributes(payload);
 
     let row = entry::EntryRow {
         entry_id: sql_id.to_string(),
-        title: payload.name.to_string(),
+        title: payload.name.clone().unwrap_or_default(),
         form: SQL_FORM_NAME.to_string(),
         tags: Vec::new(),
         created_at: timestamp,
         updated_at: timestamp,
         fields: Value::Object(fields),
-        extra_attributes: Value::Object(Map::new()),
+        extra_attributes,
         revision_id: revision_id.clone(),
         parent_revision_id: None,
         integrity: integrity_payload.clone(),
@@ -290,7 +466,7 @@ pub async fn update_sql<I: IntegrityProvider>(
     ws_path: &str,
     sql_id: &str,
     payload: &SqlPayload,
-    parent_revision_id: Option<&str>,
+    parent_revision_id: &str,
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
@@ -301,17 +477,26 @@ pub async fn update_sql<I: IntegrityProvider>(
         return Err(anyhow!("SQL entry not found: {}", sql_id));
     }
 
-    if let Some(expected_parent) = parent_revision_id {
-        if row.revision_id != expected_parent {
-            return Err(anyhow!(
+    if parent_revision_id.trim().is_empty() {
+        return Err(AppError::invalid_input(
+            ErrorCode::InvalidInput,
+            "parent_revision_id must not be blank",
+        )
+        .into());
+    }
+    if row.revision_id != parent_revision_id {
+        return Err(AppError::conflict(
+            ErrorCode::RevisionConflict,
+            format!(
                 "Revision conflict: expected {}, got {}",
-                expected_parent,
-                row.revision_id
-            ));
-        }
+                parent_revision_id, row.revision_id
+            ),
+        )
+        .into());
     }
 
     let variables = normalize_sql_variables(Some(&payload.variables))?;
+    validate_sql_metadata(payload)?;
     validate_sql_payload(op, ws_path, &payload.sql, &variables).await?;
     let mut timestamp = entry::now_ts();
     if timestamp <= row.updated_at {
@@ -323,10 +508,12 @@ pub async fn update_sql<I: IntegrityProvider>(
     let mut fields = Map::new();
     fields.insert("sql".to_string(), Value::String(payload.sql.to_string()));
     fields.insert("variables".to_string(), variables.clone());
+    let extra_attributes = sql_extra_attributes(payload);
 
-    row.title = payload.name.to_string();
+    row.title = payload.name.clone().unwrap_or_default();
     row.updated_at = timestamp;
     row.fields = Value::Object(fields);
+    row.extra_attributes = extra_attributes;
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();
     row.entry_version = row.entry_version.saturating_add(1);

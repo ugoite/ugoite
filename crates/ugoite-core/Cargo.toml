@@ -6,4 +6,5 @@ license.workspace = true
 
 [dependencies]
 ugoite-domain = { path = "../ugoite-domain" }
+serde_json = "1.0"
 thiserror = "2.0.18"

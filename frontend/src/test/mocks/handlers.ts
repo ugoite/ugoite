@@ -38,6 +38,118 @@ let revisionCounter = 0;
 
 const generateRevisionId = () => `rev-${++revisionCounter}`;
 
+const validateMockSqlPayload = (
+  payload: unknown,
+  options: { allowParentRevisionId?: boolean } = {},
+): string | null => {
+  if (!payload || typeof payload !== "object") {
+    return "payload must be an object";
+  }
+  const body = payload as Record<string, unknown>;
+  const allowedKeys = new Set([
+    "name",
+    "kind",
+    "metadata",
+    "sql",
+    "variables",
+    ...(options.allowParentRevisionId ? ["parent_revision_id"] : []),
+  ]);
+  const unknownKey = Object.keys(body).find((key) => !allowedKeys.has(key));
+  if (unknownKey) return `unknown field: ${unknownKey}`;
+  if (!("name" in body)) return "name is required";
+  if (body.name !== null && typeof body.name !== "string") {
+    return "name must be a string or null";
+  }
+  if (typeof body.name === "string" && !body.name.trim()) {
+    return "name must not be blank";
+  }
+  if (body.kind !== "user-query" && body.kind !== "search-history") {
+    return "kind must be user-query or search-history";
+  }
+  if (typeof body.sql !== "string") return "sql is required";
+  if (!Array.isArray(body.variables)) return "variables must be an array";
+  if (options.allowParentRevisionId) {
+    if (typeof body.parent_revision_id !== "string") {
+      return "parent_revision_id is required";
+    }
+    if (!body.parent_revision_id.trim()) {
+      return "parent_revision_id must not be blank";
+    }
+  }
+  for (const variable of body.variables) {
+    if (!variable || typeof variable !== "object") {
+      return "variables items must be objects";
+    }
+    const item = variable as Record<string, unknown>;
+    if (
+      typeof item.type !== "string" ||
+      typeof item.name !== "string" ||
+      typeof item.description !== "string"
+    ) {
+      return "variables items require type, name, and description";
+    }
+  }
+
+  const metadata = body.metadata;
+  if (metadata === undefined || metadata === null) {
+    if (body.kind === "search-history") {
+      return "search-history metadata is required";
+    }
+    if (body.name === null) {
+      return "unnamed user-query requires generatedName=untitled";
+    }
+    return null;
+  }
+  if (typeof metadata !== "object" || Array.isArray(metadata)) {
+    return "metadata must be an object";
+  }
+  const metadataObject = metadata as Record<string, unknown>;
+  if (body.kind === "user-query") {
+    if (body.name !== null) return "named user-query cannot have metadata";
+    return metadataObject.generatedName === "untitled" &&
+        metadataObject.searchCriteria === undefined
+      ? null
+      : "unnamed user-query requires generatedName=untitled";
+  }
+
+  const criteria = metadataObject.searchCriteria;
+  if (
+    metadataObject.generatedName !== undefined ||
+    !criteria ||
+    typeof criteria !== "object" ||
+    Array.isArray(criteria)
+  ) {
+    return "search-history metadata must contain only searchCriteria";
+  }
+  const criteriaObject = criteria as Record<string, unknown>;
+  if (
+    typeof criteriaObject.formName !== "string" ||
+    !Array.isArray(criteriaObject.tags) ||
+    !criteriaObject.tags.every((tag) => typeof tag === "string") ||
+    typeof criteriaObject.updatedFrom !== "string" ||
+    typeof criteriaObject.updatedTo !== "string" ||
+    !Array.isArray(criteriaObject.fieldConditions)
+  ) {
+    return "searchCriteria is invalid";
+  }
+  for (const condition of criteriaObject.fieldConditions) {
+    if (!condition || typeof condition !== "object") {
+      return "searchCriteria field conditions are invalid";
+    }
+    const item = condition as Record<string, unknown>;
+    if (
+      typeof item.field !== "string" ||
+      !["equals", "contains", "lt", "lte", "gt", "gte"].includes(
+        item.operator as string,
+      ) ||
+      typeof item.value !== "string"
+    ) {
+      return "searchCriteria field conditions are invalid";
+    }
+  }
+  return body.name === null ? null : "search-history cannot have a name";
+};
+
 const normalizeMockEntry = (entry: Entry): Entry => ({
   ...entry,
   content: entry.content ?? entry.markdown ?? "",
@@ -635,19 +747,23 @@ export const handlers = [
   }),
   testHttp.post("/spaces/:spaceId/sql", async ({ params, request }) => {
     const spaceId = params.spaceId as string;
-    const body = (await request.json()) as {
-      name: string;
-      sql: string;
-      variables?: string[];
-    };
+    const body = await request.json();
+    const validationError = validateMockSqlPayload(body);
+    if (validationError) {
+      return HttpResponse.json({ detail: validationError }, { status: 422 });
+    }
+    const payload = body as Record<string, unknown>;
     const id = crypto.randomUUID();
     const revisionId = generateRevisionId();
     const entry = {
       id,
-      name: body.name,
-      sql: body.sql,
-      variables: body.variables || [],
+      name: payload.name,
+      kind: payload.kind,
+      metadata: payload.metadata,
+      sql: payload.sql,
+      variables: payload.variables,
       space_id: spaceId,
+      revision_id: revisionId,
     };
     if (!mockSqlEntries.has(spaceId)) mockSqlEntries.set(spaceId, new Map());
     mockSqlEntries.get(spaceId)?.set(id, entry);
@@ -660,9 +776,27 @@ export const handlers = [
     if (!entry) {
       return HttpResponse.json({ detail: "Not found" }, { status: 404 });
     }
-    const body = (await request.json()) as { name?: string; sql?: string };
-    Object.assign(entry, body);
+    const body = await request.json();
+    const validationError = validateMockSqlPayload(body, {
+      allowParentRevisionId: true,
+    });
+    if (validationError) {
+      return HttpResponse.json({ detail: validationError }, { status: 422 });
+    }
+    if (body.parent_revision_id !== entry.revision_id) {
+      return HttpResponse.json(
+        {
+          code: "REVISION_CONFLICT",
+          message: "Revision conflict",
+          current_revision_id: entry.revision_id,
+        },
+        { status: 409 },
+      );
+    }
+    const { parent_revision_id: _parentRevisionId, ...payload } = body;
+    Object.assign(entry, payload);
     const revisionId = generateRevisionId();
+    entry.revision_id = revisionId;
     return HttpResponse.json({ id: sqlId, revision_id: revisionId });
   }),
   testHttp.delete("/spaces/:spaceId/sql/:sqlId", ({ params }) => {

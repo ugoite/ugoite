@@ -1,6 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEffect, createRoot } from "solid-js";
 import { createEntryStore } from "./entry-store";
+import { setLocale } from "./i18n";
+import { entryApi } from "./ugoite-client";
+import { UgoiteApiError } from "./ugoite-client/protocol";
 import { resetMockData, seedEntry, seedSpace } from "~/test/mocks/handlers";
 import type { Entry, EntryRecord, Space } from "./types";
 
@@ -14,6 +17,11 @@ describe("createEntryStore", () => {
   beforeEach(() => {
     resetMockData();
     seedSpace(testSpace);
+  });
+
+  afterEach(() => {
+    setLocale("en");
+    vi.restoreAllMocks();
   });
 
   it("should load entries from API", async () => {
@@ -192,6 +200,31 @@ describe("createEntryStore", () => {
     });
   });
 
+  it("localizes typed API errors while retaining the original cause", async () => {
+    setLocale("ja");
+    const apiError = new UgoiteApiError({
+      kind: "api",
+      code: "ENTRY_NOT_FOUND",
+      operation: "entry.list",
+      status: 404,
+      message: "Failed to load entries: backend detail",
+      detail: "backend detail",
+    });
+    vi.spyOn(entryApi, "list").mockRejectedValue(apiError);
+
+    await createRoot(async (dispose) => {
+      const store = createEntryStore(() => "store-test-ws");
+      await store.loadEntries();
+
+      expect(store.error()).toContain("エントリーが見つかりません。");
+      expect(store.error()).toContain("backend detail");
+      expect(store.error()).not.toContain("Failed to load entries");
+      expect(store.errorCause()).toBe(apiError);
+
+      dispose();
+    });
+  });
+
   it("should not refetch after successful update", async () => {
     // REQ-FE-010: Editor content MUST NOT be overwritten during or after save operation
     await createRoot(async (dispose) => {
@@ -294,5 +327,4 @@ describe("createEntryStore", () => {
       dispose();
     });
   });
-
 });

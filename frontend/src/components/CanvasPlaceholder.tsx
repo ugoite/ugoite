@@ -154,7 +154,6 @@ export function CanvasPlaceholder(props: CanvasPlaceholderProps) {
                         </Show>
                       </div>
                     </Show>
-
                   </div>
                 </button>
               );

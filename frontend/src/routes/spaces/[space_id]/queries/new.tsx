@@ -1,12 +1,14 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
 import { buildSqlSchema } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import type { Form, SqlVariable } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "search", title: "sqlNew" });
@@ -24,7 +26,7 @@ function extractVariables(sql: string): SqlVariable[] {
   return Array.from(names).map((name) => ({
     type: "string",
     name,
-    description: `Variable ${name}`,
+    description: "",
   }));
 }
 
@@ -33,7 +35,9 @@ export default function SpaceQueryCreateRoute() {
   const navigate = useNavigate();
   const spaceId = () => params.space_id;
   const [queryName, setQueryName] = createSignal("");
-  const [sqlInput, setSqlInput] = createSignal("");
+  const [sqlInput, setSqlInput] = createSignal(
+    "SELECT * FROM entries LIMIT 50",
+  );
   const [diagnostics, setDiagnostics] = createSignal<Diagnostic[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [isSaving, setIsSaving] = createSignal(false);
@@ -42,38 +46,29 @@ export default function SpaceQueryCreateRoute() {
     return await formApi.list(spaceId());
   });
 
-  const defaultSql = createMemo(() => {
-    const relation = forms()?.find((form) => form.sql_relation)?.sql_relation;
-    return relation
-      ? `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 50`
-      : "";
-  });
-
-  createEffect(() => {
-    if (!sqlInput().trim() && defaultSql()) setSqlInput(defaultSql());
-  });
-
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
 
   const handleSave = async () => {
     setError(null);
-    const name = queryName().trim() || "Untitled query";
+    const name = queryName().trim();
     const sql = sqlInput().trim();
     if (!sql) {
-      setError("SQL is required.");
+      setError(t("sqlPage.sqlRequired"));
       return;
     }
 
     setIsSaving(true);
     try {
       await sqlApi.create(spaceId(), {
-        name,
+        name: name || null,
+        kind: "user-query",
+        metadata: name ? undefined : { generatedName: "untitled" },
         sql,
         variables: extractVariables(sql),
       });
       navigate(`/spaces/${spaceId()}/search`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save query");
+      setError(formatUserFacingError(err, "sqlPage.failedSave"));
     } finally {
       setIsSaving(false);
     }
@@ -83,26 +78,25 @@ export default function SpaceQueryCreateRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">Search / Saved SQL</div>
-          <h1>New SQL</h1>
+          <div class="eyebrow">{t("sqlPage.searchSavedSql")}</div>
+          <h1>{t("sqlPage.newSql")}</h1>
         </div>
       </div>
       <div class="settingsMain surface">
         <label class="ui-label" for="query-title">
-          Query name
+          {t("sqlPage.queryName")}
         </label>
         <input
           id="query-title"
           class="ui-input"
-          placeholder="Untitled query"
+          placeholder={t("sqlPage.untitledQuery")}
           value={queryName()}
-          onInput={(e) =>
-            setQueryName(e.currentTarget.value)}
+          onInput={(e) => setQueryName(e.currentTarget.value)}
         />
 
         <div>
           <label class="ui-label mb-2" for="query-sql">
-            SQL
+            {t("sqlPage.sql")}
           </label>
           <SqlQueryEditor
             id="query-sql"
@@ -131,7 +125,7 @@ export default function SpaceQueryCreateRoute() {
           onClick={handleSave}
           disabled={isSaving()}
         >
-          {isSaving() ? "Saving..." : "Save"}
+          {isSaving() ? t("sqlPage.saving") : t("common.save")}
         </button>
       </div>
     </>

@@ -1,5 +1,7 @@
 import { createSignal } from "solid-js";
 import { createResource } from "./recoverable-resource";
+import { formatUserFacingError } from "./user-facing-error";
+import { type TranslationKey } from "./i18n";
 import type { Entry, EntryRecord, EntryUpdatePayload } from "./types";
 import { entryApi, RevisionConflictError } from "./ugoite-client";
 import { searchApi } from "./ugoite-client";
@@ -10,6 +12,7 @@ export interface EntryStoreState {
   selectedEntry: Entry | null;
   loading: boolean;
   error: string | null;
+  errorCause: unknown;
   // Optimistic state
   pendingUpdates: Map<string, EntryRecord>;
 }
@@ -26,6 +29,21 @@ export function createEntryStore(spaceId: () => string) {
   );
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [errorCause, setErrorCause] = createSignal<unknown>(null);
+
+  const clearError = () => {
+    setError(null);
+    setErrorCause(null);
+  };
+
+  const reportError = (
+    cause: unknown,
+    fallback: TranslationKey,
+    operation: string,
+  ) => {
+    setErrorCause(cause);
+    setError(formatUserFacingError(cause, fallback, operation));
+  };
 
   // Track pending optimistic updates
   const pendingUpdates = new Map<
@@ -55,13 +73,13 @@ export function createEntryStore(spaceId: () => string) {
   /** Load all entries from server */
   async function loadEntries() {
     setLoading(true);
-    setError(null);
+    clearError();
     try {
       const fetchedEntries = await entryApi.list(spaceId());
       setEntries(fetchedEntries);
     } catch (e) {
       /* v8 ignore start */
-      setError(e instanceof Error ? e.message : "Failed to load entries");
+      reportError(e, "entriesPage.failedLoad", "entry.list");
       /* v8 ignore stop */
     } finally {
       setLoading(false);
@@ -70,7 +88,7 @@ export function createEntryStore(spaceId: () => string) {
 
   /** Create a new entry */
   async function createEntry(content: string, id?: string) {
-    setError(null);
+    clearError();
     try {
       const result = await entryApi.create(spaceId(), {
         markdown: content,
@@ -81,7 +99,7 @@ export function createEntryStore(spaceId: () => string) {
       return result;
     } catch (e) {
       /* v8 ignore start */
-      setError(e instanceof Error ? e.message : "Failed to create entry");
+      reportError(e, "entriesPage.failedCreate", "entry.create");
       /* v8 ignore stop */
       throw e;
     }
@@ -89,12 +107,14 @@ export function createEntryStore(spaceId: () => string) {
 
   /** Update a entry with optimistic updates */
   async function updateEntry(entryId: string, payload: EntryUpdatePayload) {
-    setError(null);
+    clearError();
     const currentEntries = entries();
     const entryIndex = currentEntries.findIndex((n) => n.id === entryId);
 
     if (entryIndex === -1) {
-      throw new Error("Entry not found in local state");
+      const error = new Error("Entry not found in local state");
+      reportError(error, "entryDetail.saveFailed", "entry.update");
+      throw error;
     }
 
     const originalEntry = currentEntries[entryIndex];
@@ -136,7 +156,7 @@ export function createEntryStore(spaceId: () => string) {
     /* v8 ignore start */
     if (!wsId) {
       const error = new Error("Cannot update entry: space ID is missing");
-      setError(error.message);
+      reportError(error, "entryDetail.savePrerequisite", "entry.update");
       throw error;
     }
     /* v8 ignore stop */
@@ -174,7 +194,7 @@ export function createEntryStore(spaceId: () => string) {
       }
 
       /* v8 ignore start */
-      setError(e instanceof Error ? e.message : "Failed to update entry");
+      reportError(e, "entriesPage.failedUpdate", "entry.update");
       /* v8 ignore stop */
       throw e;
     }
@@ -182,7 +202,7 @@ export function createEntryStore(spaceId: () => string) {
 
   /** Delete a entry */
   async function deleteEntry(entryId: string) {
-    setError(null);
+    clearError();
 
     // Optimistic removal
     const currentEntries = entries();
@@ -204,7 +224,7 @@ export function createEntryStore(spaceId: () => string) {
       }
       /* v8 ignore stop */
       /* v8 ignore start */
-      setError(e instanceof Error ? e.message : "Failed to delete entry");
+      reportError(e, "entriesPage.failedDelete", "entry.delete");
       /* v8 ignore stop */
       throw e;
     }
@@ -222,6 +242,7 @@ export function createEntryStore(spaceId: () => string) {
     selectedEntry,
     loading,
     error,
+    errorCause,
 
     // Actions
     loadEntries,
@@ -233,11 +254,12 @@ export function createEntryStore(spaceId: () => string) {
 
     /** Perform a keyword search without mutating store state */
     async searchEntries(query: string) {
+      clearError();
       try {
         return await searchApi.keyword(spaceId(), query);
       } catch (e) {
         /* v8 ignore start */
-        setError(e instanceof Error ? e.message : "Failed to search entries");
+        reportError(e, "entriesPage.failedSearch", "search.keyword");
         /* v8 ignore stop */
         throw e;
       }

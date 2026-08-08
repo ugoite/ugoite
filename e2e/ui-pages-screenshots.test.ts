@@ -2,9 +2,9 @@ import { expect, test } from "@playwright/test";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
-	ensureDefaultForm,
-	getDefaultFormRelation,
+  ensureDefaultForm,
   getBackendUrl,
+  getDefaultFormRelation,
   waitForServers,
 } from "./lib/client.ts";
 
@@ -22,9 +22,9 @@ test.describe("UI page screenshot export @screenshot", () => {
     await ensureDefaultForm(request);
   });
 
-	test("REQ-E2E-004: export screenshots for all UI page specs", async ({ page, request }) => {
-		test.setTimeout(180_000);
-		const relation = await getDefaultFormRelation(request);
+  test("REQ-E2E-004: export screenshots for all UI page specs", async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const relation = await getDefaultFormRelation(request);
 
     const entryTitle = `E2E Screenshot Entry ${Date.now()}`;
     const entryRes = await request.post(
@@ -39,19 +39,20 @@ test.describe("UI page screenshot export @screenshot", () => {
     expect(entryRes.status()).toBe(201);
     const entry = (await entryRes.json()) as { id: string };
 
-    const sqlId = `e2e-ui-shot-${Date.now()}`;
     const sqlCreate = await request.post(
       getBackendUrl(`/spaces/${spaceId}/sql`),
       {
         data: {
-          id: sqlId,
           name: `E2E Screenshot Query ${Date.now()}`,
-			sql: `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
+          kind: "user-query",
+          sql: `SELECT * FROM "${relation}" ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
           variables: [],
         },
       },
     );
     expect([200, 201]).toContain(sqlCreate.status());
+    const savedSql = (await sqlCreate.json()) as { id: string };
+    const sqlId = savedSql.id;
 
     const specs = await loadUiPageSpecs();
     await fs.mkdir(screenshotDir, { recursive: true });

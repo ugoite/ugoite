@@ -1,18 +1,14 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import {
-  createMemo,
-  createSignal,
-  For,
-  Match,
-  Show,
-  Switch,
-} from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { SqlQueryEditor } from "~/components";
 import { formatDateLabel } from "~/lib/date-format";
 import { buildSqlSchema } from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
+import { displaySqlName } from "~/lib/sql-metadata";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "search", title: "savedSqlDetail" });
@@ -43,7 +39,13 @@ export default function SpaceSqlDetailRoute() {
     try {
       const session = await sqlSessionApi.create(spaceId(), current.sql);
       if (session.status === "failed") {
-        setRunError(session.error || "Query failed.");
+        setRunError(
+          formatUserFacingError(
+            session.error,
+            "querySession.failed",
+            "sql_session.create",
+          ),
+        );
         return;
       }
       navigate(
@@ -52,7 +54,7 @@ export default function SpaceSqlDetailRoute() {
         }`,
       );
     } catch (err) {
-      setRunError(err instanceof Error ? err.message : "Failed to run query");
+      setRunError(formatUserFacingError(err, "querySession.failed"));
     } finally {
       setRunning(false);
     }
@@ -62,18 +64,16 @@ export default function SpaceSqlDetailRoute() {
     <>
       <div class="screenHead">
         <div class="ui-stack-sm">
-          <p class="eyebrow">Search / Saved SQL</p>
+          <p class="eyebrow">{t("sqlPage.searchSavedSql")}</p>
           <Show
             when={entry()}
-            fallback={<h1>Saved SQL detail</h1>}
+            fallback={<h1>{t("sqlPage.detail")}</h1>}
           >
             {(data) => (
               <>
-                <h1>{data().name}</h1>
+                <h1>{displaySqlName(data())}</h1>
                 <p class="ui-page-subtitle max-w-2xl">
-                  Review the saved query text, confirm whether it needs
-                  variables, then use the supported run flow that already ships
-                  today.
+                  {t("sqlPage.reviewDescription")}
                 </p>
               </>
             )}
@@ -83,16 +83,18 @@ export default function SpaceSqlDetailRoute() {
       <section class="settingsMain surface">
         <Switch>
           <Match when={entry.loading}>
-            <p class="text-sm ui-muted">Loading saved query...</p>
+            <p class="text-sm ui-muted">{t("sqlPage.loadingQuery")}</p>
           </Match>
           <Match when={entry.error}>
             <div class="ui-stack-sm">
               <p class="text-sm ui-text-danger">
-                Failed to load this saved query.
+                {formatUserFacingError(
+                  entry.error,
+                  "sqlPage.failedLoadQuery",
+                )}
               </p>
               <p class="text-sm ui-muted">
-                Return to Search or the saved-SQL overview to keep working in
-                supported query flows.
+                {t("sqlPage.failedLoadQueryDescription")}
               </p>
             </div>
           </Match>
@@ -101,31 +103,32 @@ export default function SpaceSqlDetailRoute() {
               <>
                 <dl class="grid gap-4 text-sm sm:grid-cols-3">
                   <div class="ui-stack-sm">
-                    <dt class="font-semibold">Updated</dt>
+                    <dt class="font-semibold">{t("sqlPage.updated")}</dt>
                     <dd class="ui-muted">
                       {formatDateLabel(data().updated_at)}
                     </dd>
                   </div>
                   <div class="ui-stack-sm">
-                    <dt class="font-semibold">Created</dt>
+                    <dt class="font-semibold">{t("sqlPage.created")}</dt>
                     <dd class="ui-muted">
                       {formatDateLabel(data().created_at)}
                     </dd>
                   </div>
                   <div class="ui-stack-sm">
-                    <dt class="font-semibold">Variables</dt>
+                    <dt class="font-semibold">{t("sqlPage.variables")}</dt>
                     <dd class="ui-muted">
-                      {variableCount() === 0
-                        ? "No variables"
-                        : `${variableCount()} variable${
-                          variableCount() === 1 ? "" : "s"
-                        }`}
+                      {variableCount() === 0 ? t("sqlPage.noVariables") : t(
+                        variableCount() === 1
+                          ? "sqlPage.variableCount.one"
+                          : "sqlPage.variableCount.other",
+                        { count: variableCount() },
+                      )}
                     </dd>
                   </div>
                 </dl>
 
                 <div class="ui-stack-sm">
-                  <h2 class="text-lg font-semibold">SQL</h2>
+                  <h2 class="text-lg font-semibold">{t("sqlPage.sql")}</h2>
                   <SqlQueryEditor
                     value={data().sql}
                     onChange={() => undefined}
@@ -135,13 +138,14 @@ export default function SpaceSqlDetailRoute() {
                 </div>
 
                 <div class="ui-stack-sm">
-                  <h2 class="text-lg font-semibold">Variables</h2>
+                  <h2 class="text-lg font-semibold">
+                    {t("sqlPage.variables")}
+                  </h2>
                   <Show
                     when={variableCount() > 0}
                     fallback={
                       <p class="text-sm ui-muted">
-                        This saved query has no template variables, so you can
-                        run it immediately from this page.
+                        {t("sqlPage.noTemplateVariables")}
                       </p>
                     }
                   >
@@ -151,9 +155,12 @@ export default function SpaceSqlDetailRoute() {
                           <li>
                             <span class="font-medium">{variable.name}</span>
                             <span class="ml-2 text-xs">{variable.type}</span>
-                            <Show when={variable.description}>
-                              <span class="ml-2">{variable.description}</span>
-                            </Show>
+                            <span class="ml-2">
+                              {variable.description || t(
+                                "sqlPage.variableDescription",
+                                { name: variable.name },
+                              )}
+                            </span>
                           </li>
                         )}
                       </For>
@@ -177,7 +184,7 @@ export default function SpaceSqlDetailRoute() {
               onClick={handleRun}
               disabled={running()}
             >
-              {running() ? "Running..." : "Run Query"}
+              {running() ? t("sqlPage.running") : t("sqlPage.runQuery")}
             </button>
           </Show>
           <Show when={entry() && variableCount() > 0}>
@@ -185,26 +192,26 @@ export default function SpaceSqlDetailRoute() {
               href={queryVariablesHref()}
               class="btn primary"
             >
-              Open Variables
+              {t("sqlPage.openVariables")}
             </A>
           </Show>
           <A
             href={`/spaces/${spaceId()}/sql`}
             class="btn"
           >
-            Back to Saved SQL
+            {t("sqlPage.backToSavedSql")}
           </A>
           <A
             href={`/spaces/${spaceId()}/search`}
             class="btn"
           >
-            Open Search
+            {t("sqlPage.openSearch")}
           </A>
           <A
             href={`/spaces/${spaceId()}/dashboard`}
             class="btn"
           >
-            Back to Dashboard
+            {t("sqlPage.backToDashboard")}
           </A>
         </div>
       </section>

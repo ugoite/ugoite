@@ -1,8 +1,11 @@
 // REQ-FE-044: Frontend multilingual dictionary and locale switching
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initializeLocale, locale, setLocale, t } from "./i18n";
+import uiDictionary from "../../../shared/i18n/ui.json";
 
 describe("i18n", () => {
+  afterEach(() => setLocale("en"));
+
   beforeEach(() => {
     localStorage.clear();
     window.localStorage.clear();
@@ -79,5 +82,19 @@ describe("i18n", () => {
       .toBe(
         "利用可能なフォーム 2 件",
       );
+  });
+
+  it("REQ-FE-044: keeps the English and Japanese key sets identical", () => {
+    expect(Object.keys(uiDictionary.en).sort()).toEqual(
+      Object.keys(uiDictionary.ja).sort(),
+    );
+  });
+
+  it("REQ-FE-044: preserves contextual English navigation copy", () => {
+    expect(t("globalShell.settings")).toBe("Settings");
+    expect(t("dashboard.formsEntries")).toBe("Forms / Entries");
+    expect(t("formsPage.selectForm")).toBe("Select a Form");
+    expect(t("sqlPage.createTitle")).toBe("SQL / New");
+    expect(t("sqlPage.variablesTitle")).toBe("SQL / Variables");
   });
 });

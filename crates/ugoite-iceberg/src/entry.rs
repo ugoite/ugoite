@@ -7,7 +7,7 @@ use chrono::Utc;
 use opendal::Operator;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
@@ -1286,19 +1286,23 @@ async fn prepare_entry<I: IntegrityProvider>(
     let policy = extra_attributes_policy(&form_def);
     let (extras, extra_attributes) = collect_extra_attributes(&sections, &form_set);
     if !extras.is_empty() && policy == ExtraAttributesPolicy::Deny {
-        return Err(invalid_entry_input(format!(
-            "Unknown form fields: {}",
-            extras.join(", ")
-        )));
+        return Err(AppError::invalid_input_with_detail(
+            ErrorCode::UnknownFormFields,
+            "Entry contains unknown form fields",
+            json!({"fields": extras}),
+        )
+        .into());
     }
 
     let properties = index::extract_properties(content);
     let (casted, warnings) = index::validate_properties(&properties, &form_def)?;
     if !warnings.is_empty() {
-        return Err(invalid_entry_input(format!(
-            "Form validation failed: {}",
-            serde_json::to_string(&warnings)?
-        )));
+        return Err(AppError::invalid_input_with_detail(
+            ErrorCode::FormValidationFailed,
+            "Entry form validation failed",
+            json!({"warnings": warnings}),
+        )
+        .into());
     }
 
     let mut fields = Map::new();
@@ -1717,19 +1721,23 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
     let policy = extra_attributes_policy(&form_def);
     let (extras, extra_attributes) = collect_extra_attributes(&sections, &form_set);
     if !extras.is_empty() && policy == ExtraAttributesPolicy::Deny {
-        return Err(invalid_entry_input(format!(
-            "Unknown form fields: {}",
-            extras.join(", ")
-        )));
+        return Err(AppError::invalid_input_with_detail(
+            ErrorCode::UnknownFormFields,
+            "Entry contains unknown form fields",
+            json!({"fields": extras}),
+        )
+        .into());
     }
 
     let properties = index::extract_properties(content);
     let (casted, warnings) = index::validate_properties(&properties, &form_def)?;
     if !warnings.is_empty() {
-        return Err(invalid_entry_input(format!(
-            "Form validation failed: {}",
-            serde_json::to_string(&warnings)?
-        )));
+        return Err(AppError::invalid_input_with_detail(
+            ErrorCode::FormValidationFailed,
+            "Entry form validation failed",
+            json!({"warnings": warnings}),
+        )
+        .into());
     }
 
     let mut fields = Map::new();

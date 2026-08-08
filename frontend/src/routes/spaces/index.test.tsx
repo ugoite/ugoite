@@ -9,6 +9,7 @@ import {
 } from "@solidjs/testing-library";
 import SpacesIndexRoute from "./index";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 
 const localDevAuthGuideUrl =
   "https://ugoite.github.io/ugoite/docs/guide/develop/local-dev-auth-login";
@@ -111,9 +112,12 @@ describe("/spaces", () => {
 
   it("REQ-FE-002: rewrites invalid space_id backend errors into user-facing guidance", async () => {
     (spaceApi.create as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error(
-        "Invalid space_id: My Space. Must be alphanumeric, hyphens, or underscores.",
-      ),
+      new UgoiteApiError({
+        kind: "invalid_arguments",
+        code: "INVALID_IDENTIFIER",
+        status: 400,
+        message: "Invalid space_id",
+      }),
     );
 
     render(() => <SpacesIndexRoute />);
@@ -250,13 +254,20 @@ describe("/spaces", () => {
 
   it("REQ-FE-056: shows concise auth errors only when space loading fails", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("403 Forbidden"),
+      new UgoiteApiError({
+        kind: "forbidden",
+        code: "FORBIDDEN",
+        status: 403,
+        message: "Forbidden",
+      }),
     );
 
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByText("Failed to load spaces.")).toBeInTheDocument();
+      expect(
+        screen.getByText("You do not have permission to do that. (Details: Forbidden)"),
+      ).toBeInTheDocument();
     });
 
     expect(
@@ -273,13 +284,20 @@ describe("/spaces", () => {
 
   it("REQ-FE-056: links auth guidance to Local Dev Auth/Login when auth fails", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("401 Unauthorized"),
+      new UgoiteApiError({
+        kind: "forbidden",
+        code: "AUTHENTICATION_FAILED",
+        status: 401,
+        message: "Unauthorized",
+      }),
     );
 
     render(() => <SpacesIndexRoute />);
 
     await waitFor(() => {
-      expect(screen.getByText("Failed to load spaces.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Authentication failed. (Details: Unauthorized)"),
+      ).toBeInTheDocument();
     });
 
     expect(
@@ -296,7 +314,12 @@ describe("/spaces", () => {
 
   it("REQ-OPS-015: redirects unauthenticated users to the explicit login route", async () => {
     (spaceApi.list as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("401 Unauthorized"),
+      new UgoiteApiError({
+        kind: "forbidden",
+        code: "AUTHENTICATION_FAILED",
+        status: 401,
+        message: "Unauthorized",
+      }),
     );
 
     render(() => <SpacesIndexRoute />);

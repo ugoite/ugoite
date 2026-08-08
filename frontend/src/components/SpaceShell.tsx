@@ -1,18 +1,24 @@
 import { A, useNavigate } from "@solidjs/router";
 import type { JSX } from "solid-js";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
-import { locale } from "~/lib/i18n";
+import { t, type TranslationKey } from "~/lib/i18n";
 import { loadingState } from "~/lib/loading";
 import { UiIcon, type UiIconName } from "~/components/UiIcon";
 import { AccountMenu } from "~/components/AccountMenu";
 import { createSpaceStore } from "~/lib/space-store";
 
+export type SpaceTopTab = "dashboard" | "search";
+export type SpaceBottomTab = "object" | "grid";
 export type SpaceNavigation = "home" | "forms" | "search" | "settings";
 
 interface SpaceShellProps {
   spaceId: string;
-  activeNavigation: SpaceNavigation;
+  activeTopTab?: SpaceTopTab;
+  activeBottomTab?: SpaceBottomTab;
+  activeNavigation?: SpaceNavigation;
   title?: string;
+  showBottomTabs?: boolean;
+  bottomTabHrefSuffix?: string;
   children: JSX.Element;
 }
 
@@ -24,28 +30,12 @@ const navItems: Array<{ id: SpaceNavigation; icon: UiIconName; path: string }> =
     { id: "settings", icon: "settings", path: "settings" },
   ];
 
-const labels = {
-  en: {
-    home: "Home",
-    forms: "Forms",
-    search: "Search",
-    settings: "Settings",
-    spaces: "Spaces",
-    about: "About",
-    menu: "Menu",
-    account: "Account",
-  },
-  ja: {
-    home: "ホーム",
-    forms: "フォーム",
-    search: "検索",
-    settings: "設定",
-    spaces: "スペース",
-    about: "Ugoiteについて",
-    menu: "メニュー",
-    account: "アカウント",
-  },
-} as const;
+const navigationLabels: Record<SpaceNavigation, TranslationKey> = {
+  home: "nav.home",
+  forms: "spaceShell.bottom.grid",
+  search: "spaceShell.top.search",
+  settings: "spaceShell.nav.settings",
+};
 
 export function SpaceShell(props: SpaceShellProps) {
   const spaceStore = createSpaceStore();
@@ -54,9 +44,26 @@ export function SpaceShell(props: SpaceShellProps) {
   onMount(() => {
     void spaceStore.loadSpaces().catch(() => undefined);
   });
-  const copy = () => labels[locale() === "ja" ? "ja" : "en"];
-  const active = () => props.activeNavigation;
-  const crumb = createMemo(() => props.title ?? copy()[active()]);
+  const active = createMemo<SpaceNavigation>(() => {
+    if (props.activeNavigation) return props.activeNavigation;
+    if (props.activeTopTab === "dashboard") return "home";
+    if (props.activeTopTab === "search") return "search";
+    if (props.activeBottomTab === "grid") return "forms";
+    const pathname = typeof window === "undefined"
+      ? ""
+      : window.location.pathname;
+    if (pathname.includes("/settings")) return "settings";
+    if (
+      pathname.includes("/search") || pathname.includes("/sql") ||
+      pathname.includes("/queries")
+    ) return "search";
+    if (
+      pathname.includes("/forms") || pathname.includes("/entries") ||
+      pathname.includes("/assets")
+    ) return "forms";
+    return "home";
+  });
+  const crumb = createMemo(() => props.title ?? t(navigationLabels[active()]));
   const activePath = createMemo(() =>
     navItems.find((item) => item.id === active())?.path ?? "dashboard"
   );
@@ -70,20 +77,18 @@ export function SpaceShell(props: SpaceShellProps) {
   const navigation = (mobile = false) => (
     <nav
       class={mobile ? "bottomNav" : "navGroup"}
-      aria-label="Space navigation"
+      aria-label={t("spaceShell.navigation")}
     >
       {navItems.map((item) => (
         <A
           href={`/spaces/${props.spaceId}/${item.path}`}
           class={mobile ? "" : "navItem"}
-          activeClass=""
-          inactiveClass=""
           classList={{ active: active() === item.id }}
           aria-current={active() === item.id ? "page" : undefined}
           onClick={() => setDrawerOpen(false)}
         >
           <UiIcon name={item.icon} />
-          <span>{copy()[item.id]}</span>
+          <span>{t(navigationLabels[item.id])}</span>
         </A>
       ))}
     </nav>
@@ -99,7 +104,7 @@ export function SpaceShell(props: SpaceShellProps) {
         <button
           type="button"
           class="drawerBackdrop"
-          aria-label="Close menu"
+          aria-label={t("spaceShell.closeMenu")}
           onClick={() => setDrawerOpen(false)}
         />
         <div class="mobileDrawer">{sidebar()}</div>
@@ -109,13 +114,15 @@ export function SpaceShell(props: SpaceShellProps) {
           <button
             class="btn iconBtn mobileMenu"
             type="button"
-            aria-label={copy().menu}
+            aria-label={t("common.menu")}
             onClick={() => setDrawerOpen(true)}
           >
             <UiIcon name="menu" />
           </button>
           <div class="crumbTop">{crumb()}</div>
-          <AccountMenu />
+          <AccountMenu
+            settingsHref={`/spaces/${props.spaceId}/settings?section=credentials`}
+          />
         </header>
         <div class="content">{props.children}</div>
       </section>
@@ -126,14 +133,14 @@ export function SpaceShell(props: SpaceShellProps) {
   function sidebar() {
     return (
       <aside class="sidebar">
-        <a class="brand" href={`/spaces/${props.spaceId}/dashboard`}>
+        <A class="brand" href={`/spaces/${props.spaceId}/dashboard`}>
           <span class="brandMark">U</span>
           <span>Ugoite</span>
-        </a>
+        </A>
         <label class="sidebarSpaceSelect">
-          <span class="ui-sr-only">Space</span>
+          <span class="ui-sr-only">{t("common.space")}</span>
           <select
-            aria-label="Space"
+            aria-label={t("common.space")}
             value={props.spaceId}
             onChange={(event) => switchSpace(event.currentTarget.value)}
           >
@@ -155,14 +162,14 @@ export function SpaceShell(props: SpaceShellProps) {
         </label>
         {navigation()}
         <div class="sideFoot">
-          <a class="navItem" href="/spaces">
+          <A class="navItem" href="/spaces" end>
             <UiIcon name="spaces" />
-            <span>{copy().spaces}</span>
-          </a>
-          <a class="navItem" href="/about">
+            <span>{t("nav.spaces")}</span>
+          </A>
+          <A class="navItem" href="/about" end>
             <UiIcon name="about" />
-            <span>{copy().about}</span>
-          </a>
+            <span>{t("nav.about")}</span>
+          </A>
         </div>
       </aside>
     );

@@ -5,6 +5,7 @@ import { sqlApi } from "./ugoite-client";
 import { resetMockData, seedSpace } from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "./types";
+import type { SqlUpdatePayload } from "./types";
 import { testApiUrl } from "~/test/http-origin";
 
 const testSpace: Space = {
@@ -31,6 +32,8 @@ describe("sqlApi", () => {
           {
             id: "query-1",
             name: "Recent Query",
+            kind: "user-query",
+            metadata: null,
             sql: "SELECT 1",
             variables: [],
             created_at: 1772960822.056,
@@ -52,7 +55,9 @@ describe("sqlApi", () => {
   it("creates a SQL entry and returns id/revisionId", async () => {
     const result = await sqlApi.create("sql-ws", {
       name: "My Query",
+      kind: "user-query",
       sql: "SELECT 1",
+      variables: [],
     });
     expect(result.id).toBeDefined();
     expect(result.revisionId).toBeDefined();
@@ -61,7 +66,9 @@ describe("sqlApi", () => {
   it("gets a SQL entry by id", async () => {
     const created = await sqlApi.create("sql-ws", {
       name: "Get Test",
+      kind: "user-query",
       sql: "SELECT 2",
+      variables: [],
     });
     const fetched = await sqlApi.get("sql-ws", created.id);
     expect(fetched.name).toBe("Get Test");
@@ -71,20 +78,91 @@ describe("sqlApi", () => {
   it("updates a SQL entry", async () => {
     const created = await sqlApi.create("sql-ws", {
       name: "Orig",
+      kind: "user-query",
       sql: "SELECT 1",
+      variables: [],
     });
     const result = await sqlApi.update("sql-ws", created.id, {
       name: "Updated",
+      kind: "user-query",
       sql: "SELECT 2",
+      variables: [],
+      parent_revision_id: created.revisionId,
     });
     expect(result.id).toBe(created.id);
     expect(result.revisionId).toBeDefined();
   });
 
+  it("enforces the saved SQL update revision contract in the mock server", async () => {
+    const created = await sqlApi.create("sql-ws", {
+      name: "Revisioned",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+    });
+
+    const updated = await sqlApi.update("sql-ws", created.id, {
+      name: "Revisioned again",
+      kind: "user-query",
+      sql: "SELECT 2",
+      variables: [],
+      parent_revision_id: created.revisionId,
+    });
+    expect(updated.revisionId).not.toBe(created.revisionId);
+
+    await expect(sqlApi.update("sql-ws", created.id, {
+      name: "Stale",
+      kind: "user-query",
+      sql: "SELECT 3",
+      variables: [],
+      parent_revision_id: created.revisionId,
+    })).rejects.toMatchObject({ status: 409, code: "REVISION_CONFLICT" });
+  });
+
+  it("rejects saved SQL updates without a non-blank parent revision", async () => {
+    const created = await sqlApi.create("sql-ws", {
+      name: "Strict revision",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+    });
+    const payload = {
+      name: "Missing revision",
+      kind: "user-query" as const,
+      sql: "SELECT 2",
+      variables: [],
+    } as unknown as SqlUpdatePayload;
+
+    await expect(sqlApi.update("sql-ws", created.id, payload))
+      .rejects.toThrow("parent_revision_id is required");
+  });
+
+  it("rejects unknown top-level saved SQL update fields", async () => {
+    const created = await sqlApi.create("sql-ws", {
+      name: "Strict payload",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+    });
+    const invalidPayload = {
+      name: "Strict payload",
+      kind: "user-query" as const,
+      sql: "SELECT 2",
+      variables: [],
+      parent_revision_id: created.revisionId,
+      author: "unexpected",
+    } as unknown as SqlUpdatePayload;
+
+    await expect(sqlApi.update("sql-ws", created.id, invalidPayload))
+      .rejects.toThrow("unknown field: author");
+  });
+
   it("deletes a SQL entry", async () => {
     const created = await sqlApi.create("sql-ws", {
       name: "ToDelete",
+      kind: "user-query",
       sql: "SELECT 1",
+      variables: [],
     });
     await expect(sqlApi.delete("sql-ws", created.id)).resolves.toBeUndefined();
   });
@@ -120,7 +198,12 @@ describe("sqlApi", () => {
         () => HttpResponse.json({ detail: "Invalid SQL" }, { status: 422 }),
       ),
     );
-    await expect(sqlApi.create("sql-ws", { name: "Bad", sql: "SELECT" }))
+    await expect(sqlApi.create("sql-ws", {
+      name: "Bad",
+      kind: "user-query",
+      sql: "SELECT",
+      variables: [],
+    }))
       .rejects.toThrow(
         "Invalid SQL",
       );
@@ -133,8 +216,13 @@ describe("sqlApi", () => {
         () => HttpResponse.json({ detail: "Update failed" }, { status: 500 }),
       ),
     );
-    await expect(sqlApi.update("sql-ws", "bad-id", { name: "X" })).rejects
-      .toThrow("Update failed");
+    await expect(sqlApi.update("sql-ws", "bad-id", {
+      name: "X",
+      kind: "user-query",
+      sql: "SELECT 1",
+      variables: [],
+      parent_revision_id: "rev-1",
+    })).rejects.toThrow("Update failed");
   });
 
   it("throws on delete failure", async () => {

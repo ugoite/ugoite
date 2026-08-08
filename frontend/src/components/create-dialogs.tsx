@@ -12,9 +12,10 @@ import {
   buildEntryMarkdownFromFields,
   type EntryInputMode,
 } from "~/lib/entry-input";
-import { t } from "~/lib/i18n";
+import { t, type TranslationKey } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { searchApi } from "~/lib/ugoite-client";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import type { Form, FormCreatePayload } from "~/lib/types";
 import {
   isReservedMetadataColumn,
@@ -276,8 +277,11 @@ export interface CreateEntryDialogProps {
   ) => Promise<void> | void;
 }
 
-function resolveSubmitErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+function resolveSubmitErrorMessage(
+  error: unknown,
+  fallback: TranslationKey,
+): string {
+  return formatUserFacingError(error, fallback);
 }
 
 type RowReferencePickerProps = {
@@ -871,7 +875,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       setErrorMessage(
         resolveSubmitErrorMessage(
           error,
-          t("dashboard.error.failedCreateEntry"),
+          "dashboard.error.failedCreateEntry",
         ),
       );
     }
@@ -1382,7 +1386,10 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
       setFields([]);
     } catch (error) {
       setSubmitError(
-        resolveSubmitErrorMessage(error, t("dashboard.error.failedCreateForm")),
+        resolveSubmitErrorMessage(
+          error,
+          "dashboard.error.failedCreateForm",
+        ),
       );
     }
   };
@@ -1880,7 +1887,10 @@ export function EditFormDialog(props: EditFormDialogProps) {
       });
     } catch (error) {
       setSubmitError(
-        resolveSubmitErrorMessage(error, t("dashboard.error.failedUpdateForm")),
+        resolveSubmitErrorMessage(
+          error,
+          "dashboard.error.failedUpdateForm",
+        ),
       );
     }
   };

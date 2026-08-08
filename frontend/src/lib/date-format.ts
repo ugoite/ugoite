@@ -1,4 +1,5 @@
 import type { EntryRecord } from "./types";
+import { intlLocale } from "./i18n";
 
 const numericTimestampPattern = /^-?\d+(?:\.\d+)?$/;
 
@@ -47,7 +48,21 @@ export const formatDateLabel = (
   value: string | number | null | undefined,
 ): string => {
   const date = timestampToDate(value);
-  if (date) return date.toLocaleDateString();
+  if (date) return new Intl.DateTimeFormat(intlLocale()).format(date);
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return "—";
+};
+
+export const formatDateTimeLabel = (
+  value: string | number | null | undefined,
+): string => {
+  const date = timestampToDate(value);
+  if (date) {
+    return new Intl.DateTimeFormat(intlLocale(), {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  }
   if (typeof value === "string" && value.trim()) return value.trim();
   return "—";
 };

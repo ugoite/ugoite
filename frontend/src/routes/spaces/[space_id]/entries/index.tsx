@@ -16,6 +16,7 @@ import { createResource } from "~/lib/recoverable-resource";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { sqlSessionApi, sqlSessionRowToEntryRecord } from "~/lib/ugoite-client";
 import type { EntryRecord, FormCreatePayload } from "~/lib/types";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "forms" });
@@ -114,17 +115,21 @@ export default function SpaceEntriesIndexPane() {
     return ctx.entryStore.loading();
   });
 
-  const error = createMemo(() => {
+  const error = createMemo<unknown>(() => {
     if (sessionId().trim()) {
       return session.error || sessionRows.error || displayEntryState().error;
     }
-    return ctx.entryStore.error();
+    return ctx.entryStore.errorCause();
   });
 
   const errorMessage = createMemo(() => {
     const err = error();
     if (!err) return null;
-    return err instanceof Error ? err.message : String(err);
+    return formatUserFacingError(
+      err,
+      "formTable.recordsError",
+      sessionId().trim() ? "sql_session.rows" : undefined,
+    );
   });
   const needsFirstFormGuidance = createMemo(
     () =>

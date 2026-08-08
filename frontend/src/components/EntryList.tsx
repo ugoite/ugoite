@@ -2,6 +2,8 @@ import { createMemo, For, onMount, Show } from "solid-js";
 import type { Accessor } from "solid-js";
 import { createEntryStore } from "~/lib/entry-store";
 import type { EntryRecord } from "~/lib/types";
+import { t } from "~/lib/i18n";
+import { formatDateLabel } from "~/lib/date-format";
 
 /** Props for controlled mode (passing external state) */
 export interface EntryListControlledProps {
@@ -89,7 +91,7 @@ export function EntryList(props: EntryListProps) {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            <span class="ui-muted text-sm">Loading entries...</span>
+            <span class="ui-muted text-sm">{t("entriesList.loading")}</span>
           </div>
         </div>
       </Show>
@@ -127,9 +129,9 @@ export function EntryList(props: EntryListProps) {
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
               />
             </svg>
-            <p class="ui-muted font-medium mb-1">No entries yet</p>
+            <p class="ui-muted font-medium mb-1">{t("entriesList.empty")}</p>
             <p class="text-sm ui-muted">
-              Create your first entry to get started
+              {t("entriesList.createFirst")}
             </p>
           </div>
         </div>
@@ -163,15 +165,6 @@ function EntryListItem(props: EntryListItemProps) {
   const propertyEntries = () =>
     Object.entries(props.entry.properties ?? {}).slice(0, 3);
 
-  const formatDate = (dateStr: string) => {
-    try {
-      return new Date(dateStr).toLocaleDateString();
-    } catch {
-      /* v8 ignore start */
-      return dateStr;
-    } /* v8 ignore stop */
-  };
-
   /* v8 ignore start */
   return (
     <li data-testid="entry-item">
@@ -185,7 +178,7 @@ function EntryListItem(props: EntryListItemProps) {
       >
         <div class="flex justify-between items-start mb-2">
           <h3 class="font-semibold truncate flex-1 pr-2">
-            {props.entry.title || "Untitled"}
+            {props.entry.title || t("common.untitled")}
           </h3>
           <Show when={props.entry.form}>
             <span class="ui-pill text-xs whitespace-nowrap">
@@ -225,7 +218,11 @@ function EntryListItem(props: EntryListItemProps) {
               d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <span>Updated {formatDate(props.entry.updated_at)}</span>
+          <span>
+            {t("entriesList.updated", {
+              date: formatDateLabel(props.entry.updated_at),
+            })}
+          </span>
         </div>
       </button>
     </li>

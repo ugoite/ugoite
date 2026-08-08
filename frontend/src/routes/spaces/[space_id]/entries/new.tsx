@@ -1,14 +1,10 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { EntryDetailPane } from "~/components/EntryDetailPane";
 import { filterCreatableEntryForms } from "~/lib/metadata-forms";
 import { formApi, spaceApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "forms", title: "newEntry" });
@@ -62,7 +58,7 @@ export default function NewEntryRoute() {
         when={!space.loading && !forms.loading}
         fallback={
           <div class="surface emptyState" role="status">
-            Loading entry form…
+            {t("entryPage.loadingForm")}
           </div>
         }
       >
@@ -70,7 +66,7 @@ export default function NewEntryRoute() {
           when={!space.error && !forms.error}
           fallback={
             <section class="surface emptyState" role="alert">
-              <p>Could not load the Space or its Forms.</p>
+              <p>{t("entryPage.failedLoad")}</p>
               <button
                 class="btn"
                 type="button"
@@ -79,7 +75,7 @@ export default function NewEntryRoute() {
                   void refetchForms();
                 }}
               >
-                Retry
+                {t("common.retry")}
               </button>
             </section>
           }
@@ -88,13 +84,13 @@ export default function NewEntryRoute() {
             when={selectedForm()}
             fallback={
               <section class="surface emptyState" role="alert">
-                <p>No creatable Forms are available in this Space.</p>
+                <p>{t("entryPage.noForms")}</p>
                 <button
                   class="btn"
                   type="button"
                   onClick={() => navigate(`/spaces/${spaceId()}/forms`)}
                 >
-                  Back to Forms
+                  {t("entryPage.backToForms")}
                 </button>
               </section>
             }
@@ -105,8 +101,7 @@ export default function NewEntryRoute() {
                 forms={available}
                 createForm={() => form()}
                 onCreateFormChange={setSelectedFormName}
-                onDeleted={() =>
-                  navigate(`/spaces/${spaceId()}/forms`)}
+                onDeleted={() => navigate(`/spaces/${spaceId()}/forms`)}
                 onCreated={({ id: entryId }) =>
                   navigate(
                     `/spaces/${spaceId()}/entries/${

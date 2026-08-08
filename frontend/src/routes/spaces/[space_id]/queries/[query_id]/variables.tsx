@@ -2,6 +2,9 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { sqlApi, sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
+import { t } from "~/lib/i18n";
+import { displaySqlName } from "~/lib/sql-metadata";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "search", title: "sqlVariables" });
@@ -36,14 +39,18 @@ export default function SpaceQueryVariablesRoute() {
           if (value === "") return [variable.name, null];
           if (variable.type === "boolean") {
             if (value !== "true" && value !== "false") {
-              throw new Error(`${variable.name} must be true or false`);
+              throw new Error(
+                t("sqlPage.booleanRequired", { name: variable.name }),
+              );
             }
             return [variable.name, value === "true"];
           }
           if (variable.type === "integer" || variable.type === "float") {
             const numeric = Number(value);
             if (!Number.isFinite(numeric)) {
-              throw new Error(`${variable.name} must be a number`);
+              throw new Error(
+                t("sqlPage.numberRequired", { name: variable.name }),
+              );
             }
             return [variable.name, numeric];
           }
@@ -62,7 +69,7 @@ export default function SpaceQueryVariablesRoute() {
         }`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to run query");
+      setError(formatUserFacingError(err, "querySession.failed"));
     }
   };
 
@@ -70,21 +77,26 @@ export default function SpaceQueryVariablesRoute() {
     <>
       <div class="screenHead">
         <div class="screenTitle">
-          <div class="eyebrow">Search / Saved SQL</div>
-          <h1>Query variables</h1>
+          <div class="eyebrow">{t("sqlPage.searchSavedSql")}</div>
+          <h1>{t("sqlPage.queryVariables")}</h1>
         </div>
       </div>
 
       <Show when={entry.loading}>
-        <p class="text-sm ui-muted mt-4">Loading query...</p>
+        <p class="text-sm ui-muted mt-4">{t("sqlPage.loadingVariables")}</p>
       </Show>
       <Show when={entry.error}>
-        <p class="text-sm ui-text-danger mt-4">Failed to load query.</p>
+        <p class="text-sm ui-text-danger mt-4">
+          {formatUserFacingError(
+            entry.error,
+            "sqlPage.failedLoadVariables",
+          )}
+        </p>
       </Show>
       <Show when={entry()}>
         {(data) => (
           <div class="settingsMain surface">
-            <p class="text-sm ui-muted">{data().name}</p>
+            <p class="text-sm ui-muted">{displaySqlName(data())}</p>
             <div class="ui-stack-sm">
               <For each={variables()}>
                 {(variable, index) => {
@@ -100,7 +112,10 @@ export default function SpaceQueryVariablesRoute() {
                       <input
                         id={inputId}
                         class="ui-input"
-                        placeholder={variable.description}
+                        placeholder={variable.description || t(
+                          "sqlPage.variableDescription",
+                          { name: variable.name },
+                        )}
                         value={values()[variable.name] ?? ""}
                         onInput={(e) =>
                           handleInputChange(
@@ -121,7 +136,7 @@ export default function SpaceQueryVariablesRoute() {
               class="btn primary"
               onClick={handleRun}
             >
-              Run
+              {t("sqlPage.run")}
             </button>
           </div>
         )}

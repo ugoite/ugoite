@@ -75,7 +75,9 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
     entry::create_entry(&op, ws_path, "entry-2", entry_two, "author", &MockIntegrity).await?;
 
     let sql_payload = saved_sql::SqlPayload {
-        name: "Alpha Query".to_string(),
+        name: Some("Alpha Query".to_string()),
+        kind: saved_sql::SqlKind::UserQuery,
+        metadata: None,
         sql: format!(
             "SELECT * FROM \"{entry_relation}\" WHERE _ugoite_title = $title ORDER BY _ugoite_id"
         ),
@@ -241,10 +243,6 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
         }),
     )
     .await?;
-    let public_task_relation = form::get_form(&op, ws_path, "PublicTask").await?["sql_relation"]
-        .as_str()
-        .expect("Form SQL relation")
-        .to_string();
     form::upsert_form(
         &op,
         ws_path,
@@ -255,6 +253,10 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
         }),
     )
     .await?;
+    let public_task_relation = form::get_form(&op, ws_path, "PublicTask").await?["sql_relation"]
+        .as_str()
+        .expect("Form SQL relation")
+        .to_string();
 
     entry::create_entry(
         &op,
@@ -364,10 +366,6 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         }),
     )
     .await?;
-    let task_relation = form::get_form(&op, ws_path, "Task").await?["sql_relation"]
-        .as_str()
-        .expect("Form SQL relation")
-        .to_string();
     entry::create_entry(
         &op,
         ws_path,
@@ -377,6 +375,10 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         &MockIntegrity,
     )
     .await?;
+    let task_relation = form::get_form(&op, ws_path, "Task").await?["sql_relation"]
+        .as_str()
+        .expect("Form SQL relation")
+        .to_string();
     let (principal_id, readable_entries_by_form) = authorized_entries(&task_relation, &["task-1"]);
     let principal_ids = [principal_id];
     let authorization = sql_session::SqlSessionAuthorization {
@@ -715,10 +717,6 @@ async fn sql_sessions_apply_sparse_entry_denials_in_the_provider() -> anyhow::Re
             }),
         )
         .await?;
-    let task_relation = service.get_form(&space_id, "Task").await?["sql_relation"]
-        .as_str()
-        .expect("Form SQL relation")
-        .to_string();
     for (id, title) in [("task-public", "Public"), ("task-private", "Private")] {
         service
             .create_entry(
@@ -762,6 +760,10 @@ async fn sql_sessions_apply_sparse_entry_denials_in_the_provider() -> anyhow::Re
         )
         .await?;
 
+    let task_relation = service.get_form(&space_id, "Task").await?["sql_relation"]
+        .as_str()
+        .expect("Form SQL relation")
+        .to_string();
     let principals = [viewer];
     let session = service
         .create_sql_session_authorized_for_principals(
@@ -911,23 +913,17 @@ async fn sql_session_uses_backend_relation_mapping_for_hyphenated_forms() -> any
         }
     });
     form::upsert_form(&op, ws_path, &form_def).await?;
-    let relation = form::get_form(&op, ws_path, "Daily-Note").await?["sql_relation"]
+    let form = form::get_form(&op, ws_path, "Daily-Note").await?;
+    let relation = form["sql_relation"].as_str().expect("Form SQL relation");
+    let count_column = form["fields"]["Count"]["sql_column"]
         .as_str()
-        .expect("Form SQL relation")
-        .to_string();
-    let count_column = form::get_form(&op, ws_path, "Daily-Note").await?["fields"]["Count"]
-        ["sql_column"]
+        .expect("Form SQL column");
+    let enabled_column = form["fields"]["Enabled"]["sql_column"]
         .as_str()
-        .expect("Form SQL column")
-        .to_string();
-    let enabled_column = form::get_form(&op, ws_path, "Daily-Note").await?["fields"]["Enabled"]
-        ["sql_column"]
-        .as_str()
-        .expect("Form SQL column")
-        .to_string();
+        .expect("Form SQL column");
 
     let principal_ids = [Uuid::from_u128(92)];
-    let readable_entries_by_form = [(relation.clone(), HashSet::new())]
+    let readable_entries_by_form = [(relation.to_string(), HashSet::new())]
         .into_iter()
         .collect::<BTreeMap<_, _>>();
     let session = sql_session::create_sql_session_authorized_for_principals_by_form(
@@ -960,22 +956,25 @@ async fn sql_session_uses_backend_relation_mapping_for_hyphenated_forms() -> any
         ("search_1".to_string(), "timestamp".to_string()),
         ("search_2".to_string(), "boolean".to_string()),
     ]);
-    let typed_session = sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
-        &op,
-        ws_path,
-        &format!("SELECT * FROM \"{relation}\" WHERE _ugoite_updated_at < $search_1 AND \"{count_column}\" = $search_0 AND \"{enabled_column}\" = $search_2 ORDER BY _ugoite_updated_at DESC, _ugoite_id"),
-        parameters,
-        parameter_types,
-        sql_session::SqlSessionCreateAuthorization {
-            authorization: sql_session::SqlSessionAuthorization {
-                principal_ids: &principal_ids,
-                policy_hash: AUTHORIZATION_POLICY_HASH,
+    let typed_session =
+        sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
+            &op,
+            ws_path,
+            &format!(
+                "SELECT * FROM \"{relation}\" WHERE _ugoite_updated_at < $search_1 AND \"{count_column}\" = $search_0 AND \"{enabled_column}\" = $search_2 ORDER BY _ugoite_updated_at DESC, _ugoite_id"
+            ),
+            parameters,
+            parameter_types,
+            sql_session::SqlSessionCreateAuthorization {
+                authorization: sql_session::SqlSessionAuthorization {
+                    principal_ids: &principal_ids,
+                    policy_hash: AUTHORIZATION_POLICY_HASH,
+                },
+                readable_entries_by_form: &readable_entries_by_form,
             },
-            readable_entries_by_form: &readable_entries_by_form,
-        },
-        ugoite_core::query::EntryScope::AllCurrent,
-    )
-    .await?;
+            ugoite_core::query::EntryScope::AllCurrent,
+        )
+        .await?;
     assert_eq!(typed_session["status"], "ready");
     Ok(())
 }
