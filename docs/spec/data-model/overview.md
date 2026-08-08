@@ -33,7 +33,11 @@ See [directory-structure.md](directory-structure.md) and [directory-layout.yaml]
 
 ## Spaces
 
-`meta.json` stores the Space identity, storage descriptor, and integrity key material. `settings.json` is created with `default_form: Entry`; membership and invitation objects are added lazily by the collaboration service. Public Space patching cannot modify membership-managed keys.
+`meta.json` stores the Space identity, storage descriptor, and integrity key
+material. `settings.json` is created with `default_form: Entry`; portable
+membership, principal, policy, and authorization-audit state is stored in
+`security/principals.json`. Legacy membership-shaped settings are unsupported,
+and public Space patching cannot modify membership-managed keys.
 
 Creating a Space also creates an `Entry` Form with a Markdown `Body` field. On local Unix filesystems, the Space directories are set to owner-only mode and metadata files to owner read/write mode.
 

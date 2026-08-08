@@ -14,6 +14,8 @@ use ugoite_domain::id::validate_space_id;
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
 use ugoite_storage::{operator_from_uri_with_endpoint, OpendalStorage, StorageBackend};
 
+pub(crate) const CURRENT_SPACE_SCHEMA_VERSION: u64 = 2;
+
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct StorageConnectionTestConfig {
     pub uri: String,
@@ -140,7 +142,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     let (hmac_key_id, hmac_key, last_rotation) = generate_hmac_material();
 
     let meta = serde_json::json!({
-        "schema_version": 2,
+        "schema_version": CURRENT_SPACE_SCHEMA_VERSION,
         "space_id": directory_id,
         "space_uid": space_uid,
         "slug": slug,
@@ -283,13 +285,18 @@ async fn ensure_space_identity<S: StorageBackend + ?Sized>(
 ) -> Result<serde_json::Value> {
     let meta_path = format!("spaces/{name}/meta.json");
     let meta: serde_json::Value = storage.read_json(&meta_path).await?;
+    validate_current_space_metadata(&meta)?;
+    Ok(meta)
+}
+
+pub(crate) fn validate_current_space_metadata(meta: &serde_json::Value) -> Result<uuid::Uuid> {
     let object = meta
         .as_object()
         .ok_or_else(|| anyhow!("Space metadata must be a JSON object"))?;
     if object
         .get("schema_version")
         .and_then(serde_json::Value::as_u64)
-        != Some(2)
+        != Some(CURRENT_SPACE_SCHEMA_VERSION)
     {
         return Err(anyhow!(
             "unsupported Space layout: metadata schema_version must be 2"
@@ -306,7 +313,8 @@ async fn ensure_space_identity<S: StorageBackend + ?Sized>(
             "unsupported Space layout: immutable slug is missing"
         ));
     }
-    Ok(meta)
+    uuid::Uuid::parse_str(space_uid)
+        .map_err(|_| anyhow!("unsupported Space layout: space_uid is not a UUID"))
 }
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {

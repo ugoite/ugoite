@@ -18,14 +18,7 @@ async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<Sp
         ));
     }
     let metadata: Value = serde_json::from_slice(&operator.read(&metadata_path).await?.to_vec())?;
-    let raw = metadata
-        .get("space_uid")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            anyhow::anyhow!("unsupported Space layout: immutable space_uid is missing")
-        })?;
-    let uuid = Uuid::parse_str(raw)
-        .map_err(|_| anyhow::anyhow!("unsupported Space layout: space_uid is not a UUID"))?;
+    let uuid = crate::space::validate_current_space_metadata(&metadata)?;
     Ok(SpaceId::from(uuid))
 }
 

@@ -112,6 +112,12 @@ async fn legacy_space_metadata_schema_is_rejected() -> anyhow::Result<()> {
 
     let error = space::get_space(&op, "legacy-schema").await.unwrap_err();
     assert!(error.to_string().contains("unsupported Space layout"));
+    let workspace_error = form::list_forms(&op, "spaces/legacy-schema")
+        .await
+        .unwrap_err();
+    assert!(workspace_error
+        .to_string()
+        .contains("unsupported Space layout"));
     Ok(())
 }
 

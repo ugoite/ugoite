@@ -18,9 +18,9 @@ email is display data only.
 
 Each Space stores an immutable UUIDv7 `space_uid`, stable human or agent
 principals, memberships, ACL policies, and append-only authorization audit
-events. Node-to-Space bindings are node-local. Moving a Space preserves
-attribution and authorization while requiring an owner to bind a new Node
-account.
+events in portable authorization state. Node-to-Space bindings are node-local.
+Moving a Space preserves attribution and authorization; normal setup establishes
+the destination Node binding.
 
 Node administrators configure authentication and operate the server. Space
 owners manage one Space. There is no administrative Space and neither role
@@ -36,10 +36,11 @@ registered, or one Passkey plus confirmed TOTP and the issued recovery codes are
 established. Until then, the setup session can access only credential
 strengthening endpoints.
 
-The first account receives `node_admin`, an owner principal in the initial
-`default` Space, eight one-use recovery codes, and an opaque browser session.
-Save the recovery codes immediately. The setup secret cannot be reused. Visiting
-the server first never grants administrator access.
+The first account receives `node_admin`, owner bindings for existing supported
+operator-created Spaces (or a new `default` Space when none exist), eight
+one-use recovery codes, and an opaque browser session. Save the recovery codes
+immediately. The setup secret cannot be reused. Visiting the server first never
+grants administrator access.
 
 ## Browser login and sessions
 
@@ -54,10 +55,10 @@ The account security page lists browser sessions with creation, last-use,
 expiry, and revocation state. A user can revoke any individual session; the
 change is enforced on its next request.
 
-Credential enrollment, device approval, role/ACL changes, agent lifecycle, OIDC
-configuration, and owner rebinding require a Passkey authentication within the
-preceding five minutes. Accounts should register two or more Passkeys. Ugoite
-refuses to remove the final Passkey.
+Credential enrollment, device approval, role/ACL changes, agent lifecycle, and
+OIDC configuration require a Passkey authentication within the preceding five
+minutes. Accounts should register two or more Passkeys. Ugoite refuses to remove
+the final Passkey.
 
 ## Recovery
 
