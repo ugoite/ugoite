@@ -36,6 +36,15 @@ fn form() -> FormDefinition {
 }
 
 fn revision(form: &FormDefinition, version: u64, title: &str) -> EntryRevision {
+    revision_for_entry(form, 11, version, title)
+}
+
+fn revision_for_entry(
+    form: &FormDefinition,
+    entry: u128,
+    version: u64,
+    title: &str,
+) -> EntryRevision {
     let mut values = BTreeMap::new();
     values.insert(
         FieldId::new(100).expect("test field ID"),
@@ -43,10 +52,10 @@ fn revision(form: &FormDefinition, version: u64, title: &str) -> EntryRevision {
     );
     EntryRevision {
         form_id: form.id,
-        entry_id: Uuid::from_u128(11).into(),
-        revision_id: Uuid::from_u128(20 + u128::from(version)).into(),
+        entry_id: Uuid::from_u128(entry).into(),
+        revision_id: Uuid::from_u128(20 + entry * 100 + u128::from(version)).into(),
         parent_revision_id: (version > 1)
-            .then(|| Uuid::from_u128(20 + u128::from(version - 1)).into()),
+            .then(|| Uuid::from_u128(20 + entry * 100 + u128::from(version - 1)).into()),
         entry_version: version,
         expected_version: (version > 1).then_some(version - 1),
         operation: EntryOperation::Upsert,
@@ -80,7 +89,10 @@ async fn append(
 ) -> anyhow::Result<()> {
     workspace
         .commit(publication_context(
-            format!("checkpoint-revision-{}", revision.entry_version),
+            format!(
+                "checkpoint-revision-{}-{}",
+                revision.entry_id, revision.entry_version
+            ),
             "test.entry.append",
             &revision,
         )?)?
@@ -191,6 +203,77 @@ async fn checkpoint_pins_one_head_and_uses_static_iceberg_coordinates() -> anyho
             .read_revision_view(form.id, RevisionView::LatestIncludingTombstones)
             .await?,
         vec![second]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
+    let workspace = IcebergWorkspace::memory_for_tests(
+        SpaceId::from(Uuid::from_u128(5)),
+        "memory://checkpoint-diff",
+    )
+    .await?;
+    let form = form();
+    create_form(&workspace, &form).await?;
+    append(&workspace, &form, revision(&form, 1, "first")).await?;
+    let before = workspace.capture_checkpoint().await?;
+
+    append(
+        &workspace,
+        &form,
+        revision_for_entry(&form, 12, 1, "new entry"),
+    )
+    .await?;
+    let after_add = workspace.capture_checkpoint().await?;
+    let added = workspace.diff_checkpoints(&before, &after_add).await?;
+    assert_eq!(added.changes.len(), 1);
+    assert_eq!(
+        added.changes[0].kind,
+        ugoite_iceberg::CheckpointChangeKind::Added
+    );
+    assert!(added.changes[0].from.is_none());
+    assert!(added.changes[0].to.is_some());
+
+    append(&workspace, &form, revision(&form, 2, "updated")).await?;
+    let after_update = workspace.capture_checkpoint().await?;
+    let updated = workspace
+        .diff_checkpoints(&after_add, &after_update)
+        .await?;
+    assert_eq!(updated.changes.len(), 1);
+    assert_eq!(
+        updated.changes[0].kind,
+        ugoite_iceberg::CheckpointChangeKind::Updated
+    );
+
+    let mut deleted = revision(&form, 3, "deleted");
+    deleted.operation = EntryOperation::Delete;
+    deleted.entry.deleted = true;
+    deleted.entry.deleted_at_micros = Some(3);
+    deleted.values.clear();
+    append(&workspace, &form, deleted).await?;
+    let after_delete = workspace.capture_checkpoint().await?;
+    let deleted_diff = workspace
+        .diff_checkpoints(&after_update, &after_delete)
+        .await?;
+    assert_eq!(deleted_diff.changes.len(), 1);
+    assert_eq!(
+        deleted_diff.changes[0].kind,
+        ugoite_iceberg::CheckpointChangeKind::Deleted
+    );
+
+    let mut restored = revision(&form, 4, "restored");
+    restored.operation = EntryOperation::Restore;
+    restored.entry.restored_from = Some(restored.parent_revision_id.expect("parent"));
+    append(&workspace, &form, restored).await?;
+    let after_restore = workspace.capture_checkpoint().await?;
+    let restored_diff = workspace
+        .diff_checkpoints(&after_delete, &after_restore)
+        .await?;
+    assert_eq!(restored_diff.changes.len(), 1);
+    assert_eq!(
+        restored_diff.changes[0].kind,
+        ugoite_iceberg::CheckpointChangeKind::Restored
     );
     Ok(())
 }

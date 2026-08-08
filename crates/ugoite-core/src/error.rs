@@ -38,6 +38,9 @@ pub enum ErrorCode {
     FormValidationFailed,
     UnknownFormFields,
     InvalidInput,
+    CheckpointUnavailable,
+    CheckpointIntegrity,
+    CheckpointAlreadyExists,
 }
 
 impl ErrorCode {
@@ -66,6 +69,9 @@ impl ErrorCode {
             Self::FormValidationFailed => "FORM_VALIDATION_FAILED",
             Self::UnknownFormFields => "UNKNOWN_FORM_FIELDS",
             Self::InvalidInput => "INVALID_INPUT",
+            Self::CheckpointUnavailable => "CHECKPOINT_UNAVAILABLE",
+            Self::CheckpointIntegrity => "CHECKPOINT_INTEGRITY",
+            Self::CheckpointAlreadyExists => "CHECKPOINT_ALREADY_EXISTS",
         }
     }
 }

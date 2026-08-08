@@ -51,6 +51,15 @@ checkpoints. It never scans Entry rows, lists objects to infer authority or
 orphans, or repairs storage; physical locations are redacted from its normal
 response.
 
+Named checkpoints also provide immutable Entry reads: append `?checkpoint=<name>`
+to Entry, history, or revision reads, and include the same checkpoint plus the
+source `revision_id` in `POST /spaces/{space_id}/entries/{entry_id}/restore` to
+restore by append. `GET /spaces/{space_id}/checkpoints/diff?from=<name>&to=<name>`
+returns logical revision changes (`added`, `updated`, `deleted`, or `restored`),
+not Iceberg manifest or file differences. Checkpoint restore records its source
+checkpoint and revision in the new revision metadata and revalidates the live
+Entry head through the normal commit coordinator; it never rewinds a pointer.
+
 Errors are structured JSON. Authentication failures use 401; valid identities
 lacking Space/token/resource permission use 403; stale/used one-time credentials
 fail without revealing stored secret material.

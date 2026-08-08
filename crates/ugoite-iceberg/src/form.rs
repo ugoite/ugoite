@@ -344,6 +344,7 @@ pub async fn migrate_form<I: IntegrityProvider>(
             operation: "upsert".to_string(),
             source_kind: "migration".to_string(),
             source_id: None,
+            extension_metadata: Value::Object(Map::new()),
         };
         entry::append_revision_row_for_form(op, ws_path, &form_name, &revision, &normalized)
             .await?;

@@ -33,7 +33,9 @@ pub use health::SpaceHealthReport;
 pub use migration::{MigrationFormReport, MigrationManifest, MigrationReport};
 pub use space_catalog::PublicationContext;
 use space_catalog::SpaceCatalog;
-pub use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
+pub use ugoite_domain::checkpoint::{
+    CheckpointChange, CheckpointChangeKind, CheckpointDiff, CheckpointTable, SpaceCheckpoint,
+};
 
 use anyhow::{anyhow, bail, Context, Result};
 use arrow_array::builder::{
@@ -593,6 +595,25 @@ impl IcebergWorkspace {
         form_id: FormId,
         view: RevisionView,
     ) -> Result<Vec<EntryRevision>> {
+        self.read_revision_view_at_checkpoint_with_scope(
+            checkpoint,
+            form_id,
+            EntryScope::AllCurrent,
+            view,
+        )
+        .await
+    }
+
+    /// Reads a checkpoint-pinned revision view after applying the trusted
+    /// provider-side Entry scope. Full history is allowed here only because
+    /// the caller supplies the scope before rows leave DataFusion.
+    pub async fn read_revision_view_at_checkpoint_with_scope(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
         self.validate_checkpoint(checkpoint)?;
         let coordinate = checkpoint
             .tables
@@ -609,12 +630,148 @@ impl IcebergWorkspace {
         self.read_revision_view_from_table(
             &form,
             table,
-            EntryScope::AllCurrent,
+            entry_scope,
             view,
             coordinate.snapshot_id,
+            Some(MAX_NORMAL_READ_ROWS),
         )
         .await
         .map_err(checkpoint_query_error)
+    }
+
+    /// Compares the latest logical revision at two immutable checkpoints.
+    /// Iceberg revision IDs and payload rows define the result; manifest or
+    /// data-file differences are intentionally not presented as domain events.
+    pub async fn diff_checkpoints(
+        &self,
+        from: &SpaceCheckpoint,
+        to: &SpaceCheckpoint,
+    ) -> Result<CheckpointDiff> {
+        self.diff_checkpoints_with_scopes(from, to, None).await
+    }
+
+    /// Authorized variant of [`Self::diff_checkpoints`]. The map is keyed by
+    /// stable Form ID so a display-name rename cannot widen or lose the scope.
+    pub async fn diff_checkpoints_with_scopes(
+        &self,
+        from: &SpaceCheckpoint,
+        to: &SpaceCheckpoint,
+        form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+    ) -> Result<CheckpointDiff> {
+        self.validate_checkpoint(from)?;
+        self.validate_checkpoint(to)?;
+        let catalog = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?;
+        catalog.validate_checkpoint_evidence(from).await?;
+        catalog.validate_checkpoint_evidence(to).await?;
+
+        let form_ids = from
+            .tables
+            .iter()
+            .chain(to.tables.iter())
+            .map(|table| table.form_id)
+            .collect::<BTreeSet<_>>();
+        let mut changes = Vec::new();
+        for form_id in form_ids {
+            let scope = form_scopes
+                .map(|scopes| {
+                    scopes
+                        .get(&form_id)
+                        .cloned()
+                        .unwrap_or_else(|| EntryScope::Only(BTreeSet::new()))
+                })
+                .unwrap_or(EntryScope::AllCurrent);
+            let before = self
+                .read_checkpoint_view_if_present(from, form_id, scope.clone())
+                .await?;
+            let after = self
+                .read_checkpoint_view_if_present(to, form_id, scope)
+                .await?;
+            let before = before
+                .into_iter()
+                .map(|revision| (revision.entry_id, revision))
+                .collect::<BTreeMap<_, _>>();
+            let after = after
+                .into_iter()
+                .map(|revision| (revision.entry_id, revision))
+                .collect::<BTreeMap<_, _>>();
+            let entry_ids = before
+                .keys()
+                .chain(after.keys())
+                .copied()
+                .collect::<BTreeSet<_>>();
+            for entry_id in entry_ids {
+                let from_revision = before.get(&entry_id).cloned();
+                let to_revision = after.get(&entry_id).cloned();
+                if from_revision
+                    .as_ref()
+                    .zip(to_revision.as_ref())
+                    .is_some_and(|(left, right)| left.revision_id == right.revision_id)
+                {
+                    continue;
+                }
+                let kind = match (&from_revision, &to_revision) {
+                    (None, None) => unreachable!("entry ID came from one of the checkpoint views"),
+                    (None, Some(revision)) if revision.operation == EntryOperation::Delete => {
+                        CheckpointChangeKind::Deleted
+                    }
+                    (None, Some(_)) => CheckpointChangeKind::Added,
+                    (Some(_), None) => CheckpointChangeKind::Deleted,
+                    (Some(previous), Some(revision))
+                        if revision.operation == EntryOperation::Delete =>
+                    {
+                        let _ = previous;
+                        CheckpointChangeKind::Deleted
+                    }
+                    (Some(previous), Some(revision))
+                        if revision.operation == EntryOperation::Restore
+                            || (previous.operation == EntryOperation::Delete
+                                && !revision.entry.deleted) =>
+                    {
+                        CheckpointChangeKind::Restored
+                    }
+                    (Some(_), Some(_)) => CheckpointChangeKind::Updated,
+                };
+                changes.push(CheckpointChange {
+                    form_id,
+                    entry_id,
+                    kind,
+                    from_revision_id: from_revision.as_ref().map(|revision| revision.revision_id),
+                    to_revision_id: to_revision.as_ref().map(|revision| revision.revision_id),
+                    from: from_revision,
+                    to: to_revision,
+                });
+            }
+        }
+        Ok(CheckpointDiff {
+            from_coordinate_checksum: from.coordinate_checksum.clone(),
+            to_coordinate_checksum: to.coordinate_checksum.clone(),
+            changes,
+        })
+    }
+
+    async fn read_checkpoint_view_if_present(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+        entry_scope: EntryScope,
+    ) -> Result<Vec<EntryRevision>> {
+        if !checkpoint
+            .tables
+            .iter()
+            .any(|coordinate| coordinate.form_id == form_id)
+        {
+            return Ok(Vec::new());
+        }
+        self.read_revision_view_at_checkpoint_with_scope(
+            checkpoint,
+            form_id,
+            entry_scope,
+            RevisionView::LatestIncludingTombstones,
+        )
+        .await
     }
 
     /// Loads Form definitions from the immutable tables named by one
@@ -1289,7 +1446,14 @@ impl IcebergWorkspace {
             let form = self.load_form(form_id).await?;
             let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
             return self
-                .read_revision_view_from_table(&form, table, EntryScope::AllCurrent, view, None)
+                .read_revision_view_from_table(
+                    &form,
+                    table,
+                    EntryScope::AllCurrent,
+                    view,
+                    None,
+                    None,
+                )
                 .await;
         }
         self.read_revision_view_with_scope(form_id, EntryScope::AllCurrent, view)
@@ -1310,7 +1474,7 @@ impl IcebergWorkspace {
         }
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        self.read_revision_view_from_table(&form, table, entry_scope, view, None)
+        self.read_revision_view_from_table(&form, table, entry_scope, view, None, None)
             .await
     }
 
@@ -1335,8 +1499,15 @@ impl IcebergWorkspace {
     ) -> Result<Vec<EntryRevision>> {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        self.read_revision_view_from_table(&form, table, EntryScope::AllCurrent, view, snapshot_id)
-            .await
+        self.read_revision_view_from_table(
+            &form,
+            table,
+            EntryScope::AllCurrent,
+            view,
+            snapshot_id,
+            None,
+        )
+        .await
     }
 
     async fn read_revision_view_from_table(
@@ -1346,9 +1517,21 @@ impl IcebergWorkspace {
         entry_scope: EntryScope,
         view: RevisionView,
         snapshot_id: Option<i64>,
+        checkpoint_history_limit: Option<usize>,
     ) -> Result<Vec<EntryRevision>> {
         let batches = match view {
-            RevisionView::All => self.read_all_revision_batches(&table, snapshot_id).await?,
+            RevisionView::All if entry_scope == EntryScope::AllCurrent => {
+                self.read_all_revision_batches(&table, snapshot_id).await?
+            }
+            RevisionView::All => {
+                self.read_scoped_revision_batches(
+                    &table,
+                    &entry_scope,
+                    snapshot_id,
+                    checkpoint_history_limit.map_or(usize::MAX, |limit| limit.saturating_add(1)),
+                )
+                .await?
+            }
             RevisionView::LatestIncludingTombstones | RevisionView::Current => {
                 self.read_latest_revision_batches(&table, &entry_scope, snapshot_id, view)
                     .await?
@@ -1358,6 +1541,13 @@ impl IcebergWorkspace {
         let mut revisions = Vec::new();
         for batch in &batches {
             revisions.extend(revisions_from_batch(batch, form, &schema)?);
+        }
+        if let Some(limit) = checkpoint_history_limit {
+            if matches!(view, RevisionView::All) && revisions.len() > limit {
+                return Err(anyhow!(
+                    "checkpoint history exceeds the configured {limit}-revision response limit"
+                ));
+            }
         }
         Ok(revisions)
     }
@@ -1483,6 +1673,73 @@ impl IcebergWorkspace {
             batches.push(batch);
         }
         Ok(batches)
+    }
+
+    async fn read_scoped_revision_batches(
+        &self,
+        table: &iceberg::table::Table,
+        entry_scope: &EntryScope,
+        snapshot_id: Option<i64>,
+        max_rows: usize,
+    ) -> Result<Vec<RecordBatch>> {
+        let (provider, query_snapshot_id) = self.revision_provider(table, snapshot_id).await?;
+        let context = self
+            .authorized_revision_query_context(
+                provider,
+                table.metadata().uuid().to_string(),
+                query_snapshot_id,
+                entry_scope,
+                QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+            )
+            .await?;
+        let predicate = match entry_scope {
+            EntryScope::AllCurrent => None,
+            EntryScope::Only(entry_ids) if entry_ids.is_empty() => Some(lit(false)),
+            EntryScope::Only(entry_ids) => Some(
+                col("entry_id").in_list(
+                    entry_ids
+                        .iter()
+                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                        .collect(),
+                    false,
+                ),
+            ),
+            EntryScope::AllExcept(entry_ids) => Some(
+                col("entry_id").in_list(
+                    entry_ids
+                        .iter()
+                        .map(|entry_id| lit(entry_id.as_uuid().as_bytes().to_vec()))
+                        .collect(),
+                    true,
+                ),
+            ),
+        };
+        let projection = table
+            .metadata()
+            .current_schema()
+            .as_struct()
+            .fields()
+            .iter()
+            .map(|field| ident(&field.name))
+            .collect();
+        context
+            .execute_relation_plan(
+                "revisions",
+                &[],
+                predicate.into_iter().collect(),
+                projection,
+                Vec::new(),
+                false,
+                false,
+                max_rows,
+            )
+            .await
     }
 
     async fn read_latest_revision_batches(

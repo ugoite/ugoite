@@ -455,6 +455,7 @@ pub async fn create_sql<I: IntegrityProvider>(
         operation: "upsert".to_string(),
         source_kind: "api".to_string(),
         source_id: None,
+        extension_metadata: Value::Object(Map::new()),
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 
@@ -536,6 +537,7 @@ pub async fn update_sql<I: IntegrityProvider>(
         operation: "upsert".to_string(),
         source_kind: "api".to_string(),
         source_id: None,
+        extension_metadata: Value::Object(Map::new()),
     };
     entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &revision, &form_def).await?;
 

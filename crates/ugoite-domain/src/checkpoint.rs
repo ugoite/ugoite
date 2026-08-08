@@ -3,7 +3,8 @@
 //! A checkpoint contains storage coordinates only.  It deliberately carries no
 //! authorization, SQL, or query-policy state.
 
-use crate::id::{FormId, SpaceId};
+use crate::entry::{EntryOperation, EntryRevision};
+use crate::id::{EntryId, FormId, RevisionId, SpaceId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -43,6 +44,44 @@ pub struct SpaceCheckpoint {
     pub created_at_micros: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+}
+
+/// The logical change observed when two checkpoint-pinned latest views are
+/// compared. This is deliberately based on revision rows, not Iceberg
+/// manifests or file locations.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckpointChangeKind {
+    Added,
+    Updated,
+    Deleted,
+    Restored,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CheckpointChange {
+    pub form_id: FormId,
+    pub entry_id: EntryId,
+    pub kind: CheckpointChangeKind,
+    pub from_revision_id: Option<RevisionId>,
+    pub to_revision_id: Option<RevisionId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<EntryRevision>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<EntryRevision>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CheckpointDiff {
+    pub from_coordinate_checksum: String,
+    pub to_coordinate_checksum: String,
+    pub changes: Vec<CheckpointChange>,
+}
+
+impl CheckpointChange {
+    pub fn operation(&self) -> Option<EntryOperation> {
+        self.to.as_ref().map(|revision| revision.operation)
+    }
 }
 
 impl SpaceCheckpoint {

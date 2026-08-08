@@ -14,11 +14,12 @@ use crate::{
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
     storage::operator_from_uri,
 };
+use crate::{CheckpointIntegrityError, CheckpointUnavailable, SpaceCheckpoint};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::id::{
-    validate_asset_id, validate_entry_id, validate_form_name, validate_revision_id,
-    validate_space_id, validate_sql_id, validate_sql_session_id,
+    validate_asset_id, validate_checkpoint_name, validate_entry_id, validate_form_name,
+    validate_revision_id, validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
 };
 use ugoite_domain::identity::Action;
 
@@ -158,6 +159,31 @@ impl UgoiteService {
         Ok(serde_json::to_value(
             workspace.health_report(checkpoint_names).await?,
         )?)
+    }
+
+    pub async fn create_named_checkpoint(
+        &self,
+        space_id: &str,
+        checkpoint_name: &str,
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_checkpoint_name(checkpoint_name))?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let checkpoint = workspace
+            .capture_checkpoint()
+            .await
+            .map_err(map_checkpoint_error)?;
+        workspace
+            .save_checkpoint(checkpoint_name, &checkpoint)
+            .await
+            .map_err(map_checkpoint_error)?;
+        Ok(json!({
+            "name": checkpoint_name,
+            "space_id": checkpoint.space_id,
+            "catalog_generation": checkpoint.catalog_generation,
+            "coordinate_checksum": checkpoint.coordinate_checksum,
+        }))
     }
 
     pub async fn patch_space(&self, space_id: &str, patch: &Value) -> Result<Value> {
@@ -367,6 +393,32 @@ impl UgoiteService {
         entry::get_entry_history(&self.operator, &self.workspace_path(space_id), entry_id).await
     }
 
+    pub async fn entry_history_at_checkpoint(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        checkpoint_name: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let checkpoint = self
+            .load_named_checkpoint(space_id, checkpoint_name)
+            .await?;
+        let scopes = self
+            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        entry::get_entry_history_at_checkpoint(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            &checkpoint,
+            scopes.as_ref(),
+        )
+        .await
+        .map_err(map_checkpoint_error)
+    }
+
     pub async fn entry_revision(
         &self,
         space_id: &str,
@@ -385,6 +437,35 @@ impl UgoiteService {
             )
             .await?,
         )?)
+    }
+
+    pub async fn entry_revision_at_checkpoint(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        checkpoint_name: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_revision_id(revision_id))?;
+        let checkpoint = self
+            .load_named_checkpoint(space_id, checkpoint_name)
+            .await?;
+        let scopes = self
+            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        entry::get_entry_revision_at_checkpoint(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            revision_id,
+            &checkpoint,
+            scopes.as_ref(),
+        )
+        .await
+        .map_err(map_checkpoint_error)
     }
 
     pub async fn restore_entry(
@@ -430,6 +511,153 @@ impl UgoiteService {
             scopes.as_ref(),
         )
         .await
+    }
+
+    pub async fn restore_entry_from_checkpoint_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        checkpoint_name: &str,
+        author: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_revision_id(revision_id))?;
+        self.require_entry_action_for_principals(space_id, entry_id, Action::Update, principal_ids)
+            .await?;
+        let checkpoint = self
+            .load_named_checkpoint(space_id, checkpoint_name)
+            .await?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let scopes = self
+            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        entry::restore_entry_from_checkpoint_authorized(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            revision_id,
+            &checkpoint,
+            author,
+            &integrity,
+            scopes.as_ref(),
+        )
+        .await
+        .map_err(map_checkpoint_error)
+    }
+
+    pub async fn entry_at_checkpoint_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        checkpoint_name: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let checkpoint = self
+            .load_named_checkpoint(space_id, checkpoint_name)
+            .await?;
+        let scopes = self
+            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        entry::get_entry_at_checkpoint(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            &checkpoint,
+            scopes.as_ref(),
+        )
+        .await
+        .map_err(map_checkpoint_error)
+    }
+
+    pub async fn diff_checkpoints_authorized_for_principals(
+        &self,
+        space_id: &str,
+        from_name: &str,
+        to_name: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        validate_storage_id(validate_space_id(space_id))?;
+        let from = self.load_named_checkpoint(space_id, from_name).await?;
+        let to = self.load_named_checkpoint(space_id, to_name).await?;
+        let scopes = self
+            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let diff = workspace
+            .diff_checkpoints_with_scopes(&from, &to, scopes.as_ref())
+            .await
+            .map_err(map_checkpoint_error)?;
+        let mut diff = serde_json::to_value(diff)?;
+        if let Some(changes) = diff.get_mut("changes").and_then(Value::as_array_mut) {
+            for change in changes {
+                let external_id = ["to", "from"].into_iter().find_map(|side| {
+                    change
+                        .get(side)
+                        .and_then(|revision| revision.get("entry"))
+                        .and_then(|entry| entry.get("external_id"))
+                        .and_then(Value::as_str)
+                        .filter(|external_id| !external_id.is_empty())
+                });
+                if let Some(external_id) = external_id {
+                    change["entry_id"] = Value::String(external_id.to_string());
+                }
+            }
+        }
+        Ok(diff)
+    }
+
+    async fn load_named_checkpoint(
+        &self,
+        space_id: &str,
+        checkpoint_name: &str,
+    ) -> Result<SpaceCheckpoint> {
+        validate_storage_id(validate_checkpoint_name(checkpoint_name))?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        workspace
+            .load_checkpoint(checkpoint_name)
+            .await
+            .map_err(map_checkpoint_error)
+    }
+
+    async fn checkpoint_form_scopes_for_principals(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Option<BTreeMap<FormId, EntryScope>>> {
+        if principal_ids.is_empty() {
+            return Ok(None);
+        }
+        let scopes = self
+            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
+            .await?;
+        let saved_sql_scope = self
+            .authorized_saved_sql_entry_scope_for_principals(space_id, principal_ids)
+            .await?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let form_scopes = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .filter_map(|form| {
+                let scope = if form.name.eq_ignore_ascii_case("SQL") {
+                    saved_sql_scope.clone()
+                } else {
+                    scopes.get(&form.name.to_ascii_lowercase()).cloned()?
+                };
+                scopes
+                    .get(&form.name.to_ascii_lowercase())
+                    .map(|_| (form.id, scope))
+            })
+            .collect();
+        Ok(Some(form_scopes))
     }
 
     async fn require_entry_action_for_principals(
@@ -1484,6 +1712,54 @@ fn validate_storage_id(
     result: std::result::Result<(), ugoite_domain::id::IdentifierError>,
 ) -> Result<()> {
     result.map_err(|error| AppError::invalid_identifier(error.to_string()).into())
+}
+
+fn map_checkpoint_error(error: anyhow::Error) -> anyhow::Error {
+    if error
+        .chain()
+        .any(|cause| cause.to_string().contains("entry revision conflict"))
+    {
+        return AppError::conflict(
+            ErrorCode::RevisionConflict,
+            "Entry changed while the checkpoint restore was being published",
+        )
+        .into();
+    }
+    if error.chain().any(|cause| {
+        cause.downcast_ref::<opendal::Error>().is_some_and(|error| {
+            matches!(
+                error.kind(),
+                opendal::ErrorKind::AlreadyExists | opendal::ErrorKind::ConditionNotMatch
+            )
+        })
+    }) {
+        return AppError::conflict(
+            ErrorCode::CheckpointAlreadyExists,
+            "A checkpoint with this name already exists",
+        )
+        .into();
+    }
+    if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<CheckpointUnavailable>().is_some())
+    {
+        return AppError::not_found(
+            ErrorCode::CheckpointUnavailable,
+            "Requested checkpoint is unavailable",
+        )
+        .into();
+    }
+    if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<CheckpointIntegrityError>().is_some())
+    {
+        return AppError::invalid_input(
+            ErrorCode::CheckpointIntegrity,
+            "Requested checkpoint failed integrity validation",
+        )
+        .into();
+    }
+    error
 }
 
 pub fn validate_public_space_patch(patch: &Value) -> Result<()> {

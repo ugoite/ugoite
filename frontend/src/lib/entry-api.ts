@@ -42,10 +42,15 @@ export const entryApi = {
     return entries.map(normalizeEntryRecord);
   },
 
-  async get(spaceId: string, entryId: string): Promise<Entry> {
+  async get(
+    spaceId: string,
+    entryId: string,
+    checkpoint?: string,
+  ): Promise<Entry> {
     const entry = await protocolFetch<EntryResponse>("entry.get", {
       space_id: spaceId,
       entry_id: entryId,
+      ...(checkpoint ? { checkpoint } : {}),
     });
     return normalizeEntry(entry);
   },
@@ -129,12 +134,14 @@ export const entryApi = {
   async history(
     spaceId: string,
     entryId: string,
+    checkpoint?: string,
   ): Promise<{ revisions: EntryRevision[] }> {
     return await protocolFetch<{ revisions: EntryRevision[] }>(
       "entry.history",
       {
         space_id: spaceId,
         entry_id: entryId,
+        ...(checkpoint ? { checkpoint } : {}),
       },
     );
   },
@@ -143,11 +150,13 @@ export const entryApi = {
     spaceId: string,
     entryId: string,
     revisionId: string,
+    checkpoint?: string,
   ): Promise<EntryRevisionContent> {
     return await protocolFetch<EntryRevisionContent>("entry.revision", {
       space_id: spaceId,
       entry_id: entryId,
       revision_id: revisionId,
+      ...(checkpoint ? { checkpoint } : {}),
     });
   },
 
@@ -155,11 +164,12 @@ export const entryApi = {
     spaceId: string,
     entryId: string,
     revisionId: string,
+    checkpoint?: string,
   ): Promise<Entry> {
     const entry = await protocolFetch<EntryResponse>(
       "entry.restore",
       { space_id: spaceId, entry_id: entryId },
-      { revision_id: revisionId },
+      { revision_id: revisionId, ...(checkpoint ? { checkpoint } : {}) },
     );
     return normalizeEntry(entry);
   },

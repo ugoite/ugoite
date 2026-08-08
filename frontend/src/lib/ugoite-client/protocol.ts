@@ -15,6 +15,8 @@ export const UGOITE_API_OPERATIONS = [
   "space.create",
   "space.get",
   "space.health",
+  "space.checkpoint_create",
+  "space.checkpoint_diff",
   "space.patch",
   "space.test_connection",
   "space.members.list",
