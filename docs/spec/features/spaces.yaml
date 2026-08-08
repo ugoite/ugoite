@@ -57,6 +57,28 @@ apis:
       command: ugoite space get
       file: crates/ugoite-cli/src/commands/space.rs
       function: run
+  - id: space.checkpoint_create
+    method: POST
+    status: implemented
+    backend:
+      path: /spaces/{space_id}/checkpoints
+      file: crates/ugoite-server/src/lib.rs
+      function: create_checkpoint
+    ugoite_core:
+      file: crates/ugoite-iceberg/src/service.rs
+      function: create_named_checkpoint
+    notes: Captures one immutable Catalog coordinate and persists it under the caller-supplied name.
+  - id: space.checkpoint_diff
+    method: GET
+    status: implemented
+    backend:
+      path: /spaces/{space_id}/checkpoints/diff
+      file: crates/ugoite-server/src/lib.rs
+      function: checkpoint_diff
+    ugoite_core:
+      file: crates/ugoite-iceberg/src/service.rs
+      function: diff_checkpoints_authorized_for_principals
+    notes: Compares logical Entry revisions between two durable named checkpoints; it does not expose manifest or data-file differences.
   - id: space.patch
     method: PATCH
     status: implemented

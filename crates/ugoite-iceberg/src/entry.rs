@@ -2,6 +2,7 @@ use crate::form;
 use crate::iceberg_store;
 use crate::index;
 use crate::integrity::IntegrityProvider;
+use crate::{IcebergWorkspace, RevisionView, SpaceCheckpoint};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use opendal::Operator;
@@ -15,8 +16,8 @@ use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
     RevisionError,
 };
-use ugoite_domain::form::{FieldType, FormField, ListItemDefinition};
-use ugoite_domain::id::{validate_asset_id, FieldId, RevisionId};
+use ugoite_domain::form::{sql_relation_name, FieldType, FormField, ListItemDefinition};
+use ugoite_domain::id::{validate_asset_id, FieldId, FormId, RevisionId};
 use uuid::Uuid;
 
 pub const MAX_ENTRY_CREATE_BATCH_SIZE: usize = 256;
@@ -93,6 +94,8 @@ pub struct IntegrityPayload {
 pub struct EntryContent {
     pub revision_id: String,
     pub parent_revision_id: Option<String>,
+    #[serde(default)]
+    pub timestamp: f64,
     pub author: String,
     pub markdown: String,
     #[serde(default)]
@@ -197,6 +200,8 @@ pub struct RevisionRow {
     pub source_kind: String,
     #[serde(default)]
     pub source_id: Option<String>,
+    #[serde(default)]
+    pub extension_metadata: Value,
 }
 
 const fn initial_entry_version() -> u64 {
@@ -602,7 +607,13 @@ fn revision_row_to_domain(
         entry,
         values,
         extra_attributes,
-        extension_metadata: Default::default(),
+        extension_metadata: row
+            .extension_metadata
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
     })
 }
 
@@ -888,6 +899,7 @@ fn revision_row_from_domain(
         .to_string(),
         source_kind: revision.source_kind,
         source_id: revision.source_id,
+        extension_metadata: serde_json::to_value(&revision.extension_metadata)?,
     })
 }
 
@@ -1027,6 +1039,7 @@ pub(crate) async fn write_entry_row(
         operation: if state.deleted { "delete" } else { "upsert" }.to_string(),
         source_kind: "application".to_string(),
         source_id: None,
+        extension_metadata: Value::Object(Map::new()),
     };
     append_revision_row_for_form(op, ws_path, form_name, &revision, &form_def).await
 }
@@ -1484,6 +1497,7 @@ async fn prepare_entry<I: IntegrityProvider>(
         operation: "upsert".to_string(),
         source_kind: "api".to_string(),
         source_id: None,
+        extension_metadata: Value::Object(Map::new()),
     };
     let ws_id = ws_path
         .trim_end_matches('/')
@@ -1716,6 +1730,7 @@ pub async fn get_entry_content(
     Ok(EntryContent {
         revision_id: row.revision_id,
         parent_revision_id: row.parent_revision_id,
+        timestamp: row.updated_at,
         author: row.author,
         markdown,
         frontmatter: serde_json::json!({
@@ -1756,6 +1771,7 @@ pub async fn get_entry_revision_content(
     Ok(EntryContent {
         revision_id: revision.revision_id,
         parent_revision_id: revision.parent_revision_id,
+        timestamp: revision.timestamp,
         author: revision.author,
         markdown,
         frontmatter: serde_json::json!({
@@ -1765,6 +1781,334 @@ pub async fn get_entry_revision_content(
         sections: sections_from_fields(&merged_fields),
         computed: Value::Object(Map::new()),
     })
+}
+
+fn checkpoint_scope_for_form(
+    form_id: FormId,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> EntryScope {
+    form_scopes
+        .and_then(|scopes| scopes.get(&form_id).cloned())
+        .unwrap_or_else(|| {
+            form_scopes
+                .map(|_| EntryScope::Only(BTreeSet::new()))
+                .unwrap_or(EntryScope::AllCurrent)
+        })
+}
+
+async fn checkpoint_revisions_for_entry(
+    workspace: &IcebergWorkspace,
+    checkpoint: &SpaceCheckpoint,
+    entry_id: &str,
+    view: RevisionView,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Option<(ugoite_domain::form::FormDefinition, Vec<EntryRevision>)>> {
+    let entry_uuid = Uuid::parse_str(entry_id)
+        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
+        .into();
+    for coordinate in &checkpoint.tables {
+        let form = workspace
+            .form_at_checkpoint(checkpoint, &sql_relation_name(coordinate.form_id))
+            .await?;
+        let scope =
+            entry_scope_for_lookup(&checkpoint_scope_for_form(form.id, form_scopes), entry_id);
+        if matches!(scope, EntryScope::Only(ref ids) if ids.is_empty()) {
+            continue;
+        }
+        let revisions = workspace
+            .read_revision_view_at_checkpoint_with_scope(checkpoint, form.id, scope, view)
+            .await?
+            .into_iter()
+            .filter(|revision| {
+                revision.entry_id == entry_uuid || revision.entry.external_id == entry_id
+            })
+            .collect::<Vec<_>>();
+        if !revisions.is_empty() {
+            return Ok(Some((form, revisions)));
+        }
+    }
+    Ok(None)
+}
+
+fn entry_value_from_checkpoint_revision(
+    entry_id: &str,
+    form: &ugoite_domain::form::FormDefinition,
+    revision: EntryRevision,
+) -> Result<Value> {
+    if revision.entry.deleted || revision.operation == EntryOperation::Delete {
+        return Err(entry_not_found(entry_id).into());
+    }
+    let form_def = form::from_domain_form(form);
+    let row = revision_row_from_domain(revision, &form.name, form)?.state;
+    let row = row.ok_or_else(|| entry_not_found(entry_id))?;
+    let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
+    let markdown = render_markdown(
+        &row.title,
+        &form.name,
+        &row.tags,
+        &merged_fields,
+        &form_field_names(&form_def),
+    );
+    Ok(json!({
+        "id": entry_id,
+        "revision_id": row.revision_id,
+        "content": markdown,
+        "frontmatter": {"form": form.name, "tags": row.tags},
+        "sections": sections_from_fields(&merged_fields),
+        "computed": Value::Object(Map::new()),
+        "title": row.title,
+        "form": row.form,
+        "tags": row.tags,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "integrity": serde_json::to_value(row.integrity)?,
+    }))
+}
+
+/// Reads the latest visible Entry state from a retained checkpoint. The
+/// checkpoint itself supplies both the Form schema and the Iceberg snapshot.
+pub async fn get_entry_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    checkpoint: &SpaceCheckpoint,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Value> {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let Some((form, mut revisions)) = checkpoint_revisions_for_entry(
+        &workspace,
+        checkpoint,
+        entry_id,
+        RevisionView::LatestIncludingTombstones,
+        form_scopes,
+    )
+    .await?
+    else {
+        return Err(entry_not_found(entry_id).into());
+    };
+    let revision = revisions.pop().ok_or_else(|| entry_not_found(entry_id))?;
+    entry_value_from_checkpoint_revision(entry_id, &form, revision)
+}
+
+pub async fn get_entry_history_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    checkpoint: &SpaceCheckpoint,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Value> {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let Some((_, mut revisions)) = checkpoint_revisions_for_entry(
+        &workspace,
+        checkpoint,
+        entry_id,
+        RevisionView::All,
+        form_scopes,
+    )
+    .await?
+    else {
+        return Err(entry_not_found(entry_id).into());
+    };
+    revisions.sort_by_key(|revision| (revision.committed_at_micros, revision.revision_id));
+    Ok(json!({
+        "entry_id": entry_id,
+        "revisions": revisions.into_iter().map(|revision| json!({
+            "revision_id": revision.revision_id,
+            "timestamp": from_timestamp_micros(revision.committed_at_micros),
+            "checksum": revision.entry.integrity.checksum,
+            "signature": revision.entry.integrity.signature,
+            "entry_version": revision.entry_version,
+            "operation": revision.operation,
+            "source_kind": revision.source_kind,
+            "source_id": revision.source_id,
+            "restored_from": revision.entry.restored_from,
+        })).collect::<Vec<_>>(),
+    }))
+}
+
+pub async fn get_entry_revision_at_checkpoint(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    revision_id: &str,
+    checkpoint: &SpaceCheckpoint,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Value> {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let Some((form, revisions)) = checkpoint_revisions_for_entry(
+        &workspace,
+        checkpoint,
+        entry_id,
+        RevisionView::All,
+        form_scopes,
+    )
+    .await?
+    else {
+        return Err(revision_not_found(entry_id, revision_id).into());
+    };
+    let revision = revisions
+        .into_iter()
+        .find(|revision| revision.revision_id.to_string() == revision_id)
+        .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
+    let timestamp = from_timestamp_micros(revision.committed_at_micros);
+    let row = revision_row_from_domain(revision, &form.name, &form)?
+        .state
+        .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
+    let form_def = form::from_domain_form(&form);
+    let form_name = form.name;
+    let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
+    let markdown = render_markdown(
+        &row.title,
+        &form_name,
+        &row.tags,
+        &merged_fields,
+        &form_field_names(&form_def),
+    );
+    Ok(serde_json::to_value(EntryContent {
+        revision_id: row.revision_id,
+        parent_revision_id: row.parent_revision_id,
+        timestamp,
+        author: row.author,
+        markdown,
+        frontmatter: json!({"form": form_name, "tags": row.tags}),
+        sections: sections_from_fields(&merged_fields),
+        computed: Value::Object(Map::new()),
+    })?)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    revision_id: &str,
+    checkpoint: &SpaceCheckpoint,
+    author: &str,
+    integrity: &I,
+    form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
+) -> Result<Value> {
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
+        .await?
+        .ok_or_else(|| entry_not_found(entry_id))?;
+    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
+    let current_form = form::to_domain_form(&form_def)?;
+    let scope = checkpoint_scope_for_form(current_form.id, form_scopes);
+    if matches!(scope, EntryScope::Only(ref ids) if ids.is_empty()) {
+        return Err(AppError::forbidden("Form is not readable").into());
+    }
+    let Some((_, source_revisions)) = checkpoint_revisions_for_entry(
+        &workspace,
+        checkpoint,
+        entry_id,
+        RevisionView::All,
+        form_scopes,
+    )
+    .await?
+    else {
+        return Err(revision_not_found(entry_id, revision_id).into());
+    };
+    let source = source_revisions
+        .into_iter()
+        .find(|revision| revision.revision_id.to_string() == revision_id)
+        .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
+    if source.form_id != current_form.id {
+        return Err(revision_not_found(entry_id, revision_id).into());
+    }
+
+    let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
+    let new_revision_id = Uuid::new_v4().to_string();
+    let mut timestamp = now_ts();
+    if timestamp <= row.updated_at {
+        timestamp = row.updated_at + 0.001;
+    }
+    let values = current_form
+        .fields
+        .iter()
+        .filter_map(|field| {
+            source
+                .values
+                .get(&field.id)
+                .map(|value| Ok((field.name.clone(), serde_json::to_value(value)?)))
+        })
+        .collect::<Result<Map<String, Value>>>()?;
+    let merged_fields = merge_entry_fields(
+        &Value::Object(values.clone()),
+        &serde_json::to_value(&source.extra_attributes)?,
+    );
+    let markdown = render_markdown(
+        &source.entry.title,
+        &form_name,
+        &source.entry.tags,
+        &merged_fields,
+        &form_field_names(&form_def),
+    );
+    let checksum = integrity.checksum(&markdown);
+    let signature = integrity.signature(&markdown);
+    row.title = source.entry.title.clone();
+    row.tags = source.entry.tags.clone();
+    row.updated_at = timestamp;
+    row.fields = Value::Object(values);
+    row.extra_attributes = serde_json::to_value(&source.extra_attributes)?;
+    row.parent_revision_id = Some(row.revision_id.clone());
+    row.revision_id = new_revision_id.clone();
+    row.entry_version = row.entry_version.saturating_add(1);
+    row.author = author.to_string();
+    row.deleted = false;
+    row.deleted_at = None;
+    row.integrity = IntegrityPayload {
+        checksum: checksum.clone(),
+        signature: signature.clone(),
+    };
+    let entry_version = row.entry_version;
+    let relation_scopes = form_scopes
+        .and_then(|scopes| scopes.get(&current_form.id).cloned())
+        .map(|scope| BTreeMap::from([(form_name.to_ascii_lowercase(), scope)]));
+    let restore_revision = RevisionRow {
+        revision_id: new_revision_id.clone(),
+        entry_id: entry_id.to_string(),
+        parent_revision_id: row.parent_revision_id.clone(),
+        timestamp,
+        author: author.to_string(),
+        fields: row.fields.clone(),
+        extra_attributes: row.extra_attributes.clone(),
+        markdown_checksum: checksum.clone(),
+        integrity: row.integrity.clone(),
+        restored_from: Some(revision_id.to_string()),
+        state: Some(row),
+        entry_version,
+        operation: "restore".to_string(),
+        source_kind: "checkpoint_restore".to_string(),
+        source_id: Some(revision_id.to_string()),
+        extension_metadata: json!({
+            "restore_source_checkpoint": {
+                "name": checkpoint.name,
+                "coordinate_checksum": checkpoint.coordinate_checksum,
+            },
+            "restore_source_revision_id": revision_id,
+            "restore_author": author,
+        }),
+    };
+    append_revision_row_for_form_authorized(
+        op,
+        ws_path,
+        &form_name,
+        &restore_revision,
+        &form_def,
+        relation_scopes.as_ref(),
+    )
+    .await?;
+    Ok(json!({
+        "revision_id": new_revision_id,
+        "restored_from": revision_id,
+        "source_checkpoint": {
+            "name": checkpoint.name,
+            "coordinate_checksum": checkpoint.coordinate_checksum,
+        },
+        "source_revision_id": revision_id,
+        "author": author,
+        "timestamp": timestamp,
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1915,6 +2259,7 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
         operation: "upsert".to_string(),
         source_kind: "api".to_string(),
         source_id: None,
+        extension_metadata: Value::Object(Map::new()),
     };
     append_revision_row_for_form_authorized(
         op,
@@ -1969,6 +2314,7 @@ pub async fn delete_entry(
         operation: "delete".to_string(),
         source_kind: "api".to_string(),
         source_id: None,
+        extension_metadata: Value::Object(Map::new()),
     };
     append_revision_row_for_form(op, ws_path, &form_name, &tombstone, &form_def).await?;
     Ok(())
@@ -2109,6 +2455,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
         operation: "restore".to_string(),
         source_kind: "api".to_string(),
         source_id: Some(revision_id.to_string()),
+        extension_metadata: Value::Object(Map::new()),
     };
     append_revision_row_for_form_authorized(
         op,

@@ -260,6 +260,8 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route("/spaces", get(list_spaces).post(create_space))
         .route("/spaces/{space_id}", get(get_space).patch(patch_space))
         .route("/spaces/{space_id}/health", get(space_health))
+        .route("/spaces/{space_id}/checkpoints", post(create_checkpoint))
+        .route("/spaces/{space_id}/checkpoints/diff", get(checkpoint_diff))
         .route("/spaces/{space_id}/audit", get(list_audit_events))
         .route("/spaces/{space_id}/test-connection", post(test_connection))
         .route(
@@ -3229,6 +3231,49 @@ async fn space_health(
         })
 }
 
+#[derive(Deserialize)]
+struct CheckpointCreate {
+    name: String,
+}
+
+async fn create_checkpoint(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(payload): Json<CheckpointCreate>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
+    let value = state
+        .service
+        .create_named_checkpoint(&space_id, &payload.name)
+        .await
+        .map_err(ApiError::from_core)?;
+    Ok((StatusCode::CREATED, Json(value)))
+}
+
+#[derive(Deserialize)]
+struct CheckpointDiffQuery {
+    from: String,
+    to: String,
+}
+
+async fn checkpoint_diff(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Query(query): Query<CheckpointDiffQuery>,
+) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    state
+        .service
+        .diff_checkpoints_authorized_for_principals(&space_id, &query.from, &query.to, &principals)
+        .await
+        .map(Json)
+        .map_err(ApiError::from_core)
+}
+
 async fn patch_space(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
@@ -3739,6 +3784,7 @@ async fn get_entry(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, entry_id)): Path<(String, String)>,
+    Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
     require_resource_action(
         &state,
@@ -3752,15 +3798,33 @@ async fn get_entry(
     validate_id(&entry_id, "entry_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    let mut value = state
-        .service
-        .get_entry_authorized_for_principals(&space_id, &entry_id, &principals)
-        .await
-        .map_err(ApiError::from_core)?;
+    let mut value = if let Some(checkpoint) = query.checkpoint.as_deref() {
+        state
+            .service
+            .entry_at_checkpoint_authorized_for_principals(
+                &space_id,
+                &entry_id,
+                checkpoint,
+                &principals,
+            )
+            .await
+            .map_err(ApiError::from_core)?
+    } else {
+        state
+            .service
+            .get_entry_authorized_for_principals(&space_id, &entry_id, &principals)
+            .await
+            .map_err(ApiError::from_core)?
+    };
     if let Some(content) = value.get("content").cloned() {
         value["markdown"] = content;
     }
     Ok(Json(value))
+}
+
+#[derive(Default, Deserialize)]
+struct EntryReadQuery {
+    checkpoint: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -3836,6 +3900,7 @@ async fn entry_history(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, entry_id)): Path<(String, String)>,
+    Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
     require_resource_action(
         &state,
@@ -3847,11 +3912,21 @@ async fn entry_history(
     )
     .await?;
     validate_id(&entry_id, "entry_id")?;
-    let mut history = state
-        .service
-        .entry_history(&space_id, &entry_id)
-        .await
-        .map_err(ApiError::from_core)?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let mut history = if let Some(checkpoint) = query.checkpoint.as_deref() {
+        state
+            .service
+            .entry_history_at_checkpoint(&space_id, &entry_id, checkpoint, &principals)
+            .await
+            .map_err(ApiError::from_core)?
+    } else {
+        state
+            .service
+            .entry_history(&space_id, &entry_id)
+            .await
+            .map_err(ApiError::from_core)?
+    };
     history["access_policy_history"] = serde_json::to_value(
         Authorizer::new(state.service.operator().clone())
             .resource_policy_history(
@@ -3873,6 +3948,7 @@ async fn entry_revision(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, entry_id, revision_id)): Path<(String, String, String)>,
+    Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
     require_resource_action(
         &state,
@@ -3885,11 +3961,27 @@ async fn entry_revision(
     .await?;
     validate_id(&entry_id, "entry_id")?;
     validate_id(&revision_id, "revision_id")?;
-    let mut revision = state
-        .service
-        .entry_revision(&space_id, &entry_id, &revision_id)
-        .await
-        .map_err(ApiError::from_core)?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let mut revision = if let Some(checkpoint) = query.checkpoint.as_deref() {
+        state
+            .service
+            .entry_revision_at_checkpoint(
+                &space_id,
+                &entry_id,
+                &revision_id,
+                checkpoint,
+                &principals,
+            )
+            .await
+            .map_err(ApiError::from_core)?
+    } else {
+        state
+            .service
+            .entry_revision(&space_id, &entry_id, &revision_id)
+            .await
+            .map_err(ApiError::from_core)?
+    };
     let policy_history = Authorizer::new(state.service.operator().clone())
         .resource_policy_history(
             &space_id,
@@ -3925,6 +4017,8 @@ async fn entry_revision(
 #[derive(Deserialize)]
 struct RestoreEntry {
     revision_id: String,
+    #[serde(default)]
+    checkpoint: Option<String>,
 }
 
 async fn restore_entry(
@@ -3945,7 +4039,20 @@ async fn restore_entry(
     let principals = authorization_principal_ids(&identity, principal_id);
     validate_id(&entry_id, "entry_id")?;
     validate_id(&payload.revision_id, "revision_id")?;
-    Ok(Json(
+    let value = if let Some(checkpoint) = payload.checkpoint.as_deref() {
+        state
+            .service
+            .restore_entry_from_checkpoint_authorized_for_principals(
+                &space_id,
+                &entry_id,
+                &payload.revision_id,
+                checkpoint,
+                &principal_id.to_string(),
+                &principals,
+            )
+            .await
+            .map_err(ApiError::from_core)?
+    } else {
         state
             .service
             .restore_entry_authorized_for_principals(
@@ -3956,8 +4063,9 @@ async fn restore_entry(
                 &principals,
             )
             .await
-            .map_err(ApiError::from_core)?,
-    ))
+            .map_err(ApiError::from_core)?
+    };
+    Ok(Json(value))
 }
 
 async fn list_forms(

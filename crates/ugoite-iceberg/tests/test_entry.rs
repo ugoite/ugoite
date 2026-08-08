@@ -1,12 +1,16 @@
 mod common;
 use common::setup_operator;
+use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::EntryScope;
 use ugoite_iceberg::asset;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
+use ugoite_iceberg::iceberg_store;
 use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::space;
+use uuid::Uuid;
 
 async fn ensure_entry_form(op: &opendal::Operator, ws_path: &str) -> anyhow::Result<()> {
     let form_def = serde_json::json!({
@@ -297,6 +301,97 @@ async fn deleted_entry_history_revision_and_restore_remain_reachable() -> anyhow
     .await?;
     let restored = entry::get_entry_content(&op, ws_path, "deleted-entry").await?;
     assert!(restored.markdown.contains("Before delete"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn checkpoint_restore_appends_current_head_with_provenance() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "checkpoint-restore", "/tmp").await?;
+    let ws_path = "spaces/checkpoint-restore";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        "checkpoint-entry",
+        "---\nform: Entry\n---\n# Before checkpoint\n\n## Body\nOriginal",
+        "author",
+        &integrity,
+    )
+    .await?;
+    let original = entry::get_entry_content(&op, ws_path, "checkpoint-entry").await?;
+    let workspace = iceberg_store::native_workspace(&op, ws_path).await?;
+    let checkpoint = workspace.capture_checkpoint().await?;
+    let form_id = workspace
+        .list_forms()
+        .await?
+        .into_iter()
+        .next()
+        .expect("form")
+        .id;
+    let entry_uuid = Uuid::new_v5(&Uuid::NAMESPACE_URL, b"checkpoint-entry").into();
+    let scoped_history = entry::get_entry_history_at_checkpoint(
+        &op,
+        ws_path,
+        "checkpoint-entry",
+        &checkpoint,
+        Some(&BTreeMap::from([(
+            form_id,
+            EntryScope::Only(BTreeSet::from([entry_uuid])),
+        )])),
+    )
+    .await?;
+    assert_eq!(
+        scoped_history["revisions"].as_array().map(Vec::len),
+        Some(1)
+    );
+
+    entry::update_entry(
+        &op,
+        ws_path,
+        "checkpoint-entry",
+        "---\nform: Entry\n---\n# After checkpoint\n\n## Body\nChanged",
+        Some(&original.revision_id),
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let restored = entry::restore_entry_from_checkpoint_authorized(
+        &op,
+        ws_path,
+        "checkpoint-entry",
+        &original.revision_id,
+        &checkpoint,
+        "restorer",
+        &integrity,
+        None,
+    )
+    .await?;
+    assert_eq!(restored["source_revision_id"], original.revision_id);
+    assert_eq!(restored["restored_from"], original.revision_id);
+
+    let current = entry::get_entry_content(&op, ws_path, "checkpoint-entry").await?;
+    assert!(current.markdown.contains("Original"));
+    assert!(current.markdown.contains("Before checkpoint"));
+    assert_ne!(current.revision_id, original.revision_id);
+
+    let revision = entry::get_entry_revision(
+        &op,
+        ws_path,
+        "checkpoint-entry",
+        restored["revision_id"].as_str().expect("revision ID"),
+    )
+    .await?;
+    assert_eq!(revision["source_kind"], "checkpoint_restore");
+    assert_eq!(revision["source_id"], original.revision_id);
+    assert_eq!(
+        revision["extension_metadata"]["restore_source_revision_id"],
+        original.revision_id
+    );
+    assert_eq!(revision["author"], "restorer");
     Ok(())
 }
 

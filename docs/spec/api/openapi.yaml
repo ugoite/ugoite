@@ -947,6 +947,182 @@
         }
       }
     },
+    "/spaces/{space_id}/checkpoints": {
+      "post": {
+        "summary": "Create an immutable named checkpoint",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Checkpoint created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Space management permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Checkpoint name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid checkpoint name or unavailable Catalog evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckpointCreateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spaces/{space_id}/checkpoints/diff": {
+      "get": {
+        "summary": "Diff logical Entry revisions between named checkpoints",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logical Entry changes at the two checkpoints",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Space read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Checkpoint not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Checkpoint integrity failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/spaces/{space_id}": {
       "get": {
         "summary": "Get a space",
@@ -2185,6 +2361,9 @@
           },
           {
             "$ref": "#/components/parameters/EntryId"
+          },
+          {
+            "$ref": "#/components/parameters/Checkpoint"
           }
         ],
         "responses": {
@@ -2443,6 +2622,9 @@
           },
           {
             "$ref": "#/components/parameters/EntryId"
+          },
+          {
+            "$ref": "#/components/parameters/Checkpoint"
           }
         ],
         "responses": {
@@ -2530,6 +2712,9 @@
           },
           {
             "$ref": "#/components/parameters/RevisionId"
+          },
+          {
+            "$ref": "#/components/parameters/Checkpoint"
           }
         ],
         "responses": {
@@ -2685,7 +2870,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/EntryRestoreRequest"
               }
             }
           }
@@ -6276,6 +6461,15 @@
           "minimum": 0,
           "default": 100
         }
+      },
+      "Checkpoint": {
+        "name": "checkpoint",
+        "in": "query",
+        "required": false,
+        "description": "Read the Entry or history from this immutable named checkpoint.",
+        "schema": {
+          "type": "string"
+        }
       }
     },
     "schemas": {
@@ -6609,6 +6803,35 @@
             "type": "string"
           }
         }
+      },
+      "EntryRestoreRequest": {
+        "type": "object",
+        "required": [
+          "revision_id"
+        ],
+        "properties": {
+          "revision_id": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "type": "string",
+            "description": "Resolve revision_id from this immutable named checkpoint before appending the restore."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CheckpointCreateRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Immutable caller-supplied checkpoint name."
+          }
+        },
+        "additionalProperties": false
       },
       "Form": {
         "type": "object",

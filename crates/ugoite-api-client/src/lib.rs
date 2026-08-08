@@ -26,6 +26,8 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "space.create",
     "space.get",
     "space.health",
+    "space.checkpoint_create",
+    "space.checkpoint_diff",
     "space.patch",
     "space.test_connection",
     "space.members.list",
@@ -320,6 +322,28 @@ pub fn prepare_request(
                     query,
                 )
             }
+            "space.checkpoint_diff" => (
+                OperationSpec::get("Failed to diff checkpoints"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "checkpoints".into(),
+                    "diff".into(),
+                ],
+                vec![
+                    ("from".into(), required_string(operation, args, "from")?),
+                    ("to".into(), required_string(operation, args, "to")?),
+                ],
+            ),
+            "space.checkpoint_create" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to create checkpoint"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "checkpoints".into(),
+                ],
+                vec![],
+            ),
             "space.patch" => (
                 OperationSpec::json(HttpMethod::Patch, "Failed to patch space"),
                 vec![
@@ -426,16 +450,22 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
-            "entry.get" => (
-                OperationSpec::get("Failed to get entry"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                    required_string(operation, args, "entry_id")?,
-                ],
-                vec![],
-            ),
+            "entry.get" => {
+                let mut query = Vec::new();
+                if let Some(checkpoint) = optional_string(operation, args, "checkpoint")? {
+                    query.push(("checkpoint".into(), checkpoint));
+                }
+                (
+                    OperationSpec::get("Failed to get entry"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "entries".into(),
+                        required_string(operation, args, "entry_id")?,
+                    ],
+                    query,
+                )
+            }
             "entry.create" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to create entry"),
                 vec![
@@ -471,29 +501,41 @@ pub fn prepare_request(
                     query,
                 )
             }
-            "entry.history" => (
-                OperationSpec::get("Failed to get entry history"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                    required_string(operation, args, "entry_id")?,
-                    "history".into(),
-                ],
-                vec![],
-            ),
-            "entry.revision" => (
-                OperationSpec::get("Failed to get entry revision"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                    required_string(operation, args, "entry_id")?,
-                    "history".into(),
-                    required_string(operation, args, "revision_id")?,
-                ],
-                vec![],
-            ),
+            "entry.history" => {
+                let mut query = Vec::new();
+                if let Some(checkpoint) = optional_string(operation, args, "checkpoint")? {
+                    query.push(("checkpoint".into(), checkpoint));
+                }
+                (
+                    OperationSpec::get("Failed to get entry history"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "entries".into(),
+                        required_string(operation, args, "entry_id")?,
+                        "history".into(),
+                    ],
+                    query,
+                )
+            }
+            "entry.revision" => {
+                let mut query = Vec::new();
+                if let Some(checkpoint) = optional_string(operation, args, "checkpoint")? {
+                    query.push(("checkpoint".into(), checkpoint));
+                }
+                (
+                    OperationSpec::get("Failed to get entry revision"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "entries".into(),
+                        required_string(operation, args, "entry_id")?,
+                        "history".into(),
+                        required_string(operation, args, "revision_id")?,
+                    ],
+                    query,
+                )
+            }
             "entry.restore" => (
                 OperationSpec::json(HttpMethod::Post, "Failed to restore entry"),
                 vec![
@@ -992,6 +1034,16 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             HttpMethod::Get,
             "Failed to inspect Space health",
             RequestBodyKind::None,
+        ),
+        "space.checkpoint_diff" => (
+            HttpMethod::Get,
+            "Failed to diff checkpoints",
+            RequestBodyKind::None,
+        ),
+        "space.checkpoint_create" => (
+            HttpMethod::Post,
+            "Failed to create checkpoint",
+            RequestBodyKind::Json,
         ),
         "space.patch" => (
             HttpMethod::Patch,
@@ -1593,8 +1645,15 @@ mod tests {
         ) {
             arguments.insert("entry_id".into(), json!("entry-1"));
         }
+        if matches!(operation, "entry.get" | "entry.history" | "entry.revision") {
+            arguments.insert("checkpoint".into(), json!("before-upgrade"));
+        }
         if operation == "entry.revision" {
             arguments.insert("revision_id".into(), json!("revision-1"));
+        }
+        if operation == "space.checkpoint_diff" {
+            arguments.insert("from".into(), json!("before-upgrade"));
+            arguments.insert("to".into(), json!("after-upgrade"));
         }
         if operation == "entry.options" {
             arguments.insert("form".into(), json!("Meeting"));
