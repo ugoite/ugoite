@@ -1,5 +1,6 @@
 mod common;
 use common::setup_operator;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_iceberg::asset;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::form;
@@ -79,6 +80,39 @@ async fn row_reference_values_must_target_current_entries_in_the_declared_form(
     .await
     .expect_err("references must resolve to the declared target Form");
     assert!(error.to_string().contains("does not belong to Form"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn malformed_asset_references_are_typed_input_errors() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "malformed-asset-entry", "/tmp").await?;
+    let ws_path = "spaces/malformed-asset-entry";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "AssetEntry",
+            "fields": {"Attachment": {"type": "asset_reference"}},
+        }),
+    )
+    .await?;
+
+    let error = entry::create_entry(
+        &op,
+        ws_path,
+        "asset-entry-1",
+        "---\nform: AssetEntry\nAttachment: {\"asset_id\":\"../bad\",\"name\":\"x\",\"media_type\":\"text/plain\",\"size_bytes\":1,\"sha256\":\"x\"}\n---\n# Invalid",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await
+    .expect_err("malformed asset IDs must be rejected before storage lookup");
+    let app_error = error
+        .downcast_ref::<AppError>()
+        .expect("validation errors stay typed");
+    assert_eq!(app_error.code(), ErrorCode::InvalidInput);
+    assert!(app_error.message().contains("Attachment"));
     Ok(())
 }
 

@@ -4677,6 +4677,64 @@ mod authentication_regression_tests {
             .route("/spaces/{space_id}/forms", post(upsert_form))
             .layer(Extension(identity))
             .with_state(state.clone());
+        let list_form_id = Uuid::from_u128(1863);
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "id": list_form_id,
+                    "name": "ListMeeting",
+                    "version": 1,
+                    "fields": {
+                        "labels": {
+                            "id": 100,
+                            "type": "list",
+                            "items": {"type": "string"}
+                        }
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let list_type_change_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/forms"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": list_form_id,
+                            "name": "ListMeeting",
+                            "version": 1,
+                            "fields": {
+                                "labels": {
+                                    "id": 100,
+                                    "type": "list",
+                                    "items": {"type": "integer"}
+                                }
+                            },
+                            "allow_extra_attributes": "deny"
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("list item type change response");
+        assert_eq!(
+            list_type_change_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let list_type_change_body =
+            axum::body::to_bytes(list_type_change_response.into_body(), usize::MAX).await?;
+        let list_type_change_body: Value = serde_json::from_slice(&list_type_change_body)?;
+        assert_eq!(
+            list_type_change_body["code"],
+            "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED"
+        );
+        assert!(list_type_change_body["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("labels")));
         let response = route
             .clone()
             .oneshot(

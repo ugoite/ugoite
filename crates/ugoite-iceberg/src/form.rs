@@ -151,6 +151,26 @@ fn form_changes(current: &FormDefinition, desired: &FormDefinition) -> Result<Ve
                 field_type: field.field_type.clone(),
             });
         }
+        if previous.field_type == FieldType::List && field.field_type == FieldType::List {
+            let previous_item_type = previous
+                .list_item
+                .as_ref()
+                .map(|item| item.field_type.as_str())
+                .unwrap_or("string");
+            let desired_item_type = field
+                .list_item
+                .as_ref()
+                .map(|item| item.field_type.as_str())
+                .unwrap_or("string");
+            if previous_item_type != desired_item_type {
+                return Err(AppError::form_field_type_change_not_supported(
+                    &previous.name,
+                    previous_item_type,
+                    desired_item_type,
+                )
+                .into());
+            }
+        }
         if previous.required != field.required {
             changes.push(FormChange::ChangeRequired {
                 field_id: field.id,

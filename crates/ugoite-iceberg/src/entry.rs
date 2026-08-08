@@ -14,7 +14,7 @@ use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
 };
 use ugoite_domain::form::{FieldType, FormField};
-use ugoite_domain::id::{FieldId, RevisionId};
+use ugoite_domain::id::{validate_asset_id, FieldId, RevisionId};
 use uuid::Uuid;
 
 pub const MAX_ENTRY_CREATE_BATCH_SIZE: usize = 256;
@@ -1081,6 +1081,15 @@ async fn validate_asset_references_exist(
             };
             match (&field.field_type, value) {
                 (FieldType::AssetReference, FieldValue::AssetReference(reference)) => {
+                    validate_asset_id(&reference.asset_id).map_err(|error| {
+                        invalid_entry_input(format!(
+                            "Form validation failed: {}",
+                            serde_json::json!([{
+                                "field": field.name,
+                                "message": error.to_string()
+                            }])
+                        ))
+                    })?;
                     if i64::try_from(reference.size_bytes).is_err() {
                         return Err(invalid_entry_input(format!(
                             "Form validation failed: {}",
@@ -1102,6 +1111,15 @@ async fn validate_asset_references_exist(
                         let FieldValue::AssetReference(reference) = value else {
                             continue;
                         };
+                        validate_asset_id(&reference.asset_id).map_err(|error| {
+                            invalid_entry_input(format!(
+                                "Form validation failed: {}",
+                                serde_json::json!([{
+                                    "field": field.name,
+                                    "message": error.to_string()
+                                }])
+                            ))
+                        })?;
                         if i64::try_from(reference.size_bytes).is_err() {
                             return Err(invalid_entry_input(format!(
                                 "Form validation failed: {}",
