@@ -10,10 +10,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::EntryScope;
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+    RevisionError,
 };
-use ugoite_domain::form::{FieldType, FormField};
+use ugoite_domain::form::{FieldType, FormField, ListItemDefinition};
 use ugoite_domain::id::{FieldId, RevisionId};
 use uuid::Uuid;
 
@@ -42,6 +44,41 @@ fn revision_not_found(entry_id: &str, revision_id: &str) -> AppError {
 
 fn invalid_entry_input(message: impl Into<String>) -> anyhow::Error {
     AppError::invalid_input(ErrorCode::InvalidInput, message).into()
+}
+
+fn invalid_revision_input(
+    error: RevisionError,
+    form: &ugoite_domain::form::FormDefinition,
+) -> anyhow::Error {
+    let field_name = |field_id: FieldId| {
+        form.fields
+            .iter()
+            .find(|field| field.id == field_id)
+            .map(|field| field.name.as_str())
+            .unwrap_or("unknown")
+    };
+    let message = match error {
+        RevisionError::InvalidAssetReference(field_id) => {
+            format!("Field '{}': invalid AssetReference", field_name(field_id))
+        }
+        RevisionError::DuplicateAssetReference(field_id) => {
+            format!("Field '{}': duplicate AssetReference", field_name(field_id))
+        }
+        RevisionError::RequiredField(field_id) => {
+            format!(
+                "Field '{}': required value is missing",
+                field_name(field_id)
+            )
+        }
+        RevisionError::UnknownField(field_id) => {
+            format!("Field '{}': unknown field", field_name(field_id))
+        }
+        RevisionError::WrongType(field_id) => {
+            format!("Field '{}': value has the wrong type", field_name(field_id))
+        }
+        other => format!("Invalid Entry revision: {other}"),
+    };
+    invalid_entry_input(message)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -473,6 +510,15 @@ async fn append_revision_rows_to_workspace_authorized(
         .iter()
         .map(|row| revision_row_to_domain(row, &domain_form))
         .collect::<Result<Vec<_>>>()?;
+    // Close the JSON-to-domain boundary before creating a publication
+    // command. This keeps malformed Form-owned Asset values and all other
+    // revision validation failures as client input errors, rather than
+    // allowing them to surface as an internal commit failure.
+    for revision in &revisions {
+        revision
+            .validate_payload(&domain_form)
+            .map_err(|error| invalid_revision_input(error, &domain_form))?;
+    }
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
     let command = crate::publication_context(
         format!(
@@ -583,53 +629,178 @@ fn form_values_to_domain(
     let mut values = std::collections::BTreeMap::new();
     for field in &form.fields {
         if let Some(value) = object.get(&field.name) {
-            values.insert(field.id, json_to_field_value_for_field(value, field)?);
+            values.insert(
+                field.id,
+                json_to_field_value_for_field(value, field).map_err(|error| {
+                    invalid_entry_input(format!("Field '{}': {error}", field.name))
+                })?,
+            );
         }
     }
     Ok(values)
 }
 
 fn json_to_field_value_for_field(value: &Value, field: &FormField) -> Result<FieldValue> {
-    if matches!(value, Value::Null) {
-        return Ok(FieldValue::Null);
-    }
-    if matches!(field.field_type, FieldType::AssetReference) {
-        return Ok(FieldValue::AssetReference(
-            serde_json::from_value::<AssetReference>(value.clone())
-                .context("invalid asset reference value")?,
-        ));
-    }
-    if matches!(field.field_type, FieldType::List)
-        && field
-            .list_item
-            .as_ref()
-            .is_some_and(|item| matches!(item.field_type, FieldType::AssetReference))
-    {
-        let values = value
-            .as_array()
-            .context("typed asset reference list must be an array")?
-            .iter()
-            .map(|value| {
-                if value.is_null() {
-                    Ok(FieldValue::Null)
-                } else if value.is_object() {
-                    Ok(FieldValue::AssetReference(
-                        serde_json::from_value::<AssetReference>(value.clone())
-                            .context("invalid asset reference list item")?,
-                    ))
-                } else {
-                    Err(anyhow!(
-                        "asset reference list items must be objects or null"
-                    ))
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
-        return Ok(FieldValue::List(values));
-    }
-    json_to_field_value(value)
+    json_to_field_value_for_type(value, &field.field_type, field.list_item.as_ref())
 }
 
-fn json_to_field_value(value: &Value) -> Result<FieldValue> {
+/// Convert transport JSON to the canonical domain value exactly once.
+///
+/// The Form type is part of the conversion boundary: JSON integers remain
+/// `FieldValue::Integer`, while floating fields become `FieldValue::Number`.
+/// List items use the same canonicalization as scalar fields, so writers and
+/// validators do not need a second transport coercion step.
+fn json_to_field_value_for_type(
+    value: &Value,
+    field_type: &FieldType,
+    list_item: Option<&ListItemDefinition>,
+) -> Result<FieldValue> {
+    if value.is_null() {
+        return Ok(FieldValue::Null);
+    }
+    // Markdown lists arrive as strings because Markdown has no native JSON
+    // scalar type. Treat the explicit null transport markers as null for
+    // typed items, while preserving the literal string "null" for string
+    // lists.
+    if !matches!(
+        field_type,
+        FieldType::String | FieldType::Markdown | FieldType::Sql
+    ) && value
+        .as_str()
+        .is_some_and(|value| matches!(value.trim(), "null" | "~"))
+    {
+        return Ok(FieldValue::Null);
+    }
+    match field_type {
+        FieldType::String | FieldType::Markdown | FieldType::Sql | FieldType::RowReference => {
+            Ok(FieldValue::String(
+                value
+                    .as_str()
+                    .context("typed string field must be a string")?
+                    .to_string(),
+            ))
+        }
+        FieldType::Boolean => Ok(FieldValue::Boolean(
+            value
+                .as_bool()
+                .or_else(|| {
+                    value.as_str().and_then(|value| match value.trim() {
+                        "true" | "True" | "TRUE" => Some(true),
+                        "false" | "False" | "FALSE" => Some(false),
+                        _ => None,
+                    })
+                })
+                .context("boolean field must be a boolean")?,
+        )),
+        FieldType::Integer => Ok(FieldValue::Integer(i64::from(
+            i32::try_from(
+                value
+                    .as_i64()
+                    .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
+                    .context("integer field must be an integer")?,
+            )
+            .context("integer field is outside the Int32 range")?,
+        ))),
+        FieldType::Long => Ok(FieldValue::Integer(
+            value
+                .as_i64()
+                .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
+                .context("long field must be an integer")?,
+        )),
+        FieldType::Float | FieldType::Double => {
+            let value = value
+                .as_f64()
+                .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
+                .context("floating field must be a number")?;
+            if !value.is_finite() {
+                return Err(anyhow!("floating field must be finite"));
+            }
+            Ok(FieldValue::Number(value))
+        }
+        FieldType::Date => {
+            let value = value.as_str().context("date field must be a string")?;
+            let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")?;
+            Ok(FieldValue::String(date.format("%Y-%m-%d").to_string()))
+        }
+        FieldType::Time => Ok(FieldValue::String(
+            index::normalize_time(value.as_str().context("time field must be a string")?)
+                .context("invalid time field")?,
+        )),
+        FieldType::Timestamp => Ok(FieldValue::String(
+            index::normalize_wall_timestamp(
+                value.as_str().context("timestamp field must be a string")?,
+                false,
+            )
+            .context("invalid timestamp field")?,
+        )),
+        FieldType::TimestampTz => Ok(FieldValue::String(
+            index::normalize_zoned_timestamp(
+                value
+                    .as_str()
+                    .context("timestamp_tz field must be a string")?,
+                false,
+            )
+            .context("invalid timestamp_tz field")?,
+        )),
+        FieldType::TimestampNs => Ok(FieldValue::String(
+            index::normalize_wall_timestamp(
+                value
+                    .as_str()
+                    .context("timestamp_ns field must be a string")?,
+                true,
+            )
+            .context("invalid timestamp_ns field")?,
+        )),
+        FieldType::TimestampTzNs => Ok(FieldValue::String(
+            index::normalize_zoned_timestamp(
+                value
+                    .as_str()
+                    .context("timestamp_tz_ns field must be a string")?,
+                true,
+            )
+            .context("invalid timestamp_tz_ns field")?,
+        )),
+        FieldType::Uuid => Ok(FieldValue::String(
+            Uuid::parse_str(value.as_str().context("UUID field must be a string")?)?.to_string(),
+        )),
+        FieldType::Binary => Ok(FieldValue::String(
+            index::normalize_binary(value.as_str().context("binary field must be a string")?)
+                .context("invalid binary field")?,
+        )),
+        FieldType::AssetReference => Ok(FieldValue::AssetReference(
+            serde_json::from_value::<AssetReference>(match value {
+                Value::String(raw) => serde_json::from_str(raw)
+                    .context("asset reference list item must contain a JSON object")?,
+                value => value.clone(),
+            })
+            .context("invalid asset reference value")?,
+        )),
+        FieldType::List => {
+            let values = value
+                .as_array()
+                .context("typed list field must be an array")?
+                .iter()
+                .map(|item| {
+                    let item_type = list_item
+                        .map(|item| &item.field_type)
+                        .unwrap_or(&FieldType::String);
+                    json_to_field_value_for_type(item, item_type, None)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(FieldValue::List(values))
+        }
+        FieldType::ObjectList => Ok(FieldValue::List(
+            value
+                .as_array()
+                .context("object list field must be an array")?
+                .iter()
+                .map(json_to_untyped_field_value)
+                .collect::<Result<Vec<_>>>()?,
+        )),
+    }
+}
+
+fn json_to_untyped_field_value(value: &Value) -> Result<FieldValue> {
     Ok(match value {
         Value::Null => FieldValue::Null,
         Value::Bool(value) => FieldValue::Boolean(*value),
@@ -638,13 +809,13 @@ fn json_to_field_value(value: &Value) -> Result<FieldValue> {
         Value::Array(values) => FieldValue::List(
             values
                 .iter()
-                .map(json_to_field_value)
+                .map(json_to_untyped_field_value)
                 .collect::<Result<Vec<_>>>()?,
         ),
         Value::Object(values) => FieldValue::Object(
             values
                 .iter()
-                .map(|(key, value)| Ok((key.clone(), json_to_field_value(value)?)))
+                .map(|(key, value)| Ok((key.clone(), json_to_untyped_field_value(value)?)))
                 .collect::<Result<_>>()?,
         ),
     })
@@ -741,11 +912,28 @@ pub(crate) async fn find_entry_form(
     ws_path: &str,
     entry_id: &str,
 ) -> Result<Option<String>> {
-    let rows = list_entry_rows(op, ws_path).await?;
-    Ok(rows
-        .into_iter()
-        .find(|(_, row)| row.entry_id == entry_id)
-        .map(|(form_name, _)| form_name))
+    find_entry_form_with_deleted(op, ws_path, entry_id, false).await
+}
+
+/// Resolves the owning Form from the latest head, including a tombstone. This
+/// is deliberately separate from current reads: history and restore must keep
+/// reaching an Entry after its latest revision is a delete.
+pub(crate) async fn find_entry_form_with_deleted(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    include_deleted: bool,
+) -> Result<Option<String>> {
+    for form_name in list_form_names(op, ws_path).await? {
+        let (_, revisions) =
+            iceberg_store::latest_revisions_for_entry(op, ws_path, &form_name, entry_id).await?;
+        if revisions.into_iter().any(|revision| {
+            revision.entry.external_id == entry_id && (include_deleted || !revision.entry.deleted)
+        }) {
+            return Ok(Some(form_name));
+        }
+    }
+    Ok(None)
 }
 
 pub(crate) async fn read_entry_row(
@@ -765,6 +953,47 @@ pub(crate) async fn read_entry_row(
         .ok_or_else(|| entry_not_found(entry_id))?;
     selected
         .state
+        .ok_or_else(|| entry_not_found(entry_id).into())
+}
+
+fn entry_scope_for_lookup(entry_scope: &EntryScope, entry_id: &str) -> EntryScope {
+    let entry_id = Uuid::parse_str(entry_id)
+        .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
+        .into();
+    match entry_scope {
+        EntryScope::AllCurrent => EntryScope::Only(BTreeSet::from([entry_id])),
+        EntryScope::Only(ids) if ids.contains(&entry_id) => {
+            EntryScope::Only(BTreeSet::from([entry_id]))
+        }
+        EntryScope::Only(_) => EntryScope::Only(BTreeSet::new()),
+        EntryScope::AllExcept(ids) if !ids.contains(&entry_id) => {
+            EntryScope::Only(BTreeSet::from([entry_id]))
+        }
+        EntryScope::AllExcept(_) => EntryScope::Only(BTreeSet::new()),
+    }
+}
+
+pub(crate) async fn read_entry_row_authorized(
+    op: &Operator,
+    ws_path: &str,
+    form_name: &str,
+    entry_id: &str,
+    entry_scope: &EntryScope,
+) -> Result<EntryRow> {
+    let (form, revisions) = iceberg_store::latest_revisions_for_form_authorized(
+        op,
+        ws_path,
+        form_name,
+        entry_scope_for_lookup(entry_scope, entry_id),
+    )
+    .await?;
+    revisions
+        .into_iter()
+        .map(|revision| revision_row_from_domain(revision, form_name, &form))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .find(|revision| revision.entry_id == entry_id)
+        .and_then(|revision| revision.state)
         .ok_or_else(|| entry_not_found(entry_id).into())
 }
 
@@ -798,67 +1027,6 @@ pub(crate) async fn write_entry_row(
         source_id: None,
     };
     append_revision_row_for_form(op, ws_path, form_name, &revision, &form_def).await
-}
-
-pub(crate) async fn list_entry_rows(
-    op: &Operator,
-    ws_path: &str,
-) -> Result<Vec<(String, EntryRow)>> {
-    let mut latest = Vec::<(String, RevisionRow)>::new();
-    for form_name in list_form_names(op, ws_path).await? {
-        let (form, revisions) =
-            iceberg_store::latest_revisions_for_form(op, ws_path, &form_name).await?;
-        let rows = revisions
-            .into_iter()
-            .map(|revision| revision_row_from_domain(revision, &form_name, &form))
-            .collect::<Result<Vec<_>>>()?;
-        for revision in rows {
-            let Some(row) = revision.state.as_ref() else {
-                continue;
-            };
-            if let Some((current_form_name, existing)) = latest
-                .iter_mut()
-                .find(|(_, existing)| existing.entry_id == row.entry_id)
-            {
-                if revision.entry_version == existing.entry_version
-                    && revision.revision_id != existing.revision_id
-                {
-                    return Err(anyhow!(
-                        "multiple revisions exist for entry {} at version {}",
-                        row.entry_id,
-                        revision.entry_version
-                    ));
-                }
-                if revision.entry_version > existing.entry_version {
-                    *existing = revision;
-                    *current_form_name = form_name.clone();
-                }
-            } else {
-                latest.push((form_name.clone(), revision));
-            }
-        }
-    }
-    Ok(latest
-        .into_iter()
-        .filter_map(|(form_name, revision)| revision.state.map(|row| (form_name, row)))
-        .collect())
-}
-
-pub(crate) async fn list_form_entry_rows(
-    op: &Operator,
-    ws_path: &str,
-    form_name: &str,
-    _form_def: &Value,
-) -> Result<Vec<EntryRow>> {
-    let (form, revisions) =
-        iceberg_store::latest_revisions_for_form(op, ws_path, form_name).await?;
-    Ok(revisions
-        .into_iter()
-        .map(|revision| revision_row_from_domain(revision, form_name, &form))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .filter_map(|revision| revision.state)
-        .collect())
 }
 
 #[allow(dead_code)] // used by migration verification tooling
@@ -991,17 +1159,15 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
             "entry create batches are limited to {MAX_ENTRY_CREATE_BATCH_SIZE} requests"
         ));
     }
-    let mut known_entry_ids = list_entry_rows(op, ws_path)
-        .await?
-        .into_iter()
-        .map(|(_, row)| row.entry_id)
-        .collect::<HashSet<_>>();
+    let mut requested_entry_ids = HashSet::new();
+    for request in &requests {
+        if !requested_entry_ids.insert(request.entry_id.clone()) {
+            return Err(anyhow!("Entry already exists: {}", request.entry_id));
+        }
+    }
     let mut batches = BTreeMap::<String, (Value, Vec<RevisionRow>)>::new();
     let mut entries = Vec::with_capacity(requests.len());
     for request in requests {
-        if !known_entry_ids.insert(request.entry_id.clone()) {
-            return Err(anyhow!("Entry already exists: {}", request.entry_id));
-        }
         let (entry, form_name, form_def, revision) = prepare_entry(
             op,
             ws_path,
@@ -1230,8 +1396,28 @@ async fn prepare_entry<I: IntegrityProvider>(
 }
 
 pub async fn list_entries(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
+    let relation_scopes = list_form_names(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect::<BTreeMap<_, _>>();
+    list_entries_with_scopes(op, ws_path, &relation_scopes, crate::MAX_NORMAL_READ_ROWS).await
+}
+
+pub async fn list_entries_with_scopes(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    limit: usize,
+) -> Result<Vec<Value>> {
+    let rows =
+        index::query_entry_rows_authorized(op, ws_path, relation_scopes, None, None, limit).await?;
+    list_entries_from_rows(rows)
+}
+
+fn list_entries_from_rows(rows: Vec<(String, EntryRow)>) -> Result<Vec<Value>> {
     let mut entries = Vec::new();
-    for (form_name, row) in list_entry_rows(op, ws_path).await? {
+    for (form_name, row) in rows {
         if row.deleted {
             continue;
         }
@@ -1256,52 +1442,39 @@ pub async fn list_entry_summaries(
     query: Option<&str>,
     limit: usize,
 ) -> Result<Vec<EntrySummary>> {
-    list_entry_summaries_authorized(op, ws_path, form_filter, query, limit, None).await
+    let relation_scopes = list_form_names(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect::<BTreeMap<_, _>>();
+    list_entry_summaries_with_scopes(op, ws_path, form_filter, query, limit, &relation_scopes).await
 }
 
-pub async fn list_entry_summaries_authorized(
+pub async fn list_entry_summaries_with_scopes(
     op: &Operator,
     ws_path: &str,
     form_filter: Option<&str>,
     query: Option<&str>,
     limit: usize,
-    readable_entry_ids: Option<&std::collections::HashSet<String>>,
+    relation_scopes: &BTreeMap<String, EntryScope>,
 ) -> Result<Vec<EntrySummary>> {
-    let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
-    let normalized_query = query
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_lowercase);
-    let mut entries = Vec::new();
-    for (form_name, row) in list_entry_rows(op, ws_path).await? {
-        if row.deleted || readable_entry_ids.is_some_and(|allowed| !allowed.contains(&row.entry_id))
-        {
-            continue;
-        }
-        if let Some(expected_form) = normalized_form {
-            if form_name != expected_form {
-                continue;
-            }
-        }
-        if let Some(expected_query) = normalized_query.as_deref() {
-            let search_text = format!("{}\n{}", row.title, row.entry_id).to_lowercase();
-            if !search_text.contains(expected_query) {
-                continue;
-            }
-        }
-        entries.push(EntrySummary {
-            id: row.entry_id,
-            title: row.title,
-            form: form_name,
-        });
-    }
-    entries.sort_by(|left, right| {
-        left.title
-            .cmp(&right.title)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    entries.truncate(limit);
-    Ok(entries)
+    let candidates = index::query_entry_candidates_authorized(
+        op,
+        ws_path,
+        relation_scopes,
+        form_filter,
+        query,
+        limit,
+    )
+    .await?;
+    Ok(candidates
+        .into_iter()
+        .map(|candidate| EntrySummary {
+            id: candidate.entry_id,
+            title: candidate.title,
+            form: candidate.form_name,
+        })
+        .collect())
 }
 
 pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {
@@ -1309,6 +1482,66 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
+    if row.deleted {
+        return Err(entry_not_found(entry_id).into());
+    }
+
+    let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
+    let field_order = form_field_names(&form_def);
+    let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
+    let markdown = render_markdown(
+        &row.title,
+        &form_name,
+        &row.tags,
+        &merged_fields,
+        &field_order,
+    );
+    let frontmatter = serde_json::json!({
+        "form": form_name,
+        "tags": row.tags,
+    });
+    let sections = sections_from_fields(&merged_fields);
+
+    Ok(serde_json::json!({
+        "id": entry_id,
+        "revision_id": row.revision_id,
+        "content": markdown,
+        "frontmatter": frontmatter,
+        "sections": sections,
+        "computed": Value::Object(Map::new()),
+        "title": row.title,
+        "form": row.form,
+        "tags": row.tags,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "integrity": serde_json::to_value(row.integrity)?,
+    }))
+}
+
+pub async fn get_entry_authorized(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Value> {
+    let mut selected = None;
+    for form_name in list_form_names(op, ws_path).await? {
+        let Some(entry_scope) = relation_scopes.get(&form_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        match read_entry_row_authorized(op, ws_path, &form_name, entry_id, entry_scope).await {
+            Ok(row) => {
+                selected = Some((form_name, row));
+                break;
+            }
+            Err(error)
+                if error
+                    .downcast_ref::<AppError>()
+                    .is_some_and(|error| error.code() == ErrorCode::EntryNotFound) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let (form_name, row) = selected.ok_or_else(|| entry_not_found(entry_id))?;
     if row.deleted {
         return Err(entry_not_found(entry_id).into());
     }
@@ -1384,13 +1617,10 @@ pub async fn get_entry_revision_content(
     entry_id: &str,
     revision_id: &str,
 ) -> Result<EntryContent> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_content_not_found(entry_id))?;
     let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
-    if row.deleted {
-        return Err(entry_content_not_found(entry_id).into());
-    }
 
     let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
@@ -1629,7 +1859,7 @@ pub async fn delete_entry(
 }
 
 pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> Result<Value> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
@@ -1665,7 +1895,7 @@ pub async fn get_entry_revision(
     entry_id: &str,
     revision_id: &str,
 ) -> Result<Value> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
@@ -1698,7 +1928,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     integrity: &I,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Value> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     if let Some(scopes) = relation_scopes {
@@ -1737,6 +1967,8 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     row.updated_at = timestamp;
     row.fields = revision.fields.clone();
     row.extra_attributes = revision.extra_attributes.clone();
+    row.deleted = false;
+    row.deleted_at = None;
     row.integrity = IntegrityPayload {
         checksum: checksum.clone(),
         signature: signature.clone(),
@@ -1777,4 +2009,99 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
         "restored_from": revision_id,
         "timestamp": timestamp,
     }))
+}
+
+#[cfg(test)]
+mod input_conversion_tests {
+    use super::*;
+    use ugoite_domain::form::ListItemDefinition;
+
+    fn field(field_type: FieldType, list_item: Option<FieldType>) -> FormField {
+        FormField {
+            id: ugoite_domain::id::FieldId::new(100).expect("valid test field id"),
+            name: "value".into(),
+            field_type,
+            required: false,
+            label: None,
+            description: None,
+            semantic_role: None,
+            reference_form: None,
+            list_item: list_item.map(|field_type| ListItemDefinition {
+                field_type,
+                reference_form: None,
+            }),
+            validation: None,
+            enum_values: Vec::new(),
+            deprecated: false,
+        }
+    }
+
+    #[test]
+    fn transport_json_is_canonicalized_by_scalar_and_list_type() {
+        assert_eq!(
+            json_to_field_value_for_field(&serde_json::json!(7), &field(FieldType::Integer, None))
+                .unwrap(),
+            FieldValue::Integer(7)
+        );
+        assert_eq!(
+            json_to_field_value_for_field(&serde_json::json!(7), &field(FieldType::Long, None))
+                .unwrap(),
+            FieldValue::Integer(7)
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!("A7F9F5D2-8B7E-4DB1-9B0A-0E9A2B3F4C5D"),
+                &field(FieldType::Uuid, None),
+            )
+            .unwrap(),
+            FieldValue::String("a7f9f5d2-8b7e-4db1-9b0a-0e9a2b3f4c5d".into())
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!("base64:ZGF0YQ=="),
+                &field(FieldType::Binary, None),
+            )
+            .unwrap(),
+            FieldValue::String("base64:ZGF0YQ==".into())
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!([7, null, 8]),
+                &field(FieldType::List, Some(FieldType::Integer)),
+            )
+            .unwrap(),
+            FieldValue::List(vec![
+                FieldValue::Integer(7),
+                FieldValue::Null,
+                FieldValue::Integer(8),
+            ])
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!(["base64:ZGF0YQ==", null]),
+                &field(FieldType::List, Some(FieldType::Binary)),
+            )
+            .unwrap(),
+            FieldValue::List(vec![
+                FieldValue::String("base64:ZGF0YQ==".into()),
+                FieldValue::Null,
+            ])
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!("12:34"),
+                &field(FieldType::Time, None),
+            )
+            .unwrap(),
+            FieldValue::String("12:34:00".into())
+        );
+        assert_eq!(
+            json_to_field_value_for_field(
+                &serde_json::json!("2025-01-02T03:04:05.123456789Z"),
+                &field(FieldType::TimestampTzNs, None),
+            )
+            .unwrap(),
+            FieldValue::String("2025-01-02T03:04:05.123456789+00:00".into())
+        );
+    }
 }

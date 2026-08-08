@@ -25,6 +25,10 @@ vi.mock("~/lib/ugoite-client", () => {
       update: vi.fn(),
       delete: vi.fn(),
     },
+    assetApi: {
+      upload: vi.fn(),
+      read: vi.fn(),
+    },
     searchApi: {
       rowReferenceOptions: vi.fn(),
     },
@@ -146,6 +150,169 @@ describe("EntryDetailPane", () => {
       id: "created-entry",
       revision_id: "created-revision",
     });
+  });
+
+  it("uploads an AssetReference before creating the Entry and preserves it unchanged", async () => {
+    const onCreated = vi.fn();
+    const uploaded = {
+      asset_id: "01900000-0000-7000-8000-000000000001",
+      name: "contract.pdf",
+      media_type: "application/pdf",
+      size_bytes: 123456,
+      sha256: "a".repeat(64),
+    };
+    const assetUpload = (await import("~/lib/ugoite-client")).assetApi
+      .upload as ReturnType<typeof vi.fn>;
+    assetUpload.mockResolvedValue(uploaded);
+    (entryApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "contract-entry",
+      revision_id: "contract-revision",
+    });
+    const form: Form = {
+      name: "Contract",
+      version: 1,
+      template: "# Contract\n\n## contract\n",
+      fields: {
+        contract: { type: "asset_reference", required: true },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={onCreated}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const fileInput = await screen.findByLabelText("Choose file");
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File(["pdf"], "contract.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    await waitFor(() => expect(assetUpload).toHaveBeenCalled());
+    expect(screen.getByText("Uploaded; entry not saved yet"))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
+    expect(screen.getByText("contract.pdf")).toBeInTheDocument();
+    expect(screen.queryByText(JSON.stringify(uploaded))).not
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown: expect.stringContaining(JSON.stringify(uploaded)),
+    });
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "contract-entry",
+      revision_id: "contract-revision",
+    });
+  });
+
+  it("saves from Preview when an upload completes after the Fields view unmounts", async () => {
+    const uploaded = {
+      asset_id: "01900000-0000-7000-8000-000000000013",
+      name: "pending-preview.pdf",
+      media_type: "application/pdf",
+      size_bytes: 123,
+      sha256: "c".repeat(64),
+    };
+    let resolveUpload: ((reference: typeof uploaded) => void) | undefined;
+    const assetUpload = (await import("~/lib/ugoite-client")).assetApi
+      .upload as ReturnType<typeof vi.fn>;
+    assetUpload.mockImplementation(
+      () => new Promise<typeof uploaded>((resolve) => resolveUpload = resolve),
+    );
+    (entryApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "preview-entry",
+      revision_id: "preview-revision",
+    });
+    const form: Form = {
+      name: "PreviewAsset",
+      version: 1,
+      template: "# PreviewAsset\n\n## thumbnail\n",
+      fields: { thumbnail: { type: "asset_reference", required: true } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    fireEvent.change(await screen.findByLabelText("Choose file"), {
+      target: {
+        files: [
+          new File(["pdf"], "pending-preview.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("tab", { name: "Preview" }));
+    resolveUpload?.(uploaded);
+
+    await screen.findByText("pending-preview.pdf");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalledTimes(1));
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown: expect.stringContaining(JSON.stringify(uploaded)),
+    });
+  });
+
+  it("reuses the uploaded reference when Entry save is retried", async () => {
+    const uploaded = {
+      asset_id: "01900000-0000-7000-8000-000000000004",
+      name: "retry.txt",
+      media_type: "text/plain",
+      size_bytes: 4,
+      sha256: "b".repeat(64),
+    };
+    const assetUpload = (await import("~/lib/ugoite-client")).assetApi
+      .upload as ReturnType<typeof vi.fn>;
+    assetUpload.mockResolvedValue(uploaded);
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce({
+        id: "retry-entry",
+        revision_id: "retry-revision",
+      });
+    const form: Form = {
+      name: "RetryAsset",
+      version: 1,
+      template: "# RetryAsset\n\n## attachment\n",
+      fields: { attachment: { type: "asset_reference", required: true } },
+    };
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+    fireEvent.change(await screen.findByLabelText("Choose file"), {
+      target: { files: [new File(["data"], "retry.txt")] },
+    });
+    await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/Details: save failed/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(2));
+    expect(assetUpload).toHaveBeenCalledTimes(1);
   });
 
   it("REQ-ENTRY-1872: creates numeric and timestamp fields in one clean revision", async () => {

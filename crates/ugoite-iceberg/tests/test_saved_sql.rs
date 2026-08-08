@@ -2,6 +2,7 @@ mod common;
 
 use common::setup_operator;
 use serde_json::json;
+use ugoite_core::query::EntryScope;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::saved_sql::{
     self, SearchHistoryOperator, SqlGeneratedName, SqlKind, SqlMetadata, SqlPayload,
@@ -47,7 +48,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
         Some("Recent Meetings")
     );
 
-    let entries = saved_sql::list_sql(&op, ws_path).await?;
+    let entries = saved_sql::list_sql(&op, ws_path, EntryScope::AllCurrent).await?;
     assert!(entries
         .iter()
         .any(|item| item.get("id") == Some(&json!("sql-1"))));
@@ -344,6 +345,7 @@ async fn test_saved_sql_req_api_007_validation_errors() -> anyhow::Result<()> {
             ws_path,
             &invalid_sql.sql,
             create_authorization,
+            ugoite_core::query::EntryScope::AllCurrent,
         )
         .await
         .is_err()

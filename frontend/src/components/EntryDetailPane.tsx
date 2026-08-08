@@ -1,8 +1,20 @@
 import { A } from "@solidjs/router";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import type { Accessor } from "solid-js";
 
 import { AccessPolicyEditor } from "~/components/AccessPolicyEditor";
+import { AssetField } from "~/components/AssetField";
+import {
+  type AssetFieldState,
+  createAssetFieldState,
+} from "~/lib/asset-field-state";
 import { t } from "~/lib/i18n";
 import { createResource } from "~/lib/recoverable-resource";
 import { formatDateTimeLabel } from "~/lib/date-format";
@@ -20,6 +32,13 @@ import {
 } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import type { Entry, Form, FormField } from "~/lib/types";
+import {
+  hasDuplicateAssetReferences,
+  isAssetReferenceListField,
+  parseAssetReference,
+  parseAssetReferenceList,
+  validateAssetReference,
+} from "~/lib/asset-reference";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export interface EntryDetailPaneProps {
@@ -94,6 +113,22 @@ function normalizeFieldName(fieldName: string) {
   return fieldName.trim().toLowerCase();
 }
 
+function markdownWithoutAssetSections(
+  markdown: string,
+  assetFieldNames: Set<string>,
+) {
+  const output: string[] = [];
+  let omitSection = false;
+  for (const line of markdown.split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+)$/);
+    if (heading) {
+      omitSection = assetFieldNames.has(normalizeFieldName(heading[1]));
+    }
+    if (!omitSection) output.push(line);
+  }
+  return output.join("\n");
+}
+
 function readMarkdownTitle(markdown: string, fallback = "") {
   const heading = markdown.split(/\r?\n/).find((line) => /^#\s+/.test(line));
   if (!heading) return fallback;
@@ -126,7 +161,14 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
     .filter(([fieldName, fieldDef]) => {
       if (!fieldDef.required) return false;
       const section = sectionMap.get(normalizeFieldName(fieldName));
-      return !section || !section.content.trim();
+      if (!section || !section.content.trim()) return true;
+      if (fieldDef.type === "asset_reference") {
+        return false;
+      }
+      if (isAssetReferenceListField(fieldDef)) {
+        return false;
+      }
+      return false;
     })
     .map(([fieldName]) => fieldName);
 
@@ -155,6 +197,15 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
       value.includes(",")
     ) {
       typeIssues.push(`${fieldName}: ${t("entryGuidance.listValue")}`);
+    }
+    if (fieldDef.type === "asset_reference" && !parseAssetReference(value)) {
+      typeIssues.push(`${fieldName}: ${t("assetField.error.invalid")}`);
+    }
+    if (isAssetReferenceListField(fieldDef)) {
+      const references = parseAssetReferenceList(value);
+      if (!references || hasDuplicateAssetReferences(references)) {
+        typeIssues.push(`${fieldName}: ${t("assetField.error.invalid")}`);
+      }
     }
     /* v8 ignore stop */
   }
@@ -399,6 +450,12 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   >(null);
   const [entryError, setEntryError] = createSignal<string | null>(null);
   const [showAccessPolicy, setShowAccessPolicy] = createSignal(false);
+  const [assetEditorGeneration, setAssetEditorGeneration] = createSignal(0);
+
+  // Asset upload/read state belongs to this Entry draft. Fields and Preview
+  // are separate conditional subtrees, so keeping this map in either child
+  // would lose provisional Files and read state on a tab switch.
+  const assetFieldStates = new Map<string, AssetFieldState>();
 
   const [remoteEntry, { refetch: refetchEntry }] = createResource(
     () => {
@@ -463,6 +520,17 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       availableForms.find((candidate) => candidate.name === formName) ?? null
     );
   });
+
+  createEffect(() => {
+    const generation = assetEditorGeneration();
+    for (const state of assetFieldStates.values()) {
+      state.resetForGeneration(generation);
+    }
+  });
+
+  onCleanup(() => {
+    for (const state of assetFieldStates.values()) state.dispose();
+  });
   const formWorkspaceHref = createMemo(() => {
     const formName = entry()?.form?.trim();
     const base = `/spaces/${props.spaceId()}/forms`;
@@ -487,6 +555,27 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const fieldValue = (fieldName: string) =>
     parsedSections().get(normalizeFieldName(fieldName)) ?? "";
 
+  const previewAssetFields = createMemo(() =>
+    Object.entries(currentForm()?.fields || {}).filter(([, fieldDef]) =>
+      fieldDef.type === "asset_reference" || isAssetReferenceListField(fieldDef)
+    )
+  );
+
+  const previewContent = createMemo(() => {
+    const assetFieldNames = new Set(
+      previewAssetFields().map(([fieldName]) => normalizeFieldName(fieldName)),
+    );
+    return markdownWithoutAssetSections(editorContent(), assetFieldNames);
+  });
+
+  const persistedFieldValue = (fieldName: string) => {
+    const sections = new Map<string, string>();
+    for (const section of parseMarkdownH2Sections(lastSavedContent())) {
+      sections.set(normalizeFieldName(section.title), section.content);
+    }
+    return sections.get(normalizeFieldName(fieldName)) ?? "";
+  };
+
   const fieldIssue = (fieldName: string) =>
     editorGuidance().typeIssues.find((issue) =>
       issue.startsWith(`${fieldName}:`)
@@ -505,6 +594,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     setLastLoadedEntryId(loadedEntry.id);
     setLastLoadedResourceRevisionId(loadedEntry.revision_id);
     setCurrentRevisionId(isCreateMode() ? null : loadedEntry.revision_id);
+    setAssetEditorGeneration((generation) => generation + 1);
     setEditorContent(content);
     setLastSavedContent(isCreateMode() ? "" : content);
     setIsDirty(isCreateMode());
@@ -534,6 +624,90 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
   const handleFieldChange = (fieldName: string, value: string) => {
     handleContentChange(updateH2Section(editorContent(), fieldName, value));
+  };
+
+  const assetFieldState = (fieldName: string, multiple: boolean) => {
+    const formName = currentForm()?.name ?? props.createForm?.()?.name ?? "";
+    const key = `${formName}\u0000${fieldName}`;
+    let state = assetFieldStates.get(key);
+    if (!state) {
+      state = createAssetFieldState();
+      assetFieldStates.set(key, state);
+    }
+    // The binding belongs to the Entry draft, not either conditionally
+    // mounted AssetField view. Upload completion therefore always resolves
+    // against the latest Markdown draft.
+    state.bindDraft({
+      multiple,
+      getValue: () => fieldValue(fieldName),
+      setValue: (value) => handleFieldChange(fieldName, value),
+    });
+    return state;
+  };
+
+  const validateAssetFields = async (): Promise<string[]> => {
+    const form = currentForm();
+    if (!form) return [];
+    const issues: string[] = [];
+    for (const [fieldName, fieldDef] of Object.entries(form.fields || {})) {
+      const rawValue = fieldValue(fieldName);
+      if (fieldDef.type === "asset_reference") {
+        const reference = parseAssetReference(rawValue);
+        if (rawValue.trim() && !reference) {
+          issues.push(
+            t("entryDetail.validation.assetInvalid", { field: fieldName }),
+          );
+        } else if (fieldDef.required && !reference) {
+          issues.push(
+            t("entryDetail.validation.assetRequired", { field: fieldName }),
+          );
+        } else if (reference) {
+          try {
+            await validateAssetReference(reference);
+          } catch {
+            issues.push(
+              t("entryDetail.validation.assetInvalid", { field: fieldName }),
+            );
+          }
+        }
+      } else if (isAssetReferenceListField(fieldDef)) {
+        const references = parseAssetReferenceList(rawValue);
+        if (!references) {
+          if (rawValue.trim()) {
+            issues.push(
+              t("entryDetail.validation.assetInvalid", { field: fieldName }),
+            );
+          }
+        } else if (hasDuplicateAssetReferences(references)) {
+          issues.push(
+            t("entryDetail.validation.assetDuplicate", { field: fieldName }),
+          );
+        } else if (fieldDef.required && references.length === 0) {
+          issues.push(
+            t("entryDetail.validation.assetListRequired", {
+              field: fieldName,
+            }),
+          );
+        } else {
+          try {
+            for (const reference of references) {
+              await validateAssetReference(reference);
+            }
+          } catch {
+            issues.push(
+              t("entryDetail.validation.assetInvalid", { field: fieldName }),
+            );
+          }
+        }
+      }
+    }
+    const hasPendingUpload = Array.from(assetFieldStates.values()).some(
+      (state) => state.pendingUploads().length > 0,
+    );
+    if (hasPendingUpload) {
+      issues.push(t("entryDetail.validation.assetUploadPending"));
+    }
+    return issues;
   };
 
   const handleEditorKeyDown = (event: KeyboardEvent) => {
@@ -604,7 +778,19 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
     /* v8 ignore stop */
 
+    // Lock before the async Rust/WASM validation. Two rapid Save actions
+    // must still produce one Entry revision request.
     setIsSaving(true);
+    const assetIssues = await validateAssetFields();
+    if (assetIssues.length > 0) {
+      setIsSaving(false);
+      setValidationError({
+        title: t("entryDetail.validation.title"),
+        items: assetIssues,
+      });
+      return;
+    }
+
     setConflictMessage(null);
     setValidationError(null);
     const contentToSave = editorContent();
@@ -632,6 +818,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     if (isDirty() && !confirm(t("entryDetail.confirmDiscard"))) return;
     /* v8 ignore stop */
     setEditorContent(lastSavedContent());
+    setAssetEditorGeneration((generation) => generation + 1);
     setIsDirty(false);
     setConflictMessage(null);
     setValidationError(null);
@@ -643,6 +830,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     /* v8 ignore stop */
     setLastLoadedEntryId(null);
     setLastLoadedResourceRevisionId(null);
+    setAssetEditorGeneration((generation) => generation + 1);
     await refetchEntry();
   };
 
@@ -697,8 +885,31 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
 
     if (
+      fieldDef.type === "asset_reference" || isAssetReferenceListField(fieldDef)
+    ) {
+      return (
+        <AssetField
+          fieldId={fieldId}
+          fieldName={fieldName}
+          value={value()}
+          persistedValue={persistedFieldValue(fieldName)}
+          multiple={isAssetReferenceListField(fieldDef)}
+          spaceId={props.spaceId()}
+          state={assetFieldState(
+            fieldName,
+            isAssetReferenceListField(fieldDef),
+          )}
+          formName={entry()?.form ?? currentForm()?.name}
+          entryId={isCreateMode() ? undefined : entry()?.id}
+          generation={assetEditorGeneration()}
+          onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
+        />
+      );
+    }
+
+    if (
       fieldDef.type === "markdown" ||
-      fieldDef.type === "list" ||
+      (fieldDef.type === "list" && !isAssetReferenceListField(fieldDef)) ||
       fieldDef.type === "object_list"
     ) {
       return (
@@ -1058,10 +1269,45 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                 </Show>
 
                 <Show when={viewMode() === "preview"}>
-                  <div
-                    class="ui-preview ui-entry-preview"
-                    innerHTML={renderMarkdownPreview(editorContent())}
-                  />
+                  <div class="ui-stack-lg">
+                    <div
+                      class="ui-preview ui-entry-preview"
+                      innerHTML={renderMarkdownPreview(previewContent())}
+                    />
+                    <Show when={previewAssetFields().length > 0}>
+                      <div
+                        class="ui-stack-md"
+                        aria-label={t("entryDetail.assetFieldsHeading")}
+                      >
+                        <For each={previewAssetFields()}>
+                          {([fieldName, fieldDef], index) => (
+                            <section class="ui-entry-preview-asset-field">
+                              <h3 class="text-sm font-semibold">{fieldName}</h3>
+                              <AssetField
+                                fieldId={`preview-asset-${index()}`}
+                                fieldName={fieldName}
+                                value={fieldValue(fieldName)}
+                                persistedValue={persistedFieldValue(fieldName)}
+                                multiple={isAssetReferenceListField(fieldDef)}
+                                spaceId={props.spaceId()}
+                                state={assetFieldState(
+                                  fieldName,
+                                  isAssetReferenceListField(fieldDef),
+                                )}
+                                formName={entry()?.form ?? currentForm()?.name}
+                                entryId={isCreateMode()
+                                  ? undefined
+                                  : entry()?.id}
+                                generation={assetEditorGeneration()}
+                                readOnly={true}
+                                onChange={() => undefined}
+                              />
+                            </section>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
                 </Show>
 
                 <Show when={viewMode() === "source"}>

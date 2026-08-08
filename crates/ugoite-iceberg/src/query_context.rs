@@ -1,8 +1,8 @@
 //! Closed DataFusion context for authorized Iceberg queries.
 //!
-//! The public type deliberately exposes only `execute`. It never returns a
-//! `SessionContext`, Catalog, provider, or SQL planner that could resolve an
-//! unapproved object.
+//! The public type deliberately exposes only closed query operations. It never
+//! returns a `SessionContext`, Catalog, provider, or SQL planner that could
+//! resolve an unapproved object.
 
 use anyhow::{anyhow, bail, Context, Result};
 use datafusion::catalog::default_table_source::DefaultTableSource;
@@ -12,10 +12,11 @@ use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::{SessionStateBuilder, SessionStateDefaults};
 use datafusion::logical_expr::expr_fn::ident;
-use datafusion::logical_expr::{Expr, LogicalPlan};
+use datafusion::logical_expr::{Expr, LogicalPlan, SortExpr};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
+use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -25,6 +26,10 @@ use ugoite_domain::form::sql_column_name;
 use crate::{form_from_table, IcebergWorkspace};
 
 const INTERNAL_RELATION_PREFIX: &str = "__ugoite_authorized_source_";
+
+pub(crate) fn preserved_unnest_column(input: &str) -> String {
+    format!("__ugoite_preserved_{input}")
+}
 
 /// Canonical lazy current-state derivation for append-only Form revision
 /// tables. Every reader starts from this plan: entry authorization is applied
@@ -147,6 +152,49 @@ impl AuthorizedQueryError {
     }
 }
 
+fn bounded_session_context(limits: &ugoite_core::query::QueryLimits) -> Result<SessionContext> {
+    limits.validate().map_err(|message| anyhow!(message))?;
+    let config = SessionConfig::new()
+        .with_information_schema(false)
+        .with_target_partitions(limits.max_concurrency);
+    let runtime = RuntimeEnvBuilder::new()
+        .with_memory_pool(Arc::new(GreedyMemoryPool::new(limits.max_memory_bytes)))
+        .build_arc()
+        .context("configure bounded DataFusion runtime")?;
+    let allowed_functions = &limits.allowed_functions;
+    let state = SessionStateBuilder::new()
+        .with_config(config)
+        .with_runtime_env(runtime)
+        .with_expr_planners(SessionStateDefaults::default_expr_planners())
+        .with_scalar_functions(
+            SessionStateDefaults::default_scalar_functions()
+                .into_iter()
+                .filter(|function| {
+                    allowed_functions.contains(&function.name().to_ascii_lowercase())
+                })
+                .collect(),
+        )
+        .with_aggregate_functions(
+            SessionStateDefaults::default_aggregate_functions()
+                .into_iter()
+                .filter(|function| {
+                    allowed_functions.contains(&function.name().to_ascii_lowercase())
+                })
+                .collect(),
+        )
+        .with_window_functions(
+            SessionStateDefaults::default_window_functions()
+                .into_iter()
+                .filter(|function| {
+                    allowed_functions.contains(&function.name().to_ascii_lowercase())
+                })
+                .collect(),
+        )
+        .with_table_function_list(Vec::new())
+        .build();
+    Ok(SessionContext::new_with_state(state))
+}
+
 fn classify_datafusion_error(error: datafusion::error::DataFusionError) -> AuthorizedQueryError {
     if matches!(
         error.find_root(),
@@ -205,58 +253,13 @@ impl IcebergWorkspace {
         &self,
         policy: AuthorizedQueryPolicy,
     ) -> Result<AuthorizedQueryContext> {
-        policy
-            .limits
-            .validate()
-            .map_err(|message| anyhow!(message))?;
-
-        let config = SessionConfig::new()
-            .with_information_schema(false)
-            .with_target_partitions(policy.limits.max_concurrency);
-        let runtime = RuntimeEnvBuilder::new()
-            .with_memory_pool(Arc::new(GreedyMemoryPool::new(
-                policy.limits.max_memory_bytes,
-            )))
-            .build_arc()
-            .context("configure bounded DataFusion runtime")?;
         // Start from an empty SessionState. Registering only Core-approved
         // built-ins makes every other scalar, aggregate, window, and table
         // function unresolvable before plan validation. The empty default
         // catalog is retained solely for relation registration; no file
         // formats, table factories, function factory, or table functions are
         // installed.
-        let allowed_functions = &policy.limits.allowed_functions;
-        let state = SessionStateBuilder::new()
-            .with_config(config)
-            .with_runtime_env(runtime)
-            .with_expr_planners(SessionStateDefaults::default_expr_planners())
-            .with_scalar_functions(
-                SessionStateDefaults::default_scalar_functions()
-                    .into_iter()
-                    .filter(|function| {
-                        allowed_functions.contains(&function.name().to_ascii_lowercase())
-                    })
-                    .collect(),
-            )
-            .with_aggregate_functions(
-                SessionStateDefaults::default_aggregate_functions()
-                    .into_iter()
-                    .filter(|function| {
-                        allowed_functions.contains(&function.name().to_ascii_lowercase())
-                    })
-                    .collect(),
-            )
-            .with_window_functions(
-                SessionStateDefaults::default_window_functions()
-                    .into_iter()
-                    .filter(|function| {
-                        allowed_functions.contains(&function.name().to_ascii_lowercase())
-                    })
-                    .collect(),
-            )
-            .with_table_function_list(Vec::new())
-            .build();
-        let context = SessionContext::new_with_state(state);
+        let context = bounded_session_context(&policy.limits)?;
         let mut relations = BTreeSet::new();
         let mut authorized_scans = BTreeSet::new();
         let mut duplicate_head_checks = Vec::new();
@@ -278,7 +281,7 @@ impl IcebergWorkspace {
                     form_policy.relation
                 );
             }
-            let (form, table, snapshot_id) = match &policy.checkpoint {
+            let (form, table, expected_snapshot_id) = match &policy.checkpoint {
                 Some(checkpoint) => {
                     let coordinate = checkpoint
                         .tables
@@ -305,20 +308,30 @@ impl IcebergWorkspace {
                     None,
                 ),
             };
+            let snapshot_id = table.metadata().current_snapshot_id();
+            if expected_snapshot_id.is_some_and(|expected| Some(expected) != snapshot_id) {
+                bail!("Iceberg table snapshot does not match the authorized coordinate");
+            }
+            let current_snapshot_id = table.metadata().current_snapshot_id();
             let authorized_scan = AuthorizedScan {
                 table_uuid: table.metadata().uuid().to_string(),
-                snapshot_id,
+                snapshot_id: current_snapshot_id,
             };
-            let provider: Arc<dyn TableProvider> = Arc::new(match snapshot_id {
-                Some(snapshot_id) => {
-                    IcebergStaticTableProvider::try_new_from_table_snapshot(table, snapshot_id)
-                        .await
-                        .context("open checkpoint-pinned Iceberg provider")?
-                }
-                None => IcebergStaticTableProvider::try_new_from_table(table)
+            let provider: Arc<dyn TableProvider> = match current_snapshot_id {
+                Some(snapshot_id) => Arc::new(
+                    crate::read_schema_provider::CurrentSchemaTableProvider::try_new(
+                        table,
+                        snapshot_id,
+                    )
                     .await
-                    .context("open static Iceberg provider")?,
-            });
+                    .context("open current-schema Iceberg provider")?,
+                ),
+                None => Arc::new(
+                    IcebergStaticTableProvider::try_new_from_table(table)
+                        .await
+                        .context("open static Iceberg provider")?,
+                ),
+            };
 
             authorized_scans.insert(authorized_scan);
 
@@ -371,7 +384,329 @@ impl IcebergWorkspace {
     }
 }
 
+impl IcebergWorkspace {
+    /// Builds the same closed latest-revision context used by ordinary reads,
+    /// while retaining the workspace-wide permit pool. This is used for
+    /// storage-level revision projections that cannot be exposed as a normal
+    /// Form relation.
+    pub(crate) async fn authorized_revision_query_context(
+        &self,
+        provider: Arc<dyn TableProvider>,
+        table_uuid: String,
+        snapshot_id: Option<i64>,
+        entry_scope: &EntryScope,
+        limits: ugoite_core::query::QueryLimits,
+    ) -> Result<AuthorizedQueryContext> {
+        let context = bounded_session_context(&limits)?;
+        context.register_table("revisions", provider.clone())?;
+        let source = context.table("revisions").await?;
+        let heads = latest_revision_dataframe(
+            source,
+            entry_scope,
+            crate::RevisionView::LatestIncludingTombstones,
+        )?;
+        let duplicate_head_check = heads
+            .clone()
+            .aggregate(
+                vec![col("entry_id")],
+                vec![datafusion::functions_aggregate::expr_fn::count(lit(1))
+                    .alias("ugoite_latest_head_count")],
+            )?
+            .filter(col("ugoite_latest_head_count").gt(lit(1)))?
+            .limit(0, Some(1))?;
+        Ok(AuthorizedQueryContext {
+            context,
+            limits: limits.clone(),
+            permits: self.shared_query_permits(limits.max_concurrency),
+            authorized_relations: BTreeSet::from(["revisions".to_string()]),
+            authorized_scans: BTreeSet::from([AuthorizedScan {
+                table_uuid,
+                snapshot_id,
+            }]),
+            duplicate_head_checks: vec![(provider, duplicate_head_check)],
+        })
+    }
+}
+
 impl AuthorizedQueryContext {
+    /// Executes the bounded latest-head projection through this context's
+    /// shared permit, timeout, provider validation, row bound, and invariant
+    /// checks. Full history remains a separate migration/audit operation.
+    pub(crate) async fn execute_latest_revision_plan(
+        &self,
+        entry_scope: &EntryScope,
+        view: crate::RevisionView,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let source = self
+            .context
+            .table("revisions")
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let heads = latest_revision_dataframe(
+            source,
+            entry_scope,
+            crate::RevisionView::LatestIncludingTombstones,
+        )
+        .map_err(AuthorizedQueryError::invalid_query)?;
+        let selected = match view {
+            crate::RevisionView::Current => heads
+                .filter(col("operation").not_eq(lit("delete")))
+                .map_err(AuthorizedQueryError::invalid_query)?,
+            crate::RevisionView::LatestIncludingTombstones => heads,
+            crate::RevisionView::All => {
+                return Err(AuthorizedQueryError::invalid_query(anyhow!(
+                    "bounded latest revision plan does not support full history"
+                ))
+                .into())
+            }
+        };
+        let limit = self
+            .limits
+            .max_rows
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("authorized query row limit is too large"))?;
+        let frame = selected
+            .select_columns(&["entry_id", "revision_id", "entry_version"])
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .limit(0, Some(limit))
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        self.execute_frame(frame, limit).await
+    }
+
+    /// Executes a trusted relation plan assembled by a typed read surface.
+    /// The caller can request unnesting for a typed list, but cannot provide a
+    /// provider, relation, catalog, or arbitrary SQL object. The same permit,
+    /// timeout, physical-provider validation, row bound, and latest-head
+    /// invariant checks as SQL execution are applied before Arrow leaves this
+    /// context.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn execute_relation_plan(
+        &self,
+        relation: &str,
+        unnest_columns: &[(String, String)],
+        predicates: Vec<Expr>,
+        projection: Vec<Expr>,
+        sort: Vec<SortExpr>,
+        distinct: bool,
+        preserve_unnest_columns: bool,
+        limit: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        if limit == 0 || limit > self.limits.max_rows.saturating_add(1) {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "authorized relation plan exceeds its configured row limit"
+            ))
+            .into());
+        }
+        let mut frame = self
+            .context
+            .table(relation)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        if preserve_unnest_columns && !unnest_columns.is_empty() {
+            let mut preserved_projection = frame
+                .schema()
+                .fields()
+                .iter()
+                .map(|field| col(field.name()))
+                .collect::<Vec<_>>();
+            preserved_projection.extend(unnest_columns.iter().map(|(input_column, _)| {
+                col(input_column).alias(preserved_unnest_column(input_column))
+            }));
+            frame = frame
+                .select(preserved_projection)
+                .map_err(AuthorizedQueryError::execution_failed)?;
+        }
+        for (input_column, output_column) in unnest_columns {
+            frame = frame
+                .unnest_columns_with_options(
+                    &[input_column.as_str()],
+                    datafusion::common::UnnestOptions::new().with_recursions(
+                        datafusion::common::RecursionUnnestOption {
+                            input_column: input_column.clone().into(),
+                            output_column: output_column.clone().into(),
+                            depth: 1,
+                        },
+                    ),
+                )
+                .map_err(AuthorizedQueryError::execution_failed)?;
+        }
+        for predicate in predicates {
+            frame = frame
+                .filter(predicate)
+                .map_err(AuthorizedQueryError::execution_failed)?;
+        }
+        if !projection.is_empty() {
+            frame = frame
+                .select(projection)
+                .map_err(AuthorizedQueryError::execution_failed)?;
+        }
+        if distinct {
+            frame = frame
+                .distinct()
+                .map_err(AuthorizedQueryError::execution_failed)?;
+        }
+        if !sort.is_empty() {
+            frame = frame
+                .sort(sort)
+                .map_err(AuthorizedQueryError::execution_failed)?;
+        }
+        let frame = frame
+            .limit(0, Some(limit))
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        self.execute_frame(frame, limit).await
+    }
+
+    /// Runs a DataFusion aggregate over one authorized relation. Statistics
+    /// use this path so row counts and tag counts never require a Rust-side
+    /// current-state scan.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn execute_relation_aggregate_plan(
+        &self,
+        relation: &str,
+        unnest_columns: &[(String, String)],
+        predicates: Vec<Expr>,
+        group_expr: Vec<Expr>,
+        aggregate_expr: Vec<Expr>,
+        limit: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        if limit == 0 || limit > self.limits.max_rows.saturating_add(1) {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "authorized aggregate plan exceeds its configured row limit"
+            ))
+            .into());
+        }
+        let mut frame = self
+            .context
+            .table(relation)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        for (input_column, output_column) in unnest_columns {
+            frame = frame
+                .unnest_columns_with_options(
+                    &[input_column.as_str()],
+                    datafusion::common::UnnestOptions::new().with_recursions(
+                        datafusion::common::RecursionUnnestOption {
+                            input_column: input_column.clone().into(),
+                            output_column: output_column.clone().into(),
+                            depth: 1,
+                        },
+                    ),
+                )
+                .map_err(AuthorizedQueryError::execution_failed)?;
+        }
+        for predicate in predicates {
+            frame = frame
+                .filter(predicate)
+                .map_err(AuthorizedQueryError::execution_failed)?;
+        }
+        let frame = frame
+            .aggregate(group_expr, aggregate_expr)
+            .map_err(AuthorizedQueryError::execution_failed)?
+            .limit(0, Some(limit))
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        self.execute_frame(frame, limit).await
+    }
+
+    /// Runs one aggregate over the union of authorized relation views. This
+    /// keeps cross-Form statistics inside DataFusion so the final Rust decode
+    /// sees only the globally bounded aggregate result.
+    pub(crate) async fn execute_union_relation_aggregate_plan(
+        &self,
+        relations: &[String],
+        unnest_columns: &[(String, String)],
+        group_expr: Vec<Expr>,
+        aggregate_expr: Vec<Expr>,
+        limit: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        if relations.is_empty() || limit == 0 || limit > self.limits.max_rows.saturating_add(1) {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "authorized aggregate plan exceeds its configured row limit"
+            ))
+            .into());
+        }
+        let mut unioned: Option<DataFrame> = None;
+        for relation in relations {
+            let mut frame = self
+                .context
+                .table(relation)
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            for (input_column, output_column) in unnest_columns {
+                frame = frame
+                    .unnest_columns_with_options(
+                        &[input_column.as_str()],
+                        datafusion::common::UnnestOptions::new().with_recursions(
+                            datafusion::common::RecursionUnnestOption {
+                                input_column: input_column.clone().into(),
+                                output_column: output_column.clone().into(),
+                                depth: 1,
+                            },
+                        ),
+                    )
+                    .map_err(AuthorizedQueryError::execution_failed)?;
+            }
+            let projection = unnest_columns
+                .iter()
+                .map(|(_, output_column)| col(output_column).alias(output_column))
+                .collect::<Vec<_>>();
+            frame = frame
+                .select(projection)
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            unioned = Some(match unioned {
+                None => frame,
+                Some(previous) => previous
+                    .union(frame)
+                    .map_err(AuthorizedQueryError::execution_failed)?,
+            });
+        }
+        let frame = unioned
+            .expect("non-empty relation list produces a unioned DataFrame")
+            .aggregate(group_expr, aggregate_expr)
+            .map_err(AuthorizedQueryError::execution_failed)?
+            .limit(0, Some(limit))
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        self.execute_frame(frame, limit).await
+    }
+
+    async fn execute_frame(
+        &self,
+        frame: DataFrame,
+        limit: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(self.limits.timeout, async {
+            let plan = self
+                .context
+                .state()
+                .optimize(&frame.logical_plan().clone())
+                .map_err(AuthorizedQueryError::invalid_query)?;
+            validate_logical_plan(&plan, &self.authorized_relations)
+                .map_err(AuthorizedQueryError::unauthorized)?;
+            let validation_plan = plan.clone();
+            let frame = self
+                .context
+                .execute_logical_plan(plan)
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let batches = self.collect_frame(frame).await?;
+            let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
+            if rows > self.limits.max_rows || rows > limit {
+                return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                    "authorized query row limit exceeded"
+                ))
+                .into());
+            }
+            self.validate_revision_invariants(&validation_plan).await?;
+            Ok(batches)
+        })
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
     /// Evaluates a nested Struct value in a Form-owned list without exposing
     /// the SessionContext. This keeps list-reference checks inside the same
     /// closed, Entry-scoped DataFusion boundary as scalar checks.
@@ -382,45 +717,23 @@ impl AuthorizedQueryContext {
         child_field: &str,
         expected: &str,
     ) -> Result<bool> {
-        let _permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(self.limits.timeout, async {
-            let frame = self
-                .context
-                .table(relation)
-                .await
-                .map_err(AuthorizedQueryError::execution_failed)?;
-            let frame = frame
-                .unnest_columns_with_options(
-                    &[list_field],
-                    datafusion::common::UnnestOptions::new().with_recursions(
-                        datafusion::common::RecursionUnnestOption {
-                            input_column: list_field.into(),
-                            output_column: "__ugoite_unnested_item".into(),
-                            depth: 1,
-                        },
-                    ),
+        let batches = self
+            .execute_relation_plan(
+                relation,
+                &[(list_field.to_string(), "__ugoite_unnested_item".to_string())],
+                vec![datafusion::functions::core::expr_fn::get_field(
+                    col("__ugoite_unnested_item"),
+                    child_field,
                 )
-                .map_err(AuthorizedQueryError::execution_failed)?;
-            let nested = datafusion::functions::core::expr_fn::get_field(
-                col("__ugoite_unnested_item"),
-                child_field,
-            );
-            let frame = frame
-                .filter(nested.eq(lit(expected)))
-                .and_then(|frame| frame.limit(0, Some(1)))
-                .map_err(AuthorizedQueryError::execution_failed)?;
-            let batches = frame
-                .collect()
-                .await
-                .map_err(AuthorizedQueryError::execution_failed)?;
-            Ok(batches.iter().any(|batch| batch.num_rows() > 0))
-        })
-        .await
-        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+                .eq(lit(expected))],
+                vec![lit(1).alias("__ugoite_match")],
+                Vec::new(),
+                false,
+                false,
+                1,
+            )
+            .await?;
+        Ok(batches.iter().any(|batch| batch.num_rows() > 0))
     }
 
     /// Parses a statement through the same closed DataFusion context used for
@@ -813,7 +1126,9 @@ impl AuthorizedQueryContext {
 
 fn collect_scanned_provider_addresses(plan: &LogicalPlan, providers: &mut BTreeSet<usize>) {
     if let LogicalPlan::TableScan(scan) = plan {
-        if let Some(source) = scan.source.as_any().downcast_ref::<DefaultTableSource>() {
+        if let Some(source) =
+            (scan.source.as_ref() as &dyn Any).downcast_ref::<DefaultTableSource>()
+        {
             providers.insert(Arc::as_ptr(&source.table_provider) as *const () as usize);
         }
     }
@@ -1043,11 +1358,19 @@ fn system_column(column: &QuerySystemColumn) -> VisibleColumn {
     let (source, name) = match column {
         QuerySystemColumn::ExternalId => ("ugoite_entry_external_id", "_ugoite_id"),
         QuerySystemColumn::Title => ("ugoite_entry_title", "_ugoite_title"),
+        QuerySystemColumn::Tags => ("ugoite_entry_tags", "_ugoite_tags"),
         QuerySystemColumn::CreatedAt => ("ugoite_entry_created_at", "_ugoite_created_at"),
         QuerySystemColumn::UpdatedAt => ("ugoite_entry_updated_at", "_ugoite_updated_at"),
         QuerySystemColumn::EntryId => ("entry_id", "_ugoite_entry_id"),
         QuerySystemColumn::EntryVersion => ("entry_version", "_ugoite_entry_version"),
         QuerySystemColumn::CommittedAt => ("committed_at", "_ugoite_committed_at"),
+        QuerySystemColumn::RevisionId => ("revision_id", "_ugoite_revision_id"),
+        QuerySystemColumn::ParentRevisionId => ("parent_revision_id", "_ugoite_parent_revision_id"),
+        QuerySystemColumn::Author => ("author_id", "_ugoite_author"),
+        QuerySystemColumn::ExtraAttributes => ("extra_attributes", "_ugoite_extra_attributes"),
+        QuerySystemColumn::Integrity => ("ugoite_entry_integrity", "_ugoite_integrity"),
+        QuerySystemColumn::Deleted => ("ugoite_entry_deleted", "_ugoite_deleted"),
+        QuerySystemColumn::DeletedAt => ("ugoite_entry_deleted_at", "_ugoite_deleted_at"),
     };
     VisibleColumn {
         source: source.to_string(),
@@ -1122,8 +1445,7 @@ fn validate_physical_plan(
     plan: &Arc<dyn ExecutionPlan>,
     authorized_scans: &BTreeSet<AuthorizedScan>,
 ) -> Result<()> {
-    if let Some(scan) = plan
-        .as_any()
+    if let Some(scan) = (plan.as_ref() as &dyn Any)
         .downcast_ref::<iceberg_datafusion::physical_plan::IcebergTableScan>()
     {
         let authorized = AuthorizedScan {

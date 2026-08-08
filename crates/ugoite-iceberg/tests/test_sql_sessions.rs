@@ -121,6 +121,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
             },
             readable_entries_by_form: &readable_entries_by_form,
         },
+        ugoite_core::query::EntryScope::AllCurrent,
     )
     .await
     .expect_err("a public SQL-session constructor must reject an empty principal set");
@@ -140,6 +141,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
             authorization,
             readable_entries_by_form: &oversized_scope,
         },
+        ugoite_core::query::EntryScope::AllCurrent,
     )
     .await
     .expect_err("an explicit authorization scope must be bounded before checkpoint creation");
@@ -161,6 +163,7 @@ async fn test_sql_sessions_req_api_008_end_to_end() -> anyhow::Result<()> {
             parameters,
             parameter_types,
             create_authorization,
+            ugoite_core::query::EntryScope::AllCurrent,
         )
         .await?;
     assert_eq!(session["status"], "ready");
@@ -299,6 +302,7 @@ async fn test_sql_sessions_req_api_008_scopes_rows_before_limit() -> anyhow::Res
         ws_path,
         &format!("SELECT * FROM \"{public_task_relation}\" ORDER BY _ugoite_id DESC LIMIT 2"),
         create_authorization,
+        ugoite_core::query::EntryScope::AllCurrent,
     )
     .await?;
     let session_id = session["id"].as_str().unwrap();
@@ -402,6 +406,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
                 ws_path,
                 &sql,
                 create_authorization,
+                ugoite_core::query::EntryScope::AllCurrent,
             )
             .await
             .is_err()
@@ -413,6 +418,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         ws_path,
         &format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_id"),
         create_authorization,
+        ugoite_core::query::EntryScope::AllCurrent,
     )
     .await?;
     let session_id = session["id"].as_str().expect("session id");
@@ -463,6 +469,7 @@ async fn sql_sessions_reject_unsafe_pagination_and_authorization_changes() -> an
         ws_path,
         &format!("SELECT * FROM \"{task_relation}\" ORDER BY _ugoite_id LIMIT 0"),
         create_authorization,
+        ugoite_core::query::EntryScope::AllCurrent,
     )
     .await?;
     let limit_zero_id = limit_zero["id"].as_str().expect("session id");
@@ -930,6 +937,7 @@ async fn sql_session_uses_backend_relation_mapping_for_hyphenated_forms() -> any
             },
             readable_entries_by_form: &readable_entries_by_form,
         },
+        ugoite_core::query::EntryScope::AllCurrent,
     )
     .await?;
     assert_eq!(session["status"], "ready");
@@ -964,6 +972,7 @@ async fn sql_session_uses_backend_relation_mapping_for_hyphenated_forms() -> any
                 },
                 readable_entries_by_form: &readable_entries_by_form,
             },
+            ugoite_core::query::EntryScope::AllCurrent,
         )
         .await?;
     assert_eq!(typed_session["status"], "ready");
@@ -1008,6 +1017,7 @@ async fn sql_relations_are_unique_for_case_distinct_forms() -> anyhow::Result<()
                 },
                 readable_entries_by_form: &readable_entries_by_form,
             },
+            ugoite_core::query::EntryScope::AllCurrent,
         )
         .await?;
         assert_eq!(session["status"], "ready");

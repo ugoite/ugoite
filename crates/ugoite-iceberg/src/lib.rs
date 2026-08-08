@@ -4,7 +4,10 @@
 //! callers inject a durable Catalog; every built-in test workspace uses the
 //! same OpenDAL-backed SpaceCatalog boundary as production.
 
+#![recursion_limit = "512"]
+
 mod migration;
+mod read_schema_provider;
 mod space_catalog;
 
 pub mod asset;
@@ -32,7 +35,7 @@ pub use space_catalog::PublicationContext;
 use space_catalog::SpaceCatalog;
 pub use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use arrow_array::builder::{
     BooleanBuilder, Date32Builder, FixedSizeBinaryBuilder, Float32Builder, Float64Builder,
     Int32Builder, Int64Builder, LargeBinaryBuilder, ListBuilder, StringBuilder, StructBuilder,
@@ -46,8 +49,9 @@ use arrow_array::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use datafusion::execution::context::SessionContext;
-use iceberg::expr::Reference;
-use iceberg::spec::{DataFileFormat, Datum};
+use datafusion::logical_expr::expr_fn::ident;
+use datafusion::prelude::{col, lit};
+use iceberg::spec::DataFileFormat;
 use iceberg::spec::{
     ListType, NestedField, PrimitiveType, Schema, SortOrder, StructType, Type, UnboundPartitionSpec,
 };
@@ -63,7 +67,7 @@ use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use tokio::sync::{Notify, Semaphore};
@@ -190,6 +194,11 @@ pub enum RevisionView {
     LatestIncludingTombstones,
     Current,
 }
+
+/// Normal current-state reads are deliberately bounded. History remains an
+/// explicit, separate operation and may materialize its complete revision
+/// stream.
+pub const MAX_NORMAL_READ_ROWS: usize = 10_000;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WriteConfig {
@@ -597,9 +606,15 @@ impl IcebergWorkspace {
             .load_checkpoint_table(checkpoint, coordinate)
             .await?;
         let form = form_from_table(&table, form_id)?;
-        self.read_revision_view_from_table(&form, table, view, coordinate.snapshot_id)
-            .await
-            .map_err(checkpoint_query_error)
+        self.read_revision_view_from_table(
+            &form,
+            table,
+            EntryScope::AllCurrent,
+            view,
+            coordinate.snapshot_id,
+        )
+        .await
+        .map_err(checkpoint_query_error)
     }
 
     /// Loads Form definitions from the immutable tables named by one
@@ -808,10 +823,15 @@ impl IcebergWorkspace {
                 .with_fields(fields)
                 .with_identifier_field_ids(current_schema.identifier_field_ids())
                 .build()?;
-            let metadata = table
+            let mut metadata_builder = table
                 .metadata()
                 .clone()
-                .into_builder(Some(table.metadata_location_result()?.to_string()))
+                .into_builder(Some(table.metadata_location_result()?.to_string()));
+            if schema.calc_min_compatible_format() == iceberg::spec::FormatVersion::V3 {
+                metadata_builder =
+                    metadata_builder.upgrade_format_version(iceberg::spec::FormatVersion::V3)?;
+            }
+            let metadata = metadata_builder
                 .add_current_schema(schema)?
                 .set_properties(form_properties(&evolved, self.write)?)?
                 .build()?
@@ -1253,15 +1273,7 @@ impl IcebergWorkspace {
     /// column decoding lives in this adapter; callers receive only domain
     /// revisions and never Arrow arrays or Iceberg tables.
     pub async fn read_revisions(&self, form_id: FormId) -> Result<Vec<EntryRevision>> {
-        let form = self.load_form(form_id).await?;
-        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        let table_schema = table.metadata().current_schema().clone();
-        let mut stream = table.scan().build()?.to_arrow().await?;
-        let mut revisions = Vec::new();
-        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
-            revisions.extend(revisions_from_batch(&batch, &form, &table_schema)?);
-        }
-        Ok(revisions)
+        self.read_revision_view(form_id, RevisionView::All).await
     }
 
     /// Reads one of the canonical revision views through the same DataFusion
@@ -1273,7 +1285,32 @@ impl IcebergWorkspace {
         form_id: FormId,
         view: RevisionView,
     ) -> Result<Vec<EntryRevision>> {
-        self.read_revision_view_with_snapshot(form_id, view, None)
+        if view == RevisionView::All {
+            let form = self.load_form(form_id).await?;
+            let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+            return self
+                .read_revision_view_from_table(&form, table, EntryScope::AllCurrent, view, None)
+                .await;
+        }
+        self.read_revision_view_with_scope(form_id, EntryScope::AllCurrent, view)
+            .await
+    }
+
+    /// Reads a revision view through a provider-side Entry scope. The scope is
+    /// part of the trusted DataFusion plan, so unauthorized rows never cross
+    /// the query boundary into domain decoding.
+    pub async fn read_revision_view_with_scope(
+        &self,
+        form_id: FormId,
+        entry_scope: EntryScope,
+        view: RevisionView,
+    ) -> Result<Vec<EntryRevision>> {
+        if view == RevisionView::All {
+            bail!("scoped revision views do not expose full history");
+        }
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        self.read_revision_view_from_table(&form, table, entry_scope, view, None)
             .await
     }
 
@@ -1298,7 +1335,7 @@ impl IcebergWorkspace {
     ) -> Result<Vec<EntryRevision>> {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        self.read_revision_view_from_table(&form, table, view, snapshot_id)
+        self.read_revision_view_from_table(&form, table, EntryScope::AllCurrent, view, snapshot_id)
             .await
     }
 
@@ -1306,24 +1343,14 @@ impl IcebergWorkspace {
         &self,
         form: &FormDefinition,
         table: iceberg::table::Table,
+        entry_scope: EntryScope,
         view: RevisionView,
         snapshot_id: Option<i64>,
     ) -> Result<Vec<EntryRevision>> {
         let batches = match view {
-            RevisionView::All => {
-                let scan = match snapshot_id {
-                    Some(snapshot_id) => table.scan().snapshot_id(snapshot_id),
-                    None => table.scan(),
-                };
-                let mut stream = scan.build()?.to_arrow().await?;
-                let mut batches = Vec::new();
-                while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
-                    batches.push(batch);
-                }
-                batches
-            }
+            RevisionView::All => self.read_all_revision_batches(&table, snapshot_id).await?,
             RevisionView::LatestIncludingTombstones | RevisionView::Current => {
-                self.read_latest_revision_batches(&table, None, snapshot_id, view)
+                self.read_latest_revision_batches(&table, &entry_scope, snapshot_id, view)
                     .await?
             }
         };
@@ -1358,7 +1385,7 @@ impl IcebergWorkspace {
         let batches = self
             .read_latest_revision_batches(
                 &table,
-                Some(entry_ids),
+                &EntryScope::Only(entry_ids.iter().copied().collect()),
                 None,
                 RevisionView::LatestIncludingTombstones,
             )
@@ -1370,83 +1397,170 @@ impl IcebergWorkspace {
         Ok(revisions)
     }
 
-    async fn latest_revision_plan(
+    /// Checks external IDs against every Form's latest head, including
+    /// tombstones. This is a point query per Form and request ID, rather than
+    /// a caller-scoped current-state scan. The commit coordinator calls it on
+    /// the exact publication attempt so a retry rechecks the winning head.
+    pub(crate) async fn existing_entry_external_ids(
         &self,
-        table: &iceberg::table::Table,
-        entry_ids: Option<&[ugoite_domain::id::EntryId]>,
-        snapshot_id: Option<i64>,
-        view: RevisionView,
-    ) -> Result<Vec<RecordBatch>> {
-        let context = SessionContext::new();
-        let provider = if let Some(snapshot_id) = snapshot_id {
-            IcebergStaticTableProvider::try_new_from_table_snapshot(table.clone(), snapshot_id)
-                .await?
-        } else {
-            IcebergStaticTableProvider::try_new_from_table(table.clone()).await?
-        };
-        context.register_table("revisions", Arc::new(provider))?;
-        let revisions = context.table("revisions").await?;
-        let scope = match entry_ids {
-            Some([]) => return Ok(Vec::new()),
-            Some(entry_ids) => {
-                ugoite_core::query::EntryScope::Only(entry_ids.iter().copied().collect())
-            }
-            None => ugoite_core::query::EntryScope::AllCurrent,
-        };
-        let heads = crate::query_context::latest_revision_dataframe(revisions, &scope, view)?;
-        Ok(heads
-            .select_columns(&["entry_id", "revision_id", "entry_version"])?
-            .collect()
-            .await?)
+        external_ids: &[String],
+    ) -> Result<HashSet<String>> {
+        if external_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+        let entry_ids = external_ids
+            .iter()
+            .map(|external_id| {
+                Uuid::parse_str(external_id)
+                    .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, external_id.as_bytes()))
+                    .into()
+            })
+            .collect::<Vec<ugoite_domain::id::EntryId>>();
+        let mut existing = HashSet::new();
+        for form in self.list_forms().await? {
+            existing.extend(
+                self.read_latest_revisions_for_entries(form.id, &entry_ids)
+                    .await?
+                    .into_iter()
+                    .map(|revision| revision.entry.external_id),
+            );
+        }
+        Ok(existing)
     }
 
-    async fn read_latest_revision_batches(
+    async fn revision_provider(
         &self,
         table: &iceberg::table::Table,
-        entry_ids: Option<&[ugoite_domain::id::EntryId]>,
         snapshot_id: Option<i64>,
-        view: RevisionView,
+    ) -> Result<(Arc<dyn datafusion::datasource::TableProvider>, Option<i64>)> {
+        let (provider, query_snapshot_id): (Arc<dyn datafusion::datasource::TableProvider>, _) =
+            if let Some(snapshot_id) = snapshot_id {
+                (
+                    Arc::new(
+                        read_schema_provider::CurrentSchemaTableProvider::try_new(
+                            table.clone(),
+                            snapshot_id,
+                        )
+                        .await?,
+                    ),
+                    Some(snapshot_id),
+                )
+            } else if let Some(snapshot_id) = table.metadata().current_snapshot_id() {
+                (
+                    Arc::new(
+                        read_schema_provider::CurrentSchemaTableProvider::try_new(
+                            table.clone(),
+                            snapshot_id,
+                        )
+                        .await?,
+                    ),
+                    Some(snapshot_id),
+                )
+            } else {
+                (
+                    Arc::new(IcebergStaticTableProvider::try_new_from_table(table.clone()).await?),
+                    None,
+                )
+            };
+        Ok((provider, query_snapshot_id))
+    }
+
+    async fn read_all_revision_batches(
+        &self,
+        table: &iceberg::table::Table,
+        snapshot_id: Option<i64>,
     ) -> Result<Vec<RecordBatch>> {
-        let ids = self
-            .latest_revision_plan(table, entry_ids, snapshot_id, view)
-            .await?;
-        let mut revision_ids = Vec::new();
-        let mut entry_ids = std::collections::BTreeSet::new();
-        for batch in ids {
-            let entry_values = batch
-                .column_by_name("entry_id")
-                .context("latest revision plan is missing entry_id")?;
-            let values = batch
-                .column_by_name("revision_id")
-                .context("latest revision plan is missing revision_id")?;
-            for row in 0..batch.num_rows() {
-                let entry_id = uuid_at(entry_values, row)?;
-                if !entry_ids.insert(entry_id) {
-                    return Err(anyhow!(
-                        "entry revision invariant failed: multiple revisions share a maximum entry_version"
-                    ));
-                }
-                revision_ids.push(Datum::uuid(uuid_at(values, row)?.as_uuid()));
-            }
-        }
-        if revision_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let scan = table
-            .scan()
-            .with_filter(Reference::new("revision_id").is_in(revision_ids));
-        let mut stream = match snapshot_id {
-            Some(snapshot_id) => scan.snapshot_id(snapshot_id),
-            None => scan,
-        }
-        .build()?
-        .to_arrow()
-        .await?;
+        // History is an explicit audit operation, not a normal current-state
+        // read. Keep its schema-evolution-aware Iceberg stream separate from
+        // the bounded DataFusion latest-state path above.
+        let scan = match snapshot_id {
+            Some(snapshot_id) => table.scan().snapshot_id(snapshot_id),
+            None => table.scan(),
+        };
+        let mut stream = scan.build()?.to_arrow().await?;
         let mut batches = Vec::new();
         while let Some(batch) = futures::TryStreamExt::try_next(&mut stream).await? {
             batches.push(batch);
         }
         Ok(batches)
+    }
+
+    async fn read_latest_revision_batches(
+        &self,
+        table: &iceberg::table::Table,
+        entry_scope: &EntryScope,
+        snapshot_id: Option<i64>,
+        view: RevisionView,
+    ) -> Result<Vec<RecordBatch>> {
+        let (provider, query_snapshot_id) = self.revision_provider(table, snapshot_id).await?;
+        let context = self
+            .authorized_revision_query_context(
+                provider,
+                table.metadata().uuid().to_string(),
+                query_snapshot_id,
+                entry_scope,
+                QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: MAX_NORMAL_READ_ROWS,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+            )
+            .await?;
+        let ids = context
+            .execute_latest_revision_plan(entry_scope, view)
+            .await?;
+        let mut revision_ids = Vec::<ugoite_domain::id::EntryId>::new();
+        let mut entry_ids = std::collections::BTreeSet::new();
+        for batch in ids {
+            let entry_values = batch
+                .column_by_name("entry_id")
+                .context("latest revision plan is missing entry_id")?;
+            let revision_values = batch
+                .column_by_name("revision_id")
+                .context("latest revision plan is missing revision_id")?;
+            for row in 0..batch.num_rows() {
+                if !entry_ids.insert(uuid_at(entry_values, row)?) {
+                    return Err(anyhow!(
+                        "entry revision invariant failed: multiple revisions share a maximum entry_version"
+                    ));
+                }
+                revision_ids.push(uuid_at(revision_values, row)?);
+            }
+        }
+        if entry_ids.len() > MAX_NORMAL_READ_ROWS {
+            return Err(anyhow!(
+                "normal Entry reads are limited to {MAX_NORMAL_READ_ROWS} current rows"
+            ));
+        }
+        if revision_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let revision_literals = revision_ids
+            .iter()
+            .map(|revision_id| lit(revision_id.as_uuid().as_bytes().to_vec()))
+            .collect::<Vec<_>>();
+        let projection = table
+            .metadata()
+            .current_schema()
+            .as_struct()
+            .fields()
+            .iter()
+            .map(|field| ident(&field.name))
+            .collect::<Vec<_>>();
+        context
+            .execute_relation_plan(
+                "revisions",
+                &[],
+                vec![col("revision_id").in_list(revision_literals, false)],
+                projection,
+                Vec::new(),
+                false,
+                false,
+                revision_ids.len(),
+            )
+            .await
     }
 
     pub async fn query(&self, sql: &str) -> Result<Vec<RecordBatch>> {
@@ -1641,6 +1755,22 @@ impl SpaceCommitCoordinator {
                 });
             }
             let attempt = self.attempt_workspace().await?;
+            let new_entry_ids = revisions
+                .iter()
+                .filter(|revision| {
+                    revision.entry_version == 1
+                        && revision.expected_version.is_none()
+                        && revision.parent_revision_id.is_none()
+                })
+                .map(|revision| revision.entry.external_id.clone())
+                .collect::<Vec<_>>();
+            let existing_entry_ids = attempt.existing_entry_external_ids(&new_entry_ids).await?;
+            if new_entry_ids
+                .iter()
+                .any(|entry_id| existing_entry_ids.contains(entry_id))
+            {
+                return Err(anyhow!("Entry ID unavailable"));
+            }
             attempt
                 .validate_asset_references_not_deleted(form_id, &revisions)
                 .await?;
@@ -2494,7 +2624,9 @@ fn typed_list_array(
                             field.name
                         ));
                     };
-                    builder.append_value(BASE64.decode(value)?);
+                    builder.append_value(
+                        BASE64.decode(value.strip_prefix("base64:").unwrap_or(value))?,
+                    );
                     Ok(())
                 }
             );
@@ -2798,7 +2930,9 @@ fn field_array(
             let mut builder = LargeBinaryBuilder::with_capacity(values.len(), 0);
             for value in values {
                 match value {
-                    Some(FieldValue::String(value)) => builder.append_value(BASE64.decode(value)?),
+                    Some(FieldValue::String(value)) => builder.append_value(
+                        BASE64.decode(value.strip_prefix("base64:").unwrap_or(value))?,
+                    ),
                     Some(FieldValue::Null) | None => builder.append_null(),
                     _ => return Err(anyhow!("binary field '{}' must be base64 text", field.name)),
                 }
@@ -2819,13 +2953,13 @@ fn field_array(
     }
 }
 
-fn parse_date(value: &str) -> Result<Option<i32>> {
+pub(crate) fn parse_date(value: &str) -> Result<Option<i32>> {
     let date = NaiveDate::parse_from_str(value, "%Y-%m-%d")?;
     let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("valid Unix epoch date");
     Ok(Some(date.signed_duration_since(epoch).num_days() as i32))
 }
 
-fn parse_time_micros(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_time_micros(value: &str) -> Result<Option<i64>> {
     let time = NaiveTime::parse_from_str(value, "%H:%M:%S%.f")
         .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M:%S"))
         // HTML time inputs omit seconds when the value is minute-precise.
@@ -2836,19 +2970,19 @@ fn parse_time_micros(value: &str) -> Result<Option<i64>> {
     ))
 }
 
-fn parse_wall_timestamp_micros(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_wall_timestamp_micros(value: &str) -> Result<Option<i64>> {
     let timestamp = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
         .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))?;
     Ok(Some(wall_timestamp_micros(timestamp)?))
 }
 
-fn parse_zoned_timestamp_micros(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_zoned_timestamp_micros(value: &str) -> Result<Option<i64>> {
     Ok(Some(
         DateTime::parse_from_rfc3339(value)?.timestamp_micros(),
     ))
 }
 
-fn parse_wall_timestamp_nanos(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_wall_timestamp_nanos(value: &str) -> Result<Option<i64>> {
     let timestamp = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
         .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))?;
     Ok(Some(wall_timestamp_nanos(timestamp)?))
@@ -2878,7 +3012,7 @@ fn wall_timestamp_nanos(timestamp: NaiveDateTime) -> Result<i64> {
         .context("timestamp is outside the representable nanosecond range")
 }
 
-fn parse_zoned_timestamp_nanos(value: &str) -> Result<Option<i64>> {
+pub(crate) fn parse_zoned_timestamp_nanos(value: &str) -> Result<Option<i64>> {
     Ok(Some(
         DateTime::parse_from_rfc3339(value)?
             .timestamp_nanos_opt()
@@ -3093,22 +3227,40 @@ fn struct_string_at(array: &StructArray, name: &str, row: usize) -> String {
         .unwrap_or_default()
 }
 
-fn struct_i64_at(array: &StructArray, name: &str, row: usize) -> i64 {
-    array
+fn required_struct_string_at(array: &StructArray, name: &str, row: usize) -> Result<String> {
+    let column = array
         .column_by_name(name)
-        .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
-        .filter(|column| !column.is_null(row))
-        .map(|column| column.value(row))
-        .unwrap_or_default()
+        .with_context(|| format!("asset reference is missing {name}"))?
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .with_context(|| format!("asset reference {name} has the wrong Arrow type"))?;
+    if column.is_null(row) {
+        return Err(anyhow!("asset reference {name} is null"));
+    }
+    Ok(column.value(row).to_string())
+}
+
+fn required_struct_i64_at(array: &StructArray, name: &str, row: usize) -> Result<i64> {
+    let column = array
+        .column_by_name(name)
+        .with_context(|| format!("asset reference is missing {name}"))?
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .with_context(|| format!("asset reference {name} has the wrong Arrow type"))?;
+    if column.is_null(row) {
+        return Err(anyhow!("asset reference {name} is null"));
+    }
+    Ok(column.value(row))
 }
 
 fn asset_reference_at(array: &StructArray, row: usize) -> Result<FieldValue> {
     Ok(FieldValue::AssetReference(AssetReference {
-        asset_id: struct_string_at(array, "asset_id", row),
-        name: struct_string_at(array, "name", row),
-        media_type: struct_string_at(array, "media_type", row),
-        size_bytes: u64::try_from(struct_i64_at(array, "size_bytes", row))?,
-        sha256: struct_string_at(array, "sha256", row),
+        asset_id: required_struct_string_at(array, "asset_id", row)?,
+        name: required_struct_string_at(array, "name", row)?,
+        media_type: required_struct_string_at(array, "media_type", row)?,
+        size_bytes: u64::try_from(required_struct_i64_at(array, "size_bytes", row)?)
+            .context("asset reference size_bytes must be non-negative")?,
+        sha256: required_struct_string_at(array, "sha256", row)?,
     }))
 }
 
@@ -3223,15 +3375,16 @@ fn field_value_at(
             )?
             .to_string(),
         ),
-        FieldType::Binary => FieldValue::String(
+        FieldType::Binary => FieldValue::String(format!(
+            "base64:{}",
             BASE64.encode(
                 column
                     .as_any()
                     .downcast_ref::<LargeBinaryArray>()
                     .ok_or_else(invalid)?
                     .value(row),
-            ),
-        ),
+            )
+        )),
         FieldType::List => FieldValue::List(typed_list_at(
             column
                 .as_any()
@@ -3580,5 +3733,116 @@ mod invariant_tests {
             .to_string()
             .contains("multiple revisions share a maximum entry_version"));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod asset_reference_decode_tests {
+    use super::*;
+
+    fn asset_fields() -> arrow_schema::Fields {
+        vec![
+            arrow_schema::Field::new("asset_id", arrow_schema::DataType::Utf8, true),
+            arrow_schema::Field::new("name", arrow_schema::DataType::Utf8, true),
+            arrow_schema::Field::new("media_type", arrow_schema::DataType::Utf8, true),
+            arrow_schema::Field::new("size_bytes", arrow_schema::DataType::Int64, true),
+            arrow_schema::Field::new("sha256", arrow_schema::DataType::Utf8, true),
+        ]
+        .into()
+    }
+
+    fn valid_asset() -> StructArray {
+        StructArray::new(
+            asset_fields(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("asset-1")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        )
+    }
+
+    #[test]
+    fn asset_reference_decode_requires_a_complete_typed_struct() {
+        let value = field_value_at(&valid_asset(), 0, &FieldType::AssetReference, None).unwrap();
+        assert_eq!(
+            value,
+            Some(FieldValue::AssetReference(AssetReference {
+                asset_id: "asset-1".into(),
+                name: "file.txt".into(),
+                media_type: "text/plain".into(),
+                size_bytes: 4,
+                sha256: "sha256:hash".into(),
+            }))
+        );
+
+        let null_parent = StructArray::new_null(asset_fields(), 1);
+        assert_eq!(
+            field_value_at(&null_parent, 0, &FieldType::AssetReference, None).unwrap(),
+            None
+        );
+
+        let mut missing_fields = asset_fields().to_vec();
+        missing_fields.remove(0);
+        let missing = StructArray::new(
+            missing_fields.into(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        );
+        assert!(asset_reference_at(&missing, 0).is_err());
+
+        let null_size = StructArray::new(
+            asset_fields(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("asset-1")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![None])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        );
+        assert!(asset_reference_at(&null_size, 0).is_err());
+
+        let negative_size = StructArray::new(
+            asset_fields(),
+            vec![
+                Arc::new(StringArray::from(vec![Some("asset-1")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![Some(-1)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        );
+        assert!(asset_reference_at(&negative_size, 0).is_err());
+
+        let wrong_type = StructArray::new(
+            vec![
+                arrow_schema::Field::new("asset_id", arrow_schema::DataType::Int64, true),
+                arrow_schema::Field::new("name", arrow_schema::DataType::Utf8, true),
+                arrow_schema::Field::new("media_type", arrow_schema::DataType::Utf8, true),
+                arrow_schema::Field::new("size_bytes", arrow_schema::DataType::Int64, true),
+                arrow_schema::Field::new("sha256", arrow_schema::DataType::Utf8, true),
+            ]
+            .into(),
+            vec![
+                Arc::new(Int64Array::from(vec![Some(1)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+            ],
+            None,
+        );
+        assert!(asset_reference_at(&wrong_type, 0).is_err());
     }
 }
