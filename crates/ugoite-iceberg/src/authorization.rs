@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 const AUTHORIZATION_FILE: &str = "security/principals.json";
 const LEGACY_AUTHORIZATION_FILE: &str = "authorization.json";
+const LEGACY_MIGRATION_STATE_FILE: &str = "security/migration-state.json";
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -148,16 +149,24 @@ impl Authorizer {
 
     /// Ensures an operator-created Space has the first current-release owner.
     /// Existing authorization state is validated rather than upgraded.
-    pub async fn ensure_owner(
+    pub async fn validate_current_layout(&self, space_id: &str, space_uid: Uuid) -> Result<()> {
+        self.validated_current_owner(space_id, space_uid)
+            .await
+            .map(|_| ())
+    }
+
+    async fn validated_current_owner(
         &self,
         space_id: &str,
         space_uid: Uuid,
-        display_name: &str,
-    ) -> Result<Uuid> {
-        let legacy_authorization_path = format!("spaces/{space_id}/{LEGACY_AUTHORIZATION_FILE}");
-        if self.operator.exists(&legacy_authorization_path).await? {
-            bail!("unsupported Space layout: legacy authorization.json is present");
+    ) -> Result<Option<Uuid>> {
+        for marker in [LEGACY_AUTHORIZATION_FILE, LEGACY_MIGRATION_STATE_FILE] {
+            let path = format!("spaces/{space_id}/{marker}");
+            if self.operator.exists(&path).await? {
+                bail!("unsupported Space layout: legacy marker {marker} is present");
+            }
         }
+
         let settings_path = format!("spaces/{space_id}/settings.json");
         if self.operator.exists(&settings_path).await? {
             let settings: serde_json::Value =
@@ -171,18 +180,32 @@ impl Authorizer {
                 );
             }
         }
+
         let path = state_path(space_id);
-        if self.operator.exists(&path).await? {
-            let state = self.state(space_id).await?;
-            if state.space_uid != space_uid {
-                bail!("Space metadata and authorization state use different space_uid values");
-            }
-            return state
-                .memberships
-                .values()
-                .find(|membership| matches!(membership.role, SpaceRole::Owner))
-                .map(|membership| membership.principal_id)
-                .ok_or_else(|| anyhow!("Space has no owner principal"));
+        if !self.operator.exists(&path).await? {
+            return Ok(None);
+        }
+
+        let state = self.state(space_id).await?;
+        if state.space_uid != space_uid {
+            bail!("Space metadata and authorization state use different space_uid values");
+        }
+        state
+            .memberships
+            .values()
+            .find(|membership| matches!(membership.role, SpaceRole::Owner))
+            .map(|membership| Some(membership.principal_id))
+            .ok_or_else(|| anyhow!("Space has no owner principal"))
+    }
+
+    pub async fn ensure_owner(
+        &self,
+        space_id: &str,
+        space_uid: Uuid,
+        display_name: &str,
+    ) -> Result<Uuid> {
+        if let Some(owner_principal_id) = self.validated_current_owner(space_id, space_uid).await? {
+            return Ok(owner_principal_id);
         }
         let principal_id = Uuid::now_v7();
         self.initialize_owner(space_id, space_uid, principal_id, display_name)
@@ -996,6 +1019,24 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({"members": {"old-user": "owner"}}))?,
         )
         .await?;
+        let authorizer = Authorizer::new(op.clone());
+
+        let error = authorizer
+            .ensure_owner("demo", Uuid::now_v7(), "Owner")
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("unsupported Space layout"));
+        assert!(!op.exists("spaces/demo/security/principals.json").await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn interrupted_migration_layout_is_rejected_before_owner_creation() -> Result<()> {
+        let op = operator_from_uri("memory://interrupted-migration-layout")?;
+        op.create_dir("spaces/demo/").await?;
+        op.write("spaces/demo/security/migration-state.json", "{}")
+            .await?;
         let authorizer = Authorizer::new(op.clone());
 
         let error = authorizer

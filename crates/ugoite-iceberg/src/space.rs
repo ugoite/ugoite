@@ -286,6 +286,15 @@ async fn ensure_space_identity<S: StorageBackend + ?Sized>(
     let object = meta
         .as_object()
         .ok_or_else(|| anyhow!("Space metadata must be a JSON object"))?;
+    if object
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        != Some(2)
+    {
+        return Err(anyhow!(
+            "unsupported Space layout: metadata schema_version must be 2"
+        ));
+    }
     let space_uid = object
         .get("space_uid")
         .and_then(serde_json::Value::as_str)

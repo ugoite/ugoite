@@ -733,10 +733,15 @@ async fn auth_setup_finish(
         .list_space_ids()
         .await
         .map_err(ApiError::from_core)?;
+    let authorizer = Authorizer::new(state.service.operator().clone());
     for space_id in &existing_spaces {
-        state
+        let space_uid = state
             .service
             .space_uid(space_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        authorizer
+            .validate_current_layout(space_id, space_uid)
             .await
             .map_err(ApiError::from_core)?;
     }
@@ -769,7 +774,6 @@ async fn auth_setup_finish(
             .map_err(auth_error)?;
         claimed_space_uids.push(space_uid);
     } else {
-        let authorizer = Authorizer::new(state.service.operator().clone());
         for space_id in existing_spaces {
             let space_uid = state
                 .service
