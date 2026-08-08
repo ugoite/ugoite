@@ -3,7 +3,7 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "entries", "screenshot", or "full" (runs standard tests)
+#   test-type: "smoke", "asset-owned", "entries", "screenshot", or "full" (runs standard tests)
 #
 # Environment variables:
 #   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
@@ -234,6 +234,13 @@ case "$TEST_TYPE" in
   entries)
     run_e2e_task entries
     ;;
+  asset-owned)
+    if [ "${#TEST_TIMEOUT_ARGS[@]}" -gt 0 ]; then
+      deno task asset-owned -- "${TEST_TIMEOUT_ARGS[@]}"
+    else
+      deno task asset-owned
+    fi
+    ;;
   screenshot)
     run_e2e_task screenshot
     ;;
@@ -242,7 +249,7 @@ case "$TEST_TYPE" in
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|entries|screenshot|full]"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|entries|screenshot|full]"
     exit 1
     ;;
 esac

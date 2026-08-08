@@ -49,11 +49,19 @@ pub enum EntryScope {
 pub enum QuerySystemColumn {
     ExternalId,
     Title,
+    Tags,
     CreatedAt,
     UpdatedAt,
     EntryId,
     EntryVersion,
     CommittedAt,
+    RevisionId,
+    ParentRevisionId,
+    Author,
+    ExtraAttributes,
+    Integrity,
+    Deleted,
+    DeletedAt,
 }
 
 impl QuerySystemColumn {
@@ -65,11 +73,19 @@ impl QuerySystemColumn {
             // query context fail at runtime.
             Self::ExternalId => "_ugoite_id",
             Self::Title => "_ugoite_title",
+            Self::Tags => "_ugoite_tags",
             Self::CreatedAt => "_ugoite_created_at",
             Self::UpdatedAt => "_ugoite_updated_at",
             Self::EntryId => "_ugoite_entry_id",
             Self::EntryVersion => "_ugoite_entry_version",
             Self::CommittedAt => "_ugoite_committed_at",
+            Self::RevisionId => "_ugoite_revision_id",
+            Self::ParentRevisionId => "_ugoite_parent_revision_id",
+            Self::Author => "_ugoite_author",
+            Self::ExtraAttributes => "_ugoite_extra_attributes",
+            Self::Integrity => "_ugoite_integrity",
+            Self::Deleted => "_ugoite_deleted",
+            Self::DeletedAt => "_ugoite_deleted_at",
         }
     }
 }

@@ -169,10 +169,24 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
     ),
     false,
   );
-  assertEquals(
-    rootMise.match(/docker image inspect/g)?.length,
-    2,
-  );
+  for (const task of ["test:e2e", "test:e2e:smoke", "test:e2e:asset-owned"]) {
+    const header = `[tasks."${task}"]`;
+    const start = rootMise.indexOf(header);
+    assertEquals(start >= 0, true, `${task} must exist`);
+    const end = rootMise.indexOf("\n[tasks", start + header.length);
+    const block = rootMise.slice(start, end < 0 ? undefined : end);
+    assertEquals(
+      block.includes("docker image inspect") &&
+        block.includes("UGOITE_IMAGE_TAG:-ugoite:e2e"),
+      true,
+      `${task} must use the prebuilt E2E image`,
+    );
+    assertEquals(
+      block.includes("E2E_BUILD_IMAGES=false"),
+      true,
+      `${task} must not rebuild the E2E image`,
+    );
+  }
   assertEquals(
     rootMise.includes(
       'env = { DOCSITE_ORIGIN = "http://localhost:4321", DOCSITE_BASE = "/" }',
@@ -181,6 +195,13 @@ Deno.test("CI image and E2E tasks preserve the build-once contract", async () =>
   );
   assertEquals(
     rootMise.includes("${DOCSITE_ORIGIN:-http://localhost:4321}"),
+    true,
+  );
+  const rootDeno = await Deno.readTextFile("deno.json");
+  assertEquals(
+    rootDeno.includes(
+      '"e2e:asset-owned": "bash e2e/scripts/run-e2e-parity.sh asset-owned"',
+    ),
     true,
   );
 });

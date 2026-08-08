@@ -1,52 +1,58 @@
 use anyhow::Result;
 use opendal::Operator;
-use std::collections::HashSet;
+use ugoite_core::query::EntryScope;
 
 use crate::entry;
 pub use ugoite_domain::search::KeywordSearchResult;
 
-/// Hybrid keyword search using index and content fallback.
+/// Keyword search over one bounded, authorized current-state DataFusion
+/// payload plan.
 pub async fn search_entries(
     op: &Operator,
     ws_path: &str,
     query: &str,
+    limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
-    search_entries_with_authorized_ids(op, ws_path, query, None).await
+    let relation_scopes = entry::list_form_names(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
+        .collect();
+    search_entries_with_scopes(op, ws_path, query, &relation_scopes, limit).await
 }
 
-pub async fn search_entries_authorized(
+/// Searches typed/system columns in one globally ordered DataFusion candidate
+/// plan. Search intentionally excludes `extra_attributes` and opaque asset or
+/// object-list structs; the searchable typed column set is defined by the
+/// Form field type in the plan builder.
+pub async fn search_entries_with_scopes(
     op: &Operator,
     ws_path: &str,
     query: &str,
-    readable_entry_ids: &HashSet<String>,
+    relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
+    limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
-    search_entries_with_authorized_ids(op, ws_path, query, Some(readable_entry_ids)).await
-}
-
-async fn search_entries_with_authorized_ids(
-    op: &Operator,
-    ws_path: &str,
-    query: &str,
-    readable_entry_ids: Option<&HashSet<String>>,
-) -> Result<Vec<KeywordSearchResult>> {
-    let query = query.to_lowercase();
-    let rows = entry::list_entry_rows(op, ws_path).await?;
-    let mut results = Vec::new();
-    for (_form_name, row) in rows {
-        if row.deleted || readable_entry_ids.is_some_and(|allowed| !allowed.contains(&row.entry_id))
-        {
+    let rows = crate::index::query_entry_rows_authorized(
+        op,
+        ws_path,
+        relation_scopes,
+        None,
+        Some(query),
+        limit,
+    )
+    .await?;
+    let mut results = Vec::with_capacity(rows.len());
+    for (form_name, row) in rows {
+        if row.deleted {
             continue;
         }
-        let dump = serde_json::to_string(&row)?.to_lowercase();
-        if dump.contains(&query) {
-            results.push(KeywordSearchResult {
-                id: row.entry_id,
-                title: row.title,
-                form: row.form,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-            });
-        }
+        results.push(KeywordSearchResult {
+            id: row.entry_id,
+            title: row.title,
+            form: form_name,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        });
     }
     Ok(results)
 }

@@ -543,6 +543,13 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
     .await?;
     let form = form();
     create_form(&workspace, &form).await?;
+    let history_error = workspace
+        .read_revision_view_with_scope(form.id, EntryScope::AllCurrent, RevisionView::All)
+        .await
+        .expect_err("scoped reads must never ignore their Entry scope for history");
+    assert!(history_error
+        .to_string()
+        .contains("scoped revision views do not expose full history"));
 
     let first = EntryRevision {
         form_id: form.id,
@@ -918,6 +925,24 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         extension_metadata: BTreeMap::new(),
     };
     append_revisions(&workspace, form.id, vec![first.clone()]).await?;
+    let before_evolution = workspace
+        .catalog_for_testing()
+        .load_table(&iceberg::TableIdent::new(
+            workspace.namespace_for_testing().clone(),
+            physical_form_name(form.id),
+        ))
+        .await?;
+    let before_snapshot = before_evolution
+        .metadata()
+        .current_snapshot()
+        .expect("append creates a current snapshot");
+    let before_snapshot_identity = (
+        before_snapshot.snapshot_id(),
+        before_snapshot.sequence_number(),
+        before_snapshot.parent_snapshot_id(),
+        before_snapshot.manifest_list().to_string(),
+    );
+    let before_snapshot_schema_id = before_snapshot.schema_id();
 
     let evolved = evolve_form(
         &workspace,
@@ -961,6 +986,67 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
             .field_by_id(100)
             .map(|field| field.name.as_str()),
         Some("summary")
+    );
+    let after_snapshot = table
+        .metadata()
+        .current_snapshot()
+        .expect("current snapshot remains available after schema evolution");
+    assert_eq!(
+        (
+            after_snapshot.snapshot_id(),
+            after_snapshot.sequence_number(),
+            after_snapshot.parent_snapshot_id(),
+            after_snapshot.manifest_list().to_string(),
+        ),
+        before_snapshot_identity
+    );
+    assert_eq!(after_snapshot.schema_id(), before_snapshot_schema_id);
+
+    let metadata_location = table.metadata_location_result()?.to_string();
+    let metadata_before_read = table
+        .file_io()
+        .new_input(&metadata_location)?
+        .read()
+        .await?;
+    let current = workspace
+        .read_revision_view_with_scope(form.id, EntryScope::AllCurrent, RevisionView::Current)
+        .await?;
+    assert_eq!(current.len(), 1);
+    assert_eq!(
+        current[0].values.get(&FieldId::new(100).unwrap()),
+        Some(&FieldValue::String("old".into()))
+    );
+    assert!(!current[0].values.contains_key(&FieldId::new(101).unwrap()));
+
+    let explicit_snapshot = workspace
+        .read_revision_view_at_snapshot(
+            form.id,
+            RevisionView::Current,
+            after_snapshot.snapshot_id(),
+        )
+        .await?;
+    assert_eq!(explicit_snapshot.len(), 1);
+    assert_eq!(
+        explicit_snapshot[0].values.get(&FieldId::new(100).unwrap()),
+        Some(&FieldValue::String("old".into()))
+    );
+    assert!(!explicit_snapshot[0]
+        .values
+        .contains_key(&FieldId::new(101).unwrap()));
+
+    let checkpoint = workspace.capture_checkpoint().await?;
+    let checkpoint_current = workspace
+        .read_revision_view_at_checkpoint(&checkpoint, form.id, RevisionView::Current)
+        .await?;
+    assert_eq!(checkpoint_current, explicit_snapshot);
+    let metadata_after_read = table
+        .file_io()
+        .new_input(&metadata_location)?
+        .read()
+        .await?;
+    assert_eq!(
+        metadata_after_read, metadata_before_read,
+        "a read must not rewrite Iceberg metadata"
     );
 
     let second = EntryRevision {
@@ -1251,7 +1337,10 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
             ),
             (
                 FieldId::new(113).unwrap(),
-                FieldValue::List(vec![FieldValue::String("AQI=".into()), FieldValue::Null]),
+                FieldValue::List(vec![
+                    FieldValue::String("base64:AQI=".into()),
+                    FieldValue::Null,
+                ]),
             ),
         ]),
         extra_attributes: BTreeMap::new(),

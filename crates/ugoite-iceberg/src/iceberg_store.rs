@@ -3,6 +3,7 @@ use opendal::Operator;
 use serde_json::Value;
 use std::collections::HashSet;
 use ugoite_core::error::{AppError, ErrorCode};
+use ugoite_core::query::EntryScope;
 use ugoite_domain::entry::EntryRevision;
 use ugoite_domain::form::FormDefinition;
 use ugoite_domain::id::SpaceId;
@@ -97,6 +98,26 @@ pub async fn latest_revisions_for_form(
     let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
     let revisions = workspace
         .read_revision_view(form.id, crate::RevisionView::LatestIncludingTombstones)
+        .await?;
+    Ok((form, revisions))
+}
+
+/// Reads only the current revisions admitted by the caller's provider-side
+/// scope. The scope is applied inside the canonical DataFusion latest-state
+/// plan before Arrow/domain decoding.
+pub async fn latest_revisions_for_form_authorized(
+    operator: &Operator,
+    workspace_path: &str,
+    form_name: &str,
+    entry_scope: EntryScope,
+) -> Result<(FormDefinition, Vec<EntryRevision>)> {
+    let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
+    let revisions = workspace
+        .read_revision_view_with_scope(
+            form.id,
+            entry_scope,
+            crate::RevisionView::LatestIncludingTombstones,
+        )
         .await?;
     Ok((form, revisions))
 }

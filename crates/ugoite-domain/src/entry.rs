@@ -1,5 +1,5 @@
 use crate::form::{FieldType, FormDefinition, FormVersion};
-use crate::id::{EntryId, FieldId, FormId, RevisionId};
+use crate::id::{validate_asset_id, EntryId, FieldId, FormId, RevisionId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -34,6 +34,54 @@ pub struct AssetReference {
     pub media_type: String,
     pub size_bytes: u64,
     pub sha256: String,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum AssetReferenceError {
+    InvalidAssetId,
+    EmptyName,
+    EmptyMediaType,
+    InvalidChecksum,
+}
+
+impl fmt::Display for AssetReferenceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::InvalidAssetId => "asset_id is invalid",
+            Self::EmptyName => "name must not be empty",
+            Self::EmptyMediaType => "media_type must not be empty",
+            Self::InvalidChecksum => "sha256 must be 64 lowercase hexadecimal characters",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl std::error::Error for AssetReferenceError {}
+
+impl AssetReference {
+    /// Validate the logical value stored in a Form field.
+    ///
+    /// This is deliberately independent from object storage. An AssetReference
+    /// is valid only when its metadata is complete and its ID follows the same
+    /// identifier contract used by Asset byte APIs.
+    pub fn validate(&self) -> Result<(), AssetReferenceError> {
+        validate_asset_id(&self.asset_id).map_err(|_| AssetReferenceError::InvalidAssetId)?;
+        if self.name.trim().is_empty() {
+            return Err(AssetReferenceError::EmptyName);
+        }
+        if self.media_type.trim().is_empty() {
+            return Err(AssetReferenceError::EmptyMediaType);
+        }
+        if self.sha256.len() != 64
+            || !self
+                .sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err(AssetReferenceError::InvalidChecksum);
+        }
+        Ok(())
+    }
 }
 
 /// Fixed metadata that accompanies every revision independently of a Form's
@@ -176,7 +224,12 @@ impl EntryRevision {
                 .iter()
                 .filter(|field| field.required && !field.deprecated)
             {
-                if matches!(self.values.get(&field.id), None | Some(FieldValue::Null)) {
+                let missing = match self.values.get(&field.id) {
+                    None | Some(FieldValue::Null) => true,
+                    Some(FieldValue::List(values)) => values.is_empty(),
+                    Some(_) => false,
+                };
+                if missing {
                     return Err(RevisionError::RequiredField(field.id));
                 }
             }
@@ -188,6 +241,35 @@ impl EntryRevision {
                     .ok_or(RevisionError::UnknownField(*field_id))?;
                 if !value_matches_type(value, field) {
                     return Err(RevisionError::WrongType(*field_id));
+                }
+                if field.field_type == FieldType::AssetReference {
+                    if let FieldValue::AssetReference(reference) = value {
+                        reference
+                            .validate()
+                            .map_err(|_| RevisionError::InvalidAssetReference(*field_id))?;
+                    }
+                }
+                if field.field_type == FieldType::List
+                    && field
+                        .list_item
+                        .as_ref()
+                        .is_some_and(|item| item.field_type == FieldType::AssetReference)
+                {
+                    if let FieldValue::List(values) = value {
+                        let mut asset_ids = std::collections::BTreeSet::new();
+                        for value in values {
+                            if let FieldValue::AssetReference(reference) = value {
+                                reference
+                                    .validate()
+                                    .map_err(|_| RevisionError::InvalidAssetReference(*field_id))?;
+                                if !asset_ids.insert(reference.asset_id.as_str()) {
+                                    return Err(RevisionError::DuplicateAssetReference(*field_id));
+                                }
+                            } else {
+                                return Err(RevisionError::WrongType(*field_id));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -309,6 +391,8 @@ pub enum RevisionError {
     RequiredField(FieldId),
     UnknownField(FieldId),
     WrongType(FieldId),
+    InvalidAssetReference(FieldId),
+    DuplicateAssetReference(FieldId),
 }
 impl fmt::Display for RevisionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -1,5 +1,6 @@
 mod common;
 use common::setup_operator;
+use ugoite_iceberg::integrity::FakeIntegrityProvider;
 use ugoite_iceberg::{entry, form, index, space};
 
 #[tokio::test]
@@ -269,6 +270,37 @@ fn test_index_req_idx_010_rich_content_parsing() -> anyhow::Result<()> {
 }
 
 #[test]
+fn asset_reference_markdown_values_round_trip_as_complete_json() -> anyhow::Result<()> {
+    let reference = serde_json::json!({
+        "asset_id": "01900000-0000-7000-8000-000000000001",
+        "name": "report.pdf",
+        "media_type": "application/pdf",
+        "size_bytes": 123456,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    });
+    let form_def = serde_json::json!({
+        "name": "Contracts",
+        "fields": {
+            "contract": {"type": "asset_reference"},
+            "documents": {
+                "type": "list",
+                "items": {"type": "asset_reference"}
+            }
+        }
+    });
+    let props = serde_json::json!({
+        "contract": serde_json::to_string(&reference)?,
+        "documents": serde_json::to_string(&serde_json::json!([reference.clone()]))?
+    });
+
+    let (casted, warnings) = index::validate_properties(&props, &form_def)?;
+    assert!(warnings.is_empty());
+    assert_eq!(casted["contract"], reference);
+    assert_eq!(casted["documents"][0], reference);
+    Ok(())
+}
+
+#[test]
 fn timestamp_types_reject_values_with_the_wrong_timezone_contract() -> anyhow::Result<()> {
     let form_def = serde_json::json!({
         "name": "Event",
@@ -342,5 +374,89 @@ async fn test_index_req_idx_001_get_space_stats() -> anyhow::Result<()> {
     let stats = index::get_space_stats(&op, ws_path).await?;
     assert!(stats.is_object());
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn space_stats_count_non_null_typed_values_without_partial_results() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "stats-null-field", "/tmp").await?;
+    let ws_path = "spaces/stats-null-field";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "Note",
+            "fields": {"Body": {"type": "markdown"}},
+        }),
+    )
+    .await?;
+    let integrity = FakeIntegrityProvider;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "with-body",
+        "---\nform: Note\n---\n# With body\n\n## Body\nvalue",
+        "author",
+        &integrity,
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "without-body",
+        "---\nform: Note\n---\n# Without body",
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let stats = index::get_space_stats(&op, ws_path).await?;
+    assert_eq!(stats["entry_count"], 2);
+    assert_eq!(stats["form_stats"]["Note"]["count"], 2);
+    assert_eq!(stats["form_stats"]["Note"]["fields"]["Body"], 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn space_stats_aggregates_tags_across_forms_in_datafusion() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "stats-cross-form-tags", "/tmp").await?;
+    let ws_path = "spaces/stats-cross-form-tags";
+    for form_name in ["Alpha", "Beta"] {
+        form::upsert_form(
+            &op,
+            ws_path,
+            &serde_json::json!({
+                "name": form_name,
+                "fields": {"Body": {"type": "markdown"}},
+            }),
+        )
+        .await?;
+    }
+    let integrity = FakeIntegrityProvider;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "alpha-1",
+        "---\nform: Alpha\ntags: [shared, alpha]\n---\n# Alpha\n\n## Body\nvalue",
+        "author",
+        &integrity,
+    )
+    .await?;
+    entry::create_entry(
+        &op,
+        ws_path,
+        "beta-1",
+        "---\nform: Beta\ntags: [shared, beta]\n---\n# Beta\n\n## Body\nvalue",
+        "author",
+        &integrity,
+    )
+    .await?;
+
+    let stats = index::get_space_stats(&op, ws_path).await?;
+    assert_eq!(stats["tag_counts"]["shared"], 2);
+    assert_eq!(stats["tag_counts"]["alpha"], 1);
+    assert_eq!(stats["tag_counts"]["beta"], 1);
     Ok(())
 }
