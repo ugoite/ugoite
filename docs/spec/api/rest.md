@@ -66,16 +66,18 @@ these destructive/non-compatible operations; the server remains the authority
 for CLI and other protocol callers.
 
 Entry create and update validate Markdown sections against the selected Form.
-Invalid field values, missing required fields, missing Form metadata, and
-unknown fields return HTTP 422 with code `INVALID_INPUT`; they are not internal
-server failures. Invalid row references are also returned as `INVALID_INPUT`
-with the offending field and a corrective message. A referenced Form that does
+Invalid field values and missing required fields return HTTP 422 with code
+`FORM_VALIDATION_FAILED`; unknown fields return HTTP 422 with code
+`UNKNOWN_FORM_FIELDS`. Missing Form metadata and invalid row references return
+HTTP 422 with code `INVALID_INPUT`, with the offending field and a corrective
+message; these are not internal server failures. A referenced Form that does
 not exist returns HTTP 404 with code `FORM_NOT_FOUND`; storage failures remain
 internal/dependency failures. Entry creation validates all of these conditions
 before publishing, so a rejected create leaves no entry or revision behind.
 Asset-reference fields must point to an existing, non-deleted asset; a missing,
 deleted, or otherwise invalid asset reference returns HTTP 422 with code
-`INVALID_INPUT` and identifies the field that needs correction.
+`INVALID_INPUT` or `FORM_VALIDATION_FAILED` and identifies the field that needs
+correction.
 
 Timestamp field formats follow the Iceberg logical type. `timestamp` and
 `timestamp_ns` are timezone-less wall-clock values in the form
