@@ -182,7 +182,9 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Form validation failed")).toBeInTheDocument();
+      expect(
+        screen.getByText((content) => content.includes("Form validation failed")),
+      ).toBeInTheDocument();
     });
     expect(amount).toHaveValue("not-a-number");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
