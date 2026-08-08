@@ -7,6 +7,10 @@ schemas:
     schema:
       type: object
       required:
+      - schema_version
+      - space_id
+      - space_uid
+      - slug
       - id
       - name
       - created_at
@@ -15,6 +19,16 @@ schemas:
       - hmac_key
       - last_rotation
       properties:
+        schema_version:
+          type: integer
+          const: 2
+        space_id:
+          type: string
+        space_uid:
+          type: string
+          format: uuid
+        slug:
+          type: string
         id:
           type: string
         name:
@@ -39,8 +53,9 @@ schemas:
           type: string
           format: date-time
   space_settings:
-    description: Space settings. Membership objects are added lazily by dedicated
-      collaboration operations.
+    description: Current Space settings. Portable membership and authorization
+      state is stored in security/principals.json; legacy membership-shaped keys
+      are unsupported.
     path: spaces/{id}/settings.json
     schema:
       type: object
@@ -49,16 +64,6 @@ schemas:
       properties:
         default_form:
           type: string
-        members:
-          type: object
-          additionalProperties:
-            type: object
-        member_invitations:
-          type: object
-          additionalProperties:
-            type: object
-        membership_version:
-          type: integer
   user_preferences:
     description: Portable user-scoped browser preferences.
     path: users/{sha256(user_id)}/preferences.json

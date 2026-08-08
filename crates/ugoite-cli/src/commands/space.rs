@@ -171,16 +171,6 @@ pub enum SpaceSubCmd {
         #[arg(long, default_value_t = 50)]
         limit: u64,
     },
-    /// Report or apply the breaking Space identity/authentication cutover.
-    AuthMigration {
-        #[arg(value_name = "LOCAL_ROOT")]
-        root_path: String,
-        #[arg(
-            long,
-            help = "Apply the migration. Without this flag, only a secret-free dry-run report is emitted."
-        )]
-        apply: bool,
-    },
 }
 
 fn require_local_root<'a>(root_path: Option<&'a str>, command_name: &str) -> Result<&'a str> {
@@ -443,18 +433,6 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 );
             }
             bail!("{}", backend_api_mode_error(&config, "audit-events"));
-        }
-        SpaceSubCmd::AuthMigration { root_path, apply } => {
-            if validated_base_url(&config)?.is_some() {
-                bail!("auth-migration is an operator-local command");
-            }
-            let op = operator_for_path(&root_path)?;
-            let report = if apply {
-                ugoite_iceberg::space::migrate_authentication_cutover(&op).await?
-            } else {
-                ugoite_iceberg::space::authentication_cutover_report(&op).await?
-            };
-            print_json(&serde_json::to_value(report)?);
         }
     }
     Ok(())

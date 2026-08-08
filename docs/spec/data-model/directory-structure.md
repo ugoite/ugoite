@@ -35,6 +35,10 @@ users/
 
 ```json
 {
+  "schema_version": 2,
+  "space_id": "space-main",
+  "space_uid": "019c1234-5678-7abc-8def-0123456789ab",
+  "slug": "space-main",
   "id": "space-main",
   "name": "space-main",
   "created_at": 1762000000.123,
@@ -53,7 +57,11 @@ The typed public `SpaceMeta` view exposes the identity, timestamp, and storage o
 {"default_form": "Entry"}
 ```
 
-Membership operations add `members`, `member_invitations`, and `membership_version` lazily. UI theme, locale, and selected-Space preferences are user-scoped and belong in `users/{sha256(user_id)}/preferences.json`, not Space settings.
+Portable membership, principal, policy, and authorization-audit state is stored
+in `spaces/{space_id}/security/principals.json`. Membership-shaped keys in
+`settings.json` are legacy markers and are rejected rather than upgraded. UI
+theme, locale, and selected-Space preferences are user-scoped and belong in
+`users/{sha256(user_id)}/preferences.json`, not Space settings.
 
 ## Lazy paths
 

@@ -102,35 +102,44 @@ async fn test_space_req_sto_005_create_space_idempotency() -> anyhow::Result<()>
 }
 
 #[tokio::test]
-async fn authentication_cutover_dry_run_and_migration_use_uuid_directory() -> anyhow::Result<()> {
+async fn legacy_space_metadata_schema_is_rejected() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    space::create_space(&op, "legacy-space", "/tmp").await?;
-    let settings_path = "spaces/legacy-space/settings.json";
-    let mut settings: Value = serde_json::from_slice(&op.read(settings_path).await?.to_vec())?;
-    settings["members"] = serde_json::json!({"old-user": {"role": "owner"}});
-    settings["member_invitations"] = serde_json::json!({"raw-secret": {}});
-    op.write(settings_path, serde_json::to_vec(&settings)?)
-        .await?;
+    space::create_space(&op, "legacy-schema", "/tmp").await?;
+    let meta_path = "spaces/legacy-schema/meta.json";
+    let mut meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    meta["schema_version"] = Value::from(1);
+    op.write(meta_path, serde_json::to_vec(&meta)?).await?;
 
-    let report = space::authentication_cutover_report(&op).await?;
-    assert_eq!(report.len(), 1);
-    assert_eq!(report[0].member_count, 1);
-    assert!(report[0].requires_migration);
-    assert!(!serde_json::to_string(&report)?.contains("raw-secret"));
+    let error = space::get_space(&op, "legacy-schema").await.unwrap_err();
+    assert!(error.to_string().contains("unsupported Space layout"));
+    let workspace_error = form::list_forms(&op, "spaces/legacy-schema")
+        .await
+        .unwrap_err();
+    assert!(workspace_error
+        .to_string()
+        .contains("unsupported Space layout"));
+    Ok(())
+}
 
-    let migrated = space::migrate_authentication_cutover(&op).await?;
-    assert_eq!(migrated.len(), 1);
-    assert!(!migrated[0].requires_migration);
-    let id = migrated[0].target_space_id.to_string();
-    assert!(op.exists(&format!("spaces/{id}/meta.json")).await?);
-    assert!(!op.exists("spaces/legacy-space/meta.json").await?);
-    let settings: Value = serde_json::from_slice(
-        &op.read(&format!("spaces/{id}/settings.json"))
-            .await?
-            .to_vec(),
-    )?;
-    assert!(settings.get("members").is_none());
-    assert!(settings.get("member_invitations").is_none());
+#[tokio::test]
+async fn incomplete_current_space_metadata_is_rejected() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "incomplete-metadata", "/tmp").await?;
+    let meta_path = "spaces/incomplete-metadata/meta.json";
+    let mut meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    meta.as_object_mut().unwrap().remove("storage");
+    op.write(meta_path, serde_json::to_vec(&meta)?).await?;
+
+    let error = space::get_space(&op, "incomplete-metadata")
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("unsupported Space layout"));
+    let workspace_error = form::list_forms(&op, "spaces/incomplete-metadata")
+        .await
+        .unwrap_err();
+    assert!(workspace_error
+        .to_string()
+        .contains("unsupported Space layout"));
     Ok(())
 }
 

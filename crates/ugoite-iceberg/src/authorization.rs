@@ -2,12 +2,9 @@
 
 use crate::audit;
 use anyhow::{anyhow, bail, Context, Result};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{SecondsFormat, Utc};
 use opendal::Operator;
-use rand::TryRng;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, OnceLock},
@@ -21,6 +18,8 @@ use ugoite_domain::identity::{
 use uuid::Uuid;
 
 const AUTHORIZATION_FILE: &str = "security/principals.json";
+const LEGACY_AUTHORIZATION_FILE: &str = "authorization.json";
+const LEGACY_MIGRATION_STATE_FILE: &str = "security/migration-state.json";
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -70,8 +69,6 @@ pub struct AuthorizationState {
     pub agents: BTreeMap<Uuid, AgentPrincipal>,
     #[serde(default)]
     pub agent_grants: BTreeMap<Uuid, BTreeSet<Action>>,
-    #[serde(default)]
-    owner_claims: BTreeMap<Uuid, OwnerClaim>,
     /// Reserved monotonic revision for future synchronization protocols.
     pub revision: u64,
 }
@@ -81,15 +78,6 @@ pub struct PolicyRevision {
     pub policy: AccessPolicy,
     pub changed_at: String,
     pub actor_principal_id: Uuid,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct OwnerClaim {
-    claim_id: Uuid,
-    principal_id: Uuid,
-    token_hash: String,
-    expires_at: String,
-    used_at: Option<String>,
 }
 
 #[derive(Clone)]
@@ -154,32 +142,70 @@ impl Authorizer {
             policy_history: BTreeMap::new(),
             agents: BTreeMap::new(),
             agent_grants: BTreeMap::new(),
-            owner_claims: BTreeMap::new(),
             revision: 1,
         };
         self.write_state(space_id, &state).await
     }
 
-    /// Upgrades a pre-identity Space to portable authorization state. The generated
-    /// principal is intentionally left unbound until a node admin performs owner rebinding.
-    pub async fn ensure_migrated_owner(
+    /// Ensures an operator-created Space has the first current-release owner.
+    /// Existing authorization state is validated rather than upgraded.
+    pub async fn validate_current_layout(&self, space_id: &str, space_uid: Uuid) -> Result<()> {
+        self.validated_current_owner(space_id, space_uid)
+            .await
+            .map(|_| ())
+    }
+
+    async fn validated_current_owner(
+        &self,
+        space_id: &str,
+        space_uid: Uuid,
+    ) -> Result<Option<Uuid>> {
+        for marker in [LEGACY_AUTHORIZATION_FILE, LEGACY_MIGRATION_STATE_FILE] {
+            let path = format!("spaces/{space_id}/{marker}");
+            if self.operator.exists(&path).await? {
+                bail!("unsupported Space layout: legacy marker {marker} is present");
+            }
+        }
+
+        let settings_path = format!("spaces/{space_id}/settings.json");
+        if self.operator.exists(&settings_path).await? {
+            let settings: serde_json::Value =
+                serde_json::from_slice(&self.operator.read(&settings_path).await?.to_vec())?;
+            if let Some(legacy_key) = crate::service::MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS
+                .iter()
+                .find(|key| settings.get(*key).is_some())
+            {
+                bail!(
+                    "unsupported Space layout: legacy membership setting {legacy_key} is present"
+                );
+            }
+        }
+
+        let path = state_path(space_id);
+        if !self.operator.exists(&path).await? {
+            return Ok(None);
+        }
+
+        let state = self.state(space_id).await?;
+        if state.space_uid != space_uid {
+            bail!("Space metadata and authorization state use different space_uid values");
+        }
+        state
+            .memberships
+            .values()
+            .find(|membership| matches!(membership.role, SpaceRole::Owner))
+            .map(|membership| Some(membership.principal_id))
+            .ok_or_else(|| anyhow!("Space has no owner principal"))
+    }
+
+    pub async fn ensure_owner(
         &self,
         space_id: &str,
         space_uid: Uuid,
         display_name: &str,
     ) -> Result<Uuid> {
-        let path = state_path(space_id);
-        if self.operator.exists(&path).await? {
-            let state = self.state(space_id).await?;
-            if state.space_uid != space_uid {
-                bail!("Space metadata and authorization state use different space_uid values");
-            }
-            return state
-                .memberships
-                .values()
-                .find(|membership| matches!(membership.role, SpaceRole::Owner))
-                .map(|membership| membership.principal_id)
-                .ok_or_else(|| anyhow!("Space has no owner principal"));
+        if let Some(owner_principal_id) = self.validated_current_owner(space_id, space_uid).await? {
+            return Ok(owner_principal_id);
         }
         let principal_id = Uuid::now_v7();
         self.initialize_owner(space_id, space_uid, principal_id, display_name)
@@ -603,86 +629,6 @@ impl Authorizer {
         Ok(())
     }
 
-    pub async fn issue_owner_claim(&self, space_id: &str, actor: Uuid) -> Result<String> {
-        self.require(space_id, actor, Action::Share, None).await?;
-        let _guard = self.lock.lock().await;
-        let mut state = self.state(space_id).await?;
-        if !state
-            .memberships
-            .get(&actor)
-            .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
-        {
-            bail!("only an active Space owner can create a migration claim");
-        }
-        let mut bytes = [0_u8; 32];
-        rand::rngs::SysRng
-            .try_fill_bytes(&mut bytes)
-            .map_err(|error| anyhow!("secure randomness unavailable: {error}"))?;
-        let token = URL_SAFE_NO_PAD.encode(bytes);
-        let claim_id = Uuid::now_v7();
-        state.owner_claims.insert(
-            claim_id,
-            OwnerClaim {
-                claim_id,
-                principal_id: actor,
-                token_hash: hex::encode(Sha256::digest(token.as_bytes())),
-                expires_at: (Utc::now() + chrono::Duration::hours(24)).to_rfc3339(),
-                used_at: None,
-            },
-        );
-        state.revision += 1;
-        self.write_state(space_id, &state).await?;
-        Ok(token)
-    }
-
-    pub async fn consume_owner_claim(
-        &self,
-        space_id: &str,
-        principal_id: Uuid,
-        token: &str,
-    ) -> Result<()> {
-        let _guard = self.lock.lock().await;
-        let mut state = self.state(space_id).await?;
-        let hash = hex::encode(Sha256::digest(token.trim().as_bytes()));
-        let claim = state
-            .owner_claims
-            .values_mut()
-            .find(|claim| claim.principal_id == principal_id && claim.token_hash == hash)
-            .ok_or_else(|| AppError::forbidden("owner migration claim is invalid"))?;
-        if claim.used_at.is_some()
-            || chrono::DateTime::parse_from_rfc3339(&claim.expires_at)
-                .map(|expires| expires.with_timezone(&Utc) <= Utc::now())
-                .unwrap_or(true)
-        {
-            return Err(AppError::forbidden("owner migration claim is invalid or expired").into());
-        }
-        claim.used_at = Some(now_iso());
-        state.revision += 1;
-        self.write_state(space_id, &state).await
-    }
-
-    pub async fn validate_owner_claim(
-        &self,
-        space_id: &str,
-        principal_id: Uuid,
-        token: &str,
-    ) -> Result<()> {
-        let state = self.state(space_id).await?;
-        let hash = hex::encode(Sha256::digest(token.trim().as_bytes()));
-        let valid = state.owner_claims.values().any(|claim| {
-            claim.principal_id == principal_id
-                && claim.token_hash == hash
-                && claim.used_at.is_none()
-                && chrono::DateTime::parse_from_rfc3339(&claim.expires_at)
-                    .map(|expires| expires.with_timezone(&Utc) > Utc::now())
-                    .unwrap_or(false)
-        });
-        if !valid {
-            return Err(AppError::forbidden("owner migration claim is invalid or expired").into());
-        }
-        Ok(())
-    }
-
     pub async fn filter_authorized_resources(
         &self,
         space_id: &str,
@@ -872,7 +818,7 @@ fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::operator_from_uri;
+    use ugoite_storage::operator_from_uri;
 
     #[tokio::test]
     async fn authorizer_enforces_roles_and_last_owner() -> Result<()> {
@@ -1044,6 +990,62 @@ mod tests {
             Some(PrincipalState::Revoked)
         ));
         assert!(state.policies.contains_key(&resource.key()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_authorization_layout_is_rejected_before_owner_creation() -> Result<()> {
+        let op = operator_from_uri("memory://legacy-authorization-layout")?;
+        op.create_dir("spaces/demo/").await?;
+        op.write("spaces/demo/authorization.json", "{}").await?;
+        let authorizer = Authorizer::new(op.clone());
+
+        let error = authorizer
+            .ensure_owner("demo", Uuid::now_v7(), "Owner")
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("unsupported Space layout"));
+        assert!(!op.exists("spaces/demo/security/principals.json").await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_membership_settings_are_rejected_before_owner_creation() -> Result<()> {
+        let op = operator_from_uri("memory://legacy-membership-settings")?;
+        op.create_dir("spaces/demo/").await?;
+        op.write(
+            "spaces/demo/settings.json",
+            serde_json::to_vec(&serde_json::json!({"members": {"old-user": "owner"}}))?,
+        )
+        .await?;
+        let authorizer = Authorizer::new(op.clone());
+
+        let error = authorizer
+            .ensure_owner("demo", Uuid::now_v7(), "Owner")
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("unsupported Space layout"));
+        assert!(!op.exists("spaces/demo/security/principals.json").await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn interrupted_migration_layout_is_rejected_before_owner_creation() -> Result<()> {
+        let op = operator_from_uri("memory://interrupted-migration-layout")?;
+        op.create_dir("spaces/demo/").await?;
+        op.write("spaces/demo/security/migration-state.json", "{}")
+            .await?;
+        let authorizer = Authorizer::new(op.clone());
+
+        let error = authorizer
+            .ensure_owner("demo", Uuid::now_v7(), "Owner")
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("unsupported Space layout"));
+        assert!(!op.exists("spaces/demo/security/principals.json").await?);
         Ok(())
     }
 }

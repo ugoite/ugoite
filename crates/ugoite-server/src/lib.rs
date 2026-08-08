@@ -102,17 +102,6 @@ impl AppState {
     }
 
     pub async fn initialize_node(&self) -> anyhow::Result<()> {
-        let pending = space::authentication_cutover_report(self.service.operator())
-            .await?
-            .into_iter()
-            .filter(|report| report.requires_migration)
-            .collect::<Vec<_>>();
-        if !pending.is_empty() {
-            anyhow::bail!(
-                "{} Space(s) require the authentication cutover; run `ugoite space auth-migration <root>` for a dry run, back up the reported Spaces, then rerun with `--apply`",
-                pending.len()
-            );
-        }
         if let Some(bootstrap) = self.identity.bootstrap_if_needed().await? {
             println!(
                 "Ugoite setup URL (expires {}): {}",
@@ -248,14 +237,6 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route(
             "/spaces/{space_id}/policies/{kind}/{resource_id}",
             get(get_access_policy).put(put_access_policy),
-        )
-        .route(
-            "/spaces/{space_id}/bindings/rebind-owner",
-            post(rebind_space_owner),
-        )
-        .route(
-            "/spaces/{space_id}/bindings/owner-claim",
-            post(issue_space_owner_claim),
         )
         .route("/spaces", get(list_spaces).post(create_space))
         .route("/spaces/{space_id}", get(get_space).patch(patch_space))
@@ -743,6 +724,27 @@ async fn auth_setup_finish(
     State(state): State<AppState>,
     Json(payload): Json<SetupFinishRequest>,
 ) -> ApiResult<Response> {
+    // Validate every existing Space before the identity service consumes the
+    // one-time setup secret and persists the new account. Current-release
+    // setup does not upgrade old Space layouts, so an invalid Space must leave
+    // setup retryable with the original secret.
+    let existing_spaces = state
+        .service
+        .list_space_ids()
+        .await
+        .map_err(ApiError::from_core)?;
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    for space_id in &existing_spaces {
+        let space_uid = state
+            .service
+            .space_uid(space_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        authorizer
+            .validate_current_layout(space_id, space_uid)
+            .await
+            .map_err(ApiError::from_core)?;
+    }
     let result = state
         .identity
         .finish_setup_registration(
@@ -752,11 +754,6 @@ async fn auth_setup_finish(
         )
         .await
         .map_err(auth_error)?;
-    let existing_spaces = state
-        .service
-        .list_space_ids()
-        .await
-        .map_err(ApiError::from_core)?;
     let mut claimed_space_uids = Vec::new();
     if existing_spaces.is_empty() {
         let principal_id = Uuid::now_v7();
@@ -777,7 +774,6 @@ async fn auth_setup_finish(
             .map_err(auth_error)?;
         claimed_space_uids.push(space_uid);
     } else {
-        let authorizer = Authorizer::new(state.service.operator().clone());
         for space_id in existing_spaces {
             let space_uid = state
                 .service
@@ -785,7 +781,7 @@ async fn auth_setup_finish(
                 .await
                 .map_err(ApiError::from_core)?;
             let principal_id = authorizer
-                .ensure_migrated_owner(&space_id, space_uid, &result.account.display_name)
+                .ensure_owner(&space_id, space_uid, &result.account.display_name)
                 .await
                 .map_err(ApiError::from_core)?;
             state
@@ -794,7 +790,7 @@ async fn auth_setup_finish(
                     space_uid,
                     principal_id,
                     node_account_id: result.account.account_id,
-                    binding_method: BindingMethod::Migration,
+                    binding_method: BindingMethod::Setup,
                 })
                 .await
                 .map_err(auth_error)?;
@@ -3031,87 +3027,6 @@ async fn put_access_policy(
         .map_err(ApiError::from_core)?;
     Ok(Json(
         serde_json::to_value(policy).map_err(|error| auth_error(error.into()))?,
-    ))
-}
-
-#[derive(Deserialize)]
-struct RebindOwnerPayload {
-    #[serde(default)]
-    principal_id: Option<Uuid>,
-    claim_secret: String,
-}
-
-async fn issue_space_owner_claim(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-) -> ApiResult<Json<Value>> {
-    require_recent_passkey(&identity)?;
-    let actor = principal_for_space(&state, &space_id, &identity).await?;
-    let claim_secret = Authorizer::new(state.service.operator().clone())
-        .issue_owner_claim(&space_id, actor)
-        .await
-        .map_err(ApiError::from_core)?;
-    Ok(Json(json!({
-        "principal_id": actor,
-        "claim_secret": claim_secret,
-        "expires_in": 86400
-    })))
-}
-
-async fn rebind_space_owner(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-    Json(payload): Json<RebindOwnerPayload>,
-) -> ApiResult<Json<Value>> {
-    require_recent_passkey(&identity)?;
-    let authorizer = Authorizer::new(state.service.operator().clone());
-    let space_uid = state
-        .service
-        .space_uid(&space_id)
-        .await
-        .map_err(ApiError::from_core)?;
-    let migrated_owner = authorizer
-        .ensure_migrated_owner(&space_id, space_uid, &identity.display_name)
-        .await
-        .map_err(ApiError::from_core)?;
-    let authorization = authorizer
-        .state(&space_id)
-        .await
-        .map_err(ApiError::from_core)?;
-    let principal_id = payload.principal_id.unwrap_or(migrated_owner);
-    if !authorization
-        .memberships
-        .get(&principal_id)
-        .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
-    {
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "target principal is not a Space owner",
-        ));
-    }
-    let space_uid = authorization.space_uid;
-    authorizer
-        .validate_owner_claim(&space_id, principal_id, &payload.claim_secret)
-        .await
-        .map_err(ApiError::from_core)?;
-    state
-        .identity
-        .add_binding(ugoite_domain::identity::PrincipalBinding {
-            space_uid,
-            principal_id,
-            node_account_id: identity.account_id,
-            binding_method: BindingMethod::Migration,
-        })
-        .await
-        .map_err(auth_error)?;
-    authorizer
-        .consume_owner_claim(&space_id, principal_id, &payload.claim_secret)
-        .await
-        .map_err(ApiError::from_core)?;
-    Ok(Json(
-        json!({"space_uid": space_uid, "principal_id": principal_id, "binding_method": "migration"}),
     ))
 }
 

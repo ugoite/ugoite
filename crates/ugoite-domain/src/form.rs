@@ -381,7 +381,6 @@ pub enum FormChange {
 #[serde(rename_all = "snake_case")]
 pub enum Compatibility {
     Compatible,
-    MigrationRequired,
     Breaking,
 }
 

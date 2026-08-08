@@ -25,8 +25,10 @@ For every Space, preserve the complete prefix in its configured OpenDAL
 backend. A Space is an Iceberg namespace: its Catalog Head, reachable
 publication records, Iceberg metadata, manifests, data files, entries, assets,
 saved SQL, and Space authorization state belong together. Stop writes and use
-either a complete prefix copy or the backend's native consistent snapshot. Test
-that the restored Space opens with a compatible Ugoite version.
+either a complete prefix copy or the backend's native consistent snapshot.
+Catalog Head object versioning is required for disaster recovery. Test that the
+restored Space opens with the current Ugoite format; older or incomplete layouts
+are unsupported.
 
 Do not select files from an object listing, rebuild Iceberg metadata, or
 reconstruct Catalog Head. Head and the Iceberg-owned immutable files are the
@@ -59,7 +61,7 @@ Restore each configured backend/prefix while writes are stopped, restore the
 node secret before starting the node, and verify `/health`, authentication,
 Space listing, and a representative read/write/restore path. Moving a Space
 moves the Space prefix only. Re-establish node-local account bindings on the
-destination through the supported claim/binding flow.
+destination through normal setup.
 
 ## Upgrade
 

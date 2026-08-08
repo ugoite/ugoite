@@ -4,17 +4,17 @@ use chrono::Utc;
 use futures::TryStreamExt;
 use opendal::Operator;
 use rand::TryRng;
-use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use url::Url;
 
 use crate::form;
-use crate::storage::operator_from_uri_with_endpoint;
-use crate::storage::{OpendalStorage, StorageBackend};
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::id::validate_space_id;
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
+use ugoite_storage::{operator_from_uri_with_endpoint, OpendalStorage, StorageBackend};
+
+pub(crate) const CURRENT_SPACE_SCHEMA_VERSION: u64 = 2;
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct StorageConnectionTestConfig {
@@ -115,6 +115,7 @@ fn apply_local_space_permissions(_op: &Operator, _space_id: &str) -> Result<()> 
 async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     storage: &S,
     directory_id: &str,
+    space_uid: uuid::Uuid,
     slug: &str,
     root_path: &str,
 ) -> Result<()> {
@@ -141,9 +142,9 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     let (hmac_key_id, hmac_key, last_rotation) = generate_hmac_material();
 
     let meta = serde_json::json!({
-        "schema_version": 2,
+        "schema_version": CURRENT_SPACE_SCHEMA_VERSION,
         "space_id": directory_id,
-        "space_uid": directory_id,
+        "space_uid": space_uid,
         "slug": slug,
         "id": directory_id,
         "name": slug,
@@ -172,7 +173,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
 
 pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<()> {
     let storage = OpendalStorage::from_operator(op);
-    create_space_with_storage(&storage, name, name, root_path).await?;
+    create_space_with_storage(&storage, name, uuid::Uuid::now_v7(), name, root_path).await?;
     let ws_path = format!("spaces/{name}");
     // Bootstrap a user-creatable starter form so first-entry authoring works immediately.
     form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
@@ -192,7 +193,7 @@ pub async fn create_space_with_identity(
 ) -> Result<()> {
     let directory_id = space_id.to_string();
     let storage = OpendalStorage::from_operator(op);
-    create_space_with_storage(&storage, &directory_id, slug, root_path).await?;
+    create_space_with_storage(&storage, &directory_id, space_id, slug, root_path).await?;
     let ws_path = format!("spaces/{directory_id}");
     form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
     apply_local_space_permissions(op, &directory_id)?;
@@ -233,165 +234,6 @@ async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Re
 pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
     let storage = OpendalStorage::from_operator(op);
     list_spaces_with_storage(&storage).await
-}
-
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct SpaceMigrationReport {
-    pub current_path: String,
-    pub target_space_id: uuid::Uuid,
-    pub schema_version: u64,
-    pub member_count: usize,
-    pub requires_migration: bool,
-}
-
-pub async fn authentication_cutover_report(op: &Operator) -> Result<Vec<SpaceMigrationReport>> {
-    let mut reports = Vec::new();
-    for directory_id in list_spaces(op).await? {
-        let meta_path = format!("spaces/{directory_id}/meta.json");
-        let meta: serde_json::Value = serde_json::from_slice(&op.read(&meta_path).await?.to_vec())?;
-        let target_space_id = meta
-            .get("space_id")
-            .or_else(|| meta.get("space_uid"))
-            .and_then(serde_json::Value::as_str)
-            .and_then(|value| uuid::Uuid::parse_str(value).ok())
-            .unwrap_or_else(|| deterministic_migration_space_id(&directory_id, &meta));
-        let settings_path = format!("spaces/{directory_id}/settings.json");
-        let member_count = if op.exists(&settings_path).await? {
-            let settings: serde_json::Value =
-                serde_json::from_slice(&op.read(&settings_path).await?.to_vec())?;
-            settings
-                .get("members")
-                .or_else(|| settings.get("member_roles"))
-                .and_then(serde_json::Value::as_object)
-                .map_or(0, serde_json::Map::len)
-        } else {
-            0
-        };
-        reports.push(SpaceMigrationReport {
-            current_path: format!("spaces/{directory_id}"),
-            target_space_id,
-            schema_version: meta
-                .get("schema_version")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(1),
-            member_count,
-            requires_migration: directory_id != target_space_id.to_string()
-                || meta
-                    .get("schema_version")
-                    .and_then(serde_json::Value::as_u64)
-                    != Some(2)
-                || op
-                    .exists(&format!(
-                        "spaces/{directory_id}/security/migration-state.json"
-                    ))
-                    .await?,
-        });
-    }
-    Ok(reports)
-}
-
-fn deterministic_migration_space_id(directory_id: &str, meta: &serde_json::Value) -> uuid::Uuid {
-    let timestamp_millis = meta
-        .get("created_at")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|created_at| chrono::DateTime::parse_from_rfc3339(created_at).ok())
-        .map(|created_at| created_at.timestamp_millis().max(0) as u64)
-        .unwrap_or_default();
-    let created_at = meta
-        .get("created_at")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-    let digest = Sha256::digest(
-        format!("ugoite-space-migration-v1\n{directory_id}\n{created_at}").as_bytes(),
-    );
-    let mut bytes = [0_u8; 16];
-    bytes[..6].copy_from_slice(&timestamp_millis.to_be_bytes()[2..]);
-    bytes[6..].copy_from_slice(&digest[..10]);
-    bytes[6] = (bytes[6] & 0x0f) | 0x70;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    uuid::Uuid::from_bytes(bytes)
-}
-
-pub async fn migrate_authentication_cutover(op: &Operator) -> Result<Vec<SpaceMigrationReport>> {
-    let reports = authentication_cutover_report(op).await?;
-    for report in reports.iter().filter(|report| report.requires_migration) {
-        let source = format!("{}/", report.current_path);
-        let target = format!("spaces/{}/", report.target_space_id);
-        let marker = format!("{target}security/migration-state.json");
-        if source != target && op.exists(&target).await? && !op.exists(&marker).await? {
-            return Err(anyhow!("migration target already exists: {target}"));
-        }
-        if !op.exists(&marker).await? {
-            op.create_dir(&format!("{target}security/")).await?;
-            op.write(
-                &marker,
-                serde_json::to_vec(&serde_json::json!({
-                    "schema_version": 1,
-                    "source": report.current_path,
-                    "target_space_id": report.target_space_id,
-                    "state": "copying"
-                }))?,
-            )
-            .await?;
-        }
-        if source != target {
-            for entry in op.list_with(&source).recursive(true).await? {
-                if !entry.metadata().mode().is_file() {
-                    continue;
-                }
-                let suffix = entry
-                    .path()
-                    .strip_prefix(&source)
-                    .ok_or_else(|| anyhow!("listed migration object escaped its source prefix"))?;
-                let contents = op.read(entry.path()).await?;
-                op.write(&format!("{target}{suffix}"), contents).await?;
-            }
-        }
-        let meta_path = format!("{target}meta.json");
-        let mut meta: serde_json::Value =
-            serde_json::from_slice(&op.read(&meta_path).await?.to_vec())?;
-        let slug = meta
-            .get("slug")
-            .or_else(|| meta.get("name"))
-            .or_else(|| meta.get("id"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("space")
-            .to_string();
-        meta["schema_version"] = serde_json::json!(2);
-        meta["space_id"] = serde_json::json!(report.target_space_id);
-        meta["space_uid"] = serde_json::json!(report.target_space_id);
-        meta["id"] = serde_json::json!(report.target_space_id);
-        meta["slug"] = serde_json::json!(slug);
-        op.write(&meta_path, serde_json::to_vec_pretty(&meta)?)
-            .await?;
-
-        let settings_path = format!("{target}settings.json");
-        if op.exists(&settings_path).await? {
-            let mut settings: serde_json::Value =
-                serde_json::from_slice(&op.read(&settings_path).await?.to_vec())?;
-            if let Some(object) = settings.as_object_mut() {
-                for key in crate::service::MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS {
-                    object.remove(*key);
-                }
-            }
-            op.write(&settings_path, serde_json::to_vec_pretty(&settings)?)
-                .await?;
-        }
-        let old_authorization = format!("{target}authorization.json");
-        let new_authorization = format!("{target}security/principals.json");
-        if op.exists(&old_authorization).await? && !op.exists(&new_authorization).await? {
-            let contents = op.read(&old_authorization).await?;
-            op.write(&new_authorization, contents).await?;
-            op.delete(&old_authorization).await?;
-        }
-        if source != target {
-            op.delete_with(&source).recursive(true).await?;
-        }
-        if op.exists(&marker).await? {
-            op.delete(&marker).await?;
-        }
-    }
-    authentication_cutover_report(op).await
 }
 
 async fn get_space_with_storage<S: StorageBackend + ?Sized>(
@@ -442,32 +284,59 @@ async fn ensure_space_identity<S: StorageBackend + ?Sized>(
     name: &str,
 ) -> Result<serde_json::Value> {
     let meta_path = format!("spaces/{name}/meta.json");
-    let mut meta: serde_json::Value = storage.read_json(&meta_path).await?;
-    let object = meta
-        .as_object_mut()
-        .ok_or_else(|| anyhow!("Space metadata must be a JSON object"))?;
-    let mut changed = false;
-    if !object
-        .get("space_uid")
-        .is_some_and(serde_json::Value::is_string)
-    {
-        object.insert(
-            "space_uid".to_string(),
-            serde_json::Value::String(uuid::Uuid::now_v7().to_string()),
-        );
-        changed = true;
-    }
-    if !object.get("slug").is_some_and(serde_json::Value::is_string) {
-        object.insert(
-            "slug".to_string(),
-            serde_json::Value::String(name.to_string()),
-        );
-        changed = true;
-    }
-    if changed {
-        storage.write_json(&meta_path, &meta).await?;
-    }
+    let meta: serde_json::Value = storage.read_json(&meta_path).await?;
+    validate_current_space_metadata(&meta)?;
     Ok(meta)
+}
+
+pub(crate) fn validate_current_space_metadata(meta: &serde_json::Value) -> Result<uuid::Uuid> {
+    #[derive(serde::Deserialize)]
+    struct CurrentSpaceMetadata {
+        schema_version: u64,
+        space_id: String,
+        space_uid: uuid::Uuid,
+        slug: String,
+        id: String,
+        name: String,
+        created_at: f64,
+        storage: StorageConfig,
+        hmac_key_id: String,
+        hmac_key: String,
+        last_rotation: String,
+    }
+
+    let metadata: CurrentSpaceMetadata = serde_json::from_value(meta.clone()).map_err(|error| {
+        anyhow!("unsupported Space layout: incomplete or invalid metadata: {error}")
+    })?;
+    if metadata.schema_version != CURRENT_SPACE_SCHEMA_VERSION {
+        return Err(anyhow!(
+            "unsupported Space layout: metadata schema_version must be 2"
+        ));
+    }
+    for (field, value) in [
+        ("space_id", metadata.space_id.as_str()),
+        ("slug", metadata.slug.as_str()),
+        ("id", metadata.id.as_str()),
+        ("name", metadata.name.as_str()),
+        ("storage.type", metadata.storage.storage_type.as_str()),
+        ("hmac_key_id", metadata.hmac_key_id.as_str()),
+        ("hmac_key", metadata.hmac_key.as_str()),
+        ("last_rotation", metadata.last_rotation.as_str()),
+    ] {
+        if value.trim().is_empty() {
+            return Err(anyhow!(
+                "unsupported Space layout: required metadata field {field} is empty"
+            ));
+        }
+    }
+    if !metadata.created_at.is_finite()
+        || chrono::DateTime::parse_from_rfc3339(&metadata.last_rotation).is_err()
+    {
+        return Err(anyhow!(
+            "unsupported Space layout: metadata timestamps are invalid"
+        ));
+    }
+    Ok(metadata.space_uid)
 }
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {

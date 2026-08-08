@@ -60,7 +60,6 @@ const normalizePathname = (pathname: string): string => {
 };
 
 const AUTHENTICATED_PORTABLE_PREFERENCES_PREFIXES = [
-  "/entries",
   "/spaces",
 ] as const;
 

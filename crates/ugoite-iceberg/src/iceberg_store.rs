@@ -12,23 +12,14 @@ use uuid::Uuid;
 
 async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<SpaceId> {
     let metadata_path = format!("{}/meta.json", workspace_path.trim_end_matches('/'));
-    if operator.exists(&metadata_path).await? {
-        let metadata: Value =
-            serde_json::from_slice(&operator.read(&metadata_path).await?.to_vec())?;
-        if let Some(raw) = metadata
-            .get("space_uid")
-            .or_else(|| metadata.get("space_id"))
-            .and_then(Value::as_str)
-        {
-            if let Ok(uuid) = Uuid::parse_str(raw) {
-                return Ok(SpaceId::from(uuid));
-            }
-        }
+    if !operator.exists(&metadata_path).await? {
+        return Err(anyhow::anyhow!(
+            "unsupported Space layout: missing immutable metadata at {metadata_path}"
+        ));
     }
-    Ok(SpaceId::from(Uuid::new_v5(
-        &Uuid::NAMESPACE_URL,
-        workspace_path.as_bytes(),
-    )))
+    let metadata: Value = serde_json::from_slice(&operator.read(&metadata_path).await?.to_vec())?;
+    let uuid = crate::space::validate_current_space_metadata(&metadata)?;
+    Ok(SpaceId::from(uuid))
 }
 
 /// Opens the authoritative logical Space workspace. Core deliberately sees no

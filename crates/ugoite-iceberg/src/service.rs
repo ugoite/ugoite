@@ -12,7 +12,6 @@ use crate::{
         effective_actions_for_state, AuthorizationState, Authorizer, ResourceKind, ResourceRef,
     },
     entry, form, iceberg_store, index, preferences, saved_sql, search, space, sql_session,
-    storage::operator_from_uri,
 };
 use crate::{CheckpointIntegrityError, CheckpointUnavailable, SpaceCheckpoint};
 use ugoite_core::error::{AppError, ErrorCode};
@@ -22,6 +21,7 @@ use ugoite_domain::id::{
     validate_revision_id, validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
 };
 use ugoite_domain::identity::Action;
+use ugoite_storage::operator_from_uri;
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "admin_user_ids",

@@ -1341,11 +1341,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                         <dt>{t("common.form")}</dt>
                         <dd>
                           <A
-                            href={`/spaces/${props.spaceId()}/forms/${
+                            href={`/spaces/${props.spaceId()}/forms?form=${
                               encodeURIComponent(
                                 currentEntry().form || "",
                               )
-                            }`}
+                            }&tab=entries`}
                             class="ui-link"
                           >
                             {currentEntry().form}

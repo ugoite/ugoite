@@ -76,8 +76,6 @@ export const OPENAPI_PATHS = [
   "/spaces/{space_id}/assets",
   "/spaces/{space_id}/assets/{asset_id}",
   "/spaces/{space_id}/audit",
-  "/spaces/{space_id}/bindings/owner-claim",
-  "/spaces/{space_id}/bindings/rebind-owner",
   "/spaces/{space_id}/checkpoints",
   "/spaces/{space_id}/checkpoints/diff",
   "/spaces/{space_id}/entries",

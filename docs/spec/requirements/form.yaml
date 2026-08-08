@@ -35,12 +35,12 @@ requirements:
   - SPEC-STORIES-CORE
   - SPEC-UI-PAGES
   id: REQ-FORM-002
-  title: Form Migration Strategy
-  description: 'When updating a form definition, the system MUST allow specifying
+  title: Form Evolution Boundary
+  description: 'Before v1, Form updates MUST preserve existing physical field
 
-    migration strategies for existing fields (for example: set to null,
+    types and IDs. Breaking changes MUST be rejected with an explicit error;
 
-    set a default value, or keep as-is).
+    callers can add a new field instead of migrating existing values.
 
     '
   related_spec:

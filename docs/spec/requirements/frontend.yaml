@@ -616,9 +616,9 @@ requirements:
 
     S3, remote) with connection validation before saving. The test flow MUST surface any optional remote endpoint needed for a real backend probe.
 
-    The UI MUST explain that changing `storage_config.uri` updates saved metadata
+    The UI MUST explain that changing `storage_config.uri` updates saved
 
-    only until per-space routing or migration support is implemented.
+    configuration metadata only and does not move the current Space.
 
     '
   related_spec:
@@ -795,31 +795,6 @@ requirements:
   - SPEC-UI-OVERVIEW
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
-  id: REQ-FE-032
-  title: Legacy Entries Route Redirect
-  description: 'The legacy /entries UI route MUST redirect users to /spaces.
-
-    '
-  related_spec:
-  - features/index.md
-  priority: low
-  status: implemented
-  verification: traced
-  tests:
-  - file: frontend/src/components/create-dialogs.test.tsx
-  - file: frontend/src/routes/entries/index.test.tsx
-- set_id: REQCAT-FRONTEND
-  source_file: requirements/frontend.yaml
-  scope: Frontend route, component, and interaction requirements.
-  linked_policies:
-  - POL-006
-  - POL-009
-  - POL-013
-  - POL-014
-  linked_specifications:
-  - SPEC-UI-OVERVIEW
-  - SPEC-UI-PAGES
-  - SPEC-ARCH-INTERFACE
   id: REQ-FE-033
   title: Entry Detail Navigation
   description: 'Selecting an entry from the list MUST navigate to the entry detail view,
@@ -836,7 +811,6 @@ requirements:
   - file: e2e/entries.test.ts
   - file: frontend/src/components/EntryDetailPane.test.tsx
   - file: frontend/src/routes/spaces/[space_id]/forms/index.test.tsx
-  - file: frontend/src/routes/spaces/[space_id]/forms/form-detail.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.
@@ -1355,9 +1329,9 @@ requirements:
 
     Space settings MUST separate that current topology from any saved
 
-    `storage_config.uri` migration metadata so users can review the active root
+    `storage_config.uri` configuration metadata so users can review the active
 
-    before editing future targets.
+    root; editing it does not move the current Space.
 
     '
   related_spec:
@@ -1425,36 +1399,6 @@ requirements:
   tests:
   - file: e2e/saved-sql-route.test.ts
   - file: frontend/src/routes/spaces/[space_id]/sql/[sql_id].test.tsx
-- set_id: REQCAT-FRONTEND
-  source_file: requirements/frontend.yaml
-  scope: Frontend route, component, and interaction requirements.
-  linked_policies:
-  - POL-006
-  - POL-009
-  - POL-013
-  - POL-014
-  linked_specifications:
-  - SPEC-UI-OVERVIEW
-  - SPEC-UI-PAGES
-  - SPEC-ARCH-INTERFACE
-  id: REQ-FE-063
-  title: Legacy Query Route Recovery Guidance
-  description: 'The `/spaces/{space_id}/query` route MUST not silently rewrite users
-
-    to `/search`. It MUST explain that Search is the supported query surface,
-
-    preserve a clear recovery path into `/search`, and offer a direct route back
-
-    to the current space context.
-
-    '
-  related_spec:
-  - ui/pages/space-search.yaml
-  priority: medium
-  status: implemented
-  verification: traced
-  tests:
-  - file: frontend/src/routes/spaces/[space_id]/query.test.tsx
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml
   scope: Frontend route, component, and interaction requirements.

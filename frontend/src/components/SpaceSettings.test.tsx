@@ -55,7 +55,8 @@ describe("v5 SpaceSettings", () => {
     expect(screen.getByText("Storage topology")).toBeInTheDocument();
     expect(screen.getByText("Local filesystem")).toBeInTheDocument();
     expect(screen.getByText("file:///var/lib/ugoite/demo")).toBeInTheDocument();
-    expect(screen.getByText(/migration metadata only/i)).toBeInTheDocument();
+    expect(screen.getByText(/saved configuration metadata only/i))
+      .toBeInTheDocument();
     expect(screen.getByDisplayValue("s3://bucket/demo")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>

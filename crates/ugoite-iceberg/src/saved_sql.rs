@@ -546,6 +546,7 @@ pub async fn update_sql<I: IntegrityProvider>(
 
 pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()> {
     ensure_sql_form(op, ws_path).await?;
+    let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
     let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
     if row.deleted {
         return Err(anyhow!("SQL entry not found: {}", sql_id));
@@ -558,6 +559,28 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()
     row.deleted = true;
     row.deleted_at = Some(delete_ts);
     row.updated_at = delete_ts;
-    entry::write_entry_row(op, ws_path, SQL_FORM_NAME, sql_id, &row).await?;
+    row.parent_revision_id = Some(row.revision_id.clone());
+    row.revision_id = Uuid::new_v4().to_string();
+    row.entry_version = row.entry_version.saturating_add(1);
+    let entry_version = row.entry_version;
+    let tombstone = entry::RevisionRow {
+        revision_id: row.revision_id.clone(),
+        entry_id: sql_id.to_string(),
+        parent_revision_id: row.parent_revision_id.clone(),
+        timestamp: delete_ts,
+        author: row.author.clone(),
+        fields: Value::Object(Map::new()),
+        extra_attributes: Value::Object(Map::new()),
+        markdown_checksum: row.integrity.checksum.clone(),
+        integrity: row.integrity.clone(),
+        restored_from: None,
+        state: Some(row),
+        entry_version,
+        operation: "delete".to_string(),
+        source_kind: "api".to_string(),
+        source_id: None,
+        extension_metadata: Value::Object(Map::new()),
+    };
+    entry::append_revision_row_for_form(op, ws_path, SQL_FORM_NAME, &tombstone, &form_def).await?;
     Ok(())
 }

@@ -6,9 +6,9 @@ use rand::RngExt;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::storage::{OpendalStorage, StorageBackend};
 use ugoite_domain::integrity::HmacIntegrityProvider;
 pub use ugoite_domain::integrity::{FakeIntegrityProvider, IntegrityProvider};
+use ugoite_storage::{OpendalStorage, StorageBackend};
 
 pub struct RealIntegrityProvider {
     inner: HmacIntegrityProvider,

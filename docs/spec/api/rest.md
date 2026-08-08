@@ -42,8 +42,6 @@ Space CRUD, membership, Entries, Forms, Saved SQL, Assets, search, query, SQL
 sessions, MCP, agents, and resource policies are represented in OpenAPI.
 `PUT /spaces/{space_id}/policies/{kind}/{resource_id}` updates grant-only ACLs
 for `entry` or `asset`.
-`POST /spaces/{space_id}/bindings/rebind-owner` binds an imported Space owner to
-the current Node administrator after migration.
 `GET /spaces/{space_id}/health` is a Space-management read-only doctor report.
 It follows only the exact Catalog Head, its reachable immutable publication
 chain, Iceberg metadata, manifest lists/manifests, and caller-named

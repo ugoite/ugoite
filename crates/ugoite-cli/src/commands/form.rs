@@ -1,11 +1,7 @@
-use crate::config::{
-    load_config, operator_for_path, print_json, resolve_space_reference, space_ws_path,
-    validated_base_url,
-};
+use crate::config::{load_config, print_json, resolve_space_reference, validated_base_url};
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use ugoite_iceberg::integrity::RealIntegrityProvider;
 use ugoite_iceberg::service::UgoiteService;
 
 #[derive(Args)]
@@ -58,8 +54,6 @@ pub enum FormSubCmd {
             help = "Path to a JSON form definition file."
         )]
         form_file: String,
-        #[arg(long)]
-        strategies: Option<String>,
     },
     /// List form column types
     ListTypes,
@@ -108,7 +102,6 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
         FormSubCmd::Update {
             space_path,
             form_file,
-            strategies,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "form update")?;
             let form_text = std::fs::read_to_string(&form_file)?;
@@ -126,22 +119,6 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
             }
             let service = UgoiteService::new(&root)?;
             service.upsert_form(&space_id, &form_def).await?;
-            if let Some(s) = strategies {
-                let strategies_value: serde_json::Value = serde_json::from_str(&s)?;
-                if !strategies_value.is_null() {
-                    let op = operator_for_path(&root)?;
-                    let ws = space_ws_path(&root, &space_id);
-                    let integrity = RealIntegrityProvider::from_space(&op, &space_id).await?;
-                    ugoite_iceberg::form::migrate_form(
-                        &op,
-                        &ws,
-                        &form_def,
-                        Some(strategies_value),
-                        &integrity,
-                    )
-                    .await?;
-                }
-            }
             print_json(&serde_json::json!({"updated": true}));
         }
         FormSubCmd::ListTypes => {

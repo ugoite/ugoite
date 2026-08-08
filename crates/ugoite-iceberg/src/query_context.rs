@@ -431,7 +431,7 @@ impl IcebergWorkspace {
 impl AuthorizedQueryContext {
     /// Executes the bounded latest-head projection through this context's
     /// shared permit, timeout, provider validation, row bound, and invariant
-    /// checks. Full history remains a separate migration/audit operation.
+    /// checks. Full history remains a separate audit operation.
     pub(crate) async fn execute_latest_revision_plan(
         &self,
         entry_scope: &EntryScope,

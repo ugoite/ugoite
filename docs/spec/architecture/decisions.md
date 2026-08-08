@@ -14,9 +14,9 @@ cases in another runtime.
 ## ADR-002 — Space files are authoritative
 
 **Accepted.** A Space directory/prefix is the portable source of truth.
-Indexes, projections, and SQL sessions are derived. Backups and migrations
-operate on the complete Space prefix; Node control state and the node secret
-are separate node-local recovery inputs.
+Indexes, projections, and SQL sessions are derived. Backups operate on the
+complete Space prefix; pre-release format migrations are unsupported. Node
+control state and the node secret are separate node-local recovery inputs.
 
 ## ADR-003 — Forms provide typed Markdown structure
 
