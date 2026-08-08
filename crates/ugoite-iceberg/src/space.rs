@@ -290,31 +290,54 @@ async fn ensure_space_identity<S: StorageBackend + ?Sized>(
 }
 
 pub(crate) fn validate_current_space_metadata(meta: &serde_json::Value) -> Result<uuid::Uuid> {
-    let object = meta
-        .as_object()
-        .ok_or_else(|| anyhow!("Space metadata must be a JSON object"))?;
-    if object
-        .get("schema_version")
-        .and_then(serde_json::Value::as_u64)
-        != Some(CURRENT_SPACE_SCHEMA_VERSION)
-    {
+    #[derive(serde::Deserialize)]
+    struct CurrentSpaceMetadata {
+        schema_version: u64,
+        space_id: String,
+        space_uid: uuid::Uuid,
+        slug: String,
+        id: String,
+        name: String,
+        created_at: f64,
+        storage: StorageConfig,
+        hmac_key_id: String,
+        hmac_key: String,
+        last_rotation: String,
+    }
+
+    let metadata: CurrentSpaceMetadata = serde_json::from_value(meta.clone()).map_err(|error| {
+        anyhow!("unsupported Space layout: incomplete or invalid metadata: {error}")
+    })?;
+    if metadata.schema_version != CURRENT_SPACE_SCHEMA_VERSION {
         return Err(anyhow!(
             "unsupported Space layout: metadata schema_version must be 2"
         ));
     }
-    let space_uid = object
-        .get("space_uid")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| anyhow!("unsupported Space layout: immutable space_uid is missing"))?;
-    uuid::Uuid::parse_str(space_uid)
-        .map_err(|_| anyhow!("unsupported Space layout: space_uid is not a UUID"))?;
-    if !object.get("slug").is_some_and(serde_json::Value::is_string) {
+    for (field, value) in [
+        ("space_id", metadata.space_id.as_str()),
+        ("slug", metadata.slug.as_str()),
+        ("id", metadata.id.as_str()),
+        ("name", metadata.name.as_str()),
+        ("storage.type", metadata.storage.storage_type.as_str()),
+        ("storage.root", metadata.storage.root.as_str()),
+        ("hmac_key_id", metadata.hmac_key_id.as_str()),
+        ("hmac_key", metadata.hmac_key.as_str()),
+        ("last_rotation", metadata.last_rotation.as_str()),
+    ] {
+        if value.trim().is_empty() {
+            return Err(anyhow!(
+                "unsupported Space layout: required metadata field {field} is empty"
+            ));
+        }
+    }
+    if !metadata.created_at.is_finite()
+        || chrono::DateTime::parse_from_rfc3339(&metadata.last_rotation).is_err()
+    {
         return Err(anyhow!(
-            "unsupported Space layout: immutable slug is missing"
+            "unsupported Space layout: metadata timestamps are invalid"
         ));
     }
-    uuid::Uuid::parse_str(space_uid)
-        .map_err(|_| anyhow!("unsupported Space layout: space_uid is not a UUID"))
+    Ok(metadata.space_uid)
 }
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {

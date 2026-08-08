@@ -122,6 +122,28 @@ async fn legacy_space_metadata_schema_is_rejected() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn incomplete_current_space_metadata_is_rejected() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "incomplete-metadata", "/tmp").await?;
+    let meta_path = "spaces/incomplete-metadata/meta.json";
+    let mut meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    meta.as_object_mut().unwrap().remove("storage");
+    op.write(meta_path, serde_json::to_vec(&meta)?).await?;
+
+    let error = space::get_space(&op, "incomplete-metadata")
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("unsupported Space layout"));
+    let workspace_error = form::list_forms(&op, "spaces/incomplete-metadata")
+        .await
+        .unwrap_err();
+    assert!(workspace_error
+        .to_string()
+        .contains("unsupported Space layout"));
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-STO-004
 async fn test_space_req_sto_004_list_spaces_from_directory() -> anyhow::Result<()> {
     let op = setup_operator()?;
