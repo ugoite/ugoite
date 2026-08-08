@@ -32,6 +32,10 @@ updates:
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
+      - dependency-name: "arrow-json"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
       - dependency-name: "arrow-schema"
         update-types:
           - "version-update:semver-major"

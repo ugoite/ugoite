@@ -2217,7 +2217,8 @@ pub fn validate_properties(properties: &Value, entry_form: &Value) -> Result<(Va
                 Value::String(ref s) => s
                     .parse::<f64>()
                     .ok()
-                    .map(|n| Value::Number(serde_json::Number::from_f64(n).unwrap())),
+                    .and_then(serde_json::Number::from_f64)
+                    .map(Value::Number),
                 _ => None,
             },
             "float" => match raw_value {

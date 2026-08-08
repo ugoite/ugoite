@@ -28,7 +28,7 @@ use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
-use ugoite_core::error::{AppError, ErrorKind};
+use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_domain::id::{validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
     AccessPolicy, AccountStatus, Action, Actor, AgentMode, AssuranceLevel, AuthenticatedSubject,
@@ -4142,11 +4142,23 @@ async fn upsert_form(
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let form_name = payload
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "form name is required"))?;
-    if state.service.get_form(&space_id, form_name).await.is_ok() {
+    let form_name = payload.get("name").and_then(Value::as_str).ok_or_else(|| {
+        ApiError::from_core(
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "Form definition missing 'name' field",
+            )
+            .into(),
+        )
+    })?;
+    let existing_form = state
+        .service
+        .list_forms(&space_id)
+        .await
+        .map_err(ApiError::from_core)?
+        .into_iter()
+        .any(|form| form.get("name").and_then(Value::as_str) == Some(form_name));
+    if existing_form {
         require_resource_action(
             &state,
             &space_id,
@@ -4792,7 +4804,66 @@ mod authentication_regression_tests {
             .route("/spaces/{space_id}/forms", post(upsert_form))
             .layer(Extension(identity))
             .with_state(state.clone());
+        let list_form_id = Uuid::from_u128(1863);
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "id": list_form_id,
+                    "name": "ListMeeting",
+                    "version": 1,
+                    "fields": {
+                        "labels": {
+                            "id": 100,
+                            "type": "list",
+                            "items": {"type": "string"}
+                        }
+                    },
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        let list_type_change_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/forms"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": list_form_id,
+                            "name": "ListMeeting",
+                            "version": 1,
+                            "fields": {
+                                "labels": {
+                                    "id": 100,
+                                    "type": "list",
+                                    "items": {"type": "integer"}
+                                }
+                            },
+                            "allow_extra_attributes": "deny"
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await
+            .expect("list item type change response");
+        assert_eq!(
+            list_type_change_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let list_type_change_body =
+            axum::body::to_bytes(list_type_change_response.into_body(), usize::MAX).await?;
+        let list_type_change_body: Value = serde_json::from_slice(&list_type_change_body)?;
+        assert_eq!(
+            list_type_change_body["code"],
+            "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED"
+        );
+        assert!(list_type_change_body["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("labels")));
         let response = route
+            .clone()
             .oneshot(
                 Request::post(format!("/spaces/{space_id}/forms"))
                     .header(header::CONTENT_TYPE, "application/json")
@@ -4810,6 +4881,32 @@ mod authentication_regression_tests {
         );
         let stored = state.service.get_form(&space_id, "Meeting").await?;
         assert_eq!(stored["fields"]["time"]["type"], "timestamp");
+
+        let removal = json!({
+            "id": form_id,
+            "name": "Meeting",
+            "version": 1,
+            "fields": {},
+            "allow_extra_attributes": "deny"
+        });
+        let removal_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/forms"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(removal.to_string()))?,
+            )
+            .await
+            .expect("Form removal response");
+        assert_eq!(removal_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let removal_body = axum::body::to_bytes(removal_response.into_body(), usize::MAX).await?;
+        let removal_body: Value = serde_json::from_slice(&removal_body)?;
+        assert_eq!(removal_body["code"], "FORM_FIELD_REMOVAL_NOT_SUPPORTED");
+        assert!(removal_body["message"].as_str().is_some_and(|message| {
+            message.contains("time") && message.contains("add a new field")
+        }));
+        let stored_after_removal = state.service.get_form(&space_id, "Meeting").await?;
+        assert_eq!(stored_after_removal["fields"]["time"]["type"], "timestamp");
         Ok(())
     }
 
@@ -4997,13 +5094,12 @@ mod authentication_regression_tests {
             .layer(Extension(content_identity(principal_id, space_uid)))
             .with_state(state.clone());
 
-        let reference = json!({
-            "asset_id": "01900000-0000-7000-8000-000000000187",
-            "name": "report.pdf",
-            "media_type": "application/pdf",
-            "size_bytes": 10,
-            "sha256": "a".repeat(64)
-        });
+        let reference = serde_json::to_value(
+            state
+                .service
+                .save_asset_with_media_type(&space_id, "report.pdf", b"report", "application/pdf")
+                .await?,
+        )?;
         let markdown = |entry_id: &str, thumbnail: Value, documents: Value| {
             format!(
                 "---\nform: AssetReview\n---\n# {entry_id}\n\n## thumbnail\n{}\n\n## documents\n{}\n",

@@ -1,6 +1,7 @@
 mod common;
 use common::setup_operator;
 use std::collections::{BTreeMap, BTreeSet};
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
 use ugoite_iceberg::asset;
 use ugoite_iceberg::entry;
@@ -8,7 +9,6 @@ use ugoite_iceberg::form;
 use ugoite_iceberg::iceberg_store;
 use ugoite_iceberg::index;
 use ugoite_iceberg::integrity::FakeIntegrityProvider;
-use ugoite_iceberg::search;
 use ugoite_iceberg::space;
 use uuid::Uuid;
 
@@ -100,6 +100,39 @@ async fn row_reference_values_must_target_current_entries_in_the_declared_form(
     .await
     .expect_err("references must resolve to the declared target Form");
     assert!(error.to_string().contains("does not belong to Form"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn malformed_asset_references_are_typed_input_errors() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "malformed-asset-entry", "/tmp").await?;
+    let ws_path = "spaces/malformed-asset-entry";
+    form::upsert_form(
+        &op,
+        ws_path,
+        &serde_json::json!({
+            "name": "AssetEntry",
+            "fields": {"Attachment": {"type": "asset_reference"}},
+        }),
+    )
+    .await?;
+
+    let error = entry::create_entry(
+        &op,
+        ws_path,
+        "asset-entry-1",
+        "---\nform: AssetEntry\nAttachment: {\"asset_id\":\"../bad\",\"name\":\"x\",\"media_type\":\"text/plain\",\"size_bytes\":1,\"sha256\":\"x\"}\n---\n# Invalid",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await
+    .expect_err("malformed asset IDs must be rejected before storage lookup");
+    let app_error = error
+        .downcast_ref::<AppError>()
+        .expect("validation errors stay typed");
+    assert_eq!(app_error.code(), ErrorCode::InvalidInput);
+    assert!(app_error.message().contains("Attachment"));
     Ok(())
 }
 
@@ -400,7 +433,11 @@ async fn entry_ids_are_global_across_forms_and_tombstones() -> anyhow::Result<()
     )
     .await
     .expect_err("global ID availability must not be caller-scoped");
-    assert!(unreadable_duplicate.to_string().contains("ID unavailable"));
+    let unreadable_duplicate = unreadable_duplicate
+        .downcast_ref::<AppError>()
+        .expect("global ID rejection must remain typed");
+    assert_eq!(unreadable_duplicate.code(), ErrorCode::InvalidInput);
+    assert!(unreadable_duplicate.message().contains("global-id"));
 
     entry::delete_entry(&op, ws_path, "global-id", false).await?;
     let tombstone_duplicate = entry::create_entry(
@@ -413,7 +450,11 @@ async fn entry_ids_are_global_across_forms_and_tombstones() -> anyhow::Result<()
     )
     .await
     .expect_err("tombstones must retain the global ID reservation");
-    assert!(tombstone_duplicate.to_string().contains("ID unavailable"));
+    let tombstone_duplicate = tombstone_duplicate
+        .downcast_ref::<AppError>()
+        .expect("tombstone ID rejection must remain typed");
+    assert_eq!(tombstone_duplicate.code(), ErrorCode::InvalidInput);
+    assert!(tombstone_duplicate.message().contains("global-id"));
     Ok(())
 }
 
@@ -577,6 +618,57 @@ async fn explicit_entry_batch_creates_all_entries() -> anyhow::Result<()> {
     assert_eq!(entries.len(), 2);
 
     assert_eq!(entry::list_entries(&op, ws_path).await?.len(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn entry_batch_rejects_existing_ids_before_publishing_other_forms() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "batch-id-validation", "/tmp").await?;
+    let ws_path = "spaces/batch-id-validation";
+    for form_name in ["A", "B"] {
+        form::upsert_form(
+            &op,
+            ws_path,
+            &serde_json::json!({
+                "name": form_name,
+                "fields": {"Body": {"type": "markdown"}},
+            }),
+        )
+        .await?;
+    }
+    entry::create_entry(
+        &op,
+        ws_path,
+        "taken-id",
+        "---\nform: B\n---\n# Existing\n\n## Body\nExisting",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+
+    let error = entry::create_entries(
+        &op,
+        ws_path,
+        vec![
+            entry::EntryCreateRequest::new("new-id", "---\nform: A\n---\n# New\n\n## Body\nNew"),
+            entry::EntryCreateRequest::new(
+                "taken-id",
+                "---\nform: B\n---\n# Duplicate\n\n## Body\nDuplicate",
+            ),
+        ],
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await
+    .expect_err("existing IDs must be rejected before another Form is published");
+    let app_error = error
+        .downcast_ref::<AppError>()
+        .expect("duplicate IDs must remain typed input errors");
+    assert_eq!(app_error.code(), ErrorCode::InvalidInput);
+    assert!(app_error.message().contains("taken-id"));
+    assert!(entry::get_entry(&op, ws_path, "new-id").await.is_err());
+    assert_eq!(entry::list_entries(&op, ws_path).await?.len(), 1);
     Ok(())
 }
 
@@ -746,7 +838,7 @@ async fn querying_entries_survives_adding_a_time_column() -> anyhow::Result<()> 
 }
 
 #[tokio::test]
-async fn renamed_field_reads_old_values_through_the_current_schema() -> anyhow::Result<()> {
+async fn renaming_existing_field_is_rejected_before_v1() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "renamed-entry-field", "/tmp").await?;
     let ws_path = "spaces/renamed-entry-field";
@@ -761,7 +853,7 @@ async fn renamed_field_reads_old_values_through_the_current_schema() -> anyhow::
         &FakeIntegrityProvider,
     )
     .await?;
-    form::upsert_form(
+    let rename_error = form::upsert_form(
         &op,
         ws_path,
         &serde_json::json!({
@@ -771,20 +863,16 @@ async fn renamed_field_reads_old_values_through_the_current_schema() -> anyhow::
             },
         }),
     )
-    .await?;
+    .await
+    .expect_err("pre-v1 Form renames must be rejected");
+    let rename_error = rename_error
+        .downcast_ref::<AppError>()
+        .expect("Form rename rejection must remain typed");
+    assert_eq!(rename_error.code(), ErrorCode::FormFieldRemovalNotSupported);
+    assert!(rename_error.message().contains("Body"));
 
     let all = index::query_index(&op, ws_path, r#"{"form":"Entry"}"#).await?;
-    assert_eq!(all[0]["properties"]["Content"], "Existing value");
-    let filtered = index::query_index(
-        &op,
-        ws_path,
-        r#"{"form":"Entry","Content":"Existing value"}"#,
-    )
-    .await?;
-    assert_eq!(filtered.len(), 1);
-    let searched = search::search_entries(&op, ws_path, "Existing value", 10).await?;
-    assert_eq!(searched.len(), 1);
-    assert_eq!(searched[0].id, "entry-before-rename");
+    assert_eq!(all[0]["properties"]["Body"], "Existing value");
     Ok(())
 }
 

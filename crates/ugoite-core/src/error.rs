@@ -35,6 +35,7 @@ pub enum ErrorCode {
     ReindexNotImplemented,
     StorageConnectionFailed,
     FormFieldTypeChangeNotSupported,
+    FormFieldRemovalNotSupported,
     FormValidationFailed,
     UnknownFormFields,
     InvalidInput,
@@ -66,6 +67,7 @@ impl ErrorCode {
             Self::ReindexNotImplemented => "REINDEX_NOT_IMPLEMENTED",
             Self::StorageConnectionFailed => "STORAGE_CONNECTION_FAILED",
             Self::FormFieldTypeChangeNotSupported => "FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED",
+            Self::FormFieldRemovalNotSupported => "FORM_FIELD_REMOVAL_NOT_SUPPORTED",
             Self::FormValidationFailed => "FORM_VALIDATION_FAILED",
             Self::UnknownFormFields => "UNKNOWN_FORM_FIELDS",
             Self::InvalidInput => "INVALID_INPUT",
@@ -129,6 +131,16 @@ impl AppError {
             ErrorCode::FormFieldTypeChangeNotSupported,
             format!(
                 "Changing the type of existing Form field '{field_name}' from '{source_type}' to '{target_type}' is not supported; create a new field instead"
+            ),
+        )
+    }
+
+    pub fn form_field_removal_not_supported(field_name: impl Into<String>) -> Self {
+        let field_name = field_name.into();
+        Self::invalid_input(
+            ErrorCode::FormFieldRemovalNotSupported,
+            format!(
+                "Removing existing Form field '{field_name}' is not supported before v1; add a new field instead"
             ),
         )
     }
