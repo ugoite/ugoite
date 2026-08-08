@@ -18,6 +18,7 @@ use ugoite_domain::identity::{
 use uuid::Uuid;
 
 const AUTHORIZATION_FILE: &str = "security/principals.json";
+const LEGACY_AUTHORIZATION_FILE: &str = "authorization.json";
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -153,6 +154,23 @@ impl Authorizer {
         space_uid: Uuid,
         display_name: &str,
     ) -> Result<Uuid> {
+        let legacy_authorization_path = format!("spaces/{space_id}/{LEGACY_AUTHORIZATION_FILE}");
+        if self.operator.exists(&legacy_authorization_path).await? {
+            bail!("unsupported Space layout: legacy authorization.json is present");
+        }
+        let settings_path = format!("spaces/{space_id}/settings.json");
+        if self.operator.exists(&settings_path).await? {
+            let settings: serde_json::Value =
+                serde_json::from_slice(&self.operator.read(&settings_path).await?.to_vec())?;
+            if let Some(legacy_key) = crate::service::MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS
+                .iter()
+                .find(|key| settings.get(*key).is_some())
+            {
+                bail!(
+                    "unsupported Space layout: legacy membership setting {legacy_key} is present"
+                );
+            }
+        }
         let path = state_path(space_id);
         if self.operator.exists(&path).await? {
             let state = self.state(space_id).await?;
@@ -949,6 +967,44 @@ mod tests {
             Some(PrincipalState::Revoked)
         ));
         assert!(state.policies.contains_key(&resource.key()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_authorization_layout_is_rejected_before_owner_creation() -> Result<()> {
+        let op = operator_from_uri("memory://legacy-authorization-layout")?;
+        op.create_dir("spaces/demo/").await?;
+        op.write("spaces/demo/authorization.json", "{}").await?;
+        let authorizer = Authorizer::new(op.clone());
+
+        let error = authorizer
+            .ensure_owner("demo", Uuid::now_v7(), "Owner")
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("unsupported Space layout"));
+        assert!(!op.exists("spaces/demo/security/principals.json").await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_membership_settings_are_rejected_before_owner_creation() -> Result<()> {
+        let op = operator_from_uri("memory://legacy-membership-settings")?;
+        op.create_dir("spaces/demo/").await?;
+        op.write(
+            "spaces/demo/settings.json",
+            serde_json::to_vec(&serde_json::json!({"members": {"old-user": "owner"}}))?,
+        )
+        .await?;
+        let authorizer = Authorizer::new(op.clone());
+
+        let error = authorizer
+            .ensure_owner("demo", Uuid::now_v7(), "Owner")
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("unsupported Space layout"));
+        assert!(!op.exists("spaces/demo/security/principals.json").await?);
         Ok(())
     }
 }
