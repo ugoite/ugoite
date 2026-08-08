@@ -1,5 +1,6 @@
 mod common;
 use common::setup_operator;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_iceberg::form;
 use ugoite_iceberg::space;
 
@@ -35,7 +36,7 @@ async fn test_form_req_form_002_upsert_and_list_forms() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn sql_columns_follow_field_ids_across_case_collisions_and_renames() -> anyhow::Result<()> {
+async fn sql_columns_remain_stable_when_pre_v1_renames_are_rejected() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "stable-sql-columns", "/tmp").await?;
     let ws_path = "spaces/stable-sql-columns";
@@ -63,7 +64,7 @@ async fn sql_columns_follow_field_ids_across_case_collisions_and_renames() -> an
         .to_string();
     assert_ne!(status_column, lowercase_status_column);
 
-    form::upsert_form(
+    let rename_error = form::upsert_form(
         &op,
         ws_path,
         &serde_json::json!({
@@ -74,12 +75,14 @@ async fn sql_columns_follow_field_ids_across_case_collisions_and_renames() -> an
             }
         }),
     )
-    .await?;
+    .await
+    .expect_err("pre-v1 Form renames must be rejected");
+    let app_error = rename_error
+        .downcast_ref::<AppError>()
+        .expect("Form rename rejection must remain typed");
+    assert_eq!(app_error.code(), ErrorCode::FormFieldRemovalNotSupported);
     let after = form::get_form(&op, ws_path, "CaseFields").await?;
-    assert_eq!(
-        after["fields"]["RenamedStatus"]["sql_column"],
-        status_column
-    );
+    assert_eq!(after["fields"]["Status"]["sql_column"], status_column);
     assert_eq!(
         after["fields"]["status"]["sql_column"],
         lowercase_status_column

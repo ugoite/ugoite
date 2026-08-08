@@ -59,12 +59,25 @@ Form evolution that changes the type of an existing field is intentionally
 unsupported before v1. The server returns HTTP 422 with code
 `FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED` and a message naming the field and
 recommending a new field; it does not return this expected rejection as a 500.
+Removing an existing physical field is also unsupported before v1. The server
+returns HTTP 422 with `FORM_FIELD_REMOVAL_NOT_SUPPORTED`, naming the field and
+directing the caller to add a new field instead. The browser editor disables
+these destructive/non-compatible operations; the server remains the authority
+for CLI and other protocol callers.
 
 Entry create and update validate Markdown sections against the selected Form.
-Invalid field values, missing required fields, missing Form metadata, and
-unknown fields return HTTP 422 with code `INVALID_INPUT`; they are not internal
-server failures. A referenced Form that does not exist returns HTTP 404 with
-code `FORM_NOT_FOUND`; storage failures remain internal/dependency failures.
+Invalid field values and missing required fields return HTTP 422 with code
+`FORM_VALIDATION_FAILED`; unknown fields return HTTP 422 with code
+`UNKNOWN_FORM_FIELDS`. Missing Form metadata and invalid row references return
+HTTP 422 with code `INVALID_INPUT`, with the offending field and a corrective
+message; these are not internal server failures. A referenced Form that does
+not exist returns HTTP 404 with code `FORM_NOT_FOUND`; storage failures remain
+internal/dependency failures. Entry creation validates all of these conditions
+before publishing, so a rejected create leaves no entry or revision behind.
+Asset-reference fields must point to an existing, non-deleted asset; a missing,
+deleted, or otherwise invalid asset reference returns HTTP 422 with code
+`INVALID_INPUT` or `FORM_VALIDATION_FAILED` and identifies the field that needs
+correction.
 
 Timestamp field formats follow the Iceberg logical type. `timestamp` and
 `timestamp_ns` are timezone-less wall-clock values in the form

@@ -2056,7 +2056,14 @@
             }
           },
           "422": {
-            "description": "Invalid payload"
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Error",
@@ -2313,7 +2320,14 @@
             }
           },
           "422": {
-            "description": "Invalid payload"
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Error",
@@ -2830,7 +2844,14 @@
             }
           },
           "422": {
-            "description": "Invalid form"
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Error",

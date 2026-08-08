@@ -879,7 +879,7 @@ describe("error paths", () => {
         template: "",
         fields: {},
       }),
-    ).rejects.toThrow("Failed to create form");
+    ).rejects.toThrow("Failed to save form");
   });
 
   it("searchApi.keyword throws on failure", async () => {

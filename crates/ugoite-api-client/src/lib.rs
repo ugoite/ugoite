@@ -408,7 +408,7 @@ pub fn prepare_request(
                 vec![],
             ),
             "form.upsert" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to create form"),
+                OperationSpec::json(HttpMethod::Post, "Failed to save form"),
                 vec![
                     "spaces".into(),
                     required_string(operation, args, "space_id")?,
@@ -1036,7 +1036,7 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
         "form.get" => (HttpMethod::Get, "Failed to get form", RequestBodyKind::None),
         "form.upsert" => (
             HttpMethod::Post,
-            "Failed to create form",
+            "Failed to save form",
             RequestBodyKind::Json,
         ),
         "entry.list" => (
@@ -1426,7 +1426,7 @@ mod tests {
 
         assert_eq!(
             error.message,
-            "Failed to create form: Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead"
+            "Failed to save form: Changing the type of existing Form field 'time' from 'timestamp' to 'date' is not supported; create a new field instead"
         );
         assert_eq!(
             error

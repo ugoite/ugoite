@@ -16,7 +16,7 @@ use ugoite_domain::entry::{
     RevisionError,
 };
 use ugoite_domain::form::{FieldType, FormField, ListItemDefinition};
-use ugoite_domain::id::{FieldId, RevisionId};
+use ugoite_domain::id::{validate_asset_id, FieldId, RevisionId};
 use uuid::Uuid;
 
 pub const MAX_ENTRY_CREATE_BATCH_SIZE: usize = 256;
@@ -509,7 +509,9 @@ async fn append_revision_rows_to_workspace_authorized(
     let revisions = rows
         .iter()
         .map(|row| revision_row_to_domain(row, &domain_form))
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>>>()
+        .map_err(|error| invalid_entry_input(format!("Entry validation failed: {error:#}")))?;
+    validate_asset_references_exist(op, ws_path, &domain_form, &revisions).await?;
     // Close the JSON-to-domain boundary before creating a publication
     // command. This keeps malformed Form-owned Asset values and all other
     // revision validation failures as client input errors, rather than
@@ -1155,14 +1157,17 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
         return Ok(Vec::new());
     }
     if requests.len() > MAX_ENTRY_CREATE_BATCH_SIZE {
-        return Err(anyhow!(
+        return Err(invalid_entry_input(format!(
             "entry create batches are limited to {MAX_ENTRY_CREATE_BATCH_SIZE} requests"
-        ));
+        )));
     }
     let mut requested_entry_ids = HashSet::new();
     for request in &requests {
         if !requested_entry_ids.insert(request.entry_id.clone()) {
-            return Err(anyhow!("Entry already exists: {}", request.entry_id));
+            return Err(invalid_entry_input(format!(
+                "Entry ID '{}' appears more than once in this create request",
+                request.entry_id
+            )));
         }
     }
     let mut batches = BTreeMap::<String, (Value, Vec<RevisionRow>)>::new();
@@ -1185,6 +1190,28 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
         entries.push(entry);
     }
     reject_cross_form_forward_references(&batches)?;
+    let workspace = iceberg_store::native_workspace(op, ws_path).await?;
+    let domain_batches = batches
+        .values()
+        .map(|(form_def, revisions)| {
+            let form = form::to_domain_form(form_def)?;
+            let revisions = revisions
+                .iter()
+                .map(|revision| revision_row_to_domain(revision, &form))
+                .collect::<Result<Vec<_>>>()
+                .map_err(|error| {
+                    invalid_entry_input(format!("Entry validation failed: {error:#}"))
+                })?;
+            Ok((form.id, revisions))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    for ((form_def, _), (_, revisions)) in batches.values().zip(&domain_batches) {
+        let form = form::to_domain_form(form_def)?;
+        validate_asset_references_exist(op, ws_path, &form, revisions).await?;
+    }
+    workspace
+        .validate_revision_batches_authorized(&domain_batches, relation_scopes)
+        .await?;
     for (_, (form_def, revisions)) in batches {
         append_revision_rows_to_workspace_authorized(
             op,
@@ -1196,6 +1223,95 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
         .await?;
     }
     Ok(entries)
+}
+
+async fn validate_asset_references_exist(
+    op: &Operator,
+    ws_path: &str,
+    form: &ugoite_domain::form::FormDefinition,
+    revisions: &[EntryRevision],
+) -> Result<()> {
+    let mut references = BTreeMap::<String, String>::new();
+    for revision in revisions {
+        if matches!(
+            revision.operation,
+            EntryOperation::Delete | EntryOperation::Restore
+        ) {
+            continue;
+        }
+        for field in &form.fields {
+            let Some(value) = revision.values.get(&field.id) else {
+                continue;
+            };
+            match (&field.field_type, value) {
+                (FieldType::AssetReference, FieldValue::AssetReference(reference)) => {
+                    validate_asset_id(&reference.asset_id).map_err(|error| {
+                        invalid_entry_input(format!(
+                            "Form validation failed: {}",
+                            serde_json::json!([{
+                                "field": field.name,
+                                "message": error.to_string()
+                            }])
+                        ))
+                    })?;
+                    if i64::try_from(reference.size_bytes).is_err() {
+                        return Err(invalid_entry_input(format!(
+                            "Form validation failed: {}",
+                            serde_json::json!([{
+                                "field": field.name,
+                                "message": "Asset size is too large"
+                            }])
+                        )));
+                    }
+                    references.insert(reference.asset_id.clone(), field.name.clone());
+                }
+                (FieldType::List, FieldValue::List(values))
+                    if field
+                        .list_item
+                        .as_ref()
+                        .is_some_and(|item| item.field_type == FieldType::AssetReference) =>
+                {
+                    for value in values {
+                        let FieldValue::AssetReference(reference) = value else {
+                            continue;
+                        };
+                        validate_asset_id(&reference.asset_id).map_err(|error| {
+                            invalid_entry_input(format!(
+                                "Form validation failed: {}",
+                                serde_json::json!([{
+                                    "field": field.name,
+                                    "message": error.to_string()
+                                }])
+                            ))
+                        })?;
+                        if i64::try_from(reference.size_bytes).is_err() {
+                            return Err(invalid_entry_input(format!(
+                                "Form validation failed: {}",
+                                serde_json::json!([{
+                                    "field": field.name,
+                                    "message": "Asset size is too large"
+                                }])
+                            )));
+                        }
+                        references.insert(reference.asset_id.clone(), field.name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    for (asset_id, field) in references {
+        if !crate::asset::asset_exists(op, ws_path, &asset_id).await? {
+            return Err(invalid_entry_input(format!(
+                "Form validation failed: {}",
+                serde_json::json!([{
+                    "field": field,
+                    "message": format!("Asset '{asset_id}' does not exist")
+                }])
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn reject_cross_form_forward_references(
@@ -1255,11 +1371,11 @@ fn reject_cross_form_forward_references(
                     if target_form != source_form.id
                         && pending.contains(&(target_form, entry_id.clone()))
                     {
-                        return Err(anyhow!(
+                        return Err(invalid_entry_input(format!(
                             "cross-Form forward references in one create batch are unsupported: '{}' -> '{}'",
                             source_form.name,
                             entry_id
-                        ));
+                        )));
                     }
                 }
             }

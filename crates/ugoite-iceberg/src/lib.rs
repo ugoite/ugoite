@@ -71,12 +71,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use tokio::sync::{Notify, Semaphore};
-use ugoite_core::error::AppError;
+use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
 };
 use ugoite_domain::entry::{
     AssetReference, EntryIntegrity, EntryMetadata, EntryOperation, EntryRevision, FieldValue,
+    RevisionError,
 };
 use ugoite_domain::form::{
     sql_column_name, sql_relation_name, Compatibility, FieldType, FormChange, FormChangeSet,
@@ -117,6 +118,43 @@ fn unsupported_form_field_type_change(
             ))
         })
         .context("breaking Form compatibility did not contain a field type change")
+}
+
+fn invalid_revision_input(message: impl Into<String>) -> anyhow::Error {
+    AppError::invalid_input(ErrorCode::InvalidInput, message).into()
+}
+
+fn validate_revision_payload(form: &FormDefinition, revision: &EntryRevision) -> Result<()> {
+    revision.validate_payload(form).map_err(|error| {
+        let field_id = match error {
+            RevisionError::RequiredField(field_id)
+            | RevisionError::UnknownField(field_id)
+            | RevisionError::WrongType(field_id)
+            | RevisionError::InvalidAssetReference(field_id)
+            | RevisionError::DuplicateAssetReference(field_id) => Some(field_id),
+            _ => None,
+        };
+        let field = field_id.and_then(|field_id| {
+            form.fields
+                .iter()
+                .find(|candidate| candidate.id == field_id)
+                .map(|candidate| candidate.name.clone())
+        });
+        let message = match error {
+            RevisionError::RequiredField(_) => "Required field is missing",
+            RevisionError::UnknownField(_) => "Field is not defined on this Form",
+            RevisionError::WrongType(_) => "Value has the wrong type for this field",
+            RevisionError::InvalidAssetReference(_) => "Asset reference metadata is invalid",
+            RevisionError::DuplicateAssetReference(_) => {
+                "The same asset is referenced more than once in this list"
+            }
+            _ => "Entry revision payload is not valid for this Form",
+        };
+        invalid_revision_input(format!(
+            "Form validation failed: {}",
+            serde_json::json!([{"field": field, "message": message}])
+        ))
+    })
 }
 
 /// A durable checkpoint or one of its immutable targets cannot be resolved.
@@ -909,6 +947,7 @@ impl IcebergWorkspace {
             })
             .collect::<BTreeSet<_>>();
         let mut references = BTreeSet::<(FormId, String)>::new();
+        let mut reference_fields = HashMap::<(FormId, String), String>::new();
         for revision in revisions {
             if matches!(
                 revision.operation,
@@ -923,8 +962,16 @@ impl IcebergWorkspace {
                 match (&field.field_type, value) {
                     (FieldType::RowReference, FieldValue::String(entry_id)) => {
                         let target_form = field.reference_form.ok_or_else(|| {
-                            anyhow!("row_reference field '{}' has no target Form", field.name)
+                            invalid_revision_input(format!(
+                                "Form validation failed: {}",
+                                serde_json::json!([{
+                                    "field": field.name,
+                                    "message": "This row reference has no target Form"
+                                }])
+                            ))
                         })?;
+                        reference_fields
+                            .insert((target_form, entry_id.clone()), field.name.clone());
                         references.insert((target_form, entry_id.clone()));
                     }
                     (FieldType::List, FieldValue::List(values))
@@ -938,13 +985,18 @@ impl IcebergWorkspace {
                             .as_ref()
                             .and_then(|item| item.reference_form)
                             .ok_or_else(|| {
-                                anyhow!(
-                                    "row_reference list field '{}' has no target Form",
-                                    field.name
-                                )
+                                invalid_revision_input(format!(
+                                    "Form validation failed: {}",
+                                    serde_json::json!([{
+                                        "field": field.name,
+                                        "message": "This row reference has no target Form"
+                                    }])
+                                ))
                             })?;
                         for value in values {
                             if let FieldValue::String(entry_id) = value {
+                                reference_fields
+                                    .insert((target_form, entry_id.clone()), field.name.clone());
                                 references.insert((target_form, entry_id.clone()));
                             }
                         }
@@ -958,9 +1010,15 @@ impl IcebergWorkspace {
         }
 
         let mut authorized_forms = BTreeMap::new();
-        for (target_form_id, _) in &references {
+        for (target_form_id, entry_id) in &references {
             let target_form = target_forms.get(target_form_id).ok_or_else(|| {
-                anyhow!("row_reference target Form {target_form_id} does not exist")
+                invalid_revision_input(format!(
+                    "Form validation failed: {}",
+                    serde_json::json!([{
+                        "field": reference_fields.get(&(*target_form_id, entry_id.clone())),
+                        "message": format!("Referenced Form '{target_form_id}' does not exist")
+                    }])
+                ))
             })?;
             let entry_scope = relation_scopes
                 .and_then(|scopes| scopes.get(&target_form.name.to_ascii_lowercase()).cloned())
@@ -1004,7 +1062,13 @@ impl IcebergWorkspace {
                 continue;
             }
             let target_form = target_forms.get(&target_form_id).ok_or_else(|| {
-                anyhow!("row_reference target Form {target_form_id} does not exist")
+                invalid_revision_input(format!(
+                    "Form validation failed: {}",
+                    serde_json::json!([{
+                        "field": reference_fields.get(&(target_form_id, entry_id.clone())),
+                        "message": format!("Referenced Form '{target_form_id}' does not exist")
+                    }])
+                ))
             })?;
             let relation_name = sql_relation_name(target_form.id);
             let relation = format!("\"{}\"", relation_name.replace('"', "\"\""));
@@ -1015,11 +1079,19 @@ impl IcebergWorkspace {
                 ))
                 .await?;
             if rows.iter().map(|batch| batch.num_rows()).sum::<usize>() == 0 {
-                return Err(anyhow!(
-                    "row_reference target Entry '{}' does not belong to Form '{}'",
-                    entry_id,
-                    target_form.name
-                ));
+                let field = reference_fields
+                    .get(&(target_form_id, entry_id.clone()))
+                    .cloned();
+                return Err(invalid_revision_input(format!(
+                    "Form validation failed: {}",
+                    serde_json::json!([{
+                        "field": field,
+                        "message": format!(
+                            "Referenced Entry '{}' does not belong to Form '{}'",
+                            entry_id, target_form.name
+                        )
+                    }])
+                )));
             }
         }
         Ok(())
@@ -1042,9 +1114,9 @@ impl IcebergWorkspace {
                 let Some(value) = revision.values.get(&field.id) else {
                     continue;
                 };
-                let asset_ids = match (&field.field_type, value) {
+                let asset_references = match (&field.field_type, value) {
                     (FieldType::AssetReference, FieldValue::AssetReference(reference)) => {
-                        vec![reference.asset_id.as_str()]
+                        vec![(reference.asset_id.as_str(), field.name.as_str())]
                     }
                     (FieldType::List, FieldValue::List(values))
                         if field
@@ -1056,7 +1128,7 @@ impl IcebergWorkspace {
                             .iter()
                             .filter_map(|value| match value {
                                 FieldValue::AssetReference(reference) => {
-                                    Some(reference.asset_id.as_str())
+                                    Some((reference.asset_id.as_str(), field.name.as_str()))
                                 }
                                 _ => None,
                             })
@@ -1064,15 +1136,70 @@ impl IcebergWorkspace {
                     }
                     _ => Vec::new(),
                 };
-                for asset_id in asset_ids {
+                for (asset_id, field_name) in asset_references {
                     if self.asset_is_deleted(asset_id).await? {
-                        return Err(anyhow!(
-                            "Asset '{}' is unavailable because it was deleted",
-                            asset_id
-                        ));
+                        return Err(invalid_revision_input(format!(
+                            "Form validation failed: {}",
+                            serde_json::json!([{
+                                "field": field_name,
+                                "message": format!(
+                                    "Asset '{}' is unavailable because it was deleted",
+                                    asset_id
+                                )
+                            }])
+                        )));
                     }
                 }
             }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn validate_revision_batches_authorized(
+        &self,
+        batches: &[(FormId, Vec<EntryRevision>)],
+        relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    ) -> Result<()> {
+        let requested_entry_ids = batches
+            .iter()
+            .flat_map(|(_, revisions)| revisions)
+            .filter(|revision| {
+                revision.entry_version == 1
+                    && revision.expected_version.is_none()
+                    && revision.parent_revision_id.is_none()
+            })
+            .map(|revision| revision.entry.external_id.clone())
+            .collect::<Vec<_>>();
+        let existing_entry_ids = self
+            .existing_entry_external_ids(&requested_entry_ids)
+            .await?;
+        if let Some(entry_id) = requested_entry_ids
+            .iter()
+            .find(|entry_id| existing_entry_ids.contains(*entry_id))
+        {
+            return Err(invalid_revision_input(format!(
+                "Entry ID '{entry_id}' is already in use"
+            )));
+        }
+        for (form_id, revisions) in batches {
+            let form = self.load_form(*form_id).await?;
+            if let Some(scopes) = relation_scopes {
+                if !scopes.contains_key(&form.name.to_ascii_lowercase()) {
+                    return Err(AppError::forbidden("Form is not readable").into());
+                }
+            }
+            for revision in revisions {
+                validate_revision_payload(&form, revision)?;
+            }
+            let table = self.catalog.load_table(&self.form_ident(*form_id)).await?;
+            revision_batch_from_values(&form, table.metadata().current_schema(), revisions)
+                .map_err(|error| {
+                    invalid_revision_input(format!("Form validation failed: {error:#}"))
+                })?;
+            self.validate_asset_references_not_deleted(*form_id, revisions)
+                .await?;
+            self.validate_row_reference_targets(*form_id, revisions, relation_scopes)
+                .await?;
         }
         Ok(())
     }
@@ -1167,7 +1294,7 @@ impl IcebergWorkspace {
                     return Err(anyhow!("entry revision conflict"));
                 }
             }
-            revision.validate_payload(&form)?;
+            validate_revision_payload(&form, revision)?;
             if validate_revision_chain {
                 current.insert(revision.entry_id, revision.clone());
             }
@@ -1264,7 +1391,10 @@ impl IcebergWorkspace {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
         let batch =
-            revision_batch_from_values(&form, table.metadata().current_schema(), &revisions)?;
+            revision_batch_from_values(&form, table.metadata().current_schema(), &revisions)
+                .map_err(|error| {
+                    invalid_revision_input(format!("Form validation failed: {error:#}"))
+                })?;
         self.append_record_batches(form_id, vec![batch], &revisions)
             .await
     }
@@ -1769,7 +1899,7 @@ impl SpaceCommitCoordinator {
                 .iter()
                 .any(|entry_id| existing_entry_ids.contains(entry_id))
             {
-                return Err(anyhow!("Entry ID unavailable"));
+                return Err(invalid_revision_input("Entry ID is already in use"));
             }
             attempt
                 .validate_asset_references_not_deleted(form_id, &revisions)
