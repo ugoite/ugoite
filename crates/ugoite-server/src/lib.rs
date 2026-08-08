@@ -4986,13 +4986,12 @@ mod authentication_regression_tests {
             .layer(Extension(content_identity(principal_id, space_uid)))
             .with_state(state.clone());
 
-        let reference = json!({
-            "asset_id": "01900000-0000-7000-8000-000000000187",
-            "name": "report.pdf",
-            "media_type": "application/pdf",
-            "size_bytes": 10,
-            "sha256": "a".repeat(64)
-        });
+        let reference = serde_json::to_value(
+            state
+                .service
+                .save_asset_with_media_type(&space_id, "report.pdf", b"report", "application/pdf")
+                .await?,
+        )?;
         let markdown = |entry_id: &str, thumbnail: Value, documents: Value| {
             format!(
                 "---\nform: AssetReview\n---\n# {entry_id}\n\n## thumbnail\n{}\n\n## documents\n{}\n",
