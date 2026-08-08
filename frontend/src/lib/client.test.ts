@@ -394,6 +394,22 @@ describe("entryApi", () => {
       expect(asset.asset_id).toBeTruthy();
       await assetApi.delete("test-ws", asset.asset_id);
     });
+
+    it("reads asset bytes with the containing Form and Entry context", async () => {
+      const file = new File(["data"], "contract.pdf", {
+        type: "application/pdf",
+      });
+      const asset = await assetApi.upload("test-ws", file);
+      const bytes = await assetApi.read(
+        "test-ws",
+        asset.asset_id,
+        "Contracts",
+        "entry-1",
+      );
+
+      expect(bytes).toBeInstanceOf(Blob);
+      expect(bytes.type).toBe("application/octet-stream");
+    });
   });
 });
 

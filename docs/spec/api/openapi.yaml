@@ -1914,6 +1914,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
           }
         ],
         "responses": {
@@ -3051,6 +3054,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
           }
         ],
         "responses": {
@@ -6259,6 +6265,16 @@
         "required": true,
         "schema": {
           "type": "string"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 100
         }
       }
     },

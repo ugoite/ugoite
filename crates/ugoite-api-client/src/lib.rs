@@ -62,6 +62,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "access.get",
     "access.put",
     "asset.upload",
+    "asset.read",
     "asset.delete",
 ];
 
@@ -708,6 +709,22 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "asset.read" => (
+                OperationSpec::get("Failed to read asset"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "assets".into(),
+                    required_string(operation, args, "asset_id")?,
+                ],
+                vec![
+                    ("form".into(), required_string(operation, args, "form")?),
+                    (
+                        "entry_id".into(),
+                        required_string(operation, args, "entry_id")?,
+                    ),
+                ],
+            ),
             "asset.delete" => (
                 OperationSpec::no_body(HttpMethod::Delete, "Failed to delete asset"),
                 vec![
@@ -1151,6 +1168,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             HttpMethod::Post,
             "Failed to upload asset",
             RequestBodyKind::Multipart,
+        ),
+        "asset.read" => (
+            HttpMethod::Get,
+            "Failed to read asset",
+            RequestBodyKind::None,
         ),
         "asset.delete" => (
             HttpMethod::Delete,
@@ -1597,6 +1619,11 @@ mod tests {
         }
         if operation == "asset.delete" {
             arguments.insert("asset_id".into(), json!("asset-1"));
+        }
+        if operation == "asset.read" {
+            arguments.insert("asset_id".into(), json!("asset-1"));
+            arguments.insert("form".into(), json!("Meeting"));
+            arguments.insert("entry_id".into(), json!("entry-1"));
         }
         if operation == "agent.revoke" {
             arguments.insert(

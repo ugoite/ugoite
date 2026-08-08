@@ -123,3 +123,26 @@ to missing bytes.
 Entry content and revisions carry checksums and HMAC signatures generated from
 Space-local integrity material. Response-signing material may also be written
 lazily to `hmac.json`.
+
+### Form-owned attachment editing
+
+The browser exposes `asset_reference` and `list<asset_reference>` as ordinary
+Form field controls. The scalar control accepts one uploaded reference; the
+typed list preserves the displayed order and accepts zero or more references.
+Neither control creates an Assets Form, a universal Entry attachment property,
+or Asset metadata Entries.
+
+Markdown-oriented Entry input represents these values as JSON in the field
+section, preserving the complete `AssetReference` object. For example:
+
+```json
+{"asset_id":"019...","name":"report.pdf","media_type":"application/pdf","size_bytes":123456,"sha256":"..."}
+```
+
+The editor treats byte upload and Entry revision commit as separate states:
+an uploaded reference remains provisional until the normal Entry create/update
+operation succeeds. Retrying a failed Entry save reuses that reference; closing
+the editor does not delete bytes automatically. Removing a reference only
+changes the Form-owned Entry value. Byte reads always use the containing
+Form/Entry authorization context, and an unavailable byte is rendered as a
+field-level state while the logical reference metadata remains visible.
