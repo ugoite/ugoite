@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
+import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
 import type { Form } from "~/lib/types";
 
@@ -344,7 +345,7 @@ describe("EntryDetailPane", () => {
     await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("save failed")).toBeInTheDocument();
+    expect(screen.getByText(/Details: save failed/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(2));
     expect(assetUpload).toHaveBeenCalledTimes(1);
@@ -696,6 +697,7 @@ describe("EntryDetailPane", () => {
     );
   });
   it("REQ-FE-038: renders form validation warnings", async () => {
+    setLocale("ja");
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",
@@ -706,9 +708,19 @@ describe("EntryDetailPane", () => {
       updated_at: "2026-01-01T00:00:00Z",
     });
     (entryApi.update as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error(
-        'Form validation failed: [{"field":"Date","message":"Missing required field: Date"}]',
-      ),
+      new UgoiteApiError({
+        kind: "invalid_arguments",
+        code: "FORM_VALIDATION_FAILED",
+        operation: "entry.update",
+        status: 422,
+        message: "Entry form validation failed",
+        detail: {
+          warnings: [{
+            field: "Date",
+            message: "Missing required field: Date",
+          }],
+        },
+      }),
     );
 
     render(() => (
@@ -722,22 +734,30 @@ describe("EntryDetailPane", () => {
     await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
 
     const textarea = await screen.findByPlaceholderText(
-      "Start writing in Markdown...",
+      "Markdown を入力...",
     );
     fireEvent.input(textarea, { target: { value: "Updated content" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Form validation failed")).toBeInTheDocument();
+      expect(screen.getByText("フォームの入力内容を確認してください。"))
+        .toBeInTheDocument();
       expect(screen.getByText("Missing required field: Date"))
         .toBeInTheDocument();
     });
   });
 
   it("shows error message when entry load fails", async () => {
+    setLocale("ja");
     (entryApi.get as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Network error"),
+      new UgoiteApiError({
+        kind: "not_found",
+        code: "ENTRY_NOT_FOUND",
+        operation: "entry.get",
+        status: 404,
+        message: "Entry not found",
+      }),
     );
 
     render(() => (
@@ -749,7 +769,14 @@ describe("EntryDetailPane", () => {
     ));
 
     await waitFor(() => {
-      expect(screen.getByText("Network error")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "エントリーが見つかりません。（詳細: Entry not found）",
+        ),
+      )
+        .toBeInTheDocument();
+      expect(screen.getByText("スペース: default / エントリID: missing-entry"))
+        .toBeInTheDocument();
     });
   });
 
@@ -841,6 +868,7 @@ describe("EntryDetailPane", () => {
   });
 
   it("shows unknown fields warning from save error", async () => {
+    setLocale("ja");
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",
@@ -851,7 +879,14 @@ describe("EntryDetailPane", () => {
       updated_at: "2026-01-01T00:00:00Z",
     });
     (entryApi.update as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Unknown form fields: extraField1, extraField2"),
+      new UgoiteApiError({
+        kind: "invalid_arguments",
+        code: "UNKNOWN_FORM_FIELDS",
+        operation: "entry.update",
+        status: 422,
+        message: "Entry contains unknown form fields",
+        detail: { fields: ["extraField1", "extraField2"] },
+      }),
     );
 
     render(() => (
@@ -865,17 +900,18 @@ describe("EntryDetailPane", () => {
     await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
 
     const textarea = await screen.findByPlaceholderText(
-      "Start writing in Markdown...",
+      "Markdown を入力...",
     );
     fireEvent.input(textarea, { target: { value: "Updated content" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Unknown form fields")).toBeInTheDocument();
+      expect(screen.getByText("フォームにないフィールドがあります。"))
+        .toBeInTheDocument();
     });
   });
 
-  it("handles malformed JSON in validation error message", async () => {
+  it("does not parse backend validation prefixes as a second error protocol", async () => {
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",
@@ -886,7 +922,14 @@ describe("EntryDetailPane", () => {
       updated_at: "2026-01-01T00:00:00Z",
     });
     (entryApi.update as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("Form validation failed: not-valid-json"),
+      new UgoiteApiError({
+        kind: "invalid_arguments",
+        code: "INVALID_INPUT",
+        operation: "entry.update",
+        status: 422,
+        message: "Server validation failed",
+        detail: "not-valid-json",
+      }),
     );
 
     render(() => (
@@ -906,7 +949,8 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Form validation failed")).toBeInTheDocument();
+      expect(screen.getByText(/The request is invalid.*not-valid-json/))
+        .toBeInTheDocument();
     });
   });
 
@@ -941,11 +985,16 @@ describe("EntryDetailPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Server unavailable")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Failed to save the entry. (Details: Server unavailable)",
+        ),
+      ).toBeInTheDocument();
     });
   });
 
   it("REQ-FE-009: shows refresh guidance on revision conflict", async () => {
+    setLocale("ja");
     (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "entry-1",
       title: "Test Entry",
@@ -970,18 +1019,59 @@ describe("EntryDetailPane", () => {
     await waitFor(() => expect(entryApi.get).toHaveBeenCalled());
 
     const textarea = await screen.findByPlaceholderText(
-      "Start writing in Markdown...",
+      "Markdown を入力...",
     );
     fireEvent.input(textarea, { target: { value: "Updated content" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
       expect(
-        screen.getByText(
-          "This entry was modified elsewhere. Your draft is still in the editor; refresh to load the latest version.",
-        ),
+        screen.getByText("保存する前にエントリーが変更されました。"),
       ).toBeInTheDocument();
     });
+  });
+
+  it("localizes delete failures while preserving the typed API boundary", async () => {
+    setLocale("ja");
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Test Entry",
+      form: null,
+      content: "# Test Entry",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    (entryApi.delete as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new UgoiteApiError({
+        kind: "not_found",
+        code: "ENTRY_NOT_FOUND",
+        operation: "entry.delete",
+        status: 404,
+        message: "Entry not found",
+      }),
+    );
+    vi.stubGlobal("confirm", () => true);
+    const alertMock = vi.fn();
+    vi.stubGlobal("alert", alertMock);
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    await waitFor(() => screen.getByRole("button", { name: "エントリを削除" }));
+    fireEvent.click(screen.getByRole("button", { name: "エントリを削除" }));
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(
+        "エントリーが見つかりません。（詳細: Entry not found）",
+      );
+    });
+    vi.unstubAllGlobals();
   });
 
   it("calls onDeleted after successful delete", async () => {

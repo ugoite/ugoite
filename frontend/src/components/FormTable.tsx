@@ -16,6 +16,8 @@ import {
   replaceFirstH1,
   updateH2Section,
 } from "~/lib/markdown";
+import { t } from "~/lib/i18n";
+import { formatDateLabel } from "~/lib/date-format";
 
 interface FormTableProps {
   spaceId: string;
@@ -62,7 +64,7 @@ function applyColumnFilters(
       /* v8 ignore start */
       if (field === "title") val = entry.title || "";
       else if (field === "updated_at") {
-        val = new Date(entry.updated_at).toLocaleDateString();
+        val = formatDateLabel(entry.updated_at);
       } else val = String(entry.properties?.[field] ?? "");
       /* v8 ignore stop */
 
@@ -117,7 +119,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
         stroke="currentColor"
         viewBox="0 0 24 24"
       >
-        <title>Sort</title>
+        <title>{t("formTable.sort")}</title>
         <path
           stroke-linecap="round"
           stroke-linejoin="round"
@@ -135,7 +137,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
         stroke="currentColor"
         viewBox="0 0 24 24"
       >
-        <title>Sorted Ascending</title>
+        <title>{t("formTable.ascending")}</title>
         <path
           stroke-linecap="round"
           stroke-linejoin="round"
@@ -152,7 +154,7 @@ function SortIcon(props: { active: boolean; direction: SortDirection }) {
       stroke="currentColor"
       viewBox="0 0 24 24"
     >
-      <title>Sorted Descending</title>
+      <title>{t("formTable.descending")}</title>
       <path
         stroke-linecap="round"
         stroke-linejoin="round"
@@ -328,7 +330,7 @@ export function FormTable(props: FormTableProps) {
       /* v8 ignore start */
       // biome-ignore lint/suspicious/noConsole: error reporting
       console.error("CSV Export failed:", err);
-      alert("Failed to export CSV. Please check the console for details.");
+      alert(t("formTable.exportFailed"));
       /* v8 ignore stop */
     }
   };
@@ -346,9 +348,9 @@ export function FormTable(props: FormTableProps) {
     } catch (err) {
       /* v8 ignore start */
       // biome-ignore lint/suspicious/noConsole: error logging
-      console.error("Failed to add row", err);
+      console.error(t("formTable.addRowFailed"), err);
       alert(
-        `Failed to add row: ${
+        `${t("formTable.addRowFailed")}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -390,9 +392,11 @@ export function FormTable(props: FormTableProps) {
     } catch (err) {
       /* v8 ignore start */
       // biome-ignore lint/suspicious/noConsole: error logging
-      console.error("Update failed", err);
+      console.error(t("formTable.updateFailed"), err);
       alert(
-        `Update failed: ${err instanceof Error ? err.message : String(err)}`,
+        `${t("formTable.updateFailed")}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
       /* v8 ignore stop */
     }
@@ -460,7 +464,7 @@ export function FormTable(props: FormTableProps) {
     // Col N+1: Updated
     const lastCol = currentFields.length + 1;
     if (c1 <= lastCol && c2 >= lastCol) {
-      rowData.push(new Date(entry.updated_at).toLocaleDateString());
+      rowData.push(formatDateLabel(entry.updated_at));
     }
     return rowData.join("\t");
   };
@@ -493,7 +497,7 @@ export function FormTable(props: FormTableProps) {
     } catch (err) {
       /* v8 ignore start */
       // biome-ignore lint/suspicious/noConsole: debugging
-      console.error("Failed to copy", err);
+      console.error(t("common.copy"), err);
       /* v8 ignore stop */
     }
   };
@@ -537,10 +541,12 @@ export function FormTable(props: FormTableProps) {
           <div>
             <p class="ui-muted text-sm">
               {entries.error
-                ? "Could not load records."
+                ? t("formTable.recordsError")
                 : entries.loading && !entries()
-                ? "Loading..."
-                : `${processedEntries().length} records found`}
+                ? t("formTable.loading")
+                : t("formTable.recordsFound", {
+                  count: processedEntries().length,
+                })}
             </p>
           </div>
           <div class="flex gap-2">
@@ -555,7 +561,7 @@ export function FormTable(props: FormTableProps) {
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <title>Download CSV</title>
+                <title>{t("formTable.downloadCsv")}</title>
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -563,7 +569,7 @@ export function FormTable(props: FormTableProps) {
                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                 />
               </svg>
-              Export CSV
+              {t("formTable.exportCsv")}
             </button>
             <button
               type="button"
@@ -571,7 +577,9 @@ export function FormTable(props: FormTableProps) {
               class={`ui-button text-sm flex items-center gap-2 ${
                 isEditMode() ? "ui-button-primary" : "ui-button-secondary"
               }`}
-              title={isEditMode() ? "Disable Editing" : "Enable Editing"}
+              title={isEditMode()
+                ? t("formTable.disableEditing")
+                : t("formTable.enableEditing")}
             >
               {isEditMode()
                 ? (
@@ -581,7 +589,7 @@ export function FormTable(props: FormTableProps) {
                     stroke="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <title>Unlocked</title>
+                    <title>{t("formTable.unlocked")}</title>
                     <path
                       stroke-linecap="round"
                       stroke-linejoin="round"
@@ -597,7 +605,7 @@ export function FormTable(props: FormTableProps) {
                     stroke="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <title>Locked</title>
+                    <title>{t("formTable.locked")}</title>
                     <path
                       stroke-linecap="round"
                       stroke-linejoin="round"
@@ -606,7 +614,7 @@ export function FormTable(props: FormTableProps) {
                     />
                   </svg>
                 )}
-              {isEditMode() ? "Editable" : "Locked"}
+              {isEditMode() ? t("formTable.editable") : t("formTable.locked")}
             </button>
             <Show when={isEditMode()}>
               <button
@@ -627,17 +635,20 @@ export function FormTable(props: FormTableProps) {
                     d="M12 4v16m8-8H4"
                   />
                 </svg>
-                Add Row
+                {t("formTable.addRow")}
               </button>
             </Show>
           </div>
         </div>
 
         <Show when={entries.error}>
-          <div class="ui-alert ui-alert-error flex flex-wrap items-center justify-between gap-3" role="alert">
-            <span>Could not load records for this Form.</span>
+          <div
+            class="ui-alert ui-alert-error flex flex-wrap items-center justify-between gap-3"
+            role="alert"
+          >
+            <span>{t("formTable.loadRecordsError")}</span>
             <button class="btn" type="button" onClick={() => void refetch()}>
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         </Show>
@@ -646,7 +657,7 @@ export function FormTable(props: FormTableProps) {
           <div class="flex flex-wrap items-center gap-2 justify-between">
             <input
               type="text"
-              placeholder="Global Search..."
+              placeholder={t("formTable.globalSearch")}
               class="ui-input w-full max-w-md"
               value={globalFilter()}
               onInput={(e) => setGlobalFilter(e.currentTarget.value)}
@@ -662,30 +673,30 @@ export function FormTable(props: FormTableProps) {
                   type="button"
                   class="ui-button ui-button-secondary text-sm"
                   onClick={() => setShowSortMenu((value) => !value)}
-                  aria-label="Sort menu"
+                  aria-label={t("formTable.sortMenu")}
                   aria-expanded={showSortMenu()}
                 >
-                  Sort
+                  {t("formTable.sort")}
                 </button>
                 <Show when={showSortMenu()}>
                   <div class="ui-menu-panel">
                     <div class="ui-menu-section">
-                      <p class="ui-menu-title">Sort Field</p>
+                      <p class="ui-menu-title">{t("formTable.sortField")}</p>
                       <select
-                        aria-label="Sort field"
+                        aria-label={t("formTable.sortField")}
                         class="ui-input"
                         value={sortField() ?? ""}
                         onChange={(e) =>
                           handleSortFieldChange(e.currentTarget.value)}
                       >
-                        <option value="">None</option>
+                        <option value="">{t("formTable.none")}</option>
                         <For each={sortableFields()}>
                           {(field) => <option value={field}>{field}</option>}
                         </For>
                       </select>
                     </div>
                     <div class="ui-menu-section">
-                      <p class="ui-menu-title">Direction</p>
+                      <p class="ui-menu-title">{t("formTable.direction")}</p>
                       <div class="ui-menu-options">
                         <label class="ui-radio">
                           <input
@@ -695,7 +706,7 @@ export function FormTable(props: FormTableProps) {
                             checked={sortDirection() === "asc"}
                             onChange={() => setSortDirection("asc")}
                           />
-                          <span>Ascending</span>
+                          <span>{t("formTable.ascending")}</span>
                         </label>
                         <label class="ui-radio">
                           <input
@@ -705,7 +716,7 @@ export function FormTable(props: FormTableProps) {
                             checked={sortDirection() === "desc"}
                             onChange={() => setSortDirection("desc")}
                           />
-                          <span>Descending</span>
+                          <span>{t("formTable.descending")}</span>
                         </label>
                       </div>
                     </div>
@@ -721,7 +732,7 @@ export function FormTable(props: FormTableProps) {
                 }`}
                 onClick={() => setShowColumnFilters((value) => !value)}
               >
-                Filter
+                {t("formTable.filter")}
               </button>
             </div>
           </div>
@@ -734,9 +745,9 @@ export function FormTable(props: FormTableProps) {
                 <th
                   scope="col"
                   class="ui-table-header-cell w-10 sticky top-0 z-10"
-                  aria-label="Actions"
+                  aria-label={t("formTable.actions")}
                 >
-                  <span class="sr-only">Actions</span>
+                  <span class="sr-only">{t("formTable.actions")}</span>
                 </th>
                 <th scope="col" class="ui-table-header-cell sticky top-0 z-10">
                   <div class="flex flex-col gap-2">
@@ -745,7 +756,7 @@ export function FormTable(props: FormTableProps) {
                       class="ui-table-header-button select-none"
                       onClick={() => handleHeaderClick("title")}
                     >
-                      Title
+                      {t("formTable.title")}
                       <SortIcon
                         active={sortField() === "title"}
                         direction={sortDirection()}
@@ -755,7 +766,7 @@ export function FormTable(props: FormTableProps) {
                       <input
                         type="text"
                         class="ui-input ui-input-sm ui-table-filter text-xs"
-                        placeholder="Filter..."
+                        placeholder={t("formTable.columnFilter")}
                         value={columnFilters().title || ""}
                         onInput={(e) =>
                           updateColumnFilter("title", e.currentTarget.value)}
@@ -787,7 +798,7 @@ export function FormTable(props: FormTableProps) {
                           <input
                             type="text"
                             class="ui-input ui-input-sm ui-table-filter text-xs"
-                            placeholder="Filter..."
+                            placeholder={t("formTable.columnFilter")}
                             value={columnFilters()[field] || ""}
                             onInput={(e) =>
                               updateColumnFilter(field, e.currentTarget.value)}
@@ -806,7 +817,7 @@ export function FormTable(props: FormTableProps) {
                       class="ui-table-header-button select-none"
                       onClick={() => handleHeaderClick("updated_at")}
                     >
-                      Updated
+                      {t("formTable.updated")}
                       <SortIcon
                         active={sortField() === "updated_at"}
                         direction={sortDirection()}
@@ -816,7 +827,7 @@ export function FormTable(props: FormTableProps) {
                       <input
                         type="text"
                         class="ui-input ui-input-sm ui-table-filter text-xs"
-                        placeholder="Filter..."
+                        placeholder={t("formTable.columnFilter")}
                         value={columnFilters().updated_at || ""}
                         onInput={(e) =>
                           updateColumnFilter(
@@ -839,8 +850,8 @@ export function FormTable(props: FormTableProps) {
                         type="button"
                         onClick={() => props.onEntryClick(entry.id)}
                         class="ui-button ui-button-secondary ui-button-sm inline-flex items-center gap-2 text-xs"
-                        title="View Entry"
-                        aria-label="View Entry"
+                        title={t("formTable.viewEntry")}
+                        aria-label={t("formTable.viewEntry")}
                       >
                         <svg
                           class="w-4 h-4"
@@ -848,7 +859,7 @@ export function FormTable(props: FormTableProps) {
                           stroke="currentColor"
                           viewBox="0 0 24 24"
                         >
-                          <title>View Entry</title>
+                          <title>{t("formTable.viewEntry")}</title>
                           <path
                             stroke-linecap="round"
                             stroke-linejoin="round"
@@ -856,7 +867,7 @@ export function FormTable(props: FormTableProps) {
                             d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
                           />
                         </svg>
-                        <span>View</span>
+                        <span>{t("formTable.view")}</span>
                       </button>
                     </td>
                     {/* biome-ignore lint/a11y/useKeyWithClickEvents: drag select is mouse-only for now */}
@@ -878,7 +889,7 @@ export function FormTable(props: FormTableProps) {
                     >
                       <Show
                         when={isCellEditing(entry.id, "title")}
-                        fallback={entry.title || "Untitled"}
+                        fallback={entry.title || t("common.untitled")}
                       >
                         <input
                           value={entry.title || ""}
@@ -965,7 +976,7 @@ export function FormTable(props: FormTableProps) {
                           fields().length + 1,
                         )}
                     >
-                      {new Date(entry.updated_at).toLocaleDateString()}
+                      {formatDateLabel(entry.updated_at)}
                     </td>
                   </tr>
                 )}

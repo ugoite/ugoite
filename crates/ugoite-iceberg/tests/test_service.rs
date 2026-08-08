@@ -7,7 +7,7 @@ use ugoite_domain::identity::{
     AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
 use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
-use ugoite_iceberg::saved_sql::SqlPayload;
+use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
 use uuid::Uuid;
 
@@ -333,7 +333,9 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
         .await?
         .to_string();
     let payload = |name: &str| SqlPayload {
-        name: name.to_string(),
+        name: Some(name.to_string()),
+        kind: SqlKind::UserQuery,
+        metadata: None,
         sql: "SELECT 1".to_string(),
         variables: json!([]),
     };

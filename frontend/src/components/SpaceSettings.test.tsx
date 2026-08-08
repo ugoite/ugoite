@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SpaceSettings } from "./SpaceSettings";
 import { setLocale } from "~/lib/i18n";
 import type { Space } from "~/lib/types";
@@ -18,6 +18,7 @@ const space: Space = {
 };
 describe("v5 SpaceSettings", () => {
   beforeEach(() => setLocale("en"));
+  afterEach(() => setLocale("en"));
   it("renders and saves General independently", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     render(() => (
@@ -101,5 +102,28 @@ describe("v5 SpaceSettings", () => {
         storage_config: { uri: "file:///data/demo" },
       })
     );
+  });
+
+  it("REQ-FE-044: renders space settings controls in Japanese", () => {
+    setLocale("ja");
+    render(() => (
+      <SpaceSettings
+        space={space}
+        section="storage"
+        onSave={vi.fn()}
+        onTestConnection={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByRole("heading", { name: "ストレージ" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "保存トポロジ" }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("URI")).toBeInTheDocument();
+    expect(screen.getByLabelText("エンドポイント")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "接続をテスト" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存" })).toBeInTheDocument();
+    expect(screen.queryByText("Storage topology")).not.toBeInTheDocument();
   });
 });

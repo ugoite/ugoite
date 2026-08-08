@@ -149,13 +149,14 @@ impl ApiError {
                 ErrorKind::DependencyUnavailable => StatusCode::BAD_GATEWAY,
                 ErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
             };
-            return Self {
-                status,
-                detail: json!({
-                    "code": app_error.code_str(),
-                    "message": app_error.message(),
-                }),
-            };
+            let mut detail = json!({
+                "code": app_error.code_str(),
+                "message": app_error.message(),
+            });
+            if let Some(extra) = app_error.detail() {
+                detail["detail"] = extra.clone();
+            }
+            return Self { status, detail };
         }
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -4187,7 +4188,7 @@ async fn update_sql(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, sql_id)): Path<(String, String)>,
-    Json(payload): Json<saved_sql::SqlPayload>,
+    Json(payload): Json<saved_sql::SqlUpdatePayload>,
 ) -> ApiResult<Json<Value>> {
     let principal_id = require_resource_action(
         &state,
@@ -4199,6 +4200,8 @@ async fn update_sql(
     )
     .await?;
     validate_id(&sql_id, "sql_id")?;
+    let parent_revision_id = payload.parent_revision_id.clone();
+    let payload = payload.into_sql_payload();
     Ok(Json(
         state
             .service
@@ -4206,7 +4209,7 @@ async fn update_sql(
                 &space_id,
                 &sql_id,
                 &payload,
-                None,
+                &parent_revision_id,
                 &principal_id.to_string(),
             )
             .await
@@ -4852,7 +4855,7 @@ mod authentication_regression_tests {
         assert_eq!(invalid_response.status(), StatusCode::UNPROCESSABLE_ENTITY);
         let invalid_body = axum::body::to_bytes(invalid_response.into_body(), usize::MAX).await?;
         let invalid_body: Value = serde_json::from_slice(&invalid_body)?;
-        assert_eq!(invalid_body["code"], "INVALID_INPUT");
+        assert_eq!(invalid_body["code"], "FORM_VALIDATION_FAILED");
         assert!(state.service.list_entries(&space_id).await?.is_empty());
 
         let missing_form_response = route
@@ -4924,7 +4927,7 @@ mod authentication_regression_tests {
         let invalid_update_body =
             axum::body::to_bytes(invalid_update_response.into_body(), usize::MAX).await?;
         let invalid_update_body: Value = serde_json::from_slice(&invalid_update_body)?;
-        assert_eq!(invalid_update_body["code"], "INVALID_INPUT");
+        assert_eq!(invalid_update_body["code"], "FORM_VALIDATION_FAILED");
 
         let history_response = route
             .oneshot(
@@ -5034,10 +5037,12 @@ mod authentication_regression_tests {
             assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
             let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
             let body: Value = serde_json::from_slice(&body)?;
-            assert_eq!(body["code"], "INVALID_INPUT");
-            assert!(body["message"].as_str().is_some_and(|message| {
-                message.contains("Field 'thumbnail'") || message.contains("Field 'documents'")
-            }));
+            assert!(matches!(
+                body["code"].as_str(),
+                Some("INVALID_INPUT" | "FORM_VALIDATION_FAILED")
+            ));
+            let diagnostic = format!("{} {}", body["message"], body["detail"]);
+            assert!(diagnostic.contains("thumbnail") || diagnostic.contains("documents"));
         }
         assert!(state.service.list_entries(&space_id).await?.is_empty());
 
@@ -5090,6 +5095,149 @@ mod authentication_regression_tests {
         let history_body: Value = serde_json::from_slice(&history_body)?;
         assert_eq!(history_body["revisions"].as_array().map(Vec::len), Some(1));
         assert_eq!(history_body["revisions"][0]["revision_id"], revision_id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn saved_sql_update_contract_preserves_revision_checks() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-saved-sql-update-contract")?;
+        let principal_id = Uuid::from_u128(1873);
+        let space_id = state
+            .service
+            .create_space_for_principal("saved-sql-update-contract", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let route = Router::new()
+            .route("/spaces/{space_id}/sql", post(create_sql))
+            .route("/spaces/{space_id}/sql/{sql_id}", put(update_sql))
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state.clone());
+
+        let create_response = route
+            .clone()
+            .oneshot(
+                Request::post(format!("/spaces/{space_id}/sql"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "Saved query",
+                            "kind": "user-query",
+                            "sql": "SELECT 1",
+                            "variables": []
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let create_body = axum::body::to_bytes(create_response.into_body(), usize::MAX).await?;
+        let create_body: Value = serde_json::from_slice(&create_body)?;
+        let sql_id = create_body["id"].as_str().expect("SQL id").to_string();
+        let first_revision = create_body["revision_id"]
+            .as_str()
+            .expect("initial SQL revision")
+            .to_string();
+
+        let update_body = |parent_revision_id: &str| {
+            json!({
+                "name": "Saved query updated",
+                "kind": "user-query",
+                "sql": "SELECT 2",
+                "variables": [],
+                "parent_revision_id": parent_revision_id,
+            })
+        };
+
+        let update_without_revision = route
+            .clone()
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "Saved query updated",
+                            "kind": "user-query",
+                            "sql": "SELECT 2",
+                            "variables": []
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(
+            update_without_revision.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+
+        let blank_revision = route
+            .clone()
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(update_body("   ").to_string()))?,
+            )
+            .await?;
+        assert_eq!(blank_revision.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let first_update = route
+            .clone()
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(update_body(&first_revision).to_string()))?,
+            )
+            .await?;
+        assert_eq!(first_update.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(first_update.into_body(), usize::MAX).await?;
+        let second_revision = serde_json::from_slice::<Value>(&body)?["revision_id"]
+            .as_str()
+            .expect("second SQL revision")
+            .to_string();
+
+        let stale_update = route
+            .clone()
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(update_body(&first_revision).to_string()))?,
+            )
+            .await?;
+        assert_eq!(stale_update.status(), StatusCode::CONFLICT);
+        let stale_body = axum::body::to_bytes(stale_update.into_body(), usize::MAX).await?;
+        assert_eq!(
+            serde_json::from_slice::<Value>(&stale_body)?["code"],
+            "REVISION_CONFLICT"
+        );
+
+        let valid_update = route
+            .clone()
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(update_body(&second_revision).to_string()))?,
+            )
+            .await?;
+        assert_eq!(valid_update.status(), StatusCode::OK);
+
+        let unknown_field = route
+            .oneshot(
+                Request::put(format!("/spaces/{space_id}/sql/{sql_id}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "Saved query",
+                            "kind": "user-query",
+                            "sql": "SELECT 3",
+                            "variables": [],
+                            "parent_revision_id": second_revision,
+                            "author": "unexpected"
+                        })
+                        .to_string(),
+                    ))?,
+            )
+            .await?;
+        assert_eq!(unknown_field.status(), StatusCode::UNPROCESSABLE_ENTITY);
         Ok(())
     }
 

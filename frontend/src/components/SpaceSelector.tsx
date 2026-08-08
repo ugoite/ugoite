@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { Space } from "~/lib/types";
+import { t } from "~/lib/i18n";
 
 export interface SpaceSelectorProps {
   spaces: Space[];
@@ -14,10 +15,10 @@ export function SpaceSelector(props: SpaceSelectorProps) {
     <div class="ui-toolbar">
       <div class="flex items-center gap-2">
         <label for="space-select" class="ui-label text-xs shrink-0">
-          Space:
+          {t("common.space")}:
         </label>
         <Show when={props.loading}>
-          <span class="text-xs ui-muted">Loading...</span>
+          <span class="text-xs ui-muted">{t("common.loading")}</span>
         </Show>
         <Show when={!props.loading}>
           <select

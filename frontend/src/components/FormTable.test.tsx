@@ -4,8 +4,13 @@ import { fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { FormTable } from "./FormTable";
 import { entryApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
+import { setLocale } from "~/lib/i18n";
 
 describe("FormTable", () => {
+  beforeEach(() => {
+    setLocale("en");
+  });
+
   it("keeps the Form workspace available when its query fails", async () => {
     const entryForm = { name: "Entry", fields: {} } as any;
     const query = vi.spyOn(searchApi, "query")

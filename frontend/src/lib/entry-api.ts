@@ -9,10 +9,7 @@ import type {
 } from "./types";
 import { normalizeEntryRecord, normalizeTimestamp } from "./date-format";
 import { buildEntryMarkdownByMode } from "./entry-input";
-import {
-  protocolFetch,
-  UgoiteApiError,
-} from "./ugoite-client/protocol";
+import { protocolFetch, UgoiteApiError } from "./ugoite-client/protocol";
 
 type EntryResponse = Omit<Entry, "content"> & {
   content?: string;
@@ -26,7 +23,9 @@ const normalizeEntry = (entry: EntryResponse): Entry => ({
   updated_at: normalizeTimestamp(entry.updated_at),
 });
 
-const currentRevisionIdFromError = (error: UgoiteApiError): string | undefined => {
+const currentRevisionIdFromError = (
+  error: UgoiteApiError,
+): string | undefined => {
   if (!error.payload || typeof error.payload !== "object") return undefined;
   const value = (error.payload as Record<string, unknown>)[
     "current_revision_id"
@@ -113,6 +112,7 @@ export const entryApi = {
         throw new RevisionConflictError(
           error.message,
           currentRevisionIdFromError(error),
+          error,
         );
       }
       throw error;
@@ -130,10 +130,13 @@ export const entryApi = {
     spaceId: string,
     entryId: string,
   ): Promise<{ revisions: EntryRevision[] }> {
-    return await protocolFetch<{ revisions: EntryRevision[] }>("entry.history", {
-      space_id: spaceId,
-      entry_id: entryId,
-    });
+    return await protocolFetch<{ revisions: EntryRevision[] }>(
+      "entry.history",
+      {
+        space_id: spaceId,
+        entry_id: entryId,
+      },
+    );
   },
 
   async getRevision(
@@ -166,6 +169,7 @@ export class RevisionConflictError extends Error {
   constructor(
     message: string,
     public currentRevisionId?: string,
+    public apiError?: UgoiteApiError,
   ) {
     super(message);
     this.name = "RevisionConflictError";

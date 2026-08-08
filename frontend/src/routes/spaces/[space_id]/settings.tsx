@@ -1,9 +1,9 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceSettings } from "~/components/SpaceSettings";
-import { UiIcon, type UiIconName } from "~/components/UiIcon";
+import { UiIcon } from "~/components/UiIcon";
 import { CredentialSettings } from "~/routes/settings/security";
-import { locale } from "~/lib/i18n";
+import { locale, t, type TranslationKey } from "~/lib/i18n";
 import { setLocalePreference } from "~/lib/preferences-store";
 import { spaceApi } from "~/lib/ugoite-client";
 import type {
@@ -13,42 +13,46 @@ import type {
   StorageConnectionConfig,
 } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
+import {
+  settingsSections,
+  type SettingsSectionId,
+} from "~/lib/settings-sections";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "settings", title: "settings" });
 
-type Section =
-  | "general"
-  | "members"
-  | "agents"
-  | "credentials"
-  | "storage";
-const sections: Array<
-  { id: Section; icon: UiIconName; en: string; ja: string }
-> = [
-  { id: "general", icon: "settings", en: "General", ja: "一般" },
-  { id: "members", icon: "members", en: "Members", ja: "メンバー" },
-  { id: "agents", icon: "agent", en: "Agents", ja: "エージェント" },
-  { id: "credentials", icon: "credential", en: "Credentials", ja: "認証情報" },
-  { id: "storage", icon: "storage", en: "Storage", ja: "ストレージ" },
-];
+type Section = SettingsSectionId;
 const managedRoles = ["owner", "editor", "viewer"] as const;
 type ManagedRole = typeof managedRoles[number];
 type AgentMode = "autonomous" | "delegated" | "both";
-const message = (error: unknown, fallback: string) =>
-  error instanceof Error && error.message.trim() ? error.message : fallback;
+const message = (error: unknown, fallbackKey: TranslationKey) =>
+  formatUserFacingError(error, fallbackKey);
+
+const parseAgentPublicJwk = (
+  value: string,
+): Record<string, unknown> | null => {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
 
 export default function SpaceSettingsRoute() {
   const params = useParams<{ space_id: string }>();
   const [search, setSearch] = useSearchParams();
   const spaceId = () => params.space_id;
   const active = createMemo<Section>(() =>
-    sections.some((section) => section.id === search.section)
+    settingsSections.some((section) => section.id === search.section)
       ? search.section as Section
       : "general"
   );
-  const label = (section: typeof sections[number]) =>
-    section[locale() === "ja" ? "ja" : "en"];
+  const label = (section: typeof settingsSections[number]) => t(section.key);
   const [space, { refetch }] = createResource(spaceId, spaceApi.get);
   const [members, { refetch: refetchMembers }] = createResource(
     () => active() === "members" ? spaceId() : null,
@@ -79,7 +83,7 @@ export default function SpaceSettingsRoute() {
     spaceApi.testConnection(spaceId(), { storage_config: config });
   const invite = async () => {
     if (!inviteLabel().trim()) {
-      setMemberError("Invitation label is required.");
+      setMemberError(t("settings.invitationLabelRequired"));
       return;
     }
     try {
@@ -92,7 +96,7 @@ export default function SpaceSettingsRoute() {
       setMemberError("");
       await refetchMembers();
     } catch (error) {
-      setMemberError(message(error, "Failed to invite member."));
+      setMemberError(message(error, "settings.failedInvite"));
     }
   };
   const updateRole = async (principalId: string, role: ManagedRole) => {
@@ -100,7 +104,7 @@ export default function SpaceSettingsRoute() {
       await spaceApi.updateMemberRole(spaceId(), principalId, { role });
       await refetchMembers();
     } catch (error) {
-      setMemberError(message(error, "Failed to update role."));
+      setMemberError(message(error, "settings.failedUpdateRole"));
     }
   };
   const revokeMember = async (principalId: string) => {
@@ -108,7 +112,7 @@ export default function SpaceSettingsRoute() {
       await spaceApi.revokeMember(spaceId(), principalId);
       await refetchMembers();
     } catch (error) {
-      setMemberError(message(error, "Failed to revoke member."));
+      setMemberError(message(error, "settings.failedRevokeMember"));
     }
   };
   const createAgent = async () => {
@@ -120,13 +124,18 @@ export default function SpaceSettingsRoute() {
           ["read", "create", "update"].includes(value)
         ) as Array<"read" | "create" | "update">;
       if (!agentName().trim() || !agentExpiresAt() || !actions.length) {
-        throw new Error("Name, expiry, and at least one action are required.");
+        throw new Error(t("settings.agentValidation"));
+      }
+      const publicJwk = parseAgentPublicJwk(agentPublicKey());
+      if (!publicJwk) {
+        setAgentError(t("settings.invalidPublicJwk"));
+        return;
       }
       const result = await spaceApi.createAgent(spaceId(), {
         display_name: agentName().trim(),
         description: agentDescription().trim(),
         mode: agentMode(),
-        public_key_jwk: JSON.parse(agentPublicKey()),
+        public_key_jwk: publicJwk,
         granted_actions: actions,
         expires_at: new Date(agentExpiresAt()).toISOString(),
       });
@@ -136,7 +145,7 @@ export default function SpaceSettingsRoute() {
       setAgentPublicKey("");
       await refetchAgents();
     } catch (error) {
-      setAgentError(message(error, "Failed to create agent."));
+      setAgentError(message(error, "settings.failedCreateAgent"));
     }
   };
   const revokeAgent = async (id: string) => {
@@ -144,7 +153,7 @@ export default function SpaceSettingsRoute() {
       await spaceApi.revokeAgent(spaceId(), id);
       await refetchAgents();
     } catch (error) {
-      setAgentError(message(error, "Failed to revoke agent."));
+      setAgentError(message(error, "settings.failedRevokeAgent"));
     }
   };
 
@@ -153,12 +162,12 @@ export default function SpaceSettingsRoute() {
       <div class="screenHead">
         <div class="screenTitle">
           <div class="eyebrow">{space()?.name || spaceId()}</div>
-          <h1>Settings</h1>
+          <h1>{t("settings.title")}</h1>
         </div>
       </div>
       <div class="settingsLayout">
         <aside class="settingsNav surface">
-          <For each={sections}>
+          <For each={settingsSections}>
             {(section) => (
               <button
                 type="button"
@@ -173,11 +182,15 @@ export default function SpaceSettingsRoute() {
         </aside>
         <main>
           <Show when={space.loading}>
-            <div class="settingsMain surface ui-muted">Loading space…</div>
+            <div class="settingsMain surface ui-muted">
+              {t("settings.loadingSpace")}
+            </div>
           </Show>
           <Show when={space.error}>
             <div class="ui-alert ui-alert-error">
-              Failed to load space: {message(space.error, "Unknown error")}
+              {t("settings.failedLoadSpace", {
+                error: message(space.error, "settings.unknownError"),
+              })}
             </div>
           </Show>
           <Show when={space()}>
@@ -192,17 +205,22 @@ export default function SpaceSettingsRoute() {
                       onTestConnection={testConnection}
                     />
                     <section class="settingsMain surface">
-                      <h2>Language</h2>
+                      <h2>{t("settings.language")}</h2>
                       <label>
-                        Language<select
+                        {t("settings.language")}
+                        <select
                           value={locale()}
                           onChange={(event) =>
                             void setLocalePreference(
                               event.currentTarget.value as "en" | "ja",
                             )}
                         >
-                          <option value="en">English</option>
-                          <option value="ja">日本語</option>
+                          <option value="en">
+                            {t("settings.language.english")}
+                          </option>
+                          <option value="ja">
+                            {t("settings.language.japanese")}
+                          </option>
                         </select>
                       </label>
                     </section>
@@ -222,22 +240,28 @@ export default function SpaceSettingsRoute() {
 
           <Show when={active() === "members"}>
             <section class="settingsMain surface">
-              <h2>Members</h2>
+              <h2>{t("settings.section.members")}</h2>
               <div class="settingsGrid">
                 <label>
-                  Invitation label<input
+                  {t("settings.invitationLabel")}
+                  <input
                     value={inviteLabel()}
                     onInput={(e) => setInviteLabel(e.currentTarget.value)}
                   />
                 </label>
                 <label>
-                  Role<select
+                  {t("settings.role")}
+                  <select
                     value={inviteRole()}
                     onChange={(e) =>
                       setInviteRole(e.currentTarget.value as ManagedRole)}
                   >
                     <For each={managedRoles}>
-                      {(role) => <option value={role}>{role}</option>}
+                      {(role) => (
+                        <option value={role}>
+                          {role} — {t(`settings.role.${role}` as TranslationKey)}
+                        </option>
+                      )}
                     </For>
                   </select>
                 </label>
@@ -247,23 +271,24 @@ export default function SpaceSettingsRoute() {
                 type="button"
                 onClick={() => void invite()}
               >
-                Invite
+                {t("settings.invite")}
               </button>
               <Show when={inviteUrl()}>
                 <p class="ui-alert ui-alert-success">
-                  Invitation URL: <code>{inviteUrl()}</code>
+                  {t("settings.invitationUrl")}: <code>{inviteUrl()}</code>
                 </p>
               </Show>
               <Show when={memberError()}>
                 <p class="ui-alert ui-alert-error">{memberError()}</p>
               </Show>
               <Show when={members.loading}>
-                <p class="ui-muted">Loading members...</p>
+                <p class="ui-muted">{t("settings.loadingMembers")}</p>
               </Show>
               <Show when={members.error}>
                 <p class="ui-alert ui-alert-error">
-                  Failed to load members:{" "}
-                  {message(members.error, "Unknown error")}
+                  {t("settings.failedLoadMembers", {
+                    error: message(members.error, "settings.unknownError"),
+                  })}
                 </p>
               </Show>
               <div class="rowStack">
@@ -271,7 +296,7 @@ export default function SpaceSettingsRoute() {
                   each={members() ?? []}
                   fallback={
                     <Show when={!members.loading && !members.error}>
-                      <p class="ui-muted">No members found.</p>
+                      <p class="ui-muted">{t("settings.noMembers")}</p>
                     </Show>
                   }
                 >
@@ -295,7 +320,11 @@ export default function SpaceSettingsRoute() {
                             )}
                         >
                           <For each={managedRoles}>
-                            {(role) => <option value={role}>{role}</option>}
+                            {(role) => (
+                              <option value={role}>
+                                {role} — {t(`settings.role.${role}` as TranslationKey)}
+                              </option>
+                            )}
                           </For>
                         </select>
                         <button
@@ -305,7 +334,7 @@ export default function SpaceSettingsRoute() {
                           onClick={() =>
                             void revokeMember(member.principal.principal_id)}
                         >
-                          Revoke
+                          {t("settings.revoke")}
                         </button>
                       </span>
                     </div>
@@ -317,33 +346,43 @@ export default function SpaceSettingsRoute() {
 
           <Show when={active() === "agents"}>
             <section class="settingsMain surface">
-              <h2>Agents</h2>
+              <h2>{t("settings.section.agents")}</h2>
               <div class="settingsGrid">
                 <label>
-                  Name<input
+                  {t("settings.agentName")}
+                  <input
                     value={agentName()}
                     onInput={(e) => setAgentName(e.currentTarget.value)}
                   />
                 </label>
                 <label>
-                  Mode<select
+                  {t("settings.agentMode")}
+                  <select
                     value={agentMode()}
                     onChange={(e) =>
                       setAgentMode(e.currentTarget.value as AgentMode)}
                   >
-                    <option value="autonomous">autonomous</option>
-                    <option value="delegated">delegated</option>
-                    <option value="both">both</option>
+                    <option value="autonomous">
+                      autonomous — {t("settings.agentMode.autonomous")}
+                    </option>
+                    <option value="delegated">
+                      delegated — {t("settings.agentMode.delegated")}
+                    </option>
+                    <option value="both">
+                      both — {t("settings.agentMode.both")}
+                    </option>
                   </select>
                 </label>
                 <label>
-                  Granted actions<input
+                  {t("settings.grantedActions")}
+                  <input
                     value={agentActions()}
                     onInput={(e) => setAgentActions(e.currentTarget.value)}
                   />
                 </label>
                 <label>
-                  Expiry<input
+                  {t("settings.expiry")}
+                  <input
                     type="datetime-local"
                     value={agentExpiresAt()}
                     onInput={(e) => setAgentExpiresAt(e.currentTarget.value)}
@@ -351,13 +390,15 @@ export default function SpaceSettingsRoute() {
                 </label>
               </div>
               <label>
-                Description<textarea
+                {t("settings.description")}
+                <textarea
                   value={agentDescription()}
                   onInput={(e) => setAgentDescription(e.currentTarget.value)}
                 />
               </label>
               <label>
-                Public JWK<textarea
+                {t("settings.publicJwk")}
+                <textarea
                   class="mono"
                   value={agentPublicKey()}
                   onInput={(e) => setAgentPublicKey(e.currentTarget.value)}
@@ -368,23 +409,25 @@ export default function SpaceSettingsRoute() {
                 type="button"
                 onClick={() => void createAgent()}
               >
-                Create Agent
+                {t("settings.createAgent")}
               </button>
               <Show when={agentError()}>
                 <p class="ui-alert ui-alert-error">{agentError()}</p>
               </Show>
               <Show when={agentCredential()}>
                 <p class="ui-alert ui-alert-success">
-                  Credential registered: <code>{agentCredential()}</code>
+                  {t("settings.credentialRegistered")}:{" "}
+                  <code>{agentCredential()}</code>
                 </p>
               </Show>
               <Show when={agents.loading}>
-                <p class="ui-muted">Loading agents...</p>
+                <p class="ui-muted">{t("settings.loadingAgents")}</p>
               </Show>
               <Show when={agents.error}>
                 <p class="ui-alert ui-alert-error">
-                  Failed to load agents:{" "}
-                  {message(agents.error, "Unknown error")}
+                  {t("settings.failedLoadAgents", {
+                    error: message(agents.error, "settings.unknownError"),
+                  })}
                 </p>
               </Show>
               <div class="rowStack">
@@ -392,7 +435,7 @@ export default function SpaceSettingsRoute() {
                   each={agents() ?? []}
                   fallback={
                     <Show when={!agents.loading && !agents.error}>
-                      <p class="ui-muted">No agents found.</p>
+                      <p class="ui-muted">{t("settings.noAgents")}</p>
                     </Show>
                   }
                 >
@@ -411,7 +454,7 @@ export default function SpaceSettingsRoute() {
                         disabled={agent.status === "revoked"}
                         onClick={() => void revokeAgent(agent.agent_id)}
                       >
-                        Revoke
+                        {t("settings.revoke")}
                       </button>
                     </div>
                   )}
@@ -425,7 +468,6 @@ export default function SpaceSettingsRoute() {
               <CredentialSettings />
             </section>
           </Show>
-
         </main>
       </div>
     </>

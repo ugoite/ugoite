@@ -1,9 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import {
-	ensureDefaultForm,
-	getBackendUrl,
-	getDefaultFormRelation,
-	waitForServers,
+  ensureDefaultForm,
+  getBackendUrl,
+  getDefaultFormRelation,
+  waitForServers,
 } from "./lib/client.ts";
 
 const spaceId = "default";
@@ -26,9 +26,9 @@ test.describe("UI theme flows", () => {
 			const relation = await getDefaultFormRelation(request);
 			const runId = Date.now();
 			const entryTitle = `E2E Theme Entry ${theme} ${runId}`;
-			const variableQueryId = `e2e-theme-var-${theme}-${runId}`;
 			const variableQueryName = `E2E Variables ${theme}`;
 			let entryId: string | null = null;
+			let variableQueryId: string | null = null;
 
 			await cleanupThemeQueries(request, theme, spaceId);
 			await resetThemePreferences(request);
@@ -45,8 +45,8 @@ test.describe("UI theme flows", () => {
 
 				const variableQueryRes = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
 					data: {
-						id: variableQueryId,
 						name: variableQueryName,
+						kind: "user-query",
 						sql: `SELECT * FROM "${relation}" WHERE _ugoite_title = {{title}} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT 10`,
 						variables: [
 							{ type: "string", name: "title", description: "Title" },
@@ -54,6 +54,8 @@ test.describe("UI theme flows", () => {
 					},
 				});
 				expect([200, 201]).toContain(variableQueryRes.status());
+				const variableQuery = (await variableQueryRes.json()) as { id: string };
+				variableQueryId = variableQuery.id;
 
 				await gotoWithRetry(page, `/spaces/${spaceId}/dashboard`);
 
@@ -119,7 +121,9 @@ test.describe("UI theme flows", () => {
 				if (entryId) {
 					await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
 				}
-				await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${variableQueryId}`));
+				if (variableQueryId) {
+					await request.delete(getBackendUrl(`/spaces/${spaceId}/sql/${variableQueryId}`));
+				}
 				await cleanupThemeQueries(request, theme, spaceId);
 			}
 		});
@@ -151,7 +155,11 @@ async function waitForQueryButton(
 	for (let attempt = 0; attempt < 20; attempt += 1) {
 		const response = await request.get(getBackendUrl(`/spaces/${space}/sql`));
 		if (response.ok()) {
-			const list = (await response.json()) as Array<{ id: string; name: string }>;
+			const list = (await response.json()) as Array<{
+				id: string;
+				name: string | null;
+				kind: "user-query" | "search-history";
+			}>;
 			if (list.some((item) => item.name === name)) {
 				return;
 			}
@@ -172,9 +180,18 @@ async function cleanupThemeQueries(
 		return;
 	}
 
-	const list = (await listRes.json()) as Array<{ id: string; name: string }>;
+	const list = (await listRes.json()) as Array<{
+		id: string;
+		name: string | null;
+		kind: "user-query" | "search-history";
+	}>;
 	const prefixes = [`E2E Theme Query ${theme}`, `E2E Variables ${theme}`];
-	const created = list.filter((item) => prefixes.some((prefix) => item.name.startsWith(prefix)));
+	const created = list.filter((item) => {
+		const name = item.name;
+		return item.kind === "user-query" &&
+			name !== null &&
+			prefixes.some((prefix) => name.startsWith(prefix));
+	});
 	for (const item of created) {
 		await request.delete(getBackendUrl(`/spaces/${space}/sql/${item.id}`));
 	}

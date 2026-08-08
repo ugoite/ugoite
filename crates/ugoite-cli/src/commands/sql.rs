@@ -2,8 +2,9 @@ use crate::config::{load_config, print_json, resolve_space_reference, validated_
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use ugoite_iceberg::saved_sql::SqlPayload;
+use ugoite_iceberg::saved_sql::{SqlKind, SqlPayload};
 use ugoite_iceberg::service::UgoiteService;
+use uuid::Uuid;
 
 #[derive(Args)]
 pub struct SqlCmd {
@@ -22,15 +23,12 @@ pub enum SqlSubCmd {
     /// Create a saved SQL query
     SavedCreate {
         space_path: String,
-        sql_id: String,
         #[arg(long)]
         name: String,
         #[arg(long)]
         sql: String,
         #[arg(long)]
         variables: Option<String>,
-        #[arg(long, default_value = "cli")]
-        author: String,
     },
     /// Update a saved SQL query
     SavedUpdate {
@@ -43,9 +41,7 @@ pub enum SqlSubCmd {
         #[arg(long)]
         variables: Option<String>,
         #[arg(long)]
-        parent_revision_id: Option<String>,
-        #[arg(long, default_value = "cli")]
-        author: String,
+        parent_revision_id: String,
     },
     /// Delete a saved SQL query
     SavedDelete { space_path: String, sql_id: String },
@@ -95,11 +91,9 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
         }
         SqlSubCmd::SavedCreate {
             space_path,
-            sql_id,
             name,
             sql,
             variables,
-            author,
         } => {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-create")?;
@@ -111,20 +105,23 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                     &base,
                     "sql.create",
                     serde_json::json!({"space_id": space_id}),
-                    Some(serde_json::json!({"id": sql_id, "name": name, "sql": sql, "variables": vars, "author": author})),
+                    Some(serde_json::json!({"name": name, "kind": "user-query", "sql": sql, "variables": vars})),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
+            let sql_id = Uuid::now_v7().to_string();
             let payload = SqlPayload {
-                name,
+                name: Some(name),
+                kind: SqlKind::UserQuery,
+                metadata: None,
                 sql,
                 variables: vars,
             };
             let service = UgoiteService::new(&root)?;
             let result = service
-                .create_saved_sql(&space_id, &sql_id, &payload, &author)
+                .create_saved_sql(&space_id, &sql_id, &payload, "cli")
                 .await?;
             print_json(&result);
         }
@@ -135,7 +132,6 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             sql,
             variables,
             parent_revision_id,
-            author,
         } => {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-update")?;
@@ -143,30 +139,33 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 .map(|v| serde_json::from_str(&v).unwrap_or(serde_json::json!([])))
                 .unwrap_or(serde_json::json!([]));
             if let Some(base) = validated_base_url(&config)? {
+                let mut body = serde_json::json!({
+                    "name": name,
+                    "kind": "user-query",
+                    "sql": sql,
+                    "variables": vars,
+                });
+                body["parent_revision_id"] = serde_json::json!(parent_revision_id);
                 let result = http::execute(
                     &base,
                     "sql.update",
                     serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
-                    Some(serde_json::json!({"name": name, "sql": sql, "variables": vars, "parent_revision_id": parent_revision_id, "author": author})),
+                    Some(body),
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
             }
             let payload = SqlPayload {
-                name,
+                name: Some(name),
+                kind: SqlKind::UserQuery,
+                metadata: None,
                 sql,
                 variables: vars,
             };
             let service = UgoiteService::new(&root)?;
             let result = service
-                .update_saved_sql(
-                    &space_id,
-                    &sql_id,
-                    &payload,
-                    parent_revision_id.as_deref(),
-                    &author,
-                )
+                .update_saved_sql(&space_id, &sql_id, &payload, &parent_revision_id, "cli")
                 .await?;
             print_json(&result);
         }

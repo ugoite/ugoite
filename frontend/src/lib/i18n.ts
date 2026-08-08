@@ -1,6 +1,5 @@
 import uiDictionary from "../../../shared/i18n/ui.json";
 import { createRoot, createSignal } from "solid-js";
-import { isServer } from "solid-js/web";
 import {
   readLocalPreferences,
   writeLocalPreferences,
@@ -26,7 +25,7 @@ const readStoredLocale = (): Locale | null => {
 
 const applyLocaleAttributes = (nextLocale: Locale) => {
   /* v8 ignore start */
-  if (isServer || typeof document === "undefined") return;
+  if (typeof document === "undefined") return;
   /* v8 ignore stop */
   document.documentElement.lang = nextLocale;
   document.documentElement.dataset.locale = nextLocale;
@@ -57,6 +56,9 @@ const localeStore = createRoot(() => {
 
 export const locale = localeStore.locale;
 export const setLocale = localeStore.setLocale;
+
+export const intlLocale = (value: Locale = locale()): string =>
+  value === "ja" ? "ja-JP" : "en-US";
 
 export const t = (key: TranslationKey, params?: TranslationParams): string => {
   const currentLocale = locale();

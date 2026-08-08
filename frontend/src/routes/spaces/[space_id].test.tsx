@@ -26,6 +26,7 @@ vi.mock("~/lib/space-store", () => ({
 const formsRoute = spaceRoute({ navigation: "forms" });
 const dashboardRoute = spaceRoute({ navigation: "home" });
 const newEntryRoute = spaceRoute({ navigation: "forms", title: "newEntry" });
+const settingsRoute = spaceRoute({ navigation: "settings", title: "settings" });
 const testConnectionRoute = spaceRoute({
   navigation: "settings",
   title: "settingsStorage",
@@ -53,6 +54,10 @@ function TestConnectionPage() {
   return <p>Test connection route</p>;
 }
 
+function SettingsPage() {
+  return <p>Settings route</p>;
+}
+
 const routes: RouteDefinition[] = [{
   path: "/spaces/:space_id",
   component: SpaceLayout,
@@ -61,6 +66,7 @@ const routes: RouteDefinition[] = [{
     { path: "/dashboard", component: DashboardPage, ...dashboardRoute },
     { path: "/forms", component: FormsPage, ...formsRoute },
     { path: "/entries/new", component: NewEntryPage, ...newEntryRoute },
+    { path: "/settings", component: SettingsPage, ...settingsRoute },
     {
       path: "/test-connection",
       component: TestConnectionPage,
@@ -135,6 +141,23 @@ describe("/spaces/:space_id persistent layout", () => {
       .toHaveClass("active");
     expect(screen.getAllByRole("link", { name: "Home" })[0])
       .not.toHaveClass("active");
+  });
+
+  it("localizes the settings breadcrumb from shared route metadata", async () => {
+    renderAt("/spaces/demo/settings?section=storage");
+
+    await waitFor(() => {
+      expect(document.querySelector(".crumbTop")).toHaveTextContent(
+        "Settings / Storage",
+      );
+    });
+
+    setLocale("ja");
+    await waitFor(() => {
+      expect(document.querySelector(".crumbTop")).toHaveTextContent(
+        "設定 / ストレージ",
+      );
+    });
   });
 
   it("keeps Forms localized when the shell uses the route fallback title", () => {

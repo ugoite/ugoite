@@ -98,7 +98,7 @@ pub enum EntrySubCmd {
         #[arg(
             long,
             default_value = "cli",
-            help = "Author name to record in the revision history"
+            help = "Author name to record in the revision history (core mode only)"
         )]
         author: String,
     },
@@ -141,7 +141,11 @@ pub enum EntrySubCmd {
         space_path: String,
         entry_id: String,
         revision_id: String,
-        #[arg(long, default_value = "cli")]
+        #[arg(
+            long,
+            default_value = "cli",
+            help = "Author name to record in the revision history (core mode only)"
+        )]
         author: String,
     },
 }
@@ -245,7 +249,12 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry update")?;
             if let Some(base) = validated_base_url(&config)? {
-                let mut body = serde_json::json!({"markdown": markdown, "author": author});
+                if author != "cli" {
+                    bail!(
+                        "entry update --author is only supported in core mode; backend/api derive author from the authenticated identity"
+                    );
+                }
+                let mut body = serde_json::json!({"markdown": markdown});
                 if let Some(p) = &parent_revision_id {
                     body["parent_revision_id"] = serde_json::json!(p);
                 }
@@ -353,11 +362,16 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry restore")?;
             if let Some(base) = validated_base_url(&config)? {
+                if author != "cli" {
+                    bail!(
+                        "entry restore --author is only supported in core mode; backend/api derive author from the authenticated identity"
+                    );
+                }
                 let result = http::execute(
                     &base,
                     "entry.restore",
                     serde_json::json!({"space_id": space_id, "entry_id": entry_id}),
-                    Some(serde_json::json!({"revision_id": revision_id, "author": author})),
+                    Some(serde_json::json!({"revision_id": revision_id})),
                 )
                 .await?;
                 print_json(&result);
