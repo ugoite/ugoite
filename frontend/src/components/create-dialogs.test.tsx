@@ -2536,6 +2536,48 @@ describe("EditFormDialog", () => {
     );
   });
 
+  it("REQ-FE-043: blocks existing list item type changes before submit", () => {
+    const onSubmit = vi.fn();
+    const listForm: Form = {
+      ...mockForm,
+      fields: {
+        labels: {
+          type: "list",
+          required: false,
+          items: { type: "string" },
+        },
+      },
+    };
+
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={listForm}
+        columnTypes={["list", "string", "asset_reference"]}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    expect(screen.getByRole("combobox", { name: "List item type" }))
+      .toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: {
+          labels: {
+            type: "list",
+            required: false,
+            target_form: undefined,
+            items: { type: "string", target_form: undefined },
+          },
+        },
+      }),
+    );
+  });
+
   it("REQ-FE-043: blocks removing an existing column before submit", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();

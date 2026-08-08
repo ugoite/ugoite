@@ -129,7 +129,9 @@ fn validate_revision_payload(form: &FormDefinition, revision: &EntryRevision) ->
         let field_id = match error {
             RevisionError::RequiredField(field_id)
             | RevisionError::UnknownField(field_id)
-            | RevisionError::WrongType(field_id) => Some(field_id),
+            | RevisionError::WrongType(field_id)
+            | RevisionError::InvalidAssetReference(field_id)
+            | RevisionError::DuplicateAssetReference(field_id) => Some(field_id),
             _ => None,
         };
         let field = field_id.and_then(|field_id| {
@@ -142,6 +144,10 @@ fn validate_revision_payload(form: &FormDefinition, revision: &EntryRevision) ->
             RevisionError::RequiredField(_) => "Required field is missing",
             RevisionError::UnknownField(_) => "Field is not defined on this Form",
             RevisionError::WrongType(_) => "Value has the wrong type for this field",
+            RevisionError::InvalidAssetReference(_) => "Asset reference metadata is invalid",
+            RevisionError::DuplicateAssetReference(_) => {
+                "The same asset is referenced more than once in this list"
+            }
             _ => "Entry revision payload is not valid for this Form",
         };
         invalid_revision_input(format!(
@@ -1154,6 +1160,27 @@ impl IcebergWorkspace {
         batches: &[(FormId, Vec<EntryRevision>)],
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<()> {
+        let requested_entry_ids = batches
+            .iter()
+            .flat_map(|(_, revisions)| revisions)
+            .filter(|revision| {
+                revision.entry_version == 1
+                    && revision.expected_version.is_none()
+                    && revision.parent_revision_id.is_none()
+            })
+            .map(|revision| revision.entry.external_id.clone())
+            .collect::<Vec<_>>();
+        let existing_entry_ids = self
+            .existing_entry_external_ids(&requested_entry_ids)
+            .await?;
+        if let Some(entry_id) = requested_entry_ids
+            .iter()
+            .find(|entry_id| existing_entry_ids.contains(*entry_id))
+        {
+            return Err(invalid_revision_input(format!(
+                "Entry ID '{entry_id}' is already in use"
+            )));
+        }
         for (form_id, revisions) in batches {
             let form = self.load_form(*form_id).await?;
             if let Some(scopes) = relation_scopes {
@@ -1872,7 +1899,7 @@ impl SpaceCommitCoordinator {
                 .iter()
                 .any(|entry_id| existing_entry_ids.contains(entry_id))
             {
-                return Err(anyhow!("Entry ID unavailable"));
+                return Err(invalid_revision_input("Entry ID is already in use"));
             }
             attempt
                 .validate_asset_references_not_deleted(form_id, &revisions)

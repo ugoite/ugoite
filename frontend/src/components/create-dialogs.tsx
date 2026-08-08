@@ -1270,7 +1270,9 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
     return Array.from(options);
   });
   const listItemTypes = createMemo(() =>
-    props.columnTypes.filter((type) => type !== "list" && type !== "object_list")
+    props.columnTypes.filter((type) =>
+      type !== "list" && type !== "object_list"
+    )
   );
 
   const fieldIssues = createMemo(() =>
@@ -1747,9 +1749,14 @@ function processFields(
 }
 
 const findUnsupportedEditChanges = (
-  fields: Array<{ name: string; type: string }>,
-  existingFields: Record<string, { type: string }>,
+  fields: Array<{ name: string; type: string; itemsType?: string }>,
+  existingFields: Record<
+    string,
+    { type: string; items?: { type?: string } }
+  >,
 ) => {
+  const fieldTypeSignature = (type: string, itemsType?: string) =>
+    type === "list" ? `${type}<${itemsType || "string"}>` : type;
   const draftFields = new Map(
     fields
       .map((field) => [field.name.trim(), field] as const)
@@ -1760,12 +1767,15 @@ const findUnsupportedEditChanges = (
     const draft = draftFields.get(name);
     if (!draft) {
       issues.push(t("createDialog.form.editIssue.removed", { field: name }));
-    } else if (draft.type !== existing.type) {
+    } else if (
+      fieldTypeSignature(draft.type, draft.itemsType) !==
+        fieldTypeSignature(existing.type, existing.items?.type)
+    ) {
       issues.push(
         t("createDialog.form.editIssue.typeChanged", {
           field: name,
-          from: existing.type,
-          to: draft.type,
+          from: fieldTypeSignature(existing.type, existing.items?.type),
+          to: fieldTypeSignature(draft.type, draft.itemsType),
         }),
       );
     }
@@ -1805,7 +1815,9 @@ export function EditFormDialog(props: EditFormDialogProps) {
     return Array.from(options);
   });
   const listItemTypes = createMemo(() =>
-    props.columnTypes.filter((type) => type !== "list" && type !== "object_list")
+    props.columnTypes.filter((type) =>
+      type !== "list" && type !== "object_list"
+    )
   );
 
   const fieldIssues = createMemo(() =>
@@ -2093,6 +2105,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
                           class={columnAuxInputClass}
                           aria-label={t("createDialog.form.listItemTypeLabel")}
                           value={field().itemsType || ""}
+                          disabled={!field().isNew}
                           onChange={(event) =>
                             updateField(
                               i,

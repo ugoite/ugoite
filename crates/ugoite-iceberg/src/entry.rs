@@ -1164,7 +1164,10 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
     let mut requested_entry_ids = HashSet::new();
     for request in &requests {
         if !requested_entry_ids.insert(request.entry_id.clone()) {
-            return Err(anyhow!("Entry already exists: {}", request.entry_id));
+            return Err(invalid_entry_input(format!(
+                "Entry ID '{}' appears more than once in this create request",
+                request.entry_id
+            )));
         }
     }
     let mut batches = BTreeMap::<String, (Value, Vec<RevisionRow>)>::new();

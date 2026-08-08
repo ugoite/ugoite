@@ -520,6 +520,57 @@ async fn explicit_entry_batch_creates_all_entries() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn entry_batch_rejects_existing_ids_before_publishing_other_forms() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "batch-id-validation", "/tmp").await?;
+    let ws_path = "spaces/batch-id-validation";
+    for form_name in ["A", "B"] {
+        form::upsert_form(
+            &op,
+            ws_path,
+            &serde_json::json!({
+                "name": form_name,
+                "fields": {"Body": {"type": "markdown"}},
+            }),
+        )
+        .await?;
+    }
+    entry::create_entry(
+        &op,
+        ws_path,
+        "taken-id",
+        "---\nform: B\n---\n# Existing\n\n## Body\nExisting",
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await?;
+
+    let error = entry::create_entries(
+        &op,
+        ws_path,
+        vec![
+            entry::EntryCreateRequest::new("new-id", "---\nform: A\n---\n# New\n\n## Body\nNew"),
+            entry::EntryCreateRequest::new(
+                "taken-id",
+                "---\nform: B\n---\n# Duplicate\n\n## Body\nDuplicate",
+            ),
+        ],
+        "author",
+        &FakeIntegrityProvider,
+    )
+    .await
+    .expect_err("existing IDs must be rejected before another Form is published");
+    let app_error = error
+        .downcast_ref::<AppError>()
+        .expect("duplicate IDs must remain typed input errors");
+    assert_eq!(app_error.code(), ErrorCode::InvalidInput);
+    assert!(app_error.message().contains("taken-id"));
+    assert!(entry::get_entry(&op, ws_path, "new-id").await.is_err());
+    assert_eq!(entry::list_entries(&op, ws_path).await?.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn same_form_batch_may_reference_another_pending_entry() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "same-batch-reference-space", "/tmp").await?;
