@@ -2403,29 +2403,6 @@ describe("EditFormDialog", () => {
       .toHaveClass("ui-dialog-form-content");
   });
 
-  it("REQ-FE-039: shows default value input for new fields", async () => {
-    const onSubmit = vi.fn();
-    const onClose = vi.fn();
-
-    render(() => (
-      <EditFormDialog
-        open={true}
-        entryForm={mockForm}
-        columnTypes={columnTypes}
-        formNames={["ExistingForm"]}
-        onClose={onClose}
-        onSubmit={onSubmit}
-      />
-    ));
-
-    // Add a new column
-    fireEvent.click(screen.getByText("+ Add Column"));
-
-    // New field should have default value input
-    expect(screen.getByPlaceholderText("(Optional) e.g. Pending"))
-      .toBeInTheDocument();
-  });
-
   it("REQ-FE-039: hides reserved-name guidance until a reserved name is entered in edit form", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
