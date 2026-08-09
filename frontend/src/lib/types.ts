@@ -178,6 +178,8 @@ export interface FormField {
   id?: number;
   type: string;
   required: boolean;
+  /** Deprecated fields remain readable but are not required for new entries. */
+  deprecated?: boolean;
   target_form?: string;
   items?: {
     type: string;
