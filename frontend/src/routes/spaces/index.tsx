@@ -1,6 +1,6 @@
 import { A, useNavigate } from "@solidjs/router";
 import { GlobalShell } from "~/components/GlobalShell";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { getDocsiteHref } from "~/lib/docsite-links";
 import { authApi, spaceApi } from "~/lib/ugoite-client";
 import { sortSpaces } from "~/lib/space-list";
@@ -83,7 +83,6 @@ export default function SpacesIndexRoute() {
       return [];
     }
   });
-  const [redirected, setRedirected] = createSignal(false);
   const [showCreateForm, setShowCreateForm] = createSignal(false);
   const [newSpaceId, setNewSpaceId] = createSignal("");
   const [createError, setCreateError] = createSignal<string | null>(null);
@@ -170,16 +169,6 @@ export default function SpacesIndexRoute() {
       setIsCreating(false);
     }
   };
-
-  createEffect(() => {
-    if (!spacesError() || redirected()) {
-      return;
-    }
-    if (isAuthenticationError(spacesError())) {
-      setRedirected(true);
-      navigate("/login?next=%2Fspaces");
-    }
-  });
 
   return (
     <GlobalShell title={t("spacesPage.title")} active="spaces">

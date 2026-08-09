@@ -1,4 +1,5 @@
 import { UgoiteApiError } from "./ugoite-client/protocol";
+import { clearPendingLoginPath, rememberPendingLoginPath } from "./auth-route";
 
 export type AuthConfig = {
   status: "uninitialized" | "active";
@@ -187,11 +188,19 @@ export const authApi = {
   async listOidcProviders(): Promise<OidcProvider[]> {
     return await request("/auth/oidc/providers", { method: "GET" });
   },
-  loginWithOidc(providerId: string, invitationToken?: string): void {
+  loginWithOidc(
+    providerId: string,
+    invitationToken?: string,
+    nextPath?: string,
+  ): void {
+    if (nextPath) rememberPendingLoginPath(nextPath);
+    else clearPendingLoginPath();
     const query = invitationToken
       ? `?invitation_token=${encodeURIComponent(invitationToken)}`
       : "";
-    location.assign(`/api/auth/oidc/${encodeURIComponent(providerId)}/start${query}`);
+    location.assign(
+      `/api/auth/oidc/${encodeURIComponent(providerId)}/start${query}`,
+    );
   },
   linkOidc(providerId: string): void {
     location.assign(`/api/auth/oidc/${encodeURIComponent(providerId)}/link`);
@@ -343,14 +352,17 @@ export const authApi = {
       }),
     });
     const credential = await createPasskey(challenge);
-    return await request<{ recovery_codes: string[] }>("/auth/recovery/finish", {
-      method: "POST",
-      body: JSON.stringify({
-        account_id: accountId,
-        challenge_id: challenge.challenge_id,
-        credential,
-      }),
-    });
+    return await request<{ recovery_codes: string[] }>(
+      "/auth/recovery/finish",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          account_id: accountId,
+          challenge_id: challenge.challenge_id,
+          credential,
+        }),
+      },
+    );
   },
   async clearSession(): Promise<void> {
     await request("/auth/session", { method: "DELETE" });

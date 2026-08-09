@@ -1,6 +1,7 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
 import { spaceApi } from "~/lib/ugoite-client";
+import { formatUserFacingError } from "~/lib/user-facing-error";
 
 export default function DeviceApprovalRoute() {
   const [params] = useSearchParams();
@@ -16,10 +17,10 @@ export default function DeviceApprovalRoute() {
       const values = await spaceApi.list();
       setSpaces(values);
       setSpaceId(values[0]?.id ?? "");
-    } catch {
-      location.href = `/login?next=${
-        encodeURIComponent(location.pathname + location.search)
-      }`;
+    } catch (cause) {
+      setError(
+        formatUserFacingError(cause, "spacesPage.failedLoad", "space.list"),
+      );
     }
   });
   const approve = async (event: Event) => {
@@ -101,7 +102,7 @@ export default function DeviceApprovalRoute() {
           </form>
         </Show>
         <Show when={error()}>
-          <p class="ui-alert ui-alert-error">{error()}</p>
+          <p class="ui-alert ui-alert-error" role="alert">{error()}</p>
         </Show>
       </section>
     </main>

@@ -266,7 +266,9 @@ describe("/spaces", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("You do not have permission to do that. (Details: Forbidden)"),
+        screen.getByText(
+          "You do not have permission to do that. (Details: Forbidden)",
+        ),
       ).toBeInTheDocument();
     });
 
@@ -310,22 +312,5 @@ describe("/spaces", () => {
         "href",
         localDevAuthGuideUrl,
       );
-  });
-
-  it("REQ-OPS-015: redirects unauthenticated users to the explicit login route", async () => {
-    (spaceApi.list as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new UgoiteApiError({
-        kind: "forbidden",
-        code: "AUTHENTICATION_FAILED",
-        status: 401,
-        message: "Unauthorized",
-      }),
-    );
-
-    render(() => <SpacesIndexRoute />);
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith("/login?next=%2Fspaces");
-    });
   });
 });
