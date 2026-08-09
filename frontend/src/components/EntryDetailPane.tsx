@@ -217,6 +217,10 @@ function resolveInputMode(field: FormField): "decimal" | undefined {
   return NUMERIC_FIELD_TYPES.has(field.type) ? "decimal" : undefined;
 }
 
+function resolveInputType(field: FormField): "date" | "text" {
+  return field.type === "date" ? "date" : "text";
+}
+
 function createFieldInputId(fieldName: string, index: number) {
   const normalized = fieldName
     .trim()
@@ -930,7 +934,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
       <input
         id={fieldId}
         class="ui-input"
-        type="text"
+        type={resolveInputType(fieldDef)}
         inputmode={resolveInputMode(fieldDef)}
         value={value()}
         placeholder={t("entryDetail.fieldPlaceholder")}
