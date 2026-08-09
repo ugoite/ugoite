@@ -152,6 +152,42 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("serializes a selected date from the native date input", async () => {
+    const form: Form = {
+      name: "Meeting",
+      version: 1,
+      template: "# Meeting\n\n## Date\n",
+      fields: {
+        Date: { type: "date", required: false },
+      },
+    };
+    (entryApi.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "created-date-entry",
+      revision_id: "created-date-revision",
+    });
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const date = await screen.findByLabelText("Date");
+    expect(date).toHaveAttribute("type", "date");
+    fireEvent.input(date, { target: { value: "2026-08-03" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
+    expect(entryApi.create).toHaveBeenCalledWith("default", {
+      markdown:
+        "---\nform: Meeting\n---\n\n# Meeting\n\n## Date\n2026-08-03\n",
+    });
+  });
+
   it("shows field-level validation feedback and keeps the create draft", async () => {
     (entryApi.create as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error(
@@ -464,7 +500,7 @@ describe("EntryDetailPane", () => {
       title: "Timestamp Entry",
       form: "Event",
       content:
-        "---\nform: Event\n---\n\n# Timestamp Entry\n\n## Amount\n12.5\n\n## Started\n2026-07-18T12:34:56Z\n\n## Observed\n2026-07-18T21:34:56+09:00\n\n## Precise\n2026-07-18T12:34:56.123456789Z\n\n## Date\n2026-07-\n\n## Time\n12:",
+        "---\nform: Event\n---\n\n# Timestamp Entry\n\n## Amount\n12.5\n\n## Started\n2026-07-18T12:34:56Z\n\n## Observed\n2026-07-18T21:34:56+09:00\n\n## Precise\n2026-07-18T12:34:56.123456789Z\n\n## Date\n2026-07-18\n\n## Time\n12:",
       revision_id: "rev-1",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -513,8 +549,8 @@ describe("EntryDetailPane", () => {
     expect(precise).toHaveValue("2026-07-18T12:34:56.123456789Z");
 
     const date = screen.getByLabelText("Date");
-    expect(date).toHaveAttribute("type", "text");
-    expect(date).toHaveValue("2026-07-");
+    expect(date).toHaveAttribute("type", "date");
+    expect(date).toHaveValue("2026-07-18");
 
     const time = screen.getByLabelText("Time");
     expect(time).toHaveAttribute("type", "text");

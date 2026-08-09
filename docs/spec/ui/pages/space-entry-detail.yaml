@@ -52,6 +52,7 @@ components:
             - typed-form-fields
           field_controls:
             boolean: free-form-text-input
+            date: native-date-input
             list: multiline-input
             markdown: multiline-input
             row_reference: searchable-entry-picker
