@@ -330,6 +330,79 @@ describe("CreateFormDialog", () => {
     );
   });
 
+  it("rejects names with spaces before making a request and focuses the field", () => {
+    const onSubmit = vi.fn();
+    render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={columnTypes}
+        formNames={[]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    const nameInput = screen.getByPlaceholderText("e.g. Meeting, Task");
+    fireEvent.input(nameInput, { target: { value: "Audit Notes" } });
+
+    expect(screen.getByText(
+      "Use 1–128 ASCII letters, digits, '-' or '_' only; spaces are not allowed.",
+    )).toBeInTheDocument();
+    expect(screen.queryByText(
+      /Reserved metadata columns are system-owned and cannot be used/,
+    )).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(nameInput).toHaveAttribute("aria-invalid", "true");
+    expect(document.activeElement).toBe(nameInput);
+  });
+
+  it.each(["SQL", "User", "UserGroup"])(
+    "rejects reserved metadata form name %s",
+    (reservedName) => {
+      const onSubmit = vi.fn();
+      render(() => (
+        <CreateFormDialog
+          open={true}
+          columnTypes={columnTypes}
+          formNames={[]}
+          onClose={vi.fn()}
+          onSubmit={onSubmit}
+        />
+      ));
+
+      fireEvent.input(screen.getByPlaceholderText("e.g. Meeting, Task"), {
+        target: { value: reservedName },
+      });
+
+      expect(screen.getByText("Reserved metadata form name")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
+      expect(onSubmit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an existing form name before making a request", () => {
+    const onSubmit = vi.fn();
+    render(() => (
+      <CreateFormDialog
+        open={true}
+        columnTypes={columnTypes}
+        formNames={["ExistingForm"]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.input(screen.getByPlaceholderText("e.g. Meeting, Task"), {
+      target: { value: "ExistingForm" },
+    });
+
+    expect(screen.getByText("A Form with this name already exists.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create Form" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("REQ-FE-043: create-form dialog renders rejected submit errors inline", async () => {
     const onSubmit = vi.fn().mockRejectedValue(
       new Error("Form already exists"),
