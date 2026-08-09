@@ -6,7 +6,7 @@ Page YAML files describe the current Space-scoped browser routes. `page.implemen
 
 The current browser is server-backed and authenticated. Shared navigation is described in `components/space-shell.yaml`; page files live under `pages/`. The v5 UI uses a persistent Home / Forms / Search / Settings sidebar on desktop and the same destinations in a mobile bottom bar. Route behavior, API calls, and loading/error states remain authoritative in the corresponding TSX files and tests.
 
-Implemented page routes include Space home/dashboard, Form-first New Entry, Entries and history/restore, the Forms split workspace and column types, keyword/advanced search, saved SQL and query sessions, integrated Assets, persistent Settings sections, and connection testing.
+Implemented page routes include Space home/dashboard, Form-first New Entry, Entries and history/restore, the Forms split workspace and column types, keyword/advanced search, saved SQL and query sessions, the Form-owned Asset reference workspace, persistent Settings sections, and connection testing.
 
 When changing a route:
 
