@@ -685,9 +685,9 @@ export const handlers = [
     }
     return HttpResponse.json({
       revisions: [{
-        id: entry.revision_id,
-        created_at: entry.updated_at,
-        author: null,
+        revision_id: entry.revision_id,
+        timestamp: entry.updated_at,
+        checksum: "mock-checksum",
       }],
     });
   }),

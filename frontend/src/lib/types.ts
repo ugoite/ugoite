@@ -156,7 +156,7 @@ export interface EntryRevisionContent {
 /** Entry history entry */
 export interface EntryRevision {
   revision_id: string;
-  created_at: string;
+  timestamp: string | number;
   checksum: string;
 }
 
