@@ -35,9 +35,10 @@ const currentRevisionIdFromError = (
 
 /** Entry API client backed by the shared Rust/WASM protocol. */
 export const entryApi = {
-  async list(spaceId: string): Promise<EntryRecord[]> {
+  async list(spaceId: string, limit?: number): Promise<EntryRecord[]> {
     const entries = await protocolFetch<EntryRecord[]>("entry.list", {
       space_id: spaceId,
+      ...(limit === undefined ? {} : { limit }),
     });
     return entries.map(normalizeEntryRecord);
   },
