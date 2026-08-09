@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createSignal, For, Show } from "solid-js";
+import { formatDateTimeLabel } from "~/lib/date-format";
 import { entryApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { spaceRoute } from "~/lib/space-shell-route";
@@ -77,7 +78,7 @@ export default function SpaceEntryRestoreRoute() {
                     />
                     <span>
                       <b>{revision.revision_id}</b>
-                      <small>{revision.created_at}</small>
+                      <small>{formatDateTimeLabel(revision.timestamp)}</small>
                     </span>
                   </li>
                 )}
