@@ -23,8 +23,10 @@ import {
 } from "~/lib/metadata-columns";
 import {
   filterCreatableEntryForms,
+  getFormNameValidationIssue,
   isReservedMetadataForm,
   RESERVED_METADATA_CLASSES,
+  type FormNameValidationIssue,
 } from "~/lib/metadata-forms";
 
 const numericFieldTypes = new Set([
@@ -262,6 +264,17 @@ const hasReservedMetadataFieldName = (fields: FieldIssueSource[]) =>
     const trimmed = field.name.trim();
     return trimmed ? isReservedMetadataColumn(trimmed) : false;
   });
+
+const formNameValidationMessage = (issue: FormNameValidationIssue) => {
+  switch (issue) {
+    case "syntax":
+      return t("createDialog.validation.formNameSyntax");
+    case "reserved":
+      return t("createDialog.validation.reservedMetadataFormName");
+    case "duplicate":
+      return t("createDialog.validation.duplicateFormName");
+  }
+};
 
 export interface CreateEntryDialogProps {
   open: boolean;
@@ -1286,17 +1299,18 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
     })
   );
 
-  const nameIssue = createMemo(
-    () =>
-      /* v8 ignore start */
-      isReservedMetadataForm(name())
-        ? t("createDialog.validation.reservedMetadataFormName")
-        : "",
-    /* v8 ignore stop */
-  );
+  const nameValidationIssue = createMemo(() => {
+    const value = name().trim();
+    return value ? getFormNameValidationIssue(value, props.formNames) : null;
+  });
+  const nameIssue = createMemo(() => {
+    const issue = nameValidationIssue();
+    return issue ? formNameValidationMessage(issue) : "";
+  });
 
   const showReservedNameGuidance = createMemo(
-    () => hasReservedMetadataFieldName(fields()) || Boolean(nameIssue()),
+    () => hasReservedMetadataFieldName(fields()) ||
+      nameValidationIssue() === "reserved",
   );
 
   const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
@@ -1337,7 +1351,11 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
     e.preventDefault();
     const formName = name().trim();
     /* v8 ignore start */
-    if (!formName || hasFieldIssues() || nameIssue()) return;
+    if (!formName || hasFieldIssues()) return;
+    if (nameIssue()) {
+      inputRef?.focus();
+      return;
+    }
     /* v8 ignore stop */
     setSubmitError(null);
 
@@ -1470,10 +1488,19 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                 placeholder={t("createDialog.form.namePlaceholder")}
                 class="ui-input"
                 classList={{ "ui-input-error": Boolean(nameIssue()) }}
+                aria-invalid={Boolean(nameIssue()) || undefined}
+                aria-describedby={nameIssue()
+                  ? "form-name-help form-name-error"
+                  : "form-name-help"}
                 autofocus
               />
+              <p id="form-name-help" class="text-xs ui-muted">
+                {t("createDialog.form.nameHelp")}
+              </p>
               <Show when={nameIssue()}>
-                <span class="text-xs ui-text-danger">{nameIssue()}</span>
+                <span id="form-name-error" class="text-xs ui-text-danger">
+                  {nameIssue()}
+                </span>
               </Show>
             </div>
 
@@ -1678,8 +1705,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
               </button>
               <button
                 type="submit"
-                disabled={!name().trim() || hasFieldIssues() ||
-                  Boolean(nameIssue())}
+                disabled={!name().trim() || hasFieldIssues()}
                 class="ui-button ui-button-primary text-sm"
               >
                 {t("createDialog.form.create")}
