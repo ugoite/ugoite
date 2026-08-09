@@ -87,6 +87,9 @@ const isLongTextField = (name: string, def: Form["fields"][string]) =>
 const isTextareaField = (name: string, def: Form["fields"][string]) =>
   isLongTextField(name, def) || def.type === "object_list";
 
+const isActiveRequiredField = (def: Form["fields"][string]) =>
+  def.required && !def.deprecated;
+
 const createFieldInputId = (prefix: string, name: string, index: number) => {
   const normalized = name
     .trim()
@@ -450,7 +453,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const form = selectedFormDef();
     if (!form) return [] as Array<[string, Form["fields"][string]]>;
     /* v8 ignore start */
-    return Object.entries(form.fields || {}).filter(([, def]) => def.required);
+    return Object.entries(form.fields || {}).filter(([, def]) =>
+      isActiveRequiredField(def)
+    );
     /* v8 ignore stop */
   });
 
@@ -593,7 +598,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const defaults: Record<string, string> = {};
     /* v8 ignore start */
     for (const [name, def] of Object.entries(form.fields || {})) {
-      if (!def.required) continue;
+      if (!isActiveRequiredField(def)) continue;
       defaults[name] = buildDefaultValue(name, def);
     }
     /* v8 ignore stop */
@@ -677,6 +682,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     name: string,
     def: Form["fields"][string],
   ) =>
+    !def.deprecated &&
     hasRowReferencePicker(def) &&
     (rowReferenceQueries()[name] ?? "").trim() !== "" &&
     !(fieldValues()[name] ?? "").trim();
@@ -786,7 +792,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       );
       return;
     }
-    if (def.required && !(fieldValues()[name] || "").trim()) {
+    if (isActiveRequiredField(def) && !(fieldValues()[name] || "").trim()) {
       setErrorMessage(
         t("createDialog.entry.error.answerRequired", { field: name }),
       );
@@ -800,7 +806,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const current = currentChatField();
     if (!current) return;
     const [name, def] = current;
-    if (def.required) {
+    if (isActiveRequiredField(def)) {
       setErrorMessage(
         t("createDialog.entry.error.skipRequired", { field: name }),
       );
@@ -988,7 +994,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                               <span class="ui-pill gap-1">
                                 <span class="font-medium">{name}</span>
                                 <span class="ui-muted">({def.type})</span>
-                                <Show when={def.required}>
+                                <Show when={isActiveRequiredField(def)}>
                                   <span class="ui-text-danger">*</span>
                                 </Show>
                               </span>
@@ -1094,7 +1100,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                             {name}
                             <span class="ui-muted ml-2 text-xs">
                               {t(
-                                def.required
+                                isActiveRequiredField(def)
                                   ? "createDialog.entry.fieldMeta.required"
                                   : "createDialog.entry.fieldMeta.optional",
                                 { type: def.type },
@@ -1143,7 +1149,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                           {name} (
                           {answered()
                             ? t("createDialog.entry.chatStatus.answered")
-                            : def.required
+                            : isActiveRequiredField(def)
                             ? t("createDialog.entry.chatStatus.required")
                             : t("createDialog.entry.chatStatus.optional")}
                           )
@@ -1169,7 +1175,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                           {name}
                           <span class="ui-muted ml-2 text-xs">
                             {t(
-                              def.required
+                              isActiveRequiredField(def)
                                 ? "createDialog.entry.chatFieldMeta.required"
                                 : "createDialog.entry.chatFieldMeta.optional",
                               { type: def.type },
@@ -1198,7 +1204,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                               onClick={handleSkipChatField}
                             >
                               {t(
-                                def.required
+                                isActiveRequiredField(def)
                                   ? "createDialog.entry.chatSkip"
                                   : "createDialog.entry.chatSkipOptional",
                               )}
@@ -1724,6 +1730,7 @@ function processFields(
     name: string;
     type: string;
     required: boolean;
+    deprecated?: boolean;
     targetForm?: string;
     itemsType?: string;
     itemsTargetForm?: string;
@@ -1734,6 +1741,7 @@ function processFields(
     {
       type: string;
       required: boolean;
+      deprecated?: boolean;
       target_form?: string;
       items?: { type: string; target_form?: string };
     }
@@ -1757,6 +1765,7 @@ function processFields(
       fieldRecord[trimmedName] = {
         type: f.type,
         required: f.required,
+        ...(f.deprecated ? { deprecated: true } : {}),
         target_form,
         items,
       };
@@ -1816,6 +1825,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
       name: string;
       type: string;
       required: boolean;
+      deprecated?: boolean;
       targetForm?: string;
       itemsType?: string;
       itemsTargetForm?: string;
@@ -1890,6 +1900,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
         name,
         type: def.type,
         required: def.required,
+        deprecated: def.deprecated,
         targetForm: def.target_form,
         itemsType: def.items?.type,
         itemsTargetForm: def.items?.target_form,

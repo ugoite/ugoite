@@ -684,6 +684,102 @@ describe("CreateEntryDialog", () => {
     expect((countInput as HTMLInputElement).value).toBe("0");
   });
 
+  it("REQ-FE-037: does not default or require deprecated fields in webform mode", async () => {
+    const onSubmit = vi.fn();
+    const forms = [
+      {
+        name: "Task",
+        version: 1,
+        fields: {
+          Summary: { type: "string", required: true },
+          RetiredAt: { type: "date", required: true, deprecated: true },
+        },
+        template: "",
+      },
+    ];
+
+    render(() => (
+      <CreateEntryDialog
+        open={true}
+        forms={forms}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+      target: { value: "Task Entry" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Task" },
+    });
+
+    expect(screen.getByLabelText(/RetiredAt/)).toHaveValue("");
+    fireEvent.input(screen.getByLabelText(/Summary/), {
+      target: { value: "Active summary" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Task Entry",
+      "Task",
+      { Summary: "Active summary" },
+      "webform",
+    );
+  });
+
+  it("REQ-FE-037: does not block webform submission on a deprecated row reference", async () => {
+    const onSubmit = vi.fn();
+    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
+    const forms = [
+      {
+        name: "Task",
+        version: 1,
+        fields: {
+          Summary: { type: "string", required: true },
+          Retired: {
+            type: "row_reference",
+            required: true,
+            deprecated: true,
+            target_form: "Legacy",
+          },
+        },
+        template: "",
+      },
+    ];
+
+    render(() => (
+      <CreateEntryDialog
+        open={true}
+        forms={forms}
+        spaceId="default"
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+      target: { value: "Task Entry" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Task" },
+    });
+    fireEvent.input(screen.getByLabelText(/Summary/), {
+      target: { value: "Active summary" },
+    });
+    fireEvent.input(screen.getByLabelText(/Retired/), {
+      target: { value: "legacy" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Task Entry",
+      "Task",
+      { Summary: "Active summary" },
+      "webform",
+    );
+  });
+
   it("REQ-FE-037: keeps numeric and temporal fields writable while editing", async () => {
     const onSubmit = vi.fn();
     const forms = [
@@ -1841,6 +1937,75 @@ describe("CreateEntryDialog", () => {
     expect(screen.getByRole("button", { name: "Skip optional field" }))
       .toBeInTheDocument();
   });
+
+  it("REQ-FE-057: chat mode treats deprecated required fields as optional", async () => {
+    const onSubmit = vi.fn();
+    vi.spyOn(searchApi, "rowReferenceOptions").mockResolvedValue([]);
+    const forms = [
+      {
+        name: "Task",
+        version: 1,
+        fields: {
+          Summary: { type: "string", required: true },
+          Retired: {
+            type: "row_reference",
+            required: true,
+            deprecated: true,
+            target_form: "Legacy",
+          },
+          Notes: { type: "markdown", required: false },
+        },
+        template: "# Task\n\n## Summary\n",
+      },
+    ];
+
+    render(() => (
+      <CreateEntryDialog
+        open={true}
+        forms={forms}
+        spaceId="default"
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.input(screen.getByPlaceholderText("Enter entry title..."), {
+      target: { value: "Chat Task" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "Task" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+
+    fireEvent.input(screen.getByLabelText(/Summary/), {
+      target: { value: "Conversation summary" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+
+    expect(screen.getByRole("button", { name: "Retired (optional)" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Skip optional field" }))
+      .toBeInTheDocument();
+    fireEvent.input(screen.getByLabelText(/Retired/), {
+      target: { value: "legacy" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+    expect(screen.getByText("Question 3 / 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retired (optional)" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Skip optional field" }),
+    );
+
+    expect(screen.getByText("Question 3 / 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Chat Task",
+      "Task",
+      { Summary: "Conversation summary" },
+      "chat",
+    );
+  });
   it("REQ-FE-057: chat step pills react to answers and current step", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
@@ -2418,6 +2583,40 @@ describe("EditFormDialog", () => {
       fields: expect.objectContaining({
         projects: expect.objectContaining({
           items: { type: "row_reference", target_form: "Project" },
+        }),
+      }),
+    }));
+  });
+
+  it("preserves deprecated fields on a no-op edit", () => {
+    const onSubmit = vi.fn();
+    const formWithDeprecatedField: Form = {
+      name: "LegacyForm",
+      version: 1,
+      template: "# LegacyForm\n\n## retired\n\n",
+      fields: {
+        retired: { type: "string", required: true, deprecated: true },
+      },
+    };
+
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={formWithDeprecatedField}
+        columnTypes={columnTypes}
+        formNames={["LegacyForm"]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      fields: expect.objectContaining({
+        retired: expect.objectContaining({
+          required: true,
+          deprecated: true,
         }),
       }),
     }));

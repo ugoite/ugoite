@@ -152,6 +152,45 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("does not require deprecated fields when creating an entry", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "LegacyForm",
+      version: 1,
+      template: "# LegacyForm\n\n## Active\n\n## Retired\n",
+      fields: {
+        Active: { type: "string", required: true },
+        Retired: { type: "string", required: true, deprecated: true },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByText("This field is required."))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Retired")).toBeInTheDocument();
+    expect(screen.getAllByText("Optional").length).toBeGreaterThan(0);
+
+    fireEvent.input(screen.getByLabelText("Active"), {
+      target: { value: "active value" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(createMock).toHaveBeenCalled());
+  });
+
   it("serializes a selected date from the native date input", async () => {
     const form: Form = {
       name: "Meeting",
