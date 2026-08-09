@@ -1,6 +1,7 @@
 import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { authApi, type AuthConfig, type OidcProvider } from "~/lib/auth-api";
+import { clearPendingLoginPath, getSafeNextPath } from "~/lib/auth-route";
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Authentication failed.";
@@ -12,6 +13,10 @@ export default function LoginRoute() {
   const [oidcProviders, setOidcProviders] = createSignal<OidcProvider[]>([]);
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+
+  const nextPath = () => getSafeNextPath(params.next);
+  const nextQuery = () =>
+    params.next ? `?next=${encodeURIComponent(nextPath())}` : "";
 
   onMount(async () => {
     try {
@@ -29,11 +34,12 @@ export default function LoginRoute() {
     setBusy(true);
     setError("");
     try {
+      clearPendingLoginPath();
       await authApi.loginWithPasskey();
       navigate(
         config()?.status === "uninitialized"
-          ? "/setup"
-          : params.next || "/spaces",
+          ? `/setup${nextQuery()}`
+          : nextPath(),
         { replace: true },
       );
     } catch (cause) {
@@ -71,7 +77,12 @@ export default function LoginRoute() {
               <button
                 type="button"
                 class="ui-button ui-button-secondary"
-                onClick={() => authApi.loginWithOidc(provider.provider_id)}
+                onClick={() =>
+                  authApi.loginWithOidc(
+                    provider.provider_id,
+                    undefined,
+                    params.next ? nextPath() : undefined,
+                  )}
               >
                 Sign in with {provider.issuer}
               </button>
@@ -81,7 +92,10 @@ export default function LoginRoute() {
         <Show when={error()}>
           <p class="ui-alert ui-alert-error text-sm">{error()}</p>
         </Show>
-        <A href="/recover" class="ui-button ui-button-secondary">
+        <A
+          href={`/recover${nextQuery()}`}
+          class="ui-button ui-button-secondary"
+        >
           Recover a Passkey
         </A>
       </section>

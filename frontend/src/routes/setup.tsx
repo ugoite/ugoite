@@ -1,12 +1,19 @@
-import { useNavigate } from "@solidjs/router";
-import { createSignal, onMount, Show } from "solid-js";
+import { useNavigate, useSearchParams } from "@solidjs/router";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { authApi } from "~/lib/auth-api";
+import { getSafeNextPath } from "~/lib/auth-route";
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Setup failed.";
 
 export default function SetupRoute() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  let cancelled = false;
+  onCleanup(() => cancelled = true);
+  const nextPath = () => getSafeNextPath(params.next);
+  const nextQuery = () =>
+    params.next ? `?next=${encodeURIComponent(nextPath())}` : "";
   const initialSecret = typeof location === "undefined"
     ? ""
     : new URLSearchParams(location.hash.slice(1)).get("secret") ?? "";
@@ -26,9 +33,13 @@ export default function SetupRoute() {
 
   onMount(async () => {
     const config = await authApi.getConfig().catch(() => undefined);
-    if (config?.status === "active") navigate("/login", { replace: true });
+    if (cancelled) return;
+    if (config?.status === "active") {
+      navigate(`/login${nextQuery()}`, { replace: true });
+      return;
+    }
     const session = await authApi.getSession().catch(() => undefined);
-    if (session?.authenticated) {
+    if (!cancelled && session?.authenticated) {
       setHasInitialPasskey(true);
       setAccountId(session.account?.account_id ?? "");
     }
@@ -40,7 +51,8 @@ export default function SetupRoute() {
     setError("");
     try {
       const result = await authApi.setup(secret(), displayName());
-      history.replaceState(null, "", location.pathname);
+      if (cancelled) return;
+      history.replaceState(null, "", `${location.pathname}${nextQuery()}`);
       setRecoveryCodes(result.recovery_codes);
       setAccountId(result.account.account_id);
       setHasInitialPasskey(true);
@@ -176,7 +188,7 @@ export default function SetupRoute() {
                 <button
                   type="button"
                   class="ui-button ui-button-primary"
-                  onClick={() => navigate("/spaces", { replace: true })}
+                  onClick={() => navigate(nextPath(), { replace: true })}
                 >
                   Continue
                 </button>

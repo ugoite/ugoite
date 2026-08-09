@@ -2,6 +2,7 @@ import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { type JSXElement, Suspense } from "solid-js";
 import { AppErrorBoundary } from "~/components/AppErrorBoundary";
+import { AuthGate } from "~/components/AuthGate";
 import Nav from "~/components/Nav";
 import { primePortablePreferencesFromLocal } from "~/lib/preferences-store";
 import "./app.css";
@@ -24,7 +25,9 @@ export default function App() {
       root={(props) => (
         <>
           <Nav />
-          <AppErrorBoundary>{props.children}</AppErrorBoundary>
+          <AuthGate>
+            <AppErrorBoundary>{props.children}</AppErrorBoundary>
+          </AuthGate>
         </>
       )}
     >
