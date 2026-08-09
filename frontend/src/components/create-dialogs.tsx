@@ -1704,6 +1704,7 @@ function processFields(
     name: string;
     type: string;
     required: boolean;
+    deprecated?: boolean;
     targetForm?: string;
     itemsType?: string;
     itemsTargetForm?: string;
@@ -1714,6 +1715,7 @@ function processFields(
     {
       type: string;
       required: boolean;
+      deprecated?: boolean;
       target_form?: string;
       items?: { type: string; target_form?: string };
     }
@@ -1737,6 +1739,7 @@ function processFields(
       fieldRecord[trimmedName] = {
         type: f.type,
         required: f.required,
+        ...(f.deprecated ? { deprecated: true } : {}),
         target_form,
         items,
       };
@@ -1796,6 +1799,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
       name: string;
       type: string;
       required: boolean;
+      deprecated?: boolean;
       targetForm?: string;
       itemsType?: string;
       itemsTargetForm?: string;
@@ -1870,6 +1874,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
         name,
         type: def.type,
         required: def.required,
+        deprecated: def.deprecated,
         targetForm: def.target_form,
         itemsType: def.items?.type,
         itemsTargetForm: def.items?.target_form,

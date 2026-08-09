@@ -2515,6 +2515,40 @@ describe("EditFormDialog", () => {
     }));
   });
 
+  it("preserves deprecated fields on a no-op edit", () => {
+    const onSubmit = vi.fn();
+    const formWithDeprecatedField: Form = {
+      name: "LegacyForm",
+      version: 1,
+      template: "# LegacyForm\n\n## retired\n\n",
+      fields: {
+        retired: { type: "string", required: true, deprecated: true },
+      },
+    };
+
+    render(() => (
+      <EditFormDialog
+        open={true}
+        entryForm={formWithDeprecatedField}
+        columnTypes={columnTypes}
+        formNames={["LegacyForm"]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      fields: expect.objectContaining({
+        retired: expect.objectContaining({
+          required: true,
+          deprecated: true,
+        }),
+      }),
+    }));
+  });
+
   it("REQ-FE-055: keeps edit-form column inputs readable on narrow layouts", async () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();

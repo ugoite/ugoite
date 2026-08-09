@@ -71,6 +71,9 @@ const NUMERIC_FIELD_TYPES = new Set([
 ]);
 const ROW_REFERENCE_SUGGESTION_LIMIT = 8;
 
+const isActiveRequiredField = (field: FormField) =>
+  field.required && !field.deprecated;
+
 function parseEntryValidationError(error: unknown) {
   if (!(error instanceof UgoiteApiError)) return null;
   const detail = error.detail && typeof error.detail === "object" &&
@@ -159,7 +162,7 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
 
   const missingRequired = formFields
     .filter(([fieldName, fieldDef]) => {
-      if (!fieldDef.required) return false;
+      if (!isActiveRequiredField(fieldDef)) return false;
       const section = sectionMap.get(normalizeFieldName(fieldName));
       if (!section || !section.content.trim()) return true;
       if (fieldDef.type === "asset_reference") {
@@ -661,7 +664,7 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           issues.push(
             t("entryDetail.validation.assetInvalid", { field: fieldName }),
           );
-        } else if (fieldDef.required && !reference) {
+        } else if (isActiveRequiredField(fieldDef) && !reference) {
           issues.push(
             t("entryDetail.validation.assetRequired", { field: fieldName }),
           );
@@ -686,7 +689,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           issues.push(
             t("entryDetail.validation.assetDuplicate", { field: fieldName }),
           );
-        } else if (fieldDef.required && references.length === 0) {
+        } else if (
+          isActiveRequiredField(fieldDef) &&
+          references.length === 0
+        ) {
           issues.push(
             t("entryDetail.validation.assetListRequired", {
               field: fieldName,
@@ -1216,11 +1222,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                       </p>
                                     </div>
                                     <span
-                                      class={fieldDef.required
+                                      class={isActiveRequiredField(fieldDef)
                                         ? "ui-entry-required"
                                         : "ui-pill"}
                                     >
-                                      {fieldDef.required
+                                      {isActiveRequiredField(fieldDef)
                                         ? t("entryDetail.required")
                                         : t("entryDetail.optional")}
                                     </span>

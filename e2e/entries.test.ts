@@ -516,9 +516,14 @@ test.describe("Entries CRUD", () => {
 			);
 			entryIds.push(mediaEntryId);
 
-			let mediaEntryResponse = await request.get(
-				getBackendUrl(`/spaces/${spaceId}/entries/${mediaEntryId}`),
+			const mediaEntryUrl = getBackendUrl(
+				`/spaces/${spaceId}/entries/${mediaEntryId}`,
 			);
+			let mediaEntryResponse = await request.get(mediaEntryUrl);
+			for (let attempt = 0; attempt < 10 && !mediaEntryResponse.ok(); attempt++) {
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				mediaEntryResponse = await request.get(mediaEntryUrl);
+			}
 			expect(mediaEntryResponse.ok()).toBeTruthy();
 			let mediaEntry = await mediaEntryResponse.json() as { content: string };
 			expect(mediaEntry.content).toContain('"name":"thumbnail.txt"');
