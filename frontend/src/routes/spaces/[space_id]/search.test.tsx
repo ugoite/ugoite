@@ -292,10 +292,19 @@ describe("/spaces/:space_id/search", () => {
   });
 
   it("REQ-SRCH-005: saved history entries rerun directly or open variable input when needed", async () => {
+    const relation = "form_entry";
+    seedForm("default", {
+      name: "Entry",
+      sql_relation: relation,
+      version: 1,
+      template: "# Entry\n",
+      fields: {},
+    });
     seedSqlEntry("default", {
       id: "saved-ready",
       name: "Ready history",
-      sql: "SELECT * FROM entries WHERE title = 'Alpha'",
+      sql:
+        `SELECT * FROM "${relation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id`,
       variables: [],
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-02T00:00:00Z",
@@ -304,7 +313,8 @@ describe("/spaces/:space_id/search", () => {
     seedSqlEntry("default", {
       id: "saved-vars",
       name: "Needs variables",
-      sql: "SELECT * FROM entries WHERE title = {{title}}",
+      sql:
+        `SELECT * FROM "${relation}" WHERE _ugoite_title = $title ORDER BY _ugoite_id`,
       variables: [{ type: "string", name: "title", description: "Title" }],
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-03T00:00:00Z",
@@ -332,7 +342,7 @@ describe("/spaces/:space_id/search", () => {
     );
     await waitFor(() => {
       expect(sessionSqlBody?.sql).toBe(
-        "SELECT * FROM entries WHERE title = 'Alpha'",
+        `SELECT * FROM "${relation}" WHERE _ugoite_title = 'Alpha' ORDER BY _ugoite_id`,
       );
       expect(navigateMock).toHaveBeenCalledWith(
         "/spaces/default/entries?session=history-session",
