@@ -5,6 +5,7 @@ import {
   ensureDefaultForm,
   getBackendUrl,
   getDefaultFormRelation,
+  getDefaultSpaceId,
   waitForServers,
 } from "./lib/client.ts";
 
@@ -13,18 +14,20 @@ type UiPageSpec = {
   route: string;
 };
 
-const spaceId = "default";
 const screenshotDir = path.resolve(process.cwd(), "../target/ui-screenshots");
 
 test.describe("UI page screenshot export @screenshot", () => {
+  let spaceId = "";
+
   test.beforeAll(async ({ request }) => {
     await waitForServers(request);
-    await ensureDefaultForm(request);
+    spaceId = await getDefaultSpaceId(request);
+    await ensureDefaultForm(request, spaceId);
   });
 
   test("REQ-E2E-004: export screenshots for all UI page specs", async ({ page, request }) => {
     test.setTimeout(180_000);
-    const relation = await getDefaultFormRelation(request);
+    const relation = await getDefaultFormRelation(request, spaceId);
 
     const entryTitle = `E2E Screenshot Entry ${Date.now()}`;
     const entryRes = await request.post(

@@ -65,61 +65,53 @@ export async function waitForServers(
 }
 
 export async function ensureDefaultForm(
-  request: APIRequestContext,
+	request: APIRequestContext,
+	spaceId: string,
 ): Promise<void> {
-  const spaceId = await getDefaultSpaceId(request);
-  const response = await request.post(
-    getBackendUrl(`/spaces/${spaceId}/forms`),
-    {
-      data: {
-        name: "Entry",
-        version: 1,
-        template: "# Entry\n\n## Body\n",
-        fields: { Body: { type: "markdown", required: false } },
-      },
-    },
-  );
-  if (![200, 201, 409].includes(response.status())) {
-    const body = await response.text();
-    throw new Error(
-      `Failed to ensure default form: ${response.status()} ${body}`,
-    );
-  }
+	const response = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
+		data: {
+			name: "Entry",
+			version: 1,
+			template: "# Entry\n\n## Body\n",
+			fields: { Body: { type: "markdown", required: false } },
+		},
+	});
+	if (![200, 201, 409].includes(response.status())) {
+		const body = await response.text();
+		throw new Error(`Failed to ensure default form: ${response.status()} ${body}`);
+	}
 }
 
 export async function getDefaultFormRelation(
-  request: APIRequestContext,
-  spaceId?: string,
+	request: APIRequestContext,
+	spaceId: string,
 ): Promise<string> {
-  const resolvedSpaceId = spaceId ?? await getDefaultSpaceId(request);
-  const response = await request.get(
-    getBackendUrl(`/spaces/${resolvedSpaceId}/forms`),
-  );
-  if (!response.ok()) {
-    throw new Error(`Failed to list default Forms: ${response.status()}`);
-  }
-  const forms = await response.json() as Array<{
-    name?: string;
-    sql_relation?: string;
-  }>;
-  const relation = forms.find((form) => form.name === "Entry")?.sql_relation;
-  if (!relation) throw new Error("Default Entry Form has no SQL relation");
-  return relation;
+	const response = await request.get(
+		getBackendUrl(`/spaces/${spaceId}/forms`),
+	);
+	if (!response.ok()) {
+		throw new Error(`Failed to list default Forms: ${response.status()}`);
+	}
+	const forms = await response.json() as Array<{
+		name?: string;
+		sql_relation?: string;
+	}>;
+	const relation = forms.find((form) => form.name === "Entry")?.sql_relation;
+	if (!relation) throw new Error("Default Entry Form has no SQL relation");
+	return relation;
 }
 
 export async function getDefaultSpaceId(
   request: APIRequestContext,
 ): Promise<string> {
-  const response = await request.get(getBackendUrl("/spaces"));
-  if (!response.ok()) {
-    throw new Error(`Failed to list Spaces: ${response.status()}`);
-  }
-  const spaces = await response.json() as Array<
-    { id: string; slug?: string; name: string }
-  >;
-  const space = spaces.find((candidate) =>
-    candidate.slug === "default" || candidate.name === "default"
-  );
-  if (!space) throw new Error("Default Space was not created during setup");
-  return space.id;
+	// The display name/slug are only fixture-discovery keys. All callers must use
+	// the returned immutable ID for subsequent routes and API requests.
+	const response = await request.get(getBackendUrl("/spaces"));
+	if (!response.ok()) throw new Error(`Failed to list Spaces: ${response.status()}`);
+	const spaces = await response.json() as Array<{ id: string; slug?: string; name: string }>;
+	const space = spaces.find((candidate) =>
+		candidate.name === "default" || candidate.slug === "default"
+	);
+	if (!space) throw new Error("Default Space was not created during setup");
+	return space.id;
 }
