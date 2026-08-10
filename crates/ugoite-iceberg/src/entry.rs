@@ -1487,7 +1487,14 @@ pub async fn list_entries(op: &Operator, ws_path: &str) -> Result<Vec<Value>> {
         .into_iter()
         .map(|form_name| (form_name.to_ascii_lowercase(), EntryScope::AllCurrent))
         .collect::<BTreeMap<_, _>>();
-    list_entries_with_scopes(op, ws_path, &relation_scopes, crate::MAX_NORMAL_READ_ROWS).await
+    list_entries_with_scopes(
+        op,
+        ws_path,
+        &relation_scopes,
+        crate::MAX_NORMAL_READ_ROWS,
+        0,
+    )
+    .await
 }
 
 pub async fn list_entries_with_scopes(
@@ -1495,9 +1502,11 @@ pub async fn list_entries_with_scopes(
     ws_path: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     limit: usize,
+    offset: usize,
 ) -> Result<Vec<Value>> {
     let rows =
-        index::query_entry_rows_authorized(op, ws_path, relation_scopes, None, None, limit).await?;
+        index::query_entry_rows_authorized(op, ws_path, relation_scopes, None, None, limit, offset)
+            .await?;
     list_entries_from_rows(rows)
 }
 

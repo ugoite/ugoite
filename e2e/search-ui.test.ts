@@ -1,12 +1,19 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { ensureDefaultForm, getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
-
-const spaceId = "default";
+import {
+	ensureDefaultForm,
+	getBackendUrl,
+	getDefaultSpaceId,
+	getFrontendUrl,
+	waitForServers,
+} from "./lib/client.ts";
 
 test.describe("Search UI", () => {
+	let spaceId = "";
+
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
-		await ensureDefaultForm(request);
+		spaceId = await getDefaultSpaceId(request);
+		await ensureDefaultForm(request, spaceId);
 	});
 
 	test("REQ-SRCH-004: search page starts with direct keyword search", async ({ page, request }) => {
@@ -18,9 +25,9 @@ test.describe("Search UI", () => {
 		let entryId: string | null = null;
 
 		try {
-			await ensureSearchForm(request, formName);
-			entryId = await createEntry(request, entryContent);
-			await waitForKeywordMatch(request, "keyword-first", entryId);
+			await ensureSearchForm(request, formName, spaceId);
+			entryId = await createEntry(request, entryContent, spaceId);
+			await waitForKeywordMatch(request, "keyword-first", entryId, spaceId);
 
 			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
 				waitUntil: "domcontentloaded",
@@ -54,12 +61,17 @@ test.describe("Search UI", () => {
 		const entryContent = `---\nform: ${formName}\ntags:\n  - release\n  - search-ui\n---\n# ${entryTitle}\n\n## Owner Name\nalice\n\n## Body\nAdvanced search history should stay reusable.\n`;
 		let entryId: string | null = null;
 
-		await cleanupSavedSearchesByForm(request, formName);
+		await cleanupSavedSearchesByForm(request, formName, spaceId);
 
 		try {
-			await ensureSearchForm(request, formName);
-			entryId = await createEntry(request, entryContent);
-			await waitForKeywordMatch(request, "Advanced search history should stay reusable.", entryId);
+			await ensureSearchForm(request, formName, spaceId);
+			entryId = await createEntry(request, entryContent, spaceId);
+			await waitForKeywordMatch(
+				request,
+				"Advanced search history should stay reusable.",
+				entryId,
+				spaceId,
+			);
 
 			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
 				waitUntil: "domcontentloaded",
@@ -72,7 +84,7 @@ test.describe("Search UI", () => {
 			await page.getByLabel("Value").fill("alice");
 			await page.getByRole("button", { name: "Run advanced search" }).click();
 
-			await expect(page).toHaveURL(/\/spaces\/default\/entries\?session=/);
+			await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/entries\\?session=`));
 			await expect(page.getByRole("button", { name: new RegExp(entryTitle) })).toBeVisible();
 
 			await page.goto(getFrontendUrl(`/spaces/${spaceId}/search`), {
@@ -80,17 +92,21 @@ test.describe("Search UI", () => {
 			});
 			await expect(page.getByRole("button", { name: new RegExp(historyName) })).toBeVisible();
 			await page.getByRole("button", { name: new RegExp(historyName) }).click();
-			await expect(page).toHaveURL(/\/spaces\/default\/entries\?session=/);
+			await expect(page).toHaveURL(new RegExp(`/spaces/${spaceId}/entries\\?session=`));
 		} finally {
 			if (entryId) {
 				await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entryId}`));
 			}
-			await cleanupSavedSearchesByForm(request, formName);
+			await cleanupSavedSearchesByForm(request, formName, spaceId);
 		}
 	});
 });
 
-async function ensureSearchForm(request: APIRequestContext, formName: string): Promise<void> {
+async function ensureSearchForm(
+	request: APIRequestContext,
+	formName: string,
+	spaceId: string,
+): Promise<void> {
 	const response = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
 		data: {
 			name: formName,
@@ -107,7 +123,11 @@ async function ensureSearchForm(request: APIRequestContext, formName: string): P
 	}
 }
 
-async function createEntry(request: APIRequestContext, markdown: string): Promise<string> {
+async function createEntry(
+	request: APIRequestContext,
+	markdown: string,
+	spaceId: string,
+): Promise<string> {
 	const response = await request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 		data: { markdown },
 	});
@@ -120,6 +140,7 @@ async function waitForKeywordMatch(
 	request: APIRequestContext,
 	query: string,
 	entryId: string,
+	spaceId: string,
 ): Promise<void> {
 	await expect
 		.poll(
@@ -139,6 +160,7 @@ async function waitForKeywordMatch(
 async function cleanupSavedSearchesByForm(
 	request: APIRequestContext,
 	formName: string,
+	spaceId: string,
 ): Promise<void> {
 	const response = await request.get(getBackendUrl(`/spaces/${spaceId}/sql`));
 	if (!response.ok()) {

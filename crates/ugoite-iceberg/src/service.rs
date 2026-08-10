@@ -956,6 +956,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
         limit: usize,
+        offset: usize,
     ) -> Result<Vec<Value>> {
         validate_storage_id(validate_space_id(space_id))?;
         let scopes = self
@@ -966,6 +967,7 @@ impl UgoiteService {
             &self.workspace_path(space_id),
             &scopes,
             limit,
+            offset,
         )
         .await
     }
@@ -984,6 +986,7 @@ impl UgoiteService {
             &self.workspace_path(space_id),
             &scopes,
             crate::MAX_NORMAL_READ_ROWS,
+            0,
         )
         .await
     }

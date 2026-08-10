@@ -20,6 +20,7 @@ apis:
     command: ugoite entry list
     file: crates/ugoite-cli/src/commands/entry.rs
     function: run
+  notes: Optional limit and offset query parameters provide bounded pages in stable title, Entry ID, and Form order.
 - id: entry.create
   method: POST
   status: implemented

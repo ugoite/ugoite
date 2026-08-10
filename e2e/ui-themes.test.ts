@@ -3,10 +3,10 @@ import {
   ensureDefaultForm,
   getBackendUrl,
   getDefaultFormRelation,
+  getDefaultSpaceId,
   waitForServers,
 } from "./lib/client.ts";
 
-const spaceId = "default";
 const themes = ["materialize", "classic", "pop"] as const;
 const themeTestTitles: Record<(typeof themes)[number], string> = {
 	materialize: "REQ-E2E-003: UI flows work in materialize theme",
@@ -15,15 +15,18 @@ const themeTestTitles: Record<(typeof themes)[number], string> = {
 };
 
 test.describe("UI theme flows", () => {
-	test.beforeAll(async ({ request }) => {
-		await waitForServers(request);
-		await ensureDefaultForm(request);
+  let spaceId = "";
+
+  test.beforeAll(async ({ request }) => {
+    await waitForServers(request);
+    spaceId = await getDefaultSpaceId(request);
+    await ensureDefaultForm(request, spaceId);
 	});
 
 	for (const theme of themes) {
 		test(themeTestTitles[theme], async ({ page, request }) => {
 			test.setTimeout(120_000);
-			const relation = await getDefaultFormRelation(request);
+      const relation = await getDefaultFormRelation(request, spaceId);
 			const runId = Date.now();
 			const entryTitle = `E2E Theme Entry ${theme} ${runId}`;
 			const variableQueryName = `E2E Variables ${theme}`;

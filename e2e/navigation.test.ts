@@ -1,13 +1,20 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ensureDefaultForm, getBackendUrl, waitForServers } from "./lib/client.ts";
+import {
+	ensureDefaultForm,
+	getBackendUrl,
+	getDefaultSpaceId,
+	waitForServers,
+} from "./lib/client.ts";
 
-const spaceId = "default";
 const maxVisitedPages = 16;
 
 test.describe("Dynamic navigation traversal", () => {
+	let spaceId = "";
+
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
-		await ensureDefaultForm(request);
+		spaceId = await getDefaultSpaceId(request);
+		await ensureDefaultForm(request, spaceId);
 	});
 
 	test("REQ-E2E-004: dynamic traversal has no console or SolidJS errors", async ({

@@ -38,8 +38,11 @@ const reference = {
   sha256: "a".repeat(64),
 };
 
-const entry = (properties: Record<string, unknown>): EntryRecord => ({
-  id: "entry-1",
+const entry = (
+  properties: Record<string, unknown>,
+  id = "entry-1",
+): EntryRecord => ({
+  id,
   title: "Quarterly report",
   form: "Reports",
   updated_at: "2026-08-10T00:00:00Z",
@@ -68,11 +71,41 @@ describe("/spaces/:space_id/assets", () => {
 
     expect(await screen.findByRole("heading", { name: "report.pdf" }))
       .toBeInTheDocument();
-    expect(entryApi.list).toHaveBeenCalledWith("default", 10_000);
+    expect(entryApi.list).toHaveBeenCalledWith("default", 1_000);
     expect(screen.getByText("application/pdf · 2,048 bytes"))
       .toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "All current Entry asset references are shown.",
+    );
     expect(screen.getByRole("link", { name: /Quarterly report/ }))
       .toHaveAttribute("href", "/spaces/default/entries/entry-1");
+  });
+
+  it("loads all pages when the asset inventory crosses a read boundary", async () => {
+    const firstPage = Array.from({ length: 1_000 }, (_, index) =>
+      entry(index === 0 ? { Attachments: [reference] } : {}, `entry-${index}`)
+    );
+    const laterReference = {
+      ...reference,
+      asset_id: "01900000-0000-7000-8000-000000000002",
+      name: "later-report.pdf",
+    };
+    vi.mocked(entryApi.list)
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce([entry({ Attachments: [laterReference] }, "entry-1000")]);
+
+    render(() => <SpaceAssetsRoute />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading asset references...",
+    );
+    expect(await screen.findByRole("heading", { name: "later-report.pdf" }))
+      .toBeInTheDocument();
+    expect(entryApi.list).toHaveBeenNthCalledWith(1, "default", 1_000);
+    expect(entryApi.list).toHaveBeenNthCalledWith(2, "default", 1_000, 1_000);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "All current Entry asset references are shown.",
+    );
   });
 
   it("renders the honest empty state when no current Entry owns an asset", async () => {

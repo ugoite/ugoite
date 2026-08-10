@@ -2093,6 +2093,9 @@
           },
           {
             "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
           }
         ],
         "responses": {
@@ -6356,6 +6359,17 @@
           "type": "integer",
           "minimum": 0,
           "default": 100
+        }
+      },
+      "Offset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "description": "Number of entries to skip before returning the bounded page.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
         }
       },
       "Checkpoint": {

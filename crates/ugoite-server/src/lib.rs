@@ -3652,6 +3652,7 @@ async fn list_entries(
                     .limit
                     .unwrap_or(100)
                     .min(ugoite_iceberg::MAX_NORMAL_READ_ROWS),
+                query.offset.unwrap_or(0),
             )
             .await
             .map_err(ApiError::from_core)?,
@@ -3661,6 +3662,7 @@ async fn list_entries(
 #[derive(Deserialize)]
 struct EntryListQuery {
     limit: Option<usize>,
+    offset: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -4419,6 +4421,7 @@ async fn mcp_entries(
             &space_id,
             &principals,
             ugoite_iceberg::MAX_NORMAL_READ_ROWS,
+            0,
         )
         .await
         .map_err(ApiError::from_core)?

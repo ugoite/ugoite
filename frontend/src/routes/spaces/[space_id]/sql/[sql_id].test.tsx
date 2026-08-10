@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { http, HttpResponse } from "msw";
 import SpaceSqlDetailRoute from "./[sql_id]";
-import { resetMockData, seedSpace, seedSqlEntry } from "~/test/mocks/handlers";
+import {
+  resetMockData,
+  seedForm,
+  seedSpace,
+  seedSqlEntry,
+} from "~/test/mocks/handlers";
 import { server } from "~/test/mocks/server";
 import type { Space } from "~/lib/types";
 import { testApiUrl } from "~/test/http-origin";
@@ -91,6 +96,13 @@ describe("/spaces/:space_id/sql/:sql_id", () => {
   });
 
   it("REQ-FE-062: saved SQL detail runs variable-free queries through SQL sessions", async () => {
+    seedForm("default", {
+      name: "Entry",
+      sql_relation: entryRelation,
+      version: 1,
+      template: "# Entry\n",
+      fields: {},
+    });
     seedSqlEntry("default", {
       id: "saved-query",
       name: "Runnable Query",

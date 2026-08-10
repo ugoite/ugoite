@@ -22,9 +22,24 @@ type AssetGroup = {
   occurrences: AssetOccurrence[];
 };
 
-// entry.list accepts the server's normal read ceiling, which keeps this
-// workspace complete without adding a second asset index or pagination model.
-const ASSET_WORKSPACE_ENTRY_LIMIT = 10_000;
+// Keep each request below the server's normal read ceiling. The entry.list
+// offset is part of the portable protocol, so this workspace can derive a
+// complete inventory from the Form-owned Entry source of truth.
+const ASSET_WORKSPACE_PAGE_SIZE = 1_000;
+
+const listAllEntries = async (spaceId: string): Promise<EntryRecord[]> => {
+  const entries: EntryRecord[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = offset === 0
+      ? await entryApi.list(spaceId, ASSET_WORKSPACE_PAGE_SIZE)
+      : await entryApi.list(spaceId, ASSET_WORKSPACE_PAGE_SIZE, offset);
+    entries.push(...page);
+    if (page.length < ASSET_WORKSPACE_PAGE_SIZE) return entries;
+    offset += page.length;
+  }
+};
 
 const referencesFromValue = (value: unknown): AssetReference[] => {
   if (isAssetReference(value)) return [value];
@@ -66,7 +81,7 @@ export default function SpaceAssetsRoute() {
   const spaceId = () => params.space_id;
   const [entries, { refetch }] = createResource(
     spaceId,
-    (id) => entryApi.list(id, ASSET_WORKSPACE_ENTRY_LIMIT),
+    listAllEntries,
   );
 
   const assetGroups = () => groupAssetReferences(entries() ?? []);
@@ -108,6 +123,9 @@ export default function SpaceAssetsRoute() {
       </Show>
 
       <Show when={!entries.loading && !entries.error}>
+        <p role="status" class="mb-4 text-sm ui-muted">
+          {t("assetsPage.complete")}
+        </p>
         <Show
           when={assetGroups().length > 0}
           fallback={

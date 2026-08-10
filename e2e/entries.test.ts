@@ -9,7 +9,13 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { Buffer } from "node:buffer";
-import { ensureDefaultForm, getBackendUrl, getFrontendUrl, waitForServers } from "./lib/client.ts";
+import {
+	ensureDefaultForm,
+	getBackendUrl,
+	getDefaultSpaceId,
+	getFrontendUrl,
+	waitForServers,
+} from "./lib/client.ts";
 
 async function settleUiLoading(page: Page): Promise<void> {
 	await page.waitForTimeout(150);
@@ -22,15 +28,18 @@ async function settleUiLoading(page: Page): Promise<void> {
 }
 
 test.describe("Entries CRUD", () => {
+	let spaceId = "";
+
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
-		await ensureDefaultForm(request);
+		spaceId = await getDefaultSpaceId(request);
+		await ensureDefaultForm(request, spaceId);
 	});
 
-	test("POST /spaces/default/entries creates a new entry", async ({ request }) => {
+	test("POST /spaces/:space_id/entries creates a new entry", async ({ request }) => {
 		const timestamp = Date.now();
 		const res = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown: `---\nform: Entry\n---\n# E2E Test Entry ${timestamp}\n\n## Body\nCreated at ${new Date().toISOString()}`,
@@ -42,12 +51,12 @@ test.describe("Entries CRUD", () => {
 		const entry = (await res.json()) as { id: string };
 		expect(entry).toHaveProperty("id");
 
-		await request.delete(getBackendUrl(`/spaces/default/entries/${entry.id}`));
+		await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${entry.id}`));
 	});
 
-	test("GET /spaces/default/entries returns entry list", async ({ request }) => {
+	test("GET /spaces/:space_id/entries returns entry list", async ({ request }) => {
 		const res = await request.get(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 		);
 		expect(res.ok()).toBeTruthy();
 
@@ -57,7 +66,7 @@ test.describe("Entries CRUD", () => {
 
 	test("consecutive PUT should succeed with updated revision_id", async ({ request }) => {
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown:
@@ -69,7 +78,7 @@ test.describe("Entries CRUD", () => {
 		const created = (await createRes.json()) as { id: string; revision_id: string };
 
 		const firstUpdateRes = await request.put(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
 					markdown:
@@ -84,7 +93,7 @@ test.describe("Entries CRUD", () => {
 		};
 
 		const secondUpdateRes = await request.put(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
 					markdown:
@@ -96,13 +105,13 @@ test.describe("Entries CRUD", () => {
 		expect(secondUpdateRes.ok()).toBeTruthy();
 
 		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 	});
 
 	test("PUT with stale revision_id should return 409 conflict", async ({ request }) => {
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown:
@@ -114,7 +123,7 @@ test.describe("Entries CRUD", () => {
 		const created = (await createRes.json()) as { id: string; revision_id: string };
 
 		const firstUpdateRes = await request.put(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
 					markdown:
@@ -126,7 +135,7 @@ test.describe("Entries CRUD", () => {
 		expect(firstUpdateRes.ok()).toBeTruthy();
 
 		const conflictRes = await request.put(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
 					markdown:
@@ -138,13 +147,13 @@ test.describe("Entries CRUD", () => {
 		expect(conflictRes.status()).toBe(409);
 
 		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 	});
 
 	test("saved content should persist after reload (REQ-FE-010)", async ({ page, request }) => {
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown:
@@ -156,7 +165,7 @@ test.describe("Entries CRUD", () => {
 		const created = (await createRes.json()) as { id: string; revision_id: string };
 
 		const updateRes = await request.put(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
 					markdown:
@@ -167,14 +176,14 @@ test.describe("Entries CRUD", () => {
 		);
 		expect(updateRes.ok()).toBeTruthy();
 
-		await page.goto(`/spaces/default/entries/${created.id}`);
+		await page.goto(`/spaces/${spaceId}/entries/${created.id}`);
 		await page.waitForLoadState("networkidle");
 		const html = await page.content();
 		expect(html).toContain("Updated content that should persist");
 		expect(html).not.toContain("Original content");
 
 		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 	});
 
@@ -216,7 +225,7 @@ test.describe("Entries CRUD", () => {
 		const formName = `EntryCreateFields-${timestamp}`;
 		const title = `Entry create boundary ${timestamp}`;
 		const formResponse = await request.post(
-			getBackendUrl("/spaces/default/forms"),
+			getBackendUrl(`/spaces/${spaceId}/forms`),
 			{
 				data: {
 					name: formName,
@@ -238,17 +247,17 @@ test.describe("Entries CRUD", () => {
 			const url = new URL(requestEvent.url());
 			if (
 				requestEvent.method() === "POST" &&
-				url.pathname === "/api/spaces/default/entries"
+				url.pathname === `/api/spaces/${spaceId}/entries`
 			) entryPostCount += 1;
 			if (
 				requestEvent.method() === "PUT" &&
-				/^\/api\/spaces\/default\/entries\/[^/]+$/.test(url.pathname)
+				new RegExp(`^/api/spaces/${spaceId}/entries/[^/]+$`).test(url.pathname)
 			) entryPutCount += 1;
 		});
 
 		await page.goto(
 			getFrontendUrl(
-				`/spaces/default/entries/new?form=${encodeURIComponent(formName)}`,
+				`/spaces/${spaceId}/entries/new?form=${encodeURIComponent(formName)}`,
 			),
 			{ waitUntil: "domcontentloaded" },
 		);
@@ -261,12 +270,12 @@ test.describe("Entries CRUD", () => {
 		const createResponsePromise = page.waitForResponse((response) => {
 			const url = new URL(response.url());
 			return response.request().method() === "POST" &&
-				url.pathname === "/api/spaces/default/entries";
+				url.pathname === `/api/spaces/${spaceId}/entries`;
 		});
 		const detailResponsePromise = page.waitForResponse((response) => {
 			const url = new URL(response.url());
 			return response.request().method() === "GET" &&
-				/^\/api\/spaces\/default\/entries\/[^/]+$/.test(url.pathname);
+				new RegExp(`^/api/spaces/${spaceId}/entries/[^/]+$`).test(url.pathname);
 		});
 		await page.getByRole("button", { name: "Save" }).click();
 		const createResponse = await createResponsePromise;
@@ -280,7 +289,7 @@ test.describe("Entries CRUD", () => {
 		const detail = (await detailResponse.json()) as { revision_id: string };
 
 		await expect(page).toHaveURL(
-			new RegExp(`/spaces/default/entries/${created.id}$`),
+			new RegExp(`/spaces/${spaceId}/entries/${created.id}$`),
 		);
 		await expect(page.getByText("All changes saved")).toBeVisible();
 		await expect(page.getByText("Unsaved changes")).toHaveCount(0);
@@ -290,7 +299,7 @@ test.describe("Entries CRUD", () => {
 		expect(detail.revision_id).toBe(created.revision_id);
 
 		const historyResponse = await request.get(
-			getBackendUrl(`/spaces/default/entries/${created.id}/history`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}/history`),
 		);
 		expect(historyResponse.ok()).toBeTruthy();
 		const history = (await historyResponse.json()) as {
@@ -300,7 +309,7 @@ test.describe("Entries CRUD", () => {
 		expect(history.revisions[0]?.revision_id).toBe(created.revision_id);
 
 		const entryResponse = await request.get(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 		expect(entryResponse.ok()).toBeTruthy();
 		const entry = (await entryResponse.json()) as { content: string };
@@ -308,7 +317,7 @@ test.describe("Entries CRUD", () => {
 		expect(entry.content).toContain("## ts\n2026-08-21T10:48:00");
 
 		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 	});
 
@@ -676,7 +685,7 @@ test.describe("Entries CRUD", () => {
 
 	test("REQ-FE-033: frontend entry detail route renders (not SolidJS Not Found)", async ({ page, request }) => {
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown:
@@ -687,20 +696,20 @@ test.describe("Entries CRUD", () => {
 		expect(createRes.status()).toBe(201);
 		const created = (await createRes.json()) as { id: string };
 
-		await page.goto(`/spaces/default/entries/${created.id}`);
+		await page.goto(`/spaces/${spaceId}/entries/${created.id}`);
 		await page.waitForLoadState("networkidle");
 		const html = await page.content();
 		expect(html).not.toContain("Visit solidjs.com");
 		expect(html).not.toContain("NOT FOUND");
 
 		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 	});
 
 	test("REQ-FE-005: entry detail preview escapes raw HTML in markdown content", async ({ page, request }) => {
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					content:
@@ -711,7 +720,7 @@ test.describe("Entries CRUD", () => {
 		expect(createRes.status()).toBe(201);
 		const created = (await createRes.json()) as { id: string };
 
-		await page.goto(`/spaces/default/entries/${created.id}`);
+		await page.goto(`/spaces/${spaceId}/entries/${created.id}`);
 		await page.waitForLoadState("networkidle");
 		await settleUiLoading(page);
 
@@ -728,7 +737,7 @@ test.describe("Entries CRUD", () => {
 		expect(marker).toBeNull();
 
 		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 	});
 
@@ -736,7 +745,7 @@ test.describe("Entries CRUD", () => {
 		const timestamp = Date.now();
 		const title = `Special Entry @ ${timestamp} % &`;
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown: `---\nform: Entry\n---\n# ${title}\n\n## Body\nTesting special chars in title.`,
@@ -746,29 +755,29 @@ test.describe("Entries CRUD", () => {
 		expect(createRes.status()).toBe(201);
 		const created = (await createRes.json()) as { id: string };
 
-		await page.goto(`/spaces/default/entries/${encodeURIComponent(created.id)}`);
+		await page.goto(`/spaces/${spaceId}/entries/${encodeURIComponent(created.id)}`);
 		await page.waitForLoadState("networkidle");
 		const html = await page.content();
 		expect(html).toContain(title);
 
 		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 	});
 
 	test("REQ-FE-034: Multi-entry navigation should not get stuck in loading state", async ({ page, request }) => {
 		const formEntries = await Promise.all([
-			request.post(getBackendUrl("/spaces/default/entries"), {
+			request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 				data: {
 					markdown: "---\nform: Entry\n---\n# Entry A\n\n## Body\nContent A",
 				},
 			}),
-			request.post(getBackendUrl("/spaces/default/entries"), {
+			request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 				data: {
 					markdown: "---\nform: Entry\n---\n# Entry B\n\n## Body\nContent B",
 				},
 			}),
-			request.post(getBackendUrl("/spaces/default/entries"), {
+			request.post(getBackendUrl(`/spaces/${spaceId}/entries`), {
 				data: {
 					markdown: "---\nform: Entry\n---\n# Entry C\n\n## Body\nContent C",
 				},
@@ -780,7 +789,7 @@ test.describe("Entries CRUD", () => {
 		)) as Array<{ id: string }>;
 
 		for (const entry of entries) {
-			await page.goto(`/spaces/default/entries/${encodeURIComponent(entry.id)}`);
+			await page.goto(`/spaces/${spaceId}/entries/${encodeURIComponent(entry.id)}`);
 			await page.waitForLoadState("networkidle");
 			const entryHtml = await page.content();
 			expect(entryHtml).not.toContain("Loading entry...");
@@ -788,7 +797,7 @@ test.describe("Entries CRUD", () => {
 		}
 
 		for (const entry of entries) {
-			await page.goto(`/spaces/default/entries/${encodeURIComponent(entry.id)}`);
+			await page.goto(`/spaces/${spaceId}/entries/${encodeURIComponent(entry.id)}`);
 			await page.waitForLoadState("networkidle");
 			const html = await page.content();
 			expect(html).not.toContain("Loading entry...");
@@ -798,7 +807,7 @@ test.describe("Entries CRUD", () => {
 		await Promise.all(
 			entries.map((entry) =>
 				request.delete(
-					getBackendUrl(`/spaces/default/entries/${entry.id}`),
+					getBackendUrl(`/spaces/${spaceId}/entries/${entry.id}`),
 				),
 			),
 		);
@@ -806,7 +815,7 @@ test.describe("Entries CRUD", () => {
 
 	test("REQ-FE-035: Navigation timeout handling and recovery", async ({ page, request }) => {
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown:
@@ -817,19 +826,19 @@ test.describe("Entries CRUD", () => {
 		expect(createRes.status()).toBe(201);
 		const created = (await createRes.json()) as { id: string };
 
-		await page.goto(`/spaces/default/entries/${created.id}`);
+		await page.goto(`/spaces/${spaceId}/entries/${created.id}`);
 		await page.waitForLoadState("networkidle");
 		const html = await page.content();
 		expect(html).not.toContain("Loading...");
 
 		await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 	});
 
-	test("PUT /spaces/default/entries/:id updates entry", async ({ request }) => {
+	test("PUT /spaces/:space_id/entries/:id updates entry", async ({ request }) => {
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown:
@@ -841,12 +850,12 @@ test.describe("Entries CRUD", () => {
 		const created = (await createRes.json()) as { id: string };
 
 		const getRes = await request.get(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 		const current = (await getRes.json()) as { revision_id: string };
 
 		const updateRes = await request.put(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 			{
 				data: {
 					markdown:
@@ -857,12 +866,12 @@ test.describe("Entries CRUD", () => {
 		);
 		expect(updateRes.ok()).toBeTruthy();
 
-		await request.delete(getBackendUrl(`/spaces/default/entries/${created.id}`));
+		await request.delete(getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`));
 	});
 
-	test("DELETE /spaces/default/entries/:id removes entry", async ({ request }) => {
+	test("DELETE /spaces/:space_id/entries/:id removes entry", async ({ request }) => {
 		const createRes = await request.post(
-			getBackendUrl("/spaces/default/entries"),
+			getBackendUrl(`/spaces/${spaceId}/entries`),
 			{
 				data: {
 					markdown:
@@ -874,12 +883,12 @@ test.describe("Entries CRUD", () => {
 		const created = (await createRes.json()) as { id: string };
 
 		const deleteRes = await request.delete(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 		expect([200, 204]).toContain(deleteRes.status());
 
 		const fetchRes = await request.get(
-			getBackendUrl(`/spaces/default/entries/${created.id}`),
+			getBackendUrl(`/spaces/${spaceId}/entries/${created.id}`),
 		);
 		expect(fetchRes.status()).toBe(404);
 	});

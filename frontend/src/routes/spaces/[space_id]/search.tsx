@@ -6,6 +6,11 @@ import { formApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { sqlApi } from "~/lib/ugoite-client";
+import {
+  normalizeSqlVariables,
+  SQL_SESSION_DEFAULT_LIMIT,
+  SQL_SESSION_ORDER,
+} from "~/lib/sql";
 import type { KeywordSearchResult, SqlEntry } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
@@ -65,7 +70,7 @@ type AdvancedSearchQuery = {
   parameterTypes: Record<string, string>;
 };
 
-const ADVANCED_SEARCH_LIMIT = 50;
+const ADVANCED_SEARCH_LIMIT = SQL_SESSION_DEFAULT_LIMIT;
 
 function escapeSqlLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -347,7 +352,7 @@ function buildAdvancedSearchQuery(
   const render = (where: string) =>
     `SELECT * FROM ${
       quoteSqlIdentifier(criteria.sqlRelation)
-    }${where} ORDER BY _ugoite_updated_at DESC, _ugoite_id LIMIT ${ADVANCED_SEARCH_LIMIT}`;
+    }${where} ${SQL_SESSION_ORDER} LIMIT ${ADVANCED_SEARCH_LIMIT}`;
   return {
     sql: render(sessionWhere),
     historySql: render(historyWhere),
@@ -535,7 +540,10 @@ export default function SpaceSearchRoute() {
     setActionError(null);
     setRunningSearchId(entry.id);
     try {
-      const session = await sqlSessionApi.create(spaceId(), entry.sql);
+      const session = await sqlSessionApi.create(
+        spaceId(),
+        normalizeSqlVariables(entry.sql).sql,
+      );
       if (session.status === "failed") {
         setActionError(
           formatUserFacingError(

@@ -261,6 +261,43 @@ async fn test_entry_req_entry_001_create_entry_basic() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn entry_list_supports_bounded_offset_pages_in_stable_order() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "paged-entry-list", "/tmp").await?;
+    let ws_path = "spaces/paged-entry-list";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+
+    for (entry_id, title) in [("entry-a", "A"), ("entry-b", "B"), ("entry-c", "C")] {
+        entry::create_entry(
+            &op,
+            ws_path,
+            entry_id,
+            &format!("---\nform: Entry\n---\n# {title}"),
+            "author",
+            &integrity,
+        )
+        .await?;
+    }
+
+    let page = entry::list_entries_with_scopes(
+        &op,
+        ws_path,
+        &BTreeMap::from([("entry".to_string(), EntryScope::AllCurrent)]),
+        2,
+        1,
+    )
+    .await?;
+    assert_eq!(
+        page.iter()
+            .map(|value| value["id"].as_str().unwrap_or_default())
+            .collect::<Vec<_>>(),
+        ["entry-b", "entry-c"]
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn deleted_entry_history_revision_and_restore_remain_reachable() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "deleted-entry-history", "/tmp").await?;

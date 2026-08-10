@@ -1,11 +1,12 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { getBackendUrl, waitForServers } from "./lib/client.ts";
-
-const spaceId = "default";
+import { getBackendUrl, getDefaultSpaceId, waitForServers } from "./lib/client.ts";
 
 test.describe("Form", () => {
+	let spaceId = "";
+
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
+		spaceId = await getDefaultSpaceId(request);
 	});
 
 	const waitForForm = async (request: APIRequestContext, formName: string) => {
