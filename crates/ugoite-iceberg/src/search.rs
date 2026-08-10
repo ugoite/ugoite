@@ -39,6 +39,7 @@ pub async fn search_entries_with_scopes(
         None,
         Some(query),
         limit,
+        0,
     )
     .await?;
     let mut results = Vec::with_capacity(rows.len());
