@@ -1,5 +1,45 @@
 import { chromium, expect, type FullConfig } from "@playwright/test";
 
+const SETUP_TIMEOUT_MS = 30_000;
+
+async function setupDiagnostics(
+  page: import("@playwright/test").Page,
+  browserErrors: string[],
+): Promise<string> {
+  const body = await page.locator("body").innerText().catch(() =>
+    "<unavailable>"
+  );
+  const errors = browserErrors.length > 0 ? browserErrors.join(" | ") : "none";
+  return `url=${page.url()}; browserErrors=${errors.slice(0, 2000)}; body=${
+    body.slice(0, 2000)
+  }`;
+}
+
+async function waitForSetupState(
+  page: import("@playwright/test").Page,
+  locator: import("@playwright/test").Locator,
+  state: string,
+  browserErrors: string[],
+): Promise<void> {
+  try {
+    await expect(locator).toBeVisible({ timeout: SETUP_TIMEOUT_MS });
+  } catch {
+    throw new Error(
+      `${state} did not become visible within ${SETUP_TIMEOUT_MS}ms; ${await setupDiagnostics(
+        page,
+        browserErrors,
+      )}`,
+    );
+  }
+}
+
+function isPostResponse(path: string) {
+  return (response: import("@playwright/test").Response): boolean => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST" && url.pathname === path;
+  };
+}
+
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const setupSecret = process.env.E2E_SETUP_SECRET?.trim();
   if (!setupSecret) throw new Error("E2E_SETUP_SECRET is required");
@@ -42,20 +82,38 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       );
     }
     const displayName = page.getByLabel("Display name");
+    await waitForSetupState(page, displayName, "setup form", browserErrors);
+    await displayName.fill("E2E owner");
+    const createAdministratorPasskey = page.getByRole("button", {
+      name: "Create administrator passkey",
+    });
     try {
-      await displayName.waitFor({ state: "visible", timeout: 5_000 });
-    } catch {
+      const [setupResponse] = await Promise.all([
+        page.waitForResponse(isPostResponse("/api/auth/setup/finish"), {
+          timeout: SETUP_TIMEOUT_MS,
+        }),
+        createAdministratorPasskey.click(),
+      ]);
+      if (!setupResponse.ok()) {
+        throw new Error(
+          `setup finish returned ${setupResponse.status()}: ${
+            (await setupResponse.text()).slice(0, 2000)
+          }`,
+        );
+      }
+    } catch (error) {
       throw new Error(
-        `setup form missing at ${page.url()}; errors=${
-          browserErrors.join(" | ")
-        }; html=${(await page.content()).slice(0, 2000)}`,
+        `administrator passkey setup failed: ${
+          error instanceof Error ? error.message : String(error)
+        }; ${await setupDiagnostics(page, browserErrors)}`,
       );
     }
-    await displayName.fill("E2E owner");
-    await page.getByRole("button", { name: "Create administrator passkey" })
-      .click();
-    await expect(page.getByText("Save these one-time recovery codes now."))
-      .toBeVisible();
+    await waitForSetupState(
+      page,
+      page.getByText("Save these one-time recovery codes now."),
+      "recovery-code screen",
+      browserErrors,
+    );
     await cdp.send("WebAuthn.removeVirtualAuthenticator", {
       authenticatorId: firstAuthenticator.authenticatorId,
     });
@@ -69,17 +127,37 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
         automaticPresenceSimulation: true,
       },
     });
-    await page.getByRole("button", { name: "Register second Passkey" }).click();
-    const continueButton = page.getByRole("button", { name: "Continue" });
+    const registerSecondPasskey = page.getByRole("button", {
+      name: "Register second Passkey",
+    });
     try {
-      await continueButton.waitFor({ state: "visible", timeout: 10_000 });
-    } catch {
+      const [passkeyResponse] = await Promise.all([
+        page.waitForResponse(isPostResponse("/api/auth/passkeys/finish"), {
+          timeout: SETUP_TIMEOUT_MS,
+        }),
+        registerSecondPasskey.click(),
+      ]);
+      if (!passkeyResponse.ok()) {
+        throw new Error(
+          `second Passkey finish returned ${passkeyResponse.status()}: ${
+            (await passkeyResponse.text()).slice(0, 2000)
+          }`,
+        );
+      }
+    } catch (error) {
       throw new Error(
-        `second Passkey setup failed; errors=${
-          browserErrors.join(" | ")
-        }; body=${(await page.locator("body").innerText()).slice(0, 2000)}`,
+        `second Passkey setup failed: ${
+          error instanceof Error ? error.message : String(error)
+        }; ${await setupDiagnostics(page, browserErrors)}`,
       );
     }
+    const continueButton = page.getByRole("button", { name: "Continue" });
+    await waitForSetupState(
+      page,
+      continueButton,
+      "second Passkey completion screen",
+      browserErrors,
+    );
     await continueButton.click();
     await expect(page).toHaveURL(/\/spaces$/);
 

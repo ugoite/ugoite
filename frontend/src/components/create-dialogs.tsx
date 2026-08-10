@@ -23,8 +23,10 @@ import {
 } from "~/lib/metadata-columns";
 import {
   filterCreatableEntryForms,
+  getFormNameValidationIssue,
   isReservedMetadataForm,
   RESERVED_METADATA_CLASSES,
+  type FormNameValidationIssue,
 } from "~/lib/metadata-forms";
 
 const numericFieldTypes = new Set([
@@ -84,6 +86,9 @@ const isLongTextField = (name: string, def: Form["fields"][string]) =>
 
 const isTextareaField = (name: string, def: Form["fields"][string]) =>
   isLongTextField(name, def) || def.type === "object_list";
+
+const isActiveRequiredField = (def: Form["fields"][string]) =>
+  def.required && !def.deprecated;
 
 const createFieldInputId = (prefix: string, name: string, index: number) => {
   const normalized = name
@@ -263,6 +268,17 @@ const hasReservedMetadataFieldName = (fields: FieldIssueSource[]) =>
     return trimmed ? isReservedMetadataColumn(trimmed) : false;
   });
 
+const formNameValidationMessage = (issue: FormNameValidationIssue) => {
+  switch (issue) {
+    case "syntax":
+      return t("createDialog.validation.formNameSyntax");
+    case "reserved":
+      return t("createDialog.validation.reservedMetadataFormName");
+    case "duplicate":
+      return t("createDialog.validation.duplicateFormName");
+  }
+};
+
 export interface CreateEntryDialogProps {
   open: boolean;
   forms: Form[];
@@ -437,7 +453,9 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const form = selectedFormDef();
     if (!form) return [] as Array<[string, Form["fields"][string]]>;
     /* v8 ignore start */
-    return Object.entries(form.fields || {}).filter(([, def]) => def.required);
+    return Object.entries(form.fields || {}).filter(([, def]) =>
+      isActiveRequiredField(def)
+    );
     /* v8 ignore stop */
   });
 
@@ -580,7 +598,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const defaults: Record<string, string> = {};
     /* v8 ignore start */
     for (const [name, def] of Object.entries(form.fields || {})) {
-      if (!def.required) continue;
+      if (!isActiveRequiredField(def)) continue;
       defaults[name] = buildDefaultValue(name, def);
     }
     /* v8 ignore stop */
@@ -664,6 +682,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     name: string,
     def: Form["fields"][string],
   ) =>
+    !def.deprecated &&
     hasRowReferencePicker(def) &&
     (rowReferenceQueries()[name] ?? "").trim() !== "" &&
     !(fieldValues()[name] ?? "").trim();
@@ -773,7 +792,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
       );
       return;
     }
-    if (def.required && !(fieldValues()[name] || "").trim()) {
+    if (isActiveRequiredField(def) && !(fieldValues()[name] || "").trim()) {
       setErrorMessage(
         t("createDialog.entry.error.answerRequired", { field: name }),
       );
@@ -787,7 +806,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
     const current = currentChatField();
     if (!current) return;
     const [name, def] = current;
-    if (def.required) {
+    if (isActiveRequiredField(def)) {
       setErrorMessage(
         t("createDialog.entry.error.skipRequired", { field: name }),
       );
@@ -975,7 +994,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                               <span class="ui-pill gap-1">
                                 <span class="font-medium">{name}</span>
                                 <span class="ui-muted">({def.type})</span>
-                                <Show when={def.required}>
+                                <Show when={isActiveRequiredField(def)}>
                                   <span class="ui-text-danger">*</span>
                                 </Show>
                               </span>
@@ -1081,7 +1100,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                             {name}
                             <span class="ui-muted ml-2 text-xs">
                               {t(
-                                def.required
+                                isActiveRequiredField(def)
                                   ? "createDialog.entry.fieldMeta.required"
                                   : "createDialog.entry.fieldMeta.optional",
                                 { type: def.type },
@@ -1130,7 +1149,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                           {name} (
                           {answered()
                             ? t("createDialog.entry.chatStatus.answered")
-                            : def.required
+                            : isActiveRequiredField(def)
                             ? t("createDialog.entry.chatStatus.required")
                             : t("createDialog.entry.chatStatus.optional")}
                           )
@@ -1156,7 +1175,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                           {name}
                           <span class="ui-muted ml-2 text-xs">
                             {t(
-                              def.required
+                              isActiveRequiredField(def)
                                 ? "createDialog.entry.chatFieldMeta.required"
                                 : "createDialog.entry.chatFieldMeta.optional",
                               { type: def.type },
@@ -1185,7 +1204,7 @@ export function CreateEntryDialog(props: CreateEntryDialogProps) {
                               onClick={handleSkipChatField}
                             >
                               {t(
-                                def.required
+                                isActiveRequiredField(def)
                                   ? "createDialog.entry.chatSkip"
                                   : "createDialog.entry.chatSkipOptional",
                               )}
@@ -1286,17 +1305,18 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
     })
   );
 
-  const nameIssue = createMemo(
-    () =>
-      /* v8 ignore start */
-      isReservedMetadataForm(name())
-        ? t("createDialog.validation.reservedMetadataFormName")
-        : "",
-    /* v8 ignore stop */
-  );
+  const nameValidationIssue = createMemo(() => {
+    const value = name().trim();
+    return value ? getFormNameValidationIssue(value, props.formNames) : null;
+  });
+  const nameIssue = createMemo(() => {
+    const issue = nameValidationIssue();
+    return issue ? formNameValidationMessage(issue) : "";
+  });
 
   const showReservedNameGuidance = createMemo(
-    () => hasReservedMetadataFieldName(fields()) || Boolean(nameIssue()),
+    () => hasReservedMetadataFieldName(fields()) ||
+      nameValidationIssue() === "reserved",
   );
 
   const hasFieldIssues = createMemo(() => fieldIssues().size > 0);
@@ -1337,7 +1357,11 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
     e.preventDefault();
     const formName = name().trim();
     /* v8 ignore start */
-    if (!formName || hasFieldIssues() || nameIssue()) return;
+    if (!formName || hasFieldIssues()) return;
+    if (nameIssue()) {
+      inputRef?.focus();
+      return;
+    }
     /* v8 ignore stop */
     setSubmitError(null);
 
@@ -1470,10 +1494,19 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
                 placeholder={t("createDialog.form.namePlaceholder")}
                 class="ui-input"
                 classList={{ "ui-input-error": Boolean(nameIssue()) }}
+                aria-invalid={Boolean(nameIssue()) || undefined}
+                aria-describedby={nameIssue()
+                  ? "form-name-help form-name-error"
+                  : "form-name-help"}
                 autofocus
               />
+              <p id="form-name-help" class="text-xs ui-muted">
+                {t("createDialog.form.nameHelp")}
+              </p>
               <Show when={nameIssue()}>
-                <span class="text-xs ui-text-danger">{nameIssue()}</span>
+                <span id="form-name-error" class="text-xs ui-text-danger">
+                  {nameIssue()}
+                </span>
               </Show>
             </div>
 
@@ -1678,8 +1711,7 @@ export function CreateFormDialog(props: CreateFormDialogProps) {
               </button>
               <button
                 type="submit"
-                disabled={!name().trim() || hasFieldIssues() ||
-                  Boolean(nameIssue())}
+                disabled={!name().trim() || hasFieldIssues()}
                 class="ui-button ui-button-primary text-sm"
               >
                 {t("createDialog.form.create")}
@@ -1698,6 +1730,7 @@ function processFields(
     name: string;
     type: string;
     required: boolean;
+    deprecated?: boolean;
     targetForm?: string;
     itemsType?: string;
     itemsTargetForm?: string;
@@ -1708,6 +1741,7 @@ function processFields(
     {
       type: string;
       required: boolean;
+      deprecated?: boolean;
       target_form?: string;
       items?: { type: string; target_form?: string };
     }
@@ -1731,6 +1765,7 @@ function processFields(
       fieldRecord[trimmedName] = {
         type: f.type,
         required: f.required,
+        ...(f.deprecated ? { deprecated: true } : {}),
         target_form,
         items,
       };
@@ -1790,6 +1825,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
       name: string;
       type: string;
       required: boolean;
+      deprecated?: boolean;
       targetForm?: string;
       itemsType?: string;
       itemsTargetForm?: string;
@@ -1864,6 +1900,7 @@ export function EditFormDialog(props: EditFormDialogProps) {
         name,
         type: def.type,
         required: def.required,
+        deprecated: def.deprecated,
         targetForm: def.target_form,
         itemsType: def.items?.type,
         itemsTargetForm: def.items?.target_form,

@@ -441,15 +441,21 @@ pub fn prepare_request(
                 vec![],
             ),
 
-            "entry.list" => (
-                OperationSpec::get("Failed to list entries"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "entries".into(),
-                ],
-                vec![],
-            ),
+            "entry.list" => {
+                let mut query = Vec::new();
+                if let Some(limit) = optional_u64(operation, args, "limit")? {
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                (
+                    OperationSpec::get("Failed to list entries"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "entries".into(),
+                    ],
+                    query,
+                )
+            }
             "entry.get" => {
                 let mut query = Vec::new();
                 if let Some(checkpoint) = optional_string(operation, args, "checkpoint")? {
@@ -1269,6 +1275,22 @@ fn optional_string(
     }
 }
 
+fn optional_u64(
+    operation: &str,
+    args: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<u64>, ApiProtocolError> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value.as_u64().map(Some).ok_or_else(|| {
+            ApiProtocolError::invalid_arguments(
+                operation,
+                format!("argument `{key}` must be a non-negative integer when provided"),
+            )
+        }),
+    }
+}
+
 fn required_u64(
     operation: &str,
     args: &Map<String, Value>,
@@ -1394,6 +1416,18 @@ mod tests {
             request.path,
             "/spaces/team%2F%E6%9D%B1%E4%BA%AC/search?q=a+%26+b%23c"
         );
+    }
+
+    #[test]
+    fn entry_list_encodes_an_optional_limit() {
+        let request = prepare_request(
+            "entry.list",
+            &json!({"space_id": "demo", "limit": 10_000}),
+            None,
+        )
+        .expect("request");
+
+        assert_eq!(request.path, "/spaces/demo/entries?limit=10000");
     }
 
     #[test]

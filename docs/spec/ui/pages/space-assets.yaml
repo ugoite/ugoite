@@ -1,0 +1,29 @@
+version: "0.1"
+updated: "2026-08-10"
+page:
+  id: space-assets
+  title: Form-owned Asset References
+  route: /spaces/{space_id}/assets
+  implementation: implemented
+components:
+  shared:
+    - id: space-shell
+      type: persistent-workspace-navigation
+      reference: ../components/space-shell.yaml
+  body:
+    - id: asset-reference-list
+      type: grid-list
+      description: Groups current Form-owned AssetReference values by asset ID and links each occurrence back to its Entry.
+      source: entry.list
+      states:
+        - loading
+        - error-with-retry
+        - empty
+        - referenced-asset
+    - id: asset-reference-empty-state
+      type: list
+      description: Explains that assets appear here only after an Entry saves a Form-owned asset reference.
+      target_page: space-form-grid
+responsive:
+  desktop: two-column-card-grid
+  mobile: stacked
