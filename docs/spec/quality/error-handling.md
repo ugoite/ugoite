@@ -38,6 +38,10 @@ content.
 - Preserve the current editor value while displaying save failures.
 - Do not interpret a 2xx response as durable success until the corresponding
   client decoder accepts the response body.
+- Recovery one-time responses use `Cache-Control: no-store`. Treat
+  `OWNER_RESET_ALREADY_COMPLETED` and `BACKUP_ROTATION_ALREADY_COMMITTED` as
+  terminal; do not replay the token or idempotency key. `audit_status: pending`
+  means the credential/code mutation committed and audit delivery is queued.
 
 See [frontend–backend interface](../architecture/frontend-backend-interface.md)
 for transport ownership and protocol decoding.

@@ -44,11 +44,12 @@ use ugoite_iceberg::{
 };
 use ugoite_identity::{
     node_identity::{
-        AccountInvitation, NodeAuditInput, NodeIdentityService, TotpEnrollmentFinishError,
+        AccountInvitation, NodeAuditInput, NodeIdentityService, OwnerRecoveryContext,
+        TotpEnrollmentFinishError,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
-use uuid::Uuid;
+use uuid::{Uuid, Version};
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
@@ -221,6 +222,14 @@ fn protected_routes(state: AppState) -> Router<AppState> {
         .route("/auth/recovery/totp/start", post(start_totp_enrollment))
         .route("/auth/recovery/totp/finish", post(finish_totp_enrollment))
         .route(
+            "/spaces/{space_id}/admin/recovery/force-reset",
+            post(owner_force_reset),
+        )
+        .route(
+            "/spaces/{space_id}/admin/recovery/backup-codes",
+            post(owner_rotate_backup_codes),
+        )
+        .route(
             "/auth/invitations/accept",
             post(auth_invitation_accept_existing),
         )
@@ -331,6 +340,14 @@ fn api_routes(state: AppState) -> Router<AppState> {
         .route("/auth/invitations/finish", post(auth_invitation_finish))
         .route("/auth/recovery/start", post(auth_recovery_start))
         .route("/auth/recovery/finish", post(auth_recovery_finish))
+        .route(
+            "/auth/recovery/owner/start",
+            post(auth_owner_recovery_start),
+        )
+        .route(
+            "/auth/recovery/owner/finish",
+            post(auth_owner_recovery_finish),
+        )
         .route("/auth/oidc/{provider_id}/start", get(oidc_start))
         .route("/auth/oidc/providers", get(list_oidc_providers))
         .route("/auth/oidc/callback", get(oidc_callback))
@@ -1252,6 +1269,689 @@ async fn auth_recovery_finish(
         .into_response())
 }
 
+#[derive(Deserialize)]
+struct OwnerRecoveryApprovalRequest {
+    principal_id: Uuid,
+}
+
+#[derive(Deserialize)]
+struct OwnerRecoveryStartRequest {
+    owner_approval_token: String,
+}
+
+#[derive(Deserialize)]
+struct OwnerRecoveryFinishRequest {
+    challenge_id: Uuid,
+    credential: RegisterPublicKeyCredential,
+}
+
+async fn recovery_owner_context(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+) -> ApiResult<(Uuid, Uuid)> {
+    validate_id(space_id, "space_id")?;
+    require_recent_passkey(identity).map_err(|_| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({
+                "code": "RECOVERY_AUTHORITY_REQUIRED",
+                "message": "an active Space Owner browser session with a recent Passkey is required"
+            }),
+        )
+    })?;
+    if identity.token_principal_id.is_some()
+        || identity.token_actor_principal_id.is_some()
+        || !matches!(
+            identity.request_identity.subject,
+            AuthenticatedSubject::HumanAccount { .. }
+        )
+        || !matches!(
+            identity.request_identity.authentication_method,
+            RequestAuthenticationMethod::Passkey
+        )
+    {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({
+                "code": "RECOVERY_AUTHORITY_REQUIRED",
+                "message": "owner recovery requires a browser Passkey session"
+            }),
+        ));
+    }
+    let space_uid = state
+        .service
+        .space_uid(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let authorization = Authorizer::new(state.service.operator().clone())
+        .state(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let caller_principal = principal_for_space(state, space_id, identity)
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                StatusCode::FORBIDDEN,
+                json!({
+                    "code": "RECOVERY_AUTHORITY_REQUIRED",
+                    "message": "Space Owner authority is required"
+                }),
+            )
+        })?;
+    let owner_principal = authorization
+        .memberships
+        .get(&caller_principal)
+        .filter(|membership| matches!(membership.role, SpaceRole::Owner))
+        .map(|membership| membership.principal_id)
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::FORBIDDEN,
+                json!({
+                    "code": "RECOVERY_AUTHORITY_REQUIRED",
+                    "message": "Space Owner authority is required"
+                }),
+            )
+        })?;
+    let principal = authorization
+        .principals
+        .get(&owner_principal)
+        .ok_or_else(|| ApiError::new(StatusCode::FORBIDDEN, "Space Owner is unavailable"))?;
+    if !matches!(principal.kind, PrincipalKind::Human)
+        || !matches!(principal.state, PrincipalState::Active)
+    {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({
+                "code": "RECOVERY_AUTHORITY_REQUIRED",
+                "message": "Space Owner authority is required"
+            }),
+        ));
+    }
+    Ok((space_uid, owner_principal))
+}
+
+async fn recovery_target_account(
+    state: &AppState,
+    space_id: &str,
+    space_uid: Uuid,
+    principal_id: Uuid,
+    issuer_account_id: Uuid,
+) -> ApiResult<Uuid> {
+    let authorization = Authorizer::new(state.service.operator().clone())
+        .state(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let principal = authorization
+        .principals
+        .get(&principal_id)
+        .filter(|principal| {
+            matches!(principal.kind, PrincipalKind::Human)
+                && matches!(principal.state, PrincipalState::Active)
+        })
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::NOT_FOUND,
+                json!({"code":"RECOVERY_TARGET_INVALID","message":"recovery target is invalid"}),
+            )
+        })?;
+    if !authorization
+        .memberships
+        .contains_key(&principal.principal_id)
+    {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            json!({"code":"RECOVERY_TARGET_INVALID","message":"recovery target is invalid"}),
+        ));
+    }
+    let bindings = state
+        .identity
+        .bindings_for_space(space_uid)
+        .await
+        .map_err(auth_error)?;
+    let matching = bindings
+        .iter()
+        .filter(|binding| binding.principal_id == principal_id)
+        .collect::<Vec<_>>();
+    if matching.len() != 1 || matching[0].node_account_id == issuer_account_id {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            json!({"code":"RECOVERY_TARGET_INVALID","message":"recovery target is invalid"}),
+        ));
+    }
+    let account_id = matching[0].node_account_id;
+    let account = state
+        .identity
+        .list_accounts()
+        .await
+        .map_err(auth_error)?
+        .into_iter()
+        .find(|account| account.account_id == account_id);
+    if account.is_none_or(|account| !matches!(account.status, AccountStatus::Active)) {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            json!({"code":"RECOVERY_TARGET_INVALID","message":"recovery target is invalid"}),
+        ));
+    }
+    Ok(account_id)
+}
+
+async fn validate_owner_recovery_context(
+    state: &AppState,
+    context: &OwnerRecoveryContext,
+) -> ApiResult<()> {
+    if context.account_id == context.issuer_account_id
+        || context.principal_id == context.issuer_principal_id
+    {
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
+        ));
+    }
+    let space_id = find_space_id_by_uid(state, context.space_uid).await?;
+    let authorization = Authorizer::new(state.service.operator().clone())
+        .state(&space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let issuer = authorization
+        .principals
+        .get(&context.issuer_principal_id)
+        .filter(|principal| {
+            matches!(principal.kind, PrincipalKind::Human)
+                && matches!(principal.state, PrincipalState::Active)
+        })
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
+            )
+        })?;
+    if !authorization
+        .memberships
+        .get(&issuer.principal_id)
+        .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
+    {
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
+        ));
+    }
+    let target = authorization
+        .principals
+        .get(&context.principal_id)
+        .filter(|principal| {
+            matches!(principal.kind, PrincipalKind::Human)
+                && matches!(principal.state, PrincipalState::Active)
+        })
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
+            )
+        })?;
+    if !authorization.memberships.contains_key(&target.principal_id) {
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
+        ));
+    }
+    let bindings = state
+        .identity
+        .bindings_for_space(context.space_uid)
+        .await
+        .map_err(auth_error)?;
+    let issuer_binding_count = bindings
+        .iter()
+        .filter(|binding| {
+            binding.principal_id == context.issuer_principal_id
+                && binding.node_account_id == context.issuer_account_id
+        })
+        .count();
+    let target_binding_count = bindings
+        .iter()
+        .filter(|binding| {
+            binding.principal_id == context.principal_id
+                && binding.node_account_id == context.account_id
+        })
+        .count();
+    if issuer_binding_count != 1 || target_binding_count != 1 {
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
+        ));
+    }
+    let accounts = state.identity.list_accounts().await.map_err(auth_error)?;
+    let target_account = accounts
+        .iter()
+        .find(|account| account.account_id == context.account_id)
+        .filter(|account| {
+            matches!(account.status, AccountStatus::Active)
+                && account.credential_generation == context.target_generation
+        });
+    let issuer_account = accounts
+        .iter()
+        .find(|account| account.account_id == context.issuer_account_id)
+        .filter(|account| matches!(account.status, AccountStatus::Active));
+    if target_account.is_none() || issuer_account.is_none() {
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
+        ));
+    }
+    Ok(())
+}
+
+fn recovery_result_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers
+}
+
+async fn append_recovery_space_audit(
+    state: &AppState,
+    space_id: &str,
+    event_id: Uuid,
+    action: &str,
+    request_id: Uuid,
+    principal_id: Uuid,
+    actor_principal_id: Option<Uuid>,
+    metadata: Value,
+) -> bool {
+    audit::append_audit_event(
+        state.service.operator(),
+        space_id,
+        &json!({
+            "event_id": event_id,
+            "action": action,
+            "subject_principal_id": principal_id,
+            "actor_principal_id": actor_principal_id,
+            "outcome": "success",
+            "request_id": request_id,
+            "target_type": "human_account",
+            "target_id": principal_id,
+            "metadata": metadata
+        }),
+        None,
+    )
+    .await
+    .is_ok()
+}
+
+async fn owner_force_reset(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    Json(payload): Json<OwnerRecoveryApprovalRequest>,
+) -> ApiResult<Response> {
+    let (space_uid, issuer_principal_id) =
+        recovery_owner_context(&state, &space_id, &identity).await?;
+    let account_id = recovery_target_account(
+        &state,
+        &space_id,
+        space_uid,
+        payload.principal_id,
+        identity.account_id,
+    )
+    .await?;
+    let (approval_id, token, expires_at) = state
+        .identity
+        .issue_owner_recovery_approval(
+            space_uid,
+            payload.principal_id,
+            account_id,
+            issuer_principal_id,
+            identity.account_id,
+        )
+        .await
+        .map_err(|error| {
+            ApiError::new(
+                StatusCode::NOT_FOUND,
+                json!({"code":"RECOVERY_TARGET_INVALID","message": error.to_string()}),
+            )
+        })?;
+    let node_audit_status = state
+        .identity
+        .append_node_audit_with_id(
+            approval_id,
+            NodeAuditInput {
+                subject_account_id: Some(account_id),
+                actor_account_id: Some(identity.account_id),
+                credential_id: Some(identity.request_identity.credential_id),
+                action: "recovery.owner_approval_issued",
+                target_type: "human_account",
+                target_id: Some(account_id.to_string()),
+                outcome: "success",
+                request_id: Some(approval_id.to_string()),
+                safe_metadata: json!({
+                    "space_uid": space_uid,
+                    "principal_id": payload.principal_id,
+                    "issuer_principal_id": issuer_principal_id
+                }),
+            },
+        )
+        .await
+        .is_ok();
+    if node_audit_status {
+        let _ = state
+            .identity
+            .mark_recovery_audit_stage(approval_id, "node")
+            .await;
+    }
+    let space_audit_status = append_recovery_space_audit(
+        &state,
+        &space_id,
+        approval_id,
+        "recovery.owner_approval_issued",
+        approval_id,
+        payload.principal_id,
+        Some(issuer_principal_id),
+        json!({"space_uid": space_uid, "account_id": account_id}),
+    )
+    .await;
+    if space_audit_status {
+        let _ = state
+            .identity
+            .mark_recovery_audit_stage(approval_id, "space")
+            .await;
+    }
+    let audit_delivered = if node_audit_status && space_audit_status {
+        state
+            .identity
+            .mark_recovery_audit_delivered(approval_id)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    let mut headers = recovery_result_headers();
+    Ok((
+        StatusCode::CREATED,
+        std::mem::take(&mut headers),
+        Json(json!({
+            "principal_id": payload.principal_id,
+            "owner_approval_token": token,
+            "expires_at": expires_at,
+            "audit_status": if audit_delivered { "delivered" } else { "pending" }
+        })),
+    )
+        .into_response())
+}
+
+async fn owner_rotate_backup_codes(
+    State(state): State<AppState>,
+    Extension(identity): Extension<RequestIdentityContext>,
+    Path(space_id): Path<String>,
+    headers: HeaderMap,
+    Json(payload): Json<OwnerRecoveryApprovalRequest>,
+) -> ApiResult<Response> {
+    let Some(value) = headers.get("idempotency-key") else {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({"code":"BACKUP_IDEMPOTENCY_KEY_INVALID","message":"Idempotency-Key must be a UUIDv4"}),
+        ));
+    };
+    let request_id = value
+        .to_str()
+        .ok()
+        .and_then(|value| Uuid::parse_str(value.trim()).ok())
+        .filter(|value| value.get_version() == Some(Version::Random))
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                json!({"code":"BACKUP_IDEMPOTENCY_KEY_INVALID","message":"Idempotency-Key must be a UUIDv4"}),
+            )
+        })?;
+    let (space_uid, issuer_principal_id) =
+        recovery_owner_context(&state, &space_id, &identity).await?;
+    let account_id = recovery_target_account(
+        &state,
+        &space_id,
+        space_uid,
+        payload.principal_id,
+        identity.account_id,
+    )
+    .await?;
+    let codes = state
+        .identity
+        .rotate_recovery_codes(
+            request_id,
+            space_uid,
+            payload.principal_id,
+            account_id,
+            issuer_principal_id,
+            identity.account_id,
+        )
+        .await
+        .map_err(|error| {
+            let message = error.to_string();
+            let code = if message.contains("key mismatch") {
+                "BACKUP_ROTATION_KEY_MISMATCH"
+            } else if message.contains("already committed") {
+                "BACKUP_ROTATION_ALREADY_COMMITTED"
+            } else {
+                "RECOVERY_TARGET_INVALID"
+            };
+            ApiError::new(
+                StatusCode::CONFLICT,
+                json!({"code": code, "message": message}),
+            )
+        })?;
+    let node_audit_status = state
+        .identity
+        .append_node_audit_with_id(
+            request_id,
+            NodeAuditInput {
+                subject_account_id: Some(account_id),
+                actor_account_id: Some(identity.account_id),
+                credential_id: Some(identity.request_identity.credential_id),
+                action: "recovery.backup_codes_rotated",
+                target_type: "human_account",
+                target_id: Some(account_id.to_string()),
+                outcome: "success",
+                request_id: Some(request_id.to_string()),
+                safe_metadata: json!({
+                    "space_uid": space_uid,
+                    "principal_id": payload.principal_id,
+                    "issuer_principal_id": issuer_principal_id,
+                    "code_count": codes.len()
+                }),
+            },
+        )
+        .await
+        .is_ok();
+    if node_audit_status {
+        let _ = state
+            .identity
+            .mark_recovery_audit_stage(request_id, "node")
+            .await;
+    }
+    let space_audit_status = append_recovery_space_audit(
+        &state,
+        &space_id,
+        request_id,
+        "recovery.backup_codes_rotated",
+        request_id,
+        payload.principal_id,
+        Some(issuer_principal_id),
+        json!({"space_uid": space_uid, "account_id": account_id, "code_count": codes.len()}),
+    )
+    .await;
+    if space_audit_status {
+        let _ = state
+            .identity
+            .mark_recovery_audit_stage(request_id, "space")
+            .await;
+    }
+    let audit_delivered = if node_audit_status && space_audit_status {
+        state
+            .identity
+            .mark_recovery_audit_delivered(request_id)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    let mut response_headers = recovery_result_headers();
+    Ok((
+        StatusCode::OK,
+        std::mem::take(&mut response_headers),
+        Json(json!({
+            "principal_id": payload.principal_id,
+            "codes": codes,
+            "issued_at": chrono::Utc::now().to_rfc3339(),
+            "audit_status": if audit_delivered { "delivered" } else { "pending" }
+        })),
+    )
+        .into_response())
+}
+
+async fn auth_owner_recovery_start(
+    State(state): State<AppState>,
+    Json(payload): Json<OwnerRecoveryStartRequest>,
+) -> ApiResult<Response> {
+    let context = state
+        .identity
+        .owner_recovery_approval_context(&payload.owner_approval_token)
+        .await
+        .map_err(owner_recovery_api_error)?;
+    validate_owner_recovery_context(&state, &context).await?;
+    let result = state
+        .identity
+        .start_owner_recovery_registration(&payload.owner_approval_token)
+        .await
+        .map_err(owner_recovery_api_error)?;
+    let mut headers = recovery_result_headers();
+    Ok((
+        StatusCode::OK,
+        std::mem::take(&mut headers),
+        Json(serde_json::to_value(result).map_err(|error| auth_error(error.into()))?),
+    )
+        .into_response())
+}
+
+async fn auth_owner_recovery_finish(
+    State(state): State<AppState>,
+    Json(payload): Json<OwnerRecoveryFinishRequest>,
+) -> ApiResult<Response> {
+    let context = state
+        .identity
+        .owner_recovery_challenge_context(payload.challenge_id)
+        .await
+        .map_err(owner_recovery_api_error)?;
+    validate_owner_recovery_context(&state, &context).await?;
+    let result = state
+        .identity
+        .finish_owner_recovery_registration(payload.challenge_id, &payload.credential)
+        .await
+        .map_err(owner_recovery_api_error)?;
+    let mut headers = recovery_result_headers();
+    let cookie = auth_cookie(&result.session_id, 60 * 60 * 24 * 30);
+    headers.insert(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&cookie)
+            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "invalid auth cookie"))?,
+    );
+    let node_audit_status = state
+        .identity
+        .append_node_audit_with_id(
+            result.recovery_request_id.unwrap_or(payload.challenge_id),
+            NodeAuditInput {
+            subject_account_id: Some(result.account.account_id),
+            actor_account_id: None,
+            credential_id: None,
+            action: "recovery.owner_reset_completed",
+            target_type: "human_account",
+            target_id: Some(result.account.account_id.to_string()),
+            outcome: "success",
+            request_id: Some(payload.challenge_id.to_string()),
+            safe_metadata: json!({"credential_generation": result.account.credential_generation}),
+            },
+        )
+        .await
+        .is_ok();
+    let recovery_event_id = result.recovery_request_id.unwrap_or(payload.challenge_id);
+    if node_audit_status {
+        let _ = state
+            .identity
+            .mark_recovery_audit_stage(recovery_event_id, "node")
+            .await;
+    }
+    let space_audit_status = match (
+        result.recovery_space_uid,
+        result.recovery_principal_id,
+        result.recovery_issuer_principal_id,
+        result.recovery_request_id,
+    ) {
+        (Some(space_uid), Some(principal_id), Some(issuer_principal_id), Some(request_id)) => {
+            match find_space_id_by_uid(&state, space_uid).await {
+                Ok(space_id) => append_recovery_space_audit(
+                    &state,
+                    &space_id,
+                    request_id,
+                    "recovery.owner_reset_completed",
+                    request_id,
+                    principal_id,
+                    None,
+                    json!({"space_uid": space_uid, "approving_owner_principal_id": issuer_principal_id}),
+                )
+                .await,
+                Err(_) => false,
+            }
+        }
+        _ => false,
+    };
+    if space_audit_status {
+        let _ = state
+            .identity
+            .mark_recovery_audit_stage(recovery_event_id, "space")
+            .await;
+    }
+    let audit_delivered = if node_audit_status && space_audit_status {
+        state
+            .identity
+            .mark_recovery_audit_delivered(recovery_event_id)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    Ok((
+        StatusCode::CREATED,
+        headers,
+        Json(json!({
+            "account": result.account,
+            "recovery_codes": result.recovery_codes,
+            "audit_status": if audit_delivered { "delivered" } else { "pending" }
+        })),
+    )
+        .into_response())
+}
+
+fn owner_recovery_api_error(error: anyhow::Error) -> ApiError {
+    let message = error.to_string();
+    let (status, code) = if message.contains("already pending") {
+        (StatusCode::CONFLICT, "OWNER_RECOVERY_CHALLENGE_PENDING")
+    } else if message.contains("already completed") {
+        (StatusCode::CONFLICT, "OWNER_RESET_ALREADY_COMPLETED")
+    } else if message.contains("expired") {
+        (StatusCode::GONE, "OWNER_APPROVAL_EXPIRED")
+    } else if message.contains("verify owner recovery") {
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "WEBAUTHN_REGISTRATION_INVALID",
+        )
+    } else {
+        (StatusCode::UNAUTHORIZED, "AUTHENTICATION_REQUIRED")
+    };
+    ApiError::new(
+        StatusCode::from_u16(status.as_u16()).unwrap_or(status),
+        json!({
+            "code": code,
+            "message": if code == "WEBAUTHN_REGISTRATION_INVALID" { "WebAuthn registration is invalid" } else { "owner recovery is invalid" }
+        }),
+    )
+}
+
 async fn auth_session(State(state): State<AppState>, headers: HeaderMap) -> Json<Value> {
     let account = match auth_session_cookie(&headers) {
         Some(session_id) => state
@@ -1597,6 +2297,7 @@ async fn oidc_callback(
             subject,
             attempt.invitation_hash.as_deref(),
             attempt.link_account_id,
+            attempt.link_account_generation,
         )
         .await
         .map_err(auth_error)?;
@@ -5295,6 +5996,7 @@ mod authentication_regression_tests {
             status: AccountStatus::Active,
             created_at: chrono::Utc::now().to_rfc3339(),
             node_roles: BTreeSet::new(),
+            credential_generation: 0,
         };
         let invitation = AccountInvitation {
             invitation_id: Uuid::now_v7(),

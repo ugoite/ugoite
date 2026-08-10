@@ -23,8 +23,10 @@ CI.
   authorization code + PKCE.
 - `GET|POST /auth/oidc/providers`: Node administrator provider configuration.
 - `/auth/passkeys` and `/auth/devices`: credential inventory and revocation.
-- `/auth/recovery/*`: encrypted TOTP enrollment and recovery-code + TOTP
-  replacement Passkey registration.
+- `/auth/recovery/*`: encrypted TOTP enrollment, recovery-code + TOTP
+  self-recovery, and owner-approved WebAuthn recovery. Space Owners can issue
+  a one-time forced-reset token or rotate eight backup codes with a UUIDv4
+  `Idempotency-Key`; owner recovery responses are never cached.
 - `/auth/accounts`: Node administrator account inventory and suspension.
 - `POST /oauth/device/authorization`, `/oauth/device/approve`, `/oauth/token`:
   CLI/MCP device flow and rotating refresh.

@@ -49,6 +49,15 @@ apis:
       file: frontend/src/routes/recover.tsx,
       function: RecoverRoute,
     }
+  - id: auth.owner_recovery
+    method: POST
+    status: implemented
+    backend: {
+      path: /spaces/{space_id}/admin/recovery/force-reset|backup-codes|/auth/recovery/owner/start|finish,
+      file: crates/ugoite-server/src/lib.rs,
+      function: owner_force_reset,
+    }
+    frontend: { status: future, note: Owner-approved recovery UI is not shipped in v0.1 }
   - id: auth.accounts
     method: GET|POST
     status: implemented

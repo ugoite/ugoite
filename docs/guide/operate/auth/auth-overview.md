@@ -75,6 +75,23 @@ five-minute WebAuthn registration challenge. Completing
 itself never authorizes credential registration. The last owner and the final
 Passkey cannot be removed.
 
+### Owner-approved recovery
+
+An active human Space Owner can recover another active human member with a
+recent Passkey session. `POST /spaces/{space_id}/admin/recovery/force-reset`
+returns a 15-minute one-time token; give it to the member over a trusted
+channel. The member submits it to `/auth/recovery/owner/start`, completes the
+five-minute WebAuthn challenge at `/auth/recovery/owner/finish`, and receives a
+new session plus eight recovery codes once. The target's Space membership and
+agent credentials are preserved; old human credentials are invalidated by a
+monotonic credential generation.
+
+Owners may instead rotate a member's backup codes at
+`/spaces/{space_id}/admin/recovery/backup-codes`. Supply a fresh UUIDv4
+`Idempotency-Key` for each deliberate rotation. Never retry a timed-out request
+blindly: plaintext codes are delivered once, and the response reports whether
+audit delivery is `delivered` or `pending`.
+
 ## Invitations and OIDC
 
 Space owners issue a one-use invitation URL. Only the invitation hash, expiry,

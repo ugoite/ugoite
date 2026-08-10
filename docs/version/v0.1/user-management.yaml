@@ -11,6 +11,8 @@ requirement_ids:
 - REQ-SEC-007
 - REQ-SEC-008
 - REQ-SEC-009
+- REQ-SEC-012
+- REQ-SEC-013
 phases:
 - id: design
   status: completed
@@ -32,10 +34,14 @@ phases:
     done: true
   - description: Implement node and Space security audit persistence.
     done: true
+  - description: Implement Owner-approved recovery, forced reset, and idempotent backup-code rotation.
+    done: true
 - id: testing
   status: completed
   tasks:
   - description: Cover authentication, recovery, membership transitions, and privilege checks.
     done: true
   - description: Cover OAuth constraints, agent lifecycle, ACL leak prevention, and audit completeness.
+    done: true
+  - description: Trace owner recovery generation invalidation, one-time delivery, and audit status.
     done: true

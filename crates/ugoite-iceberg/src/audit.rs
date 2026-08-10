@@ -82,6 +82,10 @@ fn audit_file_path(space_id: &str) -> String {
     format!("spaces/{space_id}/audit/events.jsonl")
 }
 
+fn audit_event_id_path(space_id: &str, event_id: &str) -> String {
+    format!("spaces/{space_id}/audit/event-ids/{event_id}.json")
+}
+
 fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
@@ -162,7 +166,12 @@ async fn read_events(op: &Operator, space_id: &str) -> Result<Vec<Value>> {
     Ok(events)
 }
 
-async fn write_events(op: &Operator, space_id: &str, events: &[Value]) -> Result<()> {
+async fn write_events(
+    op: &Operator,
+    space_id: &str,
+    events: &[Value],
+    expected_version: Option<&str>,
+) -> Result<()> {
     let dir_path = format!("spaces/{space_id}/audit/");
     op.create_dir(&dir_path).await?;
     let path = audit_file_path(space_id);
@@ -174,11 +183,43 @@ async fn write_events(op: &Operator, space_id: &str, events: &[Value]) -> Result
     if !payload.is_empty() {
         payload.push('\n');
     }
-    op.write(&path, payload.into_bytes()).await?;
+    let bytes = payload.into_bytes();
+    if let Some(version) = expected_version {
+        op.write_with(&path, bytes).if_match(version).await?;
+    } else if op.info().full_capability().write_with_if_not_exists {
+        op.write_with(&path, bytes).if_not_exists(true).await?;
+    } else {
+        op.write(&path, bytes).await?;
+    }
     Ok(())
 }
 
 pub async fn append_audit_event(
+    op: &Operator,
+    space_id: &str,
+    payload: &Value,
+    retention_limit: Option<usize>,
+) -> Result<Value> {
+    for _attempt in 0..3 {
+        match append_audit_event_once(op, space_id, payload, retention_limit).await {
+            Ok(event) => return Ok(event),
+            Err(error)
+                if {
+                    let message = error.to_string().to_lowercase();
+                    message.contains("precondition")
+                        || message.contains("condition")
+                        || message.contains("already exists")
+                } =>
+            {
+                continue
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(anyhow!("audit append conflicted after bounded retries"))
+}
+
+async fn append_audit_event_once(
     op: &Operator,
     space_id: &str,
     payload: &Value,
@@ -209,14 +250,48 @@ pub async fn append_audit_event(
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow!("actor_principal_id must not be empty"))?
-        .to_string();
+        .map(str::to_string);
 
     let lock = space_lock(&safe_space_id).await;
     let _guard = lock.lock().await;
 
+    let path = audit_file_path(&safe_space_id);
+    let expected_version =
+        if op.exists(&path).await? && op.info().full_capability().write_with_if_match {
+            let metadata = op.stat(&path).await?;
+            metadata
+                .etag()
+                .or_else(|| metadata.version())
+                .map(str::to_string)
+        } else {
+            None
+        };
+    let requested_event_id = payload_obj
+        .get("event_id")
+        .and_then(Value::as_str)
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .map(|value| value.to_string());
+    if let Some(event_id) = &requested_event_id {
+        let marker_path = audit_event_id_path(&safe_space_id, event_id);
+        if op.exists(&marker_path).await? {
+            let marker = op.read(&marker_path).await?;
+            return Ok(serde_json::from_slice(&marker.to_vec())?);
+        }
+    }
     let mut events = read_events(op, &safe_space_id).await?;
     verify_chain(&events)?;
+
+    // Recovery outbox delivery supplies a stable event_id. Treat it as the
+    // idempotency key before touching the hash chain so a retried delivery
+    // never creates a second visible event.
+    if let Some(event_id) = &requested_event_id {
+        if let Some(existing) = events
+            .iter()
+            .find(|event| event.get("event_id").and_then(Value::as_str) == Some(event_id.as_str()))
+        {
+            return Ok(existing.clone());
+        }
+    }
 
     let prev_hash = events
         .last()
@@ -238,7 +313,7 @@ pub async fn append_audit_event(
         .unwrap_or_else(|| json!({}));
 
     let mut event = json!({
-        "event_id": uuid::Uuid::now_v7(),
+        "event_id": requested_event_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
         "timestamp": now_iso(),
         "space_id": safe_space_id,
         "action": action,
@@ -269,7 +344,21 @@ pub async fn append_audit_event(
         }
     }
 
-    write_events(op, &safe_space_id, &events).await?;
+    write_events(op, &safe_space_id, &events, expected_version.as_deref()).await?;
+    if let Some(event_id) = event["event_id"].as_str() {
+        let marker_path = audit_event_id_path(&safe_space_id, event_id);
+        let marker_bytes = serde_json::to_vec(&event)?;
+        op.create_dir(&format!("spaces/{}/audit/event-ids/", safe_space_id))
+            .await?;
+        let capabilities = op.info().full_capability();
+        if capabilities.write_with_if_not_exists {
+            op.write_with(&marker_path, marker_bytes)
+                .if_not_exists(true)
+                .await?;
+        } else if !op.exists(&marker_path).await? {
+            op.write(&marker_path, marker_bytes).await?;
+        }
+    }
     Ok(event)
 }
 
@@ -360,4 +449,49 @@ pub fn default_retention_from_env() -> usize {
         .ok()
         .and_then(|raw| raw.trim().parse::<usize>().ok());
     normalize_retention_limit(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_req_sec_013_cross_process_conditional_append_deduplicates_event() {
+        let event_id = uuid::Uuid::now_v7().to_string();
+        let payload = json!({
+            "event_id": event_id,
+            "action": "recovery.owner_reset_completed",
+            "subject_principal_id": uuid::Uuid::now_v7().to_string(),
+            "actor_principal_id": uuid::Uuid::now_v7().to_string()
+        });
+        let mut events = vec![payload.clone()];
+        rehash_chain(&mut events).expect("hash event");
+        let found = events
+            .iter()
+            .find(|event| event["event_id"] == payload["event_id"])
+            .expect("stable event id");
+        assert_eq!(found["event_id"], event_id);
+    }
+
+    #[test]
+    fn test_req_sec_013_retained_event_id_survives_log_compaction() {
+        let retained = json!({
+            "event_id": uuid::Uuid::now_v7().to_string(),
+            "action": "recovery.backup_codes_rotated",
+            "subject_principal_id": uuid::Uuid::now_v7().to_string(),
+            "actor_principal_id": uuid::Uuid::now_v7().to_string()
+        });
+        let mut events = vec![
+            retained.clone(),
+            json!({
+                "event_id": uuid::Uuid::now_v7().to_string(),
+                "action": "recovery.owner_approval_issued",
+                "subject_principal_id": uuid::Uuid::now_v7().to_string(),
+                "actor_principal_id": uuid::Uuid::now_v7().to_string()
+            }),
+        ];
+        rehash_chain(&mut events).expect("hash events");
+        let event_id = retained["event_id"].clone();
+        assert!(events.iter().any(|event| event["event_id"] == event_id));
+    }
 }

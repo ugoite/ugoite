@@ -309,3 +309,54 @@ requirements:
   tests:
   - file: crates/ugoite-cli/tests/test_cli_req_sec_011_endpoint_transport.rs
   - file: crates/ugoite-cli/tests/test_endpoint_config.rs
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-012
+  title: Owner-Approved Account Recovery
+  description: An active human Space Owner may issue a tuple-bound, one-use recovery approval; the target can replace credentials through a five-minute WebAuthn challenge, while credential generations invalidate stale human sessions and preserve Space agent credentials.
+  related_spec:
+  - security/authentication-overview.yaml
+  - api/rest.md#authentication
+  - stories/experimental.yaml
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-server/tests/owner_recovery.rs
+    cases: [REQ-SEC-012]
+  - file: crates/ugoite-identity/src/node_identity.rs
+    cases: [REQ-SEC-012]
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-013
+  title: Durable Recovery Audit Delivery
+  description: Owner recovery and backup-code operations append safe, secret-free Node audit events with stable request identifiers and expose pending delivery rather than replaying one-time secrets.
+  related_spec:
+  - security/overview.md
+  - quality/error-handling.md
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-server/tests/owner_recovery.rs
+    cases: [REQ-SEC-013]
+  - file: crates/ugoite-iceberg/src/audit.rs
+    cases: [REQ-SEC-013]
