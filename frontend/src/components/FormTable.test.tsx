@@ -198,6 +198,7 @@ describe("FormTable", () => {
   it("REQ-FE-030: Add Row button creates a new entry", async () => {
     const entryForm = {
       name: "Test",
+      template: "---\ntitle: Preserved\nform: Old\n---\n\n# New Test\n",
       fields: { col: { type: "string" } },
     } as any;
     const entries = [];
@@ -221,9 +222,14 @@ describe("FormTable", () => {
       expect(createSpy).toHaveBeenCalledWith(
         "ws",
         expect.objectContaining({
-          content: expect.stringContaining("form: Test"),
+          markdown: expect.stringContaining("form: Test"),
         }),
       );
+    });
+
+    const [, payload] = createSpy.mock.calls[0];
+    expect(payload).toEqual({
+      markdown: "---\ntitle: Preserved\nform: Test\n---\n\n# New Test\n",
     });
     createSpy.mockRestore();
   });
