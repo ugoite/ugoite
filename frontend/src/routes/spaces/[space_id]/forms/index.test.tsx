@@ -11,10 +11,11 @@ import SpaceFormsIndexPane from "./index";
 const search: Record<string, string> = {};
 const setSearch = vi.fn();
 const refetchForms = vi.fn();
+const navigate = vi.fn();
 vi.mock(
   "@solidjs/router",
   () => ({
-    useNavigate: () => vi.fn(),
+    useNavigate: () => navigate,
     useSearchParams: () => [search, setSearch],
   }),
 );
@@ -27,8 +28,15 @@ vi.mock(
 vi.mock(
   "~/components/FormTable",
   () => ({
-    FormTable: (props: { entryForm: Form }) => (
-      <div>Entries table for {props.entryForm.name}</div>
+    FormTable: (props: { entryForm: Form; onAddRow?: () => void }) => (
+      <div>
+        <div>Entries table for {props.entryForm.name}</div>
+        <Show when={props.onAddRow}>
+          <button type="button" onClick={() => props.onAddRow?.()}>
+            Add Row
+          </button>
+        </Show>
+      </div>
     ),
   }),
 );
@@ -95,6 +103,7 @@ describe("v5 Forms workspace", () => {
   beforeEach(() => {
     setLocale("en");
     setSearch.mockReset();
+    navigate.mockReset();
     refetchForms.mockReset();
     vi.mocked(formApi.create).mockReset();
     for (const key of Object.keys(search)) delete search[key];
@@ -118,6 +127,16 @@ describe("v5 Forms workspace", () => {
     expect(screen.getByRole("button", { name: "Form" }).querySelector("svg"))
       .toBeInTheDocument();
   });
+  it("opens the canonical editor with the selected Form from Add Row", () => {
+    search.form = "Notes";
+    renderPage([noteForm]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Row" }));
+
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/default/entries/new?form=Notes&returnTo=forms",
+    );
+  });
   it("opens and submits the edit Form dialog", async () => {
     search.form = "Notes";
     vi.mocked(formApi.create).mockResolvedValue(noteForm);
@@ -140,10 +159,26 @@ describe("v5 Forms workspace", () => {
     renderPage([noteForm, metadataForm]);
 
     expect(screen.queryByText("SQL")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Show system forms" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Show system forms" }),
+    );
     expect(screen.getByText("SQL")).toBeInTheDocument();
     expect(screen.getByLabelText("System form")).toBeInTheDocument();
     expect(screen.queryByText("System")).not.toBeInTheDocument();
+  });
+  it("does not offer entry creation for system Forms", () => {
+    search.form = "SQL";
+    renderPage([metadataForm]);
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Show system forms" }),
+    );
+
+    expect(screen.getByText("Entries table for SQL")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add Row" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New Entry" })).not
+      .toBeInTheDocument();
   });
   it("shows API failures instead of an empty Forms state", () => {
     renderPage([], new Error("Forbidden"));

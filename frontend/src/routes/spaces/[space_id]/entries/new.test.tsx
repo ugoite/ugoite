@@ -25,6 +25,9 @@ vi.mock("~/components/EntryDetailPane", () => ({
   }) => (
     <div>
       <p>Shared entry editor: {props.createForm?.()?.name}</p>
+      <output data-testid="selected-form-schema">
+        {JSON.stringify(props.createForm?.()?.fields)}
+      </output>
       <button
         type="button"
         onClick={() => props.onCreateFormChange?.("Meeting")}
@@ -50,6 +53,15 @@ vi.mock("~/lib/ugoite-client", () => ({
 const forms: Form[] = [
   { name: "Notes", version: 1, template: "", fields: {} },
   { name: "Meeting", version: 1, template: "", fields: {} },
+  {
+    name: "Typed",
+    version: 1,
+    template: "",
+    fields: {
+      Status: { type: "string", required: true },
+      Count: { type: "integer", required: true },
+    },
+  },
 ];
 const space: Space = {
   id: "default",
@@ -80,6 +92,20 @@ describe("NewEntryRoute", () => {
     render(() => <NewEntryRoute />);
     await waitFor(() =>
       expect(screen.getByText("Shared entry editor: Notes")).toBeInTheDocument()
+    );
+  });
+
+  it("preserves required typed fields when opening the shared editor", async () => {
+    searchParams.form = "Typed";
+    render(() => <NewEntryRoute />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("selected-form-schema")).toHaveTextContent(
+        '"Status":{"type":"string","required":true}',
+      )
+    );
+    expect(screen.getByTestId("selected-form-schema")).toHaveTextContent(
+      '"Count":{"type":"integer","required":true}',
     );
   });
 
@@ -116,5 +142,18 @@ describe("NewEntryRoute", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(navigate).toHaveBeenCalledWith("/spaces/default/forms");
+  });
+
+  it("returns to the selected Form grid after Add Row creation", async () => {
+    searchParams.form = "Meeting";
+    searchParams.returnTo = "forms";
+    render(() => <NewEntryRoute />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save entry" }));
+
+    expect(navigate).toHaveBeenCalledWith(
+      "/spaces/default/forms?form=Meeting",
+      { replace: true },
+    );
   });
 });

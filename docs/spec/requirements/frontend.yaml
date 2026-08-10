@@ -745,8 +745,10 @@ requirements:
   - SPEC-UI-PAGES
   - SPEC-ARCH-INTERFACE
   id: REQ-FE-030
-  title: Inline Row Creation in Grid View
-  description: 'The grid view MUST provide a way to quickly add a new row (entry).
+  title: Form-aware Row Creation from Grid View
+  description: 'The grid view MUST provide a way to add a new row (entry) through
+    the canonical Form-aware entry editor. The selected Form MUST be preserved,
+    and returning after creation MUST restore the corresponding Forms grid.
 
     '
   related_spec:
@@ -756,6 +758,7 @@ requirements:
   verification: traced
   tests:
   - file: frontend/src/components/FormTable.test.tsx
+  - file: frontend/src/routes/spaces/[space_id]/entries/new.test.tsx
   - file: frontend/src/lib/search-store.test.ts
 - set_id: REQCAT-FRONTEND
   source_file: requirements/frontend.yaml

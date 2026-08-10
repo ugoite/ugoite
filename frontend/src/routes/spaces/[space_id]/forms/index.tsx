@@ -157,23 +157,33 @@ export default function SpaceFormsIndexPane() {
                       >
                         <UiIcon name="settings" /> {t("formsPage.editForm")}
                       </button>
-                      <button
-                        class="btn primary"
-                        type="button"
-                        onClick={() =>
-                          navigate(
-                            `/spaces/${ctx.spaceId()}/entries/new?form=${
-                              encodeURIComponent(form().name)
-                            }`,
-                          )}
-                      >
-                        <UiIcon name="plus" /> {t("formsPage.newEntry")}
-                      </button>
+                      <Show when={!isReservedMetadataForm(form().name)}>
+                        <button
+                          class="btn primary"
+                          type="button"
+                          onClick={() =>
+                            navigate(
+                              `/spaces/${ctx.spaceId()}/entries/new?form=${
+                                encodeURIComponent(form().name)
+                              }`,
+                            )}
+                        >
+                          <UiIcon name="plus" /> {t("formsPage.newEntry")}
+                        </button>
+                      </Show>
                     </div>
                   </div>
                   <FormTable
                     spaceId={ctx.spaceId()}
                     entryForm={form()}
+                    onAddRow={isReservedMetadataForm(form().name)
+                      ? undefined
+                      : () =>
+                        navigate(
+                          `/spaces/${ctx.spaceId()}/entries/new?form=${
+                            encodeURIComponent(form().name)
+                          }&returnTo=forms`,
+                        )}
                     onEntryClick={(id) =>
                       navigate(
                         `/spaces/${ctx.spaceId()}/entries/${

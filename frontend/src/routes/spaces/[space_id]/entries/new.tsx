@@ -51,6 +51,12 @@ export default function NewEntryRoute() {
     available().find((form) => form.name === selectedFormName()) ??
       available().find((form) => form.name === defaultForm())
   );
+  const returnToForms = () => searchParams.returnTo === "forms";
+  const formsHref = () => {
+    const formName = selectedFormName() ?? selectedForm()?.name;
+    const query = formName ? `?form=${encodeURIComponent(formName)}` : "";
+    return `/spaces/${spaceId()}/forms${query}`;
+  };
 
   return (
     <>
@@ -101,14 +107,24 @@ export default function NewEntryRoute() {
                 forms={available}
                 createForm={() => form()}
                 onCreateFormChange={setSelectedFormName}
-                onDeleted={() => navigate(`/spaces/${spaceId()}/forms`)}
-                onCreated={({ id: entryId }) =>
+                onDeleted={() =>
+                  navigate(
+                    returnToForms()
+                      ? formsHref()
+                      : `/spaces/${spaceId()}/forms`,
+                  )}
+                onCreated={({ id: entryId }) => {
+                  if (returnToForms()) {
+                    navigate(formsHref(), { replace: true });
+                    return;
+                  }
                   navigate(
                     `/spaces/${spaceId()}/entries/${
                       encodeURIComponent(entryId)
                     }`,
                     { replace: true },
-                  )}
+                  );
+                }}
               />
             )}
           </Show>
