@@ -203,7 +203,7 @@ async fn restore_replays_historical_references_even_when_targets_are_unavailable
         &FakeIntegrityProvider,
     )
     .await?;
-    entry::delete_entry(&op, ws_path, "target-1", false).await?;
+    entry::delete_entry(&op, ws_path, "target-1", false, "deleter").await?;
     asset::delete_asset(&op, ws_path, &reference.asset_id, &Default::default()).await?;
 
     entry::restore_entry(
@@ -315,7 +315,7 @@ async fn deleted_entry_history_revision_and_restore_remain_reachable() -> anyhow
     )
     .await?;
     let original = entry::get_entry_content(&op, ws_path, "deleted-entry").await?;
-    entry::delete_entry(&op, ws_path, "deleted-entry", false).await?;
+    entry::delete_entry(&op, ws_path, "deleted-entry", false, "deleter").await?;
 
     let history = entry::get_entry_history(&op, ws_path, "deleted-entry").await?;
     assert_eq!(history["revisions"].as_array().map(Vec::len), Some(2));
@@ -428,7 +428,8 @@ async fn checkpoint_restore_appends_current_head_with_provenance() -> anyhow::Re
         revision["extension_metadata"]["restore_source_revision_id"],
         original.revision_id
     );
-    assert_eq!(revision["author"], "restorer");
+    assert_eq!(revision["author"], "author");
+    assert_eq!(revision["updated_by"], "restorer");
     Ok(())
 }
 
@@ -476,7 +477,7 @@ async fn entry_ids_are_global_across_forms_and_tombstones() -> anyhow::Result<()
     assert_eq!(unreadable_duplicate.code(), ErrorCode::InvalidInput);
     assert!(unreadable_duplicate.message().contains("global-id"));
 
-    entry::delete_entry(&op, ws_path, "global-id", false).await?;
+    entry::delete_entry(&op, ws_path, "global-id", false, "author").await?;
     let tombstone_duplicate = entry::create_entry(
         &op,
         ws_path,
@@ -1329,7 +1330,7 @@ async fn test_entry_req_entry_004_delete_entry() -> anyhow::Result<()> {
     .await?;
 
     // Delete
-    entry::delete_entry(&op, ws_path, entry_id, false).await?;
+    entry::delete_entry(&op, ws_path, entry_id, false, "deleter").await?;
 
     // Verify
     // op.exists() should match implementation (tombstone or file removal)
@@ -1348,6 +1349,86 @@ async fn test_entry_req_entry_004_delete_entry() -> anyhow::Result<()> {
         .collect();
     assert!(!ids.contains(&entry_id.to_string()));
 
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-FORM-009
+async fn entry_attribution_is_consistent_across_lifecycle() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "entry-attribution", "/tmp").await?;
+    let ws_path = "spaces/entry-attribution";
+    ensure_entry_form(&op, ws_path).await?;
+    let integrity = FakeIntegrityProvider;
+    let entry_id = "attributed-entry";
+    let original_content = "---\nform: Entry\n---\n# Original\n\n## Body\nCreated";
+
+    entry::create_entry(
+        &op,
+        ws_path,
+        entry_id,
+        original_content,
+        "creator",
+        &integrity,
+    )
+    .await?;
+    let created = entry::get_entry_content(&op, ws_path, entry_id).await?;
+    assert_eq!(created.author, "creator");
+    assert_eq!(created.updated_by, "creator");
+    assert_eq!(created.deleted_by, None);
+
+    entry::update_entry(
+        &op,
+        ws_path,
+        entry_id,
+        "---\nform: Entry\n---\n# Updated\n\n## Body\nEdited",
+        Some(&created.revision_id),
+        "editor",
+        &integrity,
+    )
+    .await?;
+    let updated = entry::get_entry_content(&op, ws_path, entry_id).await?;
+    assert_eq!(updated.author, "creator");
+    assert_eq!(updated.updated_by, "editor");
+    assert_eq!(updated.deleted_by, None);
+
+    entry::delete_entry(&op, ws_path, entry_id, false, "deleter").await?;
+    let deleted_history = entry::get_entry_history(&op, ws_path, entry_id).await?;
+    let deleted_revision_id = deleted_history["revisions"]
+        .as_array()
+        .and_then(|revisions| revisions.last())
+        .and_then(|revision| revision["revision_id"].as_str())
+        .expect("delete revision")
+        .to_string();
+    let deleted_revision =
+        entry::get_entry_revision(&op, ws_path, entry_id, &deleted_revision_id).await?;
+    assert_eq!(deleted_revision["author"], "creator");
+    assert_eq!(deleted_revision["updated_by"], "deleter");
+    assert_eq!(deleted_revision["deleted_by"], "deleter");
+    assert_eq!(deleted_revision["state"]["author"], "creator");
+    assert_eq!(deleted_revision["state"]["updated_by"], "deleter");
+    assert_eq!(deleted_revision["state"]["deleted_by"], "deleter");
+
+    entry::restore_entry(
+        &op,
+        ws_path,
+        entry_id,
+        &created.revision_id,
+        "restorer",
+        &integrity,
+    )
+    .await?;
+    let restored = entry::get_entry_content(&op, ws_path, entry_id).await?;
+    assert_eq!(restored.author, "creator");
+    assert_eq!(restored.updated_by, "restorer");
+    assert_eq!(restored.deleted_by, None);
+    assert!(restored.markdown.contains("Created"));
+
+    let historical_delete =
+        entry::get_entry_revision(&op, ws_path, entry_id, &deleted_revision_id).await?;
+    assert_eq!(historical_delete["author"], "creator");
+    assert_eq!(historical_delete["updated_by"], "deleter");
+    assert_eq!(historical_delete["deleted_by"], "deleter");
     Ok(())
 }
 

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use ugoite_domain::entry::{
-    AssetReference, EntryOperation, EntryRevision, EntryRevisionDraft, FieldValue, RevisionError,
+    AssetReference, EntryMetadata, EntryOperation, EntryRevision, EntryRevisionDraft, FieldValue,
+    RevisionError,
 };
 use ugoite_domain::form::{
     Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
@@ -139,12 +140,21 @@ fn revision_validation_enforces_versions_parent_and_tombstones() {
         form_version: form.version,
         source_kind: "api".into(),
         source_id: None,
-        entry: Default::default(),
+        entry: EntryMetadata {
+            updated_by: "human:alice".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::from([(field_id(100), FieldValue::String("hello".into()))]),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
     };
     first.validate(&form, None).unwrap();
+    let mut forged_initial_actor = first.clone();
+    forged_initial_actor.entry.updated_by = "human:bob".into();
+    assert_eq!(
+        forged_initial_actor.validate_payload(&form),
+        Err(RevisionError::InvalidAttribution)
+    );
     let mut second = first.clone();
     second.revision_id = RevisionId::from(Uuid::from_u128(4));
     second.parent_revision_id = Some(first.revision_id);
@@ -155,6 +165,15 @@ fn revision_validation_enforces_versions_parent_and_tombstones() {
     assert_eq!(
         second.validate(&form, Some(&first)),
         Err(RevisionError::VersionConflict)
+    );
+
+    let changed_author = EntryRevision {
+        author_id: "human:bob".into(),
+        ..second
+    };
+    assert_eq!(
+        changed_author.validate(&form, Some(&first)),
+        Err(RevisionError::AuthorChanged)
     );
 }
 
@@ -171,7 +190,10 @@ fn revision_draft_derives_parent_and_expected_version() {
         form_version: form.version,
         source_kind: "wasm".into(),
         source_id: None,
-        entry: Default::default(),
+        entry: EntryMetadata {
+            updated_by: "human:alice".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::from([(field_id(100), FieldValue::String("first".into()))]),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -188,7 +210,10 @@ fn revision_draft_derives_parent_and_expected_version() {
         form_version: form.version,
         source_kind: "wasm".into(),
         source_id: None,
-        entry: Default::default(),
+        entry: EntryMetadata {
+            updated_by: "human:bob".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::from([(field_id(100), FieldValue::String("second".into()))]),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -216,7 +241,10 @@ fn extra_attributes_follow_form_policy() {
         form_version: form.version,
         source_kind: "api".into(),
         source_id: None,
-        entry: Default::default(),
+        entry: EntryMetadata {
+            updated_by: "human:alice".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::from([(field_id(100), FieldValue::String("body".into()))]),
         extra_attributes: BTreeMap::from([(String::from("priority"), serde_json::json!("high"))]),
         extension_metadata: BTreeMap::new(),
@@ -286,7 +314,10 @@ fn asset_reference_lists_are_required_and_unique() {
         form_version: form.version,
         source_kind: "api".into(),
         source_id: None,
-        entry: Default::default(),
+        entry: EntryMetadata {
+            updated_by: "human:alice".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::new(),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),

@@ -100,12 +100,20 @@ pub struct EntryMetadata {
     pub created_at_micros: i64,
     #[serde(default)]
     pub updated_at_micros: i64,
+    /// Principal that authored the latest revision, including delete and
+    /// restore revisions.
+    #[serde(default)]
+    pub updated_by: String,
     #[serde(default)]
     pub integrity: EntryIntegrity,
     #[serde(default)]
     pub deleted: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleted_at_micros: Option<i64>,
+    /// Principal that authored the current delete tombstone. It is cleared by
+    /// a restore and remains available on historical delete revisions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restored_from: Option<RevisionId>,
 }
@@ -212,6 +220,33 @@ impl EntryRevision {
         {
             return Err(RevisionError::MissingProvenance);
         }
+        if self.entry.updated_by.trim().is_empty() {
+            return Err(RevisionError::InvalidAttribution);
+        }
+        if self.entry_version == 1
+            && self.expected_version.is_none()
+            && self.parent_revision_id.is_none()
+            && self.entry.updated_by != self.author_id
+        {
+            return Err(RevisionError::InvalidAttribution);
+        }
+        match self.operation {
+            EntryOperation::Delete
+                if !self.entry.deleted
+                    || self.entry.deleted_at_micros.is_none()
+                    || self.entry.deleted_by.as_deref() != Some(self.entry.updated_by.as_str()) =>
+            {
+                return Err(RevisionError::InvalidAttribution)
+            }
+            EntryOperation::Upsert | EntryOperation::Restore
+                if self.entry.deleted
+                    || self.entry.deleted_at_micros.is_some()
+                    || self.entry.deleted_by.is_some() =>
+            {
+                return Err(RevisionError::InvalidAttribution)
+            }
+            _ => {}
+        }
         if self.operation == EntryOperation::Delete && !self.values.is_empty() {
             return Err(RevisionError::TombstoneHasValues);
         }
@@ -288,6 +323,9 @@ impl EntryRevision {
                 || self.entry_version != 1 =>
             {
                 return Err(RevisionError::VersionConflict)
+            }
+            Some(previous) if self.author_id != previous.author_id => {
+                return Err(RevisionError::AuthorChanged)
             }
             Some(previous)
                 if self.expected_version != Some(previous.entry_version)
@@ -385,6 +423,8 @@ pub enum RevisionError {
     WrongForm,
     WrongFormVersion,
     MissingProvenance,
+    AuthorChanged,
+    InvalidAttribution,
     VersionConflict,
     TombstoneHasValues,
     ExtraAttributesNotAllowed,

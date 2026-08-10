@@ -502,7 +502,10 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
-        entry: EntryMetadata::default(),
+        entry: EntryMetadata {
+            updated_by: "human:owner".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::new(),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -524,12 +527,27 @@ async fn append_enforces_revision_identity_and_entry_conflicts() -> anyhow::Resu
 
     let conflicting = EntryRevision {
         revision_id: Uuid::from_u128(33).into(),
-        ..revision
+        ..revision.clone()
     };
     let error = append_revisions(&workspace, form.id, vec![conflicting])
         .await
         .unwrap_err();
     assert!(error.to_string().contains("conflict"));
+
+    let changed_author = EntryRevision {
+        revision_id: Uuid::from_u128(38).into(),
+        parent_revision_id: Some(revision.revision_id),
+        entry_version: 2,
+        expected_version: Some(1),
+        author_id: "human:other".into(),
+        ..revision
+    };
+    let author_error = append_revisions(&workspace, form.id, vec![changed_author])
+        .await
+        .unwrap_err();
+    assert!(author_error
+        .to_string()
+        .contains("entry author cannot change"));
     Ok(())
 }
 
@@ -563,7 +581,10 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
-        entry: EntryMetadata::default(),
+        entry: EntryMetadata {
+            updated_by: "human:owner".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::new(),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -580,6 +601,8 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
         entry: EntryMetadata {
             deleted: true,
             deleted_at_micros: Some(2),
+            updated_by: "human:owner".into(),
+            deleted_by: Some("human:owner".into()),
             ..EntryMetadata::default()
         },
         ..first.clone()
@@ -631,6 +654,7 @@ async fn revision_views_keep_tombstones_and_restore_current_entries() -> anyhow:
         committed_at_micros: 3,
         entry: EntryMetadata {
             restored_from: Some(deleted.revision_id),
+            updated_by: "human:owner".into(),
             ..EntryMetadata::default()
         },
         ..first.clone()
@@ -671,7 +695,10 @@ async fn coordinator_replays_only_the_same_canonical_command() -> anyhow::Result
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
-        entry: EntryMetadata::default(),
+        entry: EntryMetadata {
+            updated_by: "human:owner".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::from([(
             FieldId::new(100).unwrap(),
             FieldValue::String("exactly once".into()),
@@ -748,7 +775,10 @@ async fn append_recovery_adopts_existing_publication_without_rewriting_iceberg(
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
-        entry: EntryMetadata::default(),
+        entry: EntryMetadata {
+            updated_by: "human:owner".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::from([(
             FieldId::new(100).unwrap(),
             FieldValue::String("recovered append".into()),
@@ -858,7 +888,10 @@ async fn one_explicit_form_batch_publishes_one_snapshot_and_receipt() -> anyhow:
                 form_version: form.version,
                 source_kind: "test".into(),
                 source_id: None,
-                entry: EntryMetadata::default(),
+                entry: EntryMetadata {
+                    updated_by: "human:owner".into(),
+                    ..EntryMetadata::default()
+                },
                 values,
                 extra_attributes: BTreeMap::new(),
                 extension_metadata: BTreeMap::new(),
@@ -917,6 +950,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         source_id: None,
         entry: EntryMetadata {
             title: "before rename".into(),
+            updated_by: "human:owner".into(),
             ..Default::default()
         },
         values: BTreeMap::from([(FieldId::new(100).unwrap(), FieldValue::String("old".into()))]),
@@ -1063,6 +1097,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         source_id: None,
         entry: EntryMetadata {
             title: "after rename".into(),
+            updated_by: "human:owner".into(),
             ..Default::default()
         },
         values: BTreeMap::from([
@@ -1163,12 +1198,14 @@ async fn typed_forms_and_fixed_entry_metadata_round_trip_without_json_payloads(
             tags: vec!["important".into(), "today".into()],
             created_at_micros: 10,
             updated_at_micros: 11,
+            updated_by: "human:owner".into(),
             integrity: EntryIntegrity {
                 checksum: "sha256:abc".into(),
                 signature: "sig".into(),
             },
             deleted: false,
             deleted_at_micros: None,
+            deleted_by: None,
             restored_from: None,
         },
         values: BTreeMap::from([
@@ -1261,6 +1298,7 @@ async fn every_supported_typed_list_item_round_trips_with_nulls() -> anyhow::Res
         source_id: None,
         entry: EntryMetadata {
             external_id: "typed-lists".into(),
+            updated_by: "human:owner".into(),
             ..Default::default()
         },
         values: BTreeMap::from([

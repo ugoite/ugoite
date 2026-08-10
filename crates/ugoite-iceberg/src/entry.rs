@@ -97,6 +97,9 @@ pub struct EntryContent {
     #[serde(default)]
     pub timestamp: f64,
     pub author: String,
+    pub updated_by: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted_by: Option<String>,
     pub markdown: String,
     #[serde(default)]
     pub frontmatter: Value,
@@ -122,6 +125,12 @@ pub struct EntryMeta {
     pub created_at: f64,
     #[serde(default)]
     pub updated_at: f64,
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub updated_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_by: Option<String>,
     #[serde(default)]
     pub integrity: IntegrityPayload,
     #[serde(default)]
@@ -170,6 +179,10 @@ pub struct EntryRow {
     pub deleted_at: Option<f64>,
     #[serde(default)]
     pub author: String,
+    #[serde(default)]
+    pub updated_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_by: Option<String>,
     #[serde(default = "initial_entry_version")]
     pub entry_version: u64,
 }
@@ -181,6 +194,10 @@ pub struct RevisionRow {
     pub parent_revision_id: Option<String>,
     pub timestamp: f64,
     pub author: String,
+    #[serde(default)]
+    pub updated_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_by: Option<String>,
     #[serde(default)]
     pub fields: Value,
     #[serde(default)]
@@ -581,6 +598,16 @@ fn revision_row_to_domain(
         .as_ref()
         .map(entry_metadata_from_row)
         .unwrap_or_default();
+    if let Some(state) = row.state.as_ref() {
+        if state.author != row.author
+            || state.updated_by != row.updated_by
+            || state.deleted_by != row.deleted_by
+        {
+            return Err(anyhow!(
+                "revision state attribution does not match revision metadata"
+            ));
+        }
+    }
     entry.integrity = EntryIntegrity {
         checksum: row.integrity.checksum.clone(),
         signature: row.integrity.signature.clone(),
@@ -624,12 +651,14 @@ fn entry_metadata_from_row(row: &EntryRow) -> EntryMetadata {
         tags: row.tags.clone(),
         created_at_micros: to_timestamp_micros(row.created_at),
         updated_at_micros: to_timestamp_micros(row.updated_at),
+        updated_by: row.updated_by.clone(),
         integrity: EntryIntegrity {
             checksum: row.integrity.checksum.clone(),
             signature: row.integrity.signature.clone(),
         },
         deleted: row.deleted,
         deleted_at_micros: row.deleted_at.map(to_timestamp_micros),
+        deleted_by: row.deleted_by.clone(),
         restored_from: None,
     }
 }
@@ -872,6 +901,12 @@ fn revision_row_from_domain(
         deleted: revision.entry.deleted,
         deleted_at: revision.entry.deleted_at_micros.map(from_timestamp_micros),
         author: revision.author_id.clone(),
+        updated_by: if revision.entry.updated_by.is_empty() {
+            revision.author_id.clone()
+        } else {
+            revision.entry.updated_by.clone()
+        },
+        deleted_by: revision.entry.deleted_by.clone(),
         entry_version: revision.entry_version,
     };
     Ok(RevisionRow {
@@ -884,6 +919,8 @@ fn revision_row_from_domain(
         parent_revision_id: revision.parent_revision_id.map(|id| id.to_string()),
         timestamp: from_timestamp_micros(revision.committed_at_micros),
         author: revision.author_id,
+        updated_by: state.updated_by.clone(),
+        deleted_by: state.deleted_by.clone(),
         fields: Value::Object(fields),
         extra_attributes: serde_json::to_value(&revision.extra_attributes)?,
         markdown_checksum: integrity.checksum.clone(),
@@ -1431,6 +1468,8 @@ async fn prepare_entry<I: IntegrityProvider>(
         deleted: false,
         deleted_at: None,
         author: author.to_string(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         entry_version: 1,
     };
 
@@ -1440,6 +1479,8 @@ async fn prepare_entry<I: IntegrityProvider>(
         parent_revision_id: None,
         timestamp,
         author: author.to_string(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         fields: entry_row.fields.clone(),
         extra_attributes: entry_row.extra_attributes.clone(),
         markdown_checksum: checksum.clone(),
@@ -1476,6 +1517,9 @@ async fn prepare_entry<I: IntegrityProvider>(
         },
         deleted: false,
         deleted_at: None,
+        author: author.to_string(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         properties: Value::Object(Map::new()),
     };
     Ok((entry, form_name, form_def, revision))
@@ -1525,6 +1569,9 @@ fn list_entries_from_rows(rows: Vec<(String, EntryRow)>) -> Result<Vec<Value>> {
             "properties": merged_fields,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
+            "author": row.author,
+            "updated_by": row.updated_by,
+            "deleted_by": row.deleted_by,
         }));
     }
     Ok(entries)
@@ -1609,6 +1656,9 @@ pub async fn get_entry(op: &Operator, ws_path: &str, entry_id: &str) -> Result<V
         "tags": row.tags,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+        "author": row.author,
+        "updated_by": row.updated_by,
+        "deleted_by": row.deleted_by,
         "integrity": serde_json::to_value(row.integrity)?,
     }))
 }
@@ -1669,6 +1719,9 @@ pub async fn get_entry_authorized(
         "tags": row.tags,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+        "author": row.author,
+        "updated_by": row.updated_by,
+        "deleted_by": row.deleted_by,
         "integrity": serde_json::to_value(row.integrity)?,
     }))
 }
@@ -1697,6 +1750,8 @@ pub async fn get_entry_content(
         parent_revision_id: row.parent_revision_id,
         timestamp: row.updated_at,
         author: row.author,
+        updated_by: row.updated_by,
+        deleted_by: row.deleted_by,
         markdown,
         frontmatter: serde_json::json!({
             "form": form_name,
@@ -1738,6 +1793,8 @@ pub async fn get_entry_revision_content(
         parent_revision_id: revision.parent_revision_id,
         timestamp: revision.timestamp,
         author: revision.author,
+        updated_by: revision.updated_by,
+        deleted_by: revision.deleted_by,
         markdown,
         frontmatter: serde_json::json!({
             "form": form_name,
@@ -1826,6 +1883,9 @@ fn entry_value_from_checkpoint_revision(
         "tags": row.tags,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+        "author": row.author,
+        "updated_by": row.updated_by,
+        "deleted_by": row.deleted_by,
         "integrity": serde_json::to_value(row.integrity)?,
     }))
 }
@@ -1887,6 +1947,9 @@ pub async fn get_entry_history_at_checkpoint(
             "source_kind": revision.source_kind,
             "source_id": revision.source_id,
             "restored_from": revision.entry.restored_from,
+            "author": revision.author_id,
+            "updated_by": revision.entry.updated_by,
+            "deleted_by": revision.entry.deleted_by,
         })).collect::<Vec<_>>(),
     }))
 }
@@ -1934,6 +1997,8 @@ pub async fn get_entry_revision_at_checkpoint(
         parent_revision_id: row.parent_revision_id,
         timestamp,
         author: row.author,
+        updated_by: row.updated_by,
+        deleted_by: row.deleted_by,
         markdown,
         frontmatter: json!({"form": form_name, "tags": row.tags}),
         sections: sections_from_fields(&merged_fields),
@@ -2018,7 +2083,8 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = new_revision_id.clone();
     row.entry_version = row.entry_version.saturating_add(1);
-    row.author = author.to_string();
+    row.updated_by = author.to_string();
+    row.deleted_by = None;
     row.deleted = false;
     row.deleted_at = None;
     row.integrity = IntegrityPayload {
@@ -2034,7 +2100,9 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
         entry_id: entry_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
-        author: author.to_string(),
+        author: row.author.clone(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         fields: row.fields.clone(),
         extra_attributes: row.extra_attributes.clone(),
         markdown_checksum: checksum.clone(),
@@ -2071,7 +2139,9 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
             "coordinate_checksum": checkpoint.coordinate_checksum,
         },
         "source_revision_id": revision_id,
-        "author": author,
+        "author": source.author_id,
+        "updated_by": author,
+        "deleted_by": null,
         "timestamp": timestamp,
     }))
 }
@@ -2199,7 +2269,8 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();
     row.entry_version = row.entry_version.saturating_add(1);
-    row.author = author.to_string();
+    row.updated_by = author.to_string();
+    row.deleted_by = None;
     row.integrity = IntegrityPayload {
         checksum: checksum.clone(),
         signature: signature.clone(),
@@ -2210,7 +2281,9 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
         entry_id: entry_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
-        author: author.to_string(),
+        author: row.author.clone(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         fields: row.fields.clone(),
         extra_attributes: row.extra_attributes.clone(),
         markdown_checksum: checksum.clone(),
@@ -2244,6 +2317,7 @@ pub async fn delete_entry(
     ws_path: &str,
     entry_id: &str,
     hard_delete: bool,
+    actor: &str,
 ) -> Result<()> {
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
@@ -2262,6 +2336,8 @@ pub async fn delete_entry(
     row.parent_revision_id = Some(previous_revision_id);
     row.revision_id = Uuid::new_v4().to_string();
     row.entry_version = row.entry_version.saturating_add(1);
+    row.updated_by = actor.to_string();
+    row.deleted_by = Some(actor.to_string());
     let form_def = form::read_form_definition(op, ws_path, &form_name).await?;
     let tombstone = RevisionRow {
         revision_id: row.revision_id.clone(),
@@ -2269,6 +2345,8 @@ pub async fn delete_entry(
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp: delete_ts,
         author: row.author.clone(),
+        updated_by: actor.to_string(),
+        deleted_by: Some(actor.to_string()),
         fields: Value::Object(Map::new()),
         extra_attributes: Value::Object(Map::new()),
         markdown_checksum: row.integrity.checksum.clone(),
@@ -2300,6 +2378,9 @@ pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> 
                 "timestamp": rev.timestamp,
                 "checksum": rev.integrity.checksum,
                 "signature": rev.integrity.signature,
+                "author": rev.author,
+                "updated_by": rev.updated_by,
+                "deleted_by": rev.deleted_by,
             })
         })
         .collect::<Vec<_>>();
@@ -2400,13 +2481,16 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
         checksum: checksum.clone(),
         signature: signature.clone(),
     };
-    row.author = author.to_string();
+    row.updated_by = author.to_string();
+    row.deleted_by = None;
     let restore_revision = RevisionRow {
         revision_id: new_rev_id.clone(),
         entry_id: entry_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
-        author: author.to_string(),
+        author: row.author.clone(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         fields: row.fields.clone(),
         extra_attributes: row.extra_attributes.clone(),
         markdown_checksum: checksum.clone(),

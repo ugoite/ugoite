@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use std::collections::BTreeMap;
-use ugoite_domain::entry::{EntryOperation, EntryRevision, FieldValue};
+use ugoite_domain::entry::{EntryMetadata, EntryOperation, EntryRevision, FieldValue};
 use ugoite_domain::form::{FieldType, FormDefinition, FormField, FormVersion};
 use ugoite_domain::id::{EntryId, FieldId, FormId, RevisionId};
 use uuid::Uuid;
@@ -46,7 +46,10 @@ fn fixture(entry_count: usize, revisions_per_entry: usize) -> (FormDefinition, V
                 form_version: form.version,
                 source_kind: "benchmark".into(),
                 source_id: None,
-                entry: Default::default(),
+                entry: EntryMetadata {
+                    updated_by: "benchmark".into(),
+                    ..EntryMetadata::default()
+                },
                 values: BTreeMap::from([(field_id, FieldValue::String("value".into()))]),
                 extra_attributes: BTreeMap::new(),
                 extension_metadata: BTreeMap::new(),

@@ -1367,6 +1367,8 @@ fn system_column(column: &QuerySystemColumn) -> VisibleColumn {
         QuerySystemColumn::RevisionId => ("revision_id", "_ugoite_revision_id"),
         QuerySystemColumn::ParentRevisionId => ("parent_revision_id", "_ugoite_parent_revision_id"),
         QuerySystemColumn::Author => ("author_id", "_ugoite_author"),
+        QuerySystemColumn::UpdatedBy => ("ugoite_entry_updated_by", "_ugoite_updated_by"),
+        QuerySystemColumn::DeletedBy => ("ugoite_entry_deleted_by", "_ugoite_deleted_by"),
         QuerySystemColumn::ExtraAttributes => ("extra_attributes", "_ugoite_extra_attributes"),
         QuerySystemColumn::Integrity => ("ugoite_entry_integrity", "_ugoite_integrity"),
         QuerySystemColumn::Deleted => ("ugoite_entry_deleted", "_ugoite_deleted"),

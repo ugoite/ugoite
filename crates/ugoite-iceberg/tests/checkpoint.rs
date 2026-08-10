@@ -64,7 +64,10 @@ fn revision_for_entry(
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
-        entry: EntryMetadata::default(),
+        entry: EntryMetadata {
+            updated_by: "human:owner".into(),
+            ..EntryMetadata::default()
+        },
         values,
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),
@@ -250,6 +253,7 @@ async fn checkpoint_diff_reports_logical_entry_changes() -> anyhow::Result<()> {
     deleted.operation = EntryOperation::Delete;
     deleted.entry.deleted = true;
     deleted.entry.deleted_at_micros = Some(3);
+    deleted.entry.deleted_by = Some("human:owner".into());
     deleted.values.clear();
     append(&workspace, &form, deleted).await?;
     let after_delete = workspace.capture_checkpoint().await?;

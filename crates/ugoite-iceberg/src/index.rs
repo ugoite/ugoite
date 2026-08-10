@@ -590,6 +590,8 @@ fn payload_projection(form: &Value, preserved_inputs: &BTreeSet<String>) -> Resu
         col("_ugoite_revision_id"),
         col("_ugoite_parent_revision_id"),
         col("_ugoite_author"),
+        col("_ugoite_updated_by"),
+        col("_ugoite_deleted_by"),
         col("_ugoite_extra_attributes"),
         col("_ugoite_integrity"),
         col("_ugoite_deleted"),
@@ -691,6 +693,8 @@ fn entry_row_from_batch(
         deleted: required_bool_column(batch, row, "_ugoite_deleted", "deleted")?,
         deleted_at: optional_timestamp_seconds_column(batch, row, "_ugoite_deleted_at")?,
         author: required_string_column(batch, row, "_ugoite_author", "author")?,
+        updated_by: required_string_column(batch, row, "_ugoite_updated_by", "updated_by")?,
+        deleted_by: optional_string_column(batch, row, "_ugoite_deleted_by")?,
         entry_version: required_u64_column(batch, row)?,
     })
 }
@@ -728,6 +732,19 @@ fn required_string_column(
         return Err(anyhow!("Entry payload is missing {label}"));
     }
     Ok(values.value(row).to_owned())
+}
+
+fn optional_string_column(
+    batch: &arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+) -> Result<Option<String>> {
+    let column = payload_column(batch, name)?;
+    let values = column
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .with_context(|| format!("Entry payload has invalid {name} Arrow type"))?;
+    Ok((!values.is_null(row)).then(|| values.value(row).to_owned()))
 }
 
 fn required_uuid_string_column(
@@ -1728,6 +1745,8 @@ async fn datafusion_sql_context_with_limits(
                 QuerySystemColumn::RevisionId,
                 QuerySystemColumn::ParentRevisionId,
                 QuerySystemColumn::Author,
+                QuerySystemColumn::UpdatedBy,
+                QuerySystemColumn::DeletedBy,
                 QuerySystemColumn::ExtraAttributes,
                 QuerySystemColumn::Integrity,
                 QuerySystemColumn::Deleted,
@@ -2746,6 +2765,9 @@ async fn build_record(
         "title": row.title,
         "form": form_name,
         "updated_at": row.updated_at,
+        "author": row.author,
+        "updated_by": row.updated_by,
+        "deleted_by": row.deleted_by,
         "space_id": ws_path.split('/').next_back().unwrap_or("").to_string(),
         "properties": properties,
         "word_count": word_count,

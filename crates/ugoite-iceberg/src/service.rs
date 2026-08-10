@@ -375,6 +375,7 @@ impl UgoiteService {
         space_id: &str,
         entry_id: &str,
         hard_delete: bool,
+        actor: &str,
     ) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -383,6 +384,7 @@ impl UgoiteService {
             &self.workspace_path(space_id),
             entry_id,
             hard_delete,
+            actor,
         )
         .await
     }
@@ -1575,10 +1577,16 @@ impl UgoiteService {
         .await
     }
 
-    pub async fn delete_saved_sql(&self, space_id: &str, sql_id: &str) -> Result<()> {
+    pub async fn delete_saved_sql(&self, space_id: &str, sql_id: &str, actor: &str) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
         validate_storage_id(validate_sql_id(sql_id))?;
-        saved_sql::delete_sql(&self.operator, &self.workspace_path(space_id), sql_id).await
+        saved_sql::delete_sql(
+            &self.operator,
+            &self.workspace_path(space_id),
+            sql_id,
+            actor,
+        )
+        .await
     }
 
     pub async fn test_storage_connection(

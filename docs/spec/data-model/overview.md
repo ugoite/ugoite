@@ -62,7 +62,12 @@ different name or type is needed; no migration compatibility path is exposed.
 The table is an append-only revision log. Common columns include `entry_id`,
 `revision_id`, `parent_revision_id`, `entry_version`, `operation`,
 `committed_at`, `author_id`, `form_version`, `source_kind`, and `source_id`,
-followed by Form fields. Delete is a tombstone and restore is another revision.
+followed by Form fields. Entry attribution is system-managed: `author` is the
+original creator, `updated_by` is the actor for the latest revision, and
+`deleted_by` is the actor for the current tombstone only. Delete is a tombstone
+and restore is another revision. This is a breaking pre-v1 physical-schema
+change; a Space with the former attribution-free table schema must be
+recreated rather than silently interpreted with incomplete attribution.
 Current state is derived from the unique greatest version and is never a second
 source-of-truth table. Equal greatest versions are a visible corruption/conflict
 and never resolved by iteration order.

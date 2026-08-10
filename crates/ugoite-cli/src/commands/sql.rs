@@ -184,7 +184,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 return Ok(());
             }
             let service = UgoiteService::new(&root)?;
-            service.delete_saved_sql(&space_id, &sql_id).await?;
+            service.delete_saved_sql(&space_id, &sql_id, "cli").await?;
             print_json(&serde_json::json!({"deleted": true}));
         }
     }

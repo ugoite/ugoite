@@ -343,6 +343,9 @@ fn sql_entry_from_row(row: &entry::EntryRow) -> Result<Value> {
         "variables": variables,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+        "author": row.author,
+        "updated_by": row.updated_by,
+        "deleted_by": row.deleted_by,
         "revision_id": row.revision_id,
     }))
 }
@@ -436,6 +439,8 @@ pub async fn create_sql<I: IntegrityProvider>(
         deleted: false,
         deleted_at: None,
         author: author.to_string(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         entry_version: 1,
     };
 
@@ -445,6 +450,8 @@ pub async fn create_sql<I: IntegrityProvider>(
         parent_revision_id: None,
         timestamp,
         author: author.to_string(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         fields: row.fields.clone(),
         extra_attributes: row.extra_attributes.clone(),
         markdown_checksum: integrity_payload.checksum.clone(),
@@ -518,7 +525,8 @@ pub async fn update_sql<I: IntegrityProvider>(
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = revision_id.clone();
     row.entry_version = row.entry_version.saturating_add(1);
-    row.author = author.to_string();
+    row.updated_by = author.to_string();
+    row.deleted_by = None;
     row.integrity = integrity_payload.clone();
 
     let revision = entry::RevisionRow {
@@ -526,7 +534,9 @@ pub async fn update_sql<I: IntegrityProvider>(
         entry_id: sql_id.to_string(),
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp,
-        author: author.to_string(),
+        author: row.author.clone(),
+        updated_by: author.to_string(),
+        deleted_by: None,
         fields: row.fields.clone(),
         extra_attributes: row.extra_attributes.clone(),
         markdown_checksum: integrity_payload.checksum.clone(),
@@ -544,7 +554,7 @@ pub async fn update_sql<I: IntegrityProvider>(
     sql_entry_from_row(&row)
 }
 
-pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()> {
+pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str, actor: &str) -> Result<()> {
     ensure_sql_form(op, ws_path).await?;
     let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
     let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
@@ -562,6 +572,8 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()
     row.parent_revision_id = Some(row.revision_id.clone());
     row.revision_id = Uuid::new_v4().to_string();
     row.entry_version = row.entry_version.saturating_add(1);
+    row.updated_by = actor.to_string();
+    row.deleted_by = Some(actor.to_string());
     let entry_version = row.entry_version;
     let tombstone = entry::RevisionRow {
         revision_id: row.revision_id.clone(),
@@ -569,6 +581,8 @@ pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str) -> Result<()
         parent_revision_id: row.parent_revision_id.clone(),
         timestamp: delete_ts,
         author: row.author.clone(),
+        updated_by: actor.to_string(),
+        deleted_by: Some(actor.to_string()),
         fields: Value::Object(Map::new()),
         extra_attributes: Value::Object(Map::new()),
         markdown_checksum: row.integrity.checksum.clone(),

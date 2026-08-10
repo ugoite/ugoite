@@ -933,7 +933,8 @@ impl IcebergWorkspace {
         for ident in self.catalog.list_tables(&self.namespace).await? {
             let table = self.catalog.load_table(&ident).await?;
             if let Some(raw) = table.metadata().properties().get(FORM_DEFINITION_PROPERTY) {
-                forms.push(serde_json::from_str(raw)?);
+                let form: FormDefinition = serde_json::from_str(raw)?;
+                forms.push(form_from_table(&table, form.id)?);
             }
         }
         forms.sort_by(|left: &FormDefinition, right: &FormDefinition| left.name.cmp(&right.name));
@@ -1428,6 +1429,9 @@ impl IcebergWorkspace {
             if validate_revision_chain {
                 let previous = current.get(&revision.entry_id);
                 if let Some(previous) = previous {
+                    if revision.author_id != previous.author_id {
+                        return Err(anyhow!("entry author cannot change across revisions"));
+                    }
                     if revision.expected_version != Some(previous.entry_version)
                         || revision.parent_revision_id != Some(previous.revision_id)
                         || revision.entry_version
@@ -2305,6 +2309,7 @@ fn physical_field_id(field: &ugoite_domain::form::FormField) -> i32 {
 }
 
 fn form_from_table(table: &iceberg::table::Table, form_id: FormId) -> Result<FormDefinition> {
+    validate_attribution_schema(table)?;
     let raw = table
         .metadata()
         .properties()
@@ -2337,6 +2342,36 @@ fn form_from_table(table: &iceberg::table::Table, form_id: FormId) -> Result<For
         }
     }
     Ok(form)
+}
+
+/// Attribution is part of the v1-pre physical Form contract. Existing tables
+/// with the former schema are rejected explicitly instead of failing later
+/// with an Arrow column-count or missing-column error; pre-v1 Spaces must be
+/// recreated after this breaking schema change.
+fn validate_attribution_schema(table: &iceberg::table::Table) -> Result<()> {
+    for (id, name, kind, required) in [
+        (24, "ugoite_entry_updated_by", PrimitiveType::String, true),
+        (25, "ugoite_entry_deleted_by", PrimitiveType::String, false),
+    ] {
+        let field = table
+            .metadata()
+            .current_schema()
+            .field_by_id(id)
+            .with_context(|| {
+                format!(
+                    "Iceberg Form table is missing required Entry attribution column {name}; recreate this pre-v1 Space"
+                )
+            })?;
+        if field.name != name
+            || field.required != required
+            || field.field_type.as_ref() != &Type::Primitive(kind)
+        {
+            return Err(anyhow!(
+                "Iceberg Form table has incompatible Entry attribution column {name}; recreate this pre-v1 Space"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn form_schema(form: &FormDefinition) -> Result<Schema> {
@@ -2378,6 +2413,8 @@ fn form_schema(form: &FormDefinition) -> Result<Schema> {
         optional(21, "ugoite_entry_deleted_at", PrimitiveType::Timestamptz),
         optional(22, "ugoite_entry_restored_from", PrimitiveType::Uuid),
         required(23, "ugoite_entry_external_id", PrimitiveType::String),
+        required(24, "ugoite_entry_updated_by", PrimitiveType::String),
+        optional(25, "ugoite_entry_deleted_by", PrimitiveType::String),
     ];
     for field in &form.fields {
         fields.push(Arc::new(NestedField::new(
@@ -2658,6 +2695,18 @@ fn revision_batch_from_values(
             revisions
                 .iter()
                 .map(|revision| revision.entry.external_id.as_str())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.entry.updated_by.as_str())
+                .collect::<Vec<_>>(),
+        )),
+        Arc::new(StringArray::from(
+            revisions
+                .iter()
+                .map(|revision| revision.entry.deleted_by.as_deref())
                 .collect::<Vec<_>>(),
         )),
     ];
@@ -3450,6 +3499,12 @@ fn revisions_from_batch(
     let restored_from =
         required_column::<FixedSizeBinaryArray>(batch, "ugoite_entry_restored_from")?;
     let external_ids = required_column::<StringArray>(batch, "ugoite_entry_external_id")?;
+    let updated_by = batch
+        .column_by_name("ugoite_entry_updated_by")
+        .and_then(|column| column.as_any().downcast_ref::<StringArray>());
+    let deleted_by = batch
+        .column_by_name("ugoite_entry_deleted_by")
+        .and_then(|column| column.as_any().downcast_ref::<StringArray>());
 
     let mut revisions = Vec::with_capacity(batch.num_rows());
     for row in 0..batch.num_rows() {
@@ -3503,9 +3558,16 @@ fn revisions_from_batch(
                 tags: string_list_at(tags, row)?,
                 created_at_micros: required_i64(&created_at, row, "ugoite_entry_created_at")?,
                 updated_at_micros: required_i64(&updated_at, row, "ugoite_entry_updated_at")?,
+                updated_by: updated_by.map_or_else(
+                    || Ok(required_string(authors, row, "author_id")?.to_string()),
+                    |values| {
+                        required_string(values, row, "ugoite_entry_updated_by").map(str::to_owned)
+                    },
+                )?,
                 integrity: integrity_at(integrity, row)?,
                 deleted: required_bool(deleted, row, "ugoite_entry_deleted")?,
                 deleted_at_micros: optional_i64(&deleted_at, row),
+                deleted_by: deleted_by.and_then(|values| optional_string(values, row)),
                 restored_from: optional_uuid(restored_from, row)?.map(RevisionId::from),
             },
             values,
@@ -3973,6 +4035,14 @@ fn validate_batch_revision_metadata(
                 EntryOperation::Delete => "delete",
                 EntryOperation::Restore => "restore",
             };
+            let updated_by = batch
+                .column_by_name("ugoite_entry_updated_by")
+                .and_then(|array| array.as_any().downcast_ref::<StringArray>())
+                .context("ugoite_entry_updated_by must be a string column")?;
+            let deleted_by = batch
+                .column_by_name("ugoite_entry_deleted_by")
+                .and_then(|array| array.as_any().downcast_ref::<StringArray>())
+                .context("ugoite_entry_deleted_by must be a string column")?;
             if uuid_value_at(entry_ids.as_ref(), row)? != revision.entry_id.as_uuid()
                 || uuid_value_at(revision_ids.as_ref(), row)? != revision.revision_id.as_uuid()
                 || parent != revision.parent_revision_id
@@ -3980,6 +4050,12 @@ fn validate_batch_revision_metadata(
                 || form_version != revision.form_version.get()
                 || operations.is_null(row)
                 || operations.value(row) != operation
+                || updated_by.is_null(row)
+                || updated_by.value(row) != revision.entry.updated_by
+                || (deleted_by.is_null(row) != revision.entry.deleted_by.is_none())
+                || (!deleted_by.is_null(row)
+                    && deleted_by.value(row)
+                        != revision.entry.deleted_by.as_deref().unwrap_or_default())
             {
                 return Err(anyhow!(
                     "record batch revision metadata does not match revision metadata"
@@ -4042,7 +4118,10 @@ mod invariant_tests {
             form_version: form.version,
             source_kind: "test".into(),
             source_id: None,
-            entry: EntryMetadata::default(),
+            entry: EntryMetadata {
+                updated_by: "test".into(),
+                ..EntryMetadata::default()
+            },
             values: BTreeMap::from([(
                 FieldId::new(100).expect("valid test field id"),
                 FieldValue::String(title.into()),
