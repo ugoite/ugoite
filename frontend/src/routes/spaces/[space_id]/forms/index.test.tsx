@@ -28,10 +28,14 @@ vi.mock(
 vi.mock(
   "~/components/FormTable",
   () => ({
-    FormTable: (props: { entryForm: Form; onAddRow: () => void }) => (
+    FormTable: (props: { entryForm: Form; onAddRow?: () => void }) => (
       <div>
         <div>Entries table for {props.entryForm.name}</div>
-        <button type="button" onClick={props.onAddRow}>Add Row</button>
+        <Show when={props.onAddRow}>
+          <button type="button" onClick={() => props.onAddRow?.()}>
+            Add Row
+          </button>
+        </Show>
       </div>
     ),
   }),
@@ -161,6 +165,20 @@ describe("v5 Forms workspace", () => {
     expect(screen.getByText("SQL")).toBeInTheDocument();
     expect(screen.getByLabelText("System form")).toBeInTheDocument();
     expect(screen.queryByText("System")).not.toBeInTheDocument();
+  });
+  it("does not offer entry creation for system Forms", () => {
+    search.form = "SQL";
+    renderPage([metadataForm]);
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Show system forms" }),
+    );
+
+    expect(screen.getByText("Entries table for SQL")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add Row" })).not
+      .toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New Entry" })).not
+      .toBeInTheDocument();
   });
   it("shows API failures instead of an empty Forms state", () => {
     renderPage([], new Error("Forbidden"));

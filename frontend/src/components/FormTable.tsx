@@ -19,7 +19,7 @@ interface FormTableProps {
   spaceId: string;
   entryForm: Form;
   onEntryClick: (entryId: string) => void;
-  onAddRow: () => void;
+  onAddRow?: () => void;
 }
 
 type SortDirection = "asc" | "desc" | null;
@@ -590,10 +590,10 @@ export function FormTable(props: FormTableProps) {
                 )}
               {isEditMode() ? t("formTable.editable") : t("formTable.locked")}
             </button>
-            <Show when={isEditMode()}>
+            <Show when={isEditMode() && props.onAddRow}>
               <button
                 type="button"
-                onClick={props.onAddRow}
+                onClick={() => props.onAddRow?.()}
                 class="ui-button ui-button-primary text-sm flex items-center gap-2"
               >
                 <svg
