@@ -6,6 +6,7 @@ import { EntryDetailPane } from "./EntryDetailPane";
 import { entryApi, RevisionConflictError } from "~/lib/ugoite-client";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
 import { setLocale } from "~/lib/i18n";
+import * as assetReference from "~/lib/asset-reference";
 import type { Form } from "~/lib/types";
 
 vi.mock("@solidjs/router", () => ({
@@ -152,6 +153,202 @@ describe("EntryDetailPane", () => {
     });
   });
 
+  it("blocks create until every active required field has a value", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Status\n\n## Notes\n",
+      fields: {
+        Status: { type: "string", required: true },
+        Notes: { type: "string", required: true },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+    expect(screen.getAllByText("This field is required.")).toHaveLength(2);
+
+    fireEvent.click(save);
+
+    expect(createMock).not.toHaveBeenCalled();
+    const requiredSummary = screen.getAllByRole("alert").find((alert) =>
+      alert.textContent?.includes("Required fields need attention")
+    );
+    expect(requiredSummary).toBeDefined();
+    expect(requiredSummary).toHaveTextContent("Status");
+    expect(requiredSummary).toHaveTextContent("Notes");
+    expect(screen.getByLabelText("Status")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(document.activeElement).toBe(screen.getByLabelText("Status"));
+
+    fireEvent.input(screen.getByLabelText("Status"), {
+      target: { value: "Open" },
+    });
+    fireEvent.input(screen.getByLabelText("Notes"), {
+      target: { value: "Details" },
+    });
+    fireEvent.click(save);
+
+    await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("blocks edit until a required field is restored", async () => {
+    const updateMock = entryApi.update as ReturnType<typeof vi.fn>;
+    (entryApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      title: "Task",
+      form: "Task",
+      content: "---\nform: Task\n---\n\n# Task\n\n## Status\nOpen\n",
+      revision_id: "rev-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    updateMock.mockResolvedValue({ revision_id: "rev-2" });
+    const form: Form = {
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Status\n",
+      fields: { Status: { type: "string", required: true } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        entryId={() => "entry-1"}
+        forms={() => [form]}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const status = await screen.findByLabelText("Status");
+    fireEvent.input(status, { target: { value: "" } });
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(status).toHaveAttribute("aria-invalid", "true");
+
+    fireEvent.input(status, { target: { value: "Done" } });
+    fireEvent.click(save);
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("blocks empty required object lists before creating an entry", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Checklist\n",
+      fields: { Checklist: { type: "object_list", required: true } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const checklist = await screen.findByLabelText("Checklist");
+    fireEvent.input(checklist, { target: { value: "[]" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(createMock).not.toHaveBeenCalled();
+    expect(checklist).toHaveAttribute("aria-invalid", "true");
+    expect(document.activeElement).toBe(checklist);
+  });
+
+  it("blocks marker-only required lists before creating an entry", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Task",
+      version: 1,
+      template: "# Task\n\n## Items\n",
+      fields: { Items: { type: "list", required: true } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const items = await screen.findByLabelText("Items");
+    fireEvent.input(items, { target: { value: "-\n*" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(createMock).not.toHaveBeenCalled();
+    expect(items).toHaveAttribute("aria-invalid", "true");
+    expect(document.activeElement).toBe(items);
+  });
+
+  it("focuses an empty required asset field before creating an entry", async () => {
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "created-entry",
+      revision_id: "created-revision",
+    });
+    const form: Form = {
+      name: "Contract",
+      version: 1,
+      template: "# Contract\n\n## Document\n",
+      fields: { Document: { type: "asset_reference", required: true } },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    const fileInput = await screen.findByLabelText("Choose file");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(createMock).not.toHaveBeenCalled();
+    expect(fileInput).toHaveAttribute("aria-invalid", "true");
+    expect(fileInput).toHaveAttribute(
+      "aria-describedby",
+      "entry-field-0-document-required",
+    );
+    expect(document.activeElement).toBe(fileInput);
+  });
+
   it("does not require deprecated fields when creating an entry", async () => {
     const createMock = entryApi.create as ReturnType<typeof vi.fn>;
     createMock.mockResolvedValue({
@@ -222,8 +419,7 @@ describe("EntryDetailPane", () => {
 
     await waitFor(() => expect(entryApi.create).toHaveBeenCalled());
     expect(entryApi.create).toHaveBeenCalledWith("default", {
-      markdown:
-        "---\nform: Meeting\n---\n\n# Meeting\n\n## Date\n2026-08-03\n",
+      markdown: "---\nform: Meeting\n---\n\n# Meeting\n\n## Date\n2026-08-03\n",
     });
   });
 
@@ -258,7 +454,9 @@ describe("EntryDetailPane", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText((content) => content.includes("Form validation failed")),
+        screen.getByText((content) =>
+          content.includes("Form validation failed")
+        ),
       ).toBeInTheDocument();
     });
     expect(amount).toHaveValue("not-a-number");
@@ -325,6 +523,70 @@ describe("EntryDetailPane", () => {
       id: "contract-entry",
       revision_id: "contract-revision",
     });
+  });
+
+  it("rechecks required fields after async asset validation", async () => {
+    const uploaded = {
+      asset_id: "01900000-0000-7000-8000-000000000002",
+      name: "contract.pdf",
+      media_type: "application/pdf",
+      size_bytes: 123456,
+      sha256: "a".repeat(64),
+    };
+    let resolveValidation: ((reference: typeof uploaded) => void) | undefined;
+    const validateMock = vi.spyOn(assetReference, "validateAssetReference");
+    validateMock.mockImplementation(
+      () =>
+        new Promise<typeof uploaded>((resolve) => {
+          resolveValidation = resolve;
+        }),
+    );
+    const assetUpload = (await import("~/lib/ugoite-client")).assetApi
+      .upload as ReturnType<typeof vi.fn>;
+    assetUpload.mockResolvedValue(uploaded);
+    const createMock = entryApi.create as ReturnType<typeof vi.fn>;
+    createMock.mockResolvedValue({
+      id: "contract-entry",
+      revision_id: "contract-revision",
+    });
+    const form: Form = {
+      name: "Contract",
+      version: 1,
+      template: "# Contract\n\n## Status\nReady\n\n## Document\n",
+      fields: {
+        Status: { type: "string", required: true },
+        Document: { type: "asset_reference", required: true },
+      },
+    };
+
+    render(() => (
+      <EntryDetailPane
+        spaceId={() => "default"}
+        forms={() => [form]}
+        createForm={() => form}
+        onCreated={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    ));
+
+    fireEvent.change(await screen.findByLabelText("Choose file"), {
+      target: {
+        files: [new File(["pdf"], "contract.pdf", { type: "application/pdf" })],
+      },
+    });
+    await waitFor(() => expect(assetUpload).toHaveBeenCalledTimes(1));
+    await screen.findByText("Uploaded; entry not saved yet");
+
+    const status = screen.getByLabelText("Status");
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+    fireEvent.input(status, { target: { value: "" } });
+
+    await waitFor(() => expect(validateMock).toHaveBeenCalledTimes(1));
+    resolveValidation?.(uploaded);
+    await waitFor(() => expect(createMock).not.toHaveBeenCalled());
+    expect(status).toHaveAttribute("aria-invalid", "true");
+    validateMock.mockRestore();
   });
 
   it("saves from Preview when an upload completes after the Fields view unmounts", async () => {
