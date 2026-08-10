@@ -13,10 +13,11 @@ components:
   body:
     - id: asset-reference-list
       type: grid-list
-      description: Groups current Form-owned AssetReference values by asset ID and links each occurrence back to its Entry.
+      description: Groups current Form-owned AssetReference values by asset ID and links each occurrence back to its Entry. It reads entry.list in bounded pages until the complete current inventory is available.
       source: entry.list
       states:
         - loading
+        - complete
         - error-with-retry
         - empty
         - referenced-asset

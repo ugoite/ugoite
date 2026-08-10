@@ -446,6 +446,9 @@ pub fn prepare_request(
                 if let Some(limit) = optional_u64(operation, args, "limit")? {
                     query.push(("limit".into(), limit.to_string()));
                 }
+                if let Some(offset) = optional_u64(operation, args, "offset")? {
+                    query.push(("offset".into(), offset.to_string()));
+                }
                 (
                     OperationSpec::get("Failed to list entries"),
                     vec![
@@ -1428,6 +1431,18 @@ mod tests {
         .expect("request");
 
         assert_eq!(request.path, "/spaces/demo/entries?limit=10000");
+    }
+
+    #[test]
+    fn entry_list_encodes_an_optional_offset_for_paging() {
+        let request = prepare_request(
+            "entry.list",
+            &json!({"space_id": "demo", "limit": 1000, "offset": 2000}),
+            None,
+        )
+        .expect("request");
+
+        assert_eq!(request.path, "/spaces/demo/entries?limit=1000&offset=2000");
     }
 
     #[test]
