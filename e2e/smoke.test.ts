@@ -15,9 +15,12 @@ import {
 } from "./lib/client.ts";
 
 test.describe("Smoke Tests", () => {
+  let spaceId = "";
+
   test.beforeAll(async ({ request }) => {
     await waitForServers(request);
-    await ensureDefaultForm(request);
+    spaceId = await getDefaultSpaceId(request);
+    await ensureDefaultForm(request, spaceId);
   });
 
   test("GET / returns HTML with DOCTYPE", async ({ page }) => {
@@ -42,7 +45,6 @@ test.describe("Smoke Tests", () => {
   });
 
   test("GET /spaces/:space_id/entries/:id returns HTML", async ({ page, request }) => {
-    const spaceId = await getDefaultSpaceId(request);
     const createRes = await request.post(
       getBackendUrl(`/spaces/${spaceId}/entries`),
       {
@@ -78,7 +80,6 @@ test.describe("Smoke Tests", () => {
   });
 
   test("plain Entries list is integrated into the Forms workspace", async ({ page, request }) => {
-    const spaceId = await getDefaultSpaceId(request);
     await page.goto(`/spaces/${spaceId}/entries`);
     await expect(page).toHaveURL(`/spaces/${spaceId}/forms?form=Entry`);
     await expect(page.getByRole("tab")).toHaveCount(0);
@@ -118,15 +119,14 @@ test.describe("Smoke Tests", () => {
     expect(Array.isArray(json)).toBe(true);
   });
 
-  test("GET /spaces includes default space", async ({ request }) => {
+  test("GET /spaces includes the resolved fixture Space", async ({ request }) => {
     const res = await request.get(getBackendUrl("/spaces"));
-    const spaces = (await res.json()) as Array<{ name: string }>;
-    const defaultWs = spaces.find((ws) => ws.name === "default");
-    expect(defaultWs).toBeDefined();
+    const spaces = (await res.json()) as Array<{ id: string; name: string }>;
+    expect(spaces.some((space) => space.id === spaceId && space.name === "default"))
+      .toBe(true);
   });
 
   test("GET /spaces/:space_id/entries returns list", async ({ request }) => {
-    const spaceId = await getDefaultSpaceId(request);
     const res = await request.get(getBackendUrl(`/spaces/${spaceId}/entries`));
     expect(res.ok()).toBeTruthy();
 

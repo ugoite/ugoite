@@ -3,15 +3,17 @@ import {
 	ensureDefaultForm,
 	getBackendUrl,
 	getDefaultFormRelation,
+	getDefaultSpaceId,
 	getFrontendUrl,
 	waitForServers,
 } from "./lib/client.ts";
 
-const spaceId = "default";
-
 test.describe("Saved SQL route", () => {
+	let spaceId = "";
+
 	test.beforeAll(async ({ request }) => {
 		await waitForServers(request);
+		spaceId = await getDefaultSpaceId(request);
 	});
 
 	test("REQ-FE-061: saved SQL route provides recovery links instead of a dead end", async ({
@@ -42,8 +44,8 @@ test.describe("Saved SQL route", () => {
 		page,
 		request,
 	}) => {
-		await ensureDefaultForm(request);
-		const relation = await getDefaultFormRelation(request);
+		await ensureDefaultForm(request, spaceId);
+		const relation = await getDefaultFormRelation(request, spaceId);
 		const sqlCreate = await request.post(getBackendUrl(`/spaces/${spaceId}/sql`), {
 			data: {
 				name: `Saved Detail Query ${Date.now()}`,

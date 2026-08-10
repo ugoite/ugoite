@@ -1,13 +1,16 @@
 import { expect, test } from "@playwright/test";
-import { getFrontendUrl, waitForServers } from "./lib/client.ts";
+import { getDefaultSpaceId, getFrontendUrl, waitForServers } from "./lib/client.ts";
 
 test.describe("Space settings storage guidance", () => {
+	let spaceId = "";
+
   test.beforeAll(async ({ request }) => {
     await waitForServers(request);
+		spaceId = await getDefaultSpaceId(request);
   });
 
   test("REQ-FE-017: storage settings explain that configuration does not move the current Space", async ({ page }) => {
-    await page.goto(getFrontendUrl("/spaces/default/settings"), {
+    await page.goto(getFrontendUrl(`/spaces/${spaceId}/settings`), {
       waitUntil: "networkidle",
     });
 

@@ -66,8 +66,8 @@ export async function waitForServers(
 
 export async function ensureDefaultForm(
 	request: APIRequestContext,
+	spaceId: string,
 ): Promise<void> {
-	const spaceId = await getDefaultSpaceId(request);
 	const response = await request.post(getBackendUrl(`/spaces/${spaceId}/forms`), {
 		data: {
 			name: "Entry",
@@ -84,11 +84,10 @@ export async function ensureDefaultForm(
 
 export async function getDefaultFormRelation(
 	request: APIRequestContext,
-	spaceId?: string,
+	spaceId: string,
 ): Promise<string> {
-	const resolvedSpaceId = spaceId ?? await getDefaultSpaceId(request);
 	const response = await request.get(
-		getBackendUrl(`/spaces/${resolvedSpaceId}/forms`),
+		getBackendUrl(`/spaces/${spaceId}/forms`),
 	);
 	if (!response.ok()) {
 		throw new Error(`Failed to list default Forms: ${response.status()}`);
@@ -105,11 +104,13 @@ export async function getDefaultFormRelation(
 export async function getDefaultSpaceId(
 	request: APIRequestContext,
 ): Promise<string> {
+	// The display name/slug are only fixture-discovery keys. All callers must use
+	// the returned immutable ID for subsequent routes and API requests.
 	const response = await request.get(getBackendUrl("/spaces"));
 	if (!response.ok()) throw new Error(`Failed to list Spaces: ${response.status()}`);
 	const spaces = await response.json() as Array<{ id: string; slug?: string; name: string }>;
 	const space = spaces.find((candidate) =>
-		candidate.slug === "default" || candidate.name === "default"
+		candidate.name === "default" || candidate.slug === "default"
 	);
 	if (!space) throw new Error("Default Space was not created during setup");
 	return space.id;
