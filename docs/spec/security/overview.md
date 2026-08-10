@@ -38,3 +38,26 @@ invariants are:
 `UGOITE_PUBLIC_ORIGIN` must be HTTPS except on loopback. The WebAuthn RP ID must
 be a registrable suffix of that origin host and must be configured before
 credential registration.
+
+## HTTP response security policy
+
+`ugoite-server` adds the following headers to every response, including static
+browser responses, metadata, API success and error responses, CORS preflight
+responses, and middleware-generated responses:
+
+- `Content-Security-Policy` restricts scripts and connections to the same
+  origin, disallows framing and plugins, permits the static browser's
+  same-origin WebAssembly and external manifest boot script, and permits
+  `blob:` previews for user-selected assets. The script policy has no
+  `unsafe-inline`; the limited CSS inline-style exception supports the
+  existing interactive layout.
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+
+`Strict-Transport-Security: max-age=31536000; includeSubDomains` is added only
+when `UGOITE_PUBLIC_ORIGIN` is HTTPS on a non-loopback host. HTTP origins and
+localhost, IPv4-loopback, and IPv6-loopback HTTPS origins intentionally do not
+receive HSTS, so local development does not create browser state that assumes
+TLS.

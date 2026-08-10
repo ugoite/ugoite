@@ -102,7 +102,10 @@ sources = [
   "shared/**/*",
   "scripts/activate-ugoite-wasm.sh",
 ]
-outputs = ["frontend/.output/public/index.html"]
+outputs = [
+  "frontend/.output/public/index.html",
+  "frontend/.output/public/_build/ugoite-manifest.js",
+]
 run = [
   "bash scripts/activate-ugoite-wasm.sh release",
   "UGOITE_STATIC_SPA=true deno task frontend:build",

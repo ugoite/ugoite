@@ -1,3 +1,5 @@
+import { dirname, join } from "node:path";
+
 const [manifestPath, outputPath] = Deno.args;
 
 if (!manifestPath || !outputPath) {
@@ -44,6 +46,11 @@ const stylesheetLinks = (clientEntry.css ?? [])
   .map((file) => `\t\t<link rel="stylesheet" href="${toBuildPath(file)}">`)
   .join("\n");
 const manifestScript = JSON.stringify(inputs);
+const manifestScriptPath = join(
+  dirname(outputPath),
+  "_build",
+  "ugoite-manifest.js",
+);
 
 const html = `<!doctype html>
 <html lang="en">
@@ -54,7 +61,7 @@ const html = `<!doctype html>
 		<link rel="icon" href="/favicon.ico">
 ${preloadLinks}
 ${stylesheetLinks}
-		<script>window.manifest = ${manifestScript};</script>
+		<script src="/_build/ugoite-manifest.js"></script>
 	</head>
 	<body>
 		<div id="app"></div>
@@ -63,4 +70,9 @@ ${stylesheetLinks}
 </html>
 `;
 
+await Deno.mkdir(dirname(manifestScriptPath), { recursive: true });
+await Deno.writeTextFile(
+  manifestScriptPath,
+  `window.manifest = ${manifestScript};\n`,
+);
 await Deno.writeTextFile(outputPath, html);
