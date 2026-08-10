@@ -3,17 +3,19 @@ import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { SqlQueryEditor } from "~/components";
 import { formatDateLabel } from "~/lib/date-format";
 import { buildSqlSchema } from "~/lib/sql";
-import { sqlApi } from "~/lib/ugoite-client";
+import { formApi, sqlApi } from "~/lib/ugoite-client";
 import { sqlSessionApi } from "~/lib/ugoite-client";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { displaySqlName } from "~/lib/sql-metadata";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { spaceRoute } from "~/lib/space-shell-route";
+import type { Form } from "~/lib/types";
 
-export const route = spaceRoute({ navigation: "search", title: "savedSqlDetail" });
-
-const READ_ONLY_SQL_SCHEMA = buildSqlSchema([]);
+export const route = spaceRoute({
+  navigation: "search",
+  title: "savedSqlDetail",
+});
 
 export default function SpaceSqlDetailRoute() {
   const params = useParams<{ space_id: string; sql_id: string }>();
@@ -24,6 +26,7 @@ export default function SpaceSqlDetailRoute() {
   const [running, setRunning] = createSignal(false);
 
   const [entry] = createResource(async () => sqlApi.get(spaceId(), sqlId()));
+  const [forms] = createResource(async () => formApi.list(spaceId()));
   const variableCount = createMemo(() => entry()?.variables.length ?? 0);
   const queryVariablesHref = () =>
     `/spaces/${spaceId()}/queries/${encodeURIComponent(sqlId())}/variables`;
@@ -132,7 +135,7 @@ export default function SpaceSqlDetailRoute() {
                   <SqlQueryEditor
                     value={data().sql}
                     onChange={() => undefined}
-                    schema={READ_ONLY_SQL_SCHEMA}
+                    schema={buildSqlSchema((forms() || []) as Form[])}
                     disabled
                   />
                 </div>

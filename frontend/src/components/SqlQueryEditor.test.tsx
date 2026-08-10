@@ -15,6 +15,17 @@ vi.mock("@codemirror/lint", () => ({
 
 vi.mock("@codemirror/lang-sql", () => ({
   sql: (config: unknown) => ({ type: "sql", config }),
+  StandardSQL: {
+    language: {
+      parser: {
+        parse: () => ({
+          cursor: () => ({
+            firstChild: () => false,
+          }),
+        }),
+      },
+    },
+  },
 }));
 
 vi.mock("@codemirror/state", () => {
