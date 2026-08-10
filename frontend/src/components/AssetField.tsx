@@ -29,6 +29,8 @@ export interface AssetFieldProps {
   readOnly?: boolean;
   generation?: number;
   state?: AssetFieldState;
+  invalid?: boolean;
+  describedBy?: string;
   onChange: (value: string) => void;
 }
 
@@ -428,6 +430,8 @@ export function AssetField(props: AssetFieldProps) {
             class="ui-sr-only"
             multiple={props.multiple}
             aria-label={t("assetField.action.choose")}
+            aria-invalid={props.invalid ? "true" : undefined}
+            aria-describedby={props.invalid ? props.describedBy : undefined}
             onChange={(event) => {
               const input = event.currentTarget;
               chooseFiles(Array.from(input.files ?? []));

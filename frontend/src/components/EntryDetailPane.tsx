@@ -116,6 +116,38 @@ function normalizeFieldName(fieldName: string) {
   return fieldName.trim().toLowerCase();
 }
 
+function isMissingRequiredValue(fieldDef: FormField, content: string) {
+  const value = content.trim();
+  if (!value) return true;
+
+  if (fieldDef.type === "object_list") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) && parsed.length === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  if (fieldDef.type === "list" && !isAssetReferenceListField(fieldDef)) {
+    const hasValue = value.split(/\r?\n/).some((line) => {
+      const item = line.trim().replace(
+        /^(?:[-*+](?:\s+\[[ xX]\])?\s*)/,
+        "",
+      );
+      return item.length > 0;
+    });
+    return !hasValue;
+  }
+
+  if (isAssetReferenceListField(fieldDef)) {
+    const references = parseAssetReferenceList(value);
+    return references !== null && references.length === 0;
+  }
+
+  return false;
+}
+
 function markdownWithoutAssetSections(
   markdown: string,
   assetFieldNames: Set<string>,
@@ -164,14 +196,7 @@ function buildEditorGuidance(form: Form | null, markdown: string) {
     .filter(([fieldName, fieldDef]) => {
       if (!isActiveRequiredField(fieldDef)) return false;
       const section = sectionMap.get(normalizeFieldName(fieldName));
-      if (!section || !section.content.trim()) return true;
-      if (fieldDef.type === "asset_reference") {
-        return false;
-      }
-      if (isAssetReferenceListField(fieldDef)) {
-        return false;
-      }
-      return false;
+      return isMissingRequiredValue(fieldDef, section?.content ?? "");
     })
     .map(([fieldName]) => fieldName);
 
@@ -269,6 +294,8 @@ function EntryRowReferenceField(props: {
   fieldId: string;
   targetForm: string;
   value: string;
+  invalid?: boolean;
+  describedBy?: string;
   onChange: (value: string) => void;
 }) {
   const [query, setQuery] = createSignal(props.value);
@@ -350,6 +377,8 @@ function EntryRowReferenceField(props: {
         type="search"
         class="ui-input"
         value={query()}
+        aria-invalid={props.invalid ? "true" : undefined}
+        aria-describedby={props.describedBy}
         placeholder={t("createDialog.entry.rowReference.searchPlaceholder", {
           form: props.targetForm,
         })}
@@ -558,6 +587,32 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
   const editorGuidance = createMemo(() =>
     buildEditorGuidance(currentForm(), editorContent())
   );
+
+  const requiredFieldErrorId = (fieldId: string) => `${fieldId}-required`;
+
+  const focusFirstMissingRequiredField = () => {
+    if (typeof document === "undefined") return;
+    const wasFieldsView = viewMode() === "fields";
+    setViewMode("fields");
+    const focus = () => {
+      document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    };
+    if (wasFieldsView) focus();
+    else queueMicrotask(focus);
+  };
+
+  const showMissingRequiredValidation = (missingRequired: string[]) => {
+    if (missingRequired.length === 0) return false;
+    setConflictMessage(null);
+    setValidationError({
+      title: t("entryDetail.validation.requiredTitle"),
+      items: missingRequired.map((fieldName) =>
+        `${fieldName}: ${t("entryDetail.requiredMessage")}`
+      ),
+    });
+    focusFirstMissingRequiredField();
+    return true;
+  };
 
   const fieldValue = (fieldName: string) =>
     parsedSections().get(normalizeFieldName(fieldName)) ?? "";
@@ -788,6 +843,10 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     }
     /* v8 ignore stop */
 
+    if (showMissingRequiredValidation(editorGuidance().missingRequired)) {
+      return;
+    }
+
     // Lock before the async Rust/WASM validation. Two rapid Save actions
     // must still produce one Entry revision request.
     setIsSaving(true);
@@ -798,6 +857,13 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         title: t("entryDetail.validation.title"),
         items: assetIssues,
       });
+      return;
+    }
+
+    // Asset validation yields to the event loop, so the draft may have
+    // changed while it was running. Never submit a newly invalid draft.
+    if (showMissingRequiredValidation(editorGuidance().missingRequired)) {
+      setIsSaving(false);
       return;
     }
 
@@ -879,6 +945,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
     fieldName: string,
     fieldDef: FormField,
     fieldId: string,
+    invalid: () => boolean,
+    describedBy: string,
   ) => {
     const value = () => fieldValue(fieldName);
 
@@ -889,6 +957,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           fieldId={fieldId}
           targetForm={fieldDef.target_form.trim()}
           value={value()}
+          invalid={invalid()}
+          describedBy={invalid() ? describedBy : undefined}
           onChange={(nextValue) => handleFieldChange(fieldName, nextValue)}
         />
       );
@@ -909,6 +979,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
             fieldName,
             isAssetReferenceListField(fieldDef),
           )}
+          invalid={invalid()}
+          describedBy={invalid() ? describedBy : undefined}
           formName={entry()?.form ?? currentForm()?.name}
           entryId={isCreateMode() ? undefined : entry()?.id}
           generation={assetEditorGeneration()}
@@ -927,6 +999,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
           id={fieldId}
           class="ui-input ui-textarea"
           value={value()}
+          aria-invalid={invalid() ? "true" : undefined}
+          aria-describedby={invalid() ? describedBy : undefined}
           placeholder={fieldDef.type === "list"
             ? t("entryDetail.listPlaceholder")
             : t("entryDetail.fieldPlaceholder")}
@@ -943,6 +1017,8 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
         type={resolveInputType(fieldDef)}
         inputmode={resolveInputMode(fieldDef)}
         value={value()}
+        aria-invalid={invalid() ? "true" : undefined}
+        aria-describedby={invalid() ? describedBy : undefined}
         placeholder={t("entryDetail.fieldPlaceholder")}
         onInput={(event) =>
           handleFieldChange(fieldName, event.currentTarget.value)}
@@ -1073,7 +1149,11 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
 
             <Show when={validationError()}>
               {(error) => (
-                <div class="ui-alert ui-alert-warning text-sm">
+                <div
+                  id="entry-detail-validation"
+                  class="ui-alert ui-alert-warning text-sm"
+                  role="alert"
+                >
                   <p class="font-semibold">{error().title}</p>
                   <ul class="mt-2 list-disc pl-5 space-y-1">
                     <For each={error().items}>{(item) => <li>{item}</li>}</For>
@@ -1235,9 +1315,15 @@ export function EntryDetailPane(props: EntryDetailPaneProps) {
                                     fieldName,
                                     fieldDef,
                                     fieldId,
+                                    isMissing,
+                                    requiredFieldErrorId(fieldId),
                                   )}
                                   <Show when={isMissing()}>
-                                    <p class="text-xs ui-text-danger">
+                                    <p
+                                      id={requiredFieldErrorId(fieldId)}
+                                      class="text-xs ui-text-danger"
+                                      role="alert"
+                                    >
                                       {t("entryDetail.requiredMessage")}
                                     </p>
                                   </Show>
