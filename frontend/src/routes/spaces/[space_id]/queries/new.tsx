@@ -1,11 +1,16 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import type { Diagnostic } from "@codemirror/lint";
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { SqlQueryEditor } from "~/components";
 import { formApi } from "~/lib/ugoite-client";
-import { buildSqlSchema } from "~/lib/sql";
+import {
+  buildSqlSchema,
+  buildSqlStarterQuery,
+  normalizeSqlVariables,
+} from "~/lib/sql";
 import { sqlApi } from "~/lib/ugoite-client";
-import type { Form, SqlVariable } from "~/lib/types";
+import { filterCreatableEntryForms } from "~/lib/metadata-forms";
+import type { Form } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { t } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
@@ -13,37 +18,27 @@ import { spaceRoute } from "~/lib/space-shell-route";
 
 export const route = spaceRoute({ navigation: "search", title: "sqlNew" });
 
-const VARIABLE_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
-
-function extractVariables(sql: string): SqlVariable[] {
-  const names = new Set<string>();
-  VARIABLE_REGEX.lastIndex = 0;
-  let match = VARIABLE_REGEX.exec(sql);
-  while (match !== null) {
-    names.add(match[1]);
-    match = VARIABLE_REGEX.exec(sql);
-  }
-  return Array.from(names).map((name) => ({
-    type: "string",
-    name,
-    description: "",
-  }));
-}
-
 export default function SpaceQueryCreateRoute() {
   const params = useParams<{ space_id: string }>();
   const navigate = useNavigate();
   const spaceId = () => params.space_id;
   const [queryName, setQueryName] = createSignal("");
-  const [sqlInput, setSqlInput] = createSignal(
-    "SELECT * FROM entries LIMIT 50",
-  );
+  const [sqlInput, setSqlInput] = createSignal("");
+  const [hasUserEditedSql, setHasUserEditedSql] = createSignal(false);
   const [diagnostics, setDiagnostics] = createSignal<Diagnostic[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [isSaving, setIsSaving] = createSignal(false);
 
   const [forms] = createResource(async () => {
     return await formApi.list(spaceId());
+  });
+
+  createEffect(() => {
+    if (hasUserEditedSql()) return;
+    const relation = filterCreatableEntryForms(forms() ?? [])
+      .find((form) => form.sql_relation?.trim())
+      ?.sql_relation?.trim();
+    if (relation) setSqlInput(buildSqlStarterQuery(relation));
   });
 
   const schema = () => buildSqlSchema((forms() || []) as Form[]);
@@ -56,6 +51,7 @@ export default function SpaceQueryCreateRoute() {
       setError(t("sqlPage.sqlRequired"));
       return;
     }
+    const normalized = normalizeSqlVariables(sql);
 
     setIsSaving(true);
     try {
@@ -63,8 +59,8 @@ export default function SpaceQueryCreateRoute() {
         name: name || null,
         kind: "user-query",
         metadata: name ? undefined : { generatedName: "untitled" },
-        sql,
-        variables: extractVariables(sql),
+        sql: normalized.sql,
+        variables: normalized.variables,
       });
       navigate(`/spaces/${spaceId()}/search`);
     } catch (err) {
@@ -101,7 +97,10 @@ export default function SpaceQueryCreateRoute() {
           <SqlQueryEditor
             id="query-sql"
             value={sqlInput()}
-            onChange={setSqlInput}
+            onChange={(value) => {
+              setHasUserEditedSql(true);
+              setSqlInput(value);
+            }}
             schema={schema()}
             onDiagnostics={setDiagnostics}
             disabled={isSaving()}

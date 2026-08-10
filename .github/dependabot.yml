@@ -22,21 +22,17 @@ updates:
     groups:
       rust-arrow-stack:
         patterns:
-          - "arrow-*"
+          - "arrow*"
           - "parquet"
           - "iceberg*"
-          - "datafusion"
-          - "opendal"
+          - "datafusion*"
+          - "opendal*"
     ignore:
-      - dependency-name: "arrow-array"
-        update-types:
-          - "version-update:semver-major"
-          - "version-update:semver-minor"
-      - dependency-name: "arrow-json"
-        update-types:
-          - "version-update:semver-major"
-          - "version-update:semver-minor"
-      - dependency-name: "arrow-schema"
+      # Arrow/Iceberg's Cargo crates share concrete Arrow types, so a
+      # major/minor update of any member must be reviewed as one stack.
+      # Keep those updates suppressed until a compatible upstream stack can
+      # be upgraded and validated together; patch updates remain grouped.
+      - dependency-name: "arrow*"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
@@ -44,26 +40,15 @@ updates:
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
-      - dependency-name: "iceberg"
+      - dependency-name: "iceberg*"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
-      - dependency-name: "iceberg-datafusion"
+      - dependency-name: "datafusion*"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
-      - dependency-name: "iceberg-storage-opendal"
-        update-types:
-          - "version-update:semver-major"
-          - "version-update:semver-minor"
-      # The current official Iceberg Rust 0.10.x set selects DataFusion 53.x
-      # and OpenDAL 0.57.x. Review a new official stack as one compatible
-      # update instead of allowing a grouped update to split this graph.
-      - dependency-name: "datafusion"
-        update-types:
-          - "version-update:semver-major"
-          - "version-update:semver-minor"
-      - dependency-name: "opendal"
+      - dependency-name: "opendal*"
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"

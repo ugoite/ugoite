@@ -4,64 +4,64 @@ const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 const backendUrl = process.env.BACKEND_URL ?? "http://localhost:8000";
 
 export function getFrontendUrl(path: string): string {
-	return new URL(path, frontendUrl).toString();
+  return new URL(path, frontendUrl).toString();
 }
 
 export function getBackendUrl(path: string): string {
-	return new URL(`/api${path}`, frontendUrl).toString();
+  return new URL(`/api${path}`, frontendUrl).toString();
 }
 
 function getDirectBackendUrl(path: string): string {
-	return new URL(path, backendUrl).toString();
+  return new URL(path, backendUrl).toString();
 }
 
 async function waitForOk(
-	request: APIRequestContext,
-	url: string,
-	timeoutMs: number,
+  request: APIRequestContext,
+  url: string,
+  timeoutMs: number,
 ): Promise<void> {
-	const start = Date.now();
-	while (Date.now() - start < timeoutMs) {
-		try {
-			const response = await request.get(url);
-			if (response.ok()) {
-				return;
-			}
-		} catch {
-			// Ignore transient errors while waiting.
-		}
-		await new Promise((resolve) => setTimeout(resolve, 500));
-	}
-	throw new Error(`Timed out waiting for ${url}`);
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const response = await request.get(url);
+      if (response.ok()) {
+        return;
+      }
+    } catch {
+      // Ignore transient errors while waiting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Timed out waiting for ${url}`);
 }
 
 async function waitForReachable(
-	request: APIRequestContext,
-	url: string,
-	timeoutMs: number,
+  request: APIRequestContext,
+  url: string,
+  timeoutMs: number,
 ): Promise<void> {
-	const start = Date.now();
-	while (Date.now() - start < timeoutMs) {
-		try {
-			const response = await request.get(url);
-			if (response.status() < 500) {
-				return;
-			}
-		} catch {
-			// Ignore transient errors while waiting.
-		}
-		await new Promise((resolve) => setTimeout(resolve, 500));
-	}
-	throw new Error(`Timed out waiting for ${url}`);
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const response = await request.get(url);
+      if (response.status() < 500) {
+        return;
+      }
+    } catch {
+      // Ignore transient errors while waiting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Timed out waiting for ${url}`);
 }
 
 export async function waitForServers(
-	request: APIRequestContext,
-	options: { timeoutMs?: number } = {},
+  request: APIRequestContext,
+  options: { timeoutMs?: number } = {},
 ): Promise<void> {
-	const timeoutMs = options.timeoutMs ?? 60_000;
-	await waitForReachable(request, getDirectBackendUrl("/spaces"), timeoutMs);
-	await waitForOk(request, getFrontendUrl("/"), timeoutMs);
+  const timeoutMs = options.timeoutMs ?? 60_000;
+  await waitForReachable(request, getDirectBackendUrl("/spaces"), timeoutMs);
+  await waitForOk(request, getFrontendUrl("/"), timeoutMs);
 }
 
 export async function ensureDefaultForm(
@@ -102,7 +102,7 @@ export async function getDefaultFormRelation(
 }
 
 export async function getDefaultSpaceId(
-	request: APIRequestContext,
+  request: APIRequestContext,
 ): Promise<string> {
 	// The display name/slug are only fixture-discovery keys. All callers must use
 	// the returned immutable ID for subsequent routes and API requests.
