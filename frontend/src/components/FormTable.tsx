@@ -342,7 +342,7 @@ export function FormTable(props: FormTableProps) {
       content = ensureFormFrontmatter(content, props.entryForm.name);
 
       await entryApi.create(props.spaceId, {
-        content,
+        markdown: content,
       });
       refetch();
     } catch (err) {
