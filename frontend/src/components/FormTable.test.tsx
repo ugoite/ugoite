@@ -18,7 +18,12 @@ describe("FormTable", () => {
       .mockResolvedValue([] as any);
 
     const { getByRole, getByText, queryByRole } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() =>
@@ -50,7 +55,12 @@ describe("FormTable", () => {
     const spy = vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
 
     render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => {
@@ -86,7 +96,12 @@ describe("FormTable", () => {
 
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
     const { getByText } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => expect(getByText("A Entry")).toBeInTheDocument());
@@ -136,7 +151,12 @@ describe("FormTable", () => {
 
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
     const { getByPlaceholderText, queryByText } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => expect(queryByText("Apple")).toBeInTheDocument());
@@ -184,7 +204,12 @@ describe("FormTable", () => {
     });
 
     const { getByText } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => expect(getByText("Export CSV")).toBeInTheDocument());
@@ -195,19 +220,23 @@ describe("FormTable", () => {
     expect(linkClickSpy).toHaveBeenCalled();
   });
 
-  it("REQ-FE-030: Add Row button creates a new entry", async () => {
+  it("REQ-FE-030: Add Row button opens the canonical entry editor", async () => {
     const entryForm = {
       name: "Test",
       fields: { col: { type: "string" } },
     } as any;
     const entries = [];
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
-    const createSpy = vi.spyOn(entryApi, "create").mockResolvedValue(
-      { id: "new-entry" } as any,
-    );
+    const onAddRow = vi.fn();
+    const createSpy = vi.spyOn(entryApi, "create");
 
     const { getByText, getByTitle } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={onAddRow}
+      />
     ));
 
     // Enable editing first
@@ -217,14 +246,8 @@ describe("FormTable", () => {
     const addButton = getByText("Add Row");
     fireEvent.click(addButton);
 
-    await waitFor(() => {
-      expect(createSpy).toHaveBeenCalledWith(
-        "ws",
-        expect.objectContaining({
-          content: expect.stringContaining("form: Test"),
-        }),
-      );
-    });
+    expect(onAddRow).toHaveBeenCalledTimes(1);
+    expect(createSpy).not.toHaveBeenCalled();
     createSpy.mockRestore();
   });
 
@@ -250,7 +273,12 @@ describe("FormTable", () => {
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
 
     const { getByText, getByTitle, getByDisplayValue } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     // Wait for render
@@ -303,6 +331,7 @@ describe("FormTable", () => {
         spaceId="ws"
         entryForm={entryForm}
         onEntryClick={onEntryClick}
+        onAddRow={() => {}}
       />
     ));
 
@@ -327,7 +356,12 @@ describe("FormTable", () => {
     vi.spyOn(searchApi, "query").mockResolvedValue([] as any);
 
     const { getByTitle, queryByTitle } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     // Initially Locked
@@ -365,7 +399,12 @@ describe("FormTable", () => {
     Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
     const { getByText } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => getByText("Entry1"));
@@ -392,7 +431,12 @@ describe("FormTable", () => {
     Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
     const { getByPlaceholderText } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     const searchInput = getByPlaceholderText("Global Search...");
@@ -426,7 +470,12 @@ describe("FormTable", () => {
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
 
     const { getByLabelText, getByText } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => getByText("A"));
@@ -468,7 +517,12 @@ describe("FormTable", () => {
     vi.spyOn(searchApi, "query").mockResolvedValue(entries as any);
 
     render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => expect(document.querySelector("tbody")).toBeTruthy());
@@ -505,7 +559,12 @@ describe("FormTable", () => {
     Object.assign(navigator, { clipboard: { writeText: writeTextSpy } });
 
     const { getByText } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => getByText("Entry1"));
@@ -549,7 +608,12 @@ describe("FormTable", () => {
     const updateSpy = vi.spyOn(entryApi, "update").mockResolvedValue({} as any);
 
     const { getByText, getByTitle } = render(() => (
-      <FormTable spaceId="ws" entryForm={entryForm} onEntryClick={() => {}} />
+      <FormTable
+        spaceId="ws"
+        entryForm={entryForm}
+        onEntryClick={() => {}}
+        onAddRow={() => {}}
+      />
     ));
 
     await waitFor(() => getByText("OldTitle"));

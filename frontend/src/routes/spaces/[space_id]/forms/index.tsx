@@ -174,6 +174,12 @@ export default function SpaceFormsIndexPane() {
                   <FormTable
                     spaceId={ctx.spaceId()}
                     entryForm={form()}
+                    onAddRow={() =>
+                      navigate(
+                        `/spaces/${ctx.spaceId()}/entries/new?form=${
+                          encodeURIComponent(form().name)
+                        }&returnTo=forms`,
+                      )}
                     onEntryClick={(id) =>
                       navigate(
                         `/spaces/${ctx.spaceId()}/entries/${

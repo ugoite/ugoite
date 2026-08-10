@@ -11,11 +11,7 @@ import type { EntryRecord, Form } from "~/lib/types";
 import { createResource } from "~/lib/recoverable-resource";
 import { entryApi } from "~/lib/ugoite-client";
 import { searchApi } from "~/lib/ugoite-client";
-import {
-  ensureFormFrontmatter,
-  replaceFirstH1,
-  updateH2Section,
-} from "~/lib/markdown";
+import { replaceFirstH1, updateH2Section } from "~/lib/markdown";
 import { t } from "~/lib/i18n";
 import { formatDateLabel } from "~/lib/date-format";
 
@@ -23,6 +19,7 @@ interface FormTableProps {
   spaceId: string;
   entryForm: Form;
   onEntryClick: (entryId: string) => void;
+  onAddRow: () => void;
 }
 
 type SortDirection = "asc" | "desc" | null;
@@ -335,29 +332,6 @@ export function FormTable(props: FormTableProps) {
     }
   };
 
-  const handleAddRow = async () => {
-    try {
-      let content = props.entryForm.template ||
-        `# New ${props.entryForm.name}\n`;
-      content = ensureFormFrontmatter(content, props.entryForm.name);
-
-      await entryApi.create(props.spaceId, {
-        content,
-      });
-      refetch();
-    } catch (err) {
-      /* v8 ignore start */
-      // biome-ignore lint/suspicious/noConsole: error logging
-      console.error(t("formTable.addRowFailed"), err);
-      alert(
-        `${t("formTable.addRowFailed")}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-      /* v8 ignore stop */
-    }
-  };
-
   const handleCellUpdate = async (
     entryId: string,
     field: string,
@@ -619,7 +593,7 @@ export function FormTable(props: FormTableProps) {
             <Show when={isEditMode()}>
               <button
                 type="button"
-                onClick={handleAddRow}
+                onClick={props.onAddRow}
                 class="ui-button ui-button-primary text-sm flex items-center gap-2"
               >
                 <svg
