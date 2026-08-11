@@ -1739,6 +1739,46 @@ impl NodeIdentityService {
         )
     }
 
+    /// Seed the minimal Node-local identity records needed by server
+    /// recovery coordinator tests. This intentionally creates no credential
+    /// material; the coordinator only needs active accounts and unique
+    /// account-to-Principal bindings to exercise the two-store fence saga.
+    #[doc(hidden)]
+    pub async fn seed_test_recovery_accounts(&self, accounts: &[(Uuid, Uuid, Uuid)]) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let now = timestamp(Utc::now());
+        state.lifecycle = NodeLifecycle::Active;
+        state.setup = None;
+        for (account_id, space_uid, principal_id) in accounts {
+            state.accounts.insert(
+                *account_id,
+                HumanAccount {
+                    account_id: *account_id,
+                    display_name: format!("Recovery test account {account_id}"),
+                    status: AccountStatus::Active,
+                    created_at: now.clone(),
+                    node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                    credential_generation: 0,
+                },
+            );
+            state
+                .account_lifecycle_epochs
+                .entry(*account_id)
+                .or_insert(0);
+            let binding = PrincipalBinding {
+                space_uid: *space_uid,
+                principal_id: *principal_id,
+                node_account_id: *account_id,
+                binding_method: BindingMethod::Setup,
+            };
+            if !state.bindings.contains(&binding) {
+                state.bindings.push(binding);
+            }
+        }
+        self.write_state(&state).await
+    }
+
     fn from_parts(
         state_store: Arc<dyn NodeControlStore>,
         secret_key: Arc<[u8]>,

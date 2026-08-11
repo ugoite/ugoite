@@ -44,8 +44,8 @@ use ugoite_iceberg::{
 };
 use ugoite_identity::{
     node_identity::{
-        AccountInvitation, NodeAuditInput, NodeIdentityService, OwnerRecoveryContext,
-        RecoveryBindingSnapshot, TotpEnrollmentFinishError,
+        AccountInvitation, NodeAuditInput, NodeIdentityService, OwnerRecoveryApproval,
+        OwnerRecoveryContext, RecoveryBindingSnapshot, TotpEnrollmentFinishError,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
@@ -1697,6 +1697,42 @@ async fn recovery_account_generations(
     Ok((issuer_generation, target_generation))
 }
 
+fn owner_recovery_replay_error(
+    existing: &OwnerRecoveryApproval,
+    space_uid: Uuid,
+    principal_id: Uuid,
+    account_id: Uuid,
+    issuer_principal_id: Uuid,
+    issuer_account_id: Uuid,
+    issuer_credential_id: Uuid,
+    issuer_generation: u64,
+    target_generation: u64,
+    issuer_space_lifecycle_epoch: u64,
+    target_space_lifecycle_epoch: u64,
+    issuer_node_lifecycle_epoch: u64,
+    target_node_lifecycle_epoch: u64,
+) -> Option<&'static str> {
+    let key_matches = existing.space_uid == space_uid
+        && existing.principal_id == principal_id
+        && existing.account_id == account_id
+        && existing.issuer_principal_id == issuer_principal_id
+        && existing.issuer_account_id == issuer_account_id
+        && existing.issuer_credential_id == Some(issuer_credential_id)
+        && existing.issuer_generation == issuer_generation
+        && existing.target_generation == target_generation
+        && existing.issuer_space_lifecycle_epoch == issuer_space_lifecycle_epoch
+        && existing.target_space_lifecycle_epoch == target_space_lifecycle_epoch
+        && existing.issuer_node_lifecycle_epoch == issuer_node_lifecycle_epoch
+        && existing.target_node_lifecycle_epoch == target_node_lifecycle_epoch;
+    if !key_matches {
+        return Some("OWNER_APPROVAL_KEY_MISMATCH");
+    }
+    if existing.invalidated_at.is_some() || existing.used_at.is_some() {
+        return Some("OWNER_APPROVAL_ALREADY_COMMITTED");
+    }
+    None
+}
+
 /// Acquire the Node half before publishing the Space fence. This closes the
 /// cross-store interval in which an invitation or credential mutation could
 /// commit after the Space barrier was visible but before Node had recorded its
@@ -2352,10 +2388,61 @@ async fn owner_force_reset(
         .await
         .map_err(recovery_commit_error)?
     {
-        if existing.invalidated_at.is_some() || existing.used_at.is_some() {
+        // Idempotency keys are bound to the complete immutable recovery tuple,
+        // including the current lifecycle/generation snapshot. Check that
+        // binding before terminal-state handling so a different request can
+        // never learn whether the original approval was used or invalidated.
+        let authorization = Authorizer::new(state.service.operator().clone())
+            .state(&space_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        let (issuer_generation, target_generation) =
+            recovery_account_generations(&state, identity.account_id, account_id).await?;
+        let issuer_space_epoch = authorization
+            .principal_lifecycle_epochs
+            .get(&issuer_principal_id)
+            .copied()
+            .unwrap_or_default();
+        let target_space_epoch = authorization
+            .principal_lifecycle_epochs
+            .get(&payload.principal_id)
+            .copied()
+            .unwrap_or_default();
+        let issuer_node_epoch = state
+            .identity
+            .recovery_account_lifecycle_epoch(identity.account_id)
+            .await
+            .map_err(recovery_commit_error)?;
+        let target_node_epoch = state
+            .identity
+            .recovery_account_lifecycle_epoch(account_id)
+            .await
+            .map_err(recovery_commit_error)?;
+        if let Some(code) = owner_recovery_replay_error(
+            &existing,
+            space_uid,
+            payload.principal_id,
+            account_id,
+            issuer_principal_id,
+            identity.account_id,
+            identity.request_identity.credential_id,
+            issuer_generation,
+            target_generation,
+            issuer_space_epoch,
+            target_space_epoch,
+            issuer_node_epoch,
+            target_node_epoch,
+        ) {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
-                json!({"code":"OWNER_APPROVAL_ALREADY_COMMITTED","message":"owner recovery approval is already committed"}),
+                json!({
+                    "code": code,
+                    "message": if code == "OWNER_APPROVAL_KEY_MISMATCH" {
+                        "idempotency key is bound to another recovery tuple"
+                    } else {
+                        "owner recovery approval is already committed"
+                    }
+                }),
             ));
         }
         if chrono::DateTime::parse_from_rfc3339(&existing.expires_at)
@@ -2387,32 +2474,6 @@ async fn owner_force_reset(
                 json!({"code":"OWNER_APPROVAL_EXPIRED","message":"owner recovery approval has expired"}),
             ));
         }
-        let authorization = Authorizer::new(state.service.operator().clone())
-            .state(&space_id)
-            .await
-            .map_err(ApiError::from_core)?;
-        let (issuer_generation, target_generation) =
-            recovery_account_generations(&state, identity.account_id, account_id).await?;
-        let issuer_space_epoch = authorization
-            .principal_lifecycle_epochs
-            .get(&issuer_principal_id)
-            .copied()
-            .unwrap_or_default();
-        let target_space_epoch = authorization
-            .principal_lifecycle_epochs
-            .get(&payload.principal_id)
-            .copied()
-            .unwrap_or_default();
-        let issuer_node_epoch = state
-            .identity
-            .recovery_account_lifecycle_epoch(identity.account_id)
-            .await
-            .map_err(recovery_commit_error)?;
-        let target_node_epoch = state
-            .identity
-            .recovery_account_lifecycle_epoch(account_id)
-            .await
-            .map_err(recovery_commit_error)?;
         let fence_is_current = existing.recovery_fence_id.is_some_and(|fence_id| {
             authorization
                 .recovery_fences
@@ -2423,24 +2484,6 @@ async fn owner_force_reset(
                         && fence.authorization_revision == existing.space_authorization_revision
                 })
         });
-        let same_tuple = existing.space_uid == space_uid
-            && existing.principal_id == payload.principal_id
-            && existing.account_id == account_id
-            && existing.issuer_principal_id == issuer_principal_id
-            && existing.issuer_account_id == identity.account_id
-            && existing.issuer_credential_id == Some(identity.request_identity.credential_id)
-            && existing.issuer_generation == issuer_generation
-            && existing.target_generation == target_generation
-            && existing.issuer_space_lifecycle_epoch == issuer_space_epoch
-            && existing.target_space_lifecycle_epoch == target_space_epoch
-            && existing.issuer_node_lifecycle_epoch == issuer_node_epoch
-            && existing.target_node_lifecycle_epoch == target_node_epoch;
-        if !same_tuple {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                json!({"code":"OWNER_APPROVAL_KEY_MISMATCH","message":"idempotency key is bound to another recovery tuple"}),
-            ));
-        }
         if !fence_is_current {
             return Err(recovery_fence_unavailable());
         }
@@ -6754,6 +6797,187 @@ mod authentication_regression_tests {
             recovery_reservation_error(unknown).status,
             StatusCode::CONFLICT
         );
+    }
+
+    #[test]
+    fn owner_recovery_terminal_state_does_not_override_key_mismatch() {
+        let space_uid = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let issuer_account_id = Uuid::now_v7();
+        let issuer_credential_id = Uuid::now_v7();
+        let approval = OwnerRecoveryApproval {
+            approval_id: Uuid::now_v7(),
+            token_hash: "token-hash".into(),
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            issuer_credential_id: Some(issuer_credential_id),
+            target_generation: 0,
+            issuer_generation: 0,
+            issuer_space_lifecycle_epoch: 1,
+            target_space_lifecycle_epoch: 1,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            space_authorization_revision: 2,
+            recovery_fence_id: Some(Uuid::now_v7()),
+            issued_at: "2026-01-01T00:00:00Z".into(),
+            expires_at: "2026-01-02T00:00:00Z".into(),
+            challenge_id: None,
+            reset_id: None,
+            used_at: Some("2026-01-01T00:01:00Z".into()),
+            invalidated_at: None,
+            encrypted_token: None,
+        };
+        let mismatch = owner_recovery_replay_error(
+            &approval,
+            space_uid,
+            Uuid::now_v7(),
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            issuer_credential_id,
+            0,
+            0,
+            1,
+            1,
+            0,
+            0,
+        );
+        assert_eq!(mismatch, Some("OWNER_APPROVAL_KEY_MISMATCH"));
+
+        let original_request = owner_recovery_replay_error(
+            &approval,
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            issuer_credential_id,
+            0,
+            0,
+            1,
+            1,
+            0,
+            0,
+        );
+        assert_eq!(original_request, Some("OWNER_APPROVAL_ALREADY_COMMITTED"));
+    }
+
+    #[tokio::test]
+    async fn recovery_coordinator_retries_missing_space_half_and_stays_fail_closed(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-recovery-coordinator-{}",
+            Uuid::now_v7()
+        ))?;
+        state.identity.bootstrap_if_needed().await?;
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("recovery-coordinator", issuer_principal_id, "Owner")
+            .await?;
+        let space_id = space_uid.to_string();
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                issuer_principal_id,
+                SpacePrincipal {
+                    principal_id: target_principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Recovery target".into(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[
+                (issuer_account_id, space_uid, issuer_principal_id),
+                (target_account_id, space_uid, target_principal_id),
+            ])
+            .await?;
+
+        let request_id = Uuid::now_v7();
+        let fence_id = Uuid::now_v7();
+        let provisional = RecoveryBindingSnapshot {
+            request_id,
+            recovery_fence_id: fence_id,
+            recovery_fence_expires_at: (chrono::Utc::now() + chrono::Duration::minutes(5))
+                .to_rfc3339(),
+            space_authorization_revision: 0,
+            issuer_space_lifecycle_epoch: 0,
+            target_space_lifecycle_epoch: 0,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        state
+            .identity
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&provisional),
+            )
+            .await?;
+
+        // A separate process can observe the Node half before the Space CAS
+        // becomes visible. Reconciliation must retain the barrier rather
+        // than release it based on that single missing read.
+        reconcile_recovery_fences(&state, &space_id).await?;
+        assert_eq!(
+            state.identity.recovery_fence_status(fence_id).await?,
+            Some("active".into())
+        );
+
+        // The same request identity replays the Space CAS and promotes the
+        // existing Node fence to paired instead of allocating a new fence.
+        let (authorizer, space_fence, snapshot) = reserve_recovery_pair(
+            &state,
+            &space_id,
+            space_uid,
+            issuer_principal_id,
+            issuer_account_id,
+            target_principal_id,
+            target_account_id,
+            request_id,
+            chrono::Duration::minutes(5),
+        )
+        .await
+        .expect("same-key recovery retry should converge");
+        assert_eq!(space_fence.fence_id, fence_id);
+        assert_eq!(snapshot.recovery_fence_id, fence_id);
+        assert_eq!(
+            state.identity.recovery_fence_phase(fence_id).await?,
+            Some("paired".into())
+        );
+        assert_eq!(
+            authorizer.recovery_fence(&space_id, fence_id).await?.status,
+            "active"
+        );
+
+        // A terminal Space result is the only signal that permits Node
+        // cleanup; this also covers the restart reconciliation path.
+        authorizer
+            .release_recovery_fence(&space_id, fence_id)
+            .await?;
+        reconcile_recovery_fences(&state, &space_id).await?;
+        assert_eq!(
+            state.identity.recovery_fence_status(fence_id).await?,
+            Some("released".into())
+        );
+        Ok(())
     }
 
     #[tokio::test]
