@@ -122,4 +122,18 @@ fn test_req_sec_013_retained_event_id_survives_log_compaction() {
     assert!(snapshot
         .pointer("/paths/~1auth~1recovery~1owner~1finish/post/responses/201/headers/Set-Cookie")
         .is_some());
+    let error_codes = snapshot
+        .pointer("/components/schemas/RecoveryErrorResponse/properties/code/enum")
+        .and_then(Value::as_array)
+        .expect("recovery error code enum");
+    assert!(error_codes
+        .iter()
+        .any(|code| code == "OWNER_APPROVAL_EXPIRED"));
+    let credential_required = snapshot
+        .pointer("/components/schemas/WebAuthnRegistrationCredential/required")
+        .and_then(Value::as_array)
+        .expect("registration credential required fields");
+    assert!(!credential_required
+        .iter()
+        .any(|field| field == "extensions"));
 }

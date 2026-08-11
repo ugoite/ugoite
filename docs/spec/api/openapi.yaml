@@ -5239,7 +5239,7 @@
           },
           "401": { "description": "Challenge invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "409": { "description": "Reset already completed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
-          "410": { "description": "Challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "410": { "description": "Approval or challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "422": { "description": "WebAuthn registration invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }
         }
@@ -7119,7 +7119,7 @@
       },
       "WebAuthnRegistrationCredential": {
         "type": "object",
-        "required": ["id", "rawId", "response", "type", "extensions"],
+        "required": ["id", "rawId", "response", "type"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "rawId": { "type": "string", "minLength": 1 },

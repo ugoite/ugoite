@@ -102,6 +102,50 @@ fn event_hash(payload: &Value, prev_hash: &str) -> Result<String> {
     Ok(hex::encode(digest))
 }
 
+fn audit_event_fingerprint(value: &Value) -> Result<String> {
+    let source = value.get("payload").unwrap_or(value);
+    let object = source
+        .as_object()
+        .ok_or_else(|| anyhow!("audit event fingerprint source must be an object"))?;
+    serde_json::to_string(&json!({
+        "action": object.get("action").cloned().unwrap_or(Value::Null),
+        "subject_principal_id": object
+            .get("subject_principal_id")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "subject_account_id": object
+            .get("subject_account_id")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "actor_principal_id": object
+            .get("actor_principal_id")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "actor_account_id": object
+            .get("actor_account_id")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "credential_id": object
+            .get("credential_id")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "outcome": normalize_outcome(object.get("outcome").and_then(Value::as_str)),
+        "target_type": object.get("target_type").cloned().unwrap_or(Value::Null),
+        "target_id": object.get("target_id").cloned().unwrap_or(Value::Null),
+        "request_method": object
+            .get("request_method")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "request_path": object
+            .get("request_path")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "request_id": object.get("request_id").cloned().unwrap_or(Value::Null),
+        "metadata": object.get("metadata").cloned().unwrap_or_else(|| json!({})),
+    }))
+    .map_err(Into::into)
+}
+
 fn verify_chain(events: &[Value]) -> Result<()> {
     let mut prev_hash = "root".to_string();
     for event in events {
@@ -378,6 +422,25 @@ async fn append_audit_event_once(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string);
+    let actor_account_id = payload_obj
+        .get("actor_account_id")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let subject_account_id = payload_obj
+        .get("subject_account_id")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let metadata = payload_obj
+        .get("metadata")
+        .and_then(Value::as_object)
+        .map(|_| {
+            payload_obj
+                .get("metadata")
+                .cloned()
+                .unwrap_or_else(|| json!({}))
+        })
+        .unwrap_or_else(|| json!({}));
+    validate_safe_metadata(&metadata)?;
 
     let lock = space_lock(&safe_space_id).await;
     let _guard = lock.lock().await;
@@ -410,10 +473,23 @@ async fn append_audit_event_once(
     let mut marker_version = None;
     if let Some(event_id) = &requested_event_id {
         if let Some((marker, version)) = read_event_marker(op, &safe_space_id, event_id).await? {
-            if marker.get("status").and_then(Value::as_str) == Some("committed")
-                || (marker.get("event_id").is_some() && marker.get("event_hash").is_some())
-            {
+            if marker.get("status").and_then(Value::as_str) == Some("committed") {
+                let canonical = marker.get("event").unwrap_or(&marker);
+                if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
+                    bail!("audit event id conflicts with canonical payload");
+                }
+                return Ok(canonical.clone());
+            }
+            if marker.get("event_id").is_some() && marker.get("event_hash").is_some() {
+                if audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)? {
+                    bail!("audit event id conflicts with canonical payload");
+                }
                 return Ok(marker.get("event").cloned().unwrap_or(marker));
+            }
+            if marker.get("status").and_then(Value::as_str) == Some("pending")
+                && audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)?
+            {
+                bail!("audit event id conflicts with pending payload");
             }
             marker_version = version;
         }
@@ -429,6 +505,9 @@ async fn append_audit_event_once(
             .iter()
             .find(|event| event.get("event_id").and_then(Value::as_str) == Some(event_id.as_str()))
         {
+            if audit_event_fingerprint(existing)? != audit_event_fingerprint(payload)? {
+                bail!("audit event id conflicts with canonical payload");
+            }
             let _ = commit_event_marker(
                 op,
                 &safe_space_id,
@@ -449,25 +528,15 @@ async fn append_audit_event_once(
         .unwrap_or("root")
         .to_string();
 
-    let metadata = payload_obj
-        .get("metadata")
-        .and_then(Value::as_object)
-        .map(|_| {
-            payload_obj
-                .get("metadata")
-                .cloned()
-                .unwrap_or_else(|| json!({}))
-        })
-        .unwrap_or_else(|| json!({}));
-    validate_safe_metadata(&metadata)?;
-
     let mut event = json!({
         "event_id": requested_event_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
         "timestamp": now_iso(),
         "space_id": safe_space_id.clone(),
         "action": action.clone(),
         "subject_principal_id": subject_principal_id.clone(),
+        "subject_account_id": subject_account_id.clone(),
         "actor_principal_id": actor_principal_id.clone(),
+        "actor_account_id": actor_account_id.clone(),
         "credential_id": payload_obj.get("credential_id").cloned().unwrap_or(Value::Null),
         "outcome": normalize_outcome(payload_obj.get("outcome").and_then(Value::as_str)),
         "target_type": payload_obj.get("target_type").cloned().unwrap_or(Value::Null),
@@ -507,13 +576,32 @@ async fn append_audit_event_once(
                 "event_id": event_id,
                 "action": action,
                 "subject_principal_id": subject_principal_id,
+                "subject_account_id": subject_account_id,
                 "actor_principal_id": actor_principal_id,
+                "actor_account_id": actor_account_id,
+                "credential_id": payload_obj.get("credential_id").cloned().unwrap_or(Value::Null),
                 "outcome": normalize_outcome(payload_obj.get("outcome").and_then(Value::as_str)),
+                "target_type": payload_obj.get("target_type").cloned().unwrap_or(Value::Null),
+                "target_id": payload_obj.get("target_id").cloned().unwrap_or(Value::Null),
+                "request_method": payload_obj.get("request_method").cloned().unwrap_or(Value::Null),
+                "request_path": payload_obj.get("request_path").cloned().unwrap_or(Value::Null),
                 "request_id": payload_obj.get("request_id").cloned().unwrap_or(Value::Null),
                 "metadata": metadata
             }),
         )
         .await?;
+    }
+    if let Some((marker, _)) = read_event_marker(op, &safe_space_id, event_id).await? {
+        if marker.get("status").and_then(Value::as_str) == Some("committed") {
+            let canonical = marker.get("event").unwrap_or(&marker);
+            if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
+                bail!("audit event id conflicts with canonical payload");
+            }
+            return Ok(canonical.clone());
+        }
+        if audit_event_fingerprint(&marker)? != audit_event_fingerprint(payload)? {
+            bail!("audit event id conflicts with pending payload");
+        }
     }
     write_events(op, &safe_space_id, &events, expected_version.as_deref()).await?;
     if let Err(error) = commit_event_marker(
@@ -527,7 +615,11 @@ async fn append_audit_event_once(
     {
         if let Some((marker, _)) = read_event_marker(op, &safe_space_id, event_id).await? {
             if marker.get("status").and_then(Value::as_str) == Some("committed") {
-                return Ok(marker["event"].clone());
+                let canonical = marker.get("event").unwrap_or(&marker);
+                if audit_event_fingerprint(canonical)? != audit_event_fingerprint(payload)? {
+                    bail!("audit event id conflicts with canonical payload");
+                }
+                return Ok(canonical.clone());
             }
         }
         return Err(error);
@@ -678,6 +770,37 @@ mod tests {
         let second = append_audit_event(&op, "demo", &payload, None).await?;
         assert_eq!(first["event_id"], event_id);
         assert_eq!(second["event_id"], event_id);
+        assert_eq!(
+            list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
+            1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_013_replay_with_same_event_id_but_different_payload_is_rejected(
+    ) -> Result<()> {
+        let op = operator_from_uri("memory://audit-conflicting-replay")?;
+        let event_id = uuid::Uuid::now_v7().to_string();
+        let first = json!({
+            "event_id": event_id,
+            "action": "recovery.owner_reset_completed",
+            "subject_principal_id": uuid::Uuid::now_v7().to_string(),
+            "actor_principal_id": uuid::Uuid::now_v7().to_string(),
+            "metadata": {"credential_generation": 2}
+        });
+        append_audit_event(&op, "demo", &first, None).await?;
+        let conflicting = json!({
+            "event_id": event_id,
+            "action": "recovery.backup_codes_rotated",
+            "subject_principal_id": first["subject_principal_id"].clone(),
+            "actor_principal_id": first["actor_principal_id"].clone(),
+            "metadata": {"credential_generation": 3}
+        });
+        let error = append_audit_event(&op, "demo", &conflicting, None)
+            .await
+            .expect_err("conflicting event id must fail closed");
+        assert!(error.to_string().contains("conflicts"));
         assert_eq!(
             list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
             1

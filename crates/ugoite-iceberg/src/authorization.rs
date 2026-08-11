@@ -283,11 +283,11 @@ impl Authorizer {
         if state.space_uid == Uuid::nil() {
             bail!("recovery fence is unavailable")
         }
-        for fence in state.recovery_fences.values_mut().filter(|fence| {
-            fence.status == "active"
-                && chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
-                    .is_ok_and(|expires| expires.with_timezone(&Utc) > Utc::now())
-        }) {
+        for fence in state
+            .recovery_fences
+            .values_mut()
+            .filter(|fence| fence.status == "active")
+        {
             if fence.target_principal_id == target_principal_id
                 && fence.target_account_id == target_account_id
             {
@@ -414,11 +414,11 @@ impl Authorizer {
     }
 
     fn ensure_recovery_mutation_allowed(&self, state: &AuthorizationState) -> Result<()> {
-        if state.recovery_fences.values().any(|fence| {
-            fence.status == "active"
-                && chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
-                    .is_ok_and(|expires| expires.with_timezone(&Utc) > Utc::now())
-        }) {
+        if state
+            .recovery_fences
+            .values()
+            .any(|fence| fence.status == "active")
+        {
             bail!("RECOVERY_FENCE_UNAVAILABLE")
         }
         Ok(())
@@ -1304,6 +1304,59 @@ mod tests {
             state.recovery_fences[&replacement.fence_id].status,
             "completed"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn expired_recovery_fence_blocks_until_explicit_abort() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-expired-recovery-fence")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        let issuer_account = Uuid::now_v7();
+        let target_account = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", space_uid, owner, "Owner")
+            .await?;
+        authorizer
+            .add_human_member(
+                "demo",
+                owner,
+                SpacePrincipal {
+                    principal_id: member,
+                    kind: PrincipalKind::Human,
+                    display_name: "Member".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let fence = authorizer
+            .reserve_recovery_fence(
+                "demo",
+                Uuid::now_v7(),
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::seconds(-1),
+            )
+            .await?;
+        assert!(authorizer
+            .change_role("demo", owner, member, SpaceRole::Editor)
+            .await
+            .is_err());
+        authorizer
+            .release_recovery_fence("demo", fence.fence_id)
+            .await?;
+        authorizer
+            .change_role("demo", owner, member, SpaceRole::Editor)
+            .await?;
         Ok(())
     }
 

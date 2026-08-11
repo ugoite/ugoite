@@ -403,6 +403,8 @@ pub struct RecoveryAuditOutboxRecord {
     pub principal_id: Uuid,
     pub account_id: Uuid,
     pub issuer_principal_id: Option<Uuid>,
+    #[serde(default)]
+    pub issuer_account_id: Option<Uuid>,
     pub status: String,
     #[serde(default)]
     pub event: serde_json::Value,
@@ -418,6 +420,8 @@ fn queue_recovery_audit(
     principal_id: Uuid,
     account_id: Uuid,
     issuer_principal_id: Option<Uuid>,
+    issuer_account_id: Option<Uuid>,
+    safe_metadata: serde_json::Value,
 ) {
     state.recovery_audit_outbox.insert(
         event_id,
@@ -429,6 +433,7 @@ fn queue_recovery_audit(
             principal_id,
             account_id,
             issuer_principal_id,
+            issuer_account_id,
             status: "pending".to_string(),
             event: serde_json::json!({
                 "event_id": event_id,
@@ -443,11 +448,40 @@ fn queue_recovery_audit(
                 } else {
                     serde_json::to_value(issuer_principal_id).unwrap_or(serde_json::Value::Null)
                 },
+                "actor_account_id": if action == "recovery.owner_reset_completed" {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::to_value(issuer_account_id).unwrap_or(serde_json::Value::Null)
+                },
+                "metadata": safe_metadata,
                 "issuer_principal_id": issuer_principal_id,
                 "outcome": "success"
             }),
         },
     );
+}
+
+fn node_audit_fingerprint(
+    subject_account_id: Option<Uuid>,
+    actor_account_id: Option<Uuid>,
+    action: &str,
+    target_type: &str,
+    target_id: Option<&str>,
+    outcome: &str,
+    request_id: Option<&str>,
+    safe_metadata: &serde_json::Value,
+) -> String {
+    serde_json::to_string(&serde_json::json!({
+        "subject_account_id": subject_account_id,
+        "actor_account_id": actor_account_id,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "outcome": outcome,
+        "request_id": request_id,
+        "safe_metadata": safe_metadata,
+    }))
+    .expect("node audit fingerprint serialization cannot fail")
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -662,8 +696,15 @@ fn bound_principal_for_account(
 }
 
 fn node_recovery_fence_is_active(fence: &NodeRecoveryFence) -> bool {
+    // Expiry is not an implicit release. An active fence remains a durable
+    // write barrier until reconciliation or an explicit abort records the
+    // terminal state.
     fence.status == "active"
-        && parse_timestamp(&fence.expires_at).is_ok_and(|expires_at| expires_at > Utc::now())
+}
+
+fn node_recovery_fence_is_expired(fence: &NodeRecoveryFence) -> bool {
+    node_recovery_fence_is_active(fence)
+        && parse_timestamp(&fence.expires_at).is_ok_and(|expires_at| expires_at <= Utc::now())
 }
 
 fn ensure_node_recovery_mutation_allowed(state: &NodeState, space_uid: Uuid) -> Result<()> {
@@ -763,9 +804,7 @@ fn acquire_node_recovery_fence(
         .values_mut()
         .filter(|fence| fence.status == "active")
     {
-        if !node_recovery_fence_is_active(fence) {
-            fence.status = "expired".to_string();
-        } else if fence.fence_id == snapshot.recovery_fence_id {
+        if fence.fence_id == snapshot.recovery_fence_id {
             return Ok(());
         } else if fence.space_uid == space_uid && fence.account_id == account_id {
             fence.status = "superseded".to_string();
@@ -907,11 +946,66 @@ impl NodeIdentityService {
         };
         let key = format!("nodes/{}/audit/{}.json", state.node_id, event.event_id);
         if let Some(existing) = self.state_store.get(&key).await? {
-            return Ok(serde_json::from_slice(&existing.value)?);
+            let existing: NodeAuditEvent = serde_json::from_slice(&existing.value)?;
+            let expected_fingerprint = node_audit_fingerprint(
+                event.subject_account_id,
+                event.actor_account_id,
+                &event.action,
+                &event.target_type,
+                event.target_id.as_deref(),
+                &event.outcome,
+                event.request_id.as_deref(),
+                &event.safe_metadata,
+            );
+            let actual_fingerprint = node_audit_fingerprint(
+                existing.subject_account_id,
+                existing.actor_account_id,
+                &existing.action,
+                &existing.target_type,
+                existing.target_id.as_deref(),
+                &existing.outcome,
+                existing.request_id.as_deref(),
+                &existing.safe_metadata,
+            );
+            if expected_fingerprint != actual_fingerprint {
+                bail!("node audit event id conflicts with canonical payload");
+            }
+            return Ok(existing);
         }
-        self.state_store
+        if let Err(create_error) = self
+            .state_store
             .create_if_absent(&key, serde_json::to_vec(&event)?)
-            .await?;
+            .await
+        {
+            let Some(existing) = self.state_store.get(&key).await? else {
+                return Err(create_error.into());
+            };
+            let existing: NodeAuditEvent = serde_json::from_slice(&existing.value)?;
+            let expected_fingerprint = node_audit_fingerprint(
+                event.subject_account_id,
+                event.actor_account_id,
+                &event.action,
+                &event.target_type,
+                event.target_id.as_deref(),
+                &event.outcome,
+                event.request_id.as_deref(),
+                &event.safe_metadata,
+            );
+            let actual_fingerprint = node_audit_fingerprint(
+                existing.subject_account_id,
+                existing.actor_account_id,
+                &existing.action,
+                &existing.target_type,
+                existing.target_id.as_deref(),
+                &existing.outcome,
+                existing.request_id.as_deref(),
+                &existing.safe_metadata,
+            );
+            if expected_fingerprint != actual_fingerprint {
+                bail!("node audit event id conflicts with canonical payload");
+            }
+            return Ok(existing);
+        }
         Ok(event)
     }
 
@@ -983,6 +1077,24 @@ impl NodeIdentityService {
         ids.sort_unstable();
         ids.dedup();
         Ok(ids)
+    }
+
+    pub async fn active_recovery_fence_ids(&self, space_uid: Uuid) -> Result<Vec<Uuid>> {
+        let state = self.read_state().await?;
+        Ok(state
+            .node_recovery_fences
+            .values()
+            .filter(|fence| fence.space_uid == space_uid && node_recovery_fence_is_active(fence))
+            .map(|fence| fence.fence_id)
+            .collect())
+    }
+
+    pub async fn expired_recovery_fence(&self, fence_id: Uuid) -> Result<bool> {
+        let state = self.read_state().await?;
+        Ok(state
+            .node_recovery_fences
+            .get(&fence_id)
+            .is_some_and(node_recovery_fence_is_expired))
     }
 
     /// Reserve the Node-side half of a recovery fence with the same
@@ -2246,6 +2358,12 @@ impl NodeIdentityService {
             principal_id,
             account_id,
             Some(issuer_principal_id),
+            Some(issuer_account_id),
+            serde_json::json!({
+                "space_uid": space_uid,
+                "principal_id": principal_id,
+                "issuer_principal_id": issuer_principal_id
+            }),
         );
         self.write_state(&state).await?;
         Ok((approval_id, token, expires_at))
@@ -2296,6 +2414,9 @@ impl NodeIdentityService {
                         .contains_key(&tombstone.reset_id)
                     {
                         bail!("owner reset already completed");
+                    }
+                    if tombstone.reason == "expired" {
+                        bail!("owner recovery challenge expired");
                     }
                 }
                 bail!("owner recovery challenge is invalid");
@@ -2786,6 +2907,10 @@ impl NodeIdentityService {
             principal_id,
             challenge.account_id,
             Some(approval.issuer_principal_id),
+            Some(approval.issuer_account_id),
+            serde_json::json!({
+                "credential_generation": generation_after
+            }),
         );
         self.write_state(&state).await?;
         let _ = self
@@ -3055,6 +3180,13 @@ impl NodeIdentityService {
             principal_id,
             account_id,
             Some(issuer_principal_id),
+            Some(issuer_account_id),
+            serde_json::json!({
+                "space_uid": space_uid,
+                "principal_id": principal_id,
+                "issuer_principal_id": issuer_principal_id,
+                "code_count": codes.len()
+            }),
         );
         self.write_state(&state).await?;
         Ok(codes)
@@ -3285,6 +3417,9 @@ impl NodeIdentityService {
         if !actor_account.node_roles.contains(&NodeRole::NodeAdmin) && space_uid.is_none() {
             bail!("node admin role is required");
         }
+        if let Some(space_uid) = space_uid {
+            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+        }
         let token = random_token(32)?;
         let invitation_id = Uuid::now_v7();
         let invitation = AccountInvitation {
@@ -3321,6 +3456,13 @@ impl NodeIdentityService {
             .find(|invitation| invitation.token_hash == token_hash(invitation_token))
             .map(|invitation| invitation.invitation_id)
             .ok_or_else(|| anyhow!("invitation is invalid"))?;
+        if let Some(space_uid) = state
+            .invitations
+            .get(&invitation_id)
+            .and_then(|invitation| invitation.space_uid)
+        {
+            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+        }
         let existing_principal_id = bound_principal_for_account(
             &state,
             state
@@ -3395,6 +3537,13 @@ impl NodeIdentityService {
     ) -> Result<()> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        let space_uid = state
+            .invitations
+            .get(&invitation_id)
+            .and_then(|invitation| invitation.space_uid);
+        if let Some(space_uid) = space_uid {
+            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+        }
         let invitation = state
             .invitations
             .get_mut(&invitation_id)
@@ -5572,6 +5721,14 @@ mod tests {
             .next()
             .unwrap()
             .event;
+        assert_eq!(
+            approval_event["actor_principal_id"],
+            serde_json::json!(issuer_principal_id)
+        );
+        assert_eq!(
+            approval_event["actor_account_id"],
+            serde_json::json!(issuer_account_id)
+        );
         assert!(serde_json::to_string(approval_event)?
             .find(&token)
             .is_none());
@@ -5679,7 +5836,7 @@ mod tests {
         let snapshot = RecoveryBindingSnapshot {
             request_id: Uuid::now_v7(),
             recovery_fence_id: Uuid::now_v7(),
-            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            recovery_fence_expires_at: timestamp(Utc::now() - Duration::minutes(1)),
             space_authorization_revision: 1,
             issuer_space_lifecycle_epoch: 1,
             target_space_lifecycle_epoch: 1,
@@ -5697,6 +5854,15 @@ mod tests {
                 Some(&snapshot),
             )
             .await?;
+        assert!(service
+            .issue_invitation(
+                issuer_account_id,
+                "Blocked invite",
+                Some(space_uid),
+                Some("viewer".to_string()),
+            )
+            .await
+            .is_err());
         assert!(service
             .set_account_status(target_account_id, AccountStatus::Suspended)
             .await
