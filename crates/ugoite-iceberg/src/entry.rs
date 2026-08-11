@@ -598,6 +598,10 @@ fn revision_row_to_domain(
         .as_ref()
         .map(entry_metadata_from_row)
         .unwrap_or_default();
+    if row.state.is_none() {
+        entry.updated_by = row.updated_by.clone();
+        entry.deleted_by = row.deleted_by.clone();
+    }
     if let Some(state) = row.state.as_ref() {
         if state.author != row.author
             || state.updated_by != row.updated_by
@@ -901,11 +905,7 @@ fn revision_row_from_domain(
         deleted: revision.entry.deleted,
         deleted_at: revision.entry.deleted_at_micros.map(from_timestamp_micros),
         author: revision.author_id.clone(),
-        updated_by: if revision.entry.updated_by.is_empty() {
-            revision.author_id.clone()
-        } else {
-            revision.entry.updated_by.clone()
-        },
+        updated_by: revision.entry.updated_by.clone(),
         deleted_by: revision.entry.deleted_by.clone(),
         entry_version: revision.entry_version,
     };
@@ -2615,5 +2615,44 @@ mod input_conversion_tests {
             .unwrap(),
             FieldValue::String("2025-01-02T03:04:05.123456789+00:00".into())
         );
+    }
+
+    #[test]
+    fn revision_row_without_state_preserves_top_level_attribution() {
+        let form = ugoite_domain::form::FormDefinition {
+            id: FormId::from(Uuid::from_u128(101)),
+            version: ugoite_domain::form::FormVersion::new(1).unwrap(),
+            name: "AttributionTest".into(),
+            description: None,
+            fields: Vec::new(),
+            allow_extra_attributes: false,
+            extension_metadata: BTreeMap::new(),
+        };
+        let row = RevisionRow {
+            revision_id: Uuid::from_u128(102).to_string(),
+            entry_id: Uuid::from_u128(103).to_string(),
+            parent_revision_id: None,
+            timestamp: 1.0,
+            author: "human:creator".into(),
+            updated_by: "human:editor".into(),
+            deleted_by: None,
+            fields: Value::Object(Map::new()),
+            extra_attributes: Value::Object(Map::new()),
+            markdown_checksum: String::new(),
+            integrity: IntegrityPayload::default(),
+            restored_from: None,
+            state: None,
+            entry_version: 1,
+            operation: "upsert".into(),
+            source_kind: "test".into(),
+            source_id: None,
+            extension_metadata: Value::Object(Map::new()),
+        };
+
+        let revision = revision_row_to_domain(&row, &form).unwrap();
+
+        assert_eq!(revision.author_id, "human:creator");
+        assert_eq!(revision.entry.updated_by, "human:editor");
+        assert_eq!(revision.entry.deleted_by, None);
     }
 }

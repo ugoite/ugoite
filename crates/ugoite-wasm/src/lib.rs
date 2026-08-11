@@ -262,5 +262,6 @@ mod tests {
         assert_eq!(response["value"]["entry_version"], 1);
         assert_eq!(response["value"]["expected_version"], Value::Null);
         assert_eq!(response["value"]["parent_revision_id"], Value::Null);
+        assert_eq!(response["value"]["entry"]["updated_by"], "human:owner");
     }
 }

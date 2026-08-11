@@ -175,6 +175,10 @@ impl EntryRevisionDraft {
         form: &FormDefinition,
         current: Option<&EntryRevision>,
     ) -> Result<EntryRevision, RevisionError> {
+        let mut entry = self.entry;
+        if current.is_none() && entry.updated_by.is_empty() {
+            entry.updated_by = self.author_id.clone();
+        }
         let (parent_revision_id, expected_version, entry_version) =
             current.map_or((None, None, 1), |revision| {
                 (
@@ -196,7 +200,7 @@ impl EntryRevisionDraft {
             form_version: self.form_version,
             source_kind: self.source_kind,
             source_id: self.source_id,
-            entry: self.entry,
+            entry,
             values: self.values,
             extra_attributes: self.extra_attributes,
             extension_metadata: self.extension_metadata,
