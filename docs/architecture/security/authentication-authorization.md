@@ -95,6 +95,11 @@ credential generation and invalidates stale human sessions, device/refresh
 credentials, and pending flows while preserving Space membership and separate
 agent credentials. Backup-code rotation requires a fresh UUIDv4 idempotency
 key and returns eight plaintext codes once.
+Both operations publish a durable Space recovery fence bound to the issuer and
+target lifecycle epochs and authorization revision. Membership lifecycle writes
+conflict while the fence is held. A crash after the Node CAS leaves a
+`node_committed_space_fence_pending` marker; startup reconciliation completes
+the matching fence before another recovery mutation is accepted.
 
 ## Space authorization
 

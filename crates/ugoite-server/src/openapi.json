@@ -5161,6 +5161,7 @@
           "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "403": { "description": "Recovery authority required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "404": { "description": "Recovery target invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "Durable recovery fence is unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "503": { "description": "No durable state committed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
         }
       }
@@ -5174,7 +5175,7 @@
             "name": "Idempotency-Key",
             "in": "header",
             "required": true,
-            "schema": { "type": "string", "format": "uuid", "description": "A fresh UUIDv4 rotation request key." }
+            "schema": { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", "description": "A fresh UUIDv4 rotation request key." }
           }
         ],
         "requestBody": {
@@ -5194,7 +5195,7 @@
           "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "403": { "description": "Recovery authority required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "404": { "description": "Recovery target invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "409": { "description": "Rotation key is committed or bound to another tuple", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "Rotation key, recovery fence, or committed result conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "422": { "description": "Idempotency key is invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "503": { "description": "No durable state committed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
         }
@@ -5215,7 +5216,8 @@
           },
           "401": { "description": "Approval token invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "409": { "description": "A challenge is already pending", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "410": { "description": "Approval or challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+          "410": { "description": "Approval or challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
         }
       }
     },
@@ -5238,7 +5240,8 @@
           "401": { "description": "Challenge invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "409": { "description": "Reset already completed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
           "410": { "description": "Challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "422": { "description": "WebAuthn registration invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+          "422": { "description": "WebAuthn registration invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
         }
       }
     },
@@ -6507,7 +6510,23 @@
         ],
         "properties": {
           "code": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "AUTHENTICATION_REQUIRED",
+              "RECOVERY_AUTHORITY_REQUIRED",
+              "RECOVERY_TARGET_INVALID",
+              "OWNER_RECOVERY_CHALLENGE_PENDING",
+              "OWNER_RESET_ALREADY_COMPLETED",
+              "OWNER_APPROVAL_EXPIRED",
+              "WEBAUTHN_REGISTRATION_INVALID",
+              "RECOVERY_FENCE_UNAVAILABLE",
+              "RECOVERY_STORAGE_UNAVAILABLE",
+              "BACKUP_IDEMPOTENCY_KEY_INVALID",
+              "BACKUP_ROTATION_KEY_MISMATCH",
+              "BACKUP_ROTATION_ALREADY_COMMITTED",
+              "RECENT_PASSKEY_REQUIRED",
+              "INTERNAL_ERROR"
+            ]
           },
           "message": {
             "type": "string"

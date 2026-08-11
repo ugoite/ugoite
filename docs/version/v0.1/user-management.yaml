@@ -1,6 +1,6 @@
 id: user-management
 version: '0.1'
-status: in_progress
+status: completed
 title: User Management
 goal: Provide authenticated multi-user Space access while preserving operator-owned storage.
 requirement_ids:

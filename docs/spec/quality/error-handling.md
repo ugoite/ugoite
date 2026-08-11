@@ -42,6 +42,10 @@ content.
   `OWNER_RESET_ALREADY_COMPLETED` and `BACKUP_ROTATION_ALREADY_COMMITTED` as
   terminal; do not replay the token or idempotency key. `audit_status: pending`
   means the credential/code mutation committed and audit delivery is queued.
+  `RECOVERY_FENCE_UNAVAILABLE` is a 409: a committed recovery marker still
+  holds an unreconciled Space fence and must be resolved by the restart-safe
+  reconciler. `RECOVERY_STORAGE_UNAVAILABLE` is a 503 only for failures before
+  the Node CAS commits any credential or code mutation.
 
 See [frontend–backend interface](../architecture/frontend-backend-interface.md)
 for transport ownership and protocol decoding.

@@ -33,6 +33,11 @@ invariants are:
 - Owner backup-code rotation requires a fresh UUIDv4 `Idempotency-Key`, returns
   eight plaintext codes once, and advertises `audit_status: pending` when audit
   delivery is queued. No recovery token, code, TOTP secret, or hash is logged.
+- Recovery approval and completion bind to durable Node/Space lifecycle epochs
+  and a Space-CAS recovery fence. Membership changes conflict while a fence is
+  held; a Node-committed but unreconciled result remains a durable
+  `node_committed_space_fence_pending` marker and returns
+  `409 RECOVERY_FENCE_UNAVAILABLE` until restart reconciliation completes it.
 - `space_uid`, principals, memberships, ACLs, attribution, and authorization
   audit events are portable Space state; accounts, bindings, sessions, RP
   configuration, and credential metadata are Node-local atomic control-store

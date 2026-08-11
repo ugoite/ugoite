@@ -45,7 +45,7 @@ use ugoite_iceberg::{
 use ugoite_identity::{
     node_identity::{
         AccountInvitation, NodeAuditInput, NodeIdentityService, OwnerRecoveryContext,
-        TotpEnrollmentFinishError,
+        RecoveryBindingSnapshot, TotpEnrollmentFinishError,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
@@ -108,6 +108,10 @@ impl AppState {
                 "Ugoite setup URL (expires {}): {}",
                 bootstrap.expires_at, bootstrap.setup_url
             );
+        }
+        for space_id in self.service.list_space_ids().await? {
+            reconcile_recovery_fences(self, &space_id).await?;
+            reconcile_recovery_audit_outbox(self, &space_id).await?;
         }
         Ok(())
     }
@@ -404,6 +408,7 @@ fn app_layers(router: Router<AppState>, state: AppState) -> Router {
                         header::ACCEPT,
                         header::AUTHORIZATION,
                         header::CONTENT_TYPE,
+                        HeaderName::from_static("idempotency-key"),
                         HeaderName::from_static("dpop"),
                         HeaderName::from_static("x-request-id"),
                     ]),
@@ -1453,6 +1458,26 @@ async fn validate_owner_recovery_context(
         .state(&space_id)
         .await
         .map_err(ApiError::from_core)?;
+    let fence = context
+        .recovery_fence_id
+        .and_then(|fence_id| authorization.recovery_fences.get(&fence_id))
+        .ok_or_else(|| recovery_fence_unavailable())?;
+    if fence.status != "active"
+        || chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
+            .is_ok_and(|expires| expires.with_timezone(&chrono::Utc) <= chrono::Utc::now())
+        || fence.space_uid != context.space_uid
+        || fence.issuer_principal_id != context.issuer_principal_id
+        || fence.issuer_account_id != context.issuer_account_id
+        || fence.target_principal_id != context.principal_id
+        || fence.target_account_id != context.account_id
+        || fence.authorization_revision != context.space_authorization_revision
+        || fence.issuer_lifecycle_epoch != context.issuer_lifecycle_epoch
+        || fence.target_lifecycle_epoch != context.target_lifecycle_epoch
+        || fence.issuer_generation != context.issuer_generation
+        || fence.target_generation != context.target_generation
+    {
+        return Err(recovery_fence_unavailable());
+    }
     let issuer = authorization
         .principals
         .get(&context.issuer_principal_id)
@@ -1531,12 +1556,117 @@ async fn validate_owner_recovery_context(
     let issuer_account = accounts
         .iter()
         .find(|account| account.account_id == context.issuer_account_id)
-        .filter(|account| matches!(account.status, AccountStatus::Active));
+        .filter(|account| {
+            matches!(account.status, AccountStatus::Active)
+                && account.credential_generation == context.issuer_generation
+        });
     if target_account.is_none() || issuer_account.is_none() {
         return Err(ApiError::new(
             StatusCode::UNAUTHORIZED,
             json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
         ));
+    }
+    Ok(())
+}
+
+fn recovery_fence_unavailable() -> ApiError {
+    ApiError::new(
+        StatusCode::CONFLICT,
+        json!({
+            "code": "RECOVERY_FENCE_UNAVAILABLE",
+            "message": "recovery could not obtain a durable authorization fence"
+        }),
+    )
+}
+
+fn recovery_storage_unavailable() -> ApiError {
+    ApiError::new(
+        StatusCode::SERVICE_UNAVAILABLE,
+        json!({
+            "code": "RECOVERY_STORAGE_UNAVAILABLE",
+            "message": "recovery state could not be durably committed"
+        }),
+    )
+}
+
+async fn recovery_account_generations(
+    state: &AppState,
+    issuer_account_id: Uuid,
+    target_account_id: Uuid,
+) -> ApiResult<(u64, u64)> {
+    let accounts = state.identity.list_accounts().await.map_err(auth_error)?;
+    let issuer_generation = accounts
+        .iter()
+        .find(|account| account.account_id == issuer_account_id)
+        .map(|account| account.credential_generation)
+        .ok_or_else(recovery_fence_unavailable)?;
+    let target_generation = accounts
+        .iter()
+        .find(|account| account.account_id == target_account_id)
+        .map(|account| account.credential_generation)
+        .ok_or_else(recovery_fence_unavailable)?;
+    Ok((issuer_generation, target_generation))
+}
+
+fn recovery_reservation_error(error: anyhow::Error) -> ApiError {
+    let message = error.to_string();
+    if message.contains("RECOVERY_FENCE_UNAVAILABLE") {
+        return recovery_fence_unavailable();
+    }
+    if message.contains("read")
+        || message.contains("write")
+        || message.contains("storage")
+        || message.contains("authorization state")
+    {
+        return recovery_storage_unavailable();
+    }
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        json!({"code":"RECOVERY_TARGET_INVALID","message":"recovery target is invalid"}),
+    )
+}
+
+fn recovery_commit_error(error: anyhow::Error) -> ApiError {
+    let message = error.to_string().to_lowercase();
+    if message.contains("recovery fence") || message.contains("recovery tuple is stale") {
+        return recovery_fence_unavailable();
+    }
+    if message.contains("conflict")
+        || message.contains("compare-and-swap")
+        || message.contains("control-store")
+        || message.contains("storage")
+    {
+        return recovery_storage_unavailable();
+    }
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        json!({"code":"RECOVERY_TARGET_INVALID","message":"recovery target is invalid"}),
+    )
+}
+
+async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::Result<()> {
+    let space_uid = state.service.space_uid(space_id).await?;
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    for fence_id in state.identity.pending_recovery_fence_ids(space_uid).await? {
+        let fence = match authorizer.recovery_fence(space_id, fence_id).await {
+            Ok(fence) => fence,
+            Err(_) => continue,
+        };
+        if fence.status == "active" {
+            if authorizer
+                .complete_recovery_fence(space_id, fence_id)
+                .await
+                .is_err()
+            {
+                continue;
+            }
+        }
+        if matches!(fence.status.as_str(), "active" | "completed") {
+            state
+                .identity
+                .mark_recovery_fence_reconciled(fence_id)
+                .await?;
+        }
     }
     Ok(())
 }
@@ -1577,12 +1707,74 @@ async fn append_recovery_space_audit(
     .is_ok()
 }
 
+/// Restart-safe recovery audit delivery. The Node outbox contains one
+/// redacted canonical event; each transition is persisted before the next
+/// delivery attempt, so a crash can resume without replaying secrets.
+async fn reconcile_recovery_audit_outbox(state: &AppState, space_id: &str) -> anyhow::Result<()> {
+    for record in state.identity.pending_recovery_audits().await? {
+        if record.status == "pending" {
+            state
+                .identity
+                .append_node_audit_with_id(
+                    record.event_id,
+                    NodeAuditInput {
+                        subject_account_id: Some(record.account_id),
+                        actor_account_id: record.issuer_principal_id,
+                        credential_id: None,
+                        action: &record.action,
+                        target_type: "human_account",
+                        target_id: Some(record.account_id.to_string()),
+                        outcome: "success",
+                        request_id: Some(record.request_id.to_string()),
+                        safe_metadata: json!({"reconciled": true}),
+                    },
+                )
+                .await?;
+            state
+                .identity
+                .mark_recovery_audit_stage(record.event_id, "node")
+                .await?;
+        }
+        let record = state
+            .identity
+            .pending_recovery_audits()
+            .await?
+            .into_iter()
+            .find(|candidate| candidate.event_id == record.event_id);
+        let Some(record) = record else { continue };
+        if record.status == "node" {
+            audit::append_audit_event(state.service.operator(), space_id, &record.event, None)
+                .await?;
+            state
+                .identity
+                .mark_recovery_audit_stage(record.event_id, "space")
+                .await?;
+        }
+        if state
+            .identity
+            .pending_recovery_audits()
+            .await?
+            .into_iter()
+            .any(|candidate| candidate.event_id == record.event_id && candidate.status == "space")
+        {
+            state
+                .identity
+                .mark_recovery_audit_delivered(record.event_id)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
 async fn owner_force_reset(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
     Json(payload): Json<OwnerRecoveryApprovalRequest>,
 ) -> ApiResult<Response> {
+    reconcile_recovery_fences(&state, &space_id)
+        .await
+        .map_err(|_| recovery_storage_unavailable())?;
     let (space_uid, issuer_principal_id) =
         recovery_owner_context(&state, &space_id, &identity).await?;
     let account_id = recovery_target_account(
@@ -1593,22 +1785,52 @@ async fn owner_force_reset(
         identity.account_id,
     )
     .await?;
-    let (approval_id, token, expires_at) = state
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let request_id = Uuid::now_v7();
+    let (issuer_generation, target_generation) =
+        recovery_account_generations(&state, identity.account_id, account_id).await?;
+    let fence = authorizer
+        .reserve_recovery_fence(
+            &space_id,
+            request_id,
+            issuer_principal_id,
+            identity.account_id,
+            payload.principal_id,
+            account_id,
+            issuer_generation,
+            target_generation,
+            chrono::Duration::minutes(15),
+        )
+        .await
+        .map_err(recovery_reservation_error)?;
+    let (approval_id, token, expires_at) = match state
         .identity
-        .issue_owner_recovery_approval(
+        .issue_owner_recovery_approval_with_snapshot(
             space_uid,
             payload.principal_id,
             account_id,
             issuer_principal_id,
             identity.account_id,
+            Some(RecoveryBindingSnapshot {
+                request_id,
+                recovery_fence_id: fence.fence_id,
+                space_authorization_revision: fence.authorization_revision,
+                issuer_lifecycle_epoch: fence.issuer_lifecycle_epoch,
+                target_lifecycle_epoch: fence.target_lifecycle_epoch,
+                issuer_generation,
+                target_generation,
+            }),
         )
         .await
-        .map_err(|error| {
-            ApiError::new(
-                StatusCode::NOT_FOUND,
-                json!({"code":"RECOVERY_TARGET_INVALID","message": error.to_string()}),
-            )
-        })?;
+    {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = authorizer
+                .release_recovery_fence(&space_id, fence.fence_id)
+                .await;
+            return Err(recovery_commit_error(error));
+        }
+    };
     let node_audit_status = state
         .identity
         .append_node_audit_with_id(
@@ -1684,6 +1906,9 @@ async fn owner_rotate_backup_codes(
     headers: HeaderMap,
     Json(payload): Json<OwnerRecoveryApprovalRequest>,
 ) -> ApiResult<Response> {
+    reconcile_recovery_fences(&state, &space_id)
+        .await
+        .map_err(|_| recovery_storage_unavailable())?;
     let Some(value) = headers.get("idempotency-key") else {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -1711,31 +1936,131 @@ async fn owner_rotate_backup_codes(
         identity.account_id,
     )
     .await?;
-    let codes = state
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let (issuer_generation, target_generation) =
+        recovery_account_generations(&state, identity.account_id, account_id).await?;
+    let authorization = authorizer
+        .state(&space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let issuer_epoch = authorization
+        .principal_lifecycle_epochs
+        .get(&issuer_principal_id)
+        .copied()
+        .unwrap_or_default();
+    let target_epoch = authorization
+        .principal_lifecycle_epochs
+        .get(&payload.principal_id)
+        .copied()
+        .unwrap_or_default();
+    let issuer_node_epoch = state
         .identity
-        .rotate_recovery_codes(
+        .recovery_account_lifecycle_epoch(identity.account_id)
+        .await
+        .map_err(auth_error)?;
+    let target_node_epoch = state
+        .identity
+        .recovery_account_lifecycle_epoch(account_id)
+        .await
+        .map_err(auth_error)?;
+    if let Some(existing) = state
+        .identity
+        .backup_rotation_request(request_id)
+        .await
+        .map_err(auth_error)?
+    {
+        let same_tuple = existing.space_uid == space_uid
+            && existing.principal_id == payload.principal_id
+            && existing.account_id == account_id
+            && existing.issuer_principal_id == issuer_principal_id
+            && existing.issuer_account_id == identity.account_id
+            && existing.target_generation == target_generation
+            && existing.issuer_generation == issuer_generation
+            && existing.target_lifecycle_epoch == target_node_epoch
+            && existing.issuer_lifecycle_epoch == issuer_node_epoch
+            && authorization
+                .principal_lifecycle_epochs
+                .get(&existing.principal_id)
+                .copied()
+                == Some(target_epoch)
+            && authorization
+                .principal_lifecycle_epochs
+                .get(&existing.issuer_principal_id)
+                .copied()
+                == Some(issuer_epoch);
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            json!({
+                "code": if same_tuple { "BACKUP_ROTATION_ALREADY_COMMITTED" } else { "BACKUP_ROTATION_KEY_MISMATCH" },
+                "message": if same_tuple { "backup rotation is already committed" } else { "idempotency key is bound to another recovery tuple" }
+            }),
+        ));
+    }
+    let fence = authorizer
+        .reserve_recovery_fence(
+            &space_id,
+            request_id,
+            issuer_principal_id,
+            identity.account_id,
+            payload.principal_id,
+            account_id,
+            issuer_generation,
+            target_generation,
+            chrono::Duration::minutes(5),
+        )
+        .await
+        .map_err(recovery_reservation_error)?;
+    let codes = match state
+        .identity
+        .rotate_recovery_codes_with_snapshot(
             request_id,
             space_uid,
             payload.principal_id,
             account_id,
             issuer_principal_id,
             identity.account_id,
+            Some(RecoveryBindingSnapshot {
+                request_id,
+                recovery_fence_id: fence.fence_id,
+                space_authorization_revision: fence.authorization_revision,
+                issuer_lifecycle_epoch: fence.issuer_lifecycle_epoch,
+                target_lifecycle_epoch: fence.target_lifecycle_epoch,
+                issuer_generation,
+                target_generation,
+            }),
         )
         .await
-        .map_err(|error| {
+    {
+        Ok(codes) => codes,
+        Err(error) => {
             let message = error.to_string();
-            let code = if message.contains("key mismatch") {
-                "BACKUP_ROTATION_KEY_MISMATCH"
-            } else if message.contains("already committed") {
-                "BACKUP_ROTATION_ALREADY_COMMITTED"
-            } else {
-                "RECOVERY_TARGET_INVALID"
-            };
-            ApiError::new(
-                StatusCode::CONFLICT,
-                json!({"code": code, "message": message}),
-            )
-        })?;
+            let _ = authorizer
+                .release_recovery_fence(&space_id, fence.fence_id)
+                .await;
+            if message.contains("key mismatch") {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({"code":"BACKUP_ROTATION_KEY_MISMATCH","message":"idempotency key is bound to another recovery tuple"}),
+                ));
+            }
+            if message.contains("already committed") {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({"code":"BACKUP_ROTATION_ALREADY_COMMITTED","message":"backup rotation is already committed"}),
+                ));
+            }
+            return Err(recovery_commit_error(error));
+        }
+    };
+    authorizer
+        .complete_recovery_fence(&space_id, fence.fence_id)
+        .await
+        .map_err(|_| recovery_fence_unavailable())?;
+    state
+        .identity
+        .mark_recovery_fence_reconciled(fence.fence_id)
+        .await
+        .map_err(|_| recovery_storage_unavailable())?;
     let node_audit_status = state
         .identity
         .append_node_audit_with_id(
@@ -1844,6 +2169,20 @@ async fn auth_owner_recovery_finish(
         .finish_owner_recovery_registration(payload.challenge_id, &payload.credential)
         .await
         .map_err(owner_recovery_api_error)?;
+    let fence_id = context
+        .recovery_fence_id
+        .ok_or_else(recovery_fence_unavailable)?;
+    let space_uid = context.space_uid;
+    let space_id = find_space_id_by_uid(&state, space_uid).await?;
+    Authorizer::new(state.service.operator().clone())
+        .complete_recovery_fence(&space_id, fence_id)
+        .await
+        .map_err(|_| recovery_fence_unavailable())?;
+    state
+        .identity
+        .mark_recovery_fence_reconciled(fence_id)
+        .await
+        .map_err(|_| recovery_storage_unavailable())?;
     let mut headers = recovery_result_headers();
     let cookie = auth_cookie(&result.session_id, 60 * 60 * 24 * 30);
     headers.insert(
@@ -1929,6 +2268,12 @@ async fn auth_owner_recovery_finish(
 
 fn owner_recovery_api_error(error: anyhow::Error) -> ApiError {
     let message = error.to_string();
+    if message.contains("RECOVERY_FENCE_UNAVAILABLE") {
+        return recovery_fence_unavailable();
+    }
+    if message.contains("compare-and-swap") || message.contains("storage") {
+        return recovery_storage_unavailable();
+    }
     let (status, code) = if message.contains("already pending") {
         (StatusCode::CONFLICT, "OWNER_RECOVERY_CHALLENGE_PENDING")
     } else if message.contains("already completed") {
@@ -3029,6 +3374,7 @@ async fn oauth_token(
         iat: now,
         jti: Uuid::now_v7(),
         credential_id: credential.credential_id,
+        credential_generation: Some(refresh.credential_generation),
         cnf: Confirmation { jkt: thumbprint },
     };
     let access_token = state
@@ -3433,6 +3779,7 @@ async fn issue_agent_token(
         iat: now,
         jti: Uuid::now_v7(),
         credential_id,
+        credential_generation: None,
         cnf: Confirmation {
             jkt: oauth::jwk_thumbprint(public_key_jwk).map_err(auth_error)?,
         },
@@ -5274,6 +5621,7 @@ mod authentication_regression_tests {
             iat: chrono::Utc::now().timestamp(),
             jti: Uuid::now_v7(),
             credential_id: Uuid::now_v7(),
+            credential_generation: None,
             cnf: Confirmation {
                 jkt: "thumbprint".to_string(),
             },

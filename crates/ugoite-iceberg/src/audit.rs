@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use chrono::{SecondsFormat, Utc};
 use opendal::Operator;
 use regex::Regex;
@@ -186,10 +186,12 @@ async fn write_events(
     let bytes = payload.into_bytes();
     if let Some(version) = expected_version {
         op.write_with(&path, bytes).if_match(version).await?;
-    } else if op.info().full_capability().write_with_if_not_exists {
+    } else if op.info().full_capability().write_with_if_not_exists && !op.exists(&path).await? {
         op.write_with(&path, bytes).if_not_exists(true).await?;
-    } else {
+    } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
         op.write(&path, bytes).await?;
+    } else {
+        bail!("audit append requires conditional storage capabilities");
     }
     Ok(())
 }
@@ -200,6 +202,7 @@ pub async fn append_audit_event(
     payload: &Value,
     retention_limit: Option<usize>,
 ) -> Result<Value> {
+    let mut last_conflict = None;
     for _attempt in 0..3 {
         match append_audit_event_once(op, space_id, payload, retention_limit).await {
             Ok(event) => return Ok(event),
@@ -211,12 +214,13 @@ pub async fn append_audit_event(
                         || message.contains("already exists")
                 } =>
             {
-                continue
+                last_conflict = Some(error);
+                continue;
             }
             Err(error) => return Err(error),
         }
     }
-    Err(anyhow!("audit append conflicted after bounded retries"))
+    Err(last_conflict.unwrap_or_else(|| anyhow!("audit append conflicted after bounded retries")))
 }
 
 async fn append_audit_event_once(
@@ -256,16 +260,24 @@ async fn append_audit_event_once(
     let _guard = lock.lock().await;
 
     let path = audit_file_path(&safe_space_id);
-    let expected_version =
-        if op.exists(&path).await? && op.info().full_capability().write_with_if_match {
-            let metadata = op.stat(&path).await?;
-            metadata
-                .etag()
-                .or_else(|| metadata.version())
-                .map(str::to_string)
-        } else {
-            None
-        };
+    let capabilities = op.info().full_capability();
+    let path_exists = op.exists(&path).await?;
+    let local_process_store = matches!(op.info().scheme(), "memory" | "fs" | "file");
+    if !local_process_store
+        && ((path_exists && !capabilities.write_with_if_match)
+            || (!path_exists && !capabilities.write_with_if_not_exists))
+    {
+        bail!("audit append requires conditional storage capabilities");
+    }
+    let expected_version = if path_exists && capabilities.write_with_if_match {
+        let metadata = op.stat(&path).await?;
+        metadata
+            .etag()
+            .or_else(|| metadata.version())
+            .map(str::to_string)
+    } else {
+        None
+    };
     let requested_event_id = payload_obj
         .get("event_id")
         .and_then(Value::as_str)
@@ -311,6 +323,7 @@ async fn append_audit_event_once(
                 .unwrap_or_else(|| json!({}))
         })
         .unwrap_or_else(|| json!({}));
+    validate_safe_metadata(&metadata)?;
 
     let mut event = json!({
         "event_id": requested_event_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
@@ -350,16 +363,50 @@ async fn append_audit_event_once(
         let marker_bytes = serde_json::to_vec(&event)?;
         op.create_dir(&format!("spaces/{}/audit/event-ids/", safe_space_id))
             .await?;
-        let capabilities = op.info().full_capability();
         if capabilities.write_with_if_not_exists {
             op.write_with(&marker_path, marker_bytes)
                 .if_not_exists(true)
                 .await?;
+        } else if !local_process_store {
+            bail!("audit event marker requires conditional storage capabilities");
         } else if !op.exists(&marker_path).await? {
             op.write(&marker_path, marker_bytes).await?;
         }
     }
     Ok(event)
+}
+
+fn validate_safe_metadata(value: &Value) -> Result<()> {
+    let Some(object) = value.as_object() else {
+        return Ok(());
+    };
+    for (key, child) in object {
+        let normalized = key.to_ascii_lowercase();
+        if matches!(
+            normalized.as_str(),
+            "token"
+                | "owner_approval_token"
+                | "recovery_codes"
+                | "code_hashes"
+                | "totp_secret"
+                | "totp_secret_encrypted"
+                | "token_hash"
+                | "secret"
+                | "credential_material"
+        ) {
+            bail!("audit metadata contains secret material");
+        }
+        match child {
+            Value::Object(_) => validate_safe_metadata(child)?,
+            Value::Array(items) => {
+                for item in items {
+                    validate_safe_metadata(item)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 pub async fn list_audit_events(
@@ -454,44 +501,55 @@ pub fn default_retention_from_env() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ugoite_storage::operator_from_uri;
 
-    #[test]
-    fn test_req_sec_013_cross_process_conditional_append_deduplicates_event() {
+    #[tokio::test]
+    async fn test_req_sec_013_cross_process_conditional_append_deduplicates_event() -> Result<()> {
+        let op = operator_from_uri("memory://audit-dedupe")?;
         let event_id = uuid::Uuid::now_v7().to_string();
         let payload = json!({
             "event_id": event_id,
             "action": "recovery.owner_reset_completed",
             "subject_principal_id": uuid::Uuid::now_v7().to_string(),
-            "actor_principal_id": uuid::Uuid::now_v7().to_string()
+            "actor_principal_id": uuid::Uuid::now_v7().to_string(),
+            "metadata": {"safe": true}
         });
-        let mut events = vec![payload.clone()];
-        rehash_chain(&mut events).expect("hash event");
-        let found = events
-            .iter()
-            .find(|event| event["event_id"] == payload["event_id"])
-            .expect("stable event id");
-        assert_eq!(found["event_id"], event_id);
+        let first = append_audit_event(&op, "demo", &payload, None).await?;
+        let second = append_audit_event(&op, "demo", &payload, None).await?;
+        assert_eq!(first["event_id"], event_id);
+        assert_eq!(second["event_id"], event_id);
+        assert_eq!(
+            list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
+            1
+        );
+        Ok(())
     }
 
-    #[test]
-    fn test_req_sec_013_retained_event_id_survives_log_compaction() {
+    #[tokio::test]
+    async fn test_req_sec_013_retained_event_id_survives_log_compaction() -> Result<()> {
+        let op = operator_from_uri("memory://audit-retention")?;
         let retained = json!({
             "event_id": uuid::Uuid::now_v7().to_string(),
             "action": "recovery.backup_codes_rotated",
             "subject_principal_id": uuid::Uuid::now_v7().to_string(),
             "actor_principal_id": uuid::Uuid::now_v7().to_string()
         });
-        let mut events = vec![
-            retained.clone(),
-            json!({
+        let first = append_audit_event(&op, "demo", &retained, Some(1)).await?;
+        append_audit_event(
+            &op,
+            "demo",
+            &json!({
                 "event_id": uuid::Uuid::now_v7().to_string(),
                 "action": "recovery.owner_approval_issued",
                 "subject_principal_id": uuid::Uuid::now_v7().to_string(),
                 "actor_principal_id": uuid::Uuid::now_v7().to_string()
             }),
-        ];
-        rehash_chain(&mut events).expect("hash events");
-        let event_id = retained["event_id"].clone();
-        assert!(events.iter().any(|event| event["event_id"] == event_id));
+            Some(1),
+        )
+        .await?;
+        let replay = append_audit_event(&op, "demo", &retained, Some(1)).await?;
+        assert_eq!(first["event_id"], retained["event_id"]);
+        assert_eq!(replay["event_id"], retained["event_id"]);
+        Ok(())
     }
 }

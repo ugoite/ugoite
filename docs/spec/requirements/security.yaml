@@ -332,9 +332,15 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-server/tests/owner_recovery.rs
-    cases: [REQ-SEC-012]
+    cases:
+    - test_req_sec_012_owner_only_space_scope_and_target_binding
+    - test_req_sec_012_generation_invalidates_human_credentials_but_not_agents
+    - test_req_sec_012_backup_rotation_idempotency_and_preservation
+    - test_req_sec_012_concurrent_reset_winner_and_loser_session
   - file: crates/ugoite-identity/src/node_identity.rs
-    cases: [REQ-SEC-012]
+    cases:
+    - test_req_sec_012_owner_approval_and_backup_rotation_are_one_use
+    - recovery_session_requires_the_committed_reset_marker_identity
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -357,6 +363,9 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-server/tests/owner_recovery.rs
-    cases: [REQ-SEC-013]
+    cases:
+    - test_req_sec_013_recovery_outbox_status_and_redaction
   - file: crates/ugoite-iceberg/src/audit.rs
-    cases: [REQ-SEC-013]
+    cases:
+    - test_req_sec_013_cross_process_conditional_append_deduplicates_event
+    - test_req_sec_013_retained_event_id_survives_log_compaction
