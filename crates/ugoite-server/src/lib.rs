@@ -2160,6 +2160,15 @@ async fn owner_force_reset(
         .map_err(|_| recovery_storage_unavailable())?;
     let (space_uid, issuer_principal_id) =
         recovery_owner_context(&state, &space_id, &identity).await?;
+    let owner_session_token = identity.session_token.as_deref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({
+                "code": "RECOVERY_AUTHORITY_REQUIRED",
+                "message": "owner recovery requires a browser Passkey session"
+            }),
+        )
+    })?;
     let account_id = recovery_target_account(
         &state,
         &space_id,
@@ -2193,39 +2202,37 @@ async fn owner_force_reset(
         chrono::Duration::minutes(15),
     )
     .await?;
-    if let Some(session_token) = identity.session_token.as_deref() {
-        if state
-            .identity
-            .revalidate_recent_passkey_session(
-                session_token,
-                identity.account_id,
-                identity.request_identity.credential_id,
-                identity.credential_generation,
-            )
+    if state
+        .identity
+        .revalidate_recent_passkey_session(
+            owner_session_token,
+            identity.account_id,
+            identity.request_identity.credential_id,
+            identity.credential_generation,
+        )
+        .await
+        .is_err()
+    {
+        authorizer
+            .release_recovery_fence(&space_id, fence.fence_id)
             .await
-            .is_err()
-        {
-            authorizer
-                .release_recovery_fence(&space_id, fence.fence_id)
-                .await
-                .map_err(|_| recovery_storage_unavailable())?;
-            state
-                .identity
-                .release_recovery_fence(fence.fence_id)
-                .await
-                .map_err(recovery_commit_error)?;
-            return Err(ApiError::new(
-                StatusCode::FORBIDDEN,
-                json!({
-                    "code": "RECOVERY_AUTHORITY_REQUIRED",
-                    "message": "the Owner Passkey session is no longer valid"
-                }),
-            ));
-        }
+            .map_err(|_| recovery_storage_unavailable())?;
+        state
+            .identity
+            .release_recovery_fence(fence.fence_id)
+            .await
+            .map_err(recovery_commit_error)?;
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({
+                "code": "RECOVERY_AUTHORITY_REQUIRED",
+                "message": "the Owner Passkey session is no longer valid"
+            }),
+        ));
     }
     let (approval_id, token, expires_at) = match state
         .identity
-        .issue_owner_recovery_approval_with_snapshot_and_credential(
+        .issue_owner_recovery_approval_with_snapshot_credential_and_session(
             space_uid,
             payload.principal_id,
             account_id,
@@ -2233,6 +2240,7 @@ async fn owner_force_reset(
             identity.account_id,
             snapshot,
             Some(identity.request_identity.credential_id),
+            owner_session_token,
         )
         .await
     {
@@ -2343,6 +2351,15 @@ async fn owner_rotate_backup_codes(
         })?;
     let (space_uid, issuer_principal_id) =
         recovery_owner_context(&state, &space_id, &identity).await?;
+    let owner_session_token = identity.session_token.as_deref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({
+                "code": "RECOVERY_AUTHORITY_REQUIRED",
+                "message": "owner recovery requires a browser Passkey session"
+            }),
+        )
+    })?;
     let account_id = recovery_target_account(
         &state,
         &space_id,
@@ -2433,7 +2450,7 @@ async fn owner_rotate_backup_codes(
     .await?;
     let codes = match state
         .identity
-        .rotate_recovery_codes_with_snapshot_and_credential(
+        .rotate_recovery_codes_with_snapshot_credential_and_session(
             request_id,
             space_uid,
             payload.principal_id,
@@ -2442,6 +2459,7 @@ async fn owner_rotate_backup_codes(
             identity.account_id,
             snapshot,
             Some(identity.request_identity.credential_id),
+            owner_session_token,
         )
         .await
     {

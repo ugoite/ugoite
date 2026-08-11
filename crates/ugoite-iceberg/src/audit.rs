@@ -784,6 +784,7 @@ pub fn default_retention_from_env() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{env, process::Command};
     use ugoite_storage::operator_from_uri;
 
     #[tokio::test]
@@ -872,6 +873,73 @@ mod tests {
         let replay = append_audit_event(&op, "demo", &retained, Some(1)).await?;
         assert_eq!(first["event_id"], retained["event_id"]);
         assert_eq!(replay["event_id"], retained["event_id"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_013_pending_marker_resumes_to_committed_event() -> Result<()> {
+        let op = operator_from_uri("memory://audit-pending-marker")?;
+        let event_id = uuid::Uuid::now_v7().to_string();
+        let payload = json!({
+            "event_id": event_id,
+            "action": "recovery.owner_reset_completed",
+            "subject_principal_id": uuid::Uuid::now_v7().to_string(),
+            "actor_principal_id": uuid::Uuid::now_v7().to_string(),
+            "metadata": {"credential_generation": 2}
+        });
+        op.create_dir("spaces/demo/audit/event-ids/").await?;
+        create_pending_marker(&op, "demo", &event_id, &payload).await?;
+        let resumed = append_audit_event(&op, "demo", &payload, None).await?;
+        assert_eq!(resumed["event_id"], event_id);
+        let (marker, _) = read_event_marker(&op, "demo", &event_id)
+            .await?
+            .expect("resumed marker");
+        assert_eq!(marker["status"], "committed");
+        assert_eq!(
+            list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
+            1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_013_real_cross_process_conditional_delivery() -> Result<()> {
+        let child_root = env::var_os("UGOITE_AUDIT_CHILD_ROOT");
+        let event_id = env::var("UGOITE_AUDIT_CHILD_EVENT_ID")
+            .unwrap_or_else(|_| uuid::Uuid::now_v7().to_string());
+        let payload = json!({
+            "event_id": event_id,
+            "action": "recovery.owner_reset_completed",
+            "subject_principal_id": "01900000-0000-7000-8000-000000000001",
+            "actor_principal_id": "01900000-0000-7000-8000-000000000002",
+            "metadata": {"credential_generation": 2}
+        });
+        if let Some(root) = child_root {
+            let op = operator_from_uri(&format!("fs://{}", root.to_string_lossy()))?;
+            append_audit_event(&op, "demo", &payload, None).await?;
+            return Ok(());
+        }
+
+        let root = tempfile::tempdir()?;
+        let executable = env::current_exe()?;
+        let test_filter = "audit::tests::test_req_sec_013_real_cross_process_conditional_delivery";
+        let mut children = Vec::new();
+        for _ in 0..2 {
+            children.push(
+                Command::new(&executable)
+                    .args(["--exact", test_filter, "--nocapture"])
+                    .env("UGOITE_AUDIT_CHILD_ROOT", root.path())
+                    .env("UGOITE_AUDIT_CHILD_EVENT_ID", &event_id)
+                    .spawn()?,
+            );
+        }
+        for mut child in children {
+            let status = child.wait()?;
+            assert!(status.success(), "audit child exited with {status}");
+        }
+        let op = operator_from_uri(&format!("fs://{}", root.path().display()))?;
+        let listing = list_audit_events(&op, "demo", AuditListOptions::default()).await?;
+        assert_eq!(listing["total"], 1);
         Ok(())
     }
 }

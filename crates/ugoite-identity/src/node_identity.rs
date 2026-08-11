@@ -2488,6 +2488,31 @@ impl NodeIdentityService {
             issuer_account_id,
             Some(snapshot),
             issuer_credential_id,
+            None,
+        )
+        .await
+    }
+
+    pub async fn issue_owner_recovery_approval_with_snapshot_credential_and_session(
+        &self,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+        session_token: &str,
+    ) -> Result<(Uuid, String, String)> {
+        self.issue_owner_recovery_approval_unchecked(
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+            Some(session_token),
         )
         .await
     }
@@ -2501,9 +2526,25 @@ impl NodeIdentityService {
         issuer_account_id: Uuid,
         snapshot: Option<RecoveryBindingSnapshot>,
         issuer_credential_id: Option<Uuid>,
+        session_token: Option<&str>,
     ) -> Result<(Uuid, String, String)> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        if let Some(session_token) = session_token {
+            self.validate_recent_passkey_session_state(
+                &state,
+                session_token,
+                issuer_account_id,
+                issuer_credential_id
+                    .ok_or_else(|| anyhow!("owner recovery credential is missing"))?,
+                state
+                    .accounts
+                    .get(&issuer_account_id)
+                    .map(|account| account.credential_generation)
+                    .unwrap_or_default(),
+            )
+            .await?;
+        }
         if account_id == issuer_account_id || principal_id == issuer_principal_id {
             bail!("owner cannot approve their own recovery");
         }
@@ -3466,6 +3507,33 @@ impl NodeIdentityService {
             issuer_account_id,
             Some(snapshot),
             issuer_credential_id,
+            None,
+        )
+        .await
+    }
+
+    pub async fn rotate_recovery_codes_with_snapshot_credential_and_session(
+        &self,
+        request_id: Uuid,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+        session_token: &str,
+    ) -> Result<Vec<String>> {
+        self.rotate_recovery_codes_unchecked(
+            request_id,
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+            Some(session_token),
         )
         .await
     }
@@ -3480,9 +3548,25 @@ impl NodeIdentityService {
         issuer_account_id: Uuid,
         snapshot: Option<RecoveryBindingSnapshot>,
         issuer_credential_id: Option<Uuid>,
+        session_token: Option<&str>,
     ) -> Result<Vec<String>> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        if let Some(session_token) = session_token {
+            self.validate_recent_passkey_session_state(
+                &state,
+                session_token,
+                issuer_account_id,
+                issuer_credential_id
+                    .ok_or_else(|| anyhow!("owner recovery credential is missing"))?,
+                state
+                    .accounts
+                    .get(&issuer_account_id)
+                    .map(|account| account.credential_generation)
+                    .unwrap_or_default(),
+            )
+            .await?;
+        }
         if let Some(existing) = state.backup_rotation_requests.get(&request_id) {
             if existing.space_uid != space_uid
                 || existing.principal_id != principal_id
@@ -3872,6 +3956,24 @@ impl NodeIdentityService {
     ) -> Result<()> {
         let _guard = self.state_lock.lock().await;
         let state = self.read_state().await?;
+        self.validate_recent_passkey_session_state(
+            &state,
+            session_token,
+            account_id,
+            credential_id,
+            expected_generation,
+        )
+        .await
+    }
+
+    async fn validate_recent_passkey_session_state(
+        &self,
+        state: &NodeState,
+        session_token: &str,
+        account_id: Uuid,
+        credential_id: Uuid,
+        expected_generation: u64,
+    ) -> Result<()> {
         let account = state
             .accounts
             .get(&account_id)
@@ -6466,6 +6568,7 @@ mod tests {
                 issuer_account_id,
                 None,
                 None,
+                None,
             )
             .await?;
         assert!(service
@@ -6649,6 +6752,7 @@ mod tests {
                 target_account_id,
                 issuer_principal_id,
                 issuer_account_id,
+                None,
                 None,
                 None,
             )
