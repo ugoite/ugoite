@@ -2441,13 +2441,16 @@ async fn owner_rotate_backup_codes(
                 Err(_) => return Err(recovery_storage_unavailable()),
             };
             let _ = reconcile_recovery_audit_outbox(&state, &space_id).await;
-            let audit_delivered = !state
+            let audit_delivered = state
                 .identity
                 .pending_recovery_audits()
                 .await
-                .map_err(|_| recovery_storage_unavailable())?
-                .into_iter()
-                .any(|record| record.event_id == request_id);
+                .map(|pending| {
+                    !pending
+                        .into_iter()
+                        .any(|record| record.event_id == request_id)
+                })
+                .unwrap_or(false);
             let mut response_headers = recovery_result_headers();
             return Ok((
                 StatusCode::OK,
@@ -2676,13 +2679,16 @@ async fn auth_owner_recovery_finish(
             if let Ok(space_id) = find_space_id_by_uid(&state, marker.space_uid).await {
                 let _ = reconcile_recovery_audit_outbox(&state, &space_id).await;
             }
-            let audit_delivered = !state
+            let audit_delivered = state
                 .identity
                 .pending_recovery_audits()
                 .await
-                .map_err(|_| recovery_storage_unavailable())?
-                .into_iter()
-                .any(|record| record.event_id == marker.reset_id);
+                .map(|pending| {
+                    !pending
+                        .into_iter()
+                        .any(|record| record.event_id == marker.reset_id)
+                })
+                .unwrap_or(false);
             let mut headers = recovery_result_headers();
             headers.insert(
                 header::SET_COOKIE,
