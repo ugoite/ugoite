@@ -283,18 +283,12 @@ impl Authorizer {
         if state.space_uid == Uuid::nil() {
             bail!("recovery fence is unavailable")
         }
-        for fence in state
+        if state
             .recovery_fences
-            .values_mut()
-            .filter(|fence| fence.status == "active")
+            .values()
+            .any(|fence| fence.status == "active")
         {
-            if fence.target_principal_id == target_principal_id
-                && fence.target_account_id == target_account_id
-            {
-                fence.status = "superseded".to_string();
-            } else {
-                bail!("RECOVERY_FENCE_UNAVAILABLE")
-            }
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
         }
         let _issuer = state
             .principals
@@ -371,10 +365,20 @@ impl Authorizer {
         let mut state = self.state(space_id).await?;
         let fence = state
             .recovery_fences
-            .get_mut(&fence_id)
+            .get(&fence_id)
             .ok_or_else(|| anyhow!("recovery fence is unavailable"))?;
+        if fence.status == "completed" {
+            return Ok(());
+        }
         if fence.status != "active" {
             bail!("recovery fence is not active")
+        }
+        let expected_revision = fence
+            .authorization_revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("authorization revision overflow"))?;
+        if state.revision != expected_revision {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
         }
         if state
             .principal_lifecycle_epochs
@@ -389,7 +393,11 @@ impl Authorizer {
         {
             bail!("RECOVERY_FENCE_UNAVAILABLE")
         }
-        fence.status = "completed".to_string();
+        state
+            .recovery_fences
+            .get_mut(&fence_id)
+            .expect("fence was checked above")
+            .status = "completed".to_string();
         state.revision = state
             .revision
             .checked_add(1)
@@ -1234,7 +1242,7 @@ mod tests {
     async fn recovery_fence_serializes_membership_lifecycle_changes() -> Result<()> {
         let op = operator_from_uri("memory://authorization-recovery-fence")?;
         op.create_dir("spaces/demo/").await?;
-        let authorizer = Authorizer::new(op);
+        let authorizer = Authorizer::new(op.clone());
         let owner = Uuid::now_v7();
         let member = Uuid::now_v7();
         let issuer_account = Uuid::now_v7();
@@ -1274,7 +1282,15 @@ mod tests {
             .change_role("demo", owner, member, SpaceRole::Editor)
             .await
             .is_err());
-        let replacement = authorizer
+        let mut tampered = authorizer.state("demo").await?;
+        tampered.revision += 1;
+        op.write(&state_path("demo"), serde_json::to_vec_pretty(&tampered)?)
+            .await?;
+        assert!(authorizer
+            .complete_recovery_fence("demo", fence.fence_id)
+            .await
+            .is_err());
+        let error = authorizer
             .reserve_recovery_fence(
                 "demo",
                 Uuid::now_v7(),
@@ -1286,24 +1302,18 @@ mod tests {
                 0,
                 chrono::Duration::minutes(5),
             )
-            .await?;
-        let superseded_state = authorizer.state("demo").await?;
-        assert_eq!(
-            superseded_state.recovery_fences[&fence.fence_id].status,
-            "superseded"
-        );
+            .await
+            .expect_err("an active recovery fence must not be superseded");
+        assert!(error.to_string().contains("RECOVERY_FENCE_UNAVAILABLE"));
         authorizer
-            .complete_recovery_fence("demo", replacement.fence_id)
+            .release_recovery_fence("demo", fence.fence_id)
             .await?;
         authorizer
             .change_role("demo", owner, member, SpaceRole::Editor)
             .await?;
         let state = authorizer.state("demo").await?;
         assert_eq!(state.principal_lifecycle_epochs[&member], 2);
-        assert_eq!(
-            state.recovery_fences[&replacement.fence_id].status,
-            "completed"
-        );
+        assert_eq!(state.recovery_fences[&fence.fence_id].status, "released");
         Ok(())
     }
 

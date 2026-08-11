@@ -686,13 +686,25 @@ fn bound_principal_for_account(
     state: &NodeState,
     space_uid: Option<Uuid>,
     account_id: Uuid,
-) -> Option<Uuid> {
-    let space_uid = space_uid?;
-    state
+) -> Result<Option<Uuid>> {
+    let Some(space_uid) = space_uid else {
+        return Ok(None);
+    };
+    let matches = state
         .bindings
         .iter()
         .find(|binding| binding.space_uid == space_uid && binding.node_account_id == account_id)
-        .map(|binding| binding.principal_id)
+        .map(|binding| binding.principal_id);
+    let count = state
+        .bindings
+        .iter()
+        .filter(|binding| binding.space_uid == space_uid && binding.node_account_id == account_id)
+        .count();
+    match count {
+        0 => Ok(None),
+        1 => Ok(matches),
+        _ => bail!("account binding is not unique"),
+    }
 }
 
 fn node_recovery_fence_is_active(fence: &NodeRecoveryFence) -> bool {
@@ -799,18 +811,19 @@ fn acquire_node_recovery_fence(
         bail!("recovery tuple is stale")
     }
 
-    for fence in state
+    if state
         .node_recovery_fences
-        .values_mut()
-        .filter(|fence| fence.status == "active")
+        .values()
+        .any(|fence| fence.status == "active" && fence.fence_id != snapshot.recovery_fence_id)
     {
-        if fence.fence_id == snapshot.recovery_fence_id {
-            return Ok(());
-        } else if fence.space_uid == space_uid && fence.account_id == account_id {
-            fence.status = "superseded".to_string();
-        } else {
-            bail!("RECOVERY_FENCE_UNAVAILABLE")
-        }
+        bail!("RECOVERY_FENCE_UNAVAILABLE")
+    }
+    if state
+        .node_recovery_fences
+        .get(&snapshot.recovery_fence_id)
+        .is_some_and(|fence| fence.status == "active")
+    {
+        return Ok(());
     }
 
     state.node_recovery_fences.insert(
@@ -1137,18 +1150,20 @@ impl NodeIdentityService {
         if fence.status != "active" {
             bail!("recovery fence is not active")
         }
-        if state
+        let issuer_epoch = state
             .account_lifecycle_epochs
             .get(&fence.issuer_account_id)
             .copied()
-            .unwrap_or_default()
-            != fence.issuer_node_lifecycle_epoch
-            || state
-                .account_lifecycle_epochs
-                .get(&fence.account_id)
-                .copied()
-                .unwrap_or_default()
-                != fence.target_node_lifecycle_epoch
+            .unwrap_or_default();
+        let target_epoch = state
+            .account_lifecycle_epochs
+            .get(&fence.account_id)
+            .copied()
+            .unwrap_or_default();
+        let target_epoch_after_reset = fence.target_node_lifecycle_epoch.checked_add(1);
+        if issuer_epoch != fence.issuer_node_lifecycle_epoch
+            || (target_epoch != fence.target_node_lifecycle_epoch
+                && Some(target_epoch) != target_epoch_after_reset)
         {
             bail!("RECOVERY_FENCE_UNAVAILABLE")
         }
@@ -1568,6 +1583,9 @@ impl NodeIdentityService {
             .find(|invitation| invitation.token_hash == token_hash(invitation_token))
             .cloned()
             .ok_or_else(|| anyhow!("invitation is invalid"))?;
+        if let Some(space_uid) = invitation.space_uid {
+            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+        }
         if let Some(acceptance) = invitation.acceptance.as_ref() {
             if matches!(
                 acceptance.kind(),
@@ -1641,6 +1659,9 @@ impl NodeIdentityService {
         if invitation.token_hash != token_hash(invitation_token) || invitation.acceptance.is_some()
         {
             bail!("invitation is invalid or used");
+        }
+        if let Some(space_uid) = invitation.space_uid {
+            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
         }
         validate_expiry(&invitation.expires_at, "invitation")?;
         let passkey = self
@@ -2415,7 +2436,10 @@ impl NodeIdentityService {
                     {
                         bail!("owner reset already completed");
                     }
-                    if tombstone.reason == "expired" {
+                    if matches!(
+                        tombstone.reason.as_str(),
+                        "expired" | "superseded" | "account_reset"
+                    ) {
                         bail!("owner recovery challenge expired");
                     }
                 }
@@ -2707,6 +2731,7 @@ impl NodeIdentityService {
             .get(&approval_id)
             .cloned()
             .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        validate_expiry(&approval.expires_at, "owner approval")?;
         if approval.challenge_id != Some(challenge_id)
             || approval.reset_id != Some(reset_id)
             || approval.used_at.is_some()
@@ -3470,7 +3495,7 @@ impl NodeIdentityService {
                 .get(&invitation_id)
                 .and_then(|invitation| invitation.space_uid),
             account_id,
-        );
+        )?;
         let mut write_state = false;
         let invitation = {
             let invitation = state
@@ -3590,11 +3615,7 @@ impl NodeIdentityService {
         account_id: Uuid,
     ) -> Result<Option<Uuid>> {
         let state = self.read_state().await?;
-        Ok(bound_principal_for_account(
-            &state,
-            Some(space_uid),
-            account_id,
-        ))
+        bound_principal_for_account(&state, Some(space_uid), account_id)
     }
 
     pub async fn principal_for_account(&self, space_uid: Uuid, account_id: Uuid) -> Result<Uuid> {
@@ -4422,8 +4443,11 @@ impl NodeIdentityService {
                     .values()
                     .find(|invitation| invitation.token_hash == invitation_hash)
                     .and_then(|invitation| invitation.space_uid);
+                if let Some(space_uid) = invitation_space_uid {
+                    ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+                }
                 let existing_principal_id =
-                    bound_principal_for_account(&state, invitation_space_uid, account_id);
+                    bound_principal_for_account(&state, invitation_space_uid, account_id)?;
                 let invitation = state
                     .invitations
                     .values_mut()
@@ -4452,6 +4476,14 @@ impl NodeIdentityService {
         } else {
             let invitation_hash =
                 invitation_hash.ok_or_else(|| anyhow!("new OIDC users require an invitation"))?;
+            let invitation_space_uid = state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == invitation_hash)
+                .and_then(|invitation| invitation.space_uid);
+            if let Some(space_uid) = invitation_space_uid {
+                ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+            }
             let invitation = state
                 .invitations
                 .values_mut()
@@ -5732,7 +5764,7 @@ mod tests {
         assert!(serde_json::to_string(approval_event)?
             .find(&token)
             .is_none());
-        service.start_owner_recovery_registration(&token).await?;
+        let first_registration = service.start_owner_recovery_registration(&token).await?;
         assert!(service
             .start_owner_recovery_registration(&token)
             .await
@@ -5756,6 +5788,13 @@ mod tests {
             .recovery_challenge_tombstones
             .values()
             .any(|tombstone| tombstone.reason == "superseded"));
+        let superseded_error = service
+            .owner_recovery_challenge_context(first_registration.challenge_id)
+            .await
+            .expect_err("superseded challenges must remain a terminal expiry");
+        assert!(superseded_error
+            .to_string()
+            .contains("owner recovery challenge expired"));
         service
             .start_owner_recovery_registration(&replacement_token)
             .await?;
@@ -5832,6 +5871,20 @@ mod tests {
                 binding_method: BindingMethod::Invite,
             },
         ]);
+        let invitation_id = Uuid::now_v7();
+        state.invitations.insert(
+            invitation_id,
+            AccountInvitation {
+                invitation_id,
+                token_hash: token_hash("blocked-invitation"),
+                display_name: "Blocked invite".to_string(),
+                space_uid: Some(space_uid),
+                role: Some("viewer".to_string()),
+                expires_at: timestamp(Utc::now() + Duration::hours(1)),
+                acceptance: None,
+                created_by: issuer_account_id,
+            },
+        );
         service.write_state(&state).await?;
         let snapshot = RecoveryBindingSnapshot {
             request_id: Uuid::now_v7(),
@@ -5861,6 +5914,10 @@ mod tests {
                 Some(space_uid),
                 Some("viewer".to_string()),
             )
+            .await
+            .is_err());
+        assert!(service
+            .start_invitation_registration("blocked-invitation")
             .await
             .is_err());
         assert!(service

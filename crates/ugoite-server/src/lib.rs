@@ -1648,6 +1648,9 @@ fn recovery_reservation_error(error: anyhow::Error) -> ApiError {
     if message.contains("RECOVERY_FENCE_UNAVAILABLE") {
         return recovery_fence_unavailable();
     }
+    if message.to_lowercase().contains("conflict") {
+        return recovery_fence_unavailable();
+    }
     if message.contains("read")
         || message.contains("write")
         || message.contains("storage")
@@ -1688,34 +1691,33 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
             Ok(fence) => fence,
             Err(_) => continue,
         };
-        if fence.status == "active" {
-            if authorizer
+        let space_fence_ready = match fence.status.as_str() {
+            "active" => authorizer
                 .complete_recovery_fence(space_id, fence_id)
                 .await
-                .is_err()
-            {
-                continue;
-            }
+                .is_ok(),
+            "completed" => true,
+            // A Node mutation is durable once it appears in pending_ids. Never
+            // mark that mutation reconciled merely because its Space fence was
+            // released or superseded; that would manufacture a cross-store
+            // completion without a completed authorization fence.
+            _ => false,
+        };
+        if !space_fence_ready {
+            continue;
         }
-        if matches!(fence.status.as_str(), "active" | "completed") {
-            if state
-                .identity
-                .complete_recovery_fence(fence_id)
-                .await
-                .is_err()
-            {
-                continue;
-            }
-            state
-                .identity
-                .mark_recovery_fence_reconciled(fence_id)
-                .await?;
-        } else if matches!(fence.status.as_str(), "superseded" | "released") {
-            state
-                .identity
-                .mark_recovery_fence_reconciled(fence_id)
-                .await?;
+        if state
+            .identity
+            .complete_recovery_fence(fence_id)
+            .await
+            .is_err()
+        {
+            continue;
         }
+        state
+            .identity
+            .mark_recovery_fence_reconciled(fence_id)
+            .await?;
     }
 
     let authorization = authorizer.state(space_id).await?;
@@ -2018,6 +2020,24 @@ async fn owner_rotate_backup_codes(
         })?;
     let (space_uid, issuer_principal_id) =
         recovery_owner_context(&state, &space_id, &identity).await?;
+    if let Some(existing) = state
+        .identity
+        .backup_rotation_request(request_id)
+        .await
+        .map_err(auth_error)?
+    {
+        let same_tuple = existing.space_uid == space_uid
+            && existing.principal_id == payload.principal_id
+            && existing.issuer_principal_id == issuer_principal_id
+            && existing.issuer_account_id == identity.account_id;
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            json!({
+                "code": if same_tuple { "BACKUP_ROTATION_ALREADY_COMMITTED" } else { "BACKUP_ROTATION_KEY_MISMATCH" },
+                "message": if same_tuple { "backup rotation is already committed" } else { "idempotency key is bound to another recovery tuple" }
+            }),
+        ));
+    }
     let account_id = recovery_target_account(
         &state,
         &space_id,
@@ -2029,20 +2049,6 @@ async fn owner_rotate_backup_codes(
     let authorizer = Authorizer::new(state.service.operator().clone());
     let (issuer_generation, target_generation) =
         recovery_account_generations(&state, identity.account_id, account_id).await?;
-    let authorization = authorizer
-        .state(&space_id)
-        .await
-        .map_err(ApiError::from_core)?;
-    let issuer_epoch = authorization
-        .principal_lifecycle_epochs
-        .get(&issuer_principal_id)
-        .copied()
-        .unwrap_or_default();
-    let target_epoch = authorization
-        .principal_lifecycle_epochs
-        .get(&payload.principal_id)
-        .copied()
-        .unwrap_or_default();
     let issuer_node_epoch = state
         .identity
         .recovery_account_lifecycle_epoch(identity.account_id)
@@ -2053,41 +2059,6 @@ async fn owner_rotate_backup_codes(
         .recovery_account_lifecycle_epoch(account_id)
         .await
         .map_err(auth_error)?;
-    if let Some(existing) = state
-        .identity
-        .backup_rotation_request(request_id)
-        .await
-        .map_err(auth_error)?
-    {
-        let same_tuple = existing.space_uid == space_uid
-            && existing.principal_id == payload.principal_id
-            && existing.account_id == account_id
-            && existing.issuer_principal_id == issuer_principal_id
-            && existing.issuer_account_id == identity.account_id
-            && existing.target_generation == target_generation
-            && existing.issuer_generation == issuer_generation
-            && existing.target_node_lifecycle_epoch == target_node_epoch
-            && existing.issuer_node_lifecycle_epoch == issuer_node_epoch
-            && existing.target_space_lifecycle_epoch == target_epoch
-            && existing.issuer_space_lifecycle_epoch == issuer_epoch
-            && authorization
-                .principal_lifecycle_epochs
-                .get(&existing.principal_id)
-                .copied()
-                == Some(target_epoch)
-            && authorization
-                .principal_lifecycle_epochs
-                .get(&existing.issuer_principal_id)
-                .copied()
-                == Some(issuer_epoch);
-        return Err(ApiError::new(
-            StatusCode::CONFLICT,
-            json!({
-                "code": if same_tuple { "BACKUP_ROTATION_ALREADY_COMMITTED" } else { "BACKUP_ROTATION_KEY_MISMATCH" },
-                "message": if same_tuple { "backup rotation is already committed" } else { "idempotency key is bound to another recovery tuple" }
-            }),
-        ));
-    }
     let fence = authorizer
         .reserve_recovery_fence(
             &space_id,
@@ -2178,6 +2149,12 @@ async fn owner_rotate_backup_codes(
     } else {
         false
     };
+    if !space_fence_committed || !node_fence_committed {
+        // The Node mutation is already durable. Do not expose the one-time
+        // plaintext codes until both halves of the fence are durable; the
+        // restart reconciler will finish the marker without replaying them.
+        return Err(recovery_fence_unavailable());
+    }
     if space_fence_committed && node_fence_committed {
         let _ = state
             .identity
@@ -2304,6 +2281,11 @@ async fn auth_owner_recovery_finish(
     } else {
         false
     };
+    if !space_fence_committed || !node_fence_committed {
+        // The committed reset is terminal, but its one-time response must not
+        // be manufactured while the matching Space fence is pending.
+        return Err(recovery_fence_unavailable());
+    }
     if space_fence_committed && node_fence_committed {
         let _ = state
             .identity

@@ -109,6 +109,16 @@ fn audit_event_fingerprint(value: &Value) -> Result<String> {
         .ok_or_else(|| anyhow!("audit event fingerprint source must be an object"))?;
     serde_json::to_string(&json!({
         "action": object.get("action").cloned().unwrap_or(Value::Null),
+        "space_uid": object.get("space_uid").cloned().unwrap_or(Value::Null),
+        "challenge_id": object.get("challenge_id").cloned().unwrap_or(Value::Null),
+        "issuer_principal_id": object
+            .get("issuer_principal_id")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "issuer_account_id": object
+            .get("issuer_account_id")
+            .cloned()
+            .unwrap_or(Value::Null),
         "subject_principal_id": object
             .get("subject_principal_id")
             .cloned()
@@ -426,6 +436,19 @@ async fn append_audit_event_once(
         .get("actor_account_id")
         .cloned()
         .unwrap_or(Value::Null);
+    let space_uid = payload_obj.get("space_uid").cloned().unwrap_or(Value::Null);
+    let challenge_id = payload_obj
+        .get("challenge_id")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let issuer_principal_id = payload_obj
+        .get("issuer_principal_id")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let issuer_account_id = payload_obj
+        .get("issuer_account_id")
+        .cloned()
+        .unwrap_or(Value::Null);
     let subject_account_id = payload_obj
         .get("subject_account_id")
         .cloned()
@@ -532,6 +555,10 @@ async fn append_audit_event_once(
         "event_id": requested_event_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
         "timestamp": now_iso(),
         "space_id": safe_space_id.clone(),
+        "space_uid": space_uid.clone(),
+        "challenge_id": challenge_id.clone(),
+        "issuer_principal_id": issuer_principal_id.clone(),
+        "issuer_account_id": issuer_account_id.clone(),
         "action": action.clone(),
         "subject_principal_id": subject_principal_id.clone(),
         "subject_account_id": subject_account_id.clone(),
@@ -575,6 +602,10 @@ async fn append_audit_event_once(
             &json!({
                 "event_id": event_id,
                 "action": action,
+                "space_uid": space_uid,
+                "challenge_id": challenge_id,
+                "issuer_principal_id": issuer_principal_id,
+                "issuer_account_id": issuer_account_id,
                 "subject_principal_id": subject_principal_id,
                 "subject_account_id": subject_account_id,
                 "actor_principal_id": actor_principal_id,
@@ -785,6 +816,10 @@ mod tests {
         let first = json!({
             "event_id": event_id,
             "action": "recovery.owner_reset_completed",
+            "space_uid": uuid::Uuid::now_v7().to_string(),
+            "challenge_id": uuid::Uuid::now_v7().to_string(),
+            "issuer_principal_id": uuid::Uuid::now_v7().to_string(),
+            "issuer_account_id": uuid::Uuid::now_v7().to_string(),
             "subject_principal_id": uuid::Uuid::now_v7().to_string(),
             "actor_principal_id": uuid::Uuid::now_v7().to_string(),
             "metadata": {"credential_generation": 2}
@@ -792,10 +827,14 @@ mod tests {
         append_audit_event(&op, "demo", &first, None).await?;
         let conflicting = json!({
             "event_id": event_id,
-            "action": "recovery.backup_codes_rotated",
+            "action": first["action"].clone(),
+            "space_uid": uuid::Uuid::now_v7().to_string(),
+            "challenge_id": uuid::Uuid::now_v7().to_string(),
+            "issuer_principal_id": uuid::Uuid::now_v7().to_string(),
+            "issuer_account_id": uuid::Uuid::now_v7().to_string(),
             "subject_principal_id": first["subject_principal_id"].clone(),
             "actor_principal_id": first["actor_principal_id"].clone(),
-            "metadata": {"credential_generation": 3}
+            "metadata": first["metadata"].clone()
         });
         let error = append_audit_event(&op, "demo", &conflicting, None)
             .await
