@@ -36,13 +36,18 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-002
   title: Security Headers
-  description: The server should add an explicit production security-header policy. Current middleware provides
-    request IDs, tracing, body limits, and CORS but does not set the full header set described here.
+  description: The server adds an explicit response security-header policy to every application response. CSP is
+    same-origin by default and supports the static browser's external manifest boot script, WebAssembly, and blob
+    asset previews. HSTS is added only for non-loopback HTTPS public origins; localhost and IPv4/IPv6 loopback
+    origins omit HSTS for local development.
   related_spec:
   - security/overview.md
   priority: medium
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-server/src/lib.rs
+  - file: crates/ugoite-server/tests/api_contract.rs
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.

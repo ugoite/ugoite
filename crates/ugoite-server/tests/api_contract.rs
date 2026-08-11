@@ -1,12 +1,44 @@
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{Method, Request, StatusCode},
 };
 use serde_json::Value;
+use std::ffi::{OsStr, OsString};
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 use tower::ServiceExt;
 use ugoite_server::{app, AppState};
 
+static APP_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 async fn initialized_app(name: &str) -> axum::Router {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    initialized_app_without_env_lock(name).await
+}
+
+async fn initialized_app_without_env_lock(name: &str) -> axum::Router {
     let state = AppState::new_for_tests(format!("memory://server-contract-{name}")).expect("state");
     state
         .initialize_node()
@@ -20,6 +52,118 @@ async fn json(response: axum::response::Response) -> Value {
         .await
         .expect("body");
     serde_json::from_slice(&bytes).expect("json")
+}
+
+fn assert_common_security_headers(response: &axum::response::Response, hsts: bool) {
+    let headers = response.headers();
+    assert_eq!(
+        headers.get("x-content-type-options"),
+        Some(&"nosniff".parse().unwrap())
+    );
+    assert_eq!(
+        headers.get("x-frame-options"),
+        Some(&"DENY".parse().unwrap())
+    );
+    assert_eq!(
+        headers.get("referrer-policy"),
+        Some(&"strict-origin-when-cross-origin".parse().unwrap())
+    );
+    assert_eq!(
+        headers.get("permissions-policy"),
+        Some(&"camera=(), microphone=(), geolocation=()".parse().unwrap())
+    );
+    let csp = headers
+        .get("content-security-policy")
+        .and_then(|value| value.to_str().ok())
+        .expect("CSP header");
+    assert!(csp.contains("default-src 'self'"));
+    assert!(csp.contains("script-src 'self'"));
+    assert!(csp.contains("img-src 'self' blob:"));
+    assert_eq!(headers.contains_key("strict-transport-security"), hsts);
+}
+
+#[tokio::test]
+async fn req_sec_002_covers_metadata_api_error_and_middleware_responses() {
+    let app = initialized_app("security-headers").await;
+    for uri in [
+        "/",
+        "/health",
+        "/.well-known/oauth-protected-resource",
+        "/missing",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_common_security_headers(&response, false);
+    }
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/auth/setup/start")
+                .header("cookie", "ugoite_session=present")
+                .header("origin", "https://attacker.example")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_common_security_headers(&response, false);
+}
+
+#[tokio::test]
+async fn req_sec_002_covers_the_static_browser_root() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let static_dir = std::env::temp_dir().join(format!(
+        "ugoite-security-headers-static-{}",
+        uuid::Uuid::now_v7()
+    ));
+    std::fs::create_dir_all(&static_dir).unwrap();
+    std::fs::write(static_dir.join("index.html"), "<!doctype html>").unwrap();
+    let _static_dir = EnvVarGuard::set("UGOITE_STATIC_DIR", &static_dir);
+    let app = initialized_app_without_env_lock("security-headers-static").await;
+    let response = app
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    std::fs::remove_dir_all(static_dir).unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_common_security_headers(&response, false);
+}
+
+#[tokio::test]
+async fn req_sec_002_keeps_security_headers_on_cors_preflight() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
+    let app = initialized_app_without_env_lock("security-headers-cors").await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/health")
+                .header("origin", "https://frontend.example")
+                .header("access-control-request-method", "GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(response.status().is_success());
+    assert_eq!(
+        response.headers().get("access-control-allow-origin"),
+        Some(&"https://frontend.example".parse().unwrap())
+    );
+    assert_eq!(
+        response.headers().get("access-control-allow-credentials"),
+        Some(&"true".parse().unwrap())
+    );
+    assert_common_security_headers(&response, false);
 }
 
 #[tokio::test]

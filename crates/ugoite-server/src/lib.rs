@@ -21,6 +21,7 @@ use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
     env,
+    net::IpAddr,
 };
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
@@ -54,11 +55,66 @@ use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
 const OAUTH_RESOURCE_DOCUMENTATION_URL: &str =
     "https://ugoite.github.io/ugoite/docs/guide/operate/auth/auth-overview/";
+const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'";
+const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SecurityHeadersPolicy {
+    hsts: bool,
+}
+
+impl SecurityHeadersPolicy {
+    fn from_public_origin(public_origin: &str) -> Self {
+        let hsts = url::Url::parse(public_origin).is_ok_and(|origin| {
+            origin.scheme() == "https"
+                && !origin.host_str().is_some_and(|host| {
+                    let host = host.trim_start_matches('[').trim_end_matches(']');
+                    host.trim_end_matches('.').eq_ignore_ascii_case("localhost")
+                        || host
+                            .parse::<IpAddr>()
+                            .is_ok_and(|address| address.is_loopback())
+                })
+        });
+        Self { hsts }
+    }
+
+    fn apply(self, headers: &mut HeaderMap) {
+        headers.insert(
+            HeaderName::from_static("content-security-policy"),
+            HeaderValue::from_static(SECURITY_HEADERS_CSP),
+        );
+        headers.insert(
+            HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
+        );
+        headers.insert(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        );
+        headers.insert(
+            HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        );
+        headers.insert(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+        );
+        if self.hsts {
+            headers.insert(
+                HeaderName::from_static("strict-transport-security"),
+                HeaderValue::from_static(HSTS_VALUE),
+            );
+        } else {
+            headers.remove("strict-transport-security");
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
     service: UgoiteService,
     identity: NodeIdentityService,
+    security_headers: SecurityHeadersPolicy,
 }
 
 impl AppState {
@@ -78,8 +134,10 @@ impl AppState {
                 .context("configure UGOITE_NODE_CONTROL_URI")?,
             Err(_) => service.operator().clone(),
         };
+        let identity = NodeIdentityService::new(control_operator, rp_id, public_origin)?;
         Ok(Self {
-            identity: NodeIdentityService::new(control_operator, rp_id, public_origin)?,
+            security_headers: SecurityHeadersPolicy::from_public_origin(identity.public_origin()),
+            identity,
             service,
         })
     }
@@ -89,6 +147,7 @@ impl AppState {
         let service = UgoiteService::new(root_uri.into())?;
         Ok(Self {
             identity: NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?,
+            security_headers: SecurityHeadersPolicy::from_public_origin("http://localhost:8000"),
             service,
         })
     }
@@ -393,7 +452,21 @@ fn app_layers(router: Router<AppState>, state: AppState) -> Router {
             );
         }
     }
+    router = router.layer(middleware::from_fn_with_state(
+        state.clone(),
+        add_security_headers,
+    ));
     router.with_state(state)
+}
+
+async fn add_security_headers(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    state.security_headers.apply(response.headers_mut());
+    response
 }
 
 async fn validate_unsafe_origin(
@@ -4542,6 +4615,55 @@ fn strip_html_tags(input: &str) -> String {
 
 pub fn openapi_snapshot() -> Value {
     serde_json::from_str(OPENAPI_JSON).expect("embedded OpenAPI snapshot must be valid JSON")
+}
+
+#[cfg(test)]
+mod security_headers_tests {
+    use super::*;
+
+    #[test]
+    fn req_sec_002_omits_hsts_for_local_origins() {
+        for origin in [
+            "http://localhost:8000",
+            "https://localhost:8000",
+            "https://127.0.0.1:8000",
+            "https://[::1]:8000",
+        ] {
+            assert!(
+                !SecurityHeadersPolicy::from_public_origin(origin).hsts,
+                "local origin must not receive HSTS: {origin}"
+            );
+        }
+        assert!(SecurityHeadersPolicy::from_public_origin("https://ugoite.example").hsts);
+    }
+
+    #[test]
+    fn req_sec_002_adds_the_common_header_contract() {
+        let mut headers = HeaderMap::new();
+        SecurityHeadersPolicy { hsts: true }.apply(&mut headers);
+
+        assert_eq!(
+            headers.get("content-security-policy").unwrap(),
+            SECURITY_HEADERS_CSP
+        );
+        assert!(SECURITY_HEADERS_CSP.contains("script-src 'self'"));
+        assert!(!SECURITY_HEADERS_CSP.contains("script-src 'unsafe-inline'"));
+        assert!(SECURITY_HEADERS_CSP.contains("img-src 'self' blob:"));
+        assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+        assert_eq!(headers.get("x-frame-options").unwrap(), "DENY");
+        assert_eq!(
+            headers.get("referrer-policy").unwrap(),
+            "strict-origin-when-cross-origin"
+        );
+        assert_eq!(
+            headers.get("permissions-policy").unwrap(),
+            "camera=(), microphone=(), geolocation=()"
+        );
+        assert_eq!(
+            headers.get("strict-transport-security").unwrap(),
+            HSTS_VALUE
+        );
+    }
 }
 
 #[cfg(test)]
