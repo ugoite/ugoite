@@ -3,6 +3,7 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use serde_json::Value;
+use std::ffi::{OsStr, OsString};
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
@@ -10,7 +11,34 @@ use ugoite_server::{app, AppState};
 
 static APP_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 async fn initialized_app(name: &str) -> axum::Router {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    initialized_app_without_env_lock(name).await
+}
+
+async fn initialized_app_without_env_lock(name: &str) -> axum::Router {
     let state = AppState::new_for_tests(format!("memory://server-contract-{name}")).expect("state");
     state
         .initialize_node()
@@ -96,17 +124,12 @@ async fn req_sec_002_covers_the_static_browser_root() {
     ));
     std::fs::create_dir_all(&static_dir).unwrap();
     std::fs::write(static_dir.join("index.html"), "<!doctype html>").unwrap();
-    let previous = std::env::var_os("UGOITE_STATIC_DIR");
-    std::env::set_var("UGOITE_STATIC_DIR", &static_dir);
-    let app = initialized_app("security-headers-static").await;
+    let _static_dir = EnvVarGuard::set("UGOITE_STATIC_DIR", &static_dir);
+    let app = initialized_app_without_env_lock("security-headers-static").await;
     let response = app
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    match previous {
-        Some(value) => std::env::set_var("UGOITE_STATIC_DIR", value),
-        None => std::env::remove_var("UGOITE_STATIC_DIR"),
-    }
     std::fs::remove_dir_all(static_dir).unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
@@ -116,9 +139,8 @@ async fn req_sec_002_covers_the_static_browser_root() {
 #[tokio::test]
 async fn req_sec_002_keeps_security_headers_on_cors_preflight() {
     let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
-    let previous = std::env::var_os("UGOITE_CORS_ALLOWED_ORIGINS");
-    std::env::set_var("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
-    let app = initialized_app("security-headers-cors").await;
+    let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
+    let app = initialized_app_without_env_lock("security-headers-cors").await;
     let response = app
         .oneshot(
             Request::builder()
@@ -131,10 +153,6 @@ async fn req_sec_002_keeps_security_headers_on_cors_preflight() {
         )
         .await
         .unwrap();
-    match previous {
-        Some(value) => std::env::set_var("UGOITE_CORS_ALLOWED_ORIGINS", value),
-        None => std::env::remove_var("UGOITE_CORS_ALLOWED_ORIGINS"),
-    }
 
     assert!(response.status().is_success());
     assert_eq!(
