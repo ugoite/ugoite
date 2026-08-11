@@ -88,8 +88,10 @@ issuer/subject pair after recent Passkey authentication.
 Recovery requires an unused recovery code and TOTP. Attempts are throttled and
 locked after repeated failure. TOTP alone cannot add a Passkey. Successful
 self-recovery registers a replacement Passkey and displays a new set of
-recovery codes once. A separate owner-approved flow accepts a 15-minute,
-hash-only token issued by an active human Space Owner with a recent Passkey;
+recovery codes once. A separate owner-approved flow accepts a 15-minute token
+whose hash is authoritative; an encrypted bearer is retained only for a
+bounded retry with the same force-reset idempotency key. It is issued by an
+active human Space Owner with a recent Passkey;
 the target completes a five-minute WebAuthn challenge. The reset advances a
 credential generation and invalidates stale human sessions, device/refresh
 credentials, and pending flows while preserving Space membership and separate

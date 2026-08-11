@@ -79,8 +79,10 @@ Passkey cannot be removed.
 
 An active human Space Owner can recover another active human member with a
 recent Passkey session. `POST /spaces/{space_id}/admin/recovery/force-reset`
-returns a 15-minute one-time token; give it to the member over a trusted
-channel. The member submits it to `/auth/recovery/owner/start`, completes the
+requires a fresh UUIDv4 `Idempotency-Key` and returns a 15-minute one-time
+token; give it to the member over a trusted channel. If the response is
+ambiguous, retry with the same key and the same target tuple. The member submits
+the token to `/auth/recovery/owner/start`, completes the
 five-minute WebAuthn challenge at `/auth/recovery/owner/finish`, and receives a
 new session plus eight recovery codes once. The target's Space membership and
 agent credentials are preserved; old human credentials are invalidated by a

@@ -2302,6 +2302,41 @@ async fn owner_force_reset(
         .await
         .map_err(recovery_commit_error)?
     {
+        if existing.invalidated_at.is_some() || existing.used_at.is_some() {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({"code":"OWNER_APPROVAL_ALREADY_COMMITTED","message":"owner recovery approval is already committed"}),
+            ));
+        }
+        if chrono::DateTime::parse_from_rfc3339(&existing.expires_at)
+            .map(|expires| expires.with_timezone(&chrono::Utc) <= chrono::Utc::now())
+            .map_err(|_| recovery_storage_unavailable())?
+        {
+            let expired_fence = state
+                .identity
+                .expire_owner_recovery_approval(request_id)
+                .await
+                .map_err(recovery_commit_error)?;
+            if let Some((expired_space_uid, expired_fence_id)) = expired_fence {
+                abort_owner_recovery_fence(&state, expired_space_uid, expired_fence_id).await?;
+            }
+            if state
+                .identity
+                .owner_recovery_approval(request_id)
+                .await
+                .map_err(recovery_commit_error)?
+                .is_some_and(|approval| approval.used_at.is_some())
+            {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({"code":"OWNER_APPROVAL_ALREADY_COMMITTED","message":"owner recovery approval is already committed"}),
+                ));
+            }
+            return Err(ApiError::new(
+                StatusCode::GONE,
+                json!({"code":"OWNER_APPROVAL_EXPIRED","message":"owner recovery approval has expired"}),
+            ));
+        }
         let authorization = Authorizer::new(state.service.operator().clone())
             .state(&space_id)
             .await
@@ -2354,12 +2389,6 @@ async fn owner_force_reset(
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
                 json!({"code":"OWNER_APPROVAL_KEY_MISMATCH","message":"idempotency key is bound to another recovery tuple"}),
-            ));
-        }
-        if existing.invalidated_at.is_some() || existing.used_at.is_some() {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                json!({"code":"OWNER_APPROVAL_ALREADY_COMMITTED","message":"owner recovery approval is already committed"}),
             ));
         }
         if !fence_is_current {

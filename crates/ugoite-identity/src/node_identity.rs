@@ -2744,6 +2744,47 @@ impl NodeIdentityService {
             .cloned())
     }
 
+    /// Mark an expired approval terminal and release its Node-side fence.
+    /// The server releases the paired Space fence after this CAS succeeds.
+    pub async fn expire_owner_recovery_approval(
+        &self,
+        approval_id: Uuid,
+    ) -> Result<Option<(Uuid, Uuid)>> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let Some(approval) = state.owner_recovery_approvals.get(&approval_id).cloned() else {
+            return Ok(None);
+        };
+        if approval.used_at.is_some() {
+            return Ok(None);
+        }
+        let expired = parse_timestamp(&approval.expires_at)? <= Utc::now();
+        if approval.invalidated_at.is_none() && !expired {
+            return Ok(None);
+        }
+        let now = timestamp(Utc::now());
+        let approval_mut = state
+            .owner_recovery_approvals
+            .get_mut(&approval_id)
+            .expect("approval was checked above");
+        if approval_mut.invalidated_at.is_none() {
+            approval_mut.invalidated_at = Some(now);
+            approval_mut.challenge_id = None;
+            approval_mut.reset_id = None;
+        }
+        if let Some(fence_id) = approval.recovery_fence_id {
+            if let Some(fence) = state.node_recovery_fences.get_mut(&fence_id) {
+                if fence.status == "active" {
+                    fence.status = "released".to_string();
+                }
+            }
+        }
+        self.write_state(&state).await?;
+        Ok(approval
+            .recovery_fence_id
+            .map(|fence_id| (approval.space_uid, fence_id)))
+    }
+
     pub async fn owner_recovery_approval_token(&self, approval_id: Uuid) -> Result<String> {
         let state = self.read_state().await?;
         let approval = state
@@ -4640,16 +4681,13 @@ impl NodeIdentityService {
         }) {
             bail!("principal or account is already bound in this space");
         }
+        let account_id = binding.node_account_id;
         state.bindings.push(binding);
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         *state
             .account_lifecycle_epochs
-            .entry(
-                state
-                    .bindings
-                    .last()
-                    .expect("binding was pushed")
-                    .node_account_id,
-            )
+            .entry(account_id)
             .or_insert(0) += 1;
         self.write_state(&state).await
     }
@@ -4714,6 +4752,8 @@ impl NodeIdentityService {
                     node_account_id: account_id,
                     binding_method,
                 });
+                let now = timestamp(Utc::now());
+                invalidate_pending_recovery_responses(&mut state, account_id, &now);
                 *state
                     .account_lifecycle_epochs
                     .entry(account_id)
@@ -4728,7 +4768,7 @@ impl NodeIdentityService {
                     kind,
                     claimed_at,
                     credential_generation,
-                    completed_at: timestamp(Utc::now()),
+                    completed_at: now,
                 });
                 self.write_state(&state).await
             }
@@ -7475,6 +7515,189 @@ mod tests {
             )
             .await
             .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn expired_owner_approval_is_terminal_and_releases_node_fence() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let request_id = Uuid::new_v4();
+        let fence_id = Uuid::now_v7();
+        let snapshot = RecoveryBindingSnapshot {
+            request_id,
+            recovery_fence_id: fence_id,
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(15)),
+            space_authorization_revision: 1,
+            issuer_space_lifecycle_epoch: 1,
+            target_space_lifecycle_epoch: 1,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        let mut state = service.read_state().await?;
+        for (account_id, name) in [(issuer_account_id, "Issuer"), (target_account_id, "Target")] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.bindings.extend([
+            PrincipalBinding {
+                space_uid,
+                principal_id: issuer_principal_id,
+                node_account_id: issuer_account_id,
+                binding_method: BindingMethod::Setup,
+            },
+            PrincipalBinding {
+                space_uid,
+                principal_id: target_principal_id,
+                node_account_id: target_account_id,
+                binding_method: BindingMethod::Invite,
+            },
+        ]);
+        service.write_state(&state).await?;
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&snapshot),
+            )
+            .await?;
+        let (approval_id, _, _) = service
+            .issue_owner_recovery_approval_with_snapshot_and_credential(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                snapshot,
+                None,
+            )
+            .await?;
+        let mut state = service.read_state().await?;
+        state
+            .owner_recovery_approvals
+            .get_mut(&approval_id)
+            .expect("approval")
+            .expires_at = timestamp(Utc::now() - Duration::seconds(1));
+        service.write_state(&state).await?;
+
+        assert_eq!(
+            service.expire_owner_recovery_approval(approval_id).await?,
+            Some((space_uid, fence_id))
+        );
+        let state = service.read_state().await?;
+        assert!(state.owner_recovery_approvals[&approval_id]
+            .invalidated_at
+            .is_some());
+        assert_eq!(state.node_recovery_fences[&fence_id].status, "released");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn binding_lifecycle_changes_invalidate_pending_recovery_responses() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let marker_id = Uuid::now_v7();
+        let rotation_id = Uuid::new_v4();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Binding target".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.recovery_reset_markers.insert(
+            marker_id,
+            RecoveryResetMarker {
+                reset_id: marker_id,
+                challenge_id: Uuid::now_v7(),
+                approval_id: Uuid::now_v7(),
+                account_id,
+                generation_before: 0,
+                generation_after: 1,
+                session_id: Uuid::now_v7(),
+                space_authorization_revision: 1,
+                recovery_fence_id: Uuid::now_v7(),
+                space_uid,
+                principal_id: Uuid::now_v7(),
+                issuer_principal_id: Uuid::now_v7(),
+                space_fence_status: "reconciled".to_string(),
+                committed_at: timestamp(Utc::now()),
+                encrypted_response: Some("encrypted".to_string()),
+                response_delivered_at: None,
+                response_delivery_id: None,
+                response_invalidated_at: None,
+                completion_proof_hash: None,
+            },
+        );
+        state.backup_rotation_requests.insert(
+            rotation_id,
+            BackupRotationRecord {
+                request_id: rotation_id,
+                space_uid,
+                principal_id: Uuid::now_v7(),
+                account_id,
+                issuer_principal_id: Uuid::now_v7(),
+                issuer_account_id: Uuid::now_v7(),
+                issuer_credential_id: None,
+                target_generation: 0,
+                issuer_generation: 0,
+                issuer_space_lifecycle_epoch: 0,
+                target_space_lifecycle_epoch: 0,
+                issuer_node_lifecycle_epoch: 0,
+                target_node_lifecycle_epoch: 0,
+                space_authorization_revision: 1,
+                recovery_fence_id: None,
+                space_fence_status: "reconciled".to_string(),
+                issued_at: timestamp(Utc::now()),
+                code_hashes: vec!["hash".to_string()],
+                encrypted_codes: Some("encrypted".to_string()),
+                codes_delivered_at: None,
+                codes_delivery_id: None,
+                codes_invalidated_at: None,
+            },
+        );
+        service.write_state(&state).await?;
+
+        service
+            .add_binding(PrincipalBinding {
+                space_uid,
+                principal_id: Uuid::now_v7(),
+                node_account_id: account_id,
+                binding_method: BindingMethod::Invite,
+            })
+            .await?;
+        let state = service.read_state().await?;
+        assert!(state.recovery_reset_markers[&marker_id]
+            .response_invalidated_at
+            .is_some());
+        assert!(state.backup_rotation_requests[&rotation_id]
+            .codes_invalidated_at
+            .is_some());
         Ok(())
     }
 

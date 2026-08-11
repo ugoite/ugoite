@@ -34,7 +34,9 @@ CI.
 
 Browser requests authenticate with the `ugoite_session` HttpOnly cookie. CLI,
 MCP, and agent requests use `Authorization: DPoP <opaque-access-token>` plus a DPoP
-proof header. Only its hash and authorization metadata are stored server-side.
+proof header. Bearer authorization uses hashes and authorization metadata;
+force-reset response material is encrypted at rest only for a bounded retry
+with the same idempotency key. Plaintext bearer material is never audited.
 No endpoint accepts external OIDC tokens or preconfigured long-lived
 credentials, or setup values as API authorization.
 
