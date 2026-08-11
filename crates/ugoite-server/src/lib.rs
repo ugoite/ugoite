@@ -2429,6 +2429,37 @@ async fn owner_rotate_backup_codes(
             "BACKUP_ROTATION_KEY_MISMATCH"
         } else if existing.space_fence_status != "reconciled" {
             "RECOVERY_FENCE_UNAVAILABLE"
+        } else if existing.codes_delivered_at.is_none() {
+            let codes = match state.identity.take_backup_rotation_codes(request_id).await {
+                Ok(codes) => codes,
+                Err(error) if error.to_string().contains("already delivered") => {
+                    return Err(ApiError::new(
+                        StatusCode::CONFLICT,
+                        json!({"code":"BACKUP_ROTATION_ALREADY_COMMITTED","message":"backup rotation is already committed"}),
+                    ));
+                }
+                Err(_) => return Err(recovery_storage_unavailable()),
+            };
+            let _ = reconcile_recovery_audit_outbox(&state, &space_id).await;
+            let audit_delivered = !state
+                .identity
+                .pending_recovery_audits()
+                .await
+                .map_err(|_| recovery_storage_unavailable())?
+                .into_iter()
+                .any(|record| record.event_id == request_id);
+            let mut response_headers = recovery_result_headers();
+            return Ok((
+                StatusCode::OK,
+                std::mem::take(&mut response_headers),
+                Json(json!({
+                    "principal_id": payload.principal_id,
+                    "codes": codes,
+                    "issued_at": existing.issued_at,
+                    "audit_status": if audit_delivered { "delivered" } else { "pending" }
+                })),
+            )
+                .into_response());
         } else {
             "BACKUP_ROTATION_ALREADY_COMMITTED"
         };
@@ -2452,7 +2483,7 @@ async fn owner_rotate_backup_codes(
         chrono::Duration::minutes(5),
     )
     .await?;
-    let codes = match state
+    let _generated_codes = match state
         .identity
         .rotate_recovery_codes_with_snapshot_credential_and_session(
             request_id,
@@ -2520,12 +2551,16 @@ async fn owner_rotate_backup_codes(
         // restart reconciler will finish the marker without replaying them.
         return Err(recovery_fence_unavailable());
     }
-    if space_fence_committed && node_fence_committed {
-        let _ = state
-            .identity
-            .mark_recovery_fence_reconciled(fence.fence_id)
-            .await;
-    }
+    state
+        .identity
+        .mark_recovery_fence_reconciled(fence.fence_id)
+        .await
+        .map_err(|_| recovery_storage_unavailable())?;
+    let codes = state
+        .identity
+        .take_backup_rotation_codes(request_id)
+        .await
+        .map_err(|_| recovery_storage_unavailable())?;
     let node_audit_status = state
         .identity
         .append_node_audit_with_id(
@@ -2632,6 +2667,49 @@ async fn auth_owner_recovery_finish(
     reconcile_all_recovery_fences(&state)
         .await
         .map_err(|_| recovery_storage_unavailable())?;
+    match state
+        .identity
+        .take_owner_recovery_response_for_challenge(payload.challenge_id, &payload.credential)
+        .await
+    {
+        Ok(Some((account, session_token, recovery_codes, marker))) => {
+            if let Ok(space_id) = find_space_id_by_uid(&state, marker.space_uid).await {
+                let _ = reconcile_recovery_audit_outbox(&state, &space_id).await;
+            }
+            let audit_delivered = !state
+                .identity
+                .pending_recovery_audits()
+                .await
+                .map_err(|_| recovery_storage_unavailable())?
+                .into_iter()
+                .any(|record| record.event_id == marker.reset_id);
+            let mut headers = recovery_result_headers();
+            headers.insert(
+                header::SET_COOKIE,
+                HeaderValue::from_str(&auth_cookie(&session_token, 60 * 60 * 24 * 30)).map_err(
+                    |_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "invalid auth cookie"),
+                )?,
+            );
+            return Ok((
+                StatusCode::CREATED,
+                headers,
+                Json(json!({
+                    "account": account,
+                    "recovery_codes": recovery_codes,
+                    "audit_status": if audit_delivered { "delivered" } else { "pending" }
+                })),
+            )
+                .into_response());
+        }
+        Ok(None) => {}
+        Err(error) if error.to_string().contains("already delivered") => {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                json!({"code":"OWNER_RESET_ALREADY_COMPLETED","message":"owner reset response is already committed"}),
+            ));
+        }
+        Err(error) => return Err(owner_recovery_commit_api_error(error)),
+    }
     let context = match state
         .identity
         .owner_recovery_challenge_context(payload.challenge_id)
@@ -2690,8 +2768,14 @@ async fn auth_owner_recovery_finish(
             .await
             .map_err(|_| recovery_storage_unavailable())?;
     }
+    let (_, session_token, recovery_codes, _) = state
+        .identity
+        .take_owner_recovery_response_for_challenge(payload.challenge_id, &payload.credential)
+        .await
+        .map_err(|_| recovery_storage_unavailable())?
+        .ok_or_else(recovery_fence_unavailable)?;
     let mut headers = recovery_result_headers();
-    let cookie = auth_cookie(&result.session_id, 60 * 60 * 24 * 30);
+    let cookie = auth_cookie(&session_token, 60 * 60 * 24 * 30);
     headers.insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&cookie)
@@ -2756,7 +2840,7 @@ async fn auth_owner_recovery_finish(
         headers,
         Json(json!({
             "account": result.account,
-            "recovery_codes": result.recovery_codes,
+            "recovery_codes": recovery_codes,
             "audit_status": if audit_delivered && space_fence_committed && node_fence_committed { "delivered" } else { "pending" }
         })),
     )

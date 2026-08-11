@@ -379,6 +379,14 @@ pub struct RecoveryResetMarker {
     #[serde(default = "default_space_fence_status")]
     pub space_fence_status: String,
     pub committed_at: String,
+    /// Encrypted one-time response material retained until the client has
+    /// received the replacement session and recovery codes.
+    #[serde(default)]
+    pub encrypted_response: Option<String>,
+    #[serde(default)]
+    pub response_delivered_at: Option<String>,
+    #[serde(default)]
+    pub completion_proof_hash: Option<String>,
 }
 
 fn default_space_fence_status() -> String {
@@ -423,6 +431,12 @@ pub struct BackupRotationRecord {
     pub space_fence_status: String,
     pub issued_at: String,
     pub code_hashes: Vec<String>,
+    /// The one-time response is encrypted with the Node key so a crash after
+    /// the Node CAS can finish fence reconciliation before delivering it.
+    #[serde(default)]
+    pub encrypted_codes: Option<String>,
+    #[serde(default)]
+    pub codes_delivered_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -831,6 +845,16 @@ fn acquire_node_recovery_fence(
     issuer_account_id: Uuid,
     snapshot: &RecoveryBindingSnapshot,
 ) -> Result<()> {
+    if state
+        .node_recovery_fences
+        .get(&snapshot.recovery_fence_id)
+        .is_some_and(|fence| fence.status != "active")
+    {
+        // A paired Space fence may have been released or completed while a
+        // stale challenge was still in flight. Terminal Node fences must not
+        // be reopened by that old challenge.
+        bail!("RECOVERY_FENCE_UNAVAILABLE");
+    }
     if state
         .accounts
         .get(&account_id)
@@ -1355,6 +1379,54 @@ impl NodeIdentityService {
             .cloned())
     }
 
+    /// Atomically claim the encrypted plaintext codes for their single
+    /// response. The ciphertext remains for forensic durability, but the
+    /// delivery timestamp makes subsequent idempotency retries terminal.
+    pub async fn take_backup_rotation_codes(&self, request_id: Uuid) -> Result<Vec<String>> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let record = state
+            .backup_rotation_requests
+            .get(&request_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("backup rotation request is missing"))?;
+        if record.codes_delivered_at.is_some() {
+            bail!("backup rotation codes already delivered");
+        }
+        let encrypted_codes = record
+            .encrypted_codes
+            .as_deref()
+            .ok_or_else(|| anyhow!("backup rotation response is unavailable"))?;
+        let codes: Vec<String> = serde_json::from_slice(&decrypt_recovery_secret(
+            &self.encryption_key,
+            encrypted_codes,
+        )?)
+        .context("decode backup rotation response")?;
+        state
+            .backup_rotation_requests
+            .get_mut(&request_id)
+            .expect("backup rotation request was checked above")
+            .codes_delivered_at = Some(timestamp(Utc::now()));
+        if let Err(error) = self.write_state(&state).await {
+            let delivered = self
+                .read_state()
+                .await
+                .ok()
+                .and_then(|observed| {
+                    observed
+                        .backup_rotation_requests
+                        .get(&request_id)
+                        .and_then(|record| record.codes_delivered_at.as_ref())
+                        .cloned()
+                })
+                .is_some();
+            if !delivered {
+                return Err(error);
+            }
+        }
+        Ok(codes)
+    }
+
     pub async fn recovery_reset_marker(
         &self,
         reset_id: Uuid,
@@ -1365,6 +1437,76 @@ impl NodeIdentityService {
             .recovery_reset_markers
             .get(&reset_id)
             .cloned())
+    }
+
+    /// Claim the encrypted one-time owner-reset response after the paired
+    /// recovery fence is terminal. Retrying requires the same WebAuthn
+    /// completion payload, so a challenge identifier alone cannot disclose a
+    /// replacement session or recovery codes.
+    pub async fn take_owner_recovery_response_for_challenge(
+        &self,
+        challenge_id: Uuid,
+        credential: &RegisterPublicKeyCredential,
+    ) -> Result<Option<(HumanAccount, String, Vec<String>, RecoveryResetMarker)>> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let Some((reset_id, marker)) = state
+            .recovery_reset_markers
+            .iter()
+            .find(|(_, marker)| marker.challenge_id == challenge_id)
+            .map(|(reset_id, marker)| (*reset_id, marker.clone()))
+        else {
+            return Ok(None);
+        };
+        if marker.response_delivered_at.is_some() {
+            bail!("owner reset response already delivered");
+        }
+        if marker.space_fence_status != "reconciled" {
+            bail!("RECOVERY_FENCE_UNAVAILABLE");
+        }
+        let proof = marker
+            .completion_proof_hash
+            .as_deref()
+            .ok_or_else(|| anyhow!("owner reset response is unavailable"))?;
+        if proof != token_hash(&serde_json::to_string(credential)?) {
+            bail!("owner reset response proof is invalid");
+        }
+        let encrypted_response = marker
+            .encrypted_response
+            .as_deref()
+            .ok_or_else(|| anyhow!("owner reset response is unavailable"))?;
+        let (session_token, recovery_codes): (String, Vec<String>) = serde_json::from_slice(
+            &decrypt_recovery_secret(&self.encryption_key, encrypted_response)?,
+        )
+        .context("decode owner reset response")?;
+        let account = state
+            .accounts
+            .get(&marker.account_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("recovery account is missing"))?;
+        state
+            .recovery_reset_markers
+            .get_mut(&reset_id)
+            .expect("owner reset marker was checked above")
+            .response_delivered_at = Some(timestamp(Utc::now()));
+        if let Err(error) = self.write_state(&state).await {
+            let delivered = self
+                .read_state()
+                .await
+                .ok()
+                .and_then(|observed| {
+                    observed
+                        .recovery_reset_markers
+                        .get(&reset_id)
+                        .and_then(|marker| marker.response_delivered_at.as_ref())
+                        .cloned()
+                })
+                .is_some();
+            if !delivered {
+                return Err(error);
+            }
+        }
+        Ok(Some((account, session_token, recovery_codes, marker)))
     }
 
     pub async fn mark_recovery_fence_reconciled(&self, fence_id: Uuid) -> Result<()> {
@@ -3230,6 +3372,7 @@ impl NodeIdentityService {
             .webauthn
             .finish_passkey_registration(credential, &challenge.state)
             .context("verify owner recovery Passkey registration")?;
+        let completion_proof_hash = token_hash(&serde_json::to_string(credential)?);
         let credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id());
         if state.passkeys.contains_key(&credential_id) {
             bail!("credential is already registered");
@@ -3377,6 +3520,12 @@ impl NodeIdentityService {
             issuer_principal_id: approval.issuer_principal_id,
             space_fence_status: default_space_fence_status(),
             committed_at: now,
+            encrypted_response: Some(encrypt_recovery_secret(
+                &self.encryption_key,
+                &serde_json::to_vec(&(session_token.clone(), recovery_codes.clone()))?,
+            )?),
+            response_delivered_at: None,
+            completion_proof_hash: Some(completion_proof_hash),
         };
         state.recovery_reset_markers.insert(reset_id, marker);
         queue_recovery_audit(
@@ -3737,6 +3886,11 @@ impl NodeIdentityService {
                 space_fence_status: default_space_fence_status(),
                 issued_at: timestamp(Utc::now()),
                 code_hashes: code_hashes.clone(),
+                encrypted_codes: Some(encrypt_recovery_secret(
+                    &self.encryption_key,
+                    &serde_json::to_vec(&codes)?,
+                )?),
+                codes_delivered_at: None,
             },
         );
         queue_recovery_audit(
@@ -5941,6 +6095,9 @@ mod tests {
                 issuer_principal_id: Uuid::now_v7(),
                 space_fence_status: "reconciled".to_string(),
                 committed_at: "2026-01-01T00:00:00Z".to_string(),
+                encrypted_response: None,
+                response_delivered_at: None,
+                completion_proof_hash: None,
             },
         );
         assert!(recovery_session_is_committed(&session, &markers));
@@ -6973,6 +7130,14 @@ mod tests {
             )
             .await?;
         assert_eq!(codes.len(), 8);
+        let delivered_codes = service.take_backup_rotation_codes(request_id).await?;
+        assert_eq!(delivered_codes, codes);
+        assert!(service
+            .take_backup_rotation_codes(request_id)
+            .await
+            .expect_err("backup codes must be single-delivery")
+            .to_string()
+            .contains("already delivered"));
         let mut mismatched_snapshot = rotation_snapshot.clone();
         mismatched_snapshot.target_generation = 1;
         let mismatch = service
@@ -7456,6 +7621,9 @@ mod tests {
                 issuer_principal_id: Uuid::now_v7(),
                 space_fence_status: default_space_fence_status(),
                 committed_at: timestamp(Utc::now()),
+                encrypted_response: None,
+                response_delivered_at: None,
+                completion_proof_hash: None,
             },
         );
         service.write_state(&state).await?;
@@ -7577,6 +7745,9 @@ mod tests {
                 issuer_principal_id,
                 space_fence_status: default_space_fence_status(),
                 committed_at: timestamp(Utc::now()),
+                encrypted_response: None,
+                response_delivered_at: None,
+                completion_proof_hash: None,
             },
         );
         service.write_state(&state).await?;
@@ -7592,6 +7763,22 @@ mod tests {
             .recovery_reset_markers
             .values()
             .all(|marker| marker.space_fence_status == "reconciled"));
+        let reopened = RecoveryBindingSnapshot {
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            ..snapshot.clone()
+        };
+        assert!(service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&reopened),
+            )
+            .await
+            .expect_err("a released Node fence must not be reopened by a stale challenge")
+            .to_string()
+            .contains("RECOVERY_FENCE_UNAVAILABLE"));
         let provisional = RecoveryBindingSnapshot {
             request_id: Uuid::now_v7(),
             recovery_fence_id: Uuid::now_v7(),
