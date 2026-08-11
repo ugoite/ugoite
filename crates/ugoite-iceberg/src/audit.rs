@@ -1,11 +1,16 @@
 use anyhow::{anyhow, bail, Result};
 use chrono::{SecondsFormat, Utc};
+use fs2::FileExt;
 use opendal::Operator;
 use regex::Regex;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
+use std::{
+    collections::HashMap,
+    fs::{self, OpenOptions},
+    path::Path,
+};
 use tokio::sync::Mutex;
 
 const DEFAULT_AUDIT_LIMIT: usize = 100;
@@ -196,6 +201,124 @@ async fn write_events(
     Ok(())
 }
 
+fn local_audit_lock(op: &Operator, space_id: &str) -> Result<Option<std::fs::File>> {
+    if !matches!(op.info().scheme(), "fs" | "file") {
+        return Ok(None);
+    }
+    let path = Path::new(op.info().root().as_str())
+        .join(audit_file_path(space_id))
+        .with_extension("jsonl.lock");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)?;
+    file.lock_exclusive()?;
+    Ok(Some(file))
+}
+
+async fn read_event_marker(
+    op: &Operator,
+    space_id: &str,
+    event_id: &str,
+) -> Result<Option<(Value, Option<String>)>> {
+    let path = audit_event_id_path(space_id, event_id);
+    if !op.exists(&path).await? {
+        return Ok(None);
+    }
+    let marker = serde_json::from_slice::<Value>(&op.read(&path).await?.to_vec())?;
+    let metadata = op.stat(&path).await?;
+    let version = metadata
+        .etag()
+        .or_else(|| metadata.version())
+        .map(str::to_string);
+    Ok(Some((marker, version)))
+}
+
+async fn create_pending_marker(
+    op: &Operator,
+    space_id: &str,
+    event_id: &str,
+    payload: &Value,
+) -> Result<Option<String>> {
+    let path = audit_event_id_path(space_id, event_id);
+    let marker = json!({
+        "status": "pending",
+        "event_id": event_id,
+        "payload": payload,
+    });
+    let bytes = serde_json::to_vec(&marker)?;
+    let capabilities = op.info().full_capability();
+    if capabilities.write_with_if_not_exists {
+        if let Err(error) = op.write_with(&path, bytes).if_not_exists(true).await {
+            let message = error.to_string().to_lowercase();
+            if !message.contains("condition") && !message.contains("exists") {
+                return Err(error.into());
+            }
+            return Ok(read_event_marker(op, space_id, event_id)
+                .await?
+                .and_then(|(_, version)| version));
+        }
+    } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+        if !op.exists(&path).await? {
+            op.write(&path, bytes).await?;
+        }
+    } else {
+        bail!("audit event marker requires conditional storage capabilities");
+    }
+    let metadata = op.stat(&path).await?;
+    Ok(metadata
+        .etag()
+        .or_else(|| metadata.version())
+        .map(str::to_string))
+}
+
+async fn commit_event_marker(
+    op: &Operator,
+    space_id: &str,
+    event_id: &str,
+    expected_version: Option<&str>,
+    event: &Value,
+) -> Result<()> {
+    let path = audit_event_id_path(space_id, event_id);
+    let marker = json!({"status": "committed", "event": event});
+    let bytes = serde_json::to_vec(&marker)?;
+    let capabilities = op.info().full_capability();
+    if let Some(version) = expected_version {
+        if capabilities.write_with_if_match {
+            op.write_with(&path, bytes).if_match(version).await?;
+        } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+            op.write(&path, bytes).await?;
+        } else {
+            bail!("audit event marker requires conditional storage capabilities");
+        }
+    } else if capabilities.write_with_if_not_exists {
+        if op.exists(&path).await? {
+            if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+                op.write(&path, bytes).await?;
+            } else {
+                let metadata = op.stat(&path).await?;
+                let version = metadata
+                    .etag()
+                    .or_else(|| metadata.version())
+                    .ok_or_else(|| anyhow!("audit event marker has no conditional version"))?;
+                op.write_with(&path, bytes).if_match(version).await?;
+            }
+        } else {
+            op.write_with(&path, bytes).if_not_exists(true).await?;
+        }
+    } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+        op.write(&path, bytes).await?;
+    } else {
+        bail!("audit event marker requires conditional storage capabilities");
+    }
+    Ok(())
+}
+
 pub async fn append_audit_event(
     op: &Operator,
     space_id: &str,
@@ -258,6 +381,7 @@ async fn append_audit_event_once(
 
     let lock = space_lock(&safe_space_id).await;
     let _guard = lock.lock().await;
+    let _local_lock = local_audit_lock(op, &safe_space_id)?;
 
     let path = audit_file_path(&safe_space_id);
     let capabilities = op.info().full_capability();
@@ -283,11 +407,15 @@ async fn append_audit_event_once(
         .and_then(Value::as_str)
         .and_then(|value| uuid::Uuid::parse_str(value).ok())
         .map(|value| value.to_string());
+    let mut marker_version = None;
     if let Some(event_id) = &requested_event_id {
-        let marker_path = audit_event_id_path(&safe_space_id, event_id);
-        if op.exists(&marker_path).await? {
-            let marker = op.read(&marker_path).await?;
-            return Ok(serde_json::from_slice(&marker.to_vec())?);
+        if let Some((marker, version)) = read_event_marker(op, &safe_space_id, event_id).await? {
+            if marker.get("status").and_then(Value::as_str) == Some("committed")
+                || (marker.get("event_id").is_some() && marker.get("event_hash").is_some())
+            {
+                return Ok(marker.get("event").cloned().unwrap_or(marker));
+            }
+            marker_version = version;
         }
     }
     let mut events = read_events(op, &safe_space_id).await?;
@@ -301,6 +429,14 @@ async fn append_audit_event_once(
             .iter()
             .find(|event| event.get("event_id").and_then(Value::as_str) == Some(event_id.as_str()))
         {
+            let _ = commit_event_marker(
+                op,
+                &safe_space_id,
+                event_id,
+                marker_version.as_deref(),
+                existing,
+            )
+            .await;
             return Ok(existing.clone());
         }
     }
@@ -328,10 +464,10 @@ async fn append_audit_event_once(
     let mut event = json!({
         "event_id": requested_event_id.unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
         "timestamp": now_iso(),
-        "space_id": safe_space_id,
-        "action": action,
-        "subject_principal_id": subject_principal_id,
-        "actor_principal_id": actor_principal_id,
+        "space_id": safe_space_id.clone(),
+        "action": action.clone(),
+        "subject_principal_id": subject_principal_id.clone(),
+        "actor_principal_id": actor_principal_id.clone(),
         "credential_id": payload_obj.get("credential_id").cloned().unwrap_or(Value::Null),
         "outcome": normalize_outcome(payload_obj.get("outcome").and_then(Value::as_str)),
         "target_type": payload_obj.get("target_type").cloned().unwrap_or(Value::Null),
@@ -339,7 +475,7 @@ async fn append_audit_event_once(
         "request_method": payload_obj.get("request_method").cloned().unwrap_or(Value::Null),
         "request_path": payload_obj.get("request_path").cloned().unwrap_or(Value::Null),
         "request_id": payload_obj.get("request_id").cloned().unwrap_or(Value::Null),
-        "metadata": metadata,
+        "metadata": metadata.clone(),
         "prev_hash": prev_hash,
     });
 
@@ -357,21 +493,44 @@ async fn append_audit_event_once(
         }
     }
 
+    let Some(event_id) = event["event_id"].as_str() else {
+        bail!("audit event id is missing");
+    };
+    op.create_dir(&format!("spaces/{}/audit/event-ids/", safe_space_id))
+        .await?;
+    if marker_version.is_none() {
+        marker_version = create_pending_marker(
+            op,
+            &safe_space_id,
+            event_id,
+            &json!({
+                "event_id": event_id,
+                "action": action,
+                "subject_principal_id": subject_principal_id,
+                "actor_principal_id": actor_principal_id,
+                "outcome": normalize_outcome(payload_obj.get("outcome").and_then(Value::as_str)),
+                "request_id": payload_obj.get("request_id").cloned().unwrap_or(Value::Null),
+                "metadata": metadata
+            }),
+        )
+        .await?;
+    }
     write_events(op, &safe_space_id, &events, expected_version.as_deref()).await?;
-    if let Some(event_id) = event["event_id"].as_str() {
-        let marker_path = audit_event_id_path(&safe_space_id, event_id);
-        let marker_bytes = serde_json::to_vec(&event)?;
-        op.create_dir(&format!("spaces/{}/audit/event-ids/", safe_space_id))
-            .await?;
-        if capabilities.write_with_if_not_exists {
-            op.write_with(&marker_path, marker_bytes)
-                .if_not_exists(true)
-                .await?;
-        } else if !local_process_store {
-            bail!("audit event marker requires conditional storage capabilities");
-        } else if !op.exists(&marker_path).await? {
-            op.write(&marker_path, marker_bytes).await?;
+    if let Err(error) = commit_event_marker(
+        op,
+        &safe_space_id,
+        event_id,
+        marker_version.as_deref(),
+        &event,
+    )
+    .await
+    {
+        if let Some((marker, _)) = read_event_marker(op, &safe_space_id, event_id).await? {
+            if marker.get("status").and_then(Value::as_str) == Some("committed") {
+                return Ok(marker["event"].clone());
+            }
         }
+        return Err(error);
     }
     Ok(event)
 }
@@ -417,6 +576,7 @@ pub async fn list_audit_events(
     let safe_space_id = validate_space_id(space_id)?;
     let lock = space_lock(&safe_space_id).await;
     let _guard = lock.lock().await;
+    let _local_lock = local_audit_lock(op, &safe_space_id)?;
 
     let mut events = read_events(op, &safe_space_id).await?;
     verify_chain(&events)?;

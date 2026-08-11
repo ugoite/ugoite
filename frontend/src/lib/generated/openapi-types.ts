@@ -12,6 +12,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "ErrorResponse",
   "Form",
   "HealthResponse",
+  "HumanAccount",
   "JsonValue",
   "McpEntryResource",
   "OwnerRecoveryApprovalRequest",
@@ -22,6 +23,7 @@ export const OPENAPI_SCHEMA_NAMES = [
   "OwnerRecoveryStartRequest",
   "PublicSpaceSettings",
   "PublicStorageSummary",
+  "RecoveryErrorResponse",
   "SavedSql",
   "SpaceCreateRequest",
   "SpaceCreateResponse",
@@ -30,7 +32,9 @@ export const OPENAPI_SCHEMA_NAMES = [
   "SpaceSummary",
   "SqlSession",
   "StorageConnectionTestRequest",
-  "StorageConnectionTestResponse"
+  "StorageConnectionTestResponse",
+  "WebAuthnCreationChallengeResponse",
+  "WebAuthnRegistrationCredential"
 ] as const;
 export type OpenApiSchemaName = typeof OPENAPI_SCHEMA_NAMES[number];
 

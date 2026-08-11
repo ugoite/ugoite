@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[test]
 fn test_req_sec_012_owner_only_space_scope_and_target_binding() {
@@ -76,8 +76,44 @@ fn test_req_sec_013_cross_process_conditional_append_deduplicates_event() {
         .expect("idempotency conflict response");
     assert_eq!(
         errors["content"]["application/json"]["schema"]["$ref"],
-        "#/components/schemas/ErrorResponse"
+        "#/components/schemas/RecoveryErrorResponse"
     );
+}
+
+#[tokio::test]
+async fn test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_storage() {
+    let root = tempfile::tempdir().expect("temporary audit root");
+    let first_operator =
+        ugoite_storage::operator_from_uri(&format!("fs://{}", root.path().display()))
+            .expect("first filesystem operator");
+    let second_operator =
+        ugoite_storage::operator_from_uri(&format!("fs://{}", root.path().display()))
+            .expect("second filesystem operator");
+    let event_id = uuid::Uuid::new_v4();
+    let payload = json!({
+        "event_id": event_id,
+        "action": "recovery.owner_reset_completed",
+        "subject_principal_id": uuid::Uuid::new_v4(),
+        "actor_principal_id": Value::Null,
+        "metadata": {"credential_generation": 2}
+    });
+    let first = ugoite_iceberg::audit::append_audit_event(&first_operator, "demo", &payload, None)
+        .await
+        .expect("first audit append");
+    let replay =
+        ugoite_iceberg::audit::append_audit_event(&second_operator, "demo", &payload, None)
+            .await
+            .expect("replayed audit append");
+    assert_eq!(first["event_id"], event_id.to_string());
+    assert_eq!(replay["event_id"], event_id.to_string());
+    let listing = ugoite_iceberg::audit::list_audit_events(
+        &second_operator,
+        "demo",
+        ugoite_iceberg::audit::AuditListOptions::default(),
+    )
+    .await
+    .expect("audit listing");
+    assert_eq!(listing["total"], 1);
 }
 
 #[test]

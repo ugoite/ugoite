@@ -5158,11 +5158,11 @@
               }
             }
           },
-          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "403": { "description": "Recovery authority required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "404": { "description": "Recovery target invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "409": { "description": "Durable recovery fence is unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "503": { "description": "No durable state committed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "403": { "description": "Recovery authority required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "404": { "description": "Recovery target invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "409": { "description": "Durable recovery fence is unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "503": { "description": "No durable state committed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }
         }
       }
     },
@@ -5192,12 +5192,12 @@
             "headers": { "Cache-Control": { "schema": { "type": "string", "const": "no-store" } } },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BackupCodesRotationResponse" } } }
           },
-          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "403": { "description": "Recovery authority required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "404": { "description": "Recovery target invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "409": { "description": "Rotation key, recovery fence, or committed result conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "422": { "description": "Idempotency key is invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "503": { "description": "No durable state committed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "403": { "description": "Recovery authority required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "404": { "description": "Recovery target invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "409": { "description": "Rotation key, recovery fence, or committed result conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "422": { "description": "Idempotency key is invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "503": { "description": "No durable state committed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }
         }
       }
     },
@@ -5214,10 +5214,10 @@
             "headers": { "Cache-Control": { "schema": { "type": "string", "const": "no-store" } } },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OwnerRecoveryRegistrationStart" } } }
           },
-          "401": { "description": "Approval token invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "409": { "description": "A challenge is already pending", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "410": { "description": "Approval or challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+          "401": { "description": "Approval token invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "409": { "description": "A challenge is already pending", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "410": { "description": "Approval or challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }
         }
       }
     },
@@ -5237,11 +5237,11 @@
             },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OwnerRecoveryFinishResponse" } } }
           },
-          "401": { "description": "Challenge invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "409": { "description": "Reset already completed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "410": { "description": "Challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "422": { "description": "WebAuthn registration invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
-          "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+          "401": { "description": "Challenge invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "409": { "description": "Reset already completed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "410": { "description": "Challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "422": { "description": "WebAuthn registration invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }
         }
       }
     },
@@ -6510,23 +6510,7 @@
         ],
         "properties": {
           "code": {
-            "type": "string",
-            "enum": [
-              "AUTHENTICATION_REQUIRED",
-              "RECOVERY_AUTHORITY_REQUIRED",
-              "RECOVERY_TARGET_INVALID",
-              "OWNER_RECOVERY_CHALLENGE_PENDING",
-              "OWNER_RESET_ALREADY_COMPLETED",
-              "OWNER_APPROVAL_EXPIRED",
-              "WEBAUTHN_REGISTRATION_INVALID",
-              "RECOVERY_FENCE_UNAVAILABLE",
-              "RECOVERY_STORAGE_UNAVAILABLE",
-              "BACKUP_IDEMPOTENCY_KEY_INVALID",
-              "BACKUP_ROTATION_KEY_MISMATCH",
-              "BACKUP_ROTATION_ALREADY_COMMITTED",
-              "RECENT_PASSKEY_REQUIRED",
-              "INTERNAL_ERROR"
-            ]
+            "type": "string"
           },
           "message": {
             "type": "string"
@@ -7014,6 +6998,34 @@
         },
         "additionalProperties": false
       },
+      "RecoveryErrorResponse": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "AUTHENTICATION_REQUIRED",
+              "RECOVERY_AUTHORITY_REQUIRED",
+              "RECOVERY_TARGET_INVALID",
+              "OWNER_RECOVERY_CHALLENGE_PENDING",
+              "OWNER_RESET_ALREADY_COMPLETED",
+              "OWNER_APPROVAL_EXPIRED",
+              "WEBAUTHN_REGISTRATION_INVALID",
+              "RECOVERY_FENCE_UNAVAILABLE",
+              "RECOVERY_STORAGE_UNAVAILABLE",
+              "BACKUP_IDEMPOTENCY_KEY_INVALID",
+              "BACKUP_ROTATION_KEY_MISMATCH",
+              "BACKUP_ROTATION_ALREADY_COMMITTED",
+              "RECENT_PASSKEY_REQUIRED",
+              "INTERNAL_ERROR"
+            ]
+          },
+          "message": { "type": "string" },
+          "detail": {}
+        },
+        "additionalProperties": true
+      },
       "AuditStatus": {
         "type": "string",
         "enum": ["delivered", "pending"]
@@ -7051,7 +7063,7 @@
         "required": ["challenge_id", "public_key"],
         "properties": {
           "challenge_id": { "type": "string", "format": "uuid" },
-          "public_key": { "type": "object", "additionalProperties": true }
+          "public_key": { "$ref": "#/components/schemas/WebAuthnCreationChallengeResponse" }
         },
         "additionalProperties": false
       },
@@ -7060,7 +7072,7 @@
         "required": ["challenge_id", "credential"],
         "properties": {
           "challenge_id": { "type": "string", "format": "uuid" },
-          "credential": { "type": "object", "additionalProperties": true }
+          "credential": { "$ref": "#/components/schemas/WebAuthnRegistrationCredential" }
         },
         "additionalProperties": false
       },
@@ -7068,9 +7080,61 @@
         "type": "object",
         "required": ["account", "recovery_codes", "audit_status"],
         "properties": {
-          "account": { "type": "object", "additionalProperties": true },
+          "account": { "$ref": "#/components/schemas/HumanAccount" },
           "recovery_codes": { "type": "array", "minItems": 8, "maxItems": 8, "items": { "type": "string" } },
           "audit_status": { "$ref": "#/components/schemas/AuditStatus" }
+        },
+        "additionalProperties": false
+      },
+      "HumanAccount": {
+        "type": "object",
+        "required": ["account_id", "display_name", "status", "created_at", "node_roles", "credential_generation"],
+        "properties": {
+          "account_id": { "type": "string", "format": "uuid" },
+          "display_name": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "suspended", "revoked"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "node_roles": { "type": "array", "items": { "type": "string", "enum": ["node_admin"] } },
+          "credential_generation": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "WebAuthnCreationChallengeResponse": {
+        "type": "object",
+        "required": ["publicKey"],
+        "properties": {
+          "publicKey": {
+            "type": "object",
+            "required": ["rp", "user", "challenge", "pubKeyCredParams"],
+            "properties": {
+              "rp": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } }, "additionalProperties": true },
+              "user": { "type": "object", "required": ["id", "name", "displayName"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "displayName": { "type": "string" } }, "additionalProperties": true },
+              "challenge": { "type": "string" },
+              "pubKeyCredParams": { "type": "array", "items": { "type": "object", "required": ["type", "alg"], "properties": { "type": { "type": "string" }, "alg": { "type": "integer" } }, "additionalProperties": false } }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WebAuthnRegistrationCredential": {
+        "type": "object",
+        "required": ["id", "rawId", "response", "type", "extensions"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "rawId": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "const": "public-key" },
+          "response": {
+            "type": "object",
+            "required": ["attestationObject", "clientDataJSON"],
+            "properties": {
+              "attestationObject": { "type": "string", "minLength": 1 },
+              "clientDataJSON": { "type": "string", "minLength": 1 },
+              "transports": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          },
+          "extensions": { "type": "object", "additionalProperties": true }
         },
         "additionalProperties": false
       },

@@ -3,10 +3,13 @@
 use crate::audit;
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{SecondsFormat, Utc};
+use fs2::FileExt;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs::{self, OpenOptions},
+    path::Path,
     sync::{Arc, OnceLock},
 };
 use tokio::sync::Mutex;
@@ -92,8 +95,8 @@ pub struct RecoveryFence {
     pub target_principal_id: Uuid,
     pub target_account_id: Uuid,
     pub authorization_revision: u64,
-    pub issuer_lifecycle_epoch: u64,
-    pub target_lifecycle_epoch: u64,
+    pub issuer_space_lifecycle_epoch: u64,
+    pub target_space_lifecycle_epoch: u64,
     #[serde(default)]
     pub issuer_generation: u64,
     #[serde(default)]
@@ -277,16 +280,21 @@ impl Authorizer {
     ) -> Result<RecoveryFence> {
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
-        self.ensure_recovery_mutation_allowed(&state)?;
         if state.space_uid == Uuid::nil() {
             bail!("recovery fence is unavailable")
         }
-        if state.recovery_fences.values().any(|fence| {
+        for fence in state.recovery_fences.values_mut().filter(|fence| {
             fence.status == "active"
                 && chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
                     .is_ok_and(|expires| expires.with_timezone(&Utc) > Utc::now())
         }) {
-            bail!("RECOVERY_FENCE_UNAVAILABLE")
+            if fence.target_principal_id == target_principal_id
+                && fence.target_account_id == target_account_id
+            {
+                fence.status = "superseded".to_string();
+            } else {
+                bail!("RECOVERY_FENCE_UNAVAILABLE")
+            }
         }
         let _issuer = state
             .principals
@@ -325,12 +333,12 @@ impl Authorizer {
             target_principal_id,
             target_account_id,
             authorization_revision: state.revision,
-            issuer_lifecycle_epoch: state
+            issuer_space_lifecycle_epoch: state
                 .principal_lifecycle_epochs
                 .get(&issuer_principal_id)
                 .copied()
                 .unwrap_or_default(),
-            target_lifecycle_epoch: state
+            target_space_lifecycle_epoch: state
                 .principal_lifecycle_epochs
                 .get(&target_principal_id)
                 .copied()
@@ -368,7 +376,17 @@ impl Authorizer {
         if fence.status != "active" {
             bail!("recovery fence is not active")
         }
-        if state.revision != fence.authorization_revision.saturating_add(1) {
+        if state
+            .principal_lifecycle_epochs
+            .get(&fence.issuer_principal_id)
+            .copied()
+            != Some(fence.issuer_space_lifecycle_epoch)
+            || state
+                .principal_lifecycle_epochs
+                .get(&fence.target_principal_id)
+                .copied()
+                != Some(fence.target_space_lifecycle_epoch)
+        {
             bail!("RECOVERY_FENCE_UNAVAILABLE")
         }
         fence.status = "completed".to_string();
@@ -480,6 +498,7 @@ impl Authorizer {
             .await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&state)?;
         for grant in &policy.grants {
             let Some(principal) = state.principals.get(&grant.principal_id) else {
                 bail!("policy references a principal outside the space");
@@ -675,6 +694,7 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, None).await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&state)?;
         let agent = state
             .agents
             .get_mut(&agent_id)
@@ -708,6 +728,7 @@ impl Authorizer {
     pub async fn mark_agent_used(&self, space_id: &str, agent_id: Uuid) -> Result<()> {
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&state)?;
         let agent = state
             .agents
             .get_mut(&agent_id)
@@ -843,6 +864,7 @@ impl Authorizer {
         let path = state_path(space_id);
         let serialized = serde_json::to_vec_pretty(state)?;
         let capabilities = self.operator.info().full_capability();
+        let _local_lock = self.local_authorization_lock(space_id)?;
 
         if state.revision == 1 {
             if capabilities.write_with_if_not_exists {
@@ -904,6 +926,29 @@ impl Authorizer {
             self.operator.write(&path, serialized).await?;
         }
         Ok(())
+    }
+
+    fn local_authorization_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+        if !matches!(self.operator.info().scheme(), "fs" | "file") {
+            return Ok(None);
+        }
+        let root_value = self.operator.info().root();
+        let root = Path::new(root_value.as_str());
+        let lock_path = root
+            .join("spaces")
+            .join(space_id)
+            .join("security/principals.json.lock");
+        if let Some(parent) = lock_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(lock_path)?;
+        file.lock_exclusive()?;
+        Ok(Some(file))
     }
 }
 
@@ -1190,6 +1235,8 @@ mod tests {
         let authorizer = Authorizer::new(op);
         let owner = Uuid::now_v7();
         let member = Uuid::now_v7();
+        let issuer_account = Uuid::now_v7();
+        let target_account = Uuid::now_v7();
         let space_uid = Uuid::now_v7();
         authorizer
             .initialize_owner("demo", space_uid, owner, "Owner")
@@ -1213,9 +1260,9 @@ mod tests {
                 "demo",
                 Uuid::now_v7(),
                 owner,
-                Uuid::now_v7(),
+                issuer_account,
                 member,
-                Uuid::now_v7(),
+                target_account,
                 0,
                 0,
                 chrono::Duration::minutes(5),
@@ -1225,15 +1272,36 @@ mod tests {
             .change_role("demo", owner, member, SpaceRole::Editor)
             .await
             .is_err());
+        let replacement = authorizer
+            .reserve_recovery_fence(
+                "demo",
+                Uuid::now_v7(),
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await?;
+        let superseded_state = authorizer.state("demo").await?;
+        assert_eq!(
+            superseded_state.recovery_fences[&fence.fence_id].status,
+            "superseded"
+        );
         authorizer
-            .complete_recovery_fence("demo", fence.fence_id)
+            .complete_recovery_fence("demo", replacement.fence_id)
             .await?;
         authorizer
             .change_role("demo", owner, member, SpaceRole::Editor)
             .await?;
         let state = authorizer.state("demo").await?;
         assert_eq!(state.principal_lifecycle_epochs[&member], 2);
-        assert_eq!(state.recovery_fences[&fence.fence_id].status, "completed");
+        assert_eq!(
+            state.recovery_fences[&replacement.fence_id].status,
+            "completed"
+        );
         Ok(())
     }
 

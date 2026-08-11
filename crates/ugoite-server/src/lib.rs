@@ -37,7 +37,7 @@ use ugoite_domain::identity::{
 };
 use ugoite_iceberg::{
     audit::{self, AuditListOptions},
-    authorization::{Authorizer, ResourceKind},
+    authorization::{AuthorizationState, Authorizer, ResourceKind},
     form, saved_sql,
     service::{SpacePermission, UgoiteService, MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS},
     space,
@@ -1471,10 +1471,23 @@ async fn validate_owner_recovery_context(
         || fence.target_principal_id != context.principal_id
         || fence.target_account_id != context.account_id
         || fence.authorization_revision != context.space_authorization_revision
-        || fence.issuer_lifecycle_epoch != context.issuer_lifecycle_epoch
-        || fence.target_lifecycle_epoch != context.target_lifecycle_epoch
+        || fence.issuer_space_lifecycle_epoch != context.issuer_space_lifecycle_epoch
+        || fence.target_space_lifecycle_epoch != context.target_space_lifecycle_epoch
         || fence.issuer_generation != context.issuer_generation
         || fence.target_generation != context.target_generation
+    {
+        return Err(recovery_fence_unavailable());
+    }
+    if authorization
+        .principal_lifecycle_epochs
+        .get(&context.issuer_principal_id)
+        .copied()
+        != Some(context.issuer_space_lifecycle_epoch)
+        || authorization
+            .principal_lifecycle_epochs
+            .get(&context.principal_id)
+            .copied()
+            != Some(context.target_space_lifecycle_epoch)
     {
         return Err(recovery_fence_unavailable());
     }
@@ -1545,6 +1558,21 @@ async fn validate_owner_recovery_context(
             json!({"code":"AUTHENTICATION_REQUIRED","message":"owner recovery is invalid"}),
         ));
     }
+    let issuer_node_lifecycle_epoch = state
+        .identity
+        .recovery_account_lifecycle_epoch(context.issuer_account_id)
+        .await
+        .map_err(auth_error)?;
+    let target_node_lifecycle_epoch = state
+        .identity
+        .recovery_account_lifecycle_epoch(context.account_id)
+        .await
+        .map_err(auth_error)?;
+    if issuer_node_lifecycle_epoch != context.issuer_node_lifecycle_epoch
+        || target_node_lifecycle_epoch != context.target_node_lifecycle_epoch
+    {
+        return Err(recovery_fence_unavailable());
+    }
     let accounts = state.identity.list_accounts().await.map_err(auth_error)?;
     let target_account = accounts
         .iter()
@@ -1577,6 +1605,14 @@ fn recovery_fence_unavailable() -> ApiError {
             "message": "recovery could not obtain a durable authorization fence"
         }),
     )
+}
+
+fn has_active_recovery_fence(authorization: &AuthorizationState) -> bool {
+    authorization.recovery_fences.values().any(|fence| {
+        fence.status == "active"
+            && chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
+                .is_ok_and(|expires| expires.with_timezone(&chrono::Utc) > chrono::Utc::now())
+    })
 }
 
 fn recovery_storage_unavailable() -> ApiError {
@@ -1662,6 +1698,14 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
             }
         }
         if matches!(fence.status.as_str(), "active" | "completed") {
+            if state
+                .identity
+                .complete_recovery_fence(fence_id)
+                .await
+                .is_err()
+            {
+                continue;
+            }
             state
                 .identity
                 .mark_recovery_fence_reconciled(fence_id)
@@ -1677,34 +1721,13 @@ fn recovery_result_headers() -> HeaderMap {
     headers
 }
 
-async fn append_recovery_space_audit(
-    state: &AppState,
-    space_id: &str,
-    event_id: Uuid,
-    action: &str,
-    request_id: Uuid,
-    principal_id: Uuid,
-    actor_principal_id: Option<Uuid>,
-    metadata: Value,
-) -> bool {
-    audit::append_audit_event(
-        state.service.operator(),
-        space_id,
-        &json!({
-            "event_id": event_id,
-            "action": action,
-            "subject_principal_id": principal_id,
-            "actor_principal_id": actor_principal_id,
-            "outcome": "success",
-            "request_id": request_id,
-            "target_type": "human_account",
-            "target_id": principal_id,
-            "metadata": metadata
-        }),
-        None,
-    )
-    .await
-    .is_ok()
+async fn append_recovery_space_audit(state: &AppState, space_id: &str, event_id: Uuid) -> bool {
+    let Ok(Some(event)) = state.identity.recovery_audit_event(event_id).await else {
+        return false;
+    };
+    audit::append_audit_event(state.service.operator(), space_id, &event, None)
+        .await
+        .is_ok()
 }
 
 /// Restart-safe recovery audit delivery. The Node outbox contains one
@@ -1814,9 +1837,20 @@ async fn owner_force_reset(
             Some(RecoveryBindingSnapshot {
                 request_id,
                 recovery_fence_id: fence.fence_id,
+                recovery_fence_expires_at: fence.expires_at.clone(),
                 space_authorization_revision: fence.authorization_revision,
-                issuer_lifecycle_epoch: fence.issuer_lifecycle_epoch,
-                target_lifecycle_epoch: fence.target_lifecycle_epoch,
+                issuer_space_lifecycle_epoch: fence.issuer_space_lifecycle_epoch,
+                target_space_lifecycle_epoch: fence.target_space_lifecycle_epoch,
+                issuer_node_lifecycle_epoch: state
+                    .identity
+                    .recovery_account_lifecycle_epoch(identity.account_id)
+                    .await
+                    .map_err(auth_error)?,
+                target_node_lifecycle_epoch: state
+                    .identity
+                    .recovery_account_lifecycle_epoch(account_id)
+                    .await
+                    .map_err(auth_error)?,
                 issuer_generation,
                 target_generation,
             }),
@@ -1859,17 +1893,7 @@ async fn owner_force_reset(
             .mark_recovery_audit_stage(approval_id, "node")
             .await;
     }
-    let space_audit_status = append_recovery_space_audit(
-        &state,
-        &space_id,
-        approval_id,
-        "recovery.owner_approval_issued",
-        approval_id,
-        payload.principal_id,
-        Some(issuer_principal_id),
-        json!({"space_uid": space_uid, "account_id": account_id}),
-    )
-    .await;
+    let space_audit_status = append_recovery_space_audit(&state, &space_id, approval_id).await;
     if space_audit_status {
         let _ = state
             .identity
@@ -1976,8 +2000,10 @@ async fn owner_rotate_backup_codes(
             && existing.issuer_account_id == identity.account_id
             && existing.target_generation == target_generation
             && existing.issuer_generation == issuer_generation
-            && existing.target_lifecycle_epoch == target_node_epoch
-            && existing.issuer_lifecycle_epoch == issuer_node_epoch
+            && existing.target_node_lifecycle_epoch == target_node_epoch
+            && existing.issuer_node_lifecycle_epoch == issuer_node_epoch
+            && existing.target_space_lifecycle_epoch == target_epoch
+            && existing.issuer_space_lifecycle_epoch == issuer_epoch
             && authorization
                 .principal_lifecycle_epochs
                 .get(&existing.principal_id)
@@ -2022,9 +2048,12 @@ async fn owner_rotate_backup_codes(
             Some(RecoveryBindingSnapshot {
                 request_id,
                 recovery_fence_id: fence.fence_id,
+                recovery_fence_expires_at: fence.expires_at.clone(),
                 space_authorization_revision: fence.authorization_revision,
-                issuer_lifecycle_epoch: fence.issuer_lifecycle_epoch,
-                target_lifecycle_epoch: fence.target_lifecycle_epoch,
+                issuer_space_lifecycle_epoch: fence.issuer_space_lifecycle_epoch,
+                target_space_lifecycle_epoch: fence.target_space_lifecycle_epoch,
+                issuer_node_lifecycle_epoch: issuer_node_epoch,
+                target_node_lifecycle_epoch: target_node_epoch,
                 issuer_generation,
                 target_generation,
             }),
@@ -2052,15 +2081,25 @@ async fn owner_rotate_backup_codes(
             return Err(recovery_commit_error(error));
         }
     };
-    authorizer
+    let space_fence_committed = authorizer
         .complete_recovery_fence(&space_id, fence.fence_id)
         .await
-        .map_err(|_| recovery_fence_unavailable())?;
-    state
-        .identity
-        .mark_recovery_fence_reconciled(fence.fence_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+        .is_ok();
+    let node_fence_committed = if space_fence_committed {
+        state
+            .identity
+            .complete_recovery_fence(fence.fence_id)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    if space_fence_committed && node_fence_committed {
+        let _ = state
+            .identity
+            .mark_recovery_fence_reconciled(fence.fence_id)
+            .await;
+    }
     let node_audit_status = state
         .identity
         .append_node_audit_with_id(
@@ -2090,17 +2129,7 @@ async fn owner_rotate_backup_codes(
             .mark_recovery_audit_stage(request_id, "node")
             .await;
     }
-    let space_audit_status = append_recovery_space_audit(
-        &state,
-        &space_id,
-        request_id,
-        "recovery.backup_codes_rotated",
-        request_id,
-        payload.principal_id,
-        Some(issuer_principal_id),
-        json!({"space_uid": space_uid, "account_id": account_id, "code_count": codes.len()}),
-    )
-    .await;
+    let space_audit_status = append_recovery_space_audit(&state, &space_id, request_id).await;
     if space_audit_status {
         let _ = state
             .identity
@@ -2124,7 +2153,7 @@ async fn owner_rotate_backup_codes(
             "principal_id": payload.principal_id,
             "codes": codes,
             "issued_at": chrono::Utc::now().to_rfc3339(),
-            "audit_status": if audit_delivered { "delivered" } else { "pending" }
+            "audit_status": if audit_delivered && space_fence_committed && node_fence_committed { "delivered" } else { "pending" }
         })),
     )
         .into_response())
@@ -2173,16 +2202,30 @@ async fn auth_owner_recovery_finish(
         .recovery_fence_id
         .ok_or_else(recovery_fence_unavailable)?;
     let space_uid = context.space_uid;
-    let space_id = find_space_id_by_uid(&state, space_uid).await?;
-    Authorizer::new(state.service.operator().clone())
-        .complete_recovery_fence(&space_id, fence_id)
-        .await
-        .map_err(|_| recovery_fence_unavailable())?;
-    state
-        .identity
-        .mark_recovery_fence_reconciled(fence_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    let space_id = find_space_id_by_uid(&state, space_uid).await.ok();
+    let space_fence_committed = if let Some(space_id) = space_id.as_deref() {
+        Authorizer::new(state.service.operator().clone())
+            .complete_recovery_fence(space_id, fence_id)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    let node_fence_committed = if space_fence_committed {
+        state
+            .identity
+            .complete_recovery_fence(fence_id)
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    if space_fence_committed && node_fence_committed {
+        let _ = state
+            .identity
+            .mark_recovery_fence_reconciled(fence_id)
+            .await;
+    }
     let mut headers = recovery_result_headers();
     let cookie = auth_cookie(&result.session_id, 60 * 60 * 24 * 30);
     headers.insert(
@@ -2221,19 +2264,9 @@ async fn auth_owner_recovery_finish(
         result.recovery_issuer_principal_id,
         result.recovery_request_id,
     ) {
-        (Some(space_uid), Some(principal_id), Some(issuer_principal_id), Some(request_id)) => {
+        (Some(space_uid), Some(_principal_id), Some(_issuer_principal_id), Some(request_id)) => {
             match find_space_id_by_uid(&state, space_uid).await {
-                Ok(space_id) => append_recovery_space_audit(
-                    &state,
-                    &space_id,
-                    request_id,
-                    "recovery.owner_reset_completed",
-                    request_id,
-                    principal_id,
-                    None,
-                    json!({"space_uid": space_uid, "approving_owner_principal_id": issuer_principal_id}),
-                )
-                .await,
+                Ok(space_id) => append_recovery_space_audit(&state, &space_id, request_id).await,
                 Err(_) => false,
             }
         }
@@ -2260,7 +2293,7 @@ async fn auth_owner_recovery_finish(
         Json(json!({
             "account": result.account,
             "recovery_codes": result.recovery_codes,
-            "audit_status": if audit_delivered { "delivered" } else { "pending" }
+            "audit_status": if audit_delivered && space_fence_committed && node_fence_committed { "delivered" } else { "pending" }
         })),
     )
         .into_response())
@@ -2376,11 +2409,40 @@ async fn set_account_status(
             "node admin role is required",
         ));
     }
+    for space_id in state
+        .service
+        .list_space_ids()
+        .await
+        .map_err(ApiError::from_core)?
+    {
+        let space_uid = state
+            .service
+            .space_uid(&space_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        let bound = state
+            .identity
+            .bindings_for_space(space_uid)
+            .await
+            .map_err(auth_error)?
+            .into_iter()
+            .any(|binding| binding.node_account_id == account_id);
+        if bound
+            && has_active_recovery_fence(
+                &Authorizer::new(state.service.operator().clone())
+                    .state(&space_id)
+                    .await
+                    .map_err(ApiError::from_core)?,
+            )
+        {
+            return Err(recovery_fence_unavailable());
+        }
+    }
     let account = state
         .identity
         .set_account_status(account_id, payload.status)
         .await
-        .map_err(auth_error)?;
+        .map_err(recovery_aware_auth_error)?;
     state
         .identity
         .append_node_audit(NodeAuditInput {
@@ -2435,6 +2497,13 @@ fn auth_error(_error: anyhow::Error) -> ApiError {
             "message": "Authentication failed",
         }),
     )
+}
+
+fn recovery_aware_auth_error(error: anyhow::Error) -> ApiError {
+    if error.to_string().contains("RECOVERY_FENCE_UNAVAILABLE") {
+        return recovery_fence_unavailable();
+    }
+    auth_error(error)
 }
 
 #[derive(Deserialize)]
@@ -2744,6 +2813,9 @@ async fn bind_invited_account(
         .state(&space_id)
         .await
         .map_err(ApiError::from_core)?;
+    if has_active_recovery_fence(&authorization) {
+        return Err(recovery_fence_unavailable());
+    }
     let active_space_member =
         authorization
             .principals
@@ -2819,6 +2891,14 @@ async fn bind_invited_account(
             .await
             .map_err(ApiError::from_core)?;
     }
+    if has_active_recovery_fence(
+        &authorizer
+            .state(&space_id)
+            .await
+            .map_err(ApiError::from_core)?,
+    ) {
+        return Err(recovery_fence_unavailable());
+    }
     state
         .identity
         .add_binding(ugoite_domain::identity::PrincipalBinding {
@@ -2828,7 +2908,7 @@ async fn bind_invited_account(
             binding_method,
         })
         .await
-        .map_err(auth_error)
+        .map_err(recovery_aware_auth_error)
 }
 
 fn parse_space_role(role: &str) -> ApiResult<SpaceRole> {
