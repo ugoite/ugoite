@@ -2684,10 +2684,11 @@ async fn auth_owner_recovery_finish(
         return Err(recovery_fence_unavailable());
     }
     if space_fence_committed && node_fence_committed {
-        let _ = state
+        state
             .identity
             .mark_recovery_fence_reconciled(fence_id)
-            .await;
+            .await
+            .map_err(|_| recovery_storage_unavailable())?;
     }
     let mut headers = recovery_result_headers();
     let cookie = auth_cookie(&result.session_id, 60 * 60 * 24 * 30);
@@ -3317,36 +3318,23 @@ async fn bind_invited_account(
         .is_some_and(|principal| {
             !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
         });
-    match state
+    let existing_binding = state
         .identity
         .binding_for_account(space_uid, account.account_id)
         .await
-        .map_err(auth_error)?
-    {
-        Some(existing_principal_id) if existing_principal_id == principal_id => {
-            if active_space_member {
-                return Ok(());
-            }
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                json!({
-                    "code": "SPACE_MEMBERSHIP_CONFLICT",
-                    "message": "Node binding exists but the Space has no active membership for this principal",
-                }),
-            ));
-        }
-        Some(_) => {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                json!({
-                    "code": "ACCOUNT_ALREADY_BOUND",
-                    "message": "account is already bound to this Space",
-                }),
-            ));
-        }
-        None => {}
+        .map_err(auth_error)?;
+    if existing_binding.is_some_and(|existing| existing != principal_id) {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            json!({
+                "code": "ACCOUNT_ALREADY_BOUND",
+                "message": "account is already bound to this Space",
+            }),
+        ));
     }
-    if principal_has_conflicting_space_state {
+    if principal_has_conflicting_space_state
+        && (existing_binding.is_none() || authorization.principals.contains_key(&principal_id))
+    {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
             json!({
@@ -3355,6 +3343,26 @@ async fn bind_invited_account(
             }),
         ));
     }
+
+    if existing_binding.is_none() {
+        // Commit the generation check, Node binding, and invitation completion
+        // in one Node CAS before creating an active Space membership. If
+        // recovery wins the race, no active membership is left behind.
+        state
+            .identity
+            .finalize_invitation_binding(
+                invitation.invitation_id,
+                account.account_id,
+                principal_id,
+                binding_method,
+            )
+            .await
+            .map_err(recovery_aware_auth_error)?;
+    }
+    if active_space_member {
+        return Ok(());
+    }
+
     if !active_space_member {
         let inviter = state
             .identity
@@ -3377,24 +3385,7 @@ async fn bind_invited_account(
             .await
             .map_err(recovery_aware_auth_error)?;
     }
-    if has_active_recovery_fence(
-        &authorizer
-            .state(&space_id)
-            .await
-            .map_err(ApiError::from_core)?,
-    ) {
-        return Err(recovery_fence_unavailable());
-    }
-    state
-        .identity
-        .add_binding(ugoite_domain::identity::PrincipalBinding {
-            space_uid,
-            principal_id,
-            node_account_id: account.account_id,
-            binding_method,
-        })
-        .await
-        .map_err(recovery_aware_auth_error)
+    Ok(())
 }
 
 fn parse_space_role(role: &str) -> ApiResult<SpaceRole> {
@@ -6999,6 +6990,15 @@ mod authentication_regression_tests {
             ),
             created_by: owner_account_id,
         };
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid,
+                principal_id,
+                node_account_id: invited_account_id,
+                binding_method: BindingMethod::Invite,
+            })
+            .await?;
         let authorizer = Authorizer::new(state.service.operator().clone());
         authorizer
             .add_human_member(

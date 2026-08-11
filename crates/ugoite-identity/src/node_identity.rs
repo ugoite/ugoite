@@ -4160,7 +4160,9 @@ impl NodeIdentityService {
                 .ok_or_else(|| anyhow!("invitation is invalid"))?;
             if let Some(acceptance) = invitation.acceptance.as_ref() {
                 if acceptance.account_id() == account_id {
-                    if acceptance.credential_generation() != account.credential_generation {
+                    if matches!(acceptance, InvitationAcceptance::Pending { .. })
+                        && acceptance.credential_generation() != account.credential_generation
+                    {
                         bail!("invitation acceptance is stale");
                     }
                     invitation.clone()
@@ -4213,6 +4215,103 @@ impl NodeIdentityService {
             )
             .or_insert(0) += 1;
         self.write_state(&state).await
+    }
+
+    /// Atomically commits the Node half of a Space invitation finalization.
+    ///
+    /// The acceptance generation, binding, and completed marker must be one
+    /// Node CAS. The server can therefore commit the Space membership after
+    /// this operation; a recovery that wins before this CAS leaves no active
+    /// Space membership to clean up.
+    pub async fn finalize_invitation_binding(
+        &self,
+        invitation_id: Uuid,
+        account_id: Uuid,
+        principal_id: Uuid,
+        binding_method: BindingMethod,
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let space_uid = state
+            .invitations
+            .get(&invitation_id)
+            .and_then(|invitation| invitation.space_uid)
+            .ok_or_else(|| anyhow!("invitation is not Space-scoped"))?;
+        ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        let current_generation = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| matches!(account.status, AccountStatus::Active))
+            .map(|account| account.credential_generation)
+            .ok_or_else(|| anyhow!("invitation account is invalid"))?;
+        let acceptance = state
+            .invitations
+            .get(&invitation_id)
+            .and_then(|invitation| invitation.acceptance.clone())
+            .ok_or_else(|| anyhow!("invitation acceptance is incomplete"))?;
+        match acceptance {
+            InvitationAcceptance::Pending {
+                account_id: claimed_account_id,
+                principal_id: claimed_principal_id,
+                kind,
+                claimed_at,
+                credential_generation,
+            } if claimed_account_id == account_id
+                && claimed_principal_id == principal_id
+                && credential_generation == current_generation =>
+            {
+                if state.bindings.iter().any(|binding| {
+                    binding.space_uid == space_uid && binding.principal_id == principal_id
+                }) {
+                    bail!("invitation principal is already bound");
+                }
+                if state.bindings.iter().any(|binding| {
+                    binding.space_uid == space_uid && binding.node_account_id == account_id
+                }) {
+                    bail!("invitation account is already bound");
+                }
+                state.bindings.push(PrincipalBinding {
+                    space_uid,
+                    principal_id,
+                    node_account_id: account_id,
+                    binding_method,
+                });
+                *state
+                    .account_lifecycle_epochs
+                    .entry(account_id)
+                    .or_insert(0) += 1;
+                state
+                    .invitations
+                    .get_mut(&invitation_id)
+                    .expect("invitation was checked above")
+                    .acceptance = Some(InvitationAcceptance::Completed {
+                    account_id,
+                    principal_id,
+                    kind,
+                    claimed_at,
+                    credential_generation,
+                    completed_at: timestamp(Utc::now()),
+                });
+                self.write_state(&state).await
+            }
+            InvitationAcceptance::Completed {
+                account_id: claimed_account_id,
+                principal_id: claimed_principal_id,
+                ..
+            } if claimed_account_id == account_id && claimed_principal_id == principal_id => {
+                if state.bindings.iter().any(|binding| {
+                    binding.space_uid == space_uid
+                        && binding.principal_id == principal_id
+                        && binding.node_account_id == account_id
+                }) {
+                    Ok(())
+                } else {
+                    bail!("completed invitation binding is missing")
+                }
+            }
+            _ => bail!("invitation acceptance does not match finalization"),
+        }
     }
 
     pub async fn complete_invitation_acceptance(
@@ -4270,12 +4369,8 @@ impl NodeIdentityService {
             completed @ InvitationAcceptance::Completed {
                 account_id: claimed_account_id,
                 principal_id: claimed_principal_id,
-                credential_generation,
                 ..
-            } if claimed_account_id == account_id
-                && claimed_principal_id == principal_id
-                && credential_generation == current_generation =>
-            {
+            } if claimed_account_id == account_id && claimed_principal_id == principal_id => {
                 (completed, false)
             }
             _ => bail!("invitation acceptance does not match finalization"),
@@ -6325,6 +6420,107 @@ mod tests {
             .await
             .expect_err("a pre-reset invitation claim must be stale");
         assert!(error.to_string().contains("does not match finalization"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_invitation_binding_checks_generation_before_node_commit() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let invitation_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Invited member".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.invitations.insert(
+            invitation_id,
+            AccountInvitation {
+                invitation_id,
+                token_hash: "atomic-invitation".to_string(),
+                display_name: "Invited member".to_string(),
+                space_uid: Some(space_uid),
+                role: Some("viewer".to_string()),
+                expires_at: timestamp(Utc::now() + Duration::hours(1)),
+                acceptance: Some(InvitationAcceptance::Pending {
+                    account_id,
+                    principal_id,
+                    kind: InvitationAcceptanceKind::ExistingAccount,
+                    claimed_at: timestamp(Utc::now()),
+                    credential_generation: 0,
+                }),
+                created_by: account_id,
+            },
+        );
+        service.write_state(&state).await?;
+        let mut reset_state = service.read_state().await?;
+        reset_state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation = 1;
+        service.write_state(&reset_state).await?;
+
+        let error = service
+            .finalize_invitation_binding(
+                invitation_id,
+                account_id,
+                principal_id,
+                BindingMethod::Invite,
+            )
+            .await
+            .expect_err("stale invitation must not create a Node binding");
+        assert!(error.to_string().contains("does not match finalization"));
+        let state = service.read_state().await?;
+        assert!(!state.bindings.iter().any(|binding| {
+            binding.space_uid == space_uid && binding.node_account_id == account_id
+        }));
+        assert!(matches!(
+            state
+                .invitations
+                .get(&invitation_id)
+                .and_then(|invitation| invitation.acceptance.as_ref()),
+            Some(InvitationAcceptance::Pending { .. })
+        ));
+
+        let mut current_state = service.read_state().await?;
+        current_state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation = 0;
+        service.write_state(&current_state).await?;
+        service
+            .finalize_invitation_binding(
+                invitation_id,
+                account_id,
+                principal_id,
+                BindingMethod::Invite,
+            )
+            .await?;
+        let state = service.read_state().await?;
+        assert!(state.bindings.iter().any(|binding| {
+            binding.space_uid == space_uid
+                && binding.principal_id == principal_id
+                && binding.node_account_id == account_id
+        }));
+        assert!(matches!(
+            state
+                .invitations
+                .get(&invitation_id)
+                .and_then(|invitation| invitation.acceptance.as_ref()),
+            Some(InvitationAcceptance::Completed { .. })
+        ));
         Ok(())
     }
 
