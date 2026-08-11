@@ -330,6 +330,12 @@ struct NodeRecoveryFence {
     target_generation: u64,
     expires_at: String,
     status: String,
+    #[serde(default = "default_node_recovery_fence_phase")]
+    phase: String,
+}
+
+fn default_node_recovery_fence_phase() -> String {
+    "paired".to_string()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -869,6 +875,13 @@ fn acquire_node_recovery_fence(
         {
             bail!("recovery tuple is stale")
         }
+        if snapshot.space_authorization_revision != 0 {
+            state
+                .node_recovery_fences
+                .get_mut(&snapshot.recovery_fence_id)
+                .expect("active fence was checked above")
+                .phase = default_node_recovery_fence_phase();
+        }
         return Ok(());
     }
 
@@ -886,6 +899,11 @@ fn acquire_node_recovery_fence(
             target_generation: snapshot.target_generation,
             expires_at: snapshot.recovery_fence_expires_at.clone(),
             status: "active".to_string(),
+            phase: if snapshot.space_authorization_revision == 0 {
+                "provisional".to_string()
+            } else {
+                default_node_recovery_fence_phase()
+            },
         },
     );
     Ok(())
@@ -1151,6 +1169,38 @@ impl NodeIdentityService {
             .values()
             .filter(|fence| fence.space_uid == space_uid && node_recovery_fence_is_active(fence))
             .map(|fence| fence.fence_id)
+            .collect())
+    }
+
+    pub async fn recovery_fence_phase(&self, fence_id: Uuid) -> Result<Option<String>> {
+        Ok(self
+            .read_state()
+            .await?
+            .node_recovery_fences
+            .get(&fence_id)
+            .map(|fence| fence.phase.clone()))
+    }
+
+    pub async fn recovery_fence_status(&self, fence_id: Uuid) -> Result<Option<String>> {
+        Ok(self
+            .read_state()
+            .await?
+            .node_recovery_fences
+            .get(&fence_id)
+            .map(|fence| fence.status.clone()))
+    }
+
+    pub async fn owner_recovery_fence_ids_for_target(&self, account_id: Uuid) -> Result<Vec<Uuid>> {
+        let state = self.read_state().await?;
+        Ok(state
+            .owner_recovery_approvals
+            .values()
+            .filter(|approval| {
+                approval.account_id == account_id
+                    && approval.used_at.is_none()
+                    && approval.invalidated_at.is_none()
+            })
+            .filter_map(|approval| approval.recovery_fence_id)
             .collect())
     }
 
@@ -2345,47 +2395,78 @@ impl NodeIdentityService {
 
     /// Issue a short-lived, tuple-bound approval for a forced recovery. The
     /// bearer is returned once; only its hash is written to Node state.
-    pub async fn issue_owner_recovery_approval(
-        &self,
-        space_uid: Uuid,
-        principal_id: Uuid,
-        account_id: Uuid,
-        issuer_principal_id: Uuid,
-        issuer_account_id: Uuid,
-    ) -> Result<(Uuid, String, String)> {
-        self.issue_owner_recovery_approval_with_snapshot(
-            space_uid,
-            principal_id,
-            account_id,
-            issuer_principal_id,
-            issuer_account_id,
-            None,
-        )
-        .await
-    }
-
-    pub async fn issue_owner_recovery_approval_with_snapshot(
-        &self,
-        space_uid: Uuid,
-        principal_id: Uuid,
-        account_id: Uuid,
-        issuer_principal_id: Uuid,
-        issuer_account_id: Uuid,
-        snapshot: Option<RecoveryBindingSnapshot>,
-    ) -> Result<(Uuid, String, String)> {
-        self.issue_owner_recovery_approval_with_snapshot_and_credential(
-            space_uid,
-            principal_id,
-            account_id,
-            issuer_principal_id,
-            issuer_account_id,
-            snapshot,
-            None,
-        )
-        .await
+    pub async fn supersede_owner_recovery_approvals(&self, account_id: Uuid) -> Result<Vec<Uuid>> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let now = timestamp(Utc::now());
+        let approvals = state
+            .owner_recovery_approvals
+            .values()
+            .filter(|approval| {
+                approval.account_id == account_id
+                    && approval.used_at.is_none()
+                    && approval.invalidated_at.is_none()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let had_approvals = !approvals.is_empty();
+        let mut fence_ids = Vec::new();
+        for approval in approvals {
+            if let Some(challenge_id) = approval.challenge_id {
+                state.registration_challenges.remove(&challenge_id);
+                state.recovery_challenge_tombstones.insert(
+                    challenge_id,
+                    RecoveryChallengeTombstone {
+                        challenge_id,
+                        approval_id: approval.approval_id,
+                        reset_id: approval.reset_id.unwrap_or_else(Uuid::now_v7),
+                        reason: "superseded".to_string(),
+                        created_at: now.clone(),
+                    },
+                );
+            }
+            if let Some(approval_mut) = state
+                .owner_recovery_approvals
+                .get_mut(&approval.approval_id)
+            {
+                approval_mut.invalidated_at = Some(now.clone());
+                approval_mut.challenge_id = None;
+                approval_mut.reset_id = None;
+            }
+            if let Some(fence_id) = approval.recovery_fence_id {
+                release_node_recovery_fence(&mut state, Some(fence_id), "superseded");
+                fence_ids.push(fence_id);
+            }
+        }
+        if had_approvals {
+            self.write_state(&state).await?;
+        }
+        Ok(fence_ids)
     }
 
     pub async fn issue_owner_recovery_approval_with_snapshot_and_credential(
+        &self,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+    ) -> Result<(Uuid, String, String)> {
+        self.issue_owner_recovery_approval_unchecked(
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+        )
+        .await
+    }
+
+    async fn issue_owner_recovery_approval_unchecked(
         &self,
         space_uid: Uuid,
         principal_id: Uuid,
@@ -3300,51 +3381,31 @@ impl NodeIdentityService {
         Ok(serde_json::from_slice::<BrowserSession>(&record.value)?.session_id)
     }
 
-    pub async fn rotate_recovery_codes(
-        &self,
-        request_id: Uuid,
-        space_uid: Uuid,
-        principal_id: Uuid,
-        account_id: Uuid,
-        issuer_principal_id: Uuid,
-        issuer_account_id: Uuid,
-    ) -> Result<Vec<String>> {
-        self.rotate_recovery_codes_with_snapshot(
-            request_id,
-            space_uid,
-            principal_id,
-            account_id,
-            issuer_principal_id,
-            issuer_account_id,
-            None,
-        )
-        .await
-    }
-
-    pub async fn rotate_recovery_codes_with_snapshot(
-        &self,
-        request_id: Uuid,
-        space_uid: Uuid,
-        principal_id: Uuid,
-        account_id: Uuid,
-        issuer_principal_id: Uuid,
-        issuer_account_id: Uuid,
-        snapshot: Option<RecoveryBindingSnapshot>,
-    ) -> Result<Vec<String>> {
-        self.rotate_recovery_codes_with_snapshot_and_credential(
-            request_id,
-            space_uid,
-            principal_id,
-            account_id,
-            issuer_principal_id,
-            issuer_account_id,
-            snapshot,
-            None,
-        )
-        .await
-    }
-
     pub async fn rotate_recovery_codes_with_snapshot_and_credential(
+        &self,
+        request_id: Uuid,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+    ) -> Result<Vec<String>> {
+        self.rotate_recovery_codes_unchecked(
+            request_id,
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+        )
+        .await
+    }
+
+    async fn rotate_recovery_codes_unchecked(
         &self,
         request_id: Uuid,
         space_uid: Uuid,
@@ -6170,7 +6231,18 @@ mod tests {
                 target_account_id,
                 issuer_principal_id,
                 issuer_account_id,
-                None,
+                RecoveryBindingSnapshot {
+                    request_id: Uuid::now_v7(),
+                    recovery_fence_id: Uuid::now_v7(),
+                    recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(15)),
+                    space_authorization_revision: 1,
+                    issuer_space_lifecycle_epoch: 1,
+                    target_space_lifecycle_epoch: 1,
+                    issuer_node_lifecycle_epoch: 0,
+                    target_node_lifecycle_epoch: 0,
+                    issuer_generation: 0,
+                    target_generation: 0,
+                },
                 Some(issuer_credential_id),
             )
             .await?;
@@ -6213,12 +6285,14 @@ mod tests {
             .is_err());
 
         let (_, replacement_token, _) = service
-            .issue_owner_recovery_approval(
+            .issue_owner_recovery_approval_unchecked(
                 space_uid,
                 target_principal_id,
                 target_account_id,
                 issuer_principal_id,
                 issuer_account_id,
+                None,
+                None,
             )
             .await?;
         assert!(service
@@ -6242,14 +6316,28 @@ mod tests {
             .await?;
 
         let request_id = Uuid::new_v4();
+        let rotation_snapshot = RecoveryBindingSnapshot {
+            request_id,
+            recovery_fence_id: Uuid::now_v7(),
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            space_authorization_revision: 1,
+            issuer_space_lifecycle_epoch: 1,
+            target_space_lifecycle_epoch: 1,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
         let codes = service
-            .rotate_recovery_codes(
+            .rotate_recovery_codes_with_snapshot_and_credential(
                 request_id,
                 space_uid,
                 target_principal_id,
                 target_account_id,
                 issuer_principal_id,
                 issuer_account_id,
+                rotation_snapshot.clone(),
+                None,
             )
             .await?;
         assert_eq!(codes.len(), 8);
@@ -6263,13 +6351,15 @@ mod tests {
             .find(&codes[0])
             .is_none());
         assert!(service
-            .rotate_recovery_codes(
+            .rotate_recovery_codes_with_snapshot_and_credential(
                 request_id,
                 space_uid,
                 target_principal_id,
                 target_account_id,
                 issuer_principal_id,
                 issuer_account_id,
+                rotation_snapshot,
+                None,
             )
             .await
             .is_err());
@@ -6315,12 +6405,14 @@ mod tests {
         ]);
         service.write_state(&state).await?;
         let (_, token, _) = service
-            .issue_owner_recovery_approval(
+            .issue_owner_recovery_approval_unchecked(
                 space_uid,
                 target_principal_id,
                 target_account_id,
                 issuer_principal_id,
                 issuer_account_id,
+                None,
+                None,
             )
             .await?;
         let mut state = service.read_state().await?;
@@ -6708,6 +6800,34 @@ mod tests {
             .recovery_reset_markers
             .values()
             .all(|marker| marker.space_fence_status == "reconciled"));
+        let provisional = RecoveryBindingSnapshot {
+            request_id: Uuid::now_v7(),
+            recovery_fence_id: Uuid::now_v7(),
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            space_authorization_revision: 0,
+            issuer_space_lifecycle_epoch: 0,
+            target_space_lifecycle_epoch: 0,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&provisional),
+            )
+            .await?;
+        assert_eq!(
+            service
+                .recovery_fence_phase(provisional.recovery_fence_id)
+                .await?
+                .as_deref(),
+            Some("provisional")
+        );
         Ok(())
     }
 

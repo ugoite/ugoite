@@ -679,7 +679,14 @@ async fn require_auth(
 }
 
 fn unauthorized(message: &str) -> Response {
-    (StatusCode::UNAUTHORIZED, Json(json!({"detail": message}))).into_response()
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({
+            "code": "AUTHENTICATION_REQUIRED",
+            "message": message,
+        })),
+    )
+        .into_response()
 }
 
 fn require_recent_passkey(identity: &RequestIdentityContext) -> ApiResult<()> {
@@ -1749,7 +1756,11 @@ async fn reserve_recovery_pair(
                 // until reconciliation can inspect the paired outcome.
                 return Err(recovery_fence_unavailable());
             }
-            let _ = state.identity.release_recovery_fence(fence_id).await;
+            state
+                .identity
+                .release_recovery_fence(fence_id)
+                .await
+                .map_err(recovery_commit_error)?;
             return Err(recovery_reservation_error(error));
         }
     };
@@ -1776,10 +1787,15 @@ async fn reserve_recovery_pair(
         )
         .await
     {
-        let _ = authorizer
+        authorizer
             .release_recovery_fence(space_id, fence.fence_id)
-            .await;
-        let _ = state.identity.release_recovery_fence(fence.fence_id).await;
+            .await
+            .map_err(|_| recovery_storage_unavailable())?;
+        state
+            .identity
+            .release_recovery_fence(fence.fence_id)
+            .await
+            .map_err(recovery_commit_error)?;
         return Err(recovery_commit_error(error));
     }
     Ok((authorizer, fence, snapshot))
@@ -1942,6 +1958,28 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
             .await?;
         state.identity.release_recovery_fence(fence_id).await?;
     }
+    // A supersession may commit the Node-side invalidation before the paired
+    // Space release. On restart, the terminal Node status is enough to finish
+    // that release; an active Node status remains fail-closed.
+    let current_authorization = authorizer.state(space_id).await?;
+    for fence in current_authorization
+        .recovery_fences
+        .values()
+        .filter(|fence| fence.status == "active" && !pending_ids.contains(&fence.fence_id))
+    {
+        if matches!(
+            state
+                .identity
+                .recovery_fence_status(fence.fence_id)
+                .await?
+                .as_deref(),
+            Some("released" | "superseded" | "completed")
+        ) {
+            authorizer
+                .release_recovery_fence(space_id, fence.fence_id)
+                .await?;
+        }
+    }
     for fence_id in state.identity.active_recovery_fence_ids(space_uid).await? {
         if state.identity.expired_recovery_fence(fence_id).await?
             && !pending_ids.contains(&fence_id)
@@ -1949,7 +1987,16 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
             // Do not release Node based on its local clock alone. The paired
             // Space fence must already be terminal; an unavailable lookup is
             // intentionally fail-closed and leaves the Node barrier active.
-            let Ok(space_fence) = authorizer.recovery_fence(space_id, fence_id).await else {
+            let Some(space_fence) = current_authorization.recovery_fences.get(&fence_id) else {
+                if state
+                    .identity
+                    .recovery_fence_phase(fence_id)
+                    .await?
+                    .as_deref()
+                    == Some("provisional")
+                {
+                    state.identity.release_recovery_fence(fence_id).await?;
+                }
                 continue;
             };
             if matches!(space_fence.status.as_str(), "released" | "completed") {
@@ -2091,6 +2138,18 @@ async fn owner_force_reset(
         identity.account_id,
     )
     .await?;
+    let old_fence_ids = state
+        .identity
+        .supersede_owner_recovery_approvals(account_id)
+        .await
+        .map_err(recovery_commit_error)?;
+    let supersede_authorizer = Authorizer::new(state.service.operator().clone());
+    for old_fence_id in old_fence_ids {
+        supersede_authorizer
+            .release_recovery_fence(&space_id, old_fence_id)
+            .await
+            .map_err(|_| recovery_storage_unavailable())?;
+    }
     let request_id = Uuid::now_v7();
     let (authorizer, fence, snapshot) = reserve_recovery_pair(
         &state,
@@ -2112,7 +2171,7 @@ async fn owner_force_reset(
             account_id,
             issuer_principal_id,
             identity.account_id,
-            Some(snapshot),
+            snapshot,
             Some(identity.request_identity.credential_id),
         )
         .await
@@ -2125,10 +2184,15 @@ async fn owner_force_reset(
                 // of releasing a committed mutation with no replayable token.
                 return Err(recovery_fence_unavailable());
             }
-            let _ = authorizer
+            authorizer
                 .release_recovery_fence(&space_id, fence.fence_id)
-                .await;
-            let _ = state.identity.release_recovery_fence(fence.fence_id).await;
+                .await
+                .map_err(|_| recovery_storage_unavailable())?;
+            state
+                .identity
+                .release_recovery_fence(fence.fence_id)
+                .await
+                .map_err(recovery_commit_error)?;
             return Err(recovery_commit_error(error));
         }
     };
@@ -2266,7 +2330,7 @@ async fn owner_rotate_backup_codes(
             account_id,
             issuer_principal_id,
             identity.account_id,
-            Some(snapshot),
+            snapshot,
             Some(identity.request_identity.credential_id),
         )
         .await
@@ -2281,10 +2345,15 @@ async fn owner_rotate_backup_codes(
                 // way to return its one-time codes safely.
                 return Err(recovery_fence_unavailable());
             }
-            let _ = authorizer
+            authorizer
                 .release_recovery_fence(&space_id, fence.fence_id)
-                .await;
-            let _ = state.identity.release_recovery_fence(fence.fence_id).await;
+                .await
+                .map_err(|_| recovery_storage_unavailable())?;
+            state
+                .identity
+                .release_recovery_fence(fence.fence_id)
+                .await
+                .map_err(recovery_commit_error)?;
             if message.contains("key mismatch") {
                 return Err(ApiError::new(
                     StatusCode::CONFLICT,
@@ -6151,6 +6220,21 @@ mod authentication_regression_tests {
             recovery_reservation_error(unknown).status,
             StatusCode::CONFLICT
         );
+    }
+
+    #[tokio::test]
+    async fn protected_auth_errors_use_the_openapi_error_envelope() -> anyhow::Result<()> {
+        let response = unauthorized("a valid session or DPoP access token is required");
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body)?,
+            json!({
+                "code": "AUTHENTICATION_REQUIRED",
+                "message": "a valid session or DPoP access token is required"
+            })
+        );
+        Ok(())
     }
 
     #[tokio::test]
