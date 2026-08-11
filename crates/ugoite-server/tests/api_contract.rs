@@ -3,7 +3,8 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use serde_json::Value;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 use tower::ServiceExt;
 use ugoite_server::{app, AppState};
 
@@ -88,7 +89,7 @@ async fn req_sec_002_covers_metadata_api_error_and_middleware_responses() {
 
 #[tokio::test]
 async fn req_sec_002_covers_the_static_browser_root() {
-    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
     let static_dir = std::env::temp_dir().join(format!(
         "ugoite-security-headers-static-{}",
         uuid::Uuid::now_v7()
@@ -114,7 +115,7 @@ async fn req_sec_002_covers_the_static_browser_root() {
 
 #[tokio::test]
 async fn req_sec_002_keeps_security_headers_on_cors_preflight() {
-    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
     let previous = std::env::var_os("UGOITE_CORS_ALLOWED_ORIGINS");
     std::env::set_var("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
     let app = initialized_app("security-headers-cors").await;
