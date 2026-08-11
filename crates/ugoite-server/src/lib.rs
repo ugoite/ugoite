@@ -1712,23 +1712,26 @@ fn owner_recovery_replay_error(
     issuer_node_lifecycle_epoch: u64,
     target_node_lifecycle_epoch: u64,
 ) -> Option<&'static str> {
-    let key_matches = existing.space_uid == space_uid
+    let original_identity_matches = existing.space_uid == space_uid
         && existing.principal_id == principal_id
         && existing.account_id == account_id
         && existing.issuer_principal_id == issuer_principal_id
         && existing.issuer_account_id == issuer_account_id
-        && existing.issuer_credential_id == Some(issuer_credential_id)
-        && existing.issuer_generation == issuer_generation
-        && existing.target_generation == target_generation
-        && existing.issuer_space_lifecycle_epoch == issuer_space_lifecycle_epoch
-        && existing.target_space_lifecycle_epoch == target_space_lifecycle_epoch
-        && existing.issuer_node_lifecycle_epoch == issuer_node_lifecycle_epoch
-        && existing.target_node_lifecycle_epoch == target_node_lifecycle_epoch;
-    if !key_matches {
+        && existing.issuer_credential_id == Some(issuer_credential_id);
+    if !original_identity_matches {
         return Some("OWNER_APPROVAL_KEY_MISMATCH");
     }
     if existing.invalidated_at.is_some() || existing.used_at.is_some() {
         return Some("OWNER_APPROVAL_ALREADY_COMMITTED");
+    }
+    if existing.issuer_generation != issuer_generation
+        || existing.target_generation != target_generation
+        || existing.issuer_space_lifecycle_epoch != issuer_space_lifecycle_epoch
+        || existing.target_space_lifecycle_epoch != target_space_lifecycle_epoch
+        || existing.issuer_node_lifecycle_epoch != issuer_node_lifecycle_epoch
+        || existing.target_node_lifecycle_epoch != target_node_lifecycle_epoch
+    {
+        return Some("OWNER_APPROVAL_KEY_MISMATCH");
     }
     None
 }
@@ -6840,12 +6843,12 @@ mod authentication_regression_tests {
             issuer_principal_id,
             issuer_account_id,
             issuer_credential_id,
-            0,
-            0,
             1,
             1,
-            0,
-            0,
+            1,
+            1,
+            1,
+            1,
         );
         assert_eq!(mismatch, Some("OWNER_APPROVAL_KEY_MISMATCH"));
 
@@ -6858,11 +6861,11 @@ mod authentication_regression_tests {
             issuer_account_id,
             issuer_credential_id,
             0,
-            0,
             1,
             1,
+            1,
             0,
-            0,
+            1,
         );
         assert_eq!(original_request, Some("OWNER_APPROVAL_ALREADY_COMMITTED"));
     }
