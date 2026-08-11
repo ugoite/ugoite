@@ -5215,7 +5215,6 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OwnerRecoveryRegistrationStart" } } }
           },
           "401": { "description": "Approval token invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
-          "409": { "description": "A challenge is already pending", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "410": { "description": "Approval or challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }
         }
@@ -5238,7 +5237,7 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OwnerRecoveryFinishResponse" } } }
           },
           "401": { "description": "Challenge invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
-          "409": { "description": "Reset already completed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "409": { "description": "Reset completed or recovery fence unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "410": { "description": "Approval or challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "422": { "description": "WebAuthn registration invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }

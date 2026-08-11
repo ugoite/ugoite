@@ -873,9 +873,7 @@ async fn auth_invitation_start(
     State(state): State<AppState>,
     Json(payload): Json<InvitationStartRequest>,
 ) -> ApiResult<Json<Value>> {
-    reconcile_all_recovery_fences(&state)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_all_recovery_fences_api(&state).await?;
     let result = state
         .identity
         .start_invitation_registration(&payload.invitation_token)
@@ -897,9 +895,7 @@ async fn auth_invitation_finish(
     State(state): State<AppState>,
     Json(payload): Json<InvitationFinishRequest>,
 ) -> ApiResult<Response> {
-    reconcile_all_recovery_fences(&state)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_all_recovery_fences_api(&state).await?;
     let result = state
         .identity
         .finish_invitation_registration(
@@ -943,9 +939,7 @@ async fn auth_invitation_accept_existing(
     Extension(identity): Extension<RequestIdentityContext>,
     Json(payload): Json<InvitationStartRequest>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    reconcile_all_recovery_fences(&state)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_all_recovery_fences_api(&state).await?;
     let (account, invitation) = state
         .identity
         .accept_invitation_for_account(&payload.invitation_token, identity.account_id)
@@ -2044,6 +2038,53 @@ async fn reconcile_all_recovery_fences(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn reconcile_recovery_fences_api(state: &AppState, space_id: &str) -> ApiResult<()> {
+    if reconcile_recovery_fences(state, space_id).await.is_ok() {
+        return Ok(());
+    }
+    let committed = match state.service.space_uid(space_id).await {
+        Ok(space_uid) => state
+            .identity
+            .pending_recovery_fence_ids(space_uid)
+            .await
+            .is_ok_and(|fences| !fences.is_empty()),
+        Err(_) => false,
+    };
+    if committed {
+        Err(recovery_fence_unavailable())
+    } else {
+        Err(recovery_storage_unavailable())
+    }
+}
+
+async fn reconcile_all_recovery_fences_api(state: &AppState) -> ApiResult<()> {
+    if reconcile_all_recovery_fences(state).await.is_ok() {
+        return Ok(());
+    }
+    let mut committed = false;
+    if let Ok(space_ids) = state.service.list_space_ids().await {
+        for space_id in space_ids {
+            let Ok(space_uid) = state.service.space_uid(&space_id).await else {
+                continue;
+            };
+            if state
+                .identity
+                .pending_recovery_fence_ids(space_uid)
+                .await
+                .is_ok_and(|fences| !fences.is_empty())
+            {
+                committed = true;
+                break;
+            }
+        }
+    }
+    if committed {
+        Err(recovery_fence_unavailable())
+    } else {
+        Err(recovery_storage_unavailable())
+    }
+}
+
 async fn abort_owner_recovery_fence(
     state: &AppState,
     space_uid: Uuid,
@@ -2155,9 +2196,7 @@ async fn owner_force_reset(
     Path(space_id): Path<String>,
     Json(payload): Json<OwnerRecoveryApprovalRequest>,
 ) -> ApiResult<Response> {
-    reconcile_recovery_fences(&state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(&state, &space_id).await?;
     let (space_uid, issuer_principal_id) =
         recovery_owner_context(&state, &space_id, &identity).await?;
     let owner_session_token = identity.session_token.as_deref().ok_or_else(|| {
@@ -2332,9 +2371,7 @@ async fn owner_rotate_backup_codes(
     headers: HeaderMap,
     Json(payload): Json<OwnerRecoveryApprovalRequest>,
 ) -> ApiResult<Response> {
-    reconcile_recovery_fences(&state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(&state, &space_id).await?;
     let Some(value) = headers.get("idempotency-key") else {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -2630,9 +2667,7 @@ async fn auth_owner_recovery_start(
     State(state): State<AppState>,
     Json(payload): Json<OwnerRecoveryStartRequest>,
 ) -> ApiResult<Response> {
-    reconcile_all_recovery_fences(&state)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_all_recovery_fences_api(&state).await?;
     let context = match state
         .identity
         .owner_recovery_approval_context(&payload.owner_approval_token)
@@ -2670,9 +2705,7 @@ async fn auth_owner_recovery_finish(
     State(state): State<AppState>,
     Json(payload): Json<OwnerRecoveryFinishRequest>,
 ) -> ApiResult<Response> {
-    reconcile_all_recovery_fences(&state)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_all_recovery_fences_api(&state).await?;
     match state
         .identity
         .take_owner_recovery_response_for_challenge(payload.challenge_id, &payload.credential)
@@ -3382,9 +3415,7 @@ async fn bind_invited_account(
         return Ok(());
     };
     let space_id = find_space_id_by_uid(state, space_uid).await?;
-    reconcile_recovery_fences(state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(state, &space_id).await?;
     let principal_id = invitation.accepted_principal_id().ok_or_else(|| {
         ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
     })?;
@@ -4129,9 +4160,7 @@ async fn create_agent(
     Json(mut payload): Json<AgentCreatePayload>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     require_recent_passkey(&identity)?;
-    reconcile_recovery_fences(&state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(&state, &space_id).await?;
     oauth::jwk_thumbprint(&payload.public_key_jwk).map_err(auth_error)?;
     let sponsor = principal_for_space(&state, &space_id, &identity).await?;
     if payload.owner_principal_ids.is_empty() {
@@ -4212,9 +4241,7 @@ async fn revoke_agent(
     Path((space_id, agent_id)): Path<(String, Uuid)>,
 ) -> ApiResult<StatusCode> {
     require_recent_passkey(&identity)?;
-    reconcile_recovery_fences(&state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(&state, &space_id).await?;
     let actor = principal_for_space(&state, &space_id, &identity).await?;
     Authorizer::new(state.service.operator().clone())
         .revoke_agent(&space_id, actor, agent_id)
@@ -4719,9 +4746,7 @@ async fn put_access_policy(
     Json(policy): Json<AccessPolicy>,
 ) -> ApiResult<Json<Value>> {
     require_recent_passkey(&identity)?;
-    reconcile_recovery_fences(&state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(&state, &space_id).await?;
     let actor = principal_for_space(&state, &space_id, &identity).await?;
     let resource = ugoite_iceberg::authorization::ResourceRef {
         kind: parse_resource_kind(&kind)?,
@@ -5025,9 +5050,7 @@ async fn invite_member(
     Path(space_id): Path<String>,
     Json(payload): Json<MemberInvite>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    reconcile_recovery_fences(&state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(&state, &space_id).await?;
     require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     require_recent_passkey(&identity)?;
     parse_space_role(&payload.role)?;
@@ -5068,9 +5091,7 @@ async fn update_member_role(
     Path((space_id, principal_id)): Path<(String, Uuid)>,
     Json(payload): Json<MemberRoleUpdate>,
 ) -> ApiResult<Json<Value>> {
-    reconcile_recovery_fences(&state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(&state, &space_id).await?;
     require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     require_recent_passkey(&identity)?;
     let actor = principal_for_space(&state, &space_id, &identity).await?;
@@ -5087,9 +5108,7 @@ async fn revoke_member(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, principal_id)): Path<(String, Uuid)>,
 ) -> ApiResult<Json<Value>> {
-    reconcile_recovery_fences(&state, &space_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
+    reconcile_recovery_fences_api(&state, &space_id).await?;
     require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     require_recent_passkey(&identity)?;
     let actor = principal_for_space(&state, &space_id, &identity).await?;

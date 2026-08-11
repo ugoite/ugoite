@@ -3155,13 +3155,77 @@ impl NodeIdentityService {
                 let challenge = state
                     .registration_challenges
                     .get(&challenge_id)
+                    .cloned()
                     .ok_or_else(|| anyhow!("owner recovery challenge is unavailable"))?;
-                let public_key = challenge
-                    .public_key
-                    .clone()
-                    .ok_or_else(|| anyhow!("owner recovery challenge response is unavailable"))?;
-                return Ok(RegistrationStart {
+                if let Some(public_key) = challenge.public_key.clone() {
+                    return Ok(RegistrationStart {
+                        challenge_id,
+                        public_key,
+                    });
+                }
+
+                // Older v0.1 pending challenges did not persist the browser
+                // response. Retire that challenge and issue a replacement
+                // bound to the same approval/fence; the new public response
+                // is persisted so a retry after an ambiguous write can
+                // converge through the normal pending-challenge path.
+                let RegistrationPurpose::OwnerRecovery {
+                    approval_id,
+                    reset_id,
+                    space_uid,
+                    principal_id,
+                } = challenge.purpose.clone()
+                else {
+                    bail!("owner recovery challenge has the wrong purpose");
+                };
+                let (mut public_key, registration) = self.webauthn.start_passkey_registration(
+                    Uuid::now_v7(),
+                    &challenge.account_id.to_string(),
+                    &challenge.display_name,
+                    None,
+                )?;
+                if let Some(selection) = public_key.public_key.authenticator_selection.as_mut() {
+                    selection.resident_key =
+                        Some(serde_json::from_value(serde_json::json!("required"))?);
+                    selection.require_resident_key = true;
+                }
+                let replacement_id = Uuid::now_v7();
+                state.registration_challenges.remove(&challenge_id);
+                state.recovery_challenge_tombstones.insert(
                     challenge_id,
+                    RecoveryChallengeTombstone {
+                        challenge_id,
+                        approval_id,
+                        reset_id,
+                        reason: "superseded".to_string(),
+                        created_at: timestamp(now),
+                    },
+                );
+                state.registration_challenges.insert(
+                    replacement_id,
+                    RegistrationChallenge {
+                        account_id: challenge.account_id,
+                        credential_generation: challenge.credential_generation,
+                        display_name: challenge.display_name,
+                        state: registration,
+                        public_key: Some(public_key.clone()),
+                        purpose: RegistrationPurpose::OwnerRecovery {
+                            approval_id,
+                            reset_id,
+                            space_uid,
+                            principal_id,
+                        },
+                        expires_at: timestamp(now + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
+                    },
+                );
+                state
+                    .owner_recovery_approvals
+                    .get_mut(&approval_id)
+                    .ok_or_else(|| anyhow!("owner approval is invalid"))?
+                    .challenge_id = Some(replacement_id);
+                self.write_state(&state).await?;
+                return Ok(RegistrationStart {
+                    challenge_id: replacement_id,
                     public_key,
                 });
             }
