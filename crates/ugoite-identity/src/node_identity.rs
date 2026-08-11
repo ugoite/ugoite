@@ -76,6 +76,11 @@ struct RegistrationChallenge {
     credential_generation: u64,
     display_name: String,
     state: PasskeyRegistration,
+    /// Keep the browser-facing challenge beside the server-side WebAuthn
+    /// state so a retry can replay the same start response after an
+    /// ambiguous Node state write.
+    #[serde(default)]
+    public_key: Option<CreationChallengeResponse>,
     purpose: RegistrationPurpose,
     expires_at: String,
 }
@@ -790,13 +795,6 @@ fn node_recovery_fence_is_expired(fence: &NodeRecoveryFence) -> Result<bool> {
     Ok(node_recovery_fence_is_active(fence) && parse_timestamp(&fence.expires_at)? <= Utc::now())
 }
 
-fn node_write_outcome_is_ambiguous(error: &anyhow::Error) -> bool {
-    let message = error.to_string();
-    message.contains("node control write committed with an ambiguous response")
-        || message.contains("node control write outcome unknown")
-}
-
-#[cfg(test)]
 fn node_write_was_committed_with_ambiguous_response(error: &anyhow::Error) -> bool {
     error
         .to_string()
@@ -1426,15 +1424,22 @@ impl NodeIdentityService {
                         .cloned()
                 })
                 .is_some();
-            if !delivered && !node_write_outcome_is_ambiguous(&error) {
+            if delivered {
+                if !node_write_was_committed_with_ambiguous_response(&error) {
+                    bail!("backup rotation codes already delivered");
+                }
+            } else if !node_write_was_committed_with_ambiguous_response(&error) {
+                // An unknown/pre-CAS outcome is fail-closed. A later retry
+                // can still recover the encrypted material if this marker
+                // write did not commit; only a verified matching state may
+                // be returned from this delivery claim.
                 return Err(error);
             }
             // The recovery mutation and its encrypted response were already
             // committed before this delivery marker. If the marker CAS has
-            // an ambiguous outcome, returning the material now is the only
-            // way to avoid losing the one-time response when the verification
-            // read is unavailable. A later retry converges to either the
-            // durable delivery marker or the same encrypted response.
+            // been observed with the exact desired bytes, returning the
+            // material is safe. A competing process that won the CAS is
+            // terminal and must never receive a second copy.
         }
         Ok(codes)
     }
@@ -1514,13 +1519,17 @@ impl NodeIdentityService {
                         .cloned()
                 })
                 .is_some();
-            if !delivered && !node_write_outcome_is_ambiguous(&error) {
+            if delivered {
+                if !node_write_was_committed_with_ambiguous_response(&error) {
+                    bail!("owner reset response already delivered");
+                }
+            } else if !node_write_was_committed_with_ambiguous_response(&error) {
                 return Err(error);
             }
             // The reset itself and its encrypted response were committed
             // before this delivery marker. Preserve liveness after an
-            // ambiguous marker CAS: the caller already has the exact response
-            // material needed to complete this one-use recovery.
+            // observed matching marker CAS: the caller already has the exact
+            // response material needed to complete this one-use recovery.
         }
         Ok(Some((account, session_token, recovery_codes, marker)))
     }
@@ -1788,6 +1797,7 @@ impl NodeIdentityService {
                 credential_generation: 0,
                 display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::Setup,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -1981,6 +1991,7 @@ impl NodeIdentityService {
                 credential_generation: 0,
                 display_name: invitation.display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::Invitation {
                     invitation_id: invitation.invitation_id,
                 },
@@ -2196,6 +2207,7 @@ impl NodeIdentityService {
                     .unwrap_or_default(),
                 display_name: account.display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::AddCredential,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -2498,6 +2510,7 @@ impl NodeIdentityService {
                     .unwrap_or_default(),
                 display_name: account.display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::Recovery,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -3124,7 +3137,18 @@ impl NodeIdentityService {
                 .transpose()?
                 .unwrap_or(false);
             if pending {
-                bail!("owner recovery challenge is already pending");
+                let challenge = state
+                    .registration_challenges
+                    .get(&challenge_id)
+                    .ok_or_else(|| anyhow!("owner recovery challenge is unavailable"))?;
+                let public_key = challenge
+                    .public_key
+                    .clone()
+                    .ok_or_else(|| anyhow!("owner recovery challenge response is unavailable"))?;
+                return Ok(RegistrationStart {
+                    challenge_id,
+                    public_key,
+                });
             }
             state.registration_challenges.remove(&challenge_id);
             state.recovery_challenge_tombstones.insert(
@@ -3227,6 +3251,7 @@ impl NodeIdentityService {
                 credential_generation: approval.target_generation,
                 display_name: account.display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::OwnerRecovery {
                     approval_id,
                     reset_id,
@@ -7083,10 +7108,15 @@ mod tests {
             "delivered"
         );
         let first_registration = service.start_owner_recovery_registration(&token).await?;
-        assert!(service
-            .start_owner_recovery_registration(&token)
-            .await
-            .is_err());
+        let resumed_registration = service.start_owner_recovery_registration(&token).await?;
+        assert_eq!(
+            resumed_registration.challenge_id,
+            first_registration.challenge_id
+        );
+        assert_eq!(
+            serde_json::to_value(resumed_registration.public_key)?,
+            serde_json::to_value(first_registration.public_key)?
+        );
 
         let (_, replacement_token, _) = service
             .issue_owner_recovery_approval_unchecked(
@@ -7834,7 +7864,7 @@ mod tests {
         assert!(!node_write_was_committed_with_ambiguous_response(&anyhow!(
             "node control write outcome unknown: timeout"
         )));
-        assert!(node_write_outcome_is_ambiguous(&anyhow!(
+        assert!(!node_write_was_committed_with_ambiguous_response(&anyhow!(
             "node control write outcome unknown: timeout"
         )));
     }
