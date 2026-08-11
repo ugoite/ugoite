@@ -5215,6 +5215,7 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OwnerRecoveryRegistrationStart" } } }
           },
           "401": { "description": "Approval token invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
+          "409": { "description": "Recovery fence unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "410": { "description": "Approval or challenge expired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "503": { "description": "Recovery storage unavailable before commit", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }
         }

@@ -396,11 +396,34 @@ pub struct RecoveryResetMarker {
     #[serde(default)]
     pub response_delivery_id: Option<Uuid>,
     #[serde(default)]
+    pub response_invalidated_at: Option<String>,
+    #[serde(default)]
     pub completion_proof_hash: Option<String>,
 }
 
 fn default_space_fence_status() -> String {
     "node_committed_space_fence_pending".to_string()
+}
+
+fn invalidate_pending_recovery_responses(state: &mut NodeState, account_id: Uuid, now: &str) {
+    for marker in state.recovery_reset_markers.values_mut().filter(|marker| {
+        marker.account_id == account_id
+            && marker.response_delivered_at.is_none()
+            && marker.response_invalidated_at.is_none()
+    }) {
+        marker.response_invalidated_at = Some(now.to_string());
+    }
+    for record in state
+        .backup_rotation_requests
+        .values_mut()
+        .filter(|record| {
+            record.account_id == account_id
+                && record.codes_delivered_at.is_none()
+                && record.codes_invalidated_at.is_none()
+        })
+    {
+        record.codes_invalidated_at = Some(now.to_string());
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -451,6 +474,8 @@ pub struct BackupRotationRecord {
     /// process after a subsequent Node-state write.
     #[serde(default)]
     pub codes_delivery_id: Option<Uuid>,
+    #[serde(default)]
+    pub codes_invalidated_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1406,6 +1431,9 @@ impl NodeIdentityService {
         if record.codes_delivered_at.is_some() {
             bail!("backup rotation codes already delivered");
         }
+        if record.codes_invalidated_at.is_some() {
+            bail!("backup rotation codes are no longer current");
+        }
         let encrypted_codes = record
             .encrypted_codes
             .as_deref()
@@ -1488,6 +1516,9 @@ impl NodeIdentityService {
         };
         if marker.response_delivered_at.is_some() {
             bail!("owner reset response already delivered");
+        }
+        if marker.response_invalidated_at.is_some() {
+            bail!("owner reset response is no longer current");
         }
         if marker.space_fence_status != "reconciled" {
             bail!("RECOVERY_FENCE_UNAVAILABLE");
@@ -2268,6 +2299,7 @@ impl NodeIdentityService {
             bail!("credential is already registered");
         }
         let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         let method_id = Uuid::now_v7();
         state.passkeys.insert(
             credential_id.clone(),
@@ -2572,6 +2604,7 @@ impl NodeIdentityService {
             bail!("credential is already registered");
         }
         let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         let method_id = Uuid::now_v7();
         state.passkeys.insert(
             credential_id.clone(),
@@ -3028,6 +3061,9 @@ impl NodeIdentityService {
         let Some(approval) = state.owner_recovery_approvals.get(&approval_id) else {
             return Ok(None);
         };
+        if approval.challenge_id != Some(challenge_id) {
+            return Ok(None);
+        }
         let approval_invalidated = approval.invalidated_at.is_some()
             || parse_timestamp(&approval.expires_at)? <= Utc::now();
         if approval.used_at.is_some() || (!terminal && !approval_invalidated) {
@@ -3646,6 +3682,7 @@ impl NodeIdentityService {
             )?),
             response_delivered_at: None,
             response_delivery_id: None,
+            response_invalidated_at: None,
             completion_proof_hash: Some(completion_proof_hash),
         };
         state.recovery_reset_markers.insert(reset_id, marker);
@@ -3717,6 +3754,7 @@ impl NodeIdentityService {
         reset_id: Uuid,
     ) -> Result<String> {
         let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(state, account.account_id, &now);
         state
             .passkeys
             .retain(|_, passkey| passkey.account_id != account.account_id);
@@ -3901,6 +3939,8 @@ impl NodeIdentityService {
             .filter(|account| matches!(account.status, AccountStatus::Active))
             .cloned()
             .ok_or_else(|| anyhow!("recovery target is invalid"))?;
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         if !state
             .accounts
             .get(&issuer_account_id)
@@ -4013,6 +4053,7 @@ impl NodeIdentityService {
                 )?),
                 codes_delivered_at: None,
                 codes_delivery_id: None,
+                codes_invalidated_at: None,
             },
         );
         queue_recovery_audit(
@@ -6225,6 +6266,7 @@ mod tests {
                 encrypted_response: None,
                 response_delivered_at: None,
                 response_delivery_id: None,
+                response_invalidated_at: None,
                 completion_proof_hash: None,
             },
         );
@@ -7757,6 +7799,7 @@ mod tests {
                 encrypted_response: None,
                 response_delivered_at: None,
                 response_delivery_id: None,
+                response_invalidated_at: None,
                 completion_proof_hash: None,
             },
         );
@@ -7882,6 +7925,7 @@ mod tests {
                 encrypted_response: None,
                 response_delivered_at: None,
                 response_delivery_id: None,
+                response_invalidated_at: None,
                 completion_proof_hash: None,
             },
         );

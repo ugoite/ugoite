@@ -2469,7 +2469,10 @@ async fn owner_rotate_backup_codes(
         } else if existing.codes_delivered_at.is_none() {
             let codes = match state.identity.take_backup_rotation_codes(request_id).await {
                 Ok(codes) => codes,
-                Err(error) if error.to_string().contains("already delivered") => {
+                Err(error)
+                    if error.to_string().contains("already delivered")
+                        || error.to_string().contains("no longer current") =>
+                {
                     return Err(ApiError::new(
                         StatusCode::CONFLICT,
                         json!({"code":"BACKUP_ROTATION_ALREADY_COMMITTED","message":"backup rotation is already committed"}),
@@ -2744,7 +2747,10 @@ async fn auth_owner_recovery_finish(
                 .into_response());
         }
         Ok(None) => {}
-        Err(error) if error.to_string().contains("already delivered") => {
+        Err(error)
+            if error.to_string().contains("already delivered")
+                || error.to_string().contains("no longer current") =>
+        {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
                 json!({"code":"OWNER_RESET_ALREADY_COMPLETED","message":"owner reset response is already committed"}),
@@ -2908,6 +2914,8 @@ fn owner_recovery_api_error(error: anyhow::Error) -> ApiError {
     }
     let (status, code) = if message.contains("already pending") {
         (StatusCode::CONFLICT, "OWNER_RECOVERY_CHALLENGE_PENDING")
+    } else if message.contains("no longer current") {
+        (StatusCode::CONFLICT, "OWNER_RESET_ALREADY_COMPLETED")
     } else if message.contains("already completed") {
         (StatusCode::CONFLICT, "OWNER_RESET_ALREADY_COMPLETED")
     } else if message.contains("expired") {
