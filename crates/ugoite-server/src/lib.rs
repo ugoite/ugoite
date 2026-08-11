@@ -196,6 +196,7 @@ struct RequestIdentityContext {
     token_actions: Option<BTreeSet<String>>,
     recent_passkey: bool,
     credential_generation: u64,
+    session_token: Option<String>,
 }
 
 fn protected_routes(state: AppState) -> Router<AppState> {
@@ -539,6 +540,7 @@ async fn require_auth(
                     .await
                     .unwrap_or(false),
                 credential_generation: authenticated.account.credential_generation,
+                session_token: Some(session_id),
             },
             Err(_) => return unauthorized("session is invalid or expired"),
         }
@@ -672,6 +674,7 @@ async fn require_auth(
             token_actions: Some(claims.granted_actions),
             recent_passkey: false,
             credential_generation: claims.credential_generation.unwrap_or_default(),
+            session_token: None,
         }
     };
     request.extensions_mut().insert(identity);
@@ -1352,6 +1355,33 @@ async fn recovery_owner_context(
             }),
         ));
     }
+    let session_token = identity.session_token.as_deref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({
+                "code": "RECOVERY_AUTHORITY_REQUIRED",
+                "message": "owner recovery requires a browser Passkey session"
+            }),
+        )
+    })?;
+    state
+        .identity
+        .revalidate_recent_passkey_session(
+            session_token,
+            identity.account_id,
+            identity.request_identity.credential_id,
+            identity.credential_generation,
+        )
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                StatusCode::FORBIDDEN,
+                json!({
+                    "code": "RECOVERY_AUTHORITY_REQUIRED",
+                    "message": "the Owner Passkey session is no longer valid"
+                }),
+            )
+        })?;
     let space_uid = state
         .service
         .space_uid(space_id)
@@ -2068,8 +2098,8 @@ async fn reconcile_recovery_audit_outbox(state: &AppState, space_id: &str) -> an
                     record.event_id,
                     NodeAuditInput {
                         subject_account_id: Some(record.account_id),
-                        actor_account_id: record.issuer_account_id,
-                        credential_id: record.credential_id,
+                        actor_account_id: record.actor_account_id,
+                        credential_id: record.actor_credential_id.or(record.credential_id),
                         action: &record.action,
                         target_type: "human_account",
                         target_id: Some(record.account_id.to_string()),
@@ -2163,6 +2193,36 @@ async fn owner_force_reset(
         chrono::Duration::minutes(15),
     )
     .await?;
+    if let Some(session_token) = identity.session_token.as_deref() {
+        if state
+            .identity
+            .revalidate_recent_passkey_session(
+                session_token,
+                identity.account_id,
+                identity.request_identity.credential_id,
+                identity.credential_generation,
+            )
+            .await
+            .is_err()
+        {
+            authorizer
+                .release_recovery_fence(&space_id, fence.fence_id)
+                .await
+                .map_err(|_| recovery_storage_unavailable())?;
+            state
+                .identity
+                .release_recovery_fence(fence.fence_id)
+                .await
+                .map_err(recovery_commit_error)?;
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                json!({
+                    "code": "RECOVERY_AUTHORITY_REQUIRED",
+                    "message": "the Owner Passkey session is no longer valid"
+                }),
+            ));
+        }
+    }
     let (approval_id, token, expires_at) = match state
         .identity
         .issue_owner_recovery_approval_with_snapshot_and_credential(
@@ -2283,24 +2343,6 @@ async fn owner_rotate_backup_codes(
         })?;
     let (space_uid, issuer_principal_id) =
         recovery_owner_context(&state, &space_id, &identity).await?;
-    if let Some(existing) = state
-        .identity
-        .backup_rotation_request(request_id)
-        .await
-        .map_err(auth_error)?
-    {
-        let same_tuple = existing.space_uid == space_uid
-            && existing.principal_id == payload.principal_id
-            && existing.issuer_principal_id == issuer_principal_id
-            && existing.issuer_account_id == identity.account_id;
-        return Err(ApiError::new(
-            StatusCode::CONFLICT,
-            json!({
-                "code": if same_tuple { "BACKUP_ROTATION_ALREADY_COMMITTED" } else { "BACKUP_ROTATION_KEY_MISMATCH" },
-                "message": if same_tuple { "backup rotation is already committed" } else { "idempotency key is bound to another recovery tuple" }
-            }),
-        ));
-    }
     let account_id = recovery_target_account(
         &state,
         &space_id,
@@ -2309,6 +2351,74 @@ async fn owner_rotate_backup_codes(
         identity.account_id,
     )
     .await?;
+    if let Some(existing) = state
+        .identity
+        .backup_rotation_request(request_id)
+        .await
+        .map_err(auth_error)?
+    {
+        let authorization = Authorizer::new(state.service.operator().clone())
+            .state(&space_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        let (issuer_generation, target_generation) =
+            recovery_account_generations(&state, identity.account_id, account_id).await?;
+        let issuer_space_epoch = authorization
+            .principal_lifecycle_epochs
+            .get(&issuer_principal_id)
+            .copied()
+            .unwrap_or_default();
+        let target_space_epoch = authorization
+            .principal_lifecycle_epochs
+            .get(&payload.principal_id)
+            .copied()
+            .unwrap_or_default();
+        let issuer_node_epoch = state
+            .identity
+            .recovery_account_lifecycle_epoch(identity.account_id)
+            .await
+            .map_err(recovery_commit_error)?;
+        let target_node_epoch = state
+            .identity
+            .recovery_account_lifecycle_epoch(account_id)
+            .await
+            .map_err(recovery_commit_error)?;
+        let fence_tuple_matches = existing.recovery_fence_id.is_some_and(|fence_id| {
+            authorization
+                .recovery_fences
+                .get(&fence_id)
+                .is_some_and(|fence| {
+                    fence.request_id == request_id
+                        && fence.authorization_revision == existing.space_authorization_revision
+                })
+        });
+        let same_tuple = existing.space_uid == space_uid
+            && existing.principal_id == payload.principal_id
+            && existing.account_id == account_id
+            && existing.issuer_principal_id == issuer_principal_id
+            && existing.issuer_account_id == identity.account_id
+            && existing.issuer_generation == issuer_generation
+            && existing.target_generation == target_generation
+            && existing.issuer_space_lifecycle_epoch == issuer_space_epoch
+            && existing.target_space_lifecycle_epoch == target_space_epoch
+            && existing.issuer_node_lifecycle_epoch == issuer_node_epoch
+            && existing.target_node_lifecycle_epoch == target_node_epoch
+            && fence_tuple_matches;
+        let replay_code = if !same_tuple {
+            "BACKUP_ROTATION_KEY_MISMATCH"
+        } else if existing.space_fence_status != "reconciled" {
+            "RECOVERY_FENCE_UNAVAILABLE"
+        } else {
+            "BACKUP_ROTATION_ALREADY_COMMITTED"
+        };
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            json!({
+                "code": replay_code,
+                "message": if replay_code == "BACKUP_ROTATION_ALREADY_COMMITTED" { "backup rotation is already committed" } else if replay_code == "RECOVERY_FENCE_UNAVAILABLE" { "recovery result is still being reconciled" } else { "idempotency key is bound to another recovery tuple" }
+            }),
+        ));
+    }
     let (authorizer, fence, snapshot) = reserve_recovery_pair(
         &state,
         &space_id,
@@ -2571,8 +2681,8 @@ async fn auth_owner_recovery_finish(
             recovery_event_id,
             NodeAuditInput {
             subject_account_id: Some(result.account.account_id),
-            actor_account_id: result.recovery_issuer_account_id,
-            credential_id: result.recovery_issuer_credential_id,
+            actor_account_id: None,
+            credential_id: None,
             action: "recovery.owner_reset_completed",
             target_type: "human_account",
             target_id: Some(result.account.account_id.to_string()),
@@ -6109,6 +6219,7 @@ mod authentication_regression_tests {
             ),
             recent_passkey: true,
             credential_generation: 0,
+            session_token: None,
         }
     }
 

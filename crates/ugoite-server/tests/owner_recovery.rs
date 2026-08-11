@@ -106,13 +106,12 @@ async fn test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_stor
         "credential_id": credential_id,
         "metadata": {"credential_generation": 2}
     });
-    let first = ugoite_iceberg::audit::append_audit_event(&first_operator, "demo", &payload, None)
-        .await
-        .expect("first audit append");
-    let replay =
-        ugoite_iceberg::audit::append_audit_event(&second_operator, "demo", &payload, None)
-            .await
-            .expect("replayed audit append");
+    let (first, replay) = tokio::join!(
+        ugoite_iceberg::audit::append_audit_event(&first_operator, "demo", &payload, None),
+        ugoite_iceberg::audit::append_audit_event(&second_operator, "demo", &payload, None),
+    );
+    let first = first.expect("first audit append");
+    let replay = replay.expect("replayed audit append");
     assert_eq!(first["event_id"], event_id.to_string());
     assert_eq!(replay["event_id"], event_id.to_string());
     assert_eq!(first["credential_id"], credential_id.to_string());
@@ -177,6 +176,35 @@ async fn test_req_sec_012_behavioral_owner_fence_blocks_mutations_and_expired_co
             SpaceRole::Viewer,
         )
         .await?;
+    let non_owner = Uuid::now_v7();
+    authorizer
+        .add_human_member(
+            "demo",
+            owner,
+            SpacePrincipal {
+                principal_id: non_owner,
+                kind: PrincipalKind::Human,
+                display_name: "Non-owner".to_string(),
+                state: PrincipalState::Active,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    assert!(authorizer
+        .reserve_recovery_fence(
+            "demo",
+            Uuid::now_v7(),
+            non_owner,
+            Uuid::now_v7(),
+            target,
+            target_account,
+            0,
+            0,
+            Duration::minutes(5),
+        )
+        .await
+        .is_err());
 
     let fence = authorizer
         .reserve_recovery_fence(
