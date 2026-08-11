@@ -873,11 +873,13 @@ impl Authorizer {
                     .if_not_exists(true)
                     .await
                     .context("atomically create Space authorization state")?;
-            } else {
+            } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
                 if self.operator.exists(&path).await? {
                     bail!("authorization state already exists");
                 }
                 self.operator.write(&path, serialized).await?;
+            } else {
+                bail!("Space authorization state requires conditional storage capabilities");
             }
             return Ok(());
         }
@@ -915,15 +917,15 @@ impl Authorizer {
                 .if_match(&version)
                 .await
                 .context("compare-and-swap Space authorization state")?;
-        } else {
+        } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
             // Filesystem and in-memory adapters are serialized by the shared process lock.
-            // Remote production stores are required to expose conditional writes by the
-            // node-control startup capability check.
             let current = self.state(space_id).await?;
             if current.revision != expected_revision {
                 bail!("Space authorization revision conflict");
             }
             self.operator.write(&path, serialized).await?;
+        } else {
+            bail!("Space authorization state requires conditional storage capabilities");
         }
         Ok(())
     }
