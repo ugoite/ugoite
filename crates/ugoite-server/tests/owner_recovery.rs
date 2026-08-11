@@ -94,7 +94,8 @@ async fn test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_stor
         "event_id": event_id,
         "action": "recovery.owner_reset_completed",
         "subject_principal_id": uuid::Uuid::new_v4(),
-        "actor_principal_id": Value::Null,
+        "actor_principal_id": uuid::Uuid::new_v4(),
+        "actor_account_id": uuid::Uuid::new_v4(),
         "metadata": {"credential_generation": 2}
     });
     let first = ugoite_iceberg::audit::append_audit_event(&first_operator, "demo", &payload, None)

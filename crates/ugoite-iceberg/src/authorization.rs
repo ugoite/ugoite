@@ -2,7 +2,7 @@
 
 use crate::audit;
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use fs2::FileExt;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
@@ -278,6 +278,34 @@ impl Authorizer {
         target_generation: u64,
         ttl: chrono::Duration,
     ) -> Result<RecoveryFence> {
+        self.reserve_recovery_fence_with_id(
+            space_id,
+            request_id,
+            Uuid::now_v7(),
+            issuer_principal_id,
+            issuer_account_id,
+            target_principal_id,
+            target_account_id,
+            issuer_generation,
+            target_generation,
+            ttl,
+        )
+        .await
+    }
+
+    pub async fn reserve_recovery_fence_with_id(
+        &self,
+        space_id: &str,
+        request_id: Uuid,
+        fence_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        target_principal_id: Uuid,
+        target_account_id: Uuid,
+        issuer_generation: u64,
+        target_generation: u64,
+        ttl: chrono::Duration,
+    ) -> Result<RecoveryFence> {
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
         if state.space_uid == Uuid::nil() {
@@ -319,7 +347,7 @@ impl Authorizer {
             bail!("recovery target is not a Space member")
         }
         let fence = RecoveryFence {
-            fence_id: Uuid::now_v7(),
+            fence_id,
             request_id,
             space_uid: state.space_uid,
             issuer_principal_id,
@@ -421,7 +449,15 @@ impl Authorizer {
         Ok(())
     }
 
-    fn ensure_recovery_mutation_allowed(&self, state: &AuthorizationState) -> Result<()> {
+    fn ensure_recovery_mutation_allowed(&self, state: &mut AuthorizationState) -> Result<()> {
+        for fence in state
+            .recovery_fences
+            .values()
+            .filter(|fence| fence.status == "active")
+        {
+            DateTime::parse_from_rfc3339(&fence.expires_at)
+                .context("invalid stored recovery fence timestamp")?;
+        }
         if state
             .recovery_fences
             .values()
@@ -506,7 +542,7 @@ impl Authorizer {
             .await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
-        self.ensure_recovery_mutation_allowed(&state)?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         for grant in &policy.grants {
             let Some(principal) = state.principals.get(&grant.principal_id) else {
                 bail!("policy references a principal outside the space");
@@ -563,7 +599,7 @@ impl Authorizer {
         }
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
-        self.ensure_recovery_mutation_allowed(&state)?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         if let Some(existing) = state.principals.get(&principal.principal_id) {
             if existing.kind == principal.kind
                 && state.memberships.contains_key(&principal.principal_id)
@@ -642,7 +678,7 @@ impl Authorizer {
         }
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
-        self.ensure_recovery_mutation_allowed(&state)?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         if owner_principal_ids.is_empty() || !owner_principal_ids.contains(&actor) {
             bail!("agent sponsor must be one of at least one human owner");
         }
@@ -702,7 +738,7 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, None).await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
-        self.ensure_recovery_mutation_allowed(&state)?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         let agent = state
             .agents
             .get_mut(&agent_id)
@@ -736,7 +772,7 @@ impl Authorizer {
     pub async fn mark_agent_used(&self, space_id: &str, agent_id: Uuid) -> Result<()> {
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
-        self.ensure_recovery_mutation_allowed(&state)?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         let agent = state
             .agents
             .get_mut(&agent_id)
@@ -757,7 +793,7 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, None).await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
-        self.ensure_recovery_mutation_allowed(&state)?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         let current = state
             .memberships
             .get(&principal_id)
@@ -808,7 +844,7 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, None).await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
-        self.ensure_recovery_mutation_allowed(&state)?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         if state
             .memberships
             .get(&principal_id)

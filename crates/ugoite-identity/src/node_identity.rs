@@ -72,6 +72,8 @@ pub struct StoredPasskey {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct RegistrationChallenge {
     account_id: Uuid,
+    #[serde(default)]
+    credential_generation: u64,
     display_name: String,
     state: PasskeyRegistration,
     purpose: RegistrationPurpose,
@@ -443,18 +445,13 @@ fn queue_recovery_audit(
                 "space_uid": space_uid,
                 "subject_principal_id": principal_id,
                 "subject_account_id": account_id,
-                "actor_principal_id": if action == "recovery.owner_reset_completed" {
-                    serde_json::Value::Null
-                } else {
-                    serde_json::to_value(issuer_principal_id).unwrap_or(serde_json::Value::Null)
-                },
-                "actor_account_id": if action == "recovery.owner_reset_completed" {
-                    serde_json::Value::Null
-                } else {
-                    serde_json::to_value(issuer_account_id).unwrap_or(serde_json::Value::Null)
-                },
+                "actor_principal_id": serde_json::to_value(issuer_principal_id)
+                    .unwrap_or(serde_json::Value::Null),
+                "actor_account_id": serde_json::to_value(issuer_account_id)
+                    .unwrap_or(serde_json::Value::Null),
                 "metadata": safe_metadata,
                 "issuer_principal_id": issuer_principal_id,
+                "issuer_account_id": issuer_account_id,
                 "outcome": "success"
             }),
         },
@@ -488,6 +485,8 @@ fn node_audit_fingerprint(
 struct PendingTotpEnrollment {
     encrypted_secret: String,
     expires_at: String,
+    #[serde(default)]
+    credential_generation: u64,
 }
 
 #[derive(Debug)]
@@ -714,12 +713,40 @@ fn node_recovery_fence_is_active(fence: &NodeRecoveryFence) -> bool {
     fence.status == "active"
 }
 
-fn node_recovery_fence_is_expired(fence: &NodeRecoveryFence) -> bool {
-    node_recovery_fence_is_active(fence)
-        && parse_timestamp(&fence.expires_at).is_ok_and(|expires_at| expires_at <= Utc::now())
+fn node_recovery_fence_is_expired(fence: &NodeRecoveryFence) -> Result<bool> {
+    Ok(node_recovery_fence_is_active(fence) && parse_timestamp(&fence.expires_at)? <= Utc::now())
 }
 
-fn ensure_node_recovery_mutation_allowed(state: &NodeState, space_uid: Uuid) -> Result<()> {
+fn release_expired_node_recovery_fences(state: &mut NodeState) -> Result<()> {
+    let now = Utc::now();
+    let expired = state
+        .node_recovery_fences
+        .values()
+        .filter(|fence| {
+            node_recovery_fence_is_active(fence)
+                && !state.recovery_reset_markers.values().any(|marker| {
+                    marker.recovery_fence_id == fence.fence_id
+                        && marker.space_fence_status == default_space_fence_status()
+                })
+                && !state.backup_rotation_requests.values().any(|record| {
+                    record.recovery_fence_id == Some(fence.fence_id)
+                        && record.space_fence_status == default_space_fence_status()
+                })
+        })
+        .map(|fence| {
+            parse_timestamp(&fence.expires_at).map(|expires_at| (fence.fence_id, expires_at <= now))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    for (fence_id, expired) in expired {
+        if expired {
+            release_node_recovery_fence(state, Some(fence_id), "expired");
+        }
+    }
+    Ok(())
+}
+
+fn ensure_node_recovery_mutation_allowed(state: &mut NodeState, space_uid: Uuid) -> Result<()> {
+    release_expired_node_recovery_fences(state)?;
     if state
         .node_recovery_fences
         .values()
@@ -731,15 +758,15 @@ fn ensure_node_recovery_mutation_allowed(state: &NodeState, space_uid: Uuid) -> 
 }
 
 fn ensure_node_account_recovery_mutation_allowed(
-    state: &NodeState,
-    _account_id: Uuid,
+    state: &mut NodeState,
+    account_id: Uuid,
 ) -> Result<()> {
+    release_expired_node_recovery_fences(state)?;
     if state.node_recovery_fences.values().any(|fence| {
         node_recovery_fence_is_active(fence)
-            && state
-                .bindings
-                .iter()
-                .any(|binding| binding.space_uid == fence.space_uid)
+            && state.bindings.iter().any(|binding| {
+                binding.space_uid == fence.space_uid && binding.node_account_id == account_id
+            })
     }) {
         bail!("RECOVERY_FENCE_UNAVAILABLE")
     }
@@ -823,6 +850,21 @@ fn acquire_node_recovery_fence(
         .get(&snapshot.recovery_fence_id)
         .is_some_and(|fence| fence.status == "active")
     {
+        let fence = state
+            .node_recovery_fences
+            .get(&snapshot.recovery_fence_id)
+            .expect("active fence was checked above");
+        if fence.space_uid != space_uid
+            || fence.principal_id != principal_id
+            || fence.account_id != account_id
+            || fence.issuer_account_id != issuer_account_id
+            || fence.issuer_node_lifecycle_epoch != snapshot.issuer_node_lifecycle_epoch
+            || fence.target_node_lifecycle_epoch != snapshot.target_node_lifecycle_epoch
+            || fence.issuer_generation != snapshot.issuer_generation
+            || fence.target_generation != snapshot.target_generation
+        {
+            bail!("recovery tuple is stale")
+        }
         return Ok(());
     }
 
@@ -905,6 +947,7 @@ pub struct RecoveryRegistrationFinish {
     pub recovery_space_uid: Option<Uuid>,
     pub recovery_principal_id: Option<Uuid>,
     pub recovery_issuer_principal_id: Option<Uuid>,
+    pub recovery_issuer_account_id: Option<Uuid>,
     pub recovery_request_id: Option<Uuid>,
 }
 
@@ -1104,10 +1147,10 @@ impl NodeIdentityService {
 
     pub async fn expired_recovery_fence(&self, fence_id: Uuid) -> Result<bool> {
         let state = self.read_state().await?;
-        Ok(state
-            .node_recovery_fences
-            .get(&fence_id)
-            .is_some_and(node_recovery_fence_is_expired))
+        match state.node_recovery_fences.get(&fence_id) {
+            Some(fence) => node_recovery_fence_is_expired(fence),
+            None => Ok(false),
+        }
     }
 
     /// Reserve the Node-side half of a recovery fence with the same
@@ -1427,6 +1470,7 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id,
+                credential_generation: 0,
                 display_name,
                 state: registration,
                 purpose: RegistrationPurpose::Setup,
@@ -1584,7 +1628,7 @@ impl NodeIdentityService {
             .cloned()
             .ok_or_else(|| anyhow!("invitation is invalid"))?;
         if let Some(space_uid) = invitation.space_uid {
-            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
         }
         if let Some(acceptance) = invitation.acceptance.as_ref() {
             if matches!(
@@ -1619,6 +1663,7 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id,
+                credential_generation: 0,
                 display_name: invitation.display_name,
                 state: registration,
                 purpose: RegistrationPurpose::Invitation {
@@ -1661,7 +1706,7 @@ impl NodeIdentityService {
             bail!("invitation is invalid or used");
         }
         if let Some(space_uid) = invitation.space_uid {
-            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
         }
         validate_expiry(&invitation.expires_at, "invitation")?;
         let passkey = self
@@ -1803,6 +1848,7 @@ impl NodeIdentityService {
     pub async fn start_add_passkey(&self, account_id: Uuid) -> Result<RegistrationStart> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let account = state
             .accounts
             .get(&account_id)
@@ -1827,6 +1873,11 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id,
+                credential_generation: state
+                    .accounts
+                    .get(&account_id)
+                    .map(|account| account.credential_generation)
+                    .unwrap_or_default(),
                 display_name: account.display_name,
                 state: registration,
                 purpose: RegistrationPurpose::AddCredential,
@@ -1856,6 +1907,14 @@ impl NodeIdentityService {
             || !matches!(challenge.purpose, RegistrationPurpose::AddCredential)
         {
             bail!("registration challenge has wrong account or purpose");
+        }
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != challenge.credential_generation)
+        {
+            bail!("registration challenge is stale");
         }
         validate_expiry(&challenge.expires_at, "registration challenge")?;
         let passkey = self
@@ -1913,9 +1972,22 @@ impl NodeIdentityService {
         )
     }
 
-    pub async fn revoke_passkey(&self, account_id: Uuid, credential_id: &str) -> Result<()> {
+    pub async fn revoke_passkey(
+        &self,
+        account_id: Uuid,
+        expected_generation: u64,
+        credential_id: &str,
+    ) -> Result<()> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != expected_generation)
+        {
+            bail!("credential generation is stale");
+        }
         let owned_count = state
             .passkeys
             .values()
@@ -1938,6 +2010,7 @@ impl NodeIdentityService {
     pub async fn start_totp_enrollment(&self, account_id: Uuid) -> Result<serde_json::Value> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let account = state
             .accounts
             .get(&account_id)
@@ -1953,6 +2026,7 @@ impl NodeIdentityService {
                 expires_at: timestamp(
                     Utc::now() + Duration::minutes(TOTP_ENROLLMENT_LIFETIME_MINUTES),
                 ),
+                credential_generation: account.credential_generation,
             },
         );
         let label = format!("Ugoite:{}", account.account_id);
@@ -1973,6 +2047,8 @@ impl NodeIdentityService {
             .read_state()
             .await
             .map_err(TotpEnrollmentFinishError::Internal)?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)
+            .map_err(TotpEnrollmentFinishError::Internal)?;
         let pending = state
             .pending_totp_enrollments
             .get(&account_id)
@@ -1981,6 +2057,13 @@ impl NodeIdentityService {
         let expires_at =
             parse_timestamp(&pending.expires_at).map_err(TotpEnrollmentFinishError::Internal)?;
         if expires_at <= Utc::now() {
+            return Err(TotpEnrollmentFinishError::InvalidOrExpired);
+        }
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != pending.credential_generation)
+        {
             return Err(TotpEnrollmentFinishError::InvalidOrExpired);
         }
         let secret = decrypt_recovery_secret(&self.encryption_key, &pending.encrypted_secret)
@@ -2017,6 +2100,7 @@ impl NodeIdentityService {
     ) -> Result<RegistrationStart> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let account = state
             .accounts
             .get(&account_id)
@@ -2091,6 +2175,11 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id,
+                credential_generation: state
+                    .accounts
+                    .get(&account_id)
+                    .map(|account| account.credential_generation)
+                    .unwrap_or_default(),
                 display_name: account.display_name,
                 state: registration,
                 purpose: RegistrationPurpose::Recovery,
@@ -2121,6 +2210,14 @@ impl NodeIdentityService {
             || !matches!(challenge.purpose, RegistrationPurpose::Recovery)
         {
             bail!("recovery challenge has the wrong account or purpose");
+        }
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != challenge.credential_generation)
+        {
+            bail!("recovery challenge is stale");
         }
         let passkey = self
             .webauthn
@@ -2186,6 +2283,7 @@ impl NodeIdentityService {
             recovery_space_uid: None,
             recovery_principal_id: None,
             recovery_issuer_principal_id: None,
+            recovery_issuer_account_id: None,
             recovery_request_id: None,
         })
     }
@@ -2421,6 +2519,68 @@ impl NodeIdentityService {
         })
     }
 
+    /// Return the paired fence coordinates for an approval that is already
+    /// terminal without mutating either store. The server uses this before
+    /// mapping an expired/invalidated bearer so it can abort the Space half
+    /// together with the Node half.
+    pub async fn owner_recovery_abort_fence_for_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<(Uuid, Uuid)>> {
+        let state = self.read_state().await?;
+        let Some(approval) = state
+            .owner_recovery_approvals
+            .values()
+            .find(|approval| approval.token_hash == token_hash(token.trim()))
+        else {
+            return Ok(None);
+        };
+        if approval.used_at.is_some() {
+            return Ok(None);
+        }
+        let approval_expired = parse_timestamp(&approval.expires_at)? <= Utc::now();
+        if approval.invalidated_at.is_some() || approval_expired {
+            return Ok(approval
+                .recovery_fence_id
+                .map(|fence_id| (approval.space_uid, fence_id)));
+        }
+        Ok(None)
+    }
+
+    pub async fn owner_recovery_abort_fence_for_challenge(
+        &self,
+        challenge_id: Uuid,
+    ) -> Result<Option<(Uuid, Uuid)>> {
+        let state = self.read_state().await?;
+        let (approval_id, terminal) = if let Some(challenge) =
+            state.registration_challenges.get(&challenge_id)
+        {
+            let RegistrationPurpose::OwnerRecovery { approval_id, .. } = &challenge.purpose else {
+                return Ok(None);
+            };
+            parse_timestamp(&challenge.expires_at)?;
+            (*approval_id, false)
+        } else if let Some(tombstone) = state.recovery_challenge_tombstones.get(&challenge_id) {
+            (
+                tombstone.approval_id,
+                matches!(tombstone.reason.as_str(), "superseded" | "account_reset"),
+            )
+        } else {
+            return Ok(None);
+        };
+        let Some(approval) = state.owner_recovery_approvals.get(&approval_id) else {
+            return Ok(None);
+        };
+        let approval_invalidated = approval.invalidated_at.is_some()
+            || parse_timestamp(&approval.expires_at)? <= Utc::now();
+        if approval.used_at.is_some() || (!terminal && !approval_invalidated) {
+            return Ok(None);
+        }
+        Ok(approval
+            .recovery_fence_id
+            .map(|fence_id| (approval.space_uid, fence_id)))
+    }
+
     pub async fn owner_recovery_challenge_context(
         &self,
         challenge_id: Uuid,
@@ -2639,6 +2799,7 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id: approval.account_id,
+                credential_generation: approval.target_generation,
                 display_name: account.display_name,
                 state: registration,
                 purpose: RegistrationPurpose::OwnerRecovery {
@@ -2769,6 +2930,35 @@ impl NodeIdentityService {
         {
             bail!("owner approval is stale");
         }
+        let recovery_fence_id = approval
+            .recovery_fence_id
+            .ok_or_else(|| anyhow!("owner recovery fence is unavailable"))?;
+        if !state
+            .node_recovery_fences
+            .get(&recovery_fence_id)
+            .is_some_and(node_recovery_fence_is_active)
+        {
+            bail!("RECOVERY_FENCE_UNAVAILABLE");
+        }
+        acquire_node_recovery_fence(
+            &mut state,
+            space_uid,
+            principal_id,
+            challenge.account_id,
+            approval.issuer_account_id,
+            &RecoveryBindingSnapshot {
+                request_id: approval.approval_id,
+                recovery_fence_id,
+                recovery_fence_expires_at: approval.expires_at.clone(),
+                space_authorization_revision: approval.space_authorization_revision,
+                issuer_space_lifecycle_epoch: approval.issuer_space_lifecycle_epoch,
+                target_space_lifecycle_epoch: approval.target_space_lifecycle_epoch,
+                issuer_node_lifecycle_epoch: approval.issuer_node_lifecycle_epoch,
+                target_node_lifecycle_epoch: approval.target_node_lifecycle_epoch,
+                issuer_generation: approval.issuer_generation,
+                target_generation: approval.target_generation,
+            },
+        )?;
         let passkey = self
             .webauthn
             .finish_passkey_registration(credential, &challenge.state)
@@ -2958,6 +3148,7 @@ impl NodeIdentityService {
             recovery_space_uid: Some(space_uid),
             recovery_principal_id: Some(principal_id),
             recovery_issuer_principal_id: Some(approval.issuer_principal_id),
+            recovery_issuer_account_id: Some(approval.issuer_account_id),
             recovery_request_id: Some(reset_id),
         })
     }
@@ -3364,7 +3555,7 @@ impl NodeIdentityService {
     ) -> Result<HumanAccount> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
-        ensure_node_account_recovery_mutation_allowed(&state, account_id)?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let target = state
             .accounts
             .get(&account_id)
@@ -3443,7 +3634,7 @@ impl NodeIdentityService {
             bail!("node admin role is required");
         }
         if let Some(space_uid) = space_uid {
-            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
         }
         let token = random_token(32)?;
         let invitation_id = Uuid::now_v7();
@@ -3486,7 +3677,7 @@ impl NodeIdentityService {
             .get(&invitation_id)
             .and_then(|invitation| invitation.space_uid)
         {
-            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
         }
         let existing_principal_id = bound_principal_for_account(
             &state,
@@ -3532,7 +3723,7 @@ impl NodeIdentityService {
         if state.bindings.iter().any(|candidate| candidate == &binding) {
             return Ok(());
         }
-        ensure_node_recovery_mutation_allowed(&state, binding.space_uid)?;
+        ensure_node_recovery_mutation_allowed(&mut state, binding.space_uid)?;
         if state.bindings.iter().any(|candidate| {
             candidate.space_uid == binding.space_uid
                 && (candidate.principal_id == binding.principal_id
@@ -3567,7 +3758,7 @@ impl NodeIdentityService {
             .get(&invitation_id)
             .and_then(|invitation| invitation.space_uid);
         if let Some(space_uid) = space_uid {
-            ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
         }
         let invitation = state
             .invitations
@@ -4349,6 +4540,18 @@ impl NodeIdentityService {
         {
             bail!("OIDC provider is not enabled");
         }
+        if let Some(account_id) = link_account_id {
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        }
+        if let Some(space_uid) = invitation_token.and_then(|token| {
+            state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == token_hash(token))
+                .and_then(|invitation| invitation.space_uid)
+        }) {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+        }
         let link_account_generation = link_account_id.and_then(|account_id| {
             state
                 .accounts
@@ -4382,6 +4585,7 @@ impl NodeIdentityService {
         if let (Some(account_id), Some(expected_generation)) =
             (attempt.link_account_id, attempt.link_account_generation)
         {
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
             if state
                 .accounts
                 .get(&account_id)
@@ -4389,6 +4593,15 @@ impl NodeIdentityService {
             {
                 bail!("OIDC login attempt is stale");
             }
+        }
+        if let Some(space_uid) = attempt.invitation_hash.as_deref().and_then(|hash| {
+            state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == hash)
+                .and_then(|invitation| invitation.space_uid)
+        }) {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
         }
         self.write_state(&state).await?;
         Ok(attempt)
@@ -4405,6 +4618,18 @@ impl NodeIdentityService {
     ) -> Result<(HumanAccount, String, Option<AccountInvitation>)> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        if let Some(link_account_id) = link_account_id {
+            let expected_generation = link_account_generation
+                .ok_or_else(|| anyhow!("OIDC login attempt is missing credential generation"))?;
+            ensure_node_account_recovery_mutation_allowed(&mut state, link_account_id)?;
+            if state
+                .accounts
+                .get(&link_account_id)
+                .is_none_or(|account| account.credential_generation != expected_generation)
+            {
+                bail!("OIDC login attempt is stale");
+            }
+        }
         let external_subject = ugoite_domain::identity::oidc_external_subject(issuer, subject)?;
         let existing_account = state
             .authentication_methods
@@ -4444,7 +4669,7 @@ impl NodeIdentityService {
                     .find(|invitation| invitation.token_hash == invitation_hash)
                     .and_then(|invitation| invitation.space_uid);
                 if let Some(space_uid) = invitation_space_uid {
-                    ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+                    ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
                 }
                 let existing_principal_id =
                     bound_principal_for_account(&state, invitation_space_uid, account_id)?;
@@ -4482,7 +4707,7 @@ impl NodeIdentityService {
                 .find(|invitation| invitation.token_hash == invitation_hash)
                 .and_then(|invitation| invitation.space_uid);
             if let Some(space_uid) = invitation_space_uid {
-                ensure_node_recovery_mutation_allowed(&state, space_uid)?;
+                ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
             }
             let invitation = state
                 .invitations
@@ -4776,9 +5001,36 @@ impl NodeIdentityService {
         let bytes = serde_json::to_vec(state)?;
         let state_key = node_state_key(state.node_id);
         if let Some(version) = &state.control_version {
-            self.state_store
-                .compare_and_swap(&state_key, version, bytes)
-                .await?;
+            if let Err(error) = self
+                .state_store
+                .compare_and_swap(&state_key, version, bytes.clone())
+                .await
+            {
+                // A remote conditional write may have committed before its
+                // post-write version probe failed. Read the object once to
+                // distinguish a pre-commit conflict from a committed or
+                // genuinely unknown outcome. Recovery callers keep their
+                // durable fence for the latter two cases so reconciliation
+                // can converge without exposing one-time secrets twice.
+                match self.read_state().await {
+                    Ok(observed) => {
+                        if serde_json::to_vec(&observed)
+                            .ok()
+                            .is_some_and(|value| value == bytes)
+                        {
+                            return Err(anyhow!(
+                                "node control write committed with an ambiguous response: {error}"
+                            ));
+                        }
+                        return Err(error);
+                    }
+                    Err(read_error) => {
+                        return Err(anyhow!(
+                            "node control write outcome unknown: {error}; verification failed: {read_error}"
+                        ));
+                    }
+                }
+            }
         } else {
             self.state_store.create_if_absent(&state_key, bytes).await?;
             self.state_store
@@ -5166,6 +5418,17 @@ mod tests {
         service.bootstrap_if_needed().await?;
         let account_id = Uuid::now_v7();
         let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "TOTP test".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
         state.recovery.insert(
             account_id,
             RecoveryRecord {
@@ -5185,6 +5448,7 @@ mod tests {
                     b"12345678901234567890123456789012",
                 )?,
                 expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+                credential_generation: 0,
             },
         );
         service.write_state(&state).await?;
@@ -5835,6 +6099,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn owner_approval_rejects_a_target_generation_changed_after_issue() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        for (account_id, name) in [(issuer_account_id, "Issuer"), (target_account_id, "Target")] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.bindings.extend([
+            PrincipalBinding {
+                space_uid,
+                principal_id: issuer_principal_id,
+                node_account_id: issuer_account_id,
+                binding_method: BindingMethod::Setup,
+            },
+            PrincipalBinding {
+                space_uid,
+                principal_id: target_principal_id,
+                node_account_id: target_account_id,
+                binding_method: BindingMethod::Invite,
+            },
+        ]);
+        service.write_state(&state).await?;
+        let (_, token, _) = service
+            .issue_owner_recovery_approval(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+            )
+            .await?;
+        let mut state = service.read_state().await?;
+        state
+            .accounts
+            .get_mut(&target_account_id)
+            .expect("target account")
+            .credential_generation = 1;
+        service.write_state(&state).await?;
+        let error = service
+            .start_owner_recovery_registration(&token)
+            .await
+            .expect_err("an approval must not cross a credential generation change");
+        assert!(error.to_string().contains("owner approval is stale"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_req_sec_013_node_recovery_fence_blocks_status_until_commit() -> Result<()> {
         let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
         service.bootstrap_if_needed().await?;
@@ -5889,7 +6215,7 @@ mod tests {
         let snapshot = RecoveryBindingSnapshot {
             request_id: Uuid::now_v7(),
             recovery_fence_id: Uuid::now_v7(),
-            recovery_fence_expires_at: timestamp(Utc::now() - Duration::minutes(1)),
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
             space_authorization_revision: 1,
             issuer_space_lifecycle_epoch: 1,
             target_space_lifecycle_epoch: 1,
@@ -5907,6 +6233,26 @@ mod tests {
                 Some(&snapshot),
             )
             .await?;
+        assert!(service.start_add_passkey(target_account_id).await.is_err());
+        assert!(service
+            .start_totp_enrollment(target_account_id)
+            .await
+            .is_err());
+        assert!(service
+            .start_recovery_registration(target_account_id, "unused", "000000")
+            .await
+            .is_err());
+        assert!(service
+            .complete_oidc_login(
+                "https://issuer.example",
+                "blocked-subject",
+                "Blocked",
+                None,
+                Some(target_account_id),
+                Some(0),
+            )
+            .await
+            .is_err());
         assert!(service
             .issue_invitation(
                 issuer_account_id,
