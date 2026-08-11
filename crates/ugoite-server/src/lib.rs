@@ -1825,6 +1825,64 @@ async fn reserve_recovery_pair(
     Ok((authorizer, fence, snapshot))
 }
 
+/// Rebind an approval written by the pre-fence v0.1 format before the normal
+/// owner-recovery validation runs. The Node CAS is performed only after both
+/// current Space and Node fence halves are reserved, so an old bearer cannot
+/// bypass the current membership, generation, or lifecycle checks.
+async fn ensure_owner_recovery_fence(
+    state: &AppState,
+    context: &OwnerRecoveryContext,
+) -> ApiResult<OwnerRecoveryContext> {
+    if context.recovery_fence_id.is_some() {
+        return Ok(context.clone());
+    }
+    let (authorizer, fence, snapshot) = reserve_recovery_pair(
+        state,
+        &find_space_id_by_uid(state, context.space_uid).await?,
+        context.space_uid,
+        context.issuer_principal_id,
+        context.issuer_account_id,
+        context.principal_id,
+        context.account_id,
+        context.approval_id,
+        chrono::Duration::minutes(15),
+    )
+    .await?;
+    if let Err(error) = state
+        .identity
+        .bind_legacy_owner_recovery_approval(context.approval_id, &snapshot)
+        .await
+    {
+        state
+            .identity
+            .release_recovery_fence(fence.fence_id)
+            .await
+            .map_err(recovery_commit_error)?;
+        authorizer
+            .release_recovery_fence(
+                &find_space_id_by_uid(state, context.space_uid).await?,
+                fence.fence_id,
+            )
+            .await
+            .map_err(|_| recovery_storage_unavailable())?;
+        if recovery_write_outcome_is_ambiguous(&error) {
+            return Err(recovery_fence_unavailable());
+        }
+        return Err(owner_recovery_api_error(error));
+    }
+    Ok(OwnerRecoveryContext {
+        issuer_generation: snapshot.issuer_generation,
+        target_generation: snapshot.target_generation,
+        issuer_space_lifecycle_epoch: snapshot.issuer_space_lifecycle_epoch,
+        target_space_lifecycle_epoch: snapshot.target_space_lifecycle_epoch,
+        issuer_node_lifecycle_epoch: snapshot.issuer_node_lifecycle_epoch,
+        target_node_lifecycle_epoch: snapshot.target_node_lifecycle_epoch,
+        space_authorization_revision: snapshot.space_authorization_revision,
+        recovery_fence_id: Some(snapshot.recovery_fence_id),
+        ..context.clone()
+    })
+}
+
 fn recovery_reservation_error(error: anyhow::Error) -> ApiError {
     let message = error.to_string();
     let lower = message.to_lowercase();
@@ -2689,6 +2747,7 @@ async fn auth_owner_recovery_start(
             return Err(owner_recovery_api_error(error));
         }
     };
+    let context = ensure_owner_recovery_fence(&state, &context).await?;
     validate_owner_recovery_context(&state, &context).await?;
     let result = state
         .identity
@@ -2776,6 +2835,7 @@ async fn auth_owner_recovery_finish(
             return Err(owner_recovery_api_error(error));
         }
     };
+    let context = ensure_owner_recovery_fence(&state, &context).await?;
     validate_owner_recovery_context(&state, &context).await?;
     let result = state
         .identity

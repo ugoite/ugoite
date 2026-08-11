@@ -312,6 +312,7 @@ pub struct OwnerRecoveryApproval {
 
 #[derive(Clone, Debug)]
 pub struct OwnerRecoveryContext {
+    pub approval_id: Uuid,
     pub space_uid: Uuid,
     pub principal_id: Uuid,
     pub account_id: Uuid,
@@ -2993,6 +2994,7 @@ impl NodeIdentityService {
         }
         validate_expiry(&approval.expires_at, "owner approval")?;
         Ok(OwnerRecoveryContext {
+            approval_id: approval.approval_id,
             space_uid: approval.space_uid,
             principal_id: approval.principal_id,
             account_id: approval.account_id,
@@ -3007,6 +3009,71 @@ impl NodeIdentityService {
             space_authorization_revision: approval.space_authorization_revision,
             recovery_fence_id: approval.recovery_fence_id,
         })
+    }
+
+    /// Attach a durable recovery-fence snapshot to an approval created before
+    /// v0.1 started persisting the cross-store fence tuple. The caller must
+    /// reserve both fence halves first; this CAS then makes the old bearer
+    /// replayable through the current recovery state machine.
+    pub async fn bind_legacy_owner_recovery_approval(
+        &self,
+        approval_id: Uuid,
+        snapshot: &RecoveryBindingSnapshot,
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let approval = state
+            .owner_recovery_approvals
+            .get(&approval_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        if approval.used_at.is_some() || approval.invalidated_at.is_some() {
+            bail!("owner approval is invalid");
+        }
+        if approval.recovery_fence_id.is_some() {
+            if approval.recovery_fence_id == Some(snapshot.recovery_fence_id) {
+                return Ok(());
+            }
+            bail!("owner approval recovery fence does not match");
+        }
+        // These fields were not persisted by the pre-fence format. Refuse to
+        // resurrect an approval after any non-zero Node lifecycle/generation
+        // transition that could make its original authorization stale.
+        if approval.target_generation != snapshot.target_generation
+            || snapshot.issuer_generation != 0
+            || snapshot.issuer_node_lifecycle_epoch != 0
+            || snapshot.target_node_lifecycle_epoch != 0
+        {
+            bail!("legacy owner approval is stale");
+        }
+        let approval = state
+            .owner_recovery_approvals
+            .get_mut(&approval_id)
+            .expect("approval was checked above");
+        approval.issuer_generation = snapshot.issuer_generation;
+        approval.target_generation = snapshot.target_generation;
+        approval.issuer_space_lifecycle_epoch = snapshot.issuer_space_lifecycle_epoch;
+        approval.target_space_lifecycle_epoch = snapshot.target_space_lifecycle_epoch;
+        approval.issuer_node_lifecycle_epoch = snapshot.issuer_node_lifecycle_epoch;
+        approval.target_node_lifecycle_epoch = snapshot.target_node_lifecycle_epoch;
+        approval.space_authorization_revision = snapshot.space_authorization_revision;
+        approval.recovery_fence_id = Some(snapshot.recovery_fence_id);
+        if let Err(error) = self.write_state(&state).await {
+            let committed = self.read_state().await.ok().is_some_and(|observed| {
+                observed
+                    .owner_recovery_approvals
+                    .get(&approval_id)
+                    .is_some_and(|current| {
+                        current.recovery_fence_id == Some(snapshot.recovery_fence_id)
+                            && current.space_authorization_revision
+                                == snapshot.space_authorization_revision
+                    })
+            });
+            if !committed {
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     /// Return the paired fence coordinates for an approval that is already
@@ -3140,6 +3207,7 @@ impl NodeIdentityService {
             bail!("owner recovery challenge expired");
         }
         Ok(OwnerRecoveryContext {
+            approval_id: approval.approval_id,
             space_uid: approval.space_uid,
             principal_id: approval.principal_id,
             account_id: approval.account_id,
