@@ -1744,6 +1744,11 @@ async fn reserve_recovery_pair(
     {
         Ok(fence) => fence,
         Err(error) => {
+            if space_write_outcome_is_ambiguous(&error) {
+                // The Space fence may already be durable. Keep the Node half
+                // until reconciliation can inspect the paired outcome.
+                return Err(recovery_fence_unavailable());
+            }
             let _ = state.identity.release_recovery_fence(fence_id).await;
             return Err(recovery_reservation_error(error));
         }
@@ -1783,6 +1788,9 @@ async fn reserve_recovery_pair(
 fn recovery_reservation_error(error: anyhow::Error) -> ApiError {
     let message = error.to_string();
     let lower = message.to_lowercase();
+    if space_write_outcome_is_ambiguous(&error) {
+        return recovery_fence_unavailable();
+    }
     if message.contains("RECOVERY_FENCE_UNAVAILABLE") {
         return recovery_fence_unavailable();
     }
@@ -1833,6 +1841,12 @@ fn recovery_write_outcome_is_ambiguous(error: &anyhow::Error) -> bool {
         || message.contains("node control write outcome unknown")
 }
 
+fn space_write_outcome_is_ambiguous(error: &anyhow::Error) -> bool {
+    let message = error.to_string();
+    message.contains("Space authorization write committed")
+        || message.contains("Space authorization write outcome unknown")
+}
+
 async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::Result<()> {
     let space_uid = state.service.space_uid(space_id).await?;
     let authorizer = Authorizer::new(state.service.operator().clone());
@@ -1843,15 +1857,39 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
             Err(_) => continue,
         };
         let space_fence_ready = match fence.status.as_str() {
-            "active" => authorizer
-                .complete_recovery_fence(space_id, fence_id)
-                .await
-                .is_ok(),
+            "active" => {
+                let expires_at = chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
+                    .map(|expires| expires.with_timezone(&chrono::Utc))
+                    .map_err(|_| anyhow::anyhow!("invalid stored recovery fence timestamp"))?;
+                if expires_at <= chrono::Utc::now() {
+                    // The Node mutation is durable, but the Space half never
+                    // committed. Release both halves as one terminal
+                    // reconciliation; expiry is not a Node-only release.
+                    authorizer
+                        .release_recovery_fence(space_id, fence_id)
+                        .await?;
+                    state
+                        .identity
+                        .abort_recovery_fence_after_space_abort(fence_id)
+                        .await?;
+                    continue;
+                }
+                authorizer
+                    .complete_recovery_fence(space_id, fence_id)
+                    .await
+                    .is_ok()
+            }
             "completed" => true,
-            // A Node mutation is durable once it appears in pending_ids. Never
-            // mark that mutation reconciled merely because its Space fence was
-            // released or superseded; that would manufacture a cross-store
-            // completion without a completed authorization fence.
+            // A Node mutation is durable once it appears in pending_ids. A
+            // released Space fence is nevertheless a safe terminal outcome:
+            // recovery changes Node credentials only, never Space membership.
+            "released" => {
+                state
+                    .identity
+                    .abort_recovery_fence_after_space_abort(fence_id)
+                    .await?;
+                continue;
+            }
             _ => false,
         };
         if !space_fence_ready {
@@ -1863,6 +1901,17 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
             .await
             .is_err()
         {
+            if state
+                .identity
+                .expired_recovery_fence(fence_id)
+                .await
+                .unwrap_or(false)
+            {
+                state
+                    .identity
+                    .abort_recovery_fence_after_space_abort(fence_id)
+                    .await?;
+            }
             continue;
         }
         state
@@ -1897,7 +1946,15 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
         if state.identity.expired_recovery_fence(fence_id).await?
             && !pending_ids.contains(&fence_id)
         {
-            state.identity.release_recovery_fence(fence_id).await?;
+            // Do not release Node based on its local clock alone. The paired
+            // Space fence must already be terminal; an unavailable lookup is
+            // intentionally fail-closed and leaves the Node barrier active.
+            let Ok(space_fence) = authorizer.recovery_fence(space_id, fence_id).await else {
+                continue;
+            };
+            if matches!(space_fence.status.as_str(), "released" | "completed") {
+                state.identity.release_recovery_fence(fence_id).await?;
+            }
         }
     }
     Ok(())
@@ -6074,6 +6131,26 @@ mod authentication_regression_tests {
             owner_recovery_commit_api_error(anyhow::anyhow!("node control write outcome unknown"));
         assert_eq!(unknown.status, StatusCode::CONFLICT);
         assert_eq!(unknown.detail["code"], "RECOVERY_FENCE_UNAVAILABLE");
+    }
+
+    #[test]
+    fn space_recovery_write_ambiguity_stays_fenced() {
+        let committed = anyhow::anyhow!(
+            "Space authorization write committed with an ambiguous response: timeout"
+        );
+        let unknown = anyhow::anyhow!(
+            "Space authorization write outcome unknown: timeout; verification failed: unavailable"
+        );
+        assert!(space_write_outcome_is_ambiguous(&committed));
+        assert!(space_write_outcome_is_ambiguous(&unknown));
+        assert_eq!(
+            recovery_reservation_error(committed).status,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            recovery_reservation_error(unknown).status,
+            StatusCode::CONFLICT
+        );
     }
 
     #[tokio::test]

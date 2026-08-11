@@ -731,36 +731,20 @@ fn node_recovery_fence_is_expired(fence: &NodeRecoveryFence) -> Result<bool> {
     Ok(node_recovery_fence_is_active(fence) && parse_timestamp(&fence.expires_at)? <= Utc::now())
 }
 
-fn release_expired_node_recovery_fences(state: &mut NodeState) -> Result<()> {
-    let now = Utc::now();
-    let expired = state
-        .node_recovery_fences
-        .values()
-        .filter(|fence| {
-            node_recovery_fence_is_active(fence)
-                && !state.recovery_reset_markers.values().any(|marker| {
-                    marker.recovery_fence_id == fence.fence_id
-                        && marker.space_fence_status == default_space_fence_status()
-                })
-                && !state.backup_rotation_requests.values().any(|record| {
-                    record.recovery_fence_id == Some(fence.fence_id)
-                        && record.space_fence_status == default_space_fence_status()
-                })
-        })
-        .map(|fence| {
-            parse_timestamp(&fence.expires_at).map(|expires_at| (fence.fence_id, expires_at <= now))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    for (fence_id, expired) in expired {
-        if expired {
-            release_node_recovery_fence(state, Some(fence_id), "expired");
-        }
-    }
-    Ok(())
+fn node_write_was_committed_with_ambiguous_response(error: &anyhow::Error) -> bool {
+    error
+        .to_string()
+        .contains("node control write committed with an ambiguous response")
 }
 
 fn ensure_node_recovery_mutation_allowed(state: &mut NodeState, space_uid: Uuid) -> Result<()> {
-    release_expired_node_recovery_fences(state)?;
+    for fence in state
+        .node_recovery_fences
+        .values()
+        .filter(|fence| node_recovery_fence_is_active(fence))
+    {
+        parse_timestamp(&fence.expires_at)?;
+    }
     if state
         .node_recovery_fences
         .values()
@@ -775,7 +759,13 @@ fn ensure_node_account_recovery_mutation_allowed(
     state: &mut NodeState,
     account_id: Uuid,
 ) -> Result<()> {
-    release_expired_node_recovery_fences(state)?;
+    for fence in state
+        .node_recovery_fences
+        .values()
+        .filter(|fence| node_recovery_fence_is_active(fence))
+    {
+        parse_timestamp(&fence.expires_at)?;
+    }
     if state.node_recovery_fences.values().any(|fence| {
         node_recovery_fence_is_active(fence)
             && state.bindings.iter().any(|binding| {
@@ -1293,6 +1283,48 @@ impl NodeIdentityService {
             {
                 record.space_fence_status = "reconciled".to_string();
                 changed = true;
+            }
+        }
+        if changed {
+            self.write_state(&state).await?;
+        }
+        Ok(())
+    }
+
+    /// Terminally reconcile a durable Node recovery mutation when the paired
+    /// Space fence was explicitly released or expired before it could be
+    /// completed. No Space membership mutation is made by the recovery
+    /// operation, so releasing both barriers is safe once the pending marker
+    /// proves the Node mutation is durable.
+    pub async fn abort_recovery_fence_after_space_abort(&self, fence_id: Uuid) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let mut changed = false;
+        let mut has_pending_marker = false;
+        for marker in state.recovery_reset_markers.values_mut() {
+            if marker.recovery_fence_id == fence_id
+                && marker.space_fence_status == "node_committed_space_fence_pending"
+            {
+                marker.space_fence_status = "reconciled".to_string();
+                has_pending_marker = true;
+                changed = true;
+            }
+        }
+        for record in state.backup_rotation_requests.values_mut() {
+            if record.recovery_fence_id == Some(fence_id)
+                && record.space_fence_status == "node_committed_space_fence_pending"
+            {
+                record.space_fence_status = "reconciled".to_string();
+                has_pending_marker = true;
+                changed = true;
+            }
+        }
+        if has_pending_marker {
+            if let Some(fence) = state.node_recovery_fences.get_mut(&fence_id) {
+                if fence.status == "active" {
+                    fence.status = "released".to_string();
+                    changed = true;
+                }
             }
         }
         if changed {
@@ -2531,7 +2563,15 @@ impl NodeIdentityService {
                 "issuer_principal_id": issuer_principal_id
             }),
         );
-        self.write_state(&state).await?;
+        if let Err(error) = self.write_state(&state).await {
+            if !node_write_was_committed_with_ambiguous_response(&error) {
+                return Err(error);
+            }
+            // The post-CAS read matched the bytes we were trying to publish,
+            // so the approval and its token hash are durable. Returning the
+            // generated bearer is safe; the paired recovery fences remain
+            // active until the target completes the flow.
+        }
         Ok((approval_id, token, expires_at))
     }
 
@@ -2685,11 +2725,6 @@ impl NodeIdentityService {
                         created_at: now.clone(),
                     },
                 );
-                let fence_id = state
-                    .owner_recovery_approvals
-                    .get(&approval_id)
-                    .and_then(|approval| approval.recovery_fence_id);
-                release_node_recovery_fence(&mut state, fence_id, "expired");
                 if let Some(approval) = state.owner_recovery_approvals.get_mut(&approval_id) {
                     approval.challenge_id = None;
                     approval.reset_id = None;
@@ -2760,7 +2795,6 @@ impl NodeIdentityService {
                     created_at: timestamp(now),
                 },
             );
-            release_node_recovery_fence(&mut state, approval.recovery_fence_id, "expired");
             let approval_mut = state
                 .owner_recovery_approvals
                 .get_mut(&approval_id)
@@ -2914,11 +2948,6 @@ impl NodeIdentityService {
                         created_at: now.clone(),
                     },
                 );
-                let fence_id = state
-                    .owner_recovery_approvals
-                    .get(&approval_id)
-                    .and_then(|approval| approval.recovery_fence_id);
-                release_node_recovery_fence(&mut state, fence_id, "expired");
                 if let Some(approval) = state.owner_recovery_approvals.get_mut(&approval_id) {
                     approval.challenge_id = None;
                     approval.reset_id = None;
@@ -6637,9 +6666,58 @@ mod tests {
             .expires_at = timestamp(Utc::now() - Duration::seconds(1));
         service.write_state(&state).await?;
         assert!(service
+            .start_add_passkey(target_account_id)
+            .await
+            .expect_err("an expired but unreconciled fence must still block Node writes")
+            .to_string()
+            .contains("RECOVERY_FENCE_UNAVAILABLE"));
+        assert!(service
             .complete_recovery_fence(snapshot.recovery_fence_id)
             .await
             .is_err());
+        let mut state = service.read_state().await?;
+        state.recovery_reset_markers.insert(
+            Uuid::now_v7(),
+            RecoveryResetMarker {
+                reset_id: Uuid::now_v7(),
+                challenge_id: Uuid::now_v7(),
+                approval_id: Uuid::now_v7(),
+                account_id: target_account_id,
+                generation_before: 0,
+                generation_after: 1,
+                session_id: Uuid::now_v7(),
+                space_authorization_revision: 1,
+                recovery_fence_id: snapshot.recovery_fence_id,
+                space_uid,
+                principal_id: target_principal_id,
+                issuer_principal_id,
+                space_fence_status: default_space_fence_status(),
+                committed_at: timestamp(Utc::now()),
+            },
+        );
+        service.write_state(&state).await?;
+        service
+            .abort_recovery_fence_after_space_abort(snapshot.recovery_fence_id)
+            .await?;
+        let state = service.read_state().await?;
+        assert_eq!(
+            state.node_recovery_fences[&snapshot.recovery_fence_id].status,
+            "released"
+        );
+        assert!(state
+            .recovery_reset_markers
+            .values()
+            .all(|marker| marker.space_fence_status == "reconciled"));
         Ok(())
+    }
+
+    #[test]
+    fn committed_node_write_errors_are_distinguished_from_unknown_outcomes() {
+        assert!(node_write_was_committed_with_ambiguous_response(&anyhow!(
+            "node control write committed with an ambiguous response: timeout"
+        )));
+        assert!(!node_write_was_committed_with_ambiguous_response(&anyhow!(
+            "node control write outcome unknown: timeout"
+        )));
     }
 }

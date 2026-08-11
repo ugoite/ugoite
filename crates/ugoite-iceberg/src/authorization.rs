@@ -962,11 +962,38 @@ impl Authorizer {
             if current.revision != expected_revision {
                 bail!("Space authorization revision conflict");
             }
-            self.operator
-                .write_with(&path, serialized)
+            if let Err(error) = self
+                .operator
+                .write_with(&path, serialized.clone())
                 .if_match(&version)
                 .await
-                .context("compare-and-swap Space authorization state")?;
+            {
+                let error: anyhow::Error = error.into();
+                let error = error.context("compare-and-swap Space authorization state");
+                // A remote conditional write may have committed before its
+                // response was lost. Do not release the paired Node fence
+                // until the Space outcome is classified. The exact desired
+                // bytes prove this write committed; a failed verification is
+                // deliberately treated as unknown and remains fenced.
+                match self.state(space_id).await {
+                    Ok(observed) => {
+                        if serde_json::to_vec_pretty(&observed)
+                            .ok()
+                            .is_some_and(|value| value == serialized)
+                        {
+                            return Err(anyhow!(
+                                "Space authorization write committed with an ambiguous response: {error}"
+                            ));
+                        }
+                        return Err(error);
+                    }
+                    Err(read_error) => {
+                        return Err(anyhow!(
+                            "Space authorization write outcome unknown: {error}; verification failed: {read_error}"
+                        ));
+                    }
+                }
+            }
         } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
             // Filesystem and in-memory adapters are serialized by the shared process lock.
             let current = self.state(space_id).await?;
