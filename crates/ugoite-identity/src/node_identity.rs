@@ -124,6 +124,8 @@ pub struct BrowserSession {
     /// matching reset marker is durably committed.
     #[serde(default)]
     pub recovery_reset_id: Option<Uuid>,
+    #[serde(default)]
+    pub revocation_epoch: u64,
 }
 
 fn default_session_assurance() -> AssuranceLevel {
@@ -198,6 +200,8 @@ pub enum InvitationAcceptance {
         principal_id: Uuid,
         kind: InvitationAcceptanceKind,
         claimed_at: String,
+        #[serde(default)]
+        credential_generation: u64,
     },
     Completed {
         account_id: Uuid,
@@ -205,6 +209,8 @@ pub enum InvitationAcceptance {
         kind: InvitationAcceptanceKind,
         claimed_at: String,
         completed_at: String,
+        #[serde(default)]
+        credential_generation: u64,
     },
 }
 
@@ -226,6 +232,19 @@ impl InvitationAcceptance {
     fn kind(&self) -> &InvitationAcceptanceKind {
         match self {
             Self::Pending { kind, .. } | Self::Completed { kind, .. } => kind,
+        }
+    }
+
+    fn credential_generation(&self) -> u64 {
+        match self {
+            Self::Pending {
+                credential_generation,
+                ..
+            }
+            | Self::Completed {
+                credential_generation,
+                ..
+            } => *credential_generation,
         }
     }
 }
@@ -383,6 +402,8 @@ pub struct BackupRotationRecord {
     pub account_id: Uuid,
     pub issuer_principal_id: Uuid,
     pub issuer_account_id: Uuid,
+    #[serde(default)]
+    pub issuer_credential_id: Option<Uuid>,
     pub target_generation: u64,
     #[serde(default)]
     pub issuer_generation: u64,
@@ -712,6 +733,11 @@ pub struct NodeState {
     pub oidc_providers: BTreeMap<Uuid, OidcProvider>,
     #[serde(default)]
     pub oidc_attempts: BTreeMap<String, OidcLoginAttempt>,
+    /// Per-session durable revocation epochs. Recovery mutations include the
+    /// state CAS that observes this map, closing the cross-process window
+    /// between validating an Owner session and committing the mutation.
+    #[serde(default)]
+    pub session_revocation_epochs: BTreeMap<Uuid, u64>,
 }
 
 fn bound_principal_for_account(
@@ -1545,6 +1571,7 @@ impl NodeIdentityService {
             proof_replay_cache: BTreeMap::new(),
             oidc_providers: BTreeMap::new(),
             oidc_attempts: BTreeMap::new(),
+            session_revocation_epochs: BTreeMap::new(),
         };
         self.write_state(&state).await?;
         Ok(Some(BootstrapResult {
@@ -1890,6 +1917,7 @@ impl NodeIdentityService {
             principal_id: Uuid::now_v7(),
             kind: InvitationAcceptanceKind::PasskeyRegistration,
             claimed_at: timestamp(Utc::now()),
+            credential_generation: 0,
         });
         let invitation = invitation.clone();
         state.registration_challenges.remove(&challenge_id);
@@ -2421,7 +2449,10 @@ impl NodeIdentityService {
 
     /// Issue a short-lived, tuple-bound approval for a forced recovery. The
     /// bearer is returned once; only its hash is written to Node state.
-    pub async fn supersede_owner_recovery_approvals(&self, account_id: Uuid) -> Result<Vec<Uuid>> {
+    pub async fn supersede_owner_recovery_approvals(
+        &self,
+        account_id: Uuid,
+    ) -> Result<Vec<(Uuid, Uuid)>> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
         let now = timestamp(Utc::now());
@@ -2436,7 +2467,7 @@ impl NodeIdentityService {
             .cloned()
             .collect::<Vec<_>>();
         let had_approvals = !approvals.is_empty();
-        let mut fence_ids = Vec::new();
+        let mut fences = Vec::new();
         for approval in approvals {
             if let Some(challenge_id) = approval.challenge_id {
                 state.registration_challenges.remove(&challenge_id);
@@ -2461,13 +2492,13 @@ impl NodeIdentityService {
             }
             if let Some(fence_id) = approval.recovery_fence_id {
                 release_node_recovery_fence(&mut state, Some(fence_id), "superseded");
-                fence_ids.push(fence_id);
+                fences.push((approval.space_uid, fence_id));
             }
         }
         if had_approvals {
             self.write_state(&state).await?;
         }
-        Ok(fence_ids)
+        Ok(fences)
     }
 
     pub async fn issue_owner_recovery_approval_with_snapshot_and_credential(
@@ -3573,10 +3604,15 @@ impl NodeIdentityService {
                 || existing.account_id != account_id
                 || existing.issuer_principal_id != issuer_principal_id
                 || existing.issuer_account_id != issuer_account_id
+                || existing.issuer_credential_id != issuer_credential_id
                 || snapshot.as_ref().is_some_and(|snapshot| {
                     existing.recovery_fence_id != Some(snapshot.recovery_fence_id)
                         || existing.space_authorization_revision
                             != snapshot.space_authorization_revision
+                        || existing.issuer_space_lifecycle_epoch
+                            != snapshot.issuer_space_lifecycle_epoch
+                        || existing.target_space_lifecycle_epoch
+                            != snapshot.target_space_lifecycle_epoch
                         || existing.issuer_node_lifecycle_epoch
                             != snapshot.issuer_node_lifecycle_epoch
                         || existing.target_node_lifecycle_epoch
@@ -3680,6 +3716,7 @@ impl NodeIdentityService {
                 account_id,
                 issuer_principal_id,
                 issuer_account_id,
+                issuer_credential_id,
                 target_generation: account.credential_generation,
                 issuer_generation,
                 issuer_space_lifecycle_epoch: snapshot
@@ -3770,6 +3807,15 @@ impl NodeIdentityService {
         if session.credential_generation != account.credential_generation {
             bail!("session credential generation is stale");
         }
+        if session.revocation_epoch
+            != state
+                .session_revocation_epochs
+                .get(&session.session_id)
+                .copied()
+                .unwrap_or_default()
+        {
+            bail!("session revocation epoch is stale");
+        }
         if !recovery_session_is_committed(&session, &state.recovery_reset_markers) {
             bail!("recovery session was not the committed reset winner");
         }
@@ -3808,12 +3854,24 @@ impl NodeIdentityService {
 
     pub async fn revoke_session(&self, session_token: &str) -> Result<()> {
         let _guard = self.state_lock.lock().await;
-        let state = self.read_state().await?;
+        let mut state = self.read_state().await?;
         let key = session_key(state.node_id, &token_hash(session_token));
         let Some(record) = self.state_store.get(&key).await? else {
             return Ok(());
         };
         let mut session: BrowserSession = serde_json::from_slice(&record.value)?;
+        if session.revoked_at.is_some() {
+            return Ok(());
+        }
+        let revocation_epoch = state
+            .session_revocation_epochs
+            .entry(session.session_id)
+            .or_insert(0);
+        *revocation_epoch = revocation_epoch
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("session revocation epoch exhausted"))?;
+        session.revocation_epoch = *revocation_epoch;
+        self.write_state(&state).await?;
         session.revoked_at = Some(timestamp(Utc::now()));
         self.state_store
             .compare_and_swap(&key, &record.version, serde_json::to_vec(&session)?)
@@ -3852,7 +3910,7 @@ impl NodeIdentityService {
 
     pub async fn revoke_session_by_id(&self, account_id: Uuid, session_id: Uuid) -> Result<()> {
         let _guard = self.state_lock.lock().await;
-        let state = self.read_state().await?;
+        let mut state = self.read_state().await?;
         let prefix = format!("nodes/{}/sessions", state.node_id);
         for key in self.state_store.list_prefix(&prefix).await? {
             let Some(record) = self.state_store.get(&key).await? else {
@@ -3863,6 +3921,15 @@ impl NodeIdentityService {
                 continue;
             }
             if session.revoked_at.is_none() {
+                let revocation_epoch = state
+                    .session_revocation_epochs
+                    .entry(session.session_id)
+                    .or_insert(0);
+                *revocation_epoch = revocation_epoch
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow!("session revocation epoch exhausted"))?;
+                session.revocation_epoch = *revocation_epoch;
+                self.write_state(&state).await?;
                 session.revoked_at = Some(timestamp(Utc::now()));
                 self.state_store
                     .compare_and_swap(&key, &record.version, serde_json::to_vec(&session)?)
@@ -3992,6 +4059,12 @@ impl NodeIdentityService {
             || session.account_id != account.account_id
             || session.credential_id != credential_id
             || session.credential_generation != expected_generation
+            || session.revocation_epoch
+                != state
+                    .session_revocation_epochs
+                    .get(&session.session_id)
+                    .copied()
+                    .unwrap_or_default()
             || !matches!(session.assurance, AssuranceLevel::PhishingResistant)
             || parse_timestamp(&session.expires_at)? <= Utc::now()
             || Utc::now() - parse_timestamp(&session.authenticated_at)? > Duration::minutes(5)
@@ -4087,6 +4160,9 @@ impl NodeIdentityService {
                 .ok_or_else(|| anyhow!("invitation is invalid"))?;
             if let Some(acceptance) = invitation.acceptance.as_ref() {
                 if acceptance.account_id() == account_id {
+                    if acceptance.credential_generation() != account.credential_generation {
+                        bail!("invitation acceptance is stale");
+                    }
                     invitation.clone()
                 } else {
                     bail!("invitation is invalid");
@@ -4098,6 +4174,7 @@ impl NodeIdentityService {
                     principal_id: existing_principal_id.unwrap_or_else(Uuid::now_v7),
                     kind: InvitationAcceptanceKind::ExistingAccount,
                     claimed_at: timestamp(Utc::now()),
+                    credential_generation: account.credential_generation,
                 });
                 write_state = true;
                 invitation.clone()
@@ -4154,6 +4231,11 @@ impl NodeIdentityService {
             ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
             ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         }
+        let current_generation = state
+            .accounts
+            .get(&account_id)
+            .map(|account| account.credential_generation)
+            .ok_or_else(|| anyhow!("invitation account is invalid"))?;
         let invitation = state
             .invitations
             .get_mut(&invitation_id)
@@ -4168,21 +4250,32 @@ impl NodeIdentityService {
                 principal_id: claimed_principal_id,
                 kind,
                 claimed_at,
-            } if claimed_account_id == account_id && claimed_principal_id == principal_id => (
-                InvitationAcceptance::Completed {
-                    account_id,
-                    principal_id,
-                    kind,
-                    claimed_at,
-                    completed_at: timestamp(Utc::now()),
-                },
-                true,
-            ),
+                credential_generation,
+            } if claimed_account_id == account_id
+                && claimed_principal_id == principal_id
+                && credential_generation == current_generation =>
+            {
+                (
+                    InvitationAcceptance::Completed {
+                        account_id,
+                        principal_id,
+                        kind,
+                        claimed_at,
+                        credential_generation,
+                        completed_at: timestamp(Utc::now()),
+                    },
+                    true,
+                )
+            }
             completed @ InvitationAcceptance::Completed {
                 account_id: claimed_account_id,
                 principal_id: claimed_principal_id,
+                credential_generation,
                 ..
-            } if claimed_account_id == account_id && claimed_principal_id == principal_id => {
+            } if claimed_account_id == account_id
+                && claimed_principal_id == principal_id
+                && credential_generation == current_generation =>
+            {
                 (completed, false)
             }
             _ => bail!("invitation acceptance does not match finalization"),
@@ -5159,6 +5252,7 @@ impl NodeIdentityService {
                         principal_id: existing_principal_id.unwrap_or_else(Uuid::now_v7),
                         kind: InvitationAcceptanceKind::Oidc,
                         claimed_at: timestamp(Utc::now()),
+                        credential_generation: account.credential_generation,
                     });
                 }
                 Some(invitation.clone())
@@ -5203,6 +5297,7 @@ impl NodeIdentityService {
                 principal_id: Uuid::now_v7(),
                 kind: InvitationAcceptanceKind::Oidc,
                 claimed_at: timestamp(Utc::now()),
+                credential_generation: account.credential_generation,
             });
             let invitation_copy = invitation.clone();
             state.accounts.insert(account.account_id, account.clone());
@@ -5376,8 +5471,9 @@ impl NodeIdentityService {
         let now = Utc::now();
         let now_text = timestamp(now);
         let hash = token_hash(&session_token);
+        let session_id = Uuid::now_v7();
         let session = BrowserSession {
-            session_id: Uuid::now_v7(),
+            session_id,
             session_hash: hash.clone(),
             credential_id,
             assurance,
@@ -5393,6 +5489,11 @@ impl NodeIdentityService {
             authenticated_at: now_text,
             revoked_at: None,
             recovery_reset_id,
+            revocation_epoch: state
+                .session_revocation_epochs
+                .get(&session_id)
+                .copied()
+                .unwrap_or_default(),
         };
         self.state_store
             .create_if_absent(
@@ -5542,6 +5643,7 @@ fn recovery_session_is_committed(
         marker.session_id == session.session_id
             && marker.account_id == session.account_id
             && marker.generation_after == session.credential_generation
+            && marker.space_fence_status == "reconciled"
     })
 }
 
@@ -5723,6 +5825,7 @@ mod tests {
             authenticated_at: "2026-01-01T00:00:00Z".to_string(),
             revoked_at: None,
             recovery_reset_id: Some(reset_id),
+            revocation_epoch: 0,
         };
         let mut markers = BTreeMap::new();
         assert!(!recovery_session_is_committed(&session, &markers));
@@ -5741,7 +5844,7 @@ mod tests {
                 space_uid: Uuid::now_v7(),
                 principal_id: Uuid::now_v7(),
                 issuer_principal_id: Uuid::now_v7(),
-                space_fence_status: default_space_fence_status(),
+                space_fence_status: "reconciled".to_string(),
                 committed_at: "2026-01-01T00:00:00Z".to_string(),
             },
         );
@@ -5762,6 +5865,7 @@ mod tests {
                 principal_id,
                 kind: InvitationAcceptanceKind::ExistingAccount,
                 claimed_at: "2026-07-31T00:00:00.000Z".to_string(),
+                credential_generation: 0,
             }),
             Some(InvitationAcceptance::Completed {
                 account_id,
@@ -5769,6 +5873,7 @@ mod tests {
                 kind: InvitationAcceptanceKind::PasskeyRegistration,
                 claimed_at: "2026-07-31T00:00:00.000Z".to_string(),
                 completed_at: "2026-07-31T00:01:00.000Z".to_string(),
+                credential_generation: 0,
             }),
         ];
 
@@ -6165,6 +6270,61 @@ mod tests {
                 .count(),
             1
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_invitation_claim_cannot_finalize_after_account_reset() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let invitation_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Invited member".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.invitations.insert(
+            invitation_id,
+            AccountInvitation {
+                invitation_id,
+                token_hash: "stale-invitation".to_string(),
+                display_name: "Invited member".to_string(),
+                space_uid: None,
+                role: Some("viewer".to_string()),
+                expires_at: timestamp(Utc::now() + Duration::hours(1)),
+                acceptance: Some(InvitationAcceptance::Pending {
+                    account_id,
+                    principal_id,
+                    kind: InvitationAcceptanceKind::ExistingAccount,
+                    claimed_at: timestamp(Utc::now()),
+                    credential_generation: 0,
+                }),
+                created_by: account_id,
+            },
+        );
+        service.write_state(&state).await?;
+        let mut reset_state = service.read_state().await?;
+        reset_state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation = 1;
+        service.write_state(&reset_state).await?;
+
+        let error = service
+            .complete_invitation_acceptance(invitation_id, account_id, principal_id)
+            .await
+            .expect_err("a pre-reset invitation claim must be stale");
+        assert!(error.to_string().contains("does not match finalization"));
         Ok(())
     }
 
@@ -7016,6 +7176,7 @@ mod tests {
                     principal_id: Uuid::now_v7(),
                     kind: InvitationAcceptanceKind::Oidc,
                     claimed_at: timestamp(Utc::now()),
+                    credential_generation: 0,
                 }),
                 created_by: account_id,
             },

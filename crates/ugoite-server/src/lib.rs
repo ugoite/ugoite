@@ -1817,15 +1817,15 @@ async fn reserve_recovery_pair(
         )
         .await
     {
-        authorizer
-            .release_recovery_fence(space_id, fence.fence_id)
-            .await
-            .map_err(|_| recovery_storage_unavailable())?;
         state
             .identity
             .release_recovery_fence(fence.fence_id)
             .await
             .map_err(recovery_commit_error)?;
+        authorizer
+            .release_recovery_fence(space_id, fence.fence_id)
+            .await
+            .map_err(|_| recovery_storage_unavailable())?;
         return Err(recovery_commit_error(error));
     }
     Ok((authorizer, fence, snapshot))
@@ -1983,10 +1983,10 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
     for fence_id in expired_space_fences {
         // An expired approval without a Node commit is explicitly aborted
         // here. Expiry alone never releases a write barrier.
+        state.identity.release_recovery_fence(fence_id).await?;
         authorizer
             .release_recovery_fence(space_id, fence_id)
             .await?;
-        state.identity.release_recovery_fence(fence_id).await?;
     }
     // A supersession may commit the Node-side invalidation before the paired
     // Space release. On restart, the terminal Node status is enough to finish
@@ -2052,13 +2052,13 @@ async fn abort_owner_recovery_fence(
     let space_id = find_space_id_by_uid(state, space_uid)
         .await
         .map_err(|_| recovery_storage_unavailable())?;
-    Authorizer::new(state.service.operator().clone())
-        .release_recovery_fence(&space_id, fence_id)
-        .await
-        .map_err(|_| recovery_storage_unavailable())?;
     state
         .identity
         .release_recovery_fence(fence_id)
+        .await
+        .map_err(|_| recovery_storage_unavailable())?;
+    Authorizer::new(state.service.operator().clone())
+        .release_recovery_fence(&space_id, fence_id)
         .await
         .map_err(|_| recovery_storage_unavailable())?;
     Ok(())
@@ -2177,15 +2177,18 @@ async fn owner_force_reset(
         identity.account_id,
     )
     .await?;
-    let old_fence_ids = state
+    let old_fences = state
         .identity
         .supersede_owner_recovery_approvals(account_id)
         .await
         .map_err(recovery_commit_error)?;
     let supersede_authorizer = Authorizer::new(state.service.operator().clone());
-    for old_fence_id in old_fence_ids {
+    for (old_space_uid, old_fence_id) in old_fences {
+        let old_space_id = find_space_id_by_uid(&state, old_space_uid)
+            .await
+            .map_err(|_| recovery_storage_unavailable())?;
         supersede_authorizer
-            .release_recovery_fence(&space_id, old_fence_id)
+            .release_recovery_fence(&old_space_id, old_fence_id)
             .await
             .map_err(|_| recovery_storage_unavailable())?;
     }
@@ -2213,15 +2216,15 @@ async fn owner_force_reset(
         .await
         .is_err()
     {
-        authorizer
-            .release_recovery_fence(&space_id, fence.fence_id)
-            .await
-            .map_err(|_| recovery_storage_unavailable())?;
         state
             .identity
             .release_recovery_fence(fence.fence_id)
             .await
             .map_err(recovery_commit_error)?;
+        authorizer
+            .release_recovery_fence(&space_id, fence.fence_id)
+            .await
+            .map_err(|_| recovery_storage_unavailable())?;
         return Err(ApiError::new(
             StatusCode::FORBIDDEN,
             json!({
@@ -2252,15 +2255,15 @@ async fn owner_force_reset(
                 // of releasing a committed mutation with no replayable token.
                 return Err(recovery_fence_unavailable());
             }
-            authorizer
-                .release_recovery_fence(&space_id, fence.fence_id)
-                .await
-                .map_err(|_| recovery_storage_unavailable())?;
             state
                 .identity
                 .release_recovery_fence(fence.fence_id)
                 .await
                 .map_err(recovery_commit_error)?;
+            authorizer
+                .release_recovery_fence(&space_id, fence.fence_id)
+                .await
+                .map_err(|_| recovery_storage_unavailable())?;
             return Err(recovery_commit_error(error));
         }
     };
@@ -2416,6 +2419,7 @@ async fn owner_rotate_backup_codes(
             && existing.issuer_account_id == identity.account_id
             && existing.issuer_generation == issuer_generation
             && existing.target_generation == target_generation
+            && existing.issuer_credential_id == Some(identity.request_identity.credential_id)
             && existing.issuer_space_lifecycle_epoch == issuer_space_epoch
             && existing.target_space_lifecycle_epoch == target_space_epoch
             && existing.issuer_node_lifecycle_epoch == issuer_node_epoch
@@ -2473,15 +2477,15 @@ async fn owner_rotate_backup_codes(
                 // way to return its one-time codes safely.
                 return Err(recovery_fence_unavailable());
             }
-            authorizer
-                .release_recovery_fence(&space_id, fence.fence_id)
-                .await
-                .map_err(|_| recovery_storage_unavailable())?;
             state
                 .identity
                 .release_recovery_fence(fence.fence_id)
                 .await
                 .map_err(recovery_commit_error)?;
+            authorizer
+                .release_recovery_fence(&space_id, fence.fence_id)
+                .await
+                .map_err(|_| recovery_storage_unavailable())?;
             if message.contains("key mismatch") {
                 return Err(ApiError::new(
                     StatusCode::CONFLICT,
@@ -6990,6 +6994,7 @@ mod authentication_regression_tests {
                     principal_id,
                     kind: ugoite_identity::node_identity::InvitationAcceptanceKind::PasskeyRegistration,
                     claimed_at: chrono::Utc::now().to_rfc3339(),
+                    credential_generation: 0,
                 },
             ),
             created_by: owner_account_id,

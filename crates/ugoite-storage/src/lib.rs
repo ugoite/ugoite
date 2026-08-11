@@ -9,6 +9,7 @@ use opendal::{EntryMode, ErrorKind, Operator};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use tokio::sync::Mutex as AsyncMutex;
@@ -676,7 +677,13 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
         .strip_prefix("fs://")
         .or_else(|| uri.strip_prefix("file://"))
         .unwrap_or(uri);
-    let op = Operator::new(Fs::default().root(root))?.finish();
+    let atomic_write_dir = Path::new(root).join(".ugoite-atomic-writes");
+    let op = Operator::new(
+        Fs::default()
+            .root(root)
+            .atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref()),
+    )?
+    .finish();
     Ok(op)
 }
 

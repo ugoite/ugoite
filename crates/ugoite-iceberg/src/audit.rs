@@ -119,6 +119,10 @@ fn audit_event_fingerprint(value: &Value) -> Result<String> {
             .get("issuer_account_id")
             .cloned()
             .unwrap_or(Value::Null),
+        "issuer_credential_id": object
+            .get("issuer_credential_id")
+            .cloned()
+            .unwrap_or(Value::Null),
         "subject_principal_id": object
             .get("subject_principal_id")
             .cloned()
@@ -449,6 +453,10 @@ async fn append_audit_event_once(
         .get("issuer_account_id")
         .cloned()
         .unwrap_or(Value::Null);
+    let issuer_credential_id = payload_obj
+        .get("issuer_credential_id")
+        .cloned()
+        .unwrap_or(Value::Null);
     let subject_account_id = payload_obj
         .get("subject_account_id")
         .cloned()
@@ -559,6 +567,7 @@ async fn append_audit_event_once(
         "challenge_id": challenge_id.clone(),
         "issuer_principal_id": issuer_principal_id.clone(),
         "issuer_account_id": issuer_account_id.clone(),
+        "issuer_credential_id": issuer_credential_id.clone(),
         "action": action.clone(),
         "subject_principal_id": subject_principal_id.clone(),
         "subject_account_id": subject_account_id.clone(),
@@ -606,6 +615,7 @@ async fn append_audit_event_once(
                 "challenge_id": challenge_id,
                 "issuer_principal_id": issuer_principal_id,
                 "issuer_account_id": issuer_account_id,
+                "issuer_credential_id": issuer_credential_id,
                 "subject_principal_id": subject_principal_id,
                 "subject_account_id": subject_account_id,
                 "actor_principal_id": actor_principal_id,
@@ -940,6 +950,34 @@ mod tests {
         let op = operator_from_uri(&format!("fs://{}", root.path().display()))?;
         let listing = list_audit_events(&op, "demo", AuditListOptions::default()).await?;
         assert_eq!(listing["total"], 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_013_delivered_event_preserves_issuer_credential() -> Result<()> {
+        let op = operator_from_uri("memory://audit-attribution")?;
+        let issuer_credential_id = uuid::Uuid::now_v7();
+        let event_id = uuid::Uuid::now_v7();
+        let payload = json!({
+            "event_id": event_id,
+            "action": "recovery.owner_reset_completed",
+            "space_uid": uuid::Uuid::now_v7(),
+            "challenge_id": uuid::Uuid::now_v7(),
+            "issuer_principal_id": uuid::Uuid::now_v7(),
+            "issuer_account_id": uuid::Uuid::now_v7(),
+            "issuer_credential_id": issuer_credential_id,
+            "subject_principal_id": uuid::Uuid::now_v7(),
+            "actor_principal_id": null,
+            "actor_account_id": null,
+            "credential_id": null
+        });
+        let event = append_audit_event(&op, "demo", &payload, None).await?;
+        assert_eq!(event["issuer_credential_id"], json!(issuer_credential_id));
+        let listed = list_audit_events(&op, "demo", AuditListOptions::default()).await?;
+        assert_eq!(
+            listed["items"][0]["issuer_credential_id"],
+            json!(issuer_credential_id)
+        );
         Ok(())
     }
 }
