@@ -308,6 +308,11 @@ pub struct OwnerRecoveryApproval {
     pub used_at: Option<String>,
     #[serde(default)]
     pub invalidated_at: Option<String>,
+    /// Encrypted bearer retained for replaying the same idempotent issuance
+    /// after a response/write outcome was ambiguous. The plaintext is never
+    /// included in Node audit state.
+    #[serde(default)]
+    pub encrypted_token: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -2379,6 +2384,8 @@ impl NodeIdentityService {
         {
             bail!("Passkey not found");
         }
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         state.passkeys.remove(credential_id);
         self.write_state(&state).await
     }
@@ -2449,6 +2456,8 @@ impl NodeIdentityService {
         {
             return Err(TotpEnrollmentFinishError::InvalidOrExpired);
         }
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         state.pending_totp_enrollments.remove(&account_id);
         let recovery = state.recovery.get_mut(&account_id).ok_or_else(|| {
             TotpEnrollmentFinishError::Internal(anyhow!("recovery record not found"))
@@ -2668,7 +2677,9 @@ impl NodeIdentityService {
     }
 
     /// Issue a short-lived, tuple-bound approval for a forced recovery. The
-    /// bearer is returned once; only its hash is written to Node state.
+    /// bearer hash is authoritative, while the encrypted bearer supports a
+    /// retry with the same request id when the first response outcome was
+    /// ambiguous. A different request id still supersedes the approval.
     pub async fn supersede_owner_recovery_approvals(
         &self,
         account_id: Uuid,
@@ -2719,6 +2730,43 @@ impl NodeIdentityService {
             self.write_state(&state).await?;
         }
         Ok(fences)
+    }
+
+    pub async fn owner_recovery_approval(
+        &self,
+        approval_id: Uuid,
+    ) -> Result<Option<OwnerRecoveryApproval>> {
+        Ok(self
+            .read_state()
+            .await?
+            .owner_recovery_approvals
+            .get(&approval_id)
+            .cloned())
+    }
+
+    pub async fn owner_recovery_approval_token(&self, approval_id: Uuid) -> Result<String> {
+        let state = self.read_state().await?;
+        let approval = state
+            .owner_recovery_approvals
+            .get(&approval_id)
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        if approval.invalidated_at.is_some() || approval.used_at.is_some() {
+            bail!("owner approval is no longer current");
+        }
+        validate_expiry(&approval.expires_at, "owner approval")?;
+        let encrypted_token = approval
+            .encrypted_token
+            .as_deref()
+            .ok_or_else(|| anyhow!("owner approval response is unavailable"))?;
+        let token: String = serde_json::from_slice(&decrypt_recovery_secret(
+            &self.encryption_key,
+            encrypted_token,
+        )?)
+        .context("decode owner approval response")?;
+        if token_hash(&token) != approval.token_hash {
+            bail!("owner approval response is invalid");
+        }
+        Ok(token)
     }
 
     pub async fn issue_owner_recovery_approval_with_snapshot_and_credential(
@@ -2862,6 +2910,8 @@ impl NodeIdentityService {
         }
         let now = Utc::now();
         let token = random_token(32)?;
+        let encrypted_token =
+            encrypt_recovery_secret(&self.encryption_key, &serde_json::to_vec(&token)?)?;
         let approval_id = snapshot
             .as_ref()
             .map(|snapshot| snapshot.request_id)
@@ -2942,6 +2992,7 @@ impl NodeIdentityService {
                 reset_id: None,
                 used_at: None,
                 invalidated_at: None,
+                encrypted_token: Some(encrypted_token),
             },
         );
         queue_recovery_audit(
@@ -4360,6 +4411,7 @@ impl NodeIdentityService {
         }
         let now = timestamp(Utc::now());
         if target.status != status {
+            invalidate_pending_recovery_responses(&mut state, account_id, &now);
             *state
                 .account_lifecycle_epochs
                 .entry(account_id)
@@ -7253,6 +7305,10 @@ mod tests {
             )
             .await?;
         assert!(token.len() >= 43);
+        assert_eq!(
+            service.owner_recovery_approval_token(approval_id).await?,
+            token
+        );
         let approval_state = service.read_state().await?;
         let approval_event = &approval_state
             .recovery_audit_outbox

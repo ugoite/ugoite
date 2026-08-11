@@ -17,6 +17,17 @@ fn owner_recovery_contract_exposes_owner_only_space_scope() {
         .unwrap()
         .iter()
         .any(|parameter| parameter["$ref"] == "#/components/parameters/SpaceId"));
+    let idempotency = force_reset["parameters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|parameter| parameter["name"] == "Idempotency-Key")
+        .expect("force-reset idempotency key");
+    assert_eq!(idempotency["required"], true);
+    assert_eq!(
+        force_reset["responses"]["422"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/RecoveryErrorResponse"
+    );
     assert_eq!(
         force_reset["responses"]["201"]["headers"]["Cache-Control"]["schema"]["const"],
         "no-store"
