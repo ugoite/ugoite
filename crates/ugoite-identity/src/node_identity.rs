@@ -390,6 +390,11 @@ pub struct RecoveryResetMarker {
     pub encrypted_response: Option<String>,
     #[serde(default)]
     pub response_delivered_at: Option<String>,
+    /// Stable claim identity lets a caller prove that its delivery CAS won
+    /// even when another process writes unrelated Node state before the
+    /// verification read.
+    #[serde(default)]
+    pub response_delivery_id: Option<Uuid>,
     #[serde(default)]
     pub completion_proof_hash: Option<String>,
 }
@@ -442,6 +447,10 @@ pub struct BackupRotationRecord {
     pub encrypted_codes: Option<String>,
     #[serde(default)]
     pub codes_delivered_at: Option<String>,
+    /// Stable claim identity distinguishes this delivery from a competing
+    /// process after a subsequent Node-state write.
+    #[serde(default)]
+    pub codes_delivery_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1406,40 +1415,42 @@ impl NodeIdentityService {
             encrypted_codes,
         )?)
         .context("decode backup rotation response")?;
+        let delivery_id = Uuid::now_v7();
         state
             .backup_rotation_requests
             .get_mut(&request_id)
             .expect("backup rotation request was checked above")
             .codes_delivered_at = Some(timestamp(Utc::now()));
+        state
+            .backup_rotation_requests
+            .get_mut(&request_id)
+            .expect("backup rotation request was checked above")
+            .codes_delivery_id = Some(delivery_id);
         if let Err(error) = self.write_state(&state).await {
-            let delivered = self
-                .read_state()
-                .await
-                .ok()
-                .and_then(|observed| {
-                    observed
-                        .backup_rotation_requests
-                        .get(&request_id)
-                        .and_then(|record| record.codes_delivered_at.as_ref())
-                        .cloned()
-                })
-                .is_some();
-            if delivered {
-                if !node_write_was_committed_with_ambiguous_response(&error) {
-                    bail!("backup rotation codes already delivered");
-                }
-            } else if !node_write_was_committed_with_ambiguous_response(&error) {
+            let observed =
+                self.read_state().await.ok().and_then(|observed| {
+                    observed.backup_rotation_requests.get(&request_id).cloned()
+                });
+            if observed
+                .as_ref()
+                .and_then(|record| record.codes_delivery_id)
+                == Some(delivery_id)
+            {
+                // The claim is ours even if a later state write changed the
+                // enclosing Node document before verification completed.
+            } else if observed
+                .as_ref()
+                .and_then(|record| record.codes_delivered_at.as_ref())
+                .is_some()
+            {
+                bail!("backup rotation codes already delivered");
+            } else {
                 // An unknown/pre-CAS outcome is fail-closed. A later retry
                 // can still recover the encrypted material if this marker
-                // write did not commit; only a verified matching state may
-                // be returned from this delivery claim.
+                // write did not commit; only a matching claim may be returned
+                // from this delivery attempt.
                 return Err(error);
             }
-            // The recovery mutation and its encrypted response were already
-            // committed before this delivery marker. If the marker CAS has
-            // been observed with the exact desired bytes, returning the
-            // material is safe. A competing process that won the CAS is
-            // terminal and must never receive a second copy.
         }
         Ok(codes)
     }
@@ -1501,35 +1512,39 @@ impl NodeIdentityService {
             .get(&marker.account_id)
             .cloned()
             .ok_or_else(|| anyhow!("recovery account is missing"))?;
+        let delivery_id = Uuid::now_v7();
         state
             .recovery_reset_markers
             .get_mut(&reset_id)
             .expect("owner reset marker was checked above")
             .response_delivered_at = Some(timestamp(Utc::now()));
+        state
+            .recovery_reset_markers
+            .get_mut(&reset_id)
+            .expect("owner reset marker was checked above")
+            .response_delivery_id = Some(delivery_id);
         if let Err(error) = self.write_state(&state).await {
-            let delivered = self
+            let observed = self
                 .read_state()
                 .await
                 .ok()
-                .and_then(|observed| {
-                    observed
-                        .recovery_reset_markers
-                        .get(&reset_id)
-                        .and_then(|marker| marker.response_delivered_at.as_ref())
-                        .cloned()
-                })
-                .is_some();
-            if delivered {
-                if !node_write_was_committed_with_ambiguous_response(&error) {
-                    bail!("owner reset response already delivered");
-                }
-            } else if !node_write_was_committed_with_ambiguous_response(&error) {
+                .and_then(|observed| observed.recovery_reset_markers.get(&reset_id).cloned());
+            if observed
+                .as_ref()
+                .and_then(|marker| marker.response_delivery_id)
+                == Some(delivery_id)
+            {
+                // The claim is ours even if a later state write changed the
+                // enclosing Node document before verification completed.
+            } else if observed
+                .as_ref()
+                .and_then(|marker| marker.response_delivered_at.as_ref())
+                .is_some()
+            {
+                bail!("owner reset response already delivered");
+            } else {
                 return Err(error);
             }
-            // The reset itself and its encrypted response were committed
-            // before this delivery marker. Preserve liveness after an
-            // observed matching marker CAS: the caller already has the exact
-            // response material needed to complete this one-use recovery.
         }
         Ok(Some((account, session_token, recovery_codes, marker)))
     }
@@ -3566,6 +3581,7 @@ impl NodeIdentityService {
                 &serde_json::to_vec(&(session_token.clone(), recovery_codes.clone()))?,
             )?),
             response_delivered_at: None,
+            response_delivery_id: None,
             completion_proof_hash: Some(completion_proof_hash),
         };
         state.recovery_reset_markers.insert(reset_id, marker);
@@ -3932,6 +3948,7 @@ impl NodeIdentityService {
                     &serde_json::to_vec(&codes)?,
                 )?),
                 codes_delivered_at: None,
+                codes_delivery_id: None,
             },
         );
         queue_recovery_audit(
@@ -5883,6 +5900,11 @@ impl NodeIdentityService {
                         }
                         return Err(error);
                     }
+                    Err(read_error) if node_write_was_committed_with_ambiguous_response(&error) => {
+                        return Err(anyhow!(
+                            "node control write committed with an ambiguous response: {error}; verification failed: {read_error}"
+                        ));
+                    }
                     Err(read_error) => {
                         return Err(anyhow!(
                             "node control write outcome unknown: {error}; verification failed: {read_error}"
@@ -6138,6 +6160,7 @@ mod tests {
                 committed_at: "2026-01-01T00:00:00Z".to_string(),
                 encrypted_response: None,
                 response_delivered_at: None,
+                response_delivery_id: None,
                 completion_proof_hash: None,
             },
         );
@@ -7669,6 +7692,7 @@ mod tests {
                 committed_at: timestamp(Utc::now()),
                 encrypted_response: None,
                 response_delivered_at: None,
+                response_delivery_id: None,
                 completion_proof_hash: None,
             },
         );
@@ -7793,6 +7817,7 @@ mod tests {
                 committed_at: timestamp(Utc::now()),
                 encrypted_response: None,
                 response_delivered_at: None,
+                response_delivery_id: None,
                 completion_proof_hash: None,
             },
         );

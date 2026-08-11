@@ -2438,7 +2438,10 @@ async fn owner_rotate_backup_codes(
                         json!({"code":"BACKUP_ROTATION_ALREADY_COMMITTED","message":"backup rotation is already committed"}),
                     ));
                 }
-                Err(_) => return Err(recovery_storage_unavailable()),
+                // The rotation marker is already durable on this path; a
+                // delivery/reconciliation failure is not a pre-CAS storage
+                // failure and must remain a recoverable conflict.
+                Err(_) => return Err(recovery_fence_unavailable()),
             };
             let _ = reconcile_recovery_audit_outbox(&state, &space_id).await;
             let audit_delivered = state
@@ -2558,12 +2561,12 @@ async fn owner_rotate_backup_codes(
         .identity
         .mark_recovery_fence_reconciled(fence.fence_id)
         .await
-        .map_err(|_| recovery_storage_unavailable())?;
+        .map_err(|_| recovery_fence_unavailable())?;
     let codes = state
         .identity
         .take_backup_rotation_codes(request_id)
         .await
-        .map_err(|_| recovery_storage_unavailable())?;
+        .map_err(|_| recovery_fence_unavailable())?;
     let node_audit_status = state
         .identity
         .append_node_audit_with_id(
@@ -2772,13 +2775,13 @@ async fn auth_owner_recovery_finish(
             .identity
             .mark_recovery_fence_reconciled(fence_id)
             .await
-            .map_err(|_| recovery_storage_unavailable())?;
+            .map_err(|_| recovery_fence_unavailable())?;
     }
     let (_, session_token, recovery_codes, _) = state
         .identity
         .take_owner_recovery_response_for_challenge(payload.challenge_id, &payload.credential)
         .await
-        .map_err(|_| recovery_storage_unavailable())?
+        .map_err(|_| recovery_fence_unavailable())?
         .ok_or_else(recovery_fence_unavailable)?;
     let mut headers = recovery_result_headers();
     let cookie = auth_cookie(&session_token, 60 * 60 * 24 * 30);
