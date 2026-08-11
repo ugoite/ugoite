@@ -1729,6 +1729,84 @@ async fn reserve_recovery_pair(
         .recovery_account_lifecycle_epoch(target_account_id)
         .await
         .map_err(recovery_commit_error)?;
+    let authorizer = Authorizer::new(state.service.operator().clone());
+
+    // A Space CAS can commit while its response is lost. Reattach the
+    // request-identified provisional Node fence to that durable Space fence
+    // before attempting a new reservation; otherwise the active Node half
+    // would make every same-key retry fail closed until expiry.
+    if let Some(provisional) = state
+        .identity
+        .provisional_recovery_fence_for_request(
+            request_id,
+            space_uid,
+            target_principal_id,
+            target_account_id,
+            issuer_account_id,
+        )
+        .await
+        .map_err(recovery_commit_error)?
+    {
+        let authorization = authorizer
+            .state(space_id)
+            .await
+            .map_err(|_| recovery_fence_unavailable())?;
+        match authorization
+            .recovery_fences
+            .get(&provisional.recovery_fence_id)
+            .cloned()
+        {
+            Some(fence)
+                if fence.status == "active"
+                    && fence.request_id == request_id
+                    && fence.space_uid == space_uid
+                    && fence.issuer_principal_id == issuer_principal_id
+                    && fence.issuer_account_id == issuer_account_id
+                    && fence.target_principal_id == target_principal_id
+                    && fence.target_account_id == target_account_id
+                    && fence.issuer_generation == issuer_generation
+                    && fence.target_generation == target_generation
+                    && chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
+                        .map(|expires| expires.with_timezone(&chrono::Utc) > chrono::Utc::now())
+                        .unwrap_or(false) =>
+            {
+                let snapshot = RecoveryBindingSnapshot {
+                    request_id,
+                    recovery_fence_id: fence.fence_id,
+                    recovery_fence_expires_at: fence.expires_at.clone(),
+                    space_authorization_revision: fence.authorization_revision,
+                    issuer_space_lifecycle_epoch: fence.issuer_space_lifecycle_epoch,
+                    target_space_lifecycle_epoch: fence.target_space_lifecycle_epoch,
+                    issuer_node_lifecycle_epoch: provisional.issuer_node_lifecycle_epoch,
+                    target_node_lifecycle_epoch: provisional.target_node_lifecycle_epoch,
+                    issuer_generation,
+                    target_generation,
+                };
+                state
+                    .identity
+                    .acquire_recovery_fence(
+                        space_uid,
+                        target_principal_id,
+                        target_account_id,
+                        issuer_account_id,
+                        Some(&snapshot),
+                    )
+                    .await
+                    .map_err(recovery_commit_error)?;
+                return Ok((authorizer, fence, snapshot));
+            }
+            Some(_) => return Err(recovery_fence_unavailable()),
+            None => {
+                // The Space half was never committed. It is safe to release
+                // the provisional Node half and retry a fresh pair.
+                state
+                    .identity
+                    .release_recovery_fence(provisional.recovery_fence_id)
+                    .await
+                    .map_err(recovery_commit_error)?;
+            }
+        }
+    }
     let fence_id = Uuid::now_v7();
     let recovery_fence_expires_at =
         (chrono::Utc::now() + ttl).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -1757,7 +1835,6 @@ async fn reserve_recovery_pair(
     {
         return Err(recovery_commit_error(error));
     }
-    let authorizer = Authorizer::new(state.service.operator().clone());
     let fence = match authorizer
         .reserve_recovery_fence_with_id(
             space_id,
@@ -1825,66 +1902,18 @@ async fn reserve_recovery_pair(
     Ok((authorizer, fence, snapshot))
 }
 
-/// Rebind an approval written by the pre-fence v0.1 format before the normal
-/// owner-recovery validation runs. The Node CAS is performed only after both
-/// current Space and Node fence halves are reserved, so an old bearer cannot
-/// bypass the current membership, generation, or lifecycle checks.
 async fn ensure_owner_recovery_fence(
-    state: &AppState,
     context: &OwnerRecoveryContext,
 ) -> ApiResult<OwnerRecoveryContext> {
     if context.recovery_fence_id.is_some() {
         return Ok(context.clone());
     }
-    let (authorizer, fence, snapshot) = reserve_recovery_pair(
-        state,
-        &find_space_id_by_uid(state, context.space_uid).await?,
-        context.space_uid,
-        context.issuer_principal_id,
-        context.issuer_account_id,
-        context.principal_id,
-        context.account_id,
-        context.approval_id,
-        chrono::Duration::minutes(15),
-    )
-    .await?;
-    if let Err(error) = state
-        .identity
-        .bind_legacy_owner_recovery_approval(context.approval_id, &snapshot)
-        .await
-    {
-        if recovery_write_outcome_is_ambiguous(&error) {
-            // The approval CAS may already be durable. Keep both fence halves
-            // active so a retry can reread and bind the committed approval;
-            // releasing here would strand an approval-only fence that the
-            // normal pending-marker reconciler cannot discover.
-            return Err(recovery_fence_unavailable());
-        }
-        state
-            .identity
-            .release_recovery_fence(fence.fence_id)
-            .await
-            .map_err(recovery_commit_error)?;
-        authorizer
-            .release_recovery_fence(
-                &find_space_id_by_uid(state, context.space_uid).await?,
-                fence.fence_id,
-            )
-            .await
-            .map_err(|_| recovery_storage_unavailable())?;
-        return Err(owner_recovery_api_error(error));
-    }
-    Ok(OwnerRecoveryContext {
-        issuer_generation: snapshot.issuer_generation,
-        target_generation: snapshot.target_generation,
-        issuer_space_lifecycle_epoch: snapshot.issuer_space_lifecycle_epoch,
-        target_space_lifecycle_epoch: snapshot.target_space_lifecycle_epoch,
-        issuer_node_lifecycle_epoch: snapshot.issuer_node_lifecycle_epoch,
-        target_node_lifecycle_epoch: snapshot.target_node_lifecycle_epoch,
-        space_authorization_revision: snapshot.space_authorization_revision,
-        recovery_fence_id: Some(snapshot.recovery_fence_id),
-        ..context.clone()
-    })
+    // Pre-fence approvals do not carry the original Space lifecycle tuple.
+    // Rebinding them to the current tuple would make a role or membership
+    // transition indistinguishable from an approval issued afterward.
+    Err(owner_recovery_api_error(anyhow::anyhow!(
+        "legacy owner approval is stale"
+    )))
 }
 
 fn recovery_reservation_error(error: anyhow::Error) -> ApiError {
@@ -2067,27 +2096,29 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
         }
     }
     for fence_id in state.identity.active_recovery_fence_ids(space_uid).await? {
-        if state.identity.expired_recovery_fence(fence_id).await?
-            && !pending_ids.contains(&fence_id)
-        {
-            // Do not release Node based on its local clock alone. The paired
-            // Space fence must already be terminal; an unavailable lookup is
-            // intentionally fail-closed and leaves the Node barrier active.
-            let Some(space_fence) = current_authorization.recovery_fences.get(&fence_id) else {
-                if state
-                    .identity
-                    .recovery_fence_phase(fence_id)
-                    .await?
-                    .as_deref()
-                    == Some("provisional")
-                {
-                    state.identity.release_recovery_fence(fence_id).await?;
-                }
-                continue;
-            };
-            if matches!(space_fence.status.as_str(), "released" | "completed") {
+        if pending_ids.contains(&fence_id) {
+            continue;
+        }
+        let phase = state.identity.recovery_fence_phase(fence_id).await?;
+        let Some(space_fence) = current_authorization.recovery_fences.get(&fence_id) else {
+            if phase.as_deref() == Some("provisional") {
+                // No operation marker and no Space fence means the Space half
+                // never committed. Retire the orphaned provisional Node half
+                // so the same request can make a fresh, durable reservation.
                 state.identity.release_recovery_fence(fence_id).await?;
             }
+            continue;
+        };
+        if matches!(space_fence.status.as_str(), "released" | "completed") {
+            state.identity.release_recovery_fence(fence_id).await?;
+            continue;
+        }
+        if phase.as_deref() != Some("provisional")
+            && state.identity.expired_recovery_fence(fence_id).await?
+        {
+            // Do not release a paired Node fence based on its local clock
+            // alone; its Space half must already be terminal.
+            continue;
         }
     }
     Ok(())
@@ -2915,7 +2946,7 @@ async fn auth_owner_recovery_start(
             return Err(owner_recovery_api_error(error));
         }
     };
-    let context = ensure_owner_recovery_fence(&state, &context).await?;
+    let context = ensure_owner_recovery_fence(&context).await?;
     validate_owner_recovery_context(&state, &context).await?;
     let result = state
         .identity
@@ -3003,7 +3034,7 @@ async fn auth_owner_recovery_finish(
             return Err(owner_recovery_api_error(error));
         }
     };
-    let context = ensure_owner_recovery_fence(&state, &context).await?;
+    let context = ensure_owner_recovery_fence(&context).await?;
     validate_owner_recovery_context(&state, &context).await?;
     let result = state
         .identity

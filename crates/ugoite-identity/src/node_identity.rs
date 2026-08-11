@@ -317,7 +317,6 @@ pub struct OwnerRecoveryApproval {
 
 #[derive(Clone, Debug)]
 pub struct OwnerRecoveryContext {
-    pub approval_id: Uuid,
     pub space_uid: Uuid,
     pub principal_id: Uuid,
     pub account_id: Uuid,
@@ -350,6 +349,8 @@ pub struct RecoveryBindingSnapshot {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct NodeRecoveryFence {
     fence_id: Uuid,
+    #[serde(default = "default_node_recovery_fence_request_id")]
+    request_id: Uuid,
     space_uid: Uuid,
     principal_id: Uuid,
     account_id: Uuid,
@@ -366,6 +367,10 @@ struct NodeRecoveryFence {
 
 fn default_node_recovery_fence_phase() -> String {
     "paired".to_string()
+}
+
+fn default_node_recovery_fence_request_id() -> Uuid {
+    Uuid::nil()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -972,7 +977,8 @@ fn acquire_node_recovery_fence(
             .node_recovery_fences
             .get(&snapshot.recovery_fence_id)
             .expect("active fence was checked above");
-        if fence.space_uid != space_uid
+        if fence.request_id != snapshot.request_id
+            || fence.space_uid != space_uid
             || fence.principal_id != principal_id
             || fence.account_id != account_id
             || fence.issuer_account_id != issuer_account_id
@@ -997,6 +1003,7 @@ fn acquire_node_recovery_fence(
         snapshot.recovery_fence_id,
         NodeRecoveryFence {
             fence_id: snapshot.recovery_fence_id,
+            request_id: snapshot.request_id,
             space_uid,
             principal_id,
             account_id,
@@ -1278,6 +1285,41 @@ impl NodeIdentityService {
             .filter(|fence| fence.space_uid == space_uid && node_recovery_fence_is_active(fence))
             .map(|fence| fence.fence_id)
             .collect())
+    }
+
+    pub async fn provisional_recovery_fence_for_request(
+        &self,
+        request_id: Uuid,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_account_id: Uuid,
+    ) -> Result<Option<RecoveryBindingSnapshot>> {
+        let state = self.read_state().await?;
+        Ok(state
+            .node_recovery_fences
+            .values()
+            .find(|fence| {
+                fence.status == "active"
+                    && fence.phase == "provisional"
+                    && fence.request_id == request_id
+                    && fence.space_uid == space_uid
+                    && fence.principal_id == principal_id
+                    && fence.account_id == account_id
+                    && fence.issuer_account_id == issuer_account_id
+            })
+            .map(|fence| RecoveryBindingSnapshot {
+                request_id,
+                recovery_fence_id: fence.fence_id,
+                recovery_fence_expires_at: fence.expires_at.clone(),
+                space_authorization_revision: 0,
+                issuer_space_lifecycle_epoch: 0,
+                target_space_lifecycle_epoch: 0,
+                issuer_node_lifecycle_epoch: fence.issuer_node_lifecycle_epoch,
+                target_node_lifecycle_epoch: fence.target_node_lifecycle_epoch,
+                issuer_generation: fence.issuer_generation,
+                target_generation: fence.target_generation,
+            }))
     }
 
     pub async fn recovery_fence_phase(&self, fence_id: Uuid) -> Result<Option<String>> {
@@ -3086,7 +3128,6 @@ impl NodeIdentityService {
         }
         validate_expiry(&approval.expires_at, "owner approval")?;
         Ok(OwnerRecoveryContext {
-            approval_id: approval.approval_id,
             space_uid: approval.space_uid,
             principal_id: approval.principal_id,
             account_id: approval.account_id,
@@ -3101,71 +3142,6 @@ impl NodeIdentityService {
             space_authorization_revision: approval.space_authorization_revision,
             recovery_fence_id: approval.recovery_fence_id,
         })
-    }
-
-    /// Attach a durable recovery-fence snapshot to an approval created before
-    /// v0.1 started persisting the cross-store fence tuple. The caller must
-    /// reserve both fence halves first; this CAS then makes the old bearer
-    /// replayable through the current recovery state machine.
-    pub async fn bind_legacy_owner_recovery_approval(
-        &self,
-        approval_id: Uuid,
-        snapshot: &RecoveryBindingSnapshot,
-    ) -> Result<()> {
-        let _guard = self.state_lock.lock().await;
-        let mut state = self.read_state().await?;
-        let approval = state
-            .owner_recovery_approvals
-            .get(&approval_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
-        if approval.used_at.is_some() || approval.invalidated_at.is_some() {
-            bail!("owner approval is invalid");
-        }
-        if approval.recovery_fence_id.is_some() {
-            if approval.recovery_fence_id == Some(snapshot.recovery_fence_id) {
-                return Ok(());
-            }
-            bail!("owner approval recovery fence does not match");
-        }
-        // These fields were not persisted by the pre-fence format. Refuse to
-        // resurrect an approval after any non-zero Node lifecycle/generation
-        // transition that could make its original authorization stale.
-        if approval.target_generation != snapshot.target_generation
-            || snapshot.issuer_generation != 0
-            || snapshot.issuer_node_lifecycle_epoch != 0
-            || snapshot.target_node_lifecycle_epoch != 0
-        {
-            bail!("legacy owner approval is stale");
-        }
-        let approval = state
-            .owner_recovery_approvals
-            .get_mut(&approval_id)
-            .expect("approval was checked above");
-        approval.issuer_generation = snapshot.issuer_generation;
-        approval.target_generation = snapshot.target_generation;
-        approval.issuer_space_lifecycle_epoch = snapshot.issuer_space_lifecycle_epoch;
-        approval.target_space_lifecycle_epoch = snapshot.target_space_lifecycle_epoch;
-        approval.issuer_node_lifecycle_epoch = snapshot.issuer_node_lifecycle_epoch;
-        approval.target_node_lifecycle_epoch = snapshot.target_node_lifecycle_epoch;
-        approval.space_authorization_revision = snapshot.space_authorization_revision;
-        approval.recovery_fence_id = Some(snapshot.recovery_fence_id);
-        if let Err(error) = self.write_state(&state).await {
-            let committed = self.read_state().await.ok().is_some_and(|observed| {
-                observed
-                    .owner_recovery_approvals
-                    .get(&approval_id)
-                    .is_some_and(|current| {
-                        current.recovery_fence_id == Some(snapshot.recovery_fence_id)
-                            && current.space_authorization_revision
-                                == snapshot.space_authorization_revision
-                    })
-            });
-            if !committed {
-                return Err(error);
-            }
-        }
-        Ok(())
     }
 
     /// Return the paired fence coordinates for an approval that is already
@@ -3299,7 +3275,6 @@ impl NodeIdentityService {
             bail!("owner recovery challenge expired");
         }
         Ok(OwnerRecoveryContext {
-            approval_id: approval.approval_id,
             space_uid: approval.space_uid,
             principal_id: approval.principal_id,
             account_id: approval.account_id,
@@ -8332,6 +8307,18 @@ mod tests {
                 .await?
                 .as_deref(),
             Some("provisional")
+        );
+        assert_eq!(
+            service
+                .provisional_recovery_fence_for_request(
+                    provisional.request_id,
+                    space_uid,
+                    target_principal_id,
+                    target_account_id,
+                    issuer_account_id,
+                )
+                .await?,
+            Some(provisional)
         );
         Ok(())
     }

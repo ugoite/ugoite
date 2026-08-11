@@ -150,6 +150,16 @@ fn owner_recovery_contract_exposes_terminal_error_and_cookie_contract() {
     assert!(error_codes
         .iter()
         .any(|code| code == "OWNER_APPROVAL_EXPIRED"));
+    for code in [
+        "OWNER_APPROVAL_IDEMPOTENCY_KEY_INVALID",
+        "OWNER_APPROVAL_ALREADY_COMMITTED",
+        "OWNER_APPROVAL_KEY_MISMATCH",
+    ] {
+        assert!(
+            error_codes.iter().any(|value| value == code),
+            "missing {code}"
+        );
+    }
     let credential_required = snapshot
         .pointer("/components/schemas/WebAuthnRegistrationCredential/required")
         .and_then(Value::as_array)
