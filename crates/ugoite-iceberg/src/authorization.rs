@@ -401,6 +401,12 @@ impl Authorizer {
         if fence.status != "active" {
             bail!("recovery fence is not active")
         }
+        if DateTime::parse_from_rfc3339(&fence.expires_at)
+            .map(|expires_at| expires_at.with_timezone(&Utc) <= Utc::now())
+            .map_err(|_| anyhow!("invalid stored recovery fence timestamp"))?
+        {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
         let expected_revision = fence
             .authorization_revision
             .checked_add(1)

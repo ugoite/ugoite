@@ -1,7 +1,13 @@
+use anyhow::Result;
+use chrono::Duration;
 use serde_json::{json, Value};
+use ugoite_domain::identity::{PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole};
+use ugoite_iceberg::authorization::Authorizer;
+use ugoite_storage::operator_from_uri;
+use uuid::Uuid;
 
 #[test]
-fn test_req_sec_012_owner_only_space_scope_and_target_binding() {
+fn owner_recovery_contract_exposes_owner_only_space_scope() {
     let snapshot = ugoite_server::openapi_snapshot();
     let force_reset = snapshot
         .pointer("/paths/~1spaces~1{space_id}~1admin~1recovery~1force-reset/post")
@@ -18,7 +24,7 @@ fn test_req_sec_012_owner_only_space_scope_and_target_binding() {
 }
 
 #[test]
-fn test_req_sec_012_generation_invalidates_human_credentials_but_not_agents() {
+fn owner_recovery_contract_exposes_generation_and_agent_semantics() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert!(snapshot
         .pointer("/paths/~1auth~1recovery~1owner~1start/post")
@@ -29,7 +35,7 @@ fn test_req_sec_012_generation_invalidates_human_credentials_but_not_agents() {
 }
 
 #[test]
-fn test_req_sec_012_backup_rotation_idempotency_and_preservation() {
+fn owner_recovery_contract_exposes_backup_rotation_idempotency() {
     let snapshot = ugoite_server::openapi_snapshot();
     let backup = snapshot
         .pointer("/paths/~1spaces~1{space_id}~1admin~1recovery~1backup-codes/post")
@@ -43,7 +49,7 @@ fn test_req_sec_012_backup_rotation_idempotency_and_preservation() {
 }
 
 #[test]
-fn test_req_sec_012_concurrent_reset_winner_and_loser_session() {
+fn owner_recovery_contract_exposes_single_reset_response() {
     let snapshot = ugoite_server::openapi_snapshot();
     let response = snapshot
         .pointer("/components/schemas/OwnerRecoveryFinishResponse")
@@ -55,7 +61,7 @@ fn test_req_sec_012_concurrent_reset_winner_and_loser_session() {
 }
 
 #[test]
-fn test_req_sec_013_recovery_outbox_status_and_redaction() {
+fn owner_recovery_contract_exposes_audit_status_and_redaction() {
     let snapshot = ugoite_server::openapi_snapshot();
     let status = snapshot
         .pointer("/components/schemas/AuditStatus")
@@ -69,7 +75,7 @@ fn test_req_sec_013_recovery_outbox_status_and_redaction() {
 }
 
 #[test]
-fn test_req_sec_013_cross_process_conditional_append_deduplicates_event() {
+fn recovery_contract_exposes_cross_process_deduplication_response() {
     let snapshot = ugoite_server::openapi_snapshot();
     let errors = snapshot
         .pointer("/paths/~1spaces~1{space_id}~1admin~1recovery~1backup-codes/post/responses/409")
@@ -118,7 +124,7 @@ async fn test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_stor
 }
 
 #[test]
-fn test_req_sec_013_retained_event_id_survives_log_compaction() {
+fn owner_recovery_contract_exposes_terminal_error_and_cookie_contract() {
     let snapshot: Value = ugoite_server::openapi_snapshot();
     assert!(snapshot
         .pointer("/paths/~1auth~1recovery~1owner~1finish/post/responses/201/headers/Set-Cookie")
@@ -137,4 +143,88 @@ fn test_req_sec_013_retained_event_id_survives_log_compaction() {
     assert!(!credential_required
         .iter()
         .any(|field| field == "extensions"));
+}
+
+#[tokio::test]
+async fn test_req_sec_012_behavioral_owner_fence_blocks_mutations_and_expired_completion(
+) -> Result<()> {
+    let operator = operator_from_uri("memory://owner-recovery-behavior")?;
+    operator.create_dir("spaces/demo/").await?;
+    let authorizer = Authorizer::new(operator);
+    let owner = Uuid::now_v7();
+    let target = Uuid::now_v7();
+    let issuer_account = Uuid::now_v7();
+    let target_account = Uuid::now_v7();
+    let space_uid = Uuid::now_v7();
+    authorizer
+        .initialize_owner("demo", space_uid, owner, "Owner")
+        .await?;
+    authorizer
+        .add_human_member(
+            "demo",
+            owner,
+            SpacePrincipal {
+                principal_id: target,
+                kind: PrincipalKind::Human,
+                display_name: "Target".to_string(),
+                state: PrincipalState::Active,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+
+    let fence = authorizer
+        .reserve_recovery_fence(
+            "demo",
+            Uuid::now_v7(),
+            owner,
+            issuer_account,
+            target,
+            target_account,
+            0,
+            0,
+            Duration::minutes(5),
+        )
+        .await?;
+    assert!(authorizer
+        .change_role("demo", owner, target, SpaceRole::Editor)
+        .await
+        .is_err());
+    assert!(authorizer
+        .reserve_recovery_fence(
+            "demo",
+            Uuid::now_v7(),
+            owner,
+            issuer_account,
+            target,
+            target_account,
+            0,
+            0,
+            Duration::minutes(5),
+        )
+        .await
+        .is_err());
+    authorizer
+        .release_recovery_fence("demo", fence.fence_id)
+        .await?;
+
+    let expired = authorizer
+        .reserve_recovery_fence(
+            "demo",
+            Uuid::now_v7(),
+            owner,
+            issuer_account,
+            target,
+            target_account,
+            0,
+            0,
+            Duration::seconds(-1),
+        )
+        .await?;
+    assert!(authorizer
+        .complete_recovery_fence("demo", expired.fence_id)
+        .await
+        .is_err());
+    Ok(())
 }

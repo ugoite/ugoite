@@ -1959,7 +1959,7 @@ async fn reconcile_recovery_audit_outbox(state: &AppState, space_id: &str) -> an
                     NodeAuditInput {
                         subject_account_id: Some(record.account_id),
                         actor_account_id: record.issuer_account_id,
-                        credential_id: None,
+                        credential_id: record.credential_id,
                         action: &record.action,
                         target_type: "human_account",
                         target_id: Some(record.account_id.to_string()),
@@ -2043,13 +2043,14 @@ async fn owner_force_reset(
     .await?;
     let (approval_id, token, expires_at) = match state
         .identity
-        .issue_owner_recovery_approval_with_snapshot(
+        .issue_owner_recovery_approval_with_snapshot_and_credential(
             space_uid,
             payload.principal_id,
             account_id,
             issuer_principal_id,
             identity.account_id,
             Some(snapshot),
+            Some(identity.request_identity.credential_id),
         )
         .await
     {
@@ -2189,7 +2190,7 @@ async fn owner_rotate_backup_codes(
     .await?;
     let codes = match state
         .identity
-        .rotate_recovery_codes_with_snapshot(
+        .rotate_recovery_codes_with_snapshot_and_credential(
             request_id,
             space_uid,
             payload.principal_id,
@@ -2197,6 +2198,7 @@ async fn owner_rotate_backup_codes(
             issuer_principal_id,
             identity.account_id,
             Some(snapshot),
+            Some(identity.request_identity.credential_id),
         )
         .await
     {
@@ -2385,7 +2387,7 @@ async fn auth_owner_recovery_finish(
         .identity
         .finish_owner_recovery_registration(payload.challenge_id, &payload.credential)
         .await
-        .map_err(owner_recovery_api_error)?;
+        .map_err(owner_recovery_commit_api_error)?;
     let fence_id = context
         .recovery_fence_id
         .ok_or_else(recovery_fence_unavailable)?;
@@ -2434,7 +2436,7 @@ async fn auth_owner_recovery_finish(
             NodeAuditInput {
             subject_account_id: Some(result.account.account_id),
             actor_account_id: result.recovery_issuer_account_id,
-            credential_id: None,
+            credential_id: result.recovery_issuer_credential_id,
             action: "recovery.owner_reset_completed",
             target_type: "human_account",
             target_id: Some(result.account.account_id.to_string()),
@@ -2530,6 +2532,16 @@ fn owner_recovery_api_error(error: anyhow::Error) -> ApiError {
             "message": if code == "WEBAUTHN_REGISTRATION_INVALID" { "WebAuthn registration is invalid" } else { "owner recovery is invalid" }
         }),
     )
+}
+
+fn owner_recovery_commit_api_error(error: anyhow::Error) -> ApiError {
+    let message = error.to_string();
+    if message.contains("node control write committed")
+        || message.contains("node control write outcome unknown")
+    {
+        return recovery_fence_unavailable();
+    }
+    owner_recovery_api_error(error)
 }
 
 async fn auth_session(State(state): State<AppState>, headers: HeaderMap) -> Json<Value> {
@@ -2914,6 +2926,7 @@ async fn oidc_callback(
             attempt.invitation_hash.as_deref(),
             attempt.link_account_id,
             attempt.link_account_generation,
+            attempt.invitation_account_generation,
         )
         .await
         .map_err(recovery_aware_auth_error)?;
@@ -6037,6 +6050,20 @@ mod authentication_regression_tests {
         assert_eq!(hidden.status, StatusCode::FORBIDDEN);
         assert_eq!(hidden.detail["code"], "FORBIDDEN");
         assert_eq!(hidden.detail["message"], "Asset deletion is not permitted");
+    }
+
+    #[test]
+    fn owner_recovery_ambiguous_node_commit_stays_fenced() {
+        let committed = owner_recovery_commit_api_error(anyhow::anyhow!(
+            "node control write committed with an ambiguous response"
+        ));
+        assert_eq!(committed.status, StatusCode::CONFLICT);
+        assert_eq!(committed.detail["code"], "RECOVERY_FENCE_UNAVAILABLE");
+
+        let unknown =
+            owner_recovery_commit_api_error(anyhow::anyhow!("node control write outcome unknown"));
+        assert_eq!(unknown.status, StatusCode::CONFLICT);
+        assert_eq!(unknown.detail["code"], "RECOVERY_FENCE_UNAVAILABLE");
     }
 
     #[tokio::test]
