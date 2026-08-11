@@ -1827,6 +1827,12 @@ fn recovery_commit_error(error: anyhow::Error) -> ApiError {
     )
 }
 
+fn recovery_write_outcome_is_ambiguous(error: &anyhow::Error) -> bool {
+    let message = error.to_string();
+    message.contains("node control write committed")
+        || message.contains("node control write outcome unknown")
+}
+
 async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::Result<()> {
     let space_uid = state.service.space_uid(space_id).await?;
     let authorizer = Authorizer::new(state.service.operator().clone());
@@ -2056,6 +2062,12 @@ async fn owner_force_reset(
     {
         Ok(result) => result,
         Err(error) => {
+            if recovery_write_outcome_is_ambiguous(&error) {
+                // The Node approval may already be durable. Keep both fences
+                // active so reconciliation can discover the approval instead
+                // of releasing a committed mutation with no replayable token.
+                return Err(recovery_fence_unavailable());
+            }
             let _ = authorizer
                 .release_recovery_fence(&space_id, fence.fence_id)
                 .await;
@@ -2205,9 +2217,7 @@ async fn owner_rotate_backup_codes(
         Ok(codes) => codes,
         Err(error) => {
             let message = error.to_string();
-            if message.contains("node control write committed")
-                || message.contains("node control write outcome unknown")
-            {
+            if recovery_write_outcome_is_ambiguous(&error) {
                 // The marker may already be durable. Keep both fences active
                 // so restart reconciliation can inspect the request marker;
                 // releasing here could strand a committed rotation with no

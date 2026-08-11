@@ -96,12 +96,14 @@ async fn test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_stor
         ugoite_storage::operator_from_uri(&format!("fs://{}", root.path().display()))
             .expect("second filesystem operator");
     let event_id = uuid::Uuid::new_v4();
+    let credential_id = uuid::Uuid::new_v4();
     let payload = json!({
         "event_id": event_id,
         "action": "recovery.owner_reset_completed",
         "subject_principal_id": uuid::Uuid::new_v4(),
         "actor_principal_id": uuid::Uuid::new_v4(),
         "actor_account_id": uuid::Uuid::new_v4(),
+        "credential_id": credential_id,
         "metadata": {"credential_generation": 2}
     });
     let first = ugoite_iceberg::audit::append_audit_event(&first_operator, "demo", &payload, None)
@@ -113,6 +115,8 @@ async fn test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_stor
             .expect("replayed audit append");
     assert_eq!(first["event_id"], event_id.to_string());
     assert_eq!(replay["event_id"], event_id.to_string());
+    assert_eq!(first["credential_id"], credential_id.to_string());
+    assert_eq!(replay["credential_id"], credential_id.to_string());
     let listing = ugoite_iceberg::audit::list_audit_events(
         &second_operator,
         "demo",

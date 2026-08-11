@@ -455,6 +455,8 @@ fn queue_recovery_audit(
                     .unwrap_or(serde_json::Value::Null),
                 "actor_account_id": serde_json::to_value(issuer_account_id)
                     .unwrap_or(serde_json::Value::Null),
+                "credential_id": serde_json::to_value(credential_id)
+                    .unwrap_or(serde_json::Value::Null),
                 "metadata": safe_metadata,
                 "issuer_principal_id": issuer_principal_id,
                 "issuer_account_id": issuer_account_id,
@@ -6167,6 +6169,10 @@ mod tests {
         assert_eq!(
             approval_event["actor_account_id"],
             serde_json::json!(issuer_account_id)
+        );
+        assert_eq!(
+            approval_event["credential_id"],
+            serde_json::json!(issuer_credential_id)
         );
         assert!(serde_json::to_string(approval_event)?
             .find(&token)
