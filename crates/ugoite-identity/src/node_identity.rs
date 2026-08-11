@@ -790,6 +790,12 @@ fn node_recovery_fence_is_expired(fence: &NodeRecoveryFence) -> Result<bool> {
     Ok(node_recovery_fence_is_active(fence) && parse_timestamp(&fence.expires_at)? <= Utc::now())
 }
 
+fn node_write_outcome_is_ambiguous(error: &anyhow::Error) -> bool {
+    let message = error.to_string();
+    message.contains("node control write committed with an ambiguous response")
+        || message.contains("node control write outcome unknown")
+}
+
 #[cfg(test)]
 fn node_write_was_committed_with_ambiguous_response(error: &anyhow::Error) -> bool {
     error
@@ -1420,9 +1426,15 @@ impl NodeIdentityService {
                         .cloned()
                 })
                 .is_some();
-            if !delivered {
+            if !delivered && !node_write_outcome_is_ambiguous(&error) {
                 return Err(error);
             }
+            // The recovery mutation and its encrypted response were already
+            // committed before this delivery marker. If the marker CAS has
+            // an ambiguous outcome, returning the material now is the only
+            // way to avoid losing the one-time response when the verification
+            // read is unavailable. A later retry converges to either the
+            // durable delivery marker or the same encrypted response.
         }
         Ok(codes)
     }
@@ -1502,9 +1514,13 @@ impl NodeIdentityService {
                         .cloned()
                 })
                 .is_some();
-            if !delivered {
+            if !delivered && !node_write_outcome_is_ambiguous(&error) {
                 return Err(error);
             }
+            // The reset itself and its encrypted response were committed
+            // before this delivery marker. Preserve liveness after an
+            // ambiguous marker CAS: the caller already has the exact response
+            // material needed to complete this one-use recovery.
         }
         Ok(Some((account, session_token, recovery_codes, marker)))
     }
@@ -7816,6 +7832,9 @@ mod tests {
             "node control write committed with an ambiguous response: timeout"
         )));
         assert!(!node_write_was_committed_with_ambiguous_response(&anyhow!(
+            "node control write outcome unknown: timeout"
+        )));
+        assert!(node_write_outcome_is_ambiguous(&anyhow!(
             "node control write outcome unknown: timeout"
         )));
     }
