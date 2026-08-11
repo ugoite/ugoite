@@ -304,6 +304,7 @@ schemas:
       - operation
       - committed_at
       - author_id
+      - ugoite_entry_updated_by
       - form_version
       - source_kind
       properties:
@@ -315,6 +316,10 @@ schemas:
           enum: [upsert, delete, restore]
         committed_at: {}
         author_id: {}
+        ugoite_entry_updated_by:
+          description: Principal that authored this revision, including delete and restore revisions.
+        ugoite_entry_deleted_by:
+          description: Principal that authored the current delete tombstone; null on non-delete revisions.
         form_version: {}
         source_kind: {}
         source_id: {}

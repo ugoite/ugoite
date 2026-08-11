@@ -102,8 +102,10 @@ objects or referenced immutable metadata are explicit unavailable-checkpoint
 errors. Snapshot expiration and a Ugoite retention engine are not implemented.
 
 Revision rows contain stable entry/revision identity, optimistic version and
-parent lineage, operation/tombstone state, commit time, author and provenance,
-Form version, typed Form columns, and extension metadata. A projection of the
+parent lineage, operation/tombstone state, commit time, original creator
+(`author`), latest mutation actor (`updated_by`), delete actor (`deleted_by` on
+a tombstone), and other provenance, Form version, typed Form columns, and
+extension metadata. A projection of the
 latest non-conflicting revision provides current Entry responses.
 
 ## Portability

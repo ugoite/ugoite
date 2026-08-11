@@ -119,6 +119,9 @@ export interface EntryRecord {
   tags: string[];
   canvas_position?: CanvasPosition;
   checksum?: string;
+  author?: string;
+  updated_by?: string;
+  deleted_by?: string | null;
 }
 
 /** Canvas position for spatial view */
@@ -141,6 +144,9 @@ export interface Entry {
   revision_id: string;
   created_at: string;
   updated_at: string;
+  author?: string;
+  updated_by?: string;
+  deleted_by?: string | null;
 }
 
 /** Rendered content captured for an entry revision. */
@@ -148,6 +154,8 @@ export interface EntryRevisionContent {
   revision_id: string;
   parent_revision_id?: string | null;
   author?: string;
+  updated_by?: string;
+  deleted_by?: string | null;
   markdown: string;
   frontmatter?: Record<string, unknown>;
   sections?: Record<string, string>;
@@ -158,6 +166,9 @@ export interface EntryRevision {
   revision_id: string;
   timestamp: string | number;
   checksum: string;
+  author?: string;
+  updated_by?: string;
+  deleted_by?: string | null;
 }
 
 /** Create entry payload */
@@ -231,6 +242,9 @@ export interface SqlEntry {
   created_at: string;
   updated_at: string;
   revision_id: string;
+  author?: string;
+  updated_by?: string;
+  deleted_by?: string | null;
 }
 
 export interface SqlCreatePayload {

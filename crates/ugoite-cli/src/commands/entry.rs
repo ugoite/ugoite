@@ -112,6 +112,12 @@ pub enum EntrySubCmd {
         entry_id: String,
         #[arg(long)]
         hard_delete: bool,
+        #[arg(
+            long,
+            default_value = "cli",
+            help = "Actor name to record for the delete (core mode only)"
+        )]
+        author: String,
     },
     /// Get entry history
     History {
@@ -284,9 +290,15 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             space_path,
             entry_id,
             hard_delete,
+            author,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry delete")?;
             if let Some(base) = validated_base_url(&config)? {
+                if author != "cli" {
+                    bail!(
+                        "entry delete --author is only supported in core mode; backend/api derive actor from the authenticated identity"
+                    );
+                }
                 let result = http::execute(
                     &base,
                     "entry.delete",
@@ -303,7 +315,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             }
             let service = UgoiteService::new(&root)?;
             service
-                .delete_entry(&space_id, &entry_id, hard_delete)
+                .delete_entry(&space_id, &entry_id, hard_delete, &author)
                 .await?;
             print_json(&serde_json::json!({"deleted": true}));
         }

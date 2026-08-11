@@ -61,7 +61,10 @@ fn revision(form: &FormDefinition, entry: u128, revision: u128, title: &str) -> 
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
-        entry: EntryMetadata::default(),
+        entry: EntryMetadata {
+            updated_by: "test".into(),
+            ..EntryMetadata::default()
+        },
         values: BTreeMap::from([(FieldId::new(100).unwrap(), FieldValue::String(title.into()))]),
         extra_attributes: BTreeMap::new(),
         extension_metadata: BTreeMap::new(),

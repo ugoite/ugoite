@@ -216,14 +216,23 @@ requirements:
   title: Mandatory Attribution Metadata
   description: 'All Form-backed rows MUST persist system-managed attribution metadata.
 
-    At minimum, `author` and `updated_by` MUST be set from authenticated user
+    `author` is the principal that created the Entry and remains stable for its
 
-    identity, with `updated_by` representing the latest writer.
+    lifetime. `updated_by` is the principal that authored the latest revision,
+
+    including create, update, delete, and restore. `deleted_by` is the principal
+
+    that authored the current delete tombstone; it is cleared by restore while
+
+    historical delete revisions retain their value.
 
     '
   related_spec:
   - data-model/overview.md#forms-and-entries
   - data-model/directory-structure.md#iceberg-managed-form-storage
   priority: high
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-iceberg/tests/test_entry.rs
+  - file: crates/ugoite-server/src/lib.rs

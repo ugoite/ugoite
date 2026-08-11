@@ -80,7 +80,7 @@ async fn test_saved_sql_req_api_006_crud() -> anyhow::Result<()> {
     assert!(!new_revision_id.is_empty());
     assert_ne!(revision_id, new_revision_id);
 
-    saved_sql::delete_sql(&op, ws_path, "sql-1").await?;
+    saved_sql::delete_sql(&op, ws_path, "sql-1", "deleter").await?;
     assert!(saved_sql::get_sql(&op, ws_path, "sql-1").await.is_err());
 
     Ok(())

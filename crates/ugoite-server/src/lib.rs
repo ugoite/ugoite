@@ -3863,7 +3863,7 @@ async fn delete_entry(
     Path((space_id, entry_id)): Path<(String, String)>,
     Query(query): Query<EntryDeleteQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
+    let principal_id = require_resource_action(
         &state,
         &space_id,
         &identity,
@@ -3875,7 +3875,12 @@ async fn delete_entry(
     validate_id(&entry_id, "entry_id")?;
     state
         .service
-        .delete_entry(&space_id, &entry_id, query.hard_delete.unwrap_or(false))
+        .delete_entry(
+            &space_id,
+            &entry_id,
+            query.hard_delete.unwrap_or(false),
+            &principal_id.to_string(),
+        )
         .await
         .map_err(ApiError::from_core)?;
     Ok(Json(json!({"id": entry_id, "status": "deleted"})))
@@ -4320,7 +4325,7 @@ async fn delete_sql(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, sql_id)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    require_resource_action(
+    let principal_id = require_resource_action(
         &state,
         &space_id,
         &identity,
@@ -4332,7 +4337,7 @@ async fn delete_sql(
     validate_id(&sql_id, "sql_id")?;
     state
         .service
-        .delete_saved_sql(&space_id, &sql_id)
+        .delete_saved_sql(&space_id, &sql_id, &principal_id.to_string())
         .await
         .map_err(ApiError::from_core)?;
     Ok(StatusCode::NO_CONTENT)
@@ -5242,6 +5247,78 @@ mod authentication_regression_tests {
         let history_body: Value = serde_json::from_slice(&history_body)?;
         assert_eq!(history_body["revisions"].as_array().map(Vec::len), Some(1));
         assert_eq!(history_body["revisions"][0]["revision_id"], revision_id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    /// REQ-FORM-009
+    async fn delete_route_records_the_authenticated_principal_as_actor() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-entry-attribution-delete")?;
+        let principal_id = Uuid::from_u128(1918);
+        let space_id = state
+            .service
+            .create_space_for_principal("entry-attribution-delete", principal_id, "Route test")
+            .await?
+            .to_string();
+        state
+            .service
+            .upsert_form(
+                &space_id,
+                &json!({
+                    "name": "Entry",
+                    "fields": {"Body": {"type": "markdown"}},
+                    "allow_extra_attributes": "deny"
+                }),
+            )
+            .await?;
+        state
+            .service
+            .create_entry(
+                &space_id,
+                "attribution-delete-entry",
+                "---\nform: Entry\n---\n# Created\n\n## Body\nBody",
+                "creator",
+            )
+            .await?;
+        let space_uid = state.service.space_uid(&space_id).await?;
+        state.identity.bootstrap_if_needed().await?;
+        state
+            .identity
+            .bind_local_owner(space_uid, principal_id, principal_id)
+            .await?;
+        let mut identity = content_identity(principal_id, space_uid);
+        identity.token_principal_id = None;
+        identity.token_space_uid = None;
+        identity.token_actions = None;
+        let route = Router::new()
+            .route(
+                "/spaces/{space_id}/entries/{entry_id}",
+                delete(delete_entry),
+            )
+            .layer(Extension(identity))
+            .with_state(state.clone());
+
+        let response = route
+            .oneshot(
+                Request::delete(format!(
+                    "/spaces/{space_id}/entries/attribution-delete-entry"
+                ))
+                .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let history = state
+            .service
+            .entry_history(&space_id, "attribution-delete-entry")
+            .await?;
+        let delete_revision = history["revisions"]
+            .as_array()
+            .and_then(|revisions| revisions.last())
+            .expect("delete revision");
+        assert_eq!(delete_revision["author"], "creator");
+        assert_eq!(delete_revision["updated_by"], principal_id.to_string());
+        assert_eq!(delete_revision["deleted_by"], principal_id.to_string());
         Ok(())
     }
 

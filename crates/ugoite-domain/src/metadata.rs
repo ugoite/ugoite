@@ -14,6 +14,8 @@ const DEFAULT_METADATA_COLUMNS: &[&str] = &[
     "deleted",
     "deleted_at",
     "author",
+    "updated_by",
+    "deleted_by",
     "integrity",
     "space_id",
     "word_count",

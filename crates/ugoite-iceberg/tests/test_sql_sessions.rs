@@ -613,7 +613,9 @@ async fn sql_sessions_service_freezes_checkpoint_scope_and_policy() -> anyhow::R
         .expect_err("session rows must reject an empty principal set");
     assert_forbidden(&error);
 
-    service.delete_entry(&space_id, "task-1", false).await?;
+    service
+        .delete_entry(&space_id, "task-1", false, "owner")
+        .await?;
     service
         .create_entry(
             &space_id,

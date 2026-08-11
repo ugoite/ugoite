@@ -46,7 +46,10 @@ fn revision(form: &FormDefinition) -> EntryRevision {
         form_version: form.version,
         source_kind: "test".into(),
         source_id: None,
-        entry: EntryMetadata::default(),
+        entry: EntryMetadata {
+            updated_by: "human:owner".into(),
+            ..EntryMetadata::default()
+        },
         values: [(
             FieldId::new(100).expect("test field ID"),
             FieldValue::String("safe".into()),
