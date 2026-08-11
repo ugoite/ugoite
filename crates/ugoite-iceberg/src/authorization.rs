@@ -311,6 +311,24 @@ impl Authorizer {
         if state.space_uid == Uuid::nil() {
             bail!("recovery fence is unavailable")
         }
+        if let Some(existing) = state.recovery_fences.get(&fence_id).cloned() {
+            if existing.status == "active"
+                && existing.request_id == request_id
+                && existing.space_uid == state.space_uid
+                && existing.issuer_principal_id == issuer_principal_id
+                && existing.issuer_account_id == issuer_account_id
+                && existing.target_principal_id == target_principal_id
+                && existing.target_account_id == target_account_id
+                && existing.issuer_generation == issuer_generation
+                && existing.target_generation == target_generation
+            {
+                // A retry may be recovering the result of a Space CAS whose
+                // response was lost. Reusing the exact fence identity is
+                // idempotent; a different tuple must never borrow it.
+                return Ok(existing);
+            }
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
         if state
             .recovery_fences
             .values()
@@ -1436,6 +1454,87 @@ mod tests {
         authorizer
             .change_role("demo", owner, member, SpaceRole::Editor)
             .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_fence_retry_reuses_exact_space_identity() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-recovery-fence-retry")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        let issuer_account = Uuid::now_v7();
+        let target_account = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let request_id = Uuid::now_v7();
+        let fence_id = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", space_uid, owner, "Owner")
+            .await?;
+        authorizer
+            .add_human_member(
+                "demo",
+                owner,
+                SpacePrincipal {
+                    principal_id: member,
+                    kind: PrincipalKind::Human,
+                    display_name: "Member".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+
+        let first = authorizer
+            .reserve_recovery_fence_with_id(
+                "demo",
+                request_id,
+                fence_id,
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await?;
+        let retry = authorizer
+            .reserve_recovery_fence_with_id(
+                "demo",
+                request_id,
+                fence_id,
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await?;
+        assert_eq!(retry.fence_id, first.fence_id);
+        assert_eq!(retry.request_id, first.request_id);
+        assert_eq!(retry.expires_at, first.expires_at);
+
+        let mismatch = authorizer
+            .reserve_recovery_fence_with_id(
+                "demo",
+                request_id,
+                fence_id,
+                owner,
+                issuer_account,
+                member,
+                Uuid::now_v7(),
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await
+            .expect_err("a fence identity cannot be borrowed by another tuple");
+        assert!(mismatch.to_string().contains("RECOVERY_FENCE_UNAVAILABLE"));
         Ok(())
     }
 

@@ -1287,7 +1287,7 @@ impl NodeIdentityService {
             .collect())
     }
 
-    pub async fn provisional_recovery_fence_for_request(
+    pub async fn recovery_fence_for_request(
         &self,
         request_id: Uuid,
         space_uid: Uuid,
@@ -1301,7 +1301,6 @@ impl NodeIdentityService {
             .values()
             .find(|fence| {
                 fence.status == "active"
-                    && fence.phase == "provisional"
                     && fence.request_id == request_id
                     && fence.space_uid == space_uid
                     && fence.principal_id == principal_id
@@ -1364,8 +1363,9 @@ impl NodeIdentityService {
 
     /// Reserve the Node-side half of a recovery fence with the same
     /// conditional-CAS state transition used by all Node lifecycle writes.
-    /// The Space fence is reserved first by the server; this reservation
-    /// closes the cross-store gap before a recovery mutation begins.
+    /// The server first records a provisional Node fence and then reserves the
+    /// Space half. A later call promotes the same Node identity to paired once
+    /// the Space CAS is observable.
     pub async fn acquire_recovery_fence(
         &self,
         space_uid: Uuid,
@@ -8310,7 +8310,7 @@ mod tests {
         );
         assert_eq!(
             service
-                .provisional_recovery_fence_for_request(
+                .recovery_fence_for_request(
                     provisional.request_id,
                     space_uid,
                     target_principal_id,
@@ -8318,7 +8318,41 @@ mod tests {
                     issuer_account_id,
                 )
                 .await?,
-            Some(provisional)
+            Some(provisional.clone())
+        );
+        let paired = RecoveryBindingSnapshot {
+            space_authorization_revision: 1,
+            ..provisional.clone()
+        };
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&paired),
+            )
+            .await?;
+        assert_eq!(
+            service
+                .recovery_fence_phase(provisional.recovery_fence_id)
+                .await?
+                .as_deref(),
+            Some("paired")
+        );
+        let found_paired = service
+            .recovery_fence_for_request(
+                provisional.request_id,
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+            )
+            .await?
+            .expect("paired fence remains discoverable by its request key");
+        assert_eq!(
+            found_paired.recovery_fence_id,
+            provisional.recovery_fence_id
         );
         Ok(())
     }

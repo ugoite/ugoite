@@ -1731,13 +1731,14 @@ async fn reserve_recovery_pair(
         .map_err(recovery_commit_error)?;
     let authorizer = Authorizer::new(state.service.operator().clone());
 
-    // A Space CAS can commit while its response is lost. Reattach the
-    // request-identified provisional Node fence to that durable Space fence
-    // before attempting a new reservation; otherwise the active Node half
-    // would make every same-key retry fail closed until expiry.
+    // A Space CAS can commit while its response is lost, either before or
+    // after the Node fence is promoted from provisional to paired. Reattach
+    // the request-identified Node fence before attempting a new reservation;
+    // otherwise the active Node half would make every same-key retry fail
+    // closed until expiry.
     if let Some(provisional) = state
         .identity
-        .provisional_recovery_fence_for_request(
+        .recovery_fence_for_request(
             request_id,
             space_uid,
             target_principal_id,
@@ -1751,61 +1752,79 @@ async fn reserve_recovery_pair(
             .state(space_id)
             .await
             .map_err(|_| recovery_fence_unavailable())?;
-        match authorization
+        let fence = match authorization
             .recovery_fences
             .get(&provisional.recovery_fence_id)
             .cloned()
         {
-            Some(fence)
-                if fence.status == "active"
-                    && fence.request_id == request_id
-                    && fence.space_uid == space_uid
-                    && fence.issuer_principal_id == issuer_principal_id
-                    && fence.issuer_account_id == issuer_account_id
-                    && fence.target_principal_id == target_principal_id
-                    && fence.target_account_id == target_account_id
-                    && fence.issuer_generation == issuer_generation
-                    && fence.target_generation == target_generation
-                    && chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
-                        .map(|expires| expires.with_timezone(&chrono::Utc) > chrono::Utc::now())
-                        .unwrap_or(false) =>
-            {
-                let snapshot = RecoveryBindingSnapshot {
-                    request_id,
-                    recovery_fence_id: fence.fence_id,
-                    recovery_fence_expires_at: fence.expires_at.clone(),
-                    space_authorization_revision: fence.authorization_revision,
-                    issuer_space_lifecycle_epoch: fence.issuer_space_lifecycle_epoch,
-                    target_space_lifecycle_epoch: fence.target_space_lifecycle_epoch,
-                    issuer_node_lifecycle_epoch: provisional.issuer_node_lifecycle_epoch,
-                    target_node_lifecycle_epoch: provisional.target_node_lifecycle_epoch,
-                    issuer_generation,
-                    target_generation,
-                };
-                state
-                    .identity
-                    .acquire_recovery_fence(
-                        space_uid,
+            Some(fence) => fence,
+            None => {
+                // A read which misses the Space fence is not proof that a
+                // concurrent CAS is not in flight. Retry the same Space CAS
+                // with the same fence identity; the Authorizer treats an
+                // exact active identity as idempotent and a storage outcome
+                // that remains ambiguous keeps the Node half fail-closed.
+                authorizer
+                    .reserve_recovery_fence_with_id(
+                        space_id,
+                        request_id,
+                        provisional.recovery_fence_id,
+                        issuer_principal_id,
+                        issuer_account_id,
                         target_principal_id,
                         target_account_id,
-                        issuer_account_id,
-                        Some(&snapshot),
+                        issuer_generation,
+                        target_generation,
+                        ttl,
                     )
                     .await
-                    .map_err(recovery_commit_error)?;
-                return Ok((authorizer, fence, snapshot));
+                    .map_err(|_| recovery_fence_unavailable())?
             }
-            Some(_) => return Err(recovery_fence_unavailable()),
-            None => {
-                // The Space half was never committed. It is safe to release
-                // the provisional Node half and retry a fresh pair.
-                state
-                    .identity
-                    .release_recovery_fence(provisional.recovery_fence_id)
-                    .await
-                    .map_err(recovery_commit_error)?;
-            }
+        };
+        if fence.status != "active"
+            || fence.request_id != request_id
+            || fence.space_uid != space_uid
+            || fence.issuer_principal_id != issuer_principal_id
+            || fence.issuer_account_id != issuer_account_id
+            || fence.target_principal_id != target_principal_id
+            || fence.target_account_id != target_account_id
+            || fence.issuer_generation != issuer_generation
+            || fence.target_generation != target_generation
+            || chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
+                .map(|expires| expires.with_timezone(&chrono::Utc) > chrono::Utc::now())
+                .unwrap_or(false)
+                == false
+            || chrono::DateTime::parse_from_rfc3339(&provisional.recovery_fence_expires_at)
+                .map(|expires| expires.with_timezone(&chrono::Utc) > chrono::Utc::now())
+                .unwrap_or(false)
+                == false
+        {
+            return Err(recovery_fence_unavailable());
         }
+        let snapshot = RecoveryBindingSnapshot {
+            request_id,
+            recovery_fence_id: fence.fence_id,
+            recovery_fence_expires_at: fence.expires_at.clone(),
+            space_authorization_revision: fence.authorization_revision,
+            issuer_space_lifecycle_epoch: fence.issuer_space_lifecycle_epoch,
+            target_space_lifecycle_epoch: fence.target_space_lifecycle_epoch,
+            issuer_node_lifecycle_epoch: provisional.issuer_node_lifecycle_epoch,
+            target_node_lifecycle_epoch: provisional.target_node_lifecycle_epoch,
+            issuer_generation,
+            target_generation,
+        };
+        state
+            .identity
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&snapshot),
+            )
+            .await
+            .map_err(recovery_commit_error)?;
+        return Ok((authorizer, fence, snapshot));
     }
     let fence_id = Uuid::now_v7();
     let recovery_fence_expires_at =
@@ -2101,12 +2120,12 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
         }
         let phase = state.identity.recovery_fence_phase(fence_id).await?;
         let Some(space_fence) = current_authorization.recovery_fences.get(&fence_id) else {
-            if phase.as_deref() == Some("provisional") {
-                // No operation marker and no Space fence means the Space half
-                // never committed. Retire the orphaned provisional Node half
-                // so the same request can make a fresh, durable reservation.
-                state.identity.release_recovery_fence(fence_id).await?;
-            }
+            // A read which misses the Space fence cannot prove that a CAS is
+            // not in flight in another process. Keep both the provisional and
+            // paired Node barriers fail-closed; the same-key retry replays the
+            // exact Space fence identity and can converge once that CAS is
+            // observable. Releasing here could let a delayed Space write
+            // publish a fence with no Node barrier.
             continue;
         };
         if matches!(space_fence.status.as_str(), "released" | "completed") {
