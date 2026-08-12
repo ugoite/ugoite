@@ -1,5 +1,7 @@
 import { UgoiteApiError } from "./ugoite-client/protocol";
 import { clearPendingLoginPath, rememberPendingLoginPath } from "./auth-route";
+import { auditApi } from "./audit-api";
+import type { NodeAuditEvent } from "./types";
 
 export type AuthConfig = {
   status: "uninitialized" | "active";
@@ -171,6 +173,9 @@ const createPasskey = async (
 export const authApi = {
   async getSession(): Promise<AuthSessionState> {
     return await request<AuthSessionState>("/auth/session", { method: "GET" });
+  },
+  async listAudit(): Promise<NodeAuditEvent[]> {
+    return await auditApi.listNode();
   },
   async getConfig(): Promise<AuthConfig> {
     const payload = await request<Record<string, unknown>>("/auth/config", {

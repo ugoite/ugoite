@@ -6,7 +6,8 @@ export type SettingsSectionId =
   | "members"
   | "agents"
   | "credentials"
-  | "storage";
+  | "storage"
+  | "audit";
 
 export const settingsSections: Array<{
   id: SettingsSectionId;
@@ -22,4 +23,5 @@ export const settingsSections: Array<{
     key: "settings.section.credentials",
   },
   { id: "storage", icon: "storage", key: "settings.section.storage" },
+  { id: "audit", icon: "history", key: "settings.section.audit" },
 ];
