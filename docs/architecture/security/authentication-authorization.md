@@ -124,7 +124,9 @@ or aggregation.
 `ugoite auth login` uses device authorization. The CLI creates a P-256 key,
 shows a user code and verification URL, and polls at the server-provided
 interval. Approval shows the device, Space, and action set and requires a recent
-Passkey. Five-minute opaque access tokens are DPoP-bound to the device key;
+Passkey. CLI access tokens are five-minute opaque credentials DPoP-bound to the
+device key; human MCP device credentials are resource-bound Bearer credentials
+or an explicitly presented DPoP credential.
 30-day refresh credentials rotate on every use. Reuse revokes the device grant.
 The private key uses the OS keychain where available and otherwise an owner-only
 file. The proof `htu` is checked against the configured canonical public URL

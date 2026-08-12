@@ -2319,10 +2319,14 @@ pub async fn delete_entry(
     hard_delete: bool,
     actor: &str,
 ) -> Result<()> {
-    let form_name = find_entry_form(op, ws_path, entry_id)
+    let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
     let mut row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
+
+    if row.deleted {
+        return Ok(());
+    }
 
     let mut delete_ts = now_ts();
     if delete_ts <= row.updated_at {
@@ -2381,6 +2385,7 @@ pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> 
                 "author": rev.author,
                 "updated_by": rev.updated_by,
                 "deleted_by": rev.deleted_by,
+                "operation": rev.operation,
             })
         })
         .collect::<Vec<_>>();

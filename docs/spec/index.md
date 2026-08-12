@@ -15,7 +15,7 @@ authoritative; indexes and query sessions are derived.
 ## Current boundary
 
 - Local CLI core mode directly opens Spaces.
-- The Rust server exposes REST, one read-only MCP resource, and static browser
+- The Rust server exposes REST, the small MCP v1 semantic facade, and static browser
   hosting.
 - The browser is server-backed.
 - Browser-local persistence and optional sync are planned.

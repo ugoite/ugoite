@@ -39,9 +39,10 @@ CI.
   `X-Ugoite-Human-Approval`. It is never echoed in a mutation JSON body,
   query string, log, or audit event.
 
-Browser requests authenticate with the `ugoite_session` HttpOnly cookie. CLI,
-MCP, and agent requests use `Authorization: DPoP <opaque-access-token>` plus a DPoP
-proof header. Bearer authorization uses hashes and authorization metadata;
+Browser requests authenticate with the `ugoite_session` HttpOnly cookie. CLI and
+agent requests use `Authorization: DPoP <opaque-access-token>` plus a DPoP proof
+header. Human MCP device credentials use a resource-bound Bearer token; an
+existing DPoP MCP credential still supplies one DPoP proof. Bearer authorization uses hashes and authorization metadata;
 force-reset response material is encrypted at rest only until its bounded
 one-time response is delivered. Plaintext bearer material is never audited.
 No endpoint accepts external OIDC tokens or preconfigured long-lived
@@ -89,7 +90,7 @@ must not canonicalize or reserialize the body before checking it.
 
 Responses for ordinary Node/API paths use the lazily created
 `response_hmac/default.json` material under the configured Space operator root.
-Requests under `/spaces/{space_id}/` and `/mcp/resources/{space_id}/` use the
+Requests under `/spaces/{space_id}/` use the
 matching Space material. The server percent-decodes the Space path segment
 exactly once and then applies the domain identifier rules. Unknown or invalid
 Space identifiers do not create storage and remain unsigned.

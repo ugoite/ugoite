@@ -17,7 +17,7 @@ release_notes:
   added:
   - A Rust-centered eight-crate workspace and one Deno workspace.
   - A single non-root runtime image layout with persistent /data storage.
-  - Local CLI core mode, server-backed browser behavior, and a resource-first MCP baseline.
+  - Local CLI core mode, server-backed browser behavior, and the small MCP semantic facade.
   changed:
   - Documentation now distinguishes shipped behavior from browser-local sync and other planned capability.
   - Release notes no longer imply that unpublished artifacts or split frontend/backend images exist.

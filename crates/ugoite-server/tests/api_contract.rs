@@ -244,9 +244,8 @@ async fn req_int_003_fails_closed_for_unknown_space_and_key_errors() {
 
 #[tokio::test]
 /// REQ-INT-003
-async fn req_int_003_uses_decoded_mcp_space_scope() {
+async fn req_int_003_removes_the_pre_v1_mcp_route() {
     let name = "response-hmac-encoded";
-    let storage = test_storage(name);
     create_test_space(name, "encoded-space").await;
     let app = initialized_app(name).await;
     let response = app
@@ -257,8 +256,138 @@ async fn req_int_003_uses_decoded_mcp_space_scope() {
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::LOCKED);
-    assert_response_signature(response, &storage, "spaces/encoded-space/hmac.json").await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn mcp_v1_transport_rejects_legacy_methods_and_validates_the_wire_shape() {
+    let app = initialized_app("mcp-v1-transport").await;
+    let legacy = app
+        .clone()
+        .oneshot(Request::get("/mcp").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(legacy.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(legacy.headers().get("allow").unwrap(), "POST");
+
+    let parse_error = app
+        .clone()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .body(Body::from("{"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(parse_error.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(json(parse_error).await["error"]["code"], -32700);
+
+    let missing_header = app
+        .clone()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header("accept", "application/json, text/event-stream")
+                .header("mcp-protocol-version", "2026-07-28")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing_header.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(json(missing_header).await["error"]["code"], -32020);
+
+    let unauthenticated = app
+        .clone()
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header("accept", "application/json, text/event-stream")
+                .header("mcp-protocol-version", "2026-07-28")
+                .header("mcp-method", "server/discover")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        json(unauthenticated).await,
+        serde_json::json!({"code":"AUTHENTICATION_REQUIRED","message":"MCP authentication is required"})
+    );
+
+    let invalid_resource = app
+        .oneshot(
+            Request::post("/mcp")
+                .header("content-type", "application/json")
+                .header("accept", "application/json, text/event-stream")
+                .header("mcp-protocol-version", "2026-07-28")
+                .header("mcp-method", "resources/read")
+                .header("mcp-name", "ugoite://entry/../history")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":"resource","method":"resources/read","params":{"uri":"ugoite://entry/../history","_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(invalid_resource.status(), StatusCode::OK);
+    assert_eq!(json(invalid_resource).await["error"]["code"], -32602);
+}
+
+#[tokio::test]
+async fn mcp_accepts_configured_cross_origin_clients_and_preflight_headers() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
+    let app = initialized_app_without_env_lock("mcp-cors").await;
+    let preflight = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/mcp")
+                .header("origin", "https://frontend.example")
+                .header("access-control-request-method", "POST")
+                .header(
+                    "access-control-request-headers",
+                    "Accept, Content-Type, MCP-Method, MCP-Name, MCP-Protocol-Version",
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(preflight.status(), StatusCode::OK);
+    assert_eq!(
+        preflight.headers().get("access-control-allow-origin"),
+        Some(&"https://frontend.example".parse().unwrap())
+    );
+
+    let actual = app
+        .oneshot(
+            Request::post("/mcp")
+                .header("origin", "https://frontend.example")
+                .header("content-type", "application/json")
+                .header("accept", "application/json, text/event-stream")
+                .header("mcp-protocol-version", "2026-07-28")
+                .header("mcp-method", "server/discover")
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(actual.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        actual.headers().get("access-control-allow-origin"),
+        Some(&"https://frontend.example".parse().unwrap())
+    );
 }
 
 #[tokio::test]
@@ -382,7 +511,7 @@ async fn req_sec_010_allows_configured_preflight_method_and_header_contract() {
                 .header("access-control-request-method", "POST")
                 .header(
                     "access-control-request-headers",
-                    "Accept, Authorization, Content-Type, Idempotency-Key, DPoP, X-Request-Id",
+                    "Accept, Authorization, Content-Type, Idempotency-Key, DPoP, X-Request-Id, MCP-Method, MCP-Name, MCP-Protocol-Version",
                 )
                 .body(Body::empty())
                 .unwrap(),
@@ -438,6 +567,9 @@ async fn req_sec_010_allows_configured_preflight_method_and_header_contract() {
             "content-type".to_owned(),
             "dpop".to_owned(),
             "idempotency-key".to_owned(),
+            "mcp-method".to_owned(),
+            "mcp-name".to_owned(),
+            "mcp-protocol-version".to_owned(),
             "x-request-id".to_owned(),
             "x-ugoite-human-approval".to_owned(),
         ])
@@ -623,7 +755,7 @@ async fn oauth_metadata_describes_device_and_dpop_surface() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let body = json(response).await;
-    assert_eq!(body["resource"], "http://localhost:8000");
+    assert_eq!(body["resource"], "http://localhost:8000/mcp");
     let documentation = body["resource_documentation"]
         .as_str()
         .expect("resource documentation URL");
@@ -662,6 +794,31 @@ fn openapi_does_not_publish_removed_credentials() {
     assert!(snapshot.pointer("/paths/~1auth~1login").is_none());
     assert!(snapshot.pointer("/paths/~1auth~1passkey~1start").is_some());
     assert!(snapshot.pointer("/paths/~1oauth~1token").is_some());
+}
+
+#[test]
+fn openapi_documents_resource_bound_mcp_agent_tokens() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    for path in [
+        "/oauth/token",
+        "/oauth/device/authorization",
+        "/oauth/agent/token",
+        "/spaces/{space_id}/agents/{agent_id}/delegated-token",
+    ] {
+        let schema = &snapshot["paths"][path]["post"]["requestBody"]["content"]["application/json"]
+            ["schema"];
+        assert_eq!(schema["properties"]["resource"]["format"], "uri", "{path}");
+        assert!(
+            schema["properties"]["resource"]["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("{issuer}/mcp")),
+            "{path}"
+        );
+    }
+    assert_eq!(
+        snapshot["paths"]["/oauth/token"]["post"]["summary"],
+        "Issue an access token, optionally bound to the MCP resource"
+    );
 }
 
 #[test]

@@ -264,11 +264,13 @@ pub async fn query_index(op: &Operator, ws_path: &str, query: &str) -> Result<Ve
     query_index_with_form_scopes(op, ws_path, query, &scopes).await
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EntryCandidate {
     pub form_name: String,
     pub entry_id: String,
     pub title: String,
+    pub created_at: f64,
+    pub updated_at: f64,
 }
 
 /// Selects only the bounded, globally ordered current Entry candidates.
@@ -279,6 +281,27 @@ pub(crate) async fn query_entry_candidates_authorized(
     form_filter: Option<&str>,
     keyword: Option<&str>,
     limit: usize,
+) -> Result<Vec<EntryCandidate>> {
+    query_entry_candidates_authorized_after(
+        op,
+        ws_path,
+        relation_scopes,
+        form_filter,
+        keyword,
+        limit,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn query_entry_candidates_authorized_after(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    form_filter: Option<&str>,
+    keyword: Option<&str>,
+    limit: usize,
+    after: Option<(&str, &str, &str)>,
 ) -> Result<Vec<EntryCandidate>> {
     if limit == 0 {
         return Ok(Vec::new());
@@ -311,6 +334,7 @@ pub(crate) async fn query_entry_candidates_authorized(
         keyword,
         limit,
         0,
+        after,
     )
     .await
 }
@@ -323,6 +347,7 @@ async fn query_entry_candidates_in_context(
     keyword: Option<&str>,
     limit: usize,
     offset: usize,
+    after: Option<(&str, &str, &str)>,
 ) -> Result<Vec<EntryCandidate>> {
     let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
     let normalized_keyword = keyword
@@ -351,7 +376,7 @@ async fn query_entry_candidates_in_context(
             .map(|predicate| format!(" WHERE {predicate}"))
             .unwrap_or_default();
         branches.push(format!(
-            "SELECT \"_ugoite_id\", \"_ugoite_title\", {} AS \"_ugoite_form\" FROM {}{}",
+            "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", {} AS \"_ugoite_form\" FROM {}{}",
             sql_string_literal(form_name),
             quote_identifier(relation),
             where_clause,
@@ -360,9 +385,20 @@ async fn query_entry_candidates_in_context(
     if branches.is_empty() {
         return Ok(Vec::new());
     }
+    let after_clause = after
+        .map(|(title, id, form)| {
+            format!(
+                " WHERE (\"_ugoite_title\" > {title} OR (\"_ugoite_title\" = {title} AND \"_ugoite_id\" > {id}) OR (\"_ugoite_title\" = {title} AND \"_ugoite_id\" = {id} AND \"_ugoite_form\" > {form}))",
+                title = sql_string_literal(title),
+                id = sql_string_literal(id),
+                form = sql_string_literal(form),
+            )
+        })
+        .unwrap_or_default();
     let sql = format!(
-        "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\" ORDER BY \"_ugoite_title\", \"_ugoite_id\", \"_ugoite_form\" LIMIT {} OFFSET {}",
+        "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\"{} ORDER BY \"_ugoite_title\", \"_ugoite_id\", \"_ugoite_form\" LIMIT {} OFFSET {}",
         branches.join(" UNION ALL "),
+        after_clause,
         limit,
         offset,
     );
@@ -386,6 +422,46 @@ async fn query_entry_candidates_in_context(
                     .and_then(Value::as_str)
                     .context("candidate plan is missing Entry title")?
                     .to_string(),
+                created_at: value
+                    .get("_ugoite_created_at")
+                    .and_then(Value::as_f64)
+                    .or_else(|| {
+                        value
+                            .get("_ugoite_created_at")
+                            .and_then(Value::as_i64)
+                            .map(|value| value as f64)
+                    })
+                    .or_else(|| {
+                        value
+                            .get("_ugoite_created_at")
+                            .and_then(Value::as_str)
+                            .and_then(|value| {
+                                chrono::DateTime::parse_from_rfc3339(value)
+                                    .ok()
+                                    .map(|value| value.timestamp_millis() as f64 / 1000.0)
+                            })
+                    })
+                    .context("candidate plan is missing Entry creation time")?,
+                updated_at: value
+                    .get("_ugoite_updated_at")
+                    .and_then(Value::as_f64)
+                    .or_else(|| {
+                        value
+                            .get("_ugoite_updated_at")
+                            .and_then(Value::as_i64)
+                            .map(|value| value as f64)
+                    })
+                    .or_else(|| {
+                        value
+                            .get("_ugoite_updated_at")
+                            .and_then(Value::as_str)
+                            .and_then(|value| {
+                                chrono::DateTime::parse_from_rfc3339(value)
+                                    .ok()
+                                    .map(|value| value.timestamp_millis() as f64 / 1000.0)
+                            })
+                    })
+                    .context("candidate plan is missing Entry update time")?,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -436,6 +512,7 @@ pub(crate) async fn query_entry_rows_authorized(
         keyword,
         limit,
         offset,
+        None,
     )
     .await?;
     let mut by_key = HashMap::<(String, String), entry::EntryRow>::new();

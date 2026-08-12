@@ -89,6 +89,43 @@ async fn test_search_req_srch_001_keyword_search() -> anyhow::Result<()> {
     let limited = search::search_entries(&op, &ws_path, "project", 1).await?;
     assert_eq!(limited.len(), 1);
 
+    let relation_scopes = form::list_forms(&op, &ws_path)
+        .await?
+        .into_iter()
+        .filter_map(|form| {
+            form.get("name")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
+        .map(|form_name| {
+            (
+                form_name.to_ascii_lowercase(),
+                ugoite_core::query::EntryScope::AllCurrent,
+            )
+        })
+        .collect();
+    let first_page = search::search_entries_with_scopes_after(
+        &op,
+        &ws_path,
+        "project",
+        &relation_scopes,
+        1,
+        None,
+    )
+    .await?;
+    let first = first_page.first().expect("first search page");
+    let second_page = search::search_entries_with_scopes_after(
+        &op,
+        &ws_path,
+        "project",
+        &relation_scopes,
+        1,
+        Some((&first.title, &first.id, &first.form)),
+    )
+    .await?;
+    assert_eq!(second_page.len(), 1);
+    assert_eq!(second_page[0].id, "entry3");
+
     Ok(())
 }
 

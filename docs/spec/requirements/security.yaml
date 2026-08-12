@@ -72,7 +72,7 @@ requirements:
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
-  - api/mcp.md#model-context-protocol-surface
+  - api/mcp.md#model-context-protocol-v1
   priority: high
   status: implemented
   verification: traced
@@ -255,7 +255,7 @@ requirements:
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
-  - api/mcp.md#model-context-protocol-surface
+  - api/mcp.md#model-context-protocol-v1
   priority: high
   status: implemented
   verification: traced
@@ -281,7 +281,8 @@ requirements:
     The Rust server is same-origin by default. When UGOITE_CORS_ALLOWED_ORIGINS is set to a non-empty,
     comma-separated list, credentialed browser responses use exact origin allowlisting. Preflight responses advertise
     only GET, POST, PUT, PATCH, DELETE, and OPTIONS plus Accept, Authorization, Content-Type, Idempotency-Key, DPoP,
-    and X-Request-Id; no wildcard is used. An unlisted origin does not receive Access-Control-Allow-Origin. This
+    and X-Request-Id plus the MCP protocol headers; no wildcard is used. An unlisted origin does not receive
+    Access-Control-Allow-Origin. This
     browser CORS permission is separate from CSRF protection: cookie-authenticated unsafe requests still require the
     canonical UGOITE_PUBLIC_ORIGIN.
   related_spec:
