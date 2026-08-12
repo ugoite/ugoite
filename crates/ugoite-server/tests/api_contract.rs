@@ -555,7 +555,7 @@ fn openapi_human_approval_is_server_derived_and_single_use() {
         4,
         "access.put must describe every path and approval header parameter"
     );
-    for status in ["409", "410", "500"] {
+    for status in ["400", "409", "410", "500"] {
         assert!(access_put["responses"].get(status).is_some());
     }
 }

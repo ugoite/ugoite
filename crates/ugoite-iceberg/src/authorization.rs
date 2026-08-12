@@ -10,6 +10,8 @@ use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
@@ -185,6 +187,8 @@ pub struct PolicyRevision {
 pub struct Authorizer {
     operator: Operator,
     lock: Arc<Mutex<()>>,
+    #[cfg(test)]
+    ambiguous_write_once: Arc<AtomicBool>,
 }
 
 fn authorization_write_lock() -> Arc<Mutex<()>> {
@@ -206,7 +210,14 @@ impl Authorizer {
         Self {
             operator,
             lock: authorization_write_lock(),
+            #[cfg(test)]
+            ambiguous_write_once: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    #[cfg(test)]
+    fn inject_ambiguous_write_once(&self) {
+        self.ambiguous_write_once.store(true, Ordering::SeqCst);
     }
 
     pub async fn initialize_owner(
@@ -688,20 +699,30 @@ impl Authorizer {
         match self.write_state(space_id, state).await {
             Ok(()) => Ok(()),
             Err(error) => {
-                // A remote CAS loser must not be exposed as an opaque 500 if
-                // another consumer already committed the single-use state.
-                // Re-read the authoritative object while the process lock is
-                // held and classify that outcome as the stable replay error.
-                let consumed_by_other = if let Some(approval_id) = approval_id {
-                    self.state(space_id)
-                        .await
+                // A remote CAS response can be lost after this exact state is
+                // durably committed. In that case the approval is consumed,
+                // but the mutation callback has not run; reporting replay
+                // would falsely imply that another caller won the mutation.
+                // Fail closed with an explicit unknown outcome so operators
+                // reconcile the durable state before retrying the operation.
+                let observed = self.state(space_id).await.ok();
+                if observed.as_ref().is_some_and(|current| {
+                    serde_json::to_vec_pretty(current)
                         .ok()
-                        .and_then(|current| current.human_approvals.get(&approval_id).cloned())
+                        .zip(serde_json::to_vec_pretty(state).ok())
+                        .is_some_and(|(observed, expected)| observed == expected)
+                }) {
+                    return Err(anyhow!("HUMAN_APPROVAL_OUTCOME_UNKNOWN"));
+                }
+                // If the desired state was not observed but the approval is
+                // consumed, another consumer committed it and this caller is
+                // the replay loser.
+                if approval_id.is_some_and(|approval_id| {
+                    observed
+                        .as_ref()
+                        .and_then(|current| current.human_approvals.get(&approval_id))
                         .is_some_and(|approval| approval.consumed_at.is_some())
-                } else {
-                    false
-                };
-                if consumed_by_other {
+                }) {
                     return Err(AppError::conflict(
                         ErrorCode::InvalidInput,
                         "HUMAN_APPROVAL_REPLAYED",
@@ -1606,6 +1627,10 @@ impl Authorizer {
             self.operator.write(&path, serialized).await?;
         } else {
             bail!("Space authorization state requires conditional storage capabilities");
+        }
+        #[cfg(test)]
+        if self.ambiguous_write_once.swap(false, Ordering::SeqCst) {
+            return Err(anyhow!("injected ambiguous authorization CAS response"));
         }
         Ok(())
     }
@@ -2636,6 +2661,72 @@ mod tests {
         let (_, mutation) = consuming.await??;
         mutation?;
         updating.await??;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn human_approval_ambiguous_commit_fails_closed_before_mutation() -> Result<()> {
+        let op = operator_from_uri("memory://human-approval-ambiguous-commit")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let credential = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), owner, "Owner")
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "entry-ambiguous".to_string(),
+            parent: None,
+        };
+        let (_, token) = authorizer
+            .issue_human_approval(
+                "demo",
+                HumanApprovalIssue {
+                    operation: "entry.delete".to_string(),
+                    action: Action::Delete,
+                    resource: resource.clone(),
+                    intent_hash: "d".repeat(64),
+                    actor_principal_id: owner,
+                    actor_credential_id: credential,
+                    issuer_principal_id: owner,
+                    issuer_account_id: Uuid::now_v7(),
+                    issuer_credential_id: credential,
+                    issuer_credential_generation: 0,
+                    issuer_node_account_lifecycle_epoch: 0,
+                    ttl: chrono::Duration::seconds(30),
+                },
+            )
+            .await?;
+        authorizer.inject_ambiguous_write_once();
+        let called = Arc::new(AtomicBool::new(false));
+        let callback_called = called.clone();
+        let error = authorizer
+            .consume_human_approval_with_audit_and(
+                "demo",
+                &token,
+                "entry.delete",
+                Action::Delete,
+                &resource,
+                &"d".repeat(64),
+                owner,
+                credential,
+                |_, _, _, _| Vec::new(),
+                || async move {
+                    callback_called.store(true, Ordering::SeqCst);
+                    Ok::<(), anyhow::Error>(())
+                },
+            )
+            .await
+            .expect_err("an ambiguous approval-state CAS must fail closed");
+        assert_eq!(error.to_string(), "HUMAN_APPROVAL_OUTCOME_UNKNOWN");
+        assert!(!called.load(Ordering::SeqCst));
+        assert!(authorizer
+            .state("demo")
+            .await?
+            .human_approvals
+            .values()
+            .all(|approval| approval.consumed_at.is_some()));
         Ok(())
     }
 

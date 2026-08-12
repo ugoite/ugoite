@@ -1890,6 +1890,119 @@ impl NodeIdentityService {
         self.write_state(&state).await
     }
 
+    /// Seed the Node bindings and credentials needed by cross-crate approval
+    /// tests. This is deliberately hidden from the public product contract;
+    /// production registration still requires the normal Passkey ceremony.
+    #[doc(hidden)]
+    pub async fn seed_test_human_approval_credentials(
+        &self,
+        space_uid: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        actor_principal_id: Uuid,
+        actor_account_id: Uuid,
+        issuer_credential_id: Uuid,
+        actor_credential_id: Uuid,
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let now = timestamp(Utc::now());
+        state.lifecycle = NodeLifecycle::Active;
+        state.setup = None;
+        for (account_id, display_name) in [
+            (issuer_account_id, "Approval issuer"),
+            (actor_account_id, "Approval actor"),
+        ] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: display_name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: now.clone(),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+            state.account_lifecycle_epochs.insert(account_id, 0);
+        }
+        for (principal_id, account_id) in [
+            (issuer_principal_id, issuer_account_id),
+            (actor_principal_id, actor_account_id),
+        ] {
+            state.bindings.push(PrincipalBinding {
+                space_uid,
+                principal_id,
+                node_account_id: account_id,
+                binding_method: BindingMethod::Setup,
+            });
+        }
+        state.authentication_methods.insert(
+            issuer_credential_id,
+            AuthenticationMethod {
+                method_id: issuer_credential_id,
+                account_id: issuer_account_id,
+                kind: AuthenticationMethodKind::Passkey,
+                external_subject: None,
+                created_at: now.clone(),
+                last_used_at: Some(now.clone()),
+            },
+        );
+        state.passkeys.insert(
+            issuer_credential_id.to_string(),
+            StoredPasskey {
+                credential_id: issuer_credential_id.to_string(),
+                account_id: issuer_account_id,
+                method_id: issuer_credential_id,
+                passkey: serde_json::from_value(serde_json::json!({
+                    "cred": {
+                        "cred_id": "AQIDBA",
+                        "cred": {
+                            "type_": "ES256",
+                            "key": {
+                                "EC_EC2": {
+                                    "curve": "SECP256R1",
+                                    "x": [194, 126, 127, 109, 252, 23, 131, 21, 252, 6, 223, 99, 44, 254, 140, 27, 230, 17, 94, 5, 133, 28, 104, 41, 144, 69, 171, 149, 161, 26, 200, 243],
+                                    "y": [143, 123, 183, 156, 24, 178, 21, 248, 117, 159, 162, 69, 171, 52, 188, 252, 26, 59, 6, 47, 103, 92, 19, 58, 117, 103, 249, 0, 219, 8, 95, 196]
+                                }
+                            }
+                        },
+                        "counter": 0,
+                        "transports": null,
+                        "user_verified": true,
+                        "backup_eligible": false,
+                        "backup_state": false,
+                        "registration_policy": "preferred",
+                        "extensions": {
+                            "cred_protect": "NotRequested",
+                            "hmac_create_secret": "NotRequested"
+                        },
+                        "attestation": {"data": "None", "metadata": "None"},
+                        "attestation_format": "None"
+                    }
+                }))?,
+                created_at: now.clone(),
+                last_used_at: Some(now.clone()),
+                rp_id: self.rp_id.clone(),
+            },
+        );
+        state.device_credentials.insert(
+            actor_credential_id,
+            DeviceCredential {
+                credential_id: actor_credential_id,
+                device_name: "Approval actor device".to_string(),
+                public_key_jwk: serde_json::json!({"kty":"EC"}),
+                account_id: actor_account_id,
+                credential_generation: 0,
+                created_at: now,
+                last_used_at: None,
+                expires_at: None,
+                revoked_at: None,
+            },
+        );
+        self.write_state(&state).await
+    }
+
     fn from_parts(
         state_store: Arc<dyn NodeControlStore>,
         secret_key: Arc<[u8]>,
@@ -6785,6 +6898,37 @@ mod tests {
         invitation
     }
 
+    fn test_passkey() -> Passkey {
+        serde_json::from_value(serde_json::json!({
+            "cred": {
+                "cred_id": "AQIDBA",
+                "cred": {
+                    "type_": "ES256",
+                    "key": {
+                        "EC_EC2": {
+                            "curve": "SECP256R1",
+                            "x": [194, 126, 127, 109, 252, 23, 131, 21, 252, 6, 223, 99, 44, 254, 140, 27, 230, 17, 94, 5, 133, 28, 104, 41, 144, 69, 171, 149, 161, 26, 200, 243],
+                            "y": [143, 123, 183, 156, 24, 178, 21, 248, 117, 159, 162, 69, 171, 52, 188, 252, 26, 59, 6, 47, 103, 92, 19, 58, 117, 103, 249, 0, 219, 8, 95, 196]
+                        }
+                    }
+                },
+                "counter": 0,
+                "transports": null,
+                "user_verified": true,
+                "backup_eligible": false,
+                "backup_state": false,
+                "registration_policy": "preferred",
+                "extensions": {
+                    "cred_protect": "NotRequested",
+                    "hmac_create_secret": "NotRequested"
+                },
+                "attestation": {"data": "None", "metadata": "None"},
+                "attestation_format": "None"
+            }
+        }))
+        .expect("test Passkey JSON must remain compatible with webauthn-rs")
+    }
+
     #[test]
     fn test_req_sec_012_concurrent_reset_winner_and_loser_session() {
         let account_id = Uuid::now_v7();
@@ -8896,6 +9040,248 @@ mod tests {
             found_paired.recovery_fence_id,
             provisional.recovery_fence_id
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn human_approval_helpers_linearize_issue_and_consume_with_node_revocation() -> Result<()>
+    {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let actor_account_id = Uuid::now_v7();
+        let actor_principal_id = Uuid::now_v7();
+        let agent_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let issuer_credential_id = Uuid::now_v7();
+        let second_issuer_credential_id = Uuid::now_v7();
+        let device_credential_id = Uuid::now_v7();
+        let agent_credential_id = Uuid::now_v7();
+        let now = timestamp(Utc::now());
+        let mut state = service.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
+        state.setup = None;
+        for (account_id, display_name) in [
+            (issuer_account_id, "Issuer"),
+            (actor_account_id, "CLI device owner"),
+        ] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: display_name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: now.clone(),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+            state.account_lifecycle_epochs.insert(account_id, 0);
+        }
+        for (method_id, key_id) in [
+            (issuer_credential_id, "issuer-key"),
+            (second_issuer_credential_id, "issuer-key-2"),
+        ] {
+            state.authentication_methods.insert(
+                method_id,
+                AuthenticationMethod {
+                    method_id,
+                    account_id: issuer_account_id,
+                    kind: AuthenticationMethodKind::Passkey,
+                    external_subject: None,
+                    created_at: now.clone(),
+                    last_used_at: Some(now.clone()),
+                },
+            );
+            state.passkeys.insert(
+                key_id.to_string(),
+                StoredPasskey {
+                    credential_id: key_id.to_string(),
+                    account_id: issuer_account_id,
+                    method_id,
+                    passkey: test_passkey(),
+                    created_at: now.clone(),
+                    last_used_at: Some(now.clone()),
+                    rp_id: "localhost".to_string(),
+                },
+            );
+        }
+        state.bindings.push(PrincipalBinding {
+            space_uid,
+            principal_id: actor_principal_id,
+            node_account_id: actor_account_id,
+            binding_method: BindingMethod::Setup,
+        });
+        state.device_credentials.insert(
+            device_credential_id,
+            DeviceCredential {
+                credential_id: device_credential_id,
+                device_name: "CLI device".to_string(),
+                public_key_jwk: serde_json::json!({"kty":"EC"}),
+                account_id: actor_account_id,
+                credential_generation: 0,
+                created_at: now.clone(),
+                last_used_at: None,
+                expires_at: None,
+                revoked_at: None,
+            },
+        );
+        state.agent_credentials.insert(
+            agent_credential_id,
+            AgentCredential {
+                credential_id: agent_credential_id,
+                agent_id: agent_principal_id,
+                public_key_jwk: serde_json::json!({"kty":"EC"}),
+                created_at: now,
+                last_used_at: None,
+                expires_at: None,
+                revoked_at: None,
+            },
+        );
+        service.write_state(&state).await?;
+
+        let issuer_epoch = service
+            .recovery_account_lifecycle_epoch(issuer_account_id)
+            .await?;
+        let (issued_actor, issued_epoch) = service
+            .with_active_human_approval_issuance(
+                issuer_credential_id,
+                Some(issuer_account_id),
+                ActiveCredentialKind::Passkey,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                device_credential_id,
+                space_uid,
+                |actor, epoch| async move { Ok::<_, anyhow::Error>((actor, epoch)) },
+            )
+            .await?;
+        assert_eq!(issued_actor, actor_principal_id);
+        assert_eq!(issued_epoch, issuer_epoch);
+        assert!(service
+            .with_active_approval_credentials(
+                device_credential_id,
+                Some(actor_account_id),
+                ActiveCredentialKind::Device,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                issued_epoch,
+                || async { Ok::<_, anyhow::Error>(()) },
+            )
+            .await
+            .is_ok());
+
+        service
+            .revoke_device_credential(actor_account_id, device_credential_id)
+            .await?;
+        assert!(service
+            .with_active_human_approval_issuance(
+                issuer_credential_id,
+                Some(issuer_account_id),
+                ActiveCredentialKind::Passkey,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                device_credential_id,
+                space_uid,
+                |_, _| async { Ok::<_, anyhow::Error>(()) },
+            )
+            .await
+            .is_err());
+
+        service
+            .with_active_human_approval_issuance(
+                agent_credential_id,
+                None,
+                ActiveCredentialKind::Agent,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                agent_credential_id,
+                space_uid,
+                |actor, epoch| async move { Ok::<_, anyhow::Error>((actor, epoch)) },
+            )
+            .await?;
+        assert!(service
+            .with_active_approval_credentials(
+                agent_credential_id,
+                None,
+                ActiveCredentialKind::Agent,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                issuer_epoch,
+                || async { Ok::<_, anyhow::Error>(()) },
+            )
+            .await
+            .is_ok());
+
+        service
+            .set_account_status(issuer_account_id, AccountStatus::Suspended)
+            .await?;
+        assert!(service
+            .with_active_approval_credentials(
+                agent_credential_id,
+                None,
+                ActiveCredentialKind::Agent,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                issuer_epoch,
+                || async { Ok::<_, anyhow::Error>(()) },
+            )
+            .await
+            .is_err());
+        service
+            .set_account_status(issuer_account_id, AccountStatus::Active)
+            .await?;
+        assert!(service
+            .with_active_approval_credentials(
+                agent_credential_id,
+                None,
+                ActiveCredentialKind::Agent,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                issuer_epoch,
+                || async { Ok::<_, anyhow::Error>(()) },
+            )
+            .await
+            .is_err());
+
+        service.revoke_agent_credentials(agent_principal_id).await?;
+        assert!(service
+            .with_active_human_approval_issuance(
+                issuer_credential_id,
+                Some(issuer_account_id),
+                ActiveCredentialKind::Passkey,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                agent_credential_id,
+                space_uid,
+                |_, _| async { Ok::<_, anyhow::Error>(()) },
+            )
+            .await
+            .is_err());
+
+        service
+            .revoke_passkey(issuer_account_id, 0, "issuer-key")
+            .await?;
+        assert!(service
+            .with_active_approval_credentials(
+                agent_credential_id,
+                None,
+                ActiveCredentialKind::Agent,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                issuer_epoch,
+                || async { Ok::<_, anyhow::Error>(()) },
+            )
+            .await
+            .is_err());
         Ok(())
     }
 

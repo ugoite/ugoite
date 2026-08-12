@@ -6392,6 +6392,17 @@
               }
             }
           },
+          "400": {
+            "description": "Malformed JSON request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "401": {
             "description": "Error",
             "content": {

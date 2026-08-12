@@ -5595,6 +5595,10 @@ fn approval_binding_error(error: anyhow::Error) -> ApiError {
             StatusCode::CONFLICT,
             json!({"code":"HUMAN_APPROVAL_REPLAYED","message":message}),
         ),
+        "HUMAN_APPROVAL_OUTCOME_UNKNOWN" => ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"code":"HUMAN_APPROVAL_OUTCOME_UNKNOWN","message":"the approval state was durably changed but the mutation outcome is unknown; reconcile before retrying"}),
+        ),
         "HUMAN_APPROVAL_INVALID" => ApiError::new(
             StatusCode::FORBIDDEN,
             json!({"code":"HUMAN_APPROVAL_INVALID","message":message}),
@@ -5607,6 +5611,7 @@ fn human_approval_failure_phase(error: &anyhow::Error) -> &'static str {
     match error.to_string().as_str() {
         "HUMAN_APPROVAL_REPLAYED" => "replayed",
         "HUMAN_APPROVAL_EXPIRED" => "expired",
+        "HUMAN_APPROVAL_OUTCOME_UNKNOWN" => "outcome_unknown",
         _ => "rejected",
     }
 }
@@ -9621,6 +9626,203 @@ mod authentication_regression_tests {
             )
             .await?;
         Ok((entry_id, token))
+    }
+
+    #[tokio::test]
+    async fn human_approval_issue_then_consume_uses_node_credential_lock() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-human-approval-node-lock")?;
+        state.initialize_node().await?;
+        let issuer_account_id = Uuid::from_u128(1943);
+        let issuer_principal_id = Uuid::from_u128(1944);
+        let actor_account_id = Uuid::from_u128(1945);
+        let actor_principal_id = Uuid::from_u128(1946);
+        let issuer_credential_id = Uuid::from_u128(1947);
+        let actor_credential_id = Uuid::from_u128(1948);
+        let space_id = state
+            .service
+            .create_space_for_principal("human-approval-node-lock", issuer_principal_id, "Owner")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        authorizer
+            .add_human_member(
+                &space_id,
+                issuer_principal_id,
+                SpacePrincipal {
+                    principal_id: actor_principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Approval actor".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Owner,
+            )
+            .await?;
+        state
+            .identity
+            .seed_test_human_approval_credentials(
+                space_uid,
+                issuer_principal_id,
+                issuer_account_id,
+                actor_principal_id,
+                actor_account_id,
+                issuer_credential_id,
+                actor_credential_id,
+            )
+            .await?;
+
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "approval-node-lock-entry".to_string(),
+            parent: None,
+        };
+        let intent = json!({"target_id": resource.id.clone(), "hard_delete": false});
+        let intent_digest = intent_hash(&intent)
+            .map_err(|error| anyhow::anyhow!("invalid test intent: {}", error.detail))?;
+        let approval_request = HumanApprovalIssue {
+            operation: "entry.delete".to_string(),
+            action: Action::Delete,
+            resource: resource.clone(),
+            intent_hash: intent_digest.clone(),
+            actor_principal_id,
+            actor_credential_id,
+            issuer_principal_id,
+            issuer_account_id,
+            issuer_credential_id,
+            issuer_credential_generation: 0,
+            issuer_node_account_lifecycle_epoch: 0,
+            ttl: chrono::Duration::seconds(30),
+        };
+        let issue_authorizer = authorizer.clone();
+        let issue_space_id = space_id.clone();
+        let (approval, token) = state
+            .identity
+            .with_active_human_approval_issuance(
+                issuer_credential_id,
+                Some(issuer_account_id),
+                ActiveCredentialKind::Passkey,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                actor_credential_id,
+                space_uid,
+                move |issued_actor, issuer_epoch| {
+                    let mut request = approval_request;
+                    request.actor_principal_id = issued_actor;
+                    request.issuer_node_account_lifecycle_epoch = issuer_epoch;
+                    let authorizer = issue_authorizer.clone();
+                    let space_id = issue_space_id.clone();
+                    async move { authorizer.issue_human_approval(&space_id, request).await }
+                },
+            )
+            .await?;
+
+        let mut identity = content_identity(actor_principal_id, space_uid);
+        identity.account_id = actor_account_id;
+        identity.request_identity.subject = AuthenticatedSubject::HumanAccount {
+            account_id: actor_account_id,
+        };
+        identity.request_identity.actor = Actor::Human {
+            account_id: actor_account_id,
+        };
+        identity.request_identity.credential_id = actor_credential_id;
+        identity.request_identity.authentication_method = RequestAuthenticationMethod::DeviceProof;
+        identity.request_identity.assurance = AssuranceLevel::Possession;
+        identity.token_principal_id = Some(actor_principal_id);
+        identity.token_actor_principal_id = Some(actor_principal_id);
+        let pending = PendingHumanApproval {
+            approval,
+            token,
+            intent_hash: intent_digest,
+        };
+        let (_, mutation) =
+            execute_approved_mutation(&state, &space_id, &identity, pending, || async {
+                Ok::<(), anyhow::Error>(())
+            })
+            .await?;
+        mutation?;
+
+        let entry = authorizer
+            .state(&space_id)
+            .await?
+            .human_approvals
+            .values()
+            .next()
+            .expect("issued approval")
+            .clone();
+        assert!(entry.consumed_at.is_some());
+
+        let second_intent = json!({
+            "target_id": "approval-node-lock-entry-2",
+            "hard_delete": false
+        });
+        let second_digest = intent_hash(&second_intent)
+            .map_err(|error| anyhow::anyhow!("invalid second test intent: {}", error.detail))?;
+        let second_authorizer = authorizer.clone();
+        let second_space_id = space_id.clone();
+        let second_digest_for_issue = second_digest.clone();
+        let (second_approval, second_token) = state
+            .identity
+            .with_active_human_approval_issuance(
+                issuer_credential_id,
+                Some(issuer_account_id),
+                ActiveCredentialKind::Passkey,
+                issuer_account_id,
+                issuer_credential_id,
+                0,
+                actor_credential_id,
+                space_uid,
+                move |issued_actor, issuer_epoch| {
+                    let authorizer = second_authorizer.clone();
+                    let space_id = second_space_id.clone();
+                    let request = HumanApprovalIssue {
+                        operation: "entry.delete".to_string(),
+                        action: Action::Delete,
+                        resource: ResourceRef {
+                            kind: ResourceKind::Entry,
+                            id: "approval-node-lock-entry-2".to_string(),
+                            parent: None,
+                        },
+                        intent_hash: second_digest_for_issue.clone(),
+                        actor_principal_id: issued_actor,
+                        actor_credential_id,
+                        issuer_principal_id,
+                        issuer_account_id,
+                        issuer_credential_id,
+                        issuer_credential_generation: 0,
+                        issuer_node_account_lifecycle_epoch: issuer_epoch,
+                        ttl: chrono::Duration::seconds(30),
+                    };
+                    async move { authorizer.issue_human_approval(&space_id, request).await }
+                },
+            )
+            .await?;
+        state
+            .identity
+            .revoke_device_credential(actor_account_id, actor_credential_id)
+            .await?;
+        let error = execute_approved_mutation(
+            &state,
+            &space_id,
+            &identity,
+            PendingHumanApproval {
+                approval: second_approval.clone(),
+                token: second_token,
+                intent_hash: second_digest,
+            },
+            || async { Ok::<(), anyhow::Error>(()) },
+        )
+        .await
+        .expect_err("revoked actor device must be rejected before consume");
+        assert!(error.to_string().contains("device credential"));
+        assert!(authorizer
+            .state(&space_id)
+            .await?
+            .human_approvals
+            .get(&second_approval.approval_id)
+            .is_some_and(|approval| approval.consumed_at.is_none()));
+        Ok(())
     }
 
     #[tokio::test]
