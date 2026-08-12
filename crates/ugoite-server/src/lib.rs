@@ -49,7 +49,7 @@ use ugoite_identity::{
     },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
-use uuid::{Uuid, Version};
+use uuid::{Uuid, Variant, Version};
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
@@ -2676,11 +2676,7 @@ async fn owner_rotate_backup_codes(
             json!({"code":"BACKUP_IDEMPOTENCY_KEY_INVALID","message":"Idempotency-Key must be a UUIDv4"}),
         ));
     };
-    let request_id = value
-        .to_str()
-        .ok()
-        .and_then(|value| Uuid::parse_str(value.trim()).ok())
-        .filter(|value| value.get_version() == Some(Version::Random))
+    let request_id = value.to_str().ok().and_then(parse_uuid_v4)
         .ok_or_else(|| {
             ApiError::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -2970,6 +2966,12 @@ async fn owner_rotate_backup_codes(
         })),
     )
         .into_response())
+}
+
+fn parse_uuid_v4(value: &str) -> Option<Uuid> {
+    Uuid::parse_str(value.trim()).ok().filter(|value| {
+        value.get_version() == Some(Version::Random) && value.get_variant() == Variant::RFC4122
+    })
 }
 
 async fn auth_owner_recovery_start(
@@ -6614,6 +6616,12 @@ mod authentication_regression_tests {
         routing::{get, post, put},
     };
     use tower::ServiceExt;
+
+    #[test]
+    fn backup_idempotency_requires_rfc4122_uuid_v4() {
+        assert!(parse_uuid_v4("018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12").is_some());
+        assert!(parse_uuid_v4("018f1f3a-9d7b-4e1b-0e3a-6e8a4a6d1f12").is_none());
+    }
 
     fn token_claims(sub: Uuid, actor_principal_id: Option<Uuid>) -> AccessTokenClaims {
         AccessTokenClaims {
