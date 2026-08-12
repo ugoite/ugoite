@@ -5,7 +5,8 @@
 use anyhow::Context as _;
 use axum::{
     extract::{
-        DefaultBodyLimit, Extension, Form, Multipart, OriginalUri, Path, Query, Request, State,
+        rejection::JsonRejection, DefaultBodyLimit, Extension, Form, Multipart, OriginalUri, Path,
+        Query, Request, State,
     },
     http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
@@ -3742,6 +3743,16 @@ fn auth_error(_error: anyhow::Error) -> ApiError {
     )
 }
 
+fn access_policy_json_rejection(error: JsonRejection) -> ApiError {
+    ApiError::new(
+        error.status(),
+        json!({
+            "code": "INVALID_INPUT",
+            "message": error.body_text(),
+        }),
+    )
+}
+
 fn recovery_aware_auth_error(error: anyhow::Error) -> ApiError {
     if error.to_string().contains("RECOVERY_FENCE_UNAVAILABLE") {
         return recovery_fence_unavailable();
@@ -6392,8 +6403,9 @@ async fn put_access_policy(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, kind, resource_id)): Path<(String, String, String)>,
-    Json(policy_value): Json<Value>,
+    policy_payload: Result<Json<Value>, JsonRejection>,
 ) -> ApiResult<Json<Value>> {
+    let Json(policy_value) = policy_payload.map_err(access_policy_json_rejection)?;
     reconcile_recovery_fences_api(&state, &space_id).await?;
     let policy: AccessPolicy = serde_json::from_value(policy_value.clone()).map_err(|error| {
         ApiError::new(
@@ -9337,6 +9349,40 @@ mod authentication_regression_tests {
             );
             assert_eq!(body["code"], "HUMAN_APPROVAL_INVALID");
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn access_policy_route_returns_json_for_malformed_json() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-human-approval-json-rejection")?;
+        let principal_id = Uuid::from_u128(1930);
+        let space_uid = Uuid::now_v7();
+        let route = Router::new()
+            .route(
+                "/spaces/{space_id}/policies/{kind}/{resource_id}",
+                axum::routing::put(put_access_policy),
+            )
+            .layer(Extension(content_identity(principal_id, space_uid)))
+            .with_state(state);
+
+        let response = route
+            .oneshot(
+                Request::put("/spaces/demo/policies/entry/entry-1")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from("{"))?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE),
+            Some(&HeaderValue::from_static("application/json"))
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+        let body: Value = serde_json::from_slice(&body)?;
+        assert_eq!(body["code"], "INVALID_INPUT");
+        assert!(body["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("Failed to parse the request body as JSON")));
         Ok(())
     }
 
