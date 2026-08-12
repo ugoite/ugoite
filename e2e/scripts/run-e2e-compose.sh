@@ -3,7 +3,8 @@
 # Used by local `mise run e2e` and by GitHub Actions e2e-ci.yml.
 #
 # Usage: ./e2e/scripts/run-e2e-compose.sh [test-type]
-#   test-type: "smoke", "asset-owned", "entries", "screenshot", or "full" (default)
+#   test-type: "smoke", "asset-owned", "smoke-and-asset-owned", "entries",
+#     "screenshot", or "full" (default)
 #
 # Environment variables:
 #   E2E_BUILD_IMAGES: "true" (default) to build local images before startup;
@@ -102,47 +103,64 @@ echo "Running E2E tests (type: $TEST_TYPE)..."
 echo "=========================================="
 
 cd "$ROOT_DIR/e2e"
-mkdir -p "$(dirname "$PLAYWRIGHT_JUNIT_OUTPUT_FILE")"
-rm -f "$PLAYWRIGHT_JUNIT_OUTPUT_FILE"
+base_report_file="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
+
+validate_junit_report() {
+  local report="$1"
+  PLAYWRIGHT_JUNIT_OUTPUT_FILE="$report" deno eval '
+    const report = Deno.env.get("PLAYWRIGHT_JUNIT_OUTPUT_FILE");
+    if (!report) throw new Error("PLAYWRIGHT_JUNIT_OUTPUT_FILE is required");
+    const xml = await Deno.readTextFile(report);
+    const suites = [...xml.matchAll(/<testsuite\b[^>]*>/g)].map((match) => match[0]);
+    const attr = (text, name) => Number(text.match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? 0);
+    const tests = suites.reduce((sum, suite) => sum + attr(suite, "tests"), 0);
+    const skipped = suites.reduce((sum, suite) => sum + attr(suite, "skipped"), 0);
+    if (tests === 0) throw new Error("e2e tests: zero executed tests");
+    if (skipped > 0) throw new Error(`e2e tests: skipped=${skipped} is not allowed`);
+    console.log(`e2e tests OK: tests=${tests}, skipped=${skipped}`);
+  '
+}
+
+run_e2e_task() {
+  local task="$1"
+  local report="$2"
+  export PLAYWRIGHT_JUNIT_OUTPUT_FILE="$report"
+  mkdir -p "$(dirname "$report")"
+  rm -f "$report"
+
+  cmd=(deno task "$task" --)
+  if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
+    cmd+=(--timeout "$E2E_TEST_TIMEOUT_MS")
+  fi
+  "${cmd[@]}"
+  validate_junit_report "$report"
+}
+
 case "$TEST_TYPE" in
   smoke)
-    cmd=(deno task smoke --)
-    ;;
-  entries)
-    cmd=(deno task entries --)
+    run_e2e_task smoke "$base_report_file"
     ;;
   asset-owned)
-    cmd=(deno task asset-owned --)
+    run_e2e_task asset-owned "$base_report_file"
+    ;;
+  smoke-and-asset-owned)
+    run_e2e_task smoke-and-asset-owned "$base_report_file"
+    ;;
+  entries)
+    run_e2e_task entries "$base_report_file"
     ;;
   screenshot)
-    cmd=(deno task screenshot --)
+    run_e2e_task screenshot "$base_report_file"
     ;;
   full)
-    cmd=(deno task full --)
+    run_e2e_task full "$base_report_file"
     ;;
   *)
     echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e-compose.sh [smoke|asset-owned|entries|screenshot|full]"
+    echo "Usage: ./run-e2e-compose.sh [smoke|asset-owned|smoke-and-asset-owned|entries|screenshot|full]"
     exit 1
     ;;
 esac
-if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
-  cmd+=(--timeout "$E2E_TEST_TIMEOUT_MS")
-fi
-"${cmd[@]}"
-
-deno eval '
-  const report = Deno.env.get("PLAYWRIGHT_JUNIT_OUTPUT_FILE");
-  if (!report) throw new Error("PLAYWRIGHT_JUNIT_OUTPUT_FILE is required");
-  const xml = await Deno.readTextFile(report);
-  const suites = [...xml.matchAll(/<testsuite\b[^>]*>/g)].map((match) => match[0]);
-  const attr = (text, name) => Number(text.match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? 0);
-  const tests = suites.reduce((sum, suite) => sum + attr(suite, "tests"), 0);
-  const skipped = suites.reduce((sum, suite) => sum + attr(suite, "skipped"), 0);
-  if (tests === 0) throw new Error("e2e tests: zero executed tests");
-  if (skipped > 0) throw new Error(`e2e tests: skipped=${skipped} is not allowed`);
-  console.log(`e2e tests OK: tests=${tests}, skipped=${skipped}`);
-'
 
 echo ""
 echo "=========================================="

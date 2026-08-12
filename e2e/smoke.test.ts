@@ -14,7 +14,7 @@ import {
   waitForServers,
 } from "./lib/client.ts";
 
-test.describe("Smoke Tests", () => {
+test.describe("Smoke Tests", { tag: "@smoke" }, () => {
   let spaceId = "";
 
   test.beforeAll(async ({ request }) => {

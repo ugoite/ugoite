@@ -426,7 +426,7 @@ test.describe("Entries CRUD", () => {
 		expect(entry.content).not.toContain(projectBetaId);
 	});
 
-	test("REQ-FE-1877: unrelated Forms own independently named scalar and list Assets", async ({
+	test("REQ-FE-1877: unrelated Forms own independently named scalar and list Assets", { tag: "@asset-owned" }, async ({
 		page,
 		request,
 	}) => {
