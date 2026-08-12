@@ -75,8 +75,52 @@ if [[ -n "$SEED_VALUE" ]] && ! [[ "$SEED_VALUE" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ -e "$ROOT_PATH/spaces/$SPACE_ID" ]]; then
-  echo "Refusing to overwrite existing local sample space: $ROOT_PATH/spaces/$SPACE_ID" >&2
+space_path_for_slug() {
+  deno eval --quiet '
+    const [spacesRoot, expectedSlug, requireCurrentIdentity] = Deno.args;
+    const uuidV7 =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    let matchingSpace;
+
+    try {
+      for await (const entry of Deno.readDir(spacesRoot)) {
+        if (!entry.isDirectory) continue;
+        const spacePath = `${spacesRoot}/${entry.name}`;
+        try {
+          const meta = JSON.parse(
+            await Deno.readTextFile(`${spacePath}/meta.json`),
+          );
+          if (requireCurrentIdentity === "true") {
+            if (
+              meta?.slug !== expectedSlug ||
+              !uuidV7.test(entry.name) ||
+              meta?.space_uid !== entry.name
+            ) {
+              continue;
+            }
+          } else if (
+            entry.name !== expectedSlug &&
+            meta?.slug !== expectedSlug
+          ) {
+            continue;
+          }
+          matchingSpace = spacePath;
+          break;
+        } catch {
+          // Ignore incomplete or unrelated top-level directories.
+        }
+      }
+    } catch {
+      // The spaces directory does not exist yet.
+    }
+
+    if (matchingSpace) console.log(matchingSpace);
+    else Deno.exit(1);
+  ' -- "$ROOT_PATH/spaces" "$SPACE_ID" "${1:-false}"
+}
+
+if existing_space="$(space_path_for_slug)"; then
+  echo "Refusing to overwrite existing local sample space: $existing_space" >&2
   echo "Choose a different space with UGOITE_SEED_SPACE_ID or --space-id." >&2
   exit 1
 fi
@@ -102,8 +146,6 @@ command=(
   --
   space
   sample-data
-  "$ROOT_PATH"
-  "$SPACE_ID"
   --scenario
   "$SCENARIO"
   --entry-count
@@ -114,11 +156,13 @@ if [[ -n "$SEED_VALUE" ]]; then
   command+=(--seed "$SEED_VALUE")
 fi
 
+command+=(-- "$ROOT_PATH" "$SPACE_ID")
+
 "${command[@]}"
 
-if [[ ! -d "$ROOT_PATH/spaces/$SPACE_ID" ]]; then
-  echo "Seed command finished but sample space directory is missing: $ROOT_PATH/spaces/$SPACE_ID" >&2
+if ! created_space="$(space_path_for_slug true)"; then
+  echo "Seed command finished but no Space with slug '$SPACE_ID' was found below: $ROOT_PATH/spaces" >&2
   exit 1
 fi
 
-echo "Verified seeded local sample space at $ROOT_PATH/spaces/$SPACE_ID" >&2
+echo "Verified seeded local sample space at $created_space" >&2

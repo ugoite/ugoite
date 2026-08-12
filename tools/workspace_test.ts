@@ -145,6 +145,168 @@ Deno.test("local runtime data uses one ignored repository mount", async () => {
   assertEquals(releaseCompose.includes("UGOITE_NODE_DIR"), false);
 });
 
+Deno.test("sample-data seeding is exposed through the root mise task", async () => {
+  const rootMise = await Deno.readTextFile("mise.toml");
+  const taskHeader = "[tasks.seed]";
+  const taskStart = rootMise.indexOf(taskHeader);
+  assertEquals(taskStart >= 0, true, "root seed task must exist");
+  const taskEnd = rootMise.indexOf("\n[tasks", taskStart + taskHeader.length);
+  const task = rootMise.slice(taskStart, taskEnd < 0 ? undefined : taskEnd);
+  assertEquals(
+    task.includes('run = "bash scripts/dev-seed.sh"'),
+    true,
+    "seed task must invoke the existing helper",
+  );
+});
+
+Deno.test("dev-seed forwards arguments and protects UUID-backed Spaces", async () => {
+  const root = await Deno.makeTempDir({ prefix: "ugoite-seed-forwarding-" });
+  const fakeBin = await Deno.makeTempDir({ prefix: "ugoite-seed-fake-bin-" });
+  const argsLog = `${fakeBin}/cargo-args`;
+  const fakeCargo = `${fakeBin}/cargo`;
+  const helperArgs = [
+    "--root",
+    root,
+    "--space-id",
+    "forwarded-space",
+    "--scenario",
+    "lab-qa",
+    "--entry-count",
+    "7",
+    "--seed",
+    "42",
+  ];
+  await Deno.writeTextFile(
+    fakeCargo,
+    `#!/bin/sh
+printf '%s\\n' "$@" > "$UGOITE_FAKE_CARGO_ARGS"
+space_dir="\${15}/spaces/019f0000-0000-7000-8000-000000000001"
+mkdir -p "$space_dir"
+printf '{"slug":"%s","space_uid":"019f0000-0000-7000-8000-000000000001"}' "\${16}" > "$space_dir/meta.json"
+printf '{"created":true,"id":"019f0000-0000-7000-8000-000000000001","slug":"%s","scenario":"%s","entry_count":%s}\\n' "\${16}" "$9" "\${11}"
+`,
+  );
+  await Deno.chmod(fakeCargo, 0o755);
+
+  try {
+    const env = {
+      ...Deno.env.toObject(),
+      PATH: `${fakeBin}:${Deno.env.get("PATH") ?? ""}`,
+      UGOITE_FAKE_CARGO_ARGS: argsLog,
+    };
+    const result = await new Deno.Command("bash", {
+      args: ["scripts/dev-seed.sh", ...helperArgs],
+      env,
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(result.success, true, new TextDecoder().decode(result.stderr));
+    const summary = JSON.parse(new TextDecoder().decode(result.stdout));
+    assertEquals(summary.slug, "forwarded-space");
+    assertEquals(summary.scenario, "lab-qa");
+    assertEquals(summary.entry_count, 7);
+
+    const spaces = [];
+    for await (const entry of Deno.readDir(`${root}/spaces`)) {
+      if (entry.isDirectory) spaces.push(entry.name);
+    }
+    assertEquals(spaces, ["019f0000-0000-7000-8000-000000000001"]);
+    const meta = JSON.parse(
+      await Deno.readTextFile(`${root}/spaces/${spaces[0]}/meta.json`),
+    );
+    assertEquals(meta.slug, "forwarded-space");
+    assertEquals(meta.space_uid, spaces[0]);
+
+    const second = await new Deno.Command("bash", {
+      args: ["scripts/dev-seed.sh", ...helperArgs],
+      env,
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(second.success, false);
+    assertEquals(
+      new TextDecoder().decode(second.stderr).includes(
+        "Refusing to overwrite existing local sample space",
+      ),
+      true,
+    );
+    assertEquals(
+      await Deno.readTextFile(argsLog),
+      "run\n-q\n-p\nugoite-cli\n--\nspace\nsample-data\n--scenario\nlab-qa\n--entry-count\n7\n--seed\n42\n--\n" +
+        `${root}\nforwarded-space\n`,
+    );
+
+    const legacyRoot = await Deno.makeTempDir({
+      prefix: "ugoite-seed-legacy-",
+    });
+    try {
+      const legacySpace = `${legacyRoot}/spaces/legacy-space`;
+      await Deno.mkdir(legacySpace, { recursive: true });
+      await Deno.writeTextFile(
+        `${legacySpace}/meta.json`,
+        '{"slug":"legacy-space"}',
+      );
+      const legacy = await new Deno.Command("bash", {
+        args: [
+          "scripts/dev-seed.sh",
+          "--root",
+          legacyRoot,
+          "--space-id",
+          "legacy-space",
+        ],
+        env,
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(legacy.success, false);
+      assertEquals(
+        new TextDecoder().decode(legacy.stderr).includes(
+          "Refusing to overwrite existing local sample space",
+        ),
+        true,
+      );
+    } finally {
+      await Deno.remove(legacyRoot, { recursive: true });
+    }
+
+    const legacyDirectoryRoot = await Deno.makeTempDir({
+      prefix: "ugoite-seed-legacy-directory-",
+    });
+    try {
+      const legacySpace = `${legacyDirectoryRoot}/spaces/directory-space`;
+      await Deno.mkdir(legacySpace, { recursive: true });
+      await Deno.writeTextFile(
+        `${legacySpace}/meta.json`,
+        '{"id":"directory-space","name":"directory-space"}',
+      );
+      const legacy = await new Deno.Command("bash", {
+        args: [
+          "scripts/dev-seed.sh",
+          "--root",
+          legacyDirectoryRoot,
+          "--space-id",
+          "directory-space",
+        ],
+        env,
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(legacy.success, false);
+      assertEquals(
+        new TextDecoder().decode(legacy.stderr).includes(
+          "Refusing to overwrite existing local sample space",
+        ),
+        true,
+      );
+    } finally {
+      await Deno.remove(legacyDirectoryRoot, { recursive: true });
+    }
+  } finally {
+    await Deno.remove(root, { recursive: true });
+    await Deno.remove(fakeBin, { recursive: true });
+  }
+});
+
 Deno.test("CI image and E2E tasks preserve the build-once contract", async () => {
   const rootMise = await Deno.readTextFile("mise.toml");
   const workflow = await Deno.readTextFile(".github/workflows/ci.yml");
