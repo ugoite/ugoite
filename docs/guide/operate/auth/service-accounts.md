@@ -15,4 +15,6 @@ principal and intersects both permission sets.
 
 Revoke the agent to disable all of its credentials. Agent creation, delegation,
 use and revocation are attributed in the Space audit chain. Agents cannot manage
-membership, ownership, or agents, and cannot receive `delete` or `share`.
+membership, ownership, or agents. A Space owner may grant an agent `delete` or
+`share` through a policy, but each supported dangerous mutation still requires
+a human approval object bound to the exact operation and actor credential.

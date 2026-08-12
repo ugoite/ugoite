@@ -29,6 +29,7 @@ const requestHeaderAllowlist = new Set([
   "if-none-match",
   "prefer",
   "x-request-id",
+  "x-ugoite-human-approval",
   "x-correlation-id",
   "x-trace-id",
   "x-b3-traceid",

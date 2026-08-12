@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    future::Future,
     sync::Arc,
 };
 use tokio::sync::Mutex;
@@ -1107,6 +1108,13 @@ pub struct NodeIdentityService {
     public_origin: String,
     encryption_key: Arc<String>,
     state_lock: Arc<Mutex<()>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActiveCredentialKind {
+    Passkey,
+    Device,
+    Agent,
 }
 
 impl NodeIdentityService {
@@ -2572,7 +2580,18 @@ impl NodeIdentityService {
         let now = timestamp(Utc::now());
         invalidate_pending_recovery_responses(&mut state, account_id, &now);
         state.passkeys.remove(credential_id);
-        self.write_state(&state).await
+        let account = state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account was checked above");
+        account.credential_generation = account
+            .credential_generation
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("credential generation overflow"))?;
+        self.write_state(&state).await?;
+        self.revoke_account_sessions(state.node_id, account_id, &now)
+            .await?;
+        Ok(())
     }
 
     pub async fn start_totp_enrollment(&self, account_id: Uuid) -> Result<serde_json::Value> {
@@ -4656,6 +4675,163 @@ impl NodeIdentityService {
         .await
     }
 
+    /// Verify the durable Node binding for a Passkey that authorized a
+    /// short-lived Space approval. This intentionally does not require a
+    /// current browser session: the recent Passkey check happens when the
+    /// approval is issued, while revocation/account-generation changes must
+    /// invalidate the approval before a delegated request consumes it.
+    pub async fn validate_active_passkey_credential(
+        &self,
+        account_id: Uuid,
+        credential_id: Uuid,
+    ) -> Result<u64> {
+        let state = self.read_state().await?;
+        let account = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| matches!(account.status, AccountStatus::Active))
+            .ok_or_else(|| anyhow!("approval issuer account is inactive"))?;
+        if !state
+            .passkeys
+            .values()
+            .any(|passkey| passkey.account_id == account_id && passkey.method_id == credential_id)
+        {
+            bail!("approval issuer Passkey is no longer registered");
+        }
+        Ok(account.credential_generation)
+    }
+
+    /// Hold the Node credential lock while the caller performs one
+    /// credential-authorized mutation. Credential revocation therefore
+    /// linearizes either before validation or after the mutation, never in
+    /// the gap between them.
+    pub async fn with_active_credential<T, F, Fut>(
+        &self,
+        credential_id: Uuid,
+        account_id: Option<Uuid>,
+        kind: ActiveCredentialKind,
+        operation: F,
+    ) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+    {
+        let _guard = self.state_lock.lock().await;
+        let state = self.read_state().await?;
+        validate_active_credential(&state, credential_id, account_id, kind)?;
+        operation().await
+    }
+
+    /// Validate the human issuer and the CLI/agent actor credential while
+    /// holding one Node lock. This closes the issuance window in which an
+    /// actor credential could be revoked after lookup but before the Space
+    /// approval was persisted.
+    pub async fn with_active_human_approval_issuance<T, F, Fut>(
+        &self,
+        request_credential_id: Uuid,
+        request_account_id: Option<Uuid>,
+        request_kind: ActiveCredentialKind,
+        issuer_account_id: Uuid,
+        issuer_credential_id: Uuid,
+        issuer_credential_generation: u64,
+        actor_credential_id: Uuid,
+        space_uid: Uuid,
+        operation: F,
+    ) -> Result<T>
+    where
+        F: FnOnce(Uuid, u64) -> Fut,
+        Fut: Future<Output = Result<T>>,
+    {
+        let _guard = self.state_lock.lock().await;
+        let state = self.read_state().await?;
+        validate_active_credential(
+            &state,
+            request_credential_id,
+            request_account_id,
+            request_kind,
+        )?;
+        validate_active_passkey(
+            &state,
+            issuer_account_id,
+            issuer_credential_id,
+            issuer_credential_generation,
+        )?;
+        let issuer_node_account_lifecycle_epoch = state
+            .account_lifecycle_epochs
+            .get(&issuer_account_id)
+            .copied()
+            .unwrap_or_default();
+        let actor_principal_id =
+            if let Some(credential) = state.agent_credentials.get(&actor_credential_id) {
+                validate_active_credential(
+                    &state,
+                    actor_credential_id,
+                    None,
+                    ActiveCredentialKind::Agent,
+                )
+                .map_err(|_| anyhow!("HUMAN_APPROVAL_ACTOR_INVALID"))?;
+                credential.agent_id
+            } else if let Some(credential) = state.device_credentials.get(&actor_credential_id) {
+                validate_active_credential(
+                    &state,
+                    actor_credential_id,
+                    Some(credential.account_id),
+                    ActiveCredentialKind::Device,
+                )
+                .map_err(|_| anyhow!("HUMAN_APPROVAL_ACTOR_INVALID"))?;
+                bound_principal_for_account(&state, Some(space_uid), credential.account_id)?
+                    .ok_or_else(|| anyhow!("HUMAN_APPROVAL_ACTOR_INVALID"))?
+            } else {
+                bail!("HUMAN_APPROVAL_ACTOR_INVALID")
+            };
+        operation(actor_principal_id, issuer_node_account_lifecycle_epoch).await
+    }
+
+    /// Validate both the request credential and the Passkey that issued a
+    /// Space human approval while holding the same Node lock used by
+    /// revocation. The callback then consumes the Space approval under its
+    /// own atomic lock.
+    pub async fn with_active_approval_credentials<T, F, Fut>(
+        &self,
+        request_credential_id: Uuid,
+        request_account_id: Option<Uuid>,
+        request_kind: ActiveCredentialKind,
+        issuer_account_id: Uuid,
+        issuer_credential_id: Uuid,
+        issuer_credential_generation: u64,
+        issuer_node_account_lifecycle_epoch: u64,
+        operation: F,
+    ) -> Result<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T>>,
+    {
+        let _guard = self.state_lock.lock().await;
+        let state = self.read_state().await?;
+        validate_active_credential(
+            &state,
+            request_credential_id,
+            request_account_id,
+            request_kind,
+        )?;
+        validate_active_passkey(
+            &state,
+            issuer_account_id,
+            issuer_credential_id,
+            issuer_credential_generation,
+        )?;
+        if state
+            .account_lifecycle_epochs
+            .get(&issuer_account_id)
+            .copied()
+            .unwrap_or_default()
+            != issuer_node_account_lifecycle_epoch
+        {
+            bail!("human approval issuer account lifecycle epoch is stale");
+        }
+        operation().await
+    }
+
     async fn validate_recent_passkey_session_state(
         &self,
         state: &NodeState,
@@ -6372,6 +6548,85 @@ fn recovery_session_is_committed(
 
 fn access_credential_key(node_id: Uuid, token_hash: &str) -> String {
     format!("nodes/{node_id}/oauth_grants/access/{token_hash}.json")
+}
+
+fn validate_active_credential(
+    state: &NodeState,
+    credential_id: Uuid,
+    account_id: Option<Uuid>,
+    kind: ActiveCredentialKind,
+) -> Result<()> {
+    match kind {
+        ActiveCredentialKind::Passkey => {
+            let account_id =
+                account_id.ok_or_else(|| anyhow!("human approval request account is missing"))?;
+            state
+                .accounts
+                .get(&account_id)
+                .filter(|account| matches!(account.status, AccountStatus::Active))
+                .ok_or_else(|| anyhow!("human approval request account is inactive"))?;
+            if !state.passkeys.values().any(|passkey| {
+                passkey.account_id == account_id && passkey.method_id == credential_id
+            }) {
+                bail!("human approval request Passkey is no longer registered");
+            }
+        }
+        ActiveCredentialKind::Device => {
+            let account_id =
+                account_id.ok_or_else(|| anyhow!("human approval request account is missing"))?;
+            let account = state
+                .accounts
+                .get(&account_id)
+                .filter(|account| matches!(account.status, AccountStatus::Active))
+                .ok_or_else(|| anyhow!("human approval request account is inactive"))?;
+            let credential = state
+                .device_credentials
+                .get(&credential_id)
+                .filter(|credential| {
+                    credential.account_id == account_id && credential.revoked_at.is_none()
+                })
+                .ok_or_else(|| anyhow!("human approval request device credential is revoked"))?;
+            if credential.credential_generation != account.credential_generation {
+                bail!("human approval request device credential generation is stale");
+            }
+            if let Some(expires_at) = credential.expires_at.as_deref() {
+                validate_expiry(expires_at, "human approval request device credential")?;
+            }
+        }
+        ActiveCredentialKind::Agent => {
+            let credential = state
+                .agent_credentials
+                .get(&credential_id)
+                .filter(|credential| credential.revoked_at.is_none())
+                .ok_or_else(|| anyhow!("human approval request agent credential is revoked"))?;
+            if let Some(expires_at) = credential.expires_at.as_deref() {
+                validate_expiry(expires_at, "human approval request agent credential")?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_active_passkey(
+    state: &NodeState,
+    account_id: Uuid,
+    credential_id: Uuid,
+    expected_generation: u64,
+) -> Result<()> {
+    let account = state
+        .accounts
+        .get(&account_id)
+        .filter(|account| matches!(account.status, AccountStatus::Active))
+        .ok_or_else(|| anyhow!("human approval issuer account is inactive"))?;
+    if account.credential_generation != expected_generation
+        || !state
+            .passkeys
+            .values()
+            .any(|passkey| passkey.account_id == account_id && passkey.method_id == credential_id)
+    {
+        bail!("human approval issuer Passkey is no longer registered");
+    }
+    Ok(())
 }
 
 fn validate_secret(record: Option<&OneTimeSecret>, supplied: &str, label: &str) -> Result<()> {

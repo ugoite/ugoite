@@ -149,8 +149,16 @@ the agent grant. Delegated tokens contain an actor chain and use the
 intersection of the agent grant and the current human's permissions.
 
 Agents cannot manage members, transfer ownership, or manage other agents.
-`delete` and `share` are unavailable to all noninteractive credentials until an
-interactive Passkey approval protocol exists.
+For automation, a recently reauthenticated human issues
+`POST /spaces/{space_id}/approvals` with the operation, strict operation-specific
+`mutation`, actor credential, and a 1–300 second `expires_in_seconds`. The
+server derives action/resource and the actor principal from the credential. The
+response contains a one-time `approval_token`; pass it as
+`X-Ugoite-Human-Approval` (the CLI accepts `--human-approval` or
+`UGOITE_HUMAN_APPROVAL`). The token is bound to the canonical intent and is
+atomically consumed before the mutation. A replay, route/body mismatch, expiry,
+or uncertain mutation result requires a new approval. Member, owner, agent,
+and Space-management operations remain Passkey-only.
 
 HTTP MCP is an OAuth protected resource. Discovery is available at
 `/.well-known/oauth-protected-resource` and

@@ -267,6 +267,7 @@ async fn req_sec_010_allows_configured_preflight_method_and_header_contract() {
             "dpop".to_owned(),
             "idempotency-key".to_owned(),
             "x-request-id".to_owned(),
+            "x-ugoite-human-approval".to_owned(),
         ])
     );
     assert!(!allow_methods.contains("*"));
@@ -504,5 +505,48 @@ fn openapi_publishes_read_only_space_health() {
     assert_eq!(
         health["parameters"][1]["name"], "checkpoint",
         "health validates only caller-named checkpoints"
+    );
+}
+
+#[test]
+fn openapi_human_approval_is_server_derived_and_single_use() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let request = snapshot
+        .pointer("/components/schemas/HumanApprovalIssueRequest")
+        .expect("human approval issue request schema");
+    assert_eq!(request["oneOf"].as_array().unwrap().len(), 4);
+    assert_eq!(
+        request["oneOf"][0],
+        serde_json::json!({
+            "$ref": "#/components/schemas/HumanApprovalEntryDeleteRequest"
+        })
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["HumanApprovalEntryDeleteRequest"]["properties"]
+            ["operation"]["const"],
+        "entry.delete"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["HumanApprovalAccessPutRequest"]["properties"]
+            ["operation"]["const"],
+        "access.put"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["HumanApprovalResponse"]["properties"]["approval_token"]
+            ["writeOnly"],
+        true
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["HumanApprovalResponse"]["properties"]["audit_status"]
+            ["$ref"],
+        "#/components/schemas/AuditStatus"
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["HumanApprovalDeleteMutation"]["required"],
+        serde_json::json!(["target_id"])
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["HumanApprovalEntryDeleteMutation"]["required"],
+        serde_json::json!(["target_id", "hard_delete"])
     );
 }

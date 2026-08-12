@@ -37,6 +37,8 @@ pub enum AssetSubCmd {
         )]
         space_path: String,
         asset_id: String,
+        #[arg(long)]
+        human_approval: Option<String>,
     },
 }
 
@@ -78,18 +80,24 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
         AssetSubCmd::Delete {
             space_path,
             asset_id,
+            human_approval,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset delete")?;
+            let human_approval =
+                human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
             if let Some(base) = validated_base_url(&config)? {
                 let result = http::execute(
                     &base,
                     "asset.delete",
-                    serde_json::json!({"space_id": space_id, "asset_id": asset_id}),
+                    serde_json::json!({"space_id": space_id, "asset_id": asset_id, "human_approval": human_approval}),
                     None,
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
+            }
+            if human_approval.is_some() {
+                anyhow::bail!("--human-approval is only supported in backend/api mode");
             }
             let service = UgoiteService::new(&root)?;
             service.delete_asset(&space_id, &asset_id).await?;

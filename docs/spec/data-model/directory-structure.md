@@ -57,8 +57,9 @@ The typed public `SpaceMeta` view exposes the identity, timestamp, and storage o
 {"default_form": "Entry"}
 ```
 
-Portable membership, principal, policy, and authorization-audit state is stored
-in `spaces/{space_id}/security/principals.json`. Membership-shaped keys in
+Portable membership, principal, policy, human-approval, approval-audit-outbox,
+and authorization-audit state is stored in
+`spaces/{space_id}/security/principals.json`. Membership-shaped keys in
 `settings.json` are legacy markers and are rejected rather than upgraded. UI
 theme, locale, and selected-Space preferences are user-scoped and belong in
 `users/{sha256(user_id)}/preferences.json`, not Space settings.

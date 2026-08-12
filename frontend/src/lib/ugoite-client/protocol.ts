@@ -54,6 +54,7 @@ export const UGOITE_API_OPERATIONS = [
   "agent.list",
   "agent.create",
   "agent.revoke",
+  "approval.issue",
   "access.get",
   "access.put",
   "asset.upload",

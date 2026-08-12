@@ -135,8 +135,12 @@ Agents are Space principals with a human sponsor, human owners, an expiry/review
 deadline, an autonomous/delegated mode, explicit grants, and independent public
 keys. Autonomous agents inherit no sponsor rights. Delegated requests evaluate
 the intersection of human policy, agent policy, token constraints, and resource
-policy. Agents cannot manage members or agents. Delete and share remain denied
-until the human approval-object flow exists.
+policy. Agents cannot manage members or agents. An active human with the
+current permission can issue a
+single-use human approval for the exact supported delete/share mutation; the
+server binds it to the operation, resource, intent, actor credential, expiry,
+and lifecycle epochs before consuming it. Member, owner, agent, and
+Space-management changes remain Passkey-only.
 
 OAuth authorization-server and protected-resource metadata are published under
 the standard `.well-known` paths. Ugoite resources accept only Ugoite-issued

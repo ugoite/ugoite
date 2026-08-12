@@ -248,7 +248,10 @@ requirements:
   title: Agent Principals and Scoped Proof-of-Possession Credentials
   description: Automation MUST use sponsored Agent Principals with independent public-key credentials, expiry,
     explicit Space/action grants, opaque short-lived access tokens, and attributable audit records. Agents MUST NOT
-    manage members, ownership, or agents, and delete/share MUST be rejected without recent human passkey approval.
+    manage members, ownership, or agents. The server MUST require a single-use human approval bound to the exact
+    operation, action, canonical resource, actor credential, lifecycle epochs, and 1–300 second expiry for
+    entry.delete, sql.delete, asset.delete, and access.put. Approval replay, mismatch, expiry, and ambiguous mutation
+    outcomes MUST fail closed and remain auditable.
   related_spec:
   - security/overview.md
   - api/rest.md#authentication

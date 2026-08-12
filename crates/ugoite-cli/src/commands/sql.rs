@@ -44,7 +44,12 @@ pub enum SqlSubCmd {
         parent_revision_id: String,
     },
     /// Delete a saved SQL query
-    SavedDelete { space_path: String, sql_id: String },
+    SavedDelete {
+        space_path: String,
+        sql_id: String,
+        #[arg(long)]
+        human_approval: Option<String>,
+    },
 }
 
 pub async fn run(cmd: SqlCmd) -> Result<()> {
@@ -169,19 +174,28 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 .await?;
             print_json(&result);
         }
-        SqlSubCmd::SavedDelete { space_path, sql_id } => {
+        SqlSubCmd::SavedDelete {
+            space_path,
+            sql_id,
+            human_approval,
+        } => {
             let (root, space_id) =
                 resolve_space_reference(&config, &space_path, "sql saved-delete")?;
+            let human_approval =
+                human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
             if let Some(base) = validated_base_url(&config)? {
                 let result = http::execute(
                     &base,
                     "sql.delete",
-                    serde_json::json!({"space_id": space_id, "sql_id": sql_id}),
+                    serde_json::json!({"space_id": space_id, "sql_id": sql_id, "human_approval": human_approval}),
                     None,
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
+            }
+            if human_approval.is_some() {
+                anyhow::bail!("--human-approval is only supported in backend/api mode");
             }
             let service = UgoiteService::new(&root)?;
             service.delete_saved_sql(&space_id, &sql_id, "cli").await?;
