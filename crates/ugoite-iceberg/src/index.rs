@@ -273,6 +273,12 @@ pub(crate) struct EntryCandidate {
     pub updated_at: f64,
 }
 
+struct EntryCandidatePage<'a> {
+    limit: usize,
+    offset: usize,
+    after: Option<(&'a str, &'a str, &'a str)>,
+}
+
 /// Selects only the bounded, globally ordered current Entry candidates.
 pub(crate) async fn query_entry_candidates_authorized(
     op: &Operator,
@@ -332,9 +338,11 @@ pub(crate) async fn query_entry_candidates_authorized_after(
         relation_scopes,
         form_filter,
         keyword,
-        limit,
-        0,
-        after,
+        &EntryCandidatePage {
+            limit,
+            offset: 0,
+            after,
+        },
     )
     .await
 }
@@ -345,9 +353,7 @@ async fn query_entry_candidates_in_context(
     relation_scopes: &BTreeMap<String, EntryScope>,
     form_filter: Option<&str>,
     keyword: Option<&str>,
-    limit: usize,
-    offset: usize,
-    after: Option<(&str, &str, &str)>,
+    page: &EntryCandidatePage<'_>,
 ) -> Result<Vec<EntryCandidate>> {
     let normalized_form = form_filter.map(str::trim).filter(|value| !value.is_empty());
     let normalized_keyword = keyword
@@ -385,7 +391,8 @@ async fn query_entry_candidates_in_context(
     if branches.is_empty() {
         return Ok(Vec::new());
     }
-    let after_clause = after
+    let after_clause = page
+        .after
         .map(|(title, id, form)| {
             format!(
                 " WHERE (\"_ugoite_title\" > {title} OR (\"_ugoite_title\" = {title} AND \"_ugoite_id\" > {id}) OR (\"_ugoite_title\" = {title} AND \"_ugoite_id\" = {id} AND \"_ugoite_form\" > {form}))",
@@ -399,8 +406,8 @@ async fn query_entry_candidates_in_context(
         "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\"{} ORDER BY \"_ugoite_title\", \"_ugoite_id\", \"_ugoite_form\" LIMIT {} OFFSET {}",
         branches.join(" UNION ALL "),
         after_clause,
-        limit,
-        offset,
+        page.limit,
+        page.offset,
     );
     let values = record_batches_to_values(&context.execute(&sql).await.map_err(map_sql_error)?)?;
     let mut candidates = values
@@ -465,7 +472,7 @@ async fn query_entry_candidates_in_context(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    candidates.truncate(limit);
+    candidates.truncate(page.limit);
     Ok(candidates)
 }
 
@@ -510,9 +517,11 @@ pub(crate) async fn query_entry_rows_authorized(
         relation_scopes,
         form_filter,
         keyword,
-        limit,
-        offset,
-        None,
+        &EntryCandidatePage {
+            limit,
+            offset,
+            after: None,
+        },
     )
     .await?;
     let mut by_key = HashMap::<(String, String), entry::EntryRow>::new();
