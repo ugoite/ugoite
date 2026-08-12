@@ -169,6 +169,11 @@ jobs:
 
       - name: Rust, tool, frontend, and docsite tests
         id: test
+        env:
+          # Keep the mise task graph parallel while leaving enough CPU for
+          # Vitest during Cargo's workspace test build.
+          MISE_JOBS: "2"
+          CARGO_BUILD_JOBS: "2"
         run: scripts/measure-step.sh test mise run test
 
       - name: Frontend coverage
