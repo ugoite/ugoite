@@ -30,6 +30,10 @@ run = [
   "deno task dev",
 ]
 
+[tasks.seed]
+description = "Seed local sample data with the development helper"
+run = "bash scripts/dev-seed.sh"
+
 [tasks.fmt]
 run = [
   "cargo fmt --all",

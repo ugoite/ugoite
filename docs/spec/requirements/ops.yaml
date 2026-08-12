@@ -250,15 +250,15 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-016
   title: Local Dev Sample-Data Seeding Workflow
-  description: A root developer task should expose sample-data seeding. A helper script exists, but no root mise task is currently defined.
+  description: The root developer task `mise run seed` exposes the existing sample-data helper with configurable local root, Space ID, scenario, entry count, and seed inputs.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
-  status: planned
+  status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-iceberg/tests/test_sample_data.rs
+  - file: tools/workspace_test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
