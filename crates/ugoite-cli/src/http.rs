@@ -20,17 +20,48 @@ pub async fn execute(
     execute_prepared(base_url, prepared).await
 }
 
+/// Execute a multipart operation while keeping path, authentication, and
+/// response decoding in the same native transport as JSON operations.
+pub async fn execute_multipart(
+    base_url: &str,
+    operation: &str,
+    arguments: Value,
+    field_name: &str,
+    filename: &str,
+    data: Vec<u8>,
+    media_type: &str,
+) -> Result<Value> {
+    let prepared = prepare_request(operation, &arguments, None)?;
+    if prepared.body_kind != RequestBodyKind::Multipart {
+        bail!("operation {operation} does not require a multipart body");
+    }
+    let operation_name = prepared.operation.clone();
+    let (_, request) = authenticated_request(base_url, &prepared).await?;
+    let part = reqwest::multipart::Part::bytes(data)
+        .file_name(filename.to_string())
+        .mime_str(media_type)?;
+    let form = reqwest::multipart::Form::new().part(field_name.to_string(), part);
+    send_and_decode(&operation_name, request.multipart(form)).await
+}
+
 async fn execute_prepared(base_url: &str, prepared: PreparedRequest) -> Result<Value> {
     let operation = prepared.operation.clone();
+    let (_, mut request) = authenticated_request(base_url, &prepared).await?;
+    request = match (prepared.body_kind, prepared.body) {
+        (RequestBodyKind::Multipart, _) => bail!("operation {operation} requires multipart"),
+        (RequestBodyKind::Json, Some(body)) => request.body(body),
+        (RequestBodyKind::Json, None) => bail!("operation {operation} requires a JSON body"),
+        (RequestBodyKind::None, _) => request,
+    };
+    send_and_decode(&operation, request).await
+}
+
+async fn authenticated_request(
+    base_url: &str,
+    prepared: &PreparedRequest,
+) -> Result<(String, reqwest::RequestBuilder)> {
     let url = join_base_and_path(base_url, &prepared.path);
     crate::config::validate_server_endpoint_url(&url, "Remote request")?;
-    let method_name = match prepared.method {
-        HttpMethod::Get => "GET",
-        HttpMethod::Post => "POST",
-        HttpMethod::Put => "PUT",
-        HttpMethod::Patch => "PATCH",
-        HttpMethod::Delete => "DELETE",
-    };
     let mut request = match prepared.method {
         HttpMethod::Get => client().get(&url),
         HttpMethod::Post => client().post(&url),
@@ -46,15 +77,13 @@ async fn execute_prepared(base_url: &str, prepared: PreparedRequest) -> Result<V
             .header("Authorization", format!("DPoP {}", session.access_token))
             .header(
                 "DPoP",
-                crate::commands::auth::dpop_proof(&session, method_name, &url)?,
+                crate::commands::auth::dpop_proof(&session, prepared.method.as_str(), &url)?,
             );
     }
-    request = match (prepared.body_kind, prepared.body) {
-        (RequestBodyKind::Multipart, _) => bail!("operation {operation} requires multipart"),
-        (RequestBodyKind::Json, Some(body)) => request.body(body),
-        (RequestBodyKind::Json, None) => bail!("operation {operation} requires a JSON body"),
-        (RequestBodyKind::None, _) => request,
-    };
+    Ok((url, request))
+}
+
+async fn send_and_decode(operation: &str, request: reqwest::RequestBuilder) -> Result<Value> {
     let response = request
         .send()
         .await
@@ -73,7 +102,7 @@ async fn execute_prepared(base_url: &str, prepared: PreparedRequest) -> Result<V
         .collect();
     let body = response.text().await?;
     decode_response(
-        &operation,
+        operation,
         ApiResponse {
             status: status.as_u16(),
             status_text,
