@@ -274,7 +274,8 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-010
   title: Credentialed CORS Allowlist
-  description: The Rust server is same-origin by default. When UGOITE_CORS_ALLOWED_ORIGINS is set to a non-empty,
+  description: >-
+    The Rust server is same-origin by default. When UGOITE_CORS_ALLOWED_ORIGINS is set to a non-empty,
     comma-separated list, credentialed browser responses use exact origin allowlisting. Preflight responses advertise
     only GET, POST, PUT, PATCH, DELETE, and OPTIONS plus Accept, Authorization, Content-Type, Idempotency-Key, DPoP,
     and X-Request-Id; no wildcard is used. An unlisted origin does not receive Access-Control-Allow-Origin. This
