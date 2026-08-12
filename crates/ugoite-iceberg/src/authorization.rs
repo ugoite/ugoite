@@ -189,6 +189,8 @@ pub struct Authorizer {
     lock: Arc<Mutex<()>>,
     #[cfg(test)]
     ambiguous_write_once: Arc<AtomicBool>,
+    #[cfg(test)]
+    ambiguous_write_with_post_commit_writer_once: Arc<AtomicBool>,
 }
 
 fn authorization_write_lock() -> Arc<Mutex<()>> {
@@ -212,12 +214,20 @@ impl Authorizer {
             lock: authorization_write_lock(),
             #[cfg(test)]
             ambiguous_write_once: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            ambiguous_write_with_post_commit_writer_once: Arc::new(AtomicBool::new(false)),
         }
     }
 
     #[cfg(test)]
     fn inject_ambiguous_write_once(&self) {
         self.ambiguous_write_once.store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    fn inject_ambiguous_write_with_post_commit_writer_once(&self) {
+        self.ambiguous_write_with_post_commit_writer_once
+            .store(true, Ordering::SeqCst);
     }
 
     pub async fn initialize_owner(
@@ -714,14 +724,32 @@ impl Authorizer {
                 }) {
                     return Err(anyhow!("HUMAN_APPROVAL_OUTCOME_UNKNOWN"));
                 }
-                // If the desired state was not observed but the approval is
-                // consumed, another consumer committed it and this caller is
-                // the replay loser.
+                // Attribute the consumed transition to this caller before
+                // classifying a non-identical state as a replay. A later
+                // writer may have changed an unrelated field after this
+                // caller's CAS committed, so `consumed_at.is_some()` alone
+                // is not evidence that another consumer won.
+                let desired_consumed_at = approval_id.and_then(|approval_id| {
+                    state
+                        .human_approvals
+                        .get(&approval_id)
+                        .and_then(|approval| approval.consumed_at.as_deref())
+                });
+                if desired_consumed_at.is_some_and(|desired_consumed_at| {
+                    observed
+                        .as_ref()
+                        .and_then(|current| current.human_approvals.get(&approval_id?))
+                        .and_then(|approval| approval.consumed_at.as_deref())
+                        == Some(desired_consumed_at)
+                }) {
+                    return Err(anyhow!("HUMAN_APPROVAL_OUTCOME_UNKNOWN"));
+                }
                 if approval_id.is_some_and(|approval_id| {
                     observed
                         .as_ref()
                         .and_then(|current| current.human_approvals.get(&approval_id))
-                        .is_some_and(|approval| approval.consumed_at.is_some())
+                        .and_then(|approval| approval.consumed_at.as_deref())
+                        .is_some()
                 }) {
                     return Err(AppError::conflict(
                         ErrorCode::InvalidInput,
@@ -1627,6 +1655,23 @@ impl Authorizer {
             self.operator.write(&path, serialized).await?;
         } else {
             bail!("Space authorization state requires conditional storage capabilities");
+        }
+        #[cfg(test)]
+        if self
+            .ambiguous_write_with_post_commit_writer_once
+            .swap(false, Ordering::SeqCst)
+        {
+            let mut later_state = state.clone();
+            later_state.revision = later_state
+                .revision
+                .checked_add(1)
+                .expect("test revision does not overflow");
+            self.operator
+                .write(&path, serde_json::to_vec_pretty(&later_state)?)
+                .await?;
+            return Err(anyhow!(
+                "injected ambiguous authorization CAS response after a later writer"
+            ));
         }
         #[cfg(test)]
         if self.ambiguous_write_once.swap(false, Ordering::SeqCst) {
@@ -2719,6 +2764,72 @@ mod tests {
             )
             .await
             .expect_err("an ambiguous approval-state CAS must fail closed");
+        assert_eq!(error.to_string(), "HUMAN_APPROVAL_OUTCOME_UNKNOWN");
+        assert!(!called.load(Ordering::SeqCst));
+        assert!(authorizer
+            .state("demo")
+            .await?
+            .human_approvals
+            .values()
+            .all(|approval| approval.consumed_at.is_some()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn human_approval_post_commit_writer_stays_unknown_before_mutation() -> Result<()> {
+        let op = operator_from_uri("memory://human-approval-post-commit-writer")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let credential = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), owner, "Owner")
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "entry-post-commit-writer".to_string(),
+            parent: None,
+        };
+        let (_, token) = authorizer
+            .issue_human_approval(
+                "demo",
+                HumanApprovalIssue {
+                    operation: "entry.delete".to_string(),
+                    action: Action::Delete,
+                    resource: resource.clone(),
+                    intent_hash: "e".repeat(64),
+                    actor_principal_id: owner,
+                    actor_credential_id: credential,
+                    issuer_principal_id: owner,
+                    issuer_account_id: Uuid::now_v7(),
+                    issuer_credential_id: credential,
+                    issuer_credential_generation: 0,
+                    issuer_node_account_lifecycle_epoch: 0,
+                    ttl: chrono::Duration::seconds(30),
+                },
+            )
+            .await?;
+        authorizer.inject_ambiguous_write_with_post_commit_writer_once();
+        let called = Arc::new(AtomicBool::new(false));
+        let callback_called = called.clone();
+        let error = authorizer
+            .consume_human_approval_with_audit_and(
+                "demo",
+                &token,
+                "entry.delete",
+                Action::Delete,
+                &resource,
+                &"e".repeat(64),
+                owner,
+                credential,
+                |_, _, _, _| Vec::new(),
+                || async move {
+                    callback_called.store(true, Ordering::SeqCst);
+                    Ok::<(), anyhow::Error>(())
+                },
+            )
+            .await
+            .expect_err("a post-commit writer must keep the mutation outcome unknown");
         assert_eq!(error.to_string(), "HUMAN_APPROVAL_OUTCOME_UNKNOWN");
         assert!(!called.load(Ordering::SeqCst));
         assert!(authorizer
