@@ -45,6 +45,10 @@ export interface AssetFieldState {
   pendingUploads: Accessor<PendingAssetUpload[]>;
   previewUrls: Accessor<Map<string, string>>;
   setPreviewUrls: Setter<Map<string, string>>;
+  previewBlobs: Accessor<Map<string, Blob>>;
+  setPreviewBlobs: Setter<Map<string, Blob>>;
+  previewSignatures: Accessor<Map<string, string>>;
+  setPreviewSignatures: Setter<Map<string, string>>;
   unavailableIds: Accessor<Set<string>>;
   setUnavailableIds: Setter<Set<string>>;
   readingIds: Accessor<Set<string>>;
@@ -66,6 +70,7 @@ export interface AssetFieldState {
   ) => void;
   cancelUpload: (item: PendingAssetUpload) => void;
   removeReference: (index: number) => void;
+  invalidatePreview: (assetId: string) => void;
   moveReference: (index: number, delta: -1 | 1) => void;
   resetForGeneration: (generation: number) => void;
   dispose: () => void;
@@ -79,6 +84,12 @@ export function createAssetFieldState(): AssetFieldState {
   const [previewUrls, setPreviewUrls] = createSignal<Map<string, string>>(
     new Map(),
   );
+  const [previewBlobs, setPreviewBlobs] = createSignal<Map<string, Blob>>(
+    new Map(),
+  );
+  const [previewSignatures, setPreviewSignatures] = createSignal<
+    Map<string, string>
+  >(new Map());
   const [unavailableIds, setUnavailableIds] = createSignal<Set<string>>(
     new Set(),
   );
@@ -109,6 +120,8 @@ export function createAssetFieldState(): AssetFieldState {
     setUnavailableIds(new Set());
     revokePreviewUrls();
     setPreviewUrls(new Map());
+    setPreviewBlobs(new Map());
+    setPreviewSignatures(new Map());
     setLocalFiles(new Map());
   };
 
@@ -153,20 +166,41 @@ export function createAssetFieldState(): AssetFieldState {
     });
   };
 
+  const invalidatePreview = (assetId: string) => {
+    readControllers.get(assetId)?.abort();
+    readControllers.delete(assetId);
+    setReadingIds((ids) => {
+      const next = new Set(ids);
+      next.delete(assetId);
+      return next;
+    });
+    setPreviewUrls((urls) => {
+      const next = new Map(urls);
+      const preview = next.get(assetId);
+      if (preview) URL.revokeObjectURL(preview);
+      next.delete(assetId);
+      return next;
+    });
+    setPreviewBlobs((blobs) => {
+      const next = new Map(blobs);
+      next.delete(assetId);
+      return next;
+    });
+    setPreviewSignatures((signatures) => {
+      const next = new Map(signatures);
+      next.delete(assetId);
+      return next;
+    });
+  };
+
   const removeReference = (index: number) => {
     const current = currentReferences();
     const removed = current[index];
     if (!removed) return;
     removePendingForAsset(removed.asset_id);
+    invalidatePreview(removed.asset_id);
     setLocalFiles((files) => {
       const next = new Map(files);
-      next.delete(removed.asset_id);
-      return next;
-    });
-    setPreviewUrls((urls) => {
-      const next = new Map(urls);
-      const preview = next.get(removed.asset_id);
-      if (preview) URL.revokeObjectURL(preview);
       next.delete(removed.asset_id);
       return next;
     });
@@ -256,13 +290,7 @@ export function createAssetFieldState(): AssetFieldState {
       setReferences(next);
 
       if (item.replaceAssetId) {
-        setPreviewUrls((urls) => {
-          const nextUrls = new Map(urls);
-          const preview = nextUrls.get(item.replaceAssetId!);
-          if (preview) URL.revokeObjectURL(preview);
-          nextUrls.delete(item.replaceAssetId!);
-          return nextUrls;
-        });
+        invalidatePreview(item.replaceAssetId);
         setUnavailableIds((ids) => {
           const nextIds = new Set(ids);
           nextIds.delete(item.replaceAssetId!);
@@ -345,6 +373,10 @@ export function createAssetFieldState(): AssetFieldState {
     pendingUploads,
     previewUrls,
     setPreviewUrls,
+    previewBlobs,
+    setPreviewBlobs,
+    previewSignatures,
+    setPreviewSignatures,
     unavailableIds,
     setUnavailableIds,
     readingIds,
@@ -358,6 +390,7 @@ export function createAssetFieldState(): AssetFieldState {
     retryUpload,
     cancelUpload,
     removeReference,
+    invalidatePreview,
     moveReference,
     resetForGeneration,
     dispose: () => resetForGeneration((generation ?? 0) + 1),

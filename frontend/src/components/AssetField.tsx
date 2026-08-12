@@ -1,4 +1,5 @@
 import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
+import { AssetPreview } from "./AssetPreview";
 import { assetApi } from "~/lib/ugoite-client";
 import { locale, t } from "~/lib/i18n";
 import {
@@ -13,6 +14,7 @@ import {
   parseAssetReference,
   parseAssetReferenceList,
 } from "~/lib/asset-reference";
+import { previewMediaType, resolvePreviewKind } from "~/lib/asset-preview";
 import type { AssetReference } from "~/lib/types";
 
 type PendingUpload = PendingAssetUpload;
@@ -47,6 +49,10 @@ export function AssetField(props: AssetFieldProps) {
   const pendingUploads = state.pendingUploads;
   const previewUrls = state.previewUrls;
   const setPreviewUrls = state.setPreviewUrls;
+  const previewBlobs = state.previewBlobs;
+  const setPreviewBlobs = state.setPreviewBlobs;
+  const previewSignatures = state.previewSignatures;
+  const setPreviewSignatures = state.setPreviewSignatures;
   const unavailableIds = state.unavailableIds;
   const setUnavailableIds = state.setUnavailableIds;
   const readingIds = state.readingIds;
@@ -86,6 +92,10 @@ export function AssetField(props: AssetFieldProps) {
       );
     return new Set(persisted.map((reference) => reference.asset_id));
   });
+  const previewSignature = (reference: AssetReference) =>
+    `${reference.name}\u0000${previewMediaType(reference)}\u0000${
+      resolvePreviewKind(reference)
+    }`;
   let observedPersistedIds: Set<string> | undefined;
 
   createEffect(() => {
@@ -93,6 +103,20 @@ export function AssetField(props: AssetFieldProps) {
     // tied to this component's mount lifetime, because Fields and Preview
     // are separate conditional views of the same draft state.
     state.resetForGeneration(props.generation ?? 0);
+  });
+
+  createEffect(() => {
+    const referencesById = new Map(
+      parsedValue().references.map((
+        reference,
+      ) => [reference.asset_id, reference]),
+    );
+    for (const [assetId, signature] of previewSignatures()) {
+      const reference = referencesById.get(assetId);
+      if (!reference || previewSignature(reference) !== signature) {
+        state.invalidatePreview(assetId);
+      }
+    }
   });
 
   createEffect(() => {
@@ -173,40 +197,104 @@ export function AssetField(props: AssetFieldProps) {
     state.moveReference(index, delta);
   };
 
-  const readReference = async (reference: AssetReference) => {
+  const loadReference = async (
+    reference: AssetReference,
+    signal: AbortSignal,
+    purpose: "preview" | "download",
+  ) => {
+    const isPersisted = persistedIds().has(reference.asset_id);
+    const localFile = localFiles().get(reference.asset_id);
+    let blob: Blob;
+    if (!isPersisted && localFile) {
+      // A provisional upload is not yet readable through the authorized
+      // Entry endpoint. Keep the local File usable without pretending it is
+      // already attached to the Entry.
+      blob = localFile;
+    } else {
+      const formName = props.formName?.trim();
+      const entryId = props.entryId?.trim();
+      if (!formName || !entryId) throw new Error("Asset context unavailable");
+      blob = await assetApi.read(
+        props.spaceId,
+        reference.asset_id,
+        formName,
+        entryId,
+        signal,
+      );
+    }
+    // get_asset returns application/octet-stream by design. Form-owned
+    // metadata supplies the logical type needed by browser-native previews;
+    // downloads stay inert even when the logical type is active markup.
+    return new Blob([blob], {
+      type: purpose === "preview"
+        ? previewMediaType(reference)
+        : "application/octet-stream",
+    });
+  };
+
+  const readReference = async (
+    reference: AssetReference,
+    purpose: "preview" | "download",
+    action: (blob: Blob) => void,
+  ) => {
     const activeGeneration = props.generation ?? 0;
     const controller = new AbortController();
     state.readControllers.set(reference.asset_id, controller);
     setReadingIds((ids) => new Set([...ids, reference.asset_id]));
     try {
-      const isPersisted = persistedIds().has(reference.asset_id);
-      const localFile = localFiles().get(reference.asset_id);
-      let blob: Blob;
-      if (!isPersisted && localFile) {
-        // A provisional upload is not yet readable through the authorized
-        // Entry endpoint. Keep the local File usable without pretending it is
-        // already attached to the Entry.
-        blob = localFile;
-      } else {
-        const formName = props.formName?.trim();
-        const entryId = props.entryId?.trim();
-        if (!formName || !entryId) throw new Error("Asset context unavailable");
-        blob = await assetApi.read(
-          props.spaceId,
-          reference.asset_id,
-          formName,
-          entryId,
-          controller.signal,
-        );
-      }
       // A tab switch may unmount this view while the authorized read is in
       // flight. Do not create object URLs or trigger a download from a dead
       // view; a later mount can retry using the shared draft state.
+      const blob = await loadReference(reference, controller.signal, purpose);
       if (
         disposed || controller.signal.aborted ||
         !state.isActive(activeGeneration)
       ) return;
+      action(blob);
+      setUnavailableIds((ids) => {
+        const next = new Set(ids);
+        next.delete(reference.asset_id);
+        return next;
+      });
+    } catch (error) {
+      if (!isAbortError(error) && state.isActive(activeGeneration)) {
+        setUnavailableIds((ids) => new Set([...ids, reference.asset_id]));
+      }
+    } finally {
+      if (state.isActive(activeGeneration)) {
+        if (state.readControllers.get(reference.asset_id) === controller) {
+          state.readControllers.delete(reference.asset_id);
+        }
+        setReadingIds((ids) => {
+          if (state.readControllers.has(reference.asset_id)) return ids;
+          const next = new Set(ids);
+          next.delete(reference.asset_id);
+          return next;
+        });
+      }
+    }
+  };
+
+  const previewReference = (reference: AssetReference) => {
+    const signature = previewSignature(reference);
+    if (
+      previewUrls().has(reference.asset_id) &&
+      previewBlobs().has(reference.asset_id) &&
+      previewSignatures().get(reference.asset_id) === signature
+    ) return;
+    state.invalidatePreview(reference.asset_id);
+    setPreviewSignatures((signatures) => {
+      const next = new Map(signatures);
+      next.set(reference.asset_id, signature);
+      return next;
+    });
+    void readReference(reference, "preview", (blob) => {
       const url = URL.createObjectURL(blob);
+      setPreviewBlobs((blobs) => {
+        const next = new Map(blobs);
+        next.set(reference.asset_id, blob);
+        return next;
+      });
       setPreviewUrls((urls) => {
         const next = new Map(urls);
         const previous = next.get(reference.asset_id);
@@ -214,29 +302,49 @@ export function AssetField(props: AssetFieldProps) {
         next.set(reference.asset_id, url);
         return next;
       });
-      setUnavailableIds((ids) => {
-        const next = new Set(ids);
-        next.delete(reference.asset_id);
-        return next;
-      });
+    });
+  };
+
+  const downloadReference = (reference: AssetReference) => {
+    const existingUrl = previewSignatures().get(reference.asset_id) ===
+        previewSignature(reference)
+      ? previewUrls().get(reference.asset_id)
+      : undefined;
+    const cachedBlob = previewBlobs().get(reference.asset_id);
+    if (existingUrl && cachedBlob) {
+      const url = URL.createObjectURL(
+        new Blob([cachedBlob], { type: "application/octet-stream" }),
+      );
       const link = document.createElement("a");
       link.href = url;
       link.download = reference.name;
       link.click();
-    } catch (error) {
-      if (!isAbortError(error) && state.isActive(activeGeneration)) {
-        setUnavailableIds((ids) => new Set([...ids, reference.asset_id]));
-      }
-    } finally {
-      if (state.isActive(activeGeneration)) {
-        state.readControllers.delete(reference.asset_id);
-        setReadingIds((ids) => {
-          const next = new Set(ids);
-          next.delete(reference.asset_id);
-          return next;
-        });
-      }
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
     }
+    void readReference(reference, "download", (blob) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = reference.name;
+      link.click();
+      // Keep the URL alive long enough for browsers to start asynchronous
+      // download navigation, including Safari and Firefox.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  };
+
+  const previewFor = (assetId: string) => {
+    const reference = parsedValue().references.find((candidate) =>
+      candidate.asset_id === assetId
+    );
+    if (
+      !reference ||
+      previewSignatures().get(assetId) !== previewSignature(reference)
+    ) return undefined;
+    const url = previewUrls().get(assetId);
+    const blob = previewBlobs().get(assetId);
+    return url && blob ? { url, blob } : undefined;
   };
 
   const statusText = (reference: AssetReference) => {
@@ -271,99 +379,114 @@ export function AssetField(props: AssetFieldProps) {
 
       <For each={parsedValue().references}>
         {(reference, index) => (
-          <div class="ui-card ui-asset-item">
-            <Show
-              when={previewUrls().get(reference.asset_id) &&
-                reference.media_type.startsWith("image/") &&
-                reference.media_type !== "image/svg+xml"}
-            >
-              <img
-                class="ui-asset-preview"
-                src={previewUrls().get(reference.asset_id)}
-                alt={reference.name}
-              />
+          <div class="ui-card ui-asset-item ui-asset-item-with-preview">
+            <div class="ui-asset-item-header">
+              <div class="min-w-0 flex-1">
+                <p class="truncate font-medium">{reference.name}</p>
+                <p class="text-xs ui-muted">
+                  {reference.media_type} · {formatAssetSize(
+                    reference.size_bytes,
+                    locale() === "ja" ? "ja-JP" : "en-US",
+                  )}
+                </p>
+                <p class="text-xs ui-muted" role="status">
+                  {statusText(reference)}
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                <Show when={resolvePreviewKind(reference) !== "unsupported"}>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary ui-button-sm"
+                    onClick={() => previewReference(reference)}
+                    disabled={readingIds().has(reference.asset_id) ||
+                      (!localFiles().has(reference.asset_id) &&
+                        (!persistedIds().has(reference.asset_id) ||
+                          !props.formName?.trim() || !props.entryId?.trim()))}
+                  >
+                    {readingIds().has(reference.asset_id)
+                      ? t("assetField.status.reading")
+                      : t("assetField.action.preview")}
+                  </button>
+                </Show>
+                <button
+                  type="button"
+                  class="ui-button ui-button-secondary ui-button-sm"
+                  onClick={() => downloadReference(reference)}
+                  disabled={readingIds().has(reference.asset_id) ||
+                    (!localFiles().has(reference.asset_id) &&
+                      (!persistedIds().has(reference.asset_id) ||
+                        !props.formName?.trim() || !props.entryId?.trim()))}
+                >
+                  {readingIds().has(reference.asset_id)
+                    ? t("assetField.status.reading")
+                    : t("assetField.action.download")}
+                </button>
+                <Show when={!props.readOnly}>
+                  <label class="ui-button ui-button-secondary ui-button-sm">
+                    {t("assetField.action.replace")}
+                    <input
+                      type="file"
+                      class="ui-sr-only"
+                      aria-label={t("assetField.action.replace")}
+                      onChange={(event) => {
+                        const input = event.currentTarget;
+                        chooseFiles(
+                          Array.from(input.files ?? []),
+                          reference.asset_id,
+                        );
+                        input.value = "";
+                      }}
+                    />
+                  </label>
+                </Show>
+                <Show when={!props.readOnly && props.multiple}>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary ui-button-sm"
+                    onClick={() => moveReference(index(), -1)}
+                    disabled={index() === 0}
+                    aria-label={t("assetField.action.moveUp", {
+                      name: reference.name,
+                    })}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-secondary ui-button-sm"
+                    onClick={() => moveReference(index(), 1)}
+                    disabled={index() === parsedValue().references.length - 1}
+                    aria-label={t("assetField.action.moveDown", {
+                      name: reference.name,
+                    })}
+                  >
+                    ↓
+                  </button>
+                </Show>
+                <Show when={!props.readOnly}>
+                  <button
+                    type="button"
+                    class="ui-button ui-button-danger ui-button-sm"
+                    onClick={() => removeReference(index())}
+                    aria-label={t("assetField.action.remove", {
+                      name: reference.name,
+                    })}
+                  >
+                    {t("assetField.action.remove")}
+                  </button>
+                </Show>
+              </div>
+            </div>
+            <Show when={previewFor(reference.asset_id)}>
+              {(preview) => (
+                <AssetPreview
+                  reference={reference}
+                  blob={preview().blob}
+                  url={preview().url}
+                />
+              )}
             </Show>
-            <div class="min-w-0 flex-1">
-              <p class="truncate font-medium">{reference.name}</p>
-              <p class="text-xs ui-muted">
-                {reference.media_type} · {formatAssetSize(
-                  reference.size_bytes,
-                  locale() === "ja" ? "ja-JP" : "en-US",
-                )}
-              </p>
-              <p class="text-xs ui-muted" role="status">
-                {statusText(reference)}
-              </p>
-            </div>
-            <div class="flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                class="ui-button ui-button-secondary ui-button-sm"
-                onClick={() => void readReference(reference)}
-                disabled={readingIds().has(reference.asset_id) ||
-                  (!localFiles().has(reference.asset_id) &&
-                    (!persistedIds().has(reference.asset_id) ||
-                      !props.formName?.trim() || !props.entryId?.trim()))}
-              >
-                {readingIds().has(reference.asset_id)
-                  ? t("assetField.status.reading")
-                  : t("assetField.action.download")}
-              </button>
-              <Show when={!props.readOnly}>
-                <label class="ui-button ui-button-secondary ui-button-sm">
-                  {t("assetField.action.replace")}
-                  <input
-                    type="file"
-                    class="ui-sr-only"
-                    aria-label={t("assetField.action.replace")}
-                    onChange={(event) => {
-                      const input = event.currentTarget;
-                      chooseFiles(
-                        Array.from(input.files ?? []),
-                        reference.asset_id,
-                      );
-                      input.value = "";
-                    }}
-                  />
-                </label>
-              </Show>
-              <Show when={!props.readOnly && props.multiple}>
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary ui-button-sm"
-                  onClick={() => moveReference(index(), -1)}
-                  disabled={index() === 0}
-                  aria-label={t("assetField.action.moveUp", {
-                    name: reference.name,
-                  })}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  class="ui-button ui-button-secondary ui-button-sm"
-                  onClick={() => moveReference(index(), 1)}
-                  disabled={index() === parsedValue().references.length - 1}
-                  aria-label={t("assetField.action.moveDown", {
-                    name: reference.name,
-                  })}
-                >
-                  ↓
-                </button>
-              </Show>
-              <Show when={!props.readOnly}>
-                <button
-                  type="button"
-                  class="ui-button ui-button-danger ui-button-sm"
-                  onClick={() => removeReference(index())}
-                  aria-label={t("assetField.action.remove", {
-                    name: reference.name,
-                  })}
-                >
-                  {t("assetField.action.remove")}
-                </button>
-              </Show>
-            </div>
           </div>
         )}
       </For>

@@ -268,8 +268,9 @@ describe("AssetField", () => {
       expect(screen.getByText("first.txt"))
         .toBeInTheDocument()
     );
-    fireEvent.click(screen.getByRole("button", { name: "Open or download" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(assetApi.read).not.toHaveBeenCalled();
+    expect(await screen.findByText("data")).toBeInTheDocument();
   });
 
   it("applies queued list uploads to the latest draft after tab and list edits", async () => {
@@ -405,12 +406,128 @@ describe("AssetField", () => {
         onChange={() => undefined}
       />
     ));
-    fireEvent.click(screen.getByRole("button", { name: "Open or download" }));
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
     await waitFor(() =>
       expect(screen.getByText("File bytes unavailable; metadata preserved"))
         .toBeInTheDocument()
     );
     expect(screen.getByText("first.txt")).toBeInTheDocument();
+  });
+
+  it("downloads cached preview bytes without issuing a second authorized read", async () => {
+    const state = createAssetFieldState();
+    const encoded = serializeAssetReference(first);
+    render(() => (
+      <AssetField
+        fieldId="document"
+        fieldName="document"
+        value={encoded}
+        persistedValue={encoded}
+        multiple={false}
+        spaceId="default"
+        formName="Contracts"
+        entryId="entry-1"
+        state={state}
+        onChange={() => undefined}
+      />
+    ));
+    state.setPreviewBlobs(new Map([[first.asset_id, new Blob(["cached"])]]));
+    state.setPreviewUrls(new Map([[first.asset_id, "blob:cached"]]));
+    state.setPreviewSignatures(
+      new Map([[
+        first.asset_id,
+        `${first.name}\u0000${first.media_type}\u0000text`,
+      ]]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+    expect(assetApi.read).not.toHaveBeenCalled();
+  });
+
+  it("keeps download-only object URLs inert for active markup", async () => {
+    const html = {
+      ...first,
+      name: "page.html",
+      media_type: "text/html",
+    };
+    (assetApi.read as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Blob(["<script>alert(1)</script>"], { type: "text/html" }),
+    );
+    const originalCreateObjectURL = URL.createObjectURL;
+    const createObjectURL = vi.fn((blob: Blob) => {
+      expect(blob.type).toBe("application/octet-stream");
+      return "blob:download";
+    });
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectURL,
+    });
+    try {
+      render(() => (
+        <AssetField
+          fieldId="document"
+          fieldName="document"
+          value={serializeAssetReference(html)}
+          persistedValue={serializeAssetReference(html)}
+          multiple={false}
+          spaceId="default"
+          formName="Contracts"
+          entryId="entry-1"
+          onChange={() => undefined}
+        />
+      ));
+      fireEvent.click(screen.getByRole("button", { name: "Download" }));
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
+    } finally {
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: originalCreateObjectURL,
+      });
+    }
+  });
+
+  it("does not restore a preview after its asset is removed during an authorized read", async () => {
+    let resolveRead: ((blob: Blob) => void) | undefined;
+    (assetApi.read as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise<Blob>((resolve) => resolveRead = resolve),
+    );
+    const [value, setValue] = createSignal(serializeAssetReference(first));
+    const state = createAssetFieldState();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const createObjectURL = vi.fn(() => "blob:removed");
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectURL,
+    });
+    try {
+      render(() => (
+        <AssetField
+          fieldId="document"
+          fieldName="document"
+          value={value()}
+          persistedValue={value()}
+          multiple={false}
+          spaceId="default"
+          formName="Contracts"
+          entryId="entry-1"
+          state={state}
+          onChange={setValue}
+        />
+      ));
+      fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+      await waitFor(() => expect(assetApi.read).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+      resolveRead?.(new Blob(["removed"]));
+      await waitFor(() => expect(state.readingIds().size).toBe(0));
+      expect(createObjectURL).not.toHaveBeenCalled();
+      expect(state.previewUrls().size).toBe(0);
+    } finally {
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: originalCreateObjectURL,
+      });
+    }
   });
 
   it("ignores an authorized read completion after the initiating view unmounts", async () => {
@@ -461,7 +578,7 @@ describe("AssetField", () => {
           />
         </Show>
       ));
-      fireEvent.click(screen.getByRole("button", { name: "Open or download" }));
+      fireEvent.click(screen.getByRole("button", { name: "Preview" }));
       await waitFor(() => expect(assetApi.read).toHaveBeenCalled());
       setMode("preview");
       resolveRead?.(new Blob(["data"], { type: "text/plain" }));

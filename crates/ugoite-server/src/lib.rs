@@ -59,7 +59,7 @@ use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 pub const OPENAPI_JSON: &str = include_str!("openapi.json");
 const OAUTH_RESOURCE_DOCUMENTATION_URL: &str =
     "https://ugoite.github.io/ugoite/docs/guide/operate/auth/auth-overview/";
-const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'";
+const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob: data:; frame-src 'self' blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'";
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
@@ -7104,6 +7104,8 @@ mod security_headers_tests {
         assert!(SECURITY_HEADERS_CSP.contains("script-src 'self'"));
         assert!(!SECURITY_HEADERS_CSP.contains("script-src 'unsafe-inline'"));
         assert!(SECURITY_HEADERS_CSP.contains("img-src 'self' blob:"));
+        assert!(SECURITY_HEADERS_CSP.contains("frame-src 'self' blob:"));
+        assert!(SECURITY_HEADERS_CSP.contains("media-src 'self' blob:"));
         assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
         assert_eq!(headers.get("x-frame-options").unwrap(), "DENY");
         assert_eq!(

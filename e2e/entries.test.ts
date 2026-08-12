@@ -552,7 +552,7 @@ test.describe("Entries CRUD", () => {
 				},
 				{ timeout: 15_000 },
 			);
-			await thumbnail.getByRole("button", { name: "Open or download" }).click();
+			await thumbnail.getByRole("button", { name: "Download" }).click();
 			const assetReadResponse = await readResponse;
 			expect(assetReadResponse.status()).toBe(200);
 			expect(await assetReadResponse.body()).toEqual(Buffer.from("thumbnail"));
