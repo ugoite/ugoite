@@ -3,6 +3,7 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
@@ -20,6 +21,12 @@ impl EnvVarGuard {
     fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
         let previous = std::env::var_os(key);
         std::env::set_var(key, value);
+        Self { key, previous }
+    }
+
+    fn unset(key: &'static str) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::remove_var(key);
         Self { key, previous }
     }
 }
@@ -187,6 +194,195 @@ async fn req_sec_002_keeps_security_headers_on_cors_preflight() {
         Some(&"true".parse().unwrap())
     );
     assert_common_security_headers(&response, false);
+}
+
+#[tokio::test]
+async fn req_sec_010_allows_configured_preflight_method_and_header_contract() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
+    let app = initialized_app_without_env_lock("cors-preflight-contract").await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/health")
+                .header("origin", "https://frontend.example")
+                .header("access-control-request-method", "POST")
+                .header(
+                    "access-control-request-headers",
+                    "Accept, Authorization, Content-Type, Idempotency-Key, DPoP, X-Request-Id",
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("access-control-allow-origin"),
+        Some(&"https://frontend.example".parse().unwrap())
+    );
+    assert_eq!(
+        response.headers().get("access-control-allow-credentials"),
+        Some(&"true".parse().unwrap())
+    );
+    let allow_methods = response
+        .headers()
+        .get("access-control-allow-methods")
+        .expect("configured CORS methods")
+        .to_str()
+        .unwrap()
+        .split(',')
+        .map(str::trim)
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        allow_methods,
+        BTreeSet::from([
+            "DELETE".to_owned(),
+            "GET".to_owned(),
+            "OPTIONS".to_owned(),
+            "PATCH".to_owned(),
+            "POST".to_owned(),
+            "PUT".to_owned(),
+        ])
+    );
+    let allow_headers = response
+        .headers()
+        .get("access-control-allow-headers")
+        .expect("configured CORS request headers")
+        .to_str()
+        .unwrap()
+        .split(',')
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        allow_headers,
+        BTreeSet::from([
+            "accept".to_owned(),
+            "authorization".to_owned(),
+            "content-type".to_owned(),
+            "dpop".to_owned(),
+            "idempotency-key".to_owned(),
+            "x-request-id".to_owned(),
+        ])
+    );
+    assert!(!allow_methods.contains("*"));
+    assert!(!allow_headers.contains("*"));
+}
+
+#[tokio::test]
+async fn req_sec_010_allows_credentials_for_an_allowed_safe_response() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
+    let app = initialized_app_without_env_lock("cors-credentialed-safe-response").await;
+    let response = app
+        .oneshot(
+            Request::get("/health")
+                .header("origin", "https://frontend.example")
+                .header("cookie", "ugoite_session=opaque")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("access-control-allow-origin"),
+        Some(&"https://frontend.example".parse().unwrap())
+    );
+    assert_eq!(
+        response.headers().get("access-control-allow-credentials"),
+        Some(&"true".parse().unwrap())
+    );
+}
+
+#[tokio::test]
+async fn req_sec_010_omits_allow_origin_for_unlisted_actual_and_preflight_requests() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
+    let app = initialized_app_without_env_lock("cors-unlisted-origin").await;
+
+    let actual_response = app
+        .clone()
+        .oneshot(
+            Request::get("/health")
+                .header("origin", "https://unlisted.example")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(actual_response.status(), StatusCode::OK);
+    assert!(!actual_response
+        .headers()
+        .contains_key("access-control-allow-origin"));
+
+    let preflight_response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/health")
+                .header("origin", "https://unlisted.example")
+                .header("access-control-request-method", "GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(!preflight_response
+        .headers()
+        .contains_key("access-control-allow-origin"));
+}
+
+#[tokio::test]
+async fn req_sec_010_keeps_cors_disabled_when_origin_allowlist_is_unset() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let _cors_origins = EnvVarGuard::unset("UGOITE_CORS_ALLOWED_ORIGINS");
+    let app = initialized_app_without_env_lock("cors-default-off").await;
+    let response = app
+        .oneshot(
+            Request::get("/health")
+                .header("origin", "https://frontend.example")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(!response
+        .headers()
+        .contains_key("access-control-allow-origin"));
+    assert!(!response
+        .headers()
+        .contains_key("access-control-allow-credentials"));
+}
+
+#[tokio::test]
+async fn req_sec_010_keeps_canonical_origin_csrf_guard_separate_from_cors_allowlist() {
+    let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
+    let _cors_origins = EnvVarGuard::set("UGOITE_CORS_ALLOWED_ORIGINS", "https://frontend.example");
+    let app = initialized_app_without_env_lock("cors-csrf-boundary").await;
+    let response = app
+        .oneshot(
+            Request::post("/auth/setup/start")
+                .header("origin", "https://frontend.example")
+                .header("cookie", "ugoite_session=opaque")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        response.headers().get("access-control-allow-origin"),
+        Some(&"https://frontend.example".parse().unwrap())
+    );
 }
 
 #[tokio::test]

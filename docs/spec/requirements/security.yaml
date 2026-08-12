@@ -274,13 +274,26 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-010
   title: Credentialed CORS Allowlist
-  description: Shared cross-origin deployments should use explicit CORS allowlists. The current server uses permissive
-    origin/method/header middleware and relies on same-origin browser deployment by default.
+  description: >-
+    The Rust server is same-origin by default. When UGOITE_CORS_ALLOWED_ORIGINS is set to a non-empty,
+    comma-separated list, credentialed browser responses use exact origin allowlisting. Preflight responses advertise
+    only GET, POST, PUT, PATCH, DELETE, and OPTIONS plus Accept, Authorization, Content-Type, Idempotency-Key, DPoP,
+    and X-Request-Id; no wildcard is used. An unlisted origin does not receive Access-Control-Allow-Origin. This
+    browser CORS permission is separate from CSRF protection: cookie-authenticated unsafe requests still require the
+    canonical UGOITE_PUBLIC_ORIGIN.
   related_spec:
   - security/overview.md
   priority: high
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-server/tests/api_contract.rs
+    tests:
+    - req_sec_010_allows_configured_preflight_method_and_header_contract
+    - req_sec_010_allows_credentials_for_an_allowed_safe_response
+    - req_sec_010_omits_allow_origin_for_unlisted_actual_and_preflight_requests
+    - req_sec_010_keeps_cors_disabled_when_origin_allowlist_is_unset
+    - req_sec_010_keeps_canonical_origin_csrf_guard_separate_from_cors_allowlist
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
