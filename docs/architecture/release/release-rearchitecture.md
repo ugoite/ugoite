@@ -19,6 +19,7 @@ The remaining architectural work is product capability, not stack migration:
 - optional synchronization/relay semantics;
 - production Passkey enrollment/login and optional invited OIDC;
 - sponsored Agent Principals and append-only authorization audit history;
-- release automation beyond the local `ci:release` gate.
+- channel-specific release communication and support rollout after a published
+  version.
 
 These items are future scope and must remain labeled as such.

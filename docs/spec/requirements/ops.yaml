@@ -32,13 +32,16 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-002
   title: Container Build Validation
-  description: The single runtime image must be built and smoke-tested by an automated release gate. The current repository provides a local `ci:release` gate but does not run it in hosted CI.
+  description: The single runtime image must be built and smoke-tested by an automated release gate. Local `ci:release` validates the build, and the hosted Release Publish workflow smoke-tests the published versioned image through the documented Compose quick start.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: .github/workflows/release-publish.yml
+  - file: scripts/verify-release-container-quickstart.sh
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -263,15 +266,16 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-017
   title: Release Container Publishing and Quick Start
-  description: Release automation should publish one deterministic runtime image and verify the documented Compose quick start. No publishing workflow is present.
+  description: Release automation publishes one deterministic runtime image and verifies the documented Compose quick start from the published versioned image and Compose assets.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
-  status: planned
+  status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-iceberg/tests/test_space.rs
+  - file: .github/workflows/release-publish.yml
+  - file: scripts/verify-release-container-quickstart.sh
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -279,15 +283,17 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-018
   title: CLI Release Binaries and Install Path
-  description: Release automation should publish checksum-verified CLI archives for supported platforms. Installer scripts/package exist, but publication automation is absent.
+  description: Release automation publishes checksum-verified CLI archives for supported platforms, and the post-publication quick-start gate verifies the installer against the published release.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
-  status: planned
+  status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-cli/tests/integration_test.rs
+  - file: .github/workflows/release-publish.yml
+  - file: scripts/install-ugoite-cli.sh
+  - file: scripts/verify-release-cli-quickstart.sh
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -379,13 +385,17 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-025
   title: Published Release Quick-Start Verification
-  description: Automation should download published artifacts and verify browser and CLI quick starts. Supporting scripts exist; no hosted workflow is present.
+  description: Release automation downloads the published Compose and CLI assets and verifies the browser and CLI quick starts against the exact released version.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: .github/workflows/release-publish.yml
+  - file: scripts/verify-release-container-quickstart.sh
+  - file: scripts/verify-release-cli-quickstart.sh
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.

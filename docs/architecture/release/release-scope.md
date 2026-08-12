@@ -26,7 +26,9 @@ support, and product claims stay aligned with the implementation.
   portable Space state;
 - browser-local persistence, offline-first editing, and sync are not
   implemented;
-- this tree has a local release-validation task but no publishing workflow.
+- the `Release Publish` workflow now publishes versioned release artifacts and
+  verifies the published Compose and CLI quick starts; an operator-supported
+  release still requires a successful published version.
 
 Release documentation and changelogs must use these boundaries rather than
 planned capability.
