@@ -21,15 +21,16 @@ Root task composition:
 - `ci:merge`: `ci`, build/package/verify, a focused docsite-navigation E2E lane, and E2E smoke;
 - `ci:release`: `validate:release`, `ci:merge`, npm packaging/verification, and the full E2E suite.
 
-Hosted CI restores Rust, Deno, and BuildKit caches on every event. Shared project caches are refreshed only after successful pushes to `main`. Successful `main` runs also upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
+Hosted CI restores Rust, Deno, Playwright browser, and BuildKit caches on every event. Shared project caches are refreshed only after successful pushes to `main`. Release build jobs use the same Rust/Deno dependency cache policy, with one Ubuntu release path writing the shared Deno key to avoid concurrent partial saves, and a separate release-image BuildKit scope. Successful `main` runs also upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies the canonical frontend and Rust release outputs into the image instead of compiling them again inside Docker. E2E tasks require the already loaded `ugoite:e2e` image and never invoke an image build. The default Dockerfile target remains a portable source build for direct Docker and Compose use.
 
 The focused docsite-navigation lane is intentionally separate from smoke/full
 runtime E2E. It builds the docsite through the canonical `build:docsite`
-inputs, installs Playwright browsers explicitly for that lane, previews the
-static artifact, and verifies Starlight navigation semantics before the heavier
-runtime-backed smoke suite runs.
+inputs, restores the versioned Playwright browser cache, keeps the explicit
+browser-install step as a cache-miss fallback, previews the static artifact,
+and verifies Starlight navigation semantics before the heavier runtime-backed
+smoke suite runs.
 
 Deployable artifacts are staged below `target/artifacts/` with a machine-readable `manifest.json` and `SHA256SUMS`. The release workflow also emits installer-compatible CLI archives named `ugoite-v<version>-<target>.tar.gz` plus per-file checksums, publishes `@ugoite/ugoite` to GitHub Packages, publishes `ghcr.io/ugoite/ugoite:<version>`, and pushes the Helm chart to `oci://ghcr.io/ugoite/charts`.
 
