@@ -10,6 +10,7 @@ type VersionState = {
   helmChart: string;
   helmApp: string;
   helmImageTag: string;
+  versionFile: string;
   releasePleaseManifest: string;
   npmPackageName: string;
   npmRegistry: string;
@@ -64,6 +65,7 @@ async function validateRelease(): Promise<void> {
     state.helmChart,
     state.helmApp,
     state.helmImageTag,
+    state.versionFile,
     state.releasePleaseManifest,
   ];
   const unique = [...new Set(versions)];
@@ -252,6 +254,9 @@ async function readVersionState(): Promise<VersionState> {
   const valuesYaml = await Deno.readTextFile(
     new URL("../charts/ugoite/values.yaml", import.meta.url),
   );
+  const versionFile = (await Deno.readTextFile(
+    new URL("../version.txt", import.meta.url),
+  )).trim();
   const releaseManifest = JSON.parse(
     await Deno.readTextFile(
       new URL("../.release-please-manifest.json", import.meta.url),
@@ -277,6 +282,7 @@ async function readVersionState(): Promise<VersionState> {
       /\n\x20\x20tag:\s*([^\n]+)/,
       "Helm image tag",
     ),
+    versionFile,
     releasePleaseManifest: releaseManifest["."] ??
       fail('.release-please-manifest.json must define "."'),
     npmPackageName: packageJson.name ??
@@ -299,7 +305,7 @@ function capture(text: string, pattern: RegExp, label: string): string {
   if (!match) {
     fail(`${label} not found`);
   }
-  return match[1].trim().replace(/^"|"$/g, "");
+  return match[1].trim().replace(/\s+#.*$/, "").replace(/^"|"$/g, "");
 }
 
 async function ensureFile(path: string, label: string): Promise<void> {

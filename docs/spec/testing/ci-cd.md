@@ -47,6 +47,56 @@ covered by behavior tests and E2E. Docsite coverage includes authored
 `src/**/*.{js,mjs,ts,tsx}` while excluding test files, `src/env.d.ts`, and
 Astro's framework-only `src/content.config.ts`.
 
+## Release promotion contract
+
+`Release Publish` has two deliberately separate phases:
+
+1. A push to `main` runs Release Please, which creates or updates the release
+   planning PR. It does not publish artifacts.
+2. Merging that planning PR creates the tag and GitHub Release. The same
+   workflow validates the tagged source, builds the release artifact set from
+   that exact tagged SHA, verifies it, and publishes it. It does not publish on
+   every `main` push. The `workflow_dispatch` input for an existing validated
+   `v<SemVer>` tag is retained only for explicit republish/recovery.
+
+The repository-level Actions setting is part of this contract. The
+organization policy must first allow repositories to enable PR creation; an
+organization administrator must lift the current organization-level block.
+Then, in the repository settings under **Actions → General → Workflow
+permissions**, keep the default at **Read repository contents permission** and
+enable **Allow GitHub Actions to create and approve pull requests**. The
+workflow keeps top-level `permissions: {}` and grants `contents: write` and
+`issues: write` and `pull-requests: write` to the `release-please` job so it
+can apply its planning-PR labels; the separate
+`build-cli` and `build-npm-helm` jobs each grant `id-token: write` to attest
+their artifacts, plus `attestations: write` for the attestation API;
+`publish-image` grants `contents: read`, `packages: write`, and
+`id-token: write` for tagged-source checkout, image publication, and its
+provenance; and `publish-release-assets` grants
+`contents: write` and `packages: write` to publish the already-validated
+artifacts. The remaining jobs use read-only permissions. No job outside
+`release-please` receives `issues: write` or `pull-requests: write`, and no
+ordinary workflow is made write-capable. These are the minimum job-scoped
+permissions for Release Please labels, artifact attestations, and publication.
+
+The release artifact jobs attest the CLI archive, npm installer, and Helm chart
+archive with `actions/attest-build-provenance`; the image job keeps BuildKit
+`provenance: true`. Hosted release evidence must verify those attestations and
+the image provenance against the exact release tag/source SHA and record the
+published image and chart digests before the release is considered complete.
+
+The first stable pre-v1 release is a one-time bootstrap. The config's
+`release-as: 0.1.0` pins the candidate to the checked-in version, and its
+`bootstrap-sha` is the current `main` boundary so the old non-Conventional
+Commit history is not replayed. After the `v0.1.0` Release Please PR merges,
+remove both temporary config keys and update the focused release contract test.
+From then on, normal Conventional Commit versioning is authoritative.
+
+If a failed planner run leaves `release-please--branches--main` without an
+open Release Please PR, verify that no release PR exists, delete only that
+orphaned planner ref, and rerun the `Release Publish` workflow on `main`. Do
+not delete tags or published releases as part of planner recovery.
+
 Deployable artifacts are staged below `target/artifacts/` with a machine-readable `manifest.json` and `SHA256SUMS`. The release workflow also emits installer-compatible CLI archives named `ugoite-v<version>-<target>.tar.gz` plus per-file checksums, publishes `@ugoite/ugoite` to GitHub Packages, publishes `ghcr.io/ugoite/ugoite:<version>`, and pushes the Helm chart to `oci://ghcr.io/ugoite/charts`.
 
 `.github/workflows/docsite-pages.yml` promotes the verified `ugoite-docsite-pages` artifact from a successful push-to-`main` CI run. It validates the upstream run identity, manifest, checksums, and current Pages origin/base metadata, then deploys the downloaded static files without checking out or rebuilding source.

@@ -2,20 +2,31 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "separate-pull-requests": false,
   "include-component-in-tag": false,
-  "bootstrap-sha": "ac732af5887049664f82d78325803bd7f4db0a68",
+  "bootstrap-sha": "2cacdd060ac38a60a286f213ea6f94c4bb8dd563",
   "packages": {
     ".": {
       "release-type": "simple",
       "package-name": "ugoite",
+      "release-as": "0.1.0",
+      "version-file": "version.txt",
       "include-v-in-tag": true,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "draft": true,
       "extra-files": [
-        "Cargo.toml",
+        {
+          "type": "generic",
+          "path": "Cargo.toml"
+        },
         "packages/ugoite/package.json",
-        "charts/ugoite/Chart.yaml",
-        "charts/ugoite/values.yaml"
+        {
+          "type": "generic",
+          "path": "charts/ugoite/Chart.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "charts/ugoite/values.yaml"
+        }
       ]
     }
   }

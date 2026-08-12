@@ -123,6 +123,8 @@ Release versions are synchronized across Cargo, the scoped GitHub Packages
 installer, and Helm metadata. Pushes to `main` update Release Please metadata
 only; merging the Release Please PR publishes versioned non-docsite artifacts
 from `.github/workflows/release-publish.yml`.
+See [the CI and release gate specification](docs/spec/testing/ci-cd.md) for
+the repository permission and first-release bootstrap contract.
 
 ## License
 

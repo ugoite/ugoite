@@ -64,9 +64,29 @@ Describe the behavior change, link an issue, list focused validation, and call o
 Canonical release versions are synchronized across:
 
 - `Cargo.toml` `[workspace.package].version`
+- `version.txt`
 - `.release-please-manifest.json`
 - `packages/ugoite/package.json`
 - `charts/ugoite/Chart.yaml`
 - `charts/ugoite/values.yaml`
 
 `mise run validate:release` verifies that contract locally. Pushes to `main` update or refresh the Release Please PR only. Merging that PR creates the `v<version>` tag and GitHub Release, then `.github/workflows/release-publish.yml` publishes the non-docsite artifacts for that exact version.
+
+The repository is currently bootstrapping its first stable pre-v1 release. The
+Release Please config pins the first candidate to `0.1.0` and starts at the
+current `main` boundary so old, non-Conventional Commit history is not replayed
+into the release notes. After the `v0.1.0` Release Please PR is merged, remove
+`release-as` and `bootstrap-sha` in a follow-up change and update the focused
+release contract test; subsequent releases must use normal Conventional Commit
+versioning.
+
+The repository Actions setting must keep **Workflow permissions** at **Read
+repository contents permission** and enable **Allow GitHub Actions to create
+and approve pull requests**. The organization policy must allow that setting;
+an organization administrator must lift the current organization-level block
+before the repository setting can be changed. The workflow grants
+`pull-requests: write` only to its Release Please job. If a failed run leaves
+`release-please--branches--main` without a PR, confirm that no release PR is
+open, remove only that planner ref, and rerun `Release Publish` from `main`.
+The `workflow_dispatch` input for an existing validated release tag is retained
+for explicit republish/recovery; it is not a second release path.
