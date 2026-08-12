@@ -56,6 +56,12 @@ const eventScopeId = (event: AuditEvent): string =>
 const eventHash = (event: AuditEvent): string | null =>
   isNodeEvent(event) ? null : event.event_hash;
 
+const eventRequestMethod = (event: AuditEvent): string | null =>
+  isNodeEvent(event) ? null : event.request_method;
+
+const eventRequestPath = (event: AuditEvent): string | null =>
+  isNodeEvent(event) ? null : event.request_path;
+
 const serializeMetadata = (value: Record<string, unknown>): string => {
   try {
     return JSON.stringify(value, null, 2) ?? "{}";
@@ -347,6 +353,23 @@ export function AuditLogViewer(props: AuditLogViewerProps) {
                                     <dt>{t("auditLog.requestId")}</dt>
                                     <dd>{event.request_id ?? "—"}</dd>
                                   </div>
+                                  <Show
+                                    when={
+                                      eventRequestMethod(event) ||
+                                      eventRequestPath(event)
+                                    }
+                                  >
+                                    <div>
+                                      <dt>{t("auditLog.requestMethod")}</dt>
+                                      <dd>{eventRequestMethod(event) ?? "—"}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>{t("auditLog.requestPath")}</dt>
+                                      <dd>
+                                        <code>{eventRequestPath(event) ?? "—"}</code>
+                                      </dd>
+                                    </div>
+                                  </Show>
                                   <div>
                                     <dt>{t("auditLog.metadata")}</dt>
                                     <dd>

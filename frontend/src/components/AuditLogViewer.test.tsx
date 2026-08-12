@@ -35,7 +35,10 @@ const nodeEvent = (
   ...overrides,
 });
 
-const spaceEvent = (index: number): SpaceAuditEvent => ({
+const spaceEvent = (
+  index: number,
+  overrides: Partial<SpaceAuditEvent> = {},
+): SpaceAuditEvent => ({
   event_id: `space-event-${index}`,
   timestamp: `2026-08-12T00:${String(index).padStart(2, "0")}:00Z`,
   space_id: "space-1",
@@ -52,6 +55,7 @@ const spaceEvent = (index: number): SpaceAuditEvent => ({
   metadata: { required_action: "read" },
   prev_hash: `prev-${index}`,
   event_hash: `hash-${index}`,
+  ...overrides,
 });
 
 describe("AuditLogViewer", () => {
@@ -139,6 +143,22 @@ describe("AuditLogViewer", () => {
         outcome: "deny",
       });
     });
+  });
+
+  it("shows request details and tolerates system events without an actor", async () => {
+    vi.mocked(spaceApi.listAudit).mockResolvedValue({
+      items: [spaceEvent(0, { actor_principal_id: null })],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    });
+    render(() => <SpaceAuditLogViewer spaceId="space-1" />);
+
+    await screen.findByText("authorization.denied");
+    fireEvent.click(screen.getByText("View details"));
+
+    expect(screen.getByText("GET")).toBeInTheDocument();
+    expect(screen.getByText("/spaces/space-1/entries")).toBeInTheDocument();
   });
 
   it("shows empty and localized API failure states", async () => {

@@ -82,7 +82,7 @@ export interface SpaceAuditEvent {
   space_id: string;
   action: string;
   subject_principal_id: string;
-  actor_principal_id: string;
+  actor_principal_id: string | null;
   credential_id: string | null;
   outcome: string;
   target_type: string | null;

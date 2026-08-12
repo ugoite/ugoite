@@ -870,6 +870,21 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
+          },
+          {
+            "$ref": "#/components/parameters/AuditOffset"
+          },
+          {
+            "$ref": "#/components/parameters/AuditLimit"
+          },
+          {
+            "$ref": "#/components/parameters/AuditAction"
+          },
+          {
+            "$ref": "#/components/parameters/AuditActorPrincipalId"
+          },
+          {
+            "$ref": "#/components/parameters/AuditOutcome"
           }
         ],
         "responses": {
@@ -878,7 +893,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/SpaceAuditPage"
                 }
               }
             }
@@ -5506,7 +5521,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
+                  "$ref": "#/components/schemas/NodeAuditEventList"
                 }
               }
             }
@@ -6499,6 +6514,61 @@
           "default": 0
         }
       },
+      "AuditOffset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "description": "Number of audit events to skip before returning the bounded page.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "AuditLimit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Maximum number of audit events to return. Values are bounded to 500.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 100
+        }
+      },
+      "AuditAction": {
+        "name": "action",
+        "in": "query",
+        "required": false,
+        "description": "Return only events with this exact action.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "AuditActorPrincipalId": {
+        "name": "actor_principal_id",
+        "in": "query",
+        "required": false,
+        "description": "Return only events with this exact actor principal ID.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "AuditOutcome": {
+        "name": "outcome",
+        "in": "query",
+        "required": false,
+        "description": "Return only events with this outcome.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "success",
+            "deny",
+            "error"
+          ]
+        }
+      },
       "Checkpoint": {
         "name": "checkpoint",
         "in": "query",
@@ -6526,6 +6596,220 @@
           "detail": {}
         },
         "additionalProperties": true
+      },
+      "NodeAuditEvent": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "timestamp",
+          "node_id",
+          "subject_account_id",
+          "actor_account_id",
+          "credential_id",
+          "action",
+          "target_type",
+          "target_id",
+          "outcome",
+          "request_id",
+          "safe_metadata"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject_account_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "actor_account_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "credential_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string"
+          },
+          "target_type": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "safe_metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "canonical_event": {}
+        },
+        "additionalProperties": true
+      },
+      "NodeAuditEventList": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/NodeAuditEvent"
+        }
+      },
+      "SpaceAuditEvent": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "timestamp",
+          "space_id",
+          "action",
+          "subject_principal_id",
+          "actor_principal_id",
+          "credential_id",
+          "outcome",
+          "target_type",
+          "target_id",
+          "request_method",
+          "request_path",
+          "request_id",
+          "metadata",
+          "prev_hash",
+          "event_hash"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "space_id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "subject_principal_id": {
+            "type": "string"
+          },
+          "actor_principal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "credential_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "deny",
+              "error"
+            ]
+          },
+          "target_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "prev_hash": {
+            "type": "string"
+          },
+          "event_hash": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SpaceAuditPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpaceAuditEvent"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "additionalProperties": false
       },
       "AuthConfig": {
         "type": "object",
