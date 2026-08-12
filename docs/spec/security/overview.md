@@ -90,9 +90,9 @@ responses, and middleware-generated responses:
 - `Content-Security-Policy` restricts scripts and connections to the same
   origin, disallows framing and plugins, permits the static browser's
   same-origin WebAssembly and external manifest boot script, and permits
-  `blob:` previews for user-selected assets. The script policy has no
-  `unsafe-inline`; the limited CSS inline-style exception supports the
-  existing interactive layout.
+  `blob:` previews for user-selected assets through the image, frame, and media
+  source policies. The script policy has no `unsafe-inline`; the limited CSS
+  inline-style exception supports the existing interactive layout.
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Referrer-Policy: strict-origin-when-cross-origin`
