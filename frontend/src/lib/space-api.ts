@@ -9,6 +9,8 @@ import type {
   SpacePatchPayload,
   TestConnectionPayload,
 } from "./types";
+import { auditApi } from "./audit-api";
+import type { AuditListQuery, SpaceAuditPage } from "./types";
 import { protocolFetch } from "./ugoite-client/protocol";
 
 /** Space API client backed by the shared Rust/WASM protocol. */
@@ -27,6 +29,13 @@ export const spaceApi = {
 
   async get(id: string): Promise<Space> {
     return await protocolFetch<Space>("space.get", { space_id: id });
+  },
+
+  async listAudit(
+    id: string,
+    query: AuditListQuery,
+  ): Promise<SpaceAuditPage> {
+    return await auditApi.listSpace(id, query);
   },
 
   async createCheckpoint(

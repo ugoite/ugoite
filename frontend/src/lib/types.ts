@@ -45,6 +45,63 @@ export interface UserPreferences {
 
 export type UserPreferencesPatchPayload = Partial<UserPreferences>;
 
+export type AuditOutcome = "success" | "deny" | "error";
+
+export type AuditFilters = {
+  action: string;
+  actorId: string;
+  outcome: AuditOutcome | "";
+};
+
+export type AuditListQuery = {
+  offset: number;
+  limit: number;
+  action?: string;
+  actorId?: string;
+  outcome?: AuditOutcome;
+};
+
+export interface NodeAuditEvent {
+  event_id: string;
+  timestamp: string;
+  node_id: string;
+  subject_account_id: string | null;
+  actor_account_id: string | null;
+  credential_id: string | null;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  outcome: string;
+  request_id: string | null;
+  safe_metadata: Record<string, unknown>;
+}
+
+export interface SpaceAuditEvent {
+  event_id: string;
+  timestamp: string;
+  space_id: string;
+  action: string;
+  subject_principal_id: string;
+  actor_principal_id: string;
+  credential_id: string | null;
+  outcome: string;
+  target_type: string | null;
+  target_id: string | null;
+  request_method: string | null;
+  request_path: string | null;
+  request_id: string | null;
+  metadata: Record<string, unknown>;
+  prev_hash: string;
+  event_hash: string;
+}
+
+export interface SpaceAuditPage {
+  items: SpaceAuditEvent[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 /** Test connection payload */
 export interface TestConnectionPayload {
   storage_config: StorageConnectionConfig;
