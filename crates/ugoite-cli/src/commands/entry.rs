@@ -112,6 +112,9 @@ pub enum EntrySubCmd {
         entry_id: String,
         #[arg(long)]
         hard_delete: bool,
+        /// Single-use approval token issued by a recently reauthenticated human.
+        #[arg(long)]
+        human_approval: Option<String>,
         #[arg(
             long,
             default_value = "cli",
@@ -290,9 +293,12 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             space_path,
             entry_id,
             hard_delete,
+            human_approval,
             author,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "entry delete")?;
+            let human_approval =
+                human_approval.or_else(|| std::env::var("UGOITE_HUMAN_APPROVAL").ok());
             if let Some(base) = validated_base_url(&config)? {
                 if author != "cli" {
                     bail!(
@@ -306,12 +312,16 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                         "space_id": space_id,
                         "entry_id": entry_id,
                         "hard_delete": hard_delete,
+                        "human_approval": human_approval,
                     }),
                     None,
                 )
                 .await?;
                 print_json(&result);
                 return Ok(());
+            }
+            if human_approval.is_some() {
+                bail!("--human-approval is only supported in backend/api mode");
             }
             let service = UgoiteService::new(&root)?;
             service

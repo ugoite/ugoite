@@ -52,8 +52,14 @@ invariants are:
   adapter uses the core Authorizer. SQL constructs authorized source tables
   before joins, counts, and aggregates.
 - The last Space owner and last account Passkey cannot be removed.
-- Agents cannot manage members, owners, or agents. Noninteractive credentials
-  cannot perform delete or share.
+- Agents cannot manage members, owners, or agents. An active human with the
+  current permission can issue a single-use human approval for the exact `entry.delete`, `sql.delete`,
+  `asset.delete`, or `access.put` intent. The approval is bound to the action,
+  canonical resource, actor credential, lifecycle epochs, and a 1–300 second
+  expiry; the server stores only its SHA-256 hash and consumes it with a
+  compare-and-swap. Replay, mismatch, or expiry fails closed and the lifecycle
+  is recorded in the append-only Space audit chain. Member, owner, agent, and
+  Space-management operations remain Passkey-only.
 - Fixed passwords, shared credentials, preconfigured bearer credentials,
   development bypasses, default credentials, and long-lived universal tokens do
   not exist.

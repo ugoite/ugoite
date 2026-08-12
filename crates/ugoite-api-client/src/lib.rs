@@ -67,6 +67,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "agent.list",
     "agent.create",
     "agent.revoke",
+    "approval.issue",
     "access.get",
     "access.put",
     "asset.upload",
@@ -806,6 +807,15 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "approval.issue" => (
+                OperationSpec::json(HttpMethod::Post, "Failed to issue human approval"),
+                vec![
+                    "spaces".into(),
+                    required_string(operation, args, "space_id")?,
+                    "approvals".into(),
+                ],
+                vec![],
+            ),
             "access.get" => (
                 OperationSpec::get("Failed to load access policy"),
                 vec![
@@ -917,6 +927,30 @@ pub fn prepare_request(
             name: "idempotency-key".to_string(),
             value: idempotency_key,
         });
+    }
+
+    if matches!(
+        operation,
+        "entry.delete" | "sql.delete" | "asset.delete" | "access.put"
+    ) {
+        if let Some(value) = args.get("human_approval").filter(|value| !value.is_null()) {
+            let value = value.as_str().ok_or_else(|| {
+                ApiProtocolError::invalid_arguments(
+                    operation,
+                    "argument `human_approval` must be a string when provided",
+                )
+            })?;
+            if value.is_empty() {
+                return Err(ApiProtocolError::invalid_arguments(
+                    operation,
+                    "argument `human_approval` must not be empty",
+                ));
+            }
+            headers.push(Header {
+                name: "x-ugoite-human-approval".to_string(),
+                value: value.to_string(),
+            });
+        }
     }
 
     Ok(PreparedRequest {
@@ -1353,6 +1387,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to revoke agent",
             RequestBodyKind::None,
         ),
+        "approval.issue" => (
+            HttpMethod::Post,
+            "Failed to issue human approval",
+            RequestBodyKind::Json,
+        ),
         "access.get" => (
             HttpMethod::Get,
             "Failed to load access policy",
@@ -1581,6 +1620,30 @@ mod tests {
         .expect("request");
 
         assert_eq!(request.path, "/spaces/demo/entries?limit=1000&offset=2000");
+    }
+
+    #[test]
+    fn dangerous_operations_put_human_approval_in_a_header_only() {
+        let request = prepare_request(
+            "entry.delete",
+            &json!({
+                "space_id": "demo",
+                "entry_id": "entry-1",
+                "hard_delete": false,
+                "human_approval": "a".repeat(43)
+            }),
+            None,
+        )
+        .expect("approval-bound delete request");
+        assert_eq!(request.path, "/spaces/demo/entries/entry-1");
+        assert_eq!(
+            request.headers,
+            vec![Header {
+                name: "x-ugoite-human-approval".into(),
+                value: "a".repeat(43)
+            }]
+        );
+        assert!(request.body.is_none());
     }
 
     #[test]
@@ -1923,6 +1986,7 @@ mod tests {
             || operation.starts_with("sql.")
             || operation.starts_with("sql_session.")
             || operation.starts_with("agent.")
+            || operation.starts_with("approval.")
             || operation.starts_with("access.")
             || operation.starts_with("asset.");
         if needs_space_id && !matches!(operation, "space.list" | "space.create") {

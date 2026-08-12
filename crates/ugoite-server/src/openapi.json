@@ -4529,6 +4529,12 @@
           },
           {
             "$ref": "#/components/parameters/EntryId"
+          },
+          {
+            "$ref": "#/components/parameters/HardDelete"
+          },
+          {
+            "$ref": "#/components/parameters/HumanApprovalHeader"
           }
         ],
         "responses": {
@@ -6767,6 +6773,9 @@
           },
           {
             "$ref": "#/components/parameters/SqlId"
+          },
+          {
+            "$ref": "#/components/parameters/HumanApprovalHeader"
           }
         ],
         "responses": {
@@ -7211,6 +7220,9 @@
           },
           {
             "$ref": "#/components/parameters/AssetId"
+          },
+          {
+            "$ref": "#/components/parameters/HumanApprovalHeader"
           }
         ],
         "responses": {
@@ -11136,7 +11148,7 @@
         }
       }
     },
-    "/spaces/{space_id}/policies/{kind}/{resource_id}": {
+  "/spaces/{space_id}/policies/{kind}/{resource_id}": {
       "get": {
         "summary": "Get resource policy",
         "responses": {
@@ -11218,9 +11230,25 @@
           }
         }
       },
-      "put": {
-        "summary": "Set resource policy",
-        "responses": {
+  "put": {
+    "summary": "Set resource policy",
+    "parameters": [
+      { "$ref": "#/components/parameters/SpaceId" },
+      {
+        "name": "kind",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      {
+        "name": "resource_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      { "$ref": "#/components/parameters/HumanApprovalHeader" }
+    ],
+    "responses": {
           "200": {
             "description": "Response",
             "content": {
@@ -11237,6 +11265,17 @@
               },
               "X-Ugoite-Signature": {
                 "$ref": "#/components/headers/X-Ugoite-Signature"
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
               }
             }
           },
@@ -11296,6 +11335,36 @@
                 "$ref": "#/components/headers/X-Ugoite-Signature"
               }
             }
+          },
+          "409": {
+            "description": "Approval token was already consumed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Approval token expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
           }
         },
         "requestBody": {
@@ -11308,6 +11377,38 @@
               }
             }
           }
+        }
+      }
+    },
+    "/spaces/{space_id}/approvals": {
+      "post": {
+        "summary": "Issue a single-use human approval for a dangerous operation",
+        "parameters": [
+          { "$ref": "#/components/parameters/SpaceId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/HumanApprovalIssueRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Approval issued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HumanApprovalResponse" }
+              }
+            }
+          },
+          "400": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "409": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "410": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "422": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "500": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
         }
       }
     }
@@ -11476,6 +11577,27 @@
         "description": "Read the Entry or history from this immutable named checkpoint.",
         "schema": {
           "type": "string"
+        }
+      },
+      "HumanApprovalHeader": {
+        "name": "X-Ugoite-Human-Approval",
+        "in": "header",
+        "required": false,
+        "description": "Single-use approval token. Required for CLI/agent dangerous mutations.",
+        "schema": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 43
+        }
+      },
+      "HardDelete": {
+        "name": "hard_delete",
+        "in": "query",
+        "required": false,
+        "description": "Retained for the v1 protocol shape; Entry hard delete is not an approval-eligible mutation.",
+        "schema": {
+          "type": "boolean",
+          "default": false
         }
       }
     },
@@ -12543,6 +12665,132 @@
             "type": "object",
             "additionalProperties": true
           }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalIssueRequest": {
+        "description": "Operation and mutation are one atomic schema variant so an approval cannot be described for a different dangerous operation.",
+        "oneOf": [
+          { "$ref": "#/components/schemas/HumanApprovalEntryDeleteRequest" },
+          { "$ref": "#/components/schemas/HumanApprovalSqlDeleteRequest" },
+          { "$ref": "#/components/schemas/HumanApprovalAssetDeleteRequest" },
+          { "$ref": "#/components/schemas/HumanApprovalAccessPutRequest" }
+        ]
+      },
+      "HumanApprovalEntryDeleteRequest": {
+        "type": "object",
+        "required": ["operation", "mutation", "actor_credential_id", "expires_in_seconds"],
+        "properties": {
+          "operation": { "const": "entry.delete" },
+          "mutation": { "$ref": "#/components/schemas/HumanApprovalEntryDeleteMutation" },
+          "actor_credential_id": { "type": "string", "format": "uuid" },
+          "expires_in_seconds": { "type": "integer", "minimum": 1, "maximum": 300 }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalSqlDeleteRequest": {
+        "type": "object",
+        "required": ["operation", "mutation", "actor_credential_id", "expires_in_seconds"],
+        "properties": {
+          "operation": { "const": "sql.delete" },
+          "mutation": { "$ref": "#/components/schemas/HumanApprovalDeleteMutation" },
+          "actor_credential_id": { "type": "string", "format": "uuid" },
+          "expires_in_seconds": { "type": "integer", "minimum": 1, "maximum": 300 }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalAssetDeleteRequest": {
+        "type": "object",
+        "required": ["operation", "mutation", "actor_credential_id", "expires_in_seconds"],
+        "properties": {
+          "operation": { "const": "asset.delete" },
+          "mutation": { "$ref": "#/components/schemas/HumanApprovalDeleteMutation" },
+          "actor_credential_id": { "type": "string", "format": "uuid" },
+          "expires_in_seconds": { "type": "integer", "minimum": 1, "maximum": 300 }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalAccessPutRequest": {
+        "type": "object",
+        "required": ["operation", "mutation", "actor_credential_id", "expires_in_seconds"],
+        "properties": {
+          "operation": { "const": "access.put" },
+          "mutation": { "$ref": "#/components/schemas/HumanApprovalAccessPutMutation" },
+          "actor_credential_id": { "type": "string", "format": "uuid" },
+          "expires_in_seconds": { "type": "integer", "minimum": 1, "maximum": 300 }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalDeleteMutation": {
+        "type": "object",
+        "required": ["target_id"],
+        "properties": {
+          "target_id": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalEntryDeleteMutation": {
+        "type": "object",
+        "required": ["target_id", "hard_delete"],
+        "properties": {
+          "target_id": { "type": "string", "minLength": 1 },
+          "hard_delete": { "type": "boolean", "enum": [false] }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalAccessPutMutation": {
+        "type": "object",
+        "required": ["kind", "resource_id", "policy"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["entry", "asset", "saved_sql", "form", "materialized_view"] },
+          "resource_id": { "type": "string", "minLength": 1 },
+          "policy": {
+            "type": "object",
+            "required": ["policy_id", "inherit_space_role", "grants"],
+            "properties": {
+              "policy_id": { "type": "string", "format": "uuid" },
+              "inherit_space_role": { "type": "boolean" },
+              "grants": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["principal_id", "actions"],
+                  "properties": {
+                    "principal_id": { "type": "string", "format": "uuid" },
+                    "actions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": ["read", "create", "update", "delete", "share"] } }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalResource": {
+        "type": "object",
+        "required": ["kind", "id"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["entry", "asset", "saved_sql", "form", "materialized_view"] },
+          "id": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      },
+      "HumanApprovalResponse": {
+        "type": "object",
+        "required": ["approval_id", "approval_token", "operation", "action", "resource", "intent_hash", "actor_principal_id", "actor_credential_id", "expires_at", "audit_status"],
+        "properties": {
+          "approval_id": { "type": "string", "format": "uuid" },
+          "approval_token": { "type": "string", "minLength": 43, "maxLength": 43, "readOnly": true },
+          "operation": { "type": "string" },
+          "action": { "type": "string", "enum": ["delete", "share"] },
+          "resource": { "$ref": "#/components/schemas/HumanApprovalResource" },
+          "intent_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "actor_principal_id": { "type": "string", "format": "uuid" },
+          "actor_credential_id": { "type": "string", "format": "uuid" },
+          "expires_at": { "type": "string", "format": "date-time" },
+          "audit_status": { "$ref": "#/components/schemas/AuditStatus" }
         },
         "additionalProperties": false
       },

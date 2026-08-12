@@ -32,6 +32,12 @@ CI.
 - `POST /oauth/device/authorization`, `/oauth/device/approve`, `/oauth/token`:
   CLI/MCP device flow and rotating refresh.
 - `POST /oauth/agent/token`: autonomous agent issuance.
+- `POST /spaces/{space_id}/approvals`: a recently Passkey-authenticated human
+  issues a one-time approval bound to `entry.delete`, `sql.delete`,
+  `asset.delete`, or `access.put`. The issue response returns the one-time
+  token; subsequent mutation requests send it only in
+  `X-Ugoite-Human-Approval`. It is never echoed in a mutation JSON body,
+  query string, log, or audit event.
 
 Browser requests authenticate with the `ugoite_session` HttpOnly cookie. CLI,
 MCP, and agent requests use `Authorization: DPoP <opaque-access-token>` plus a DPoP
@@ -47,6 +53,12 @@ Space CRUD, membership, Entries, Forms, Saved SQL, Assets, search, query, SQL
 sessions, MCP, agents, and resource policies are represented in OpenAPI.
 `PUT /spaces/{space_id}/policies/{kind}/{resource_id}` updates grant-only ACLs
 for `entry` or `asset`.
+CLI/agent delete and policy requests must include the approval header. The
+server canonicalizes the route and strict mutation intent, hashes it with
+SHA-256, atomically consumes the approval, and records the lifecycle in the
+append-only Space audit chain. `403 HUMAN_APPROVAL_REQUIRED`,
+`403 HUMAN_APPROVAL_INVALID`, `410 HUMAN_APPROVAL_EXPIRED`, and
+`409 HUMAN_APPROVAL_REPLAYED` are stable failure codes.
 `GET /spaces/{space_id}/health` is a Space-management read-only doctor report.
 It follows only the exact Catalog Head, its reachable immutable publication
 chain, Iceberg metadata, manifest lists/manifests, and caller-named

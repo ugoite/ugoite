@@ -77,4 +77,25 @@ describe("api proxy route", () => {
       expect.stringContaining("API proxy backend misconfiguration"),
     );
   });
+
+  it("forwards the human approval header without forwarding unrelated headers", async () => {
+    vi.stubEnv("BACKEND_URL", "http://127.0.0.1:8000");
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { DELETE } = await import("./[...path]");
+
+    await DELETE(
+      makeEvent("http://127.0.0.1:3000/api/spaces/demo/entries/entry-1", {
+        headers: {
+          "x-ugoite-human-approval": "a".repeat(43),
+          "x-secret-test-header": "must-not-forward",
+        },
+      }),
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get("x-ugoite-human-approval")).toBe("a".repeat(43));
+    expect(headers.get("x-secret-test-header")).toBeNull();
+  });
 });
