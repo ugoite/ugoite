@@ -90,7 +90,7 @@ locked after repeated failure. TOTP alone cannot add a Passkey. Successful
 self-recovery registers a replacement Passkey and displays a new set of
 recovery codes once. A separate owner-approved flow accepts a 15-minute token
 whose hash is authoritative; an encrypted bearer is retained only for a
-bounded retry with the same force-reset idempotency key. It is issued by an
+bounded one-time response window. It is issued by an
 active human Space Owner with a recent Passkey;
 the target completes a five-minute WebAuthn challenge. The reset advances a
 credential generation and invalidates stale human sessions, device/refresh

@@ -64,7 +64,26 @@ describe("portable Ugoite API protocol WASM", () => {
     });
   });
 
-  it("REQ-SEC-012: forwards the owner recovery idempotency header", async () => {
+  it("test_req_sec_012_owner_recovery_protocol_forwards_header", async () => {
+    const forceReset = await prepareApiRequest(
+      "space.recovery.force_reset",
+      { space_id: "team" },
+      { principal_id: "01900000-0000-7000-8000-000000000001" },
+    );
+    expect(forceReset).toMatchObject({
+      method: "POST",
+      path: "/spaces/team/admin/recovery/force-reset",
+      body_kind: "json",
+    });
+    expect(forceReset.headers).toContainEqual({
+      name: "content-type",
+      value: "application/json",
+    });
+    expect(forceReset.headers).not.toContainEqual({
+      name: "idempotency-key",
+      value: expect.any(String),
+    });
+
     const request = await prepareApiRequest(
       "space.recovery.backup_codes",
       {
@@ -82,5 +101,36 @@ describe("portable Ugoite API protocol WASM", () => {
       name: "idempotency-key",
       value: "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12",
     });
+
+    const ownerStart = await prepareApiRequest(
+      "auth.recovery.owner_start",
+      {},
+      { owner_approval_token: "owner-token" },
+    );
+    expect(ownerStart).toMatchObject({
+      method: "POST",
+      path: "/auth/recovery/owner/start",
+    });
+
+    const ownerFinish = await prepareApiRequest(
+      "auth.recovery.owner_finish",
+      {},
+      {
+        challenge_id: "01900000-0000-7000-8000-000000000002",
+        credential: { id: "credential" },
+      },
+    );
+    expect(ownerFinish).toMatchObject({
+      method: "POST",
+      path: "/auth/recovery/owner/finish",
+    });
+    expect(UGOITE_API_OPERATIONS).toEqual(
+      expect.arrayContaining([
+        "space.recovery.force_reset",
+        "space.recovery.backup_codes",
+        "auth.recovery.owner_start",
+        "auth.recovery.owner_finish",
+      ]),
+    );
   });
 });

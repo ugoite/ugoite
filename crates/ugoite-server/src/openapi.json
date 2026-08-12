@@ -5132,12 +5132,6 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/SpaceId"
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", "description": "A stable UUIDv4 request key for replaying an ambiguous approval response." }
           }
         ],
         "requestBody": {
@@ -5168,7 +5162,6 @@
           "403": { "description": "Recovery authority required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "404": { "description": "Recovery target invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "409": { "description": "Durable recovery fence is unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
-          "422": { "description": "Idempotency key is invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } },
           "503": { "description": "No durable state committed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryErrorResponse" } } } }
         }
       }
@@ -7017,9 +7010,7 @@
               "RECOVERY_TARGET_INVALID",
               "OWNER_RECOVERY_CHALLENGE_PENDING",
               "OWNER_RESET_ALREADY_COMPLETED",
-              "OWNER_APPROVAL_IDEMPOTENCY_KEY_INVALID",
               "OWNER_APPROVAL_ALREADY_COMMITTED",
-              "OWNER_APPROVAL_KEY_MISMATCH",
               "OWNER_APPROVAL_EXPIRED",
               "WEBAUTHN_REGISTRATION_INVALID",
               "RECOVERY_FENCE_UNAVAILABLE",

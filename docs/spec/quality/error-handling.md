@@ -40,7 +40,8 @@ content.
   client decoder accepts the response body.
 - Recovery one-time responses use `Cache-Control: no-store`. Treat
   `OWNER_RESET_ALREADY_COMPLETED` and `BACKUP_ROTATION_ALREADY_COMMITTED` as
-  terminal; do not replay the token or idempotency key. `audit_status: pending`
+  terminal; do not replay the token or a committed backup-rotation key.
+  `audit_status: pending`
   means the credential/code mutation committed and audit delivery is queued.
   `RECOVERY_FENCE_UNAVAILABLE` is a 409: a committed recovery marker still
   holds an unreconciled Space fence and must be resolved by the restart-safe

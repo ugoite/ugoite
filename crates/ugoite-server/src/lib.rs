@@ -44,8 +44,8 @@ use ugoite_iceberg::{
 };
 use ugoite_identity::{
     node_identity::{
-        AccountInvitation, NodeAuditInput, NodeIdentityService, OwnerRecoveryApproval,
-        OwnerRecoveryContext, RecoveryBindingSnapshot, TotpEnrollmentFinishError,
+        AccountInvitation, NodeAuditInput, NodeIdentityService, OwnerRecoveryContext,
+        RecoveryBindingSnapshot, TotpEnrollmentFinishError,
     },
     oauth::{self, AccessTokenClaims, Confirmation},
 };
@@ -1697,46 +1697,6 @@ async fn recovery_account_generations(
     Ok((issuer_generation, target_generation))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn owner_recovery_replay_error(
-    existing: &OwnerRecoveryApproval,
-    space_uid: Uuid,
-    principal_id: Uuid,
-    account_id: Uuid,
-    issuer_principal_id: Uuid,
-    issuer_account_id: Uuid,
-    issuer_credential_id: Uuid,
-    issuer_generation: u64,
-    target_generation: u64,
-    issuer_space_lifecycle_epoch: u64,
-    target_space_lifecycle_epoch: u64,
-    issuer_node_lifecycle_epoch: u64,
-    target_node_lifecycle_epoch: u64,
-) -> Option<&'static str> {
-    let original_identity_matches = existing.space_uid == space_uid
-        && existing.principal_id == principal_id
-        && existing.account_id == account_id
-        && existing.issuer_principal_id == issuer_principal_id
-        && existing.issuer_account_id == issuer_account_id
-        && existing.issuer_credential_id == Some(issuer_credential_id);
-    if !original_identity_matches {
-        return Some("OWNER_APPROVAL_KEY_MISMATCH");
-    }
-    if existing.invalidated_at.is_some() || existing.used_at.is_some() {
-        return Some("OWNER_APPROVAL_ALREADY_COMMITTED");
-    }
-    if existing.issuer_generation != issuer_generation
-        || existing.target_generation != target_generation
-        || existing.issuer_space_lifecycle_epoch != issuer_space_lifecycle_epoch
-        || existing.target_space_lifecycle_epoch != target_space_lifecycle_epoch
-        || existing.issuer_node_lifecycle_epoch != issuer_node_lifecycle_epoch
-        || existing.target_node_lifecycle_epoch != target_node_lifecycle_epoch
-    {
-        return Some("OWNER_APPROVAL_KEY_MISMATCH");
-    }
-    None
-}
-
 /// Acquire the Node half before publishing the Space fence. This closes the
 /// cross-store interval in which an invitation or credential mutation could
 /// commit after the Space barrier was visible but before Node had recorded its
@@ -1957,6 +1917,74 @@ async fn reserve_recovery_pair(
             .map_err(|_| recovery_storage_unavailable())?;
         return Err(recovery_commit_error(error));
     }
+    Ok((authorizer, fence, snapshot))
+}
+
+/// Reserve only the Space half for a replacement approval. The previous
+/// approval may own a Node fence in another Space; the Node CAS below replaces
+/// that fence and inserts the new one atomically. If either pre-commit step
+/// fails, the old approval remains durable and usable.
+#[allow(clippy::too_many_arguments)]
+async fn reserve_recovery_space_fence(
+    state: &AppState,
+    space_id: &str,
+    issuer_principal_id: Uuid,
+    issuer_account_id: Uuid,
+    target_principal_id: Uuid,
+    target_account_id: Uuid,
+    request_id: Uuid,
+    ttl: chrono::Duration,
+) -> ApiResult<(
+    Authorizer,
+    ugoite_iceberg::authorization::RecoveryFence,
+    RecoveryBindingSnapshot,
+)> {
+    let (issuer_generation, target_generation) =
+        recovery_account_generations(state, issuer_account_id, target_account_id).await?;
+    let issuer_node_epoch = state
+        .identity
+        .recovery_account_lifecycle_epoch(issuer_account_id)
+        .await
+        .map_err(recovery_commit_error)?;
+    let target_node_epoch = state
+        .identity
+        .recovery_account_lifecycle_epoch(target_account_id)
+        .await
+        .map_err(recovery_commit_error)?;
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let fence = authorizer
+        .reserve_recovery_fence_with_id(
+            space_id,
+            request_id,
+            Uuid::now_v7(),
+            issuer_principal_id,
+            issuer_account_id,
+            target_principal_id,
+            target_account_id,
+            issuer_generation,
+            target_generation,
+            ttl,
+        )
+        .await
+        .map_err(|error| {
+            if space_write_outcome_is_ambiguous(&error) {
+                recovery_fence_unavailable()
+            } else {
+                recovery_reservation_error(error)
+            }
+        })?;
+    let snapshot = RecoveryBindingSnapshot {
+        request_id,
+        recovery_fence_id: fence.fence_id,
+        recovery_fence_expires_at: fence.expires_at.clone(),
+        space_authorization_revision: fence.authorization_revision,
+        issuer_space_lifecycle_epoch: fence.issuer_space_lifecycle_epoch,
+        target_space_lifecycle_epoch: fence.target_space_lifecycle_epoch,
+        issuer_node_lifecycle_epoch: issuer_node_epoch,
+        target_node_lifecycle_epoch: target_node_epoch,
+        issuer_generation,
+        target_generation,
+    };
     Ok((authorizer, fence, snapshot))
 }
 
@@ -2345,27 +2373,13 @@ async fn owner_force_reset(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
-    headers: HeaderMap,
     Json(payload): Json<OwnerRecoveryApprovalRequest>,
 ) -> ApiResult<Response> {
     reconcile_recovery_fences_api(&state, &space_id).await?;
-    let Some(value) = headers.get("idempotency-key") else {
-        return Err(ApiError::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            json!({"code":"OWNER_APPROVAL_IDEMPOTENCY_KEY_INVALID","message":"Idempotency-Key must be a UUIDv4"}),
-        ));
-    };
-    let request_id = value
-        .to_str()
-        .ok()
-        .and_then(|value| Uuid::parse_str(value.trim()).ok())
-        .filter(|value| value.get_version() == Some(Version::Random))
-        .ok_or_else(|| {
-            ApiError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                json!({"code":"OWNER_APPROVAL_IDEMPOTENCY_KEY_INVALID","message":"Idempotency-Key must be a UUIDv4"}),
-            )
-        })?;
+    // Force-reset issuance is deliberately not idempotent. A deliberate new
+    // approval supersedes the previous one, while the request identity is
+    // generated by the server and never supplied by the caller.
+    let request_id = Uuid::now_v7();
     let (space_uid, issuer_principal_id) =
         recovery_owner_context(&state, &space_id, &identity).await?;
     let owner_session_token = identity.session_token.as_deref().ok_or_else(|| {
@@ -2385,179 +2399,77 @@ async fn owner_force_reset(
         identity.account_id,
     )
     .await?;
-    if let Some(existing) = state
+    let existing_fence = state
         .identity
-        .owner_recovery_approval(request_id)
-        .await
-        .map_err(recovery_commit_error)?
-    {
-        // Idempotency keys are bound to the complete immutable recovery tuple,
-        // including the current lifecycle/generation snapshot. Check that
-        // binding before terminal-state handling so a different request can
-        // never learn whether the original approval was used or invalidated.
-        let authorization = Authorizer::new(state.service.operator().clone())
-            .state(&space_id)
-            .await
-            .map_err(ApiError::from_core)?;
-        let (issuer_generation, target_generation) =
-            recovery_account_generations(&state, identity.account_id, account_id).await?;
-        let issuer_space_epoch = authorization
-            .principal_lifecycle_epochs
-            .get(&issuer_principal_id)
-            .copied()
-            .unwrap_or_default();
-        let target_space_epoch = authorization
-            .principal_lifecycle_epochs
-            .get(&payload.principal_id)
-            .copied()
-            .unwrap_or_default();
-        let issuer_node_epoch = state
-            .identity
-            .recovery_account_lifecycle_epoch(identity.account_id)
-            .await
-            .map_err(recovery_commit_error)?;
-        let target_node_epoch = state
-            .identity
-            .recovery_account_lifecycle_epoch(account_id)
-            .await
-            .map_err(recovery_commit_error)?;
-        if let Some(code) = owner_recovery_replay_error(
-            &existing,
-            space_uid,
-            payload.principal_id,
-            account_id,
-            issuer_principal_id,
-            identity.account_id,
-            identity.request_identity.credential_id,
-            issuer_generation,
-            target_generation,
-            issuer_space_epoch,
-            target_space_epoch,
-            issuer_node_epoch,
-            target_node_epoch,
-        ) {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                json!({
-                    "code": code,
-                    "message": if code == "OWNER_APPROVAL_KEY_MISMATCH" {
-                        "idempotency key is bound to another recovery tuple"
-                    } else {
-                        "owner recovery approval is already committed"
-                    }
-                }),
-            ));
-        }
-        if chrono::DateTime::parse_from_rfc3339(&existing.expires_at)
-            .map(|expires| expires.with_timezone(&chrono::Utc) <= chrono::Utc::now())
-            .map_err(|_| recovery_storage_unavailable())?
-        {
-            let expired_fence = state
-                .identity
-                .expire_owner_recovery_approval(request_id)
-                .await
-                .map_err(recovery_commit_error)?;
-            if let Some((expired_space_uid, expired_fence_id)) = expired_fence {
-                abort_owner_recovery_fence(&state, expired_space_uid, expired_fence_id).await?;
-            }
-            if state
-                .identity
-                .owner_recovery_approval(request_id)
-                .await
-                .map_err(recovery_commit_error)?
-                .is_some_and(|approval| approval.used_at.is_some())
-            {
-                return Err(ApiError::new(
-                    StatusCode::CONFLICT,
-                    json!({"code":"OWNER_APPROVAL_ALREADY_COMMITTED","message":"owner recovery approval is already committed"}),
-                ));
-            }
-            return Err(ApiError::new(
-                StatusCode::GONE,
-                json!({"code":"OWNER_APPROVAL_EXPIRED","message":"owner recovery approval has expired"}),
-            ));
-        }
-        let fence_is_current = existing.recovery_fence_id.is_some_and(|fence_id| {
-            authorization
-                .recovery_fences
-                .get(&fence_id)
-                .is_some_and(|fence| {
-                    fence.status == "active"
-                        && fence.request_id == request_id
-                        && fence.authorization_revision == existing.space_authorization_revision
-                })
-        });
-        if !fence_is_current {
-            return Err(recovery_fence_unavailable());
-        }
-        let token = match state
-            .identity
-            .owner_recovery_approval_token(request_id)
-            .await
-        {
-            Ok(token) => token,
-            Err(error) if error.to_string().contains("no longer current") => {
-                return Err(ApiError::new(
-                    StatusCode::CONFLICT,
-                    json!({"code":"OWNER_APPROVAL_ALREADY_COMMITTED","message":"owner recovery approval is already committed"}),
-                ));
-            }
-            Err(error) if error.to_string().contains("expired") => {
-                return Err(owner_recovery_api_error(error));
-            }
-            Err(_) => return Err(recovery_fence_unavailable()),
-        };
-        let _ = reconcile_recovery_audit_outbox(&state, &space_id).await;
-        let audit_delivered = state
-            .identity
-            .pending_recovery_audits()
-            .await
-            .map(|pending| {
-                !pending
-                    .into_iter()
-                    .any(|record| record.event_id == request_id)
-            })
-            .unwrap_or(false);
-        let mut headers = recovery_result_headers();
-        return Ok((
-            StatusCode::CREATED,
-            std::mem::take(&mut headers),
-            Json(json!({
-                "principal_id": payload.principal_id,
-                "owner_approval_token": token,
-                "expires_at": existing.expires_at,
-                "audit_status": if audit_delivered { "delivered" } else { "pending" }
-            })),
-        )
-            .into_response());
-    }
-    let old_fences = state
-        .identity
-        .supersede_owner_recovery_approvals(account_id)
+        .active_owner_recovery_fence(account_id)
         .await
         .map_err(recovery_commit_error)?;
-    let supersede_authorizer = Authorizer::new(state.service.operator().clone());
-    for (old_space_uid, old_fence_id) in old_fences {
-        let old_space_id = find_space_id_by_uid(&state, old_space_uid)
-            .await
-            .map_err(|_| recovery_storage_unavailable())?;
-        supersede_authorizer
-            .release_recovery_fence(&old_space_id, old_fence_id)
-            .await
-            .map_err(|_| recovery_storage_unavailable())?;
-    }
-    let (authorizer, fence, snapshot) = reserve_recovery_pair(
-        &state,
-        &space_id,
-        space_uid,
-        issuer_principal_id,
-        identity.account_id,
-        payload.principal_id,
-        account_id,
-        request_id,
-        chrono::Duration::minutes(15),
-    )
-    .await?;
+    let (authorizer, fence, snapshot, old_space_fence, reuse_existing_fence) =
+        if let Some((old_space_uid, old_snapshot)) = existing_fence {
+            let old_space_id = find_space_id_by_uid(&state, old_space_uid)
+                .await
+                .map_err(|_| recovery_storage_unavailable())?;
+            let old_authorizer = Authorizer::new(state.service.operator().clone());
+            let old_space_state = old_authorizer
+                .state(&old_space_id)
+                .await
+                .map_err(|_| recovery_fence_unavailable())?;
+            let old_fence = old_space_state
+                .recovery_fences
+                .get(&old_snapshot.recovery_fence_id)
+                .cloned()
+                .ok_or_else(recovery_fence_unavailable)?;
+            if old_fence.status != "active"
+                || old_fence.space_uid != old_space_uid
+                || old_fence.target_principal_id != payload.principal_id
+                || old_fence.target_account_id != account_id
+            {
+                return Err(recovery_fence_unavailable());
+            }
+            let same_tuple = old_space_uid == space_uid
+                && old_fence.issuer_principal_id == issuer_principal_id
+                && old_fence.issuer_account_id == identity.account_id;
+            if same_tuple {
+                (old_authorizer, old_fence, old_snapshot, None, true)
+            } else if old_space_uid == space_uid {
+                // A different active issuer cannot borrow the existing Space
+                // fence. Leave the old approval untouched and fail closed.
+                return Err(recovery_fence_unavailable());
+            } else {
+                let (authorizer, fence, snapshot) = reserve_recovery_space_fence(
+                    &state,
+                    &space_id,
+                    issuer_principal_id,
+                    identity.account_id,
+                    payload.principal_id,
+                    account_id,
+                    request_id,
+                    chrono::Duration::minutes(15),
+                )
+                .await?;
+                (
+                    authorizer,
+                    fence,
+                    snapshot,
+                    Some((old_space_uid, old_snapshot.recovery_fence_id)),
+                    false,
+                )
+            }
+        } else {
+            let (authorizer, fence, snapshot) = reserve_recovery_pair(
+                &state,
+                &space_id,
+                space_uid,
+                issuer_principal_id,
+                identity.account_id,
+                payload.principal_id,
+                account_id,
+                request_id,
+                chrono::Duration::minutes(15),
+            )
+            .await?;
+            (authorizer, fence, snapshot, None, false)
+        };
     if state
         .identity
         .revalidate_recent_passkey_session(
@@ -2569,45 +2481,7 @@ async fn owner_force_reset(
         .await
         .is_err()
     {
-        state
-            .identity
-            .release_recovery_fence(fence.fence_id)
-            .await
-            .map_err(recovery_commit_error)?;
-        authorizer
-            .release_recovery_fence(&space_id, fence.fence_id)
-            .await
-            .map_err(|_| recovery_storage_unavailable())?;
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            json!({
-                "code": "RECOVERY_AUTHORITY_REQUIRED",
-                "message": "the Owner Passkey session is no longer valid"
-            }),
-        ));
-    }
-    let (approval_id, token, expires_at) = match state
-        .identity
-        .issue_owner_recovery_approval_with_snapshot_credential_and_session(
-            space_uid,
-            payload.principal_id,
-            account_id,
-            issuer_principal_id,
-            identity.account_id,
-            snapshot,
-            Some(identity.request_identity.credential_id),
-            owner_session_token,
-        )
-        .await
-    {
-        Ok(result) => result,
-        Err(error) => {
-            if recovery_write_outcome_is_ambiguous(&error) {
-                // The Node approval may already be durable. Keep both fences
-                // active so reconciliation can discover the approval instead
-                // of releasing a committed mutation with no replayable token.
-                return Err(recovery_fence_unavailable());
-            }
+        if !reuse_existing_fence {
             state
                 .identity
                 .release_recovery_fence(fence.fence_id)
@@ -2617,9 +2491,96 @@ async fn owner_force_reset(
                 .release_recovery_fence(&space_id, fence.fence_id)
                 .await
                 .map_err(|_| recovery_storage_unavailable())?;
+        }
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            json!({
+                "code": "RECOVERY_AUTHORITY_REQUIRED",
+                "message": "the Owner Passkey session is no longer valid"
+            }),
+        ));
+    }
+    let issued = if reuse_existing_fence {
+        state
+            .identity
+            .replace_owner_recovery_approval_with_snapshot_credential_and_session(
+                space_uid,
+                payload.principal_id,
+                account_id,
+                issuer_principal_id,
+                identity.account_id,
+                snapshot,
+                Some(identity.request_identity.credential_id),
+                owner_session_token,
+                request_id,
+                None,
+            )
+            .await
+    } else if let Some((_, old_fence_id)) = old_space_fence {
+        state
+            .identity
+            .replace_owner_recovery_approval_with_snapshot_credential_and_session(
+                space_uid,
+                payload.principal_id,
+                account_id,
+                issuer_principal_id,
+                identity.account_id,
+                snapshot,
+                Some(identity.request_identity.credential_id),
+                owner_session_token,
+                request_id,
+                Some(old_fence_id),
+            )
+            .await
+    } else {
+        state
+            .identity
+            .issue_owner_recovery_approval_with_snapshot_credential_and_session(
+                space_uid,
+                payload.principal_id,
+                account_id,
+                issuer_principal_id,
+                identity.account_id,
+                snapshot,
+                Some(identity.request_identity.credential_id),
+                owner_session_token,
+            )
+            .await
+    };
+    let (approval_id, token, expires_at) = match issued {
+        Ok(result) => result,
+        Err(error) => {
+            if recovery_write_outcome_is_ambiguous(&error) {
+                // The Node approval may already be durable. Keep both fences
+                // active so reconciliation can discover the approval instead
+                // of releasing a committed mutation with no replayable token.
+                return Err(recovery_fence_unavailable());
+            }
+            if !reuse_existing_fence {
+                state
+                    .identity
+                    .release_recovery_fence(fence.fence_id)
+                    .await
+                    .map_err(recovery_commit_error)?;
+                authorizer
+                    .release_recovery_fence(&space_id, fence.fence_id)
+                    .await
+                    .map_err(|_| recovery_storage_unavailable())?;
+            }
             return Err(recovery_commit_error(error));
         }
     };
+    if let Some((old_space_uid, old_fence_id)) = old_space_fence {
+        if abort_owner_recovery_fence(&state, old_space_uid, old_fence_id)
+            .await
+            .is_err()
+        {
+            // The Node CAS already made the replacement authoritative. Keep
+            // the new result fail-closed until reconciliation releases the
+            // old Space half instead of manufacturing a clean success.
+            return Err(recovery_fence_unavailable());
+        }
+    }
     let node_audit_status = state
         .identity
         .append_node_audit_with_id(
@@ -6798,74 +6759,6 @@ mod authentication_regression_tests {
             recovery_reservation_error(unknown).status,
             StatusCode::CONFLICT
         );
-    }
-
-    #[test]
-    fn owner_recovery_terminal_state_does_not_override_key_mismatch() {
-        let space_uid = Uuid::now_v7();
-        let principal_id = Uuid::now_v7();
-        let account_id = Uuid::now_v7();
-        let issuer_principal_id = Uuid::now_v7();
-        let issuer_account_id = Uuid::now_v7();
-        let issuer_credential_id = Uuid::now_v7();
-        let approval = OwnerRecoveryApproval {
-            approval_id: Uuid::now_v7(),
-            token_hash: "token-hash".into(),
-            space_uid,
-            principal_id,
-            account_id,
-            issuer_principal_id,
-            issuer_account_id,
-            issuer_credential_id: Some(issuer_credential_id),
-            target_generation: 0,
-            issuer_generation: 0,
-            issuer_space_lifecycle_epoch: 1,
-            target_space_lifecycle_epoch: 1,
-            issuer_node_lifecycle_epoch: 0,
-            target_node_lifecycle_epoch: 0,
-            space_authorization_revision: 2,
-            recovery_fence_id: Some(Uuid::now_v7()),
-            issued_at: "2026-01-01T00:00:00Z".into(),
-            expires_at: "2026-01-02T00:00:00Z".into(),
-            challenge_id: None,
-            reset_id: None,
-            used_at: Some("2026-01-01T00:01:00Z".into()),
-            invalidated_at: None,
-            encrypted_token: None,
-        };
-        let mismatch = owner_recovery_replay_error(
-            &approval,
-            space_uid,
-            Uuid::now_v7(),
-            account_id,
-            issuer_principal_id,
-            issuer_account_id,
-            issuer_credential_id,
-            1,
-            1,
-            1,
-            1,
-            1,
-            1,
-        );
-        assert_eq!(mismatch, Some("OWNER_APPROVAL_KEY_MISMATCH"));
-
-        let original_request = owner_recovery_replay_error(
-            &approval,
-            space_uid,
-            principal_id,
-            account_id,
-            issuer_principal_id,
-            issuer_account_id,
-            issuer_credential_id,
-            0,
-            1,
-            1,
-            1,
-            0,
-            1,
-        );
-        assert_eq!(original_request, Some("OWNER_APPROVAL_ALREADY_COMMITTED"));
     }
 
     #[tokio::test]

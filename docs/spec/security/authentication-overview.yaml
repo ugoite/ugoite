@@ -18,7 +18,7 @@ node_identity:
     owner_approved:
       authority: active_human_space_owner_with_recent_passkey
       approval_ttl_minutes: 15
-      token: { entropy_bits_minimum: 256, hashed_at_rest: true, encrypted_for_same_idempotency_replay: true, one_use: true }
+      token: { entropy_bits_minimum: 256, hashed_at_rest: true, encrypted_for_one_time_response: true, one_use: true }
       challenge_ttl_minutes: 5
       reset: { credential_generation: monotonic, old_human_credentials_invalidated: true, agent_credentials_preserved: true }
       backup_codes: { count: 8, idempotency_key: uuid_v4, plaintext_returned_once: true }

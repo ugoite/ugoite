@@ -17,17 +17,8 @@ fn owner_recovery_contract_exposes_owner_only_space_scope() {
         .unwrap()
         .iter()
         .any(|parameter| parameter["$ref"] == "#/components/parameters/SpaceId"));
-    let idempotency = force_reset["parameters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|parameter| parameter["name"] == "Idempotency-Key")
-        .expect("force-reset idempotency key");
-    assert_eq!(idempotency["required"], true);
-    assert_eq!(
-        force_reset["responses"]["422"]["content"]["application/json"]["schema"]["$ref"],
-        "#/components/schemas/RecoveryErrorResponse"
-    );
+    assert_eq!(force_reset["parameters"].as_array().unwrap().len(), 1);
+    assert!(force_reset["responses"].get("422").is_none());
     assert_eq!(
         force_reset["responses"]["201"]["headers"]["Cache-Control"]["schema"]["const"],
         "no-store"
@@ -72,7 +63,7 @@ fn owner_recovery_contract_exposes_single_reset_response() {
 }
 
 #[test]
-fn owner_recovery_contract_exposes_audit_status_and_redaction() {
+fn test_req_sec_013_recovery_outbox_status_and_redaction() {
     let snapshot = ugoite_server::openapi_snapshot();
     let status = snapshot
         .pointer("/components/schemas/AuditStatus")
@@ -150,16 +141,11 @@ fn owner_recovery_contract_exposes_terminal_error_and_cookie_contract() {
     assert!(error_codes
         .iter()
         .any(|code| code == "OWNER_APPROVAL_EXPIRED"));
-    for code in [
-        "OWNER_APPROVAL_IDEMPOTENCY_KEY_INVALID",
-        "OWNER_APPROVAL_ALREADY_COMMITTED",
-        "OWNER_APPROVAL_KEY_MISMATCH",
-    ] {
-        assert!(
-            error_codes.iter().any(|value| value == code),
-            "missing {code}"
-        );
-    }
+    let code = "OWNER_APPROVAL_ALREADY_COMMITTED";
+    assert!(
+        error_codes.iter().any(|value| value == code),
+        "missing {code}"
+    );
     let credential_required = snapshot
         .pointer("/components/schemas/WebAuthnRegistrationCredential/required")
         .and_then(Value::as_array)
@@ -169,9 +155,57 @@ fn owner_recovery_contract_exposes_terminal_error_and_cookie_contract() {
         .any(|field| field == "extensions"));
 }
 
+#[test]
+fn test_req_sec_012_generation_invalidates_human_credentials_but_not_agents() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let response = snapshot
+        .pointer("/components/schemas/OwnerRecoveryFinishResponse")
+        .expect("owner recovery finish response");
+    assert_eq!(
+        response["required"],
+        json!(["account", "recovery_codes", "audit_status"])
+    );
+    assert_eq!(
+        snapshot["components"]["schemas"]["AuditStatus"]["enum"],
+        json!(["delivered", "pending"])
+    );
+}
+
+#[test]
+fn test_req_sec_012_backup_rotation_idempotency_and_preservation() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let backup = snapshot
+        .pointer("/paths/~1spaces~1{space_id}~1admin~1recovery~1backup-codes/post")
+        .expect("backup-code rotation endpoint");
+    assert_eq!(backup["parameters"][1]["name"], "Idempotency-Key");
+    assert_eq!(backup["parameters"][1]["required"], true);
+    assert_eq!(
+        backup["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/BackupCodesRotationResponse"
+    );
+    assert_eq!(
+        backup["responses"]["200"]["headers"]["Cache-Control"]["schema"]["const"],
+        "no-store"
+    );
+}
+
+#[test]
+fn test_req_sec_012_concurrent_reset_winner_and_loser_session() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let errors = snapshot["components"]["schemas"]["RecoveryErrorResponse"]["properties"]["code"]
+        ["enum"]
+        .as_array()
+        .expect("recovery error codes");
+    assert!(errors
+        .iter()
+        .any(|code| code == "OWNER_RESET_ALREADY_COMPLETED"));
+    assert!(snapshot
+        .pointer("/paths/~1auth~1recovery~1owner~1finish/post/responses/201/headers/Set-Cookie")
+        .is_some());
+}
+
 #[tokio::test]
-async fn test_req_sec_012_behavioral_owner_fence_blocks_mutations_and_expired_completion(
-) -> Result<()> {
+async fn test_req_sec_012_owner_only_space_scope_and_target_binding() -> Result<()> {
     let operator = operator_from_uri("memory://owner-recovery-behavior")?;
     operator.create_dir("spaces/demo/").await?;
     let authorizer = Authorizer::new(operator);

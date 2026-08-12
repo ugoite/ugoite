@@ -20,10 +20,10 @@ invariants are:
 - Owner-approved recovery is separate from self-recovery: only an active human
   Space Owner with a recent Passkey can issue a 15-minute token for another
   active member. Its hash is authoritative; encrypted response material is
-  retained only for a bounded retry with the same force-reset key. The target completes a five-minute WebAuthn flow;
-  credential generation invalidates old human credentials while agent
-  credentials remain separate. Backup-code rotation uses a UUIDv4
-  `Idempotency-Key` and returns eight codes once.
+  retained only for a bounded one-time response window. The target completes a
+  five-minute WebAuthn flow; credential generation invalidates old human
+  credentials while agent credentials remain separate. Backup-code rotation
+  uses a UUIDv4 `Idempotency-Key` and returns eight codes once.
 - Node administrator and Space owner are separate roles.
 - An active human Space Owner with a recent phishing-resistant browser session
   may issue a 15-minute, 256-bit owner-approved recovery token for another

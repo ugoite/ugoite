@@ -879,10 +879,7 @@ pub fn prepare_request(
         }
     };
 
-    if matches!(
-        operation,
-        "space.recovery.force_reset" | "space.recovery.backup_codes"
-    ) {
+    if operation == "space.recovery.backup_codes" {
         let idempotency_key = required_string(operation, args, "idempotency_key")?;
         headers.push(Header {
             name: "idempotency-key".to_string(),
@@ -1541,40 +1538,47 @@ mod tests {
 
     #[test]
     fn test_req_sec_012_owner_recovery_operations_and_idempotency_header() {
-        for (operation, path) in [
-            (
-                "space.recovery.force_reset",
-                "/spaces/team/admin/recovery/force-reset",
-            ),
-            (
-                "space.recovery.backup_codes",
-                "/spaces/team/admin/recovery/backup-codes",
-            ),
-        ] {
-            let request = prepare_request(
-                operation,
-                &json!({
-                    "space_id": "team",
-                    "idempotency_key": "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12"
-                }),
-                Some(&json!({"principal_id": "01900000-0000-7000-8000-000000000001"})),
-            )
-            .expect("owner recovery request");
-            assert_eq!(request.path, path);
-            assert_eq!(
-                request.headers,
-                vec![
-                    Header {
-                        name: "content-type".into(),
-                        value: "application/json".into()
-                    },
-                    Header {
-                        name: "idempotency-key".into(),
-                        value: "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12".into()
-                    },
-                ]
-            );
-        }
+        let force_reset = prepare_request(
+            "space.recovery.force_reset",
+            &json!({"space_id": "team"}),
+            Some(&json!({"principal_id": "01900000-0000-7000-8000-000000000001"})),
+        )
+        .expect("owner force-reset request");
+        assert_eq!(force_reset.path, "/spaces/team/admin/recovery/force-reset");
+        assert_eq!(
+            force_reset.headers,
+            vec![Header {
+                name: "content-type".into(),
+                value: "application/json".into()
+            }]
+        );
+
+        let backup_codes = prepare_request(
+            "space.recovery.backup_codes",
+            &json!({
+                "space_id": "team",
+                "idempotency_key": "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12"
+            }),
+            Some(&json!({"principal_id": "01900000-0000-7000-8000-000000000001"})),
+        )
+        .expect("owner backup-code request");
+        assert_eq!(
+            backup_codes.path,
+            "/spaces/team/admin/recovery/backup-codes"
+        );
+        assert_eq!(
+            backup_codes.headers,
+            vec![
+                Header {
+                    name: "content-type".into(),
+                    value: "application/json".into()
+                },
+                Header {
+                    name: "idempotency-key".into(),
+                    value: "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12".into()
+                },
+            ]
+        );
         for operation in [
             "space.recovery.force_reset",
             "space.recovery.backup_codes",
@@ -1800,10 +1804,7 @@ mod tests {
                 json!("01900000-0000-7000-8000-000000000001"),
             );
         }
-        if matches!(
-            operation,
-            "space.recovery.force_reset" | "space.recovery.backup_codes"
-        ) {
+        if matches!(operation, "space.recovery.backup_codes") {
             arguments.insert(
                 "idempotency_key".into(),
                 json!("018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12"),
