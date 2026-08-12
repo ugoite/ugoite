@@ -36,7 +36,7 @@ function workflowJobBlock(source: string, job: string): string {
   const jobStart = source.indexOf(jobHeader, jobsStart);
   assertEquals(jobStart >= 0, true, `workflow is missing jobs.${job}`);
   const nextJob = source.slice(jobStart + jobHeader.length).search(
-    /^  [A-Za-z0-9_-]+:\n/m,
+    /^\x20{2}[A-Za-z0-9_-]+:\n/m,
   );
   return source.slice(
     jobStart + jobHeader.length,
