@@ -9295,7 +9295,8 @@
       },
       "tools": {
         "dependencies": [
-          "jsr:@std/assert@1"
+          "jsr:@std/assert@1",
+          "npm:yaml@2.9.0"
         ]
       }
     }

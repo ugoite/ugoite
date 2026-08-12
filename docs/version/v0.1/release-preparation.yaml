@@ -25,7 +25,9 @@ phases:
   - description: Validate a published release through both quick starts.
     done: false
 - id: release-communication
-  status: planned
+  status: in_progress
   tasks:
-  - description: Publish channel-specific stable, beta, and alpha release notes only when artifacts exist.
+  - description: Provide channel-specific stable, beta, and alpha release-note publication only after artifact and quick-start verification.
+    done: true
+  - description: Complete a release with published channel-specific notes.
     done: false
