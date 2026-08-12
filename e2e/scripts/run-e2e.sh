@@ -3,7 +3,8 @@
 # fallback via `run-e2e-parity.sh`.
 #
 # Usage: ./e2e/scripts/run-e2e.sh [test-type]
-#   test-type: "smoke", "asset-owned", "entries", "screenshot", or "full" (runs standard tests)
+#   test-type: "smoke", "asset-owned", "smoke-and-asset-owned", "entries",
+#     "screenshot", or "full" (runs standard tests)
 #
 # Environment variables:
 #   E2E_TEST_TIMEOUT_MS: per-test timeout passed to `playwright test --timeout`
@@ -208,11 +209,7 @@ echo "Running E2E tests (type: $TEST_TYPE)..."
 echo "=========================================="
 
 cd "$ROOT_DIR/e2e"
-
-if [ "$ENFORCE_CI_GATES" = "true" ]; then
-  mkdir -p "$(dirname "$PLAYWRIGHT_JUNIT_OUTPUT_FILE")"
-  rm -f "$PLAYWRIGHT_JUNIT_OUTPUT_FILE"
-fi
+base_report_file="${PLAYWRIGHT_JUNIT_OUTPUT_FILE:-test-results/junit.xml}"
 
 TEST_TIMEOUT_ARGS=()
 if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
@@ -220,42 +217,25 @@ if [ -n "${E2E_TEST_TIMEOUT_MS:-}" ]; then
 fi
 run_e2e_task() {
   local task="$1"
+  local report="$2"
+  if [ "$ENFORCE_CI_GATES" = "true" ]; then
+    export PLAYWRIGHT_JUNIT_OUTPUT_FILE="$report"
+    mkdir -p "$(dirname "$report")"
+    rm -f "$report"
+  fi
   if [ "${#TEST_TIMEOUT_ARGS[@]}" -gt 0 ]; then
     deno task "$task" -- "${TEST_TIMEOUT_ARGS[@]}"
   else
     deno task "$task"
   fi
+  if [ "$ENFORCE_CI_GATES" = "true" ]; then
+    validate_junit_report "$report"
+  fi
 }
 
-case "$TEST_TYPE" in
-  smoke)
-    run_e2e_task smoke
-    ;;
-  entries)
-    run_e2e_task entries
-    ;;
-  asset-owned)
-    if [ "${#TEST_TIMEOUT_ARGS[@]}" -gt 0 ]; then
-      deno task asset-owned -- "${TEST_TIMEOUT_ARGS[@]}"
-    else
-      deno task asset-owned
-    fi
-    ;;
-  screenshot)
-    run_e2e_task screenshot
-    ;;
-  full)
-    run_e2e_task full
-    ;;
-  *)
-    echo "Unknown test type: $TEST_TYPE"
-    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|entries|screenshot|full]"
-    exit 1
-    ;;
-esac
-
-if [ "$ENFORCE_CI_GATES" = "true" ]; then
-  deno eval '
+validate_junit_report() {
+  local report="$1"
+  PLAYWRIGHT_JUNIT_OUTPUT_FILE="$report" deno eval '
     const report = Deno.env.get("PLAYWRIGHT_JUNIT_OUTPUT_FILE");
     if (!report) throw new Error("PLAYWRIGHT_JUNIT_OUTPUT_FILE is required");
     const xml = await Deno.readTextFile(report);
@@ -267,7 +247,33 @@ if [ "$ENFORCE_CI_GATES" = "true" ]; then
     if (skipped > 0) throw new Error(`e2e tests: skipped=${skipped} is not allowed`);
     console.log(`e2e tests OK: tests=${tests}, skipped=${skipped}`);
   '
-fi
+}
+
+case "$TEST_TYPE" in
+  smoke)
+    run_e2e_task smoke "$base_report_file"
+    ;;
+  entries)
+    run_e2e_task entries "$base_report_file"
+    ;;
+  asset-owned)
+    run_e2e_task asset-owned "$base_report_file"
+    ;;
+  smoke-and-asset-owned)
+    run_e2e_task smoke-and-asset-owned "$base_report_file"
+    ;;
+  screenshot)
+    run_e2e_task screenshot "$base_report_file"
+    ;;
+  full)
+    run_e2e_task full "$base_report_file"
+    ;;
+  *)
+    echo "Unknown test type: $TEST_TYPE"
+    echo "Usage: ./e2e/scripts/run-e2e.sh [smoke|asset-owned|smoke-and-asset-owned|entries|screenshot|full]"
+    exit 1
+    ;;
+esac
 
 echo ""
 echo "=========================================="

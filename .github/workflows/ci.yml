@@ -128,9 +128,6 @@ jobs:
             echo "docker_cache_to=${docker_cache_to}"
           } >>"$GITHUB_OUTPUT"
 
-      - name: Prepare artifact staging
-        run: rm -rf target/artifacts && mkdir -p target/artifacts
-
       - name: Formatting check
         id: fmt-check
         run: scripts/measure-step.sh fmt-check mise run fmt:check
@@ -143,64 +140,41 @@ jobs:
         id: check
         run: scripts/measure-step.sh check mise run check
 
-      - name: Build WASM release
-        id: build-wasm
-        run: scripts/measure-step.sh build-wasm mise run build:wasm:release
+      - name: Install Playwright browser dependencies
+        id: install-playwright
+        run: scripts/measure-step.sh install-playwright deno task e2e:install:browsers
 
-      - name: Build frontend
-        id: build-frontend
-        run: scripts/measure-step.sh build-frontend mise run build:frontend
-
-      - name: Build docsite
-        id: build-docsite
+      - name: Build release outputs
+        id: build
         env:
           DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
           DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
-        run: scripts/measure-step.sh build-docsite mise run build:docsite
-
-      - name: Build Rust release binaries
-        id: build-rust
-        run: scripts/measure-step.sh build-rust mise run build:rust:release
-
-      - name: Build runtime image
-        id: build-image
-        env:
           UGOITE_IMAGE_PREBUILT: "true"
           UGOITE_IMAGE_USE_BUILDX: "true"
           UGOITE_IMAGE_CACHE_FROM: ${{ steps.ci-config.outputs.docker_cache_from }}
           UGOITE_IMAGE_CACHE_TO: ${{ steps.ci-config.outputs.docker_cache_to }}
-        run: scripts/measure-step.sh build-image mise run build:image
+        run: scripts/measure-step.sh build mise run build
 
-      - name: Package docsite artifact
-        id: package-docsite
+      - name: Package artifacts
+        id: package
         env:
           DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
           DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
-        run: scripts/measure-step.sh package-docsite mise run package:docsite
+          UGOITE_CI_RUN_ID: ${{ github.run_id }}
+        run: scripts/measure-step.sh package mise run package
 
-      - name: Package CLI artifact
-        id: package-cli
-        run: scripts/measure-step.sh package-cli mise run package:cli
+      - name: Verify artifacts
+        id: verify
+        run: scripts/measure-step.sh verify mise run verify
 
-      - name: Package Helm artifact
-        id: package-helm
-        run: scripts/measure-step.sh package-helm mise run package:helm
-
-      - name: Rust tests
-        id: test-rust
-        run: scripts/measure-step.sh test-rust mise run test:rust
-
-      - name: Tool tests
-        id: test-tools
-        run: scripts/measure-step.sh test-tools mise run test:tools
-
-      - name: Frontend tests
-        id: test-frontend
-        run: scripts/measure-step.sh test-frontend mise run test:frontend
-
-      - name: Docsite tests
-        id: test-docsite
-        run: scripts/measure-step.sh test-docsite mise run test:docsite
+      - name: Rust, tool, frontend, and docsite tests
+        id: test
+        env:
+          # Keep the mise task graph parallel while leaving enough CPU for
+          # Vitest during Cargo's workspace test build.
+          MISE_JOBS: "2"
+          CARGO_BUILD_JOBS: "2"
+        run: scripts/measure-step.sh test mise run test
 
       - name: Frontend coverage
         id: test-frontend-coverage
@@ -212,47 +186,19 @@ jobs:
 
       - name: Docsite navigation E2E
         id: test-docsite-navigation
+        env:
+          UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
         run: scripts/measure-step.sh test-docsite-navigation mise run test:docsite:e2e:navigation
 
-      - name: E2E smoke
-        id: test-e2e
-        run: scripts/measure-step.sh test-e2e mise run test:e2e:smoke
-
-      - name: Form-owned Asset E2E
-        id: test-e2e-asset-owned
-        run: scripts/measure-step.sh test-e2e-asset-owned mise run test:e2e:asset-owned
-
-      - name: Package runtime image artifact
-        id: package-image
-        run: scripts/measure-step.sh package-image mise run package:image
-
-      - name: Write artifact manifest
-        id: package-manifest
+      - name: E2E smoke and Form-owned Asset
+        id: test-e2e-smoke-asset-owned
         env:
-          DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
-          DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
-          UGOITE_CI_RUN_ID: ${{ github.run_id }}
-        run: scripts/measure-step.sh package-manifest mise run package:manifest
-
-      - name: Verify docsite artifact
-        id: verify-docsite
-        run: scripts/measure-step.sh verify-docsite mise run verify:docsite
-
-      - name: Verify CLI artifact
-        id: verify-cli
-        run: scripts/measure-step.sh verify-cli mise run verify:cli
+          UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
+        run: scripts/measure-step.sh test-e2e-smoke-asset-owned mise run test:e2e:smoke-and-asset-owned
 
       - name: Validate release metadata
         id: validate-release
         run: scripts/measure-step.sh validate-release mise run validate:release
-
-      - name: Verify Helm artifact
-        id: verify-helm
-        run: scripts/measure-step.sh verify-helm mise run verify:helm
-
-      - name: Verify image artifact
-        id: verify-image
-        run: scripts/measure-step.sh verify-image mise run verify:image
 
       - name: Upload docsite artifact
         id: upload-docsite
@@ -407,28 +353,15 @@ jobs:
             echo "- fmt:check: ${{ steps.fmt-check.outputs.duration_seconds }}s"
             echo "- lint: ${{ steps.lint.outputs.duration_seconds }}s"
             echo "- check: ${{ steps.check.outputs.duration_seconds }}s"
-            echo "- build:wasm:release: ${{ steps.build-wasm.outputs.duration_seconds }}s"
-            echo "- build:frontend: ${{ steps.build-frontend.outputs.duration_seconds }}s"
-            echo "- build:docsite: ${{ steps.build-docsite.outputs.duration_seconds }}s"
-            echo "- build:rust:release: ${{ steps.build-rust.outputs.duration_seconds }}s"
-            echo "- build:image: ${{ steps.build-image.outputs.duration_seconds }}s"
-            echo "- test:rust: ${{ steps.test-rust.outputs.duration_seconds }}s"
-            echo "- test:tools: ${{ steps.test-tools.outputs.duration_seconds }}s"
-            echo "- test:frontend: ${{ steps.test-frontend.outputs.duration_seconds }}s"
-            echo "- test:docsite: ${{ steps.test-docsite.outputs.duration_seconds }}s"
+            echo "- install Playwright: ${{ steps.install-playwright.outputs.duration_seconds }}s"
+            echo "- build: ${{ steps.build.outputs.duration_seconds }}s"
+            echo "- test: ${{ steps.test.outputs.duration_seconds }}s"
             echo "- test:frontend:coverage: ${{ steps.test-frontend-coverage.outputs.duration_seconds }}s"
             echo "- test:docsite:coverage: ${{ steps.test-docsite-coverage.outputs.duration_seconds }}s"
-            echo "- test:e2e:smoke: ${{ steps.test-e2e.outputs.duration_seconds }}s"
-            echo "- test:e2e:asset-owned: ${{ steps.test-e2e-asset-owned.outputs.duration_seconds }}s"
-            echo "- package:docsite: ${{ steps.package-docsite.outputs.duration_seconds }}s"
-            echo "- package:cli: ${{ steps.package-cli.outputs.duration_seconds }}s"
-            echo "- package:helm: ${{ steps.package-helm.outputs.duration_seconds }}s"
-            echo "- package:image: ${{ steps.package-image.outputs.duration_seconds }}s"
-            echo "- package:manifest: ${{ steps.package-manifest.outputs.duration_seconds }}s"
-            echo "- verify:docsite: ${{ steps.verify-docsite.outputs.duration_seconds }}s"
-            echo "- verify:cli: ${{ steps.verify-cli.outputs.duration_seconds }}s"
-            echo "- verify:helm: ${{ steps.verify-helm.outputs.duration_seconds }}s"
-            echo "- verify:image: ${{ steps.verify-image.outputs.duration_seconds }}s"
+            echo "- docsite navigation E2E: ${{ steps.test-docsite-navigation.outputs.duration_seconds }}s"
+            echo "- E2E smoke and asset-owned: ${{ steps.test-e2e-smoke-asset-owned.outputs.duration_seconds }}s"
+            echo "- package: ${{ steps.package.outputs.duration_seconds }}s"
+            echo "- verify: ${{ steps.verify.outputs.duration_seconds }}s"
             echo "- validate:release: ${{ steps.validate-release.outputs.duration_seconds }}s"
             echo "- total workflow duration: ${total_duration_seconds}s"
             echo
