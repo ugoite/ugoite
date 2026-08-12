@@ -67,6 +67,28 @@ Errors are structured JSON. Authentication failures use 401; valid identities
 lacking Space/token/resource permission use 403; stale/used one-time credentials
 fail without revealing stored secret material.
 
+## Response integrity headers
+
+Eligible materialized responses from the shared `/api` route layer carry
+`X-Ugoite-Key-Id` and `X-Ugoite-Signature`. The signature is lowercase
+hexadecimal HMAC-SHA256 over the exact response body bytes delivered to the
+caller. The key ID selects the operator-controlled HMAC material; verifiers
+must not canonicalize or reserialize the body before checking it.
+
+Responses for ordinary Node/API paths use the lazily created
+`response_hmac/default.json` material under the configured Space operator root.
+Requests under `/spaces/{space_id}/` and `/mcp/resources/{space_id}/` use the
+matching Space material. The server percent-decodes the Space path segment
+exactly once and then applies the domain identifier rules. Unknown or invalid
+Space identifiers do not create storage and remain unsigned.
+
+Only bounded (at most 8 MiB), materialized, infallible JSON/string/bytes/empty
+responses are eligible. SSE, streaming/fallible bodies, trailers, static
+files, and explicit unsigned responses omit both headers; signing or storage
+errors preserve the response without headers. There is no key-distribution
+endpoint: operators provision or inspect keys through the storage boundary and
+verify responses offline.
+
 Form evolution that changes the type of an existing field is intentionally
 unsupported before v1. The server returns HTTP 422 with code
 `FORM_FIELD_TYPE_CHANGE_NOT_SUPPORTED` and a message naming the field and

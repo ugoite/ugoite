@@ -5,6 +5,10 @@ roots:
   kind: directory
   notes:
   - Space-owned data and metadata.
+- path: response_hmac
+  kind: directory
+  notes:
+  - Node-local response-signing material; excluded from Space exports.
 - path: users
   kind: directory
   notes:
@@ -52,6 +56,9 @@ space_layout:
       - path: spaces/{space_id}/hmac.json
         kind: file
         schema: response_hmac
+      - path: response_hmac/default.json
+        kind: file
+        schema: node_response_hmac
     sql_session_creation:
       operation: create_sql_session
       entries:

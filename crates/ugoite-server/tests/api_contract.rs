@@ -2,13 +2,17 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode},
 };
+use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
+use ugoite_iceberg::{authorization::Authorizer, integrity::RealIntegrityProvider, space};
 use ugoite_server::{app, AppState};
+use ugoite_storage::{operator_from_uri, OpendalStorage, StorageBackend};
+use uuid::Uuid;
 
 static APP_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -87,6 +91,174 @@ fn assert_common_security_headers(response: &axum::response::Response, hsts: boo
     assert!(csp.contains("script-src 'self'"));
     assert!(csp.contains("img-src 'self' blob:"));
     assert_eq!(headers.contains_key("strict-transport-security"), hsts);
+}
+
+async fn assert_response_signature(
+    response: axum::response::Response,
+    storage: &OpendalStorage,
+    key_path: &str,
+) -> Vec<u8> {
+    let key_id = response
+        .headers()
+        .get("x-ugoite-key-id")
+        .expect("response key ID")
+        .to_str()
+        .expect("response key ID is valid UTF-8")
+        .to_string();
+    let signature = response
+        .headers()
+        .get("x-ugoite-signature")
+        .expect("response signature")
+        .to_str()
+        .expect("response signature is valid UTF-8")
+        .to_string();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    let payload: Value = serde_json::from_slice(&storage.read(key_path).await.unwrap())
+        .expect("response HMAC payload");
+    let stored_key_id = payload["hmac_key_id"].as_str().expect("key ID");
+    let secret = general_purpose::STANDARD
+        .decode(payload["hmac_key"].as_str().expect("secret"))
+        .expect("base64 HMAC secret");
+    assert_eq!(key_id, stored_key_id);
+    assert_eq!(
+        signature,
+        RealIntegrityProvider::new(secret).signature_bytes(&body)
+    );
+    assert!(!body.windows(8).any(|window| window == b"hmac_key"));
+    body.to_vec()
+}
+
+fn test_storage(name: &str) -> OpendalStorage {
+    let operator =
+        operator_from_uri(&format!("memory://server-contract-{name}")).expect("test operator");
+    OpendalStorage::from_operator(&operator)
+}
+
+async fn create_test_space(name: &str, space_id: &str) {
+    let operator =
+        operator_from_uri(&format!("memory://server-contract-{name}")).expect("test operator");
+    space::create_space(&operator, space_id, "/tmp")
+        .await
+        .expect("Space");
+    let metadata = space::get_space(&operator, space_id)
+        .await
+        .expect("Space metadata");
+    let space_uid = metadata.space_uid;
+    Authorizer::new(operator)
+        .initialize_owner(space_id, space_uid, Uuid::now_v7(), "Test owner")
+        .await
+        .expect("Space authorization state");
+}
+
+#[tokio::test]
+/// REQ-INT-003
+async fn req_int_003_signs_default_and_space_scoped_api_responses() {
+    let name = "response-hmac-scopes";
+    let storage = test_storage(name);
+    create_test_space(name, "space-a").await;
+    create_test_space(name, "space-b").await;
+    let app = initialized_app(name).await;
+
+    let default_response = app
+        .clone()
+        .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(default_response.status(), StatusCode::OK);
+    assert_response_signature(default_response, &storage, "response_hmac/default.json").await;
+    assert!(!storage.exists("spaces/default/hmac.json").await.unwrap());
+
+    for space_id in ["space-a", "space-b"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/spaces/{space_id}/health"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::LOCKED);
+        assert_response_signature(response, &storage, &format!("spaces/{space_id}/hmac.json"))
+            .await;
+    }
+}
+
+#[tokio::test]
+/// REQ-INT-003
+async fn req_int_003_signs_head_and_empty_bodies() {
+    let name = "response-hmac-head";
+    let storage = test_storage(name);
+    let app = initialized_app(name).await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::HEAD)
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = assert_response_signature(response, &storage, "response_hmac/default.json").await;
+    assert!(body.is_empty());
+}
+
+#[tokio::test]
+/// REQ-INT-003
+async fn req_int_003_fails_closed_for_unknown_space_and_key_errors() {
+    let name = "response-hmac-fail-closed";
+    let storage = test_storage(name);
+    let app = initialized_app(name).await;
+    let unknown = app
+        .clone()
+        .oneshot(
+            Request::get("/spaces/unknown-space/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unknown.status(), StatusCode::LOCKED);
+    assert!(unknown.headers().get("x-ugoite-signature").is_none());
+    assert_common_security_headers(&unknown, false);
+    assert!(!storage.exists("spaces/unknown-space/").await.unwrap());
+
+    storage.create_dir("response_hmac/").await.unwrap();
+    storage
+        .write("response_hmac/default.json", b"{}".to_vec())
+        .await
+        .unwrap();
+    let failed = app
+        .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(failed.status(), StatusCode::OK);
+    assert!(failed.headers().get("x-ugoite-signature").is_none());
+    assert_common_security_headers(&failed, false);
+    assert_eq!(json(failed).await["status"], "ok");
+}
+
+#[tokio::test]
+/// REQ-INT-003
+async fn req_int_003_uses_decoded_mcp_space_scope() {
+    let name = "response-hmac-encoded";
+    let storage = test_storage(name);
+    create_test_space(name, "encoded-space").await;
+    let app = initialized_app(name).await;
+    let response = app
+        .oneshot(
+            Request::get("/mcp/resources/encoded%2Dspace/entries/list")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::LOCKED);
+    assert_response_signature(response, &storage, "spaces/encoded-space/hmac.json").await;
 }
 
 #[tokio::test]
@@ -505,4 +677,41 @@ fn openapi_publishes_read_only_space_health() {
         health["parameters"][1]["name"], "checkpoint",
         "health validates only caller-named checkpoints"
     );
+}
+
+#[test]
+/// REQ-INT-003
+fn openapi_publishes_response_signing_headers_and_unsigned_boundary() {
+    let snapshot = ugoite_server::openapi_snapshot();
+    let signing = &snapshot["x-ugoite-response-signing"];
+    assert_eq!(
+        signing["headers"]["key_id"]["$ref"],
+        "#/components/headers/X-Ugoite-Key-Id"
+    );
+    assert_eq!(
+        signing["headers"]["signature"]["$ref"],
+        "#/components/headers/X-Ugoite-Signature"
+    );
+    assert_eq!(
+        snapshot["components"]["headers"]["X-Ugoite-Signature"]["schema"]["pattern"],
+        "^[0-9a-f]{64}$"
+    );
+    for response in [
+        &snapshot["paths"]["/health"]["get"]["responses"]["200"],
+        &snapshot["paths"]["/spaces/{space_id}/health"]["get"]["responses"]["200"],
+    ] {
+        assert_eq!(
+            response["headers"]["X-Ugoite-Key-Id"]["$ref"],
+            "#/components/headers/X-Ugoite-Key-Id"
+        );
+        assert_eq!(
+            response["headers"]["X-Ugoite-Signature"]["$ref"],
+            "#/components/headers/X-Ugoite-Signature"
+        );
+    }
+    assert!(signing["unsigned"]
+        .as_array()
+        .expect("unsigned response classes")
+        .iter()
+        .any(|value| value == "static files"));
 }

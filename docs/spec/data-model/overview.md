@@ -131,7 +131,9 @@ to missing bytes.
 
 Entry content and revisions carry checksums and HMAC signatures generated from
 Space-local integrity material. Response-signing material may also be written
-lazily to `hmac.json`.
+lazily to `spaces/{space_id}/hmac.json`; default Node/API responses use the
+separate `response_hmac/default.json` at the configured operator root. The
+Node-default material is not part of a Space export.
 
 ### Form-owned attachment editing
 

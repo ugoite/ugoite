@@ -2,15 +2,18 @@
 
 use anyhow::Context as _;
 use axum::{
+    body::{Body, Bytes, HttpBody as _},
     extract::{
         DefaultBodyLimit, Extension, Form, Multipart, OriginalUri, Path, Query, Request, State,
     },
-    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post},
     Json, Router,
 };
+use futures_util::{stream, StreamExt};
+use http_body::Frame;
 use openidconnect::{
     core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge,
@@ -30,7 +33,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
-use ugoite_domain::id::{validate_identifier, IdentifierKind};
+use ugoite_domain::id::{validate_decoded_space_id, validate_identifier, IdentifierKind};
 use ugoite_domain::identity::{
     AccessPolicy, AccountStatus, Action, Actor, AgentMode, AssuranceLevel, AuthenticatedSubject,
     BindingMethod, CredentialConstraints, HumanAccount, NodeRole, PrincipalKind, PrincipalState,
@@ -58,6 +61,140 @@ const OAUTH_RESOURCE_DOCUMENTATION_URL: &str =
     "https://ugoite.github.io/ugoite/docs/guide/operate/auth/auth-overview/";
 const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'";
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
+const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
+const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
+
+#[derive(Clone, Debug)]
+struct SignableResponseBody(Bytes);
+
+#[derive(Clone, Copy, Debug)]
+struct UnsignedResponse;
+
+#[derive(Debug, Eq, PartialEq)]
+enum ResponseSigningScope {
+    Default,
+    Space(String),
+    Unsigned,
+}
+
+fn response_signing_scope(uri: &Uri) -> ResponseSigningScope {
+    let path = uri.path();
+    let path = path
+        .strip_prefix("/api/")
+        .or_else(|| path.strip_prefix('/'))
+        .unwrap_or(path);
+    let raw_space_id = path
+        .strip_prefix("spaces/")
+        .or_else(|| path.strip_prefix("mcp/resources/"))
+        .map(|rest| rest.split('/').next().unwrap_or(""));
+    let Some(raw_space_id) = raw_space_id else {
+        return ResponseSigningScope::Default;
+    };
+    if raw_space_id.is_empty() {
+        return ResponseSigningScope::Unsigned;
+    }
+    let Ok(decoded_space_id) = percent_encoding::percent_decode_str(raw_space_id).decode_utf8()
+    else {
+        return ResponseSigningScope::Unsigned;
+    };
+    if validate_decoded_space_id(&decoded_space_id).is_err() {
+        return ResponseSigningScope::Unsigned;
+    }
+    ResponseSigningScope::Space(decoded_space_id.into_owned())
+}
+
+fn signable_response_body_size(response: &Response) -> Option<usize> {
+    if response.extensions().get::<UnsignedResponse>().is_some()
+        || response.headers().contains_key(header::TRAILER)
+    {
+        return None;
+    }
+    if response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(';').next().is_some_and(|media_type| {
+                media_type.trim().eq_ignore_ascii_case("text/event-stream")
+            })
+        })
+    {
+        return None;
+    }
+    // This size check is only a bounded materialization gate. The
+    // SignableResponseBody contract is attached only after materialization
+    // succeeds in mark_signable_api_response below; a fallible body therefore
+    // remains unmarked and is replayed unchanged on failure.
+    response
+        .body()
+        .size_hint()
+        .exact()
+        .and_then(|size| usize::try_from(size).ok())
+        .filter(|size| *size <= MAX_SIGNED_RESPONSE_BYTES)
+}
+
+fn replay_failed_response_body(
+    mut frames: Vec<Result<Frame<Bytes>, axum::Error>>,
+    error: Option<axum::Error>,
+) -> Body {
+    if let Some(error) = error {
+        frames.push(Err(error));
+    }
+    Body::new(http_body_util::StreamBody::new(stream::iter(frames)))
+}
+
+async fn collect_response_body_preserving_failure(body: Body, limit: usize) -> Result<Bytes, Body> {
+    let mut body_stream = http_body_util::BodyStream::new(body);
+    let mut frames = Vec::new();
+    let mut chunks = Vec::new();
+    let mut size = 0usize;
+    while let Some(frame) = body_stream.next().await {
+        let frame = match frame {
+            Ok(frame) => frame,
+            Err(error) => return Err(replay_failed_response_body(frames, Some(error))),
+        };
+        let frame = match frame.into_data() {
+            Ok(chunk) => {
+                let Some(next_size) = size.checked_add(chunk.len()) else {
+                    return Err(replay_failed_response_body(
+                        frames,
+                        Some(axum::Error::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "response body exceeded signing limit",
+                        ))),
+                    ));
+                };
+                if next_size > limit {
+                    return Err(replay_failed_response_body(
+                        frames,
+                        Some(axum::Error::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "response body exceeded signing limit",
+                        ))),
+                    ));
+                }
+                size = next_size;
+                frames.push(Ok(Frame::data(chunk.clone())));
+                chunks.push(chunk);
+                continue;
+            }
+            Err(frame) => frame,
+        };
+        if let Ok(trailers) = frame.into_trailers() {
+            frames.push(Ok(Frame::trailers(trailers)));
+            return Err(replay_failed_response_body(frames, None));
+        }
+        // HTTP body frames are data or trailers; retain an unexpected frame as
+        // an unsigned response rather than silently dropping it.
+        return Err(replay_failed_response_body(frames, None));
+    }
+    let mut bytes = Vec::with_capacity(size);
+    for chunk in chunks {
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(Bytes::from(bytes))
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SecurityHeadersPolicy {
@@ -586,6 +723,25 @@ fn api_routes(state: AppState) -> Router<AppState> {
         )
         .merge(protected_routes(state))
         .fallback(api_not_found)
+        .layer(middleware::from_fn(mark_signable_api_response))
+}
+
+async fn mark_signable_api_response(request: Request, next: Next) -> Response {
+    let response = next.run(request).await;
+    let Some(exact_size) = signable_response_body_size(&response) else {
+        return response;
+    };
+    let (parts, body) = response.into_parts();
+    match collect_response_body_preserving_failure(body, exact_size).await {
+        Ok(bytes) => {
+            let mut response = Response::from_parts(parts, Body::from(bytes.clone()));
+            response
+                .extensions_mut()
+                .insert(SignableResponseBody(bytes));
+            response
+        }
+        Err(body) => Response::from_parts(parts, body),
+    }
 }
 
 fn app_layers(router: Router<AppState>, state: AppState) -> Router {
@@ -622,6 +778,7 @@ fn app_layers(router: Router<AppState>, state: AppState) -> Router {
                         Method::DELETE,
                         Method::OPTIONS,
                     ])
+                    .expose_headers([RESPONSE_KEY_ID_HEADER, RESPONSE_SIGNATURE_HEADER])
                     .allow_headers([
                         header::ACCEPT,
                         header::AUTHORIZATION,
@@ -645,8 +802,63 @@ async fn add_security_headers(
     request: Request,
     next: Next,
 ) -> Response {
+    let uri = request
+        .extensions()
+        .get::<OriginalUri>()
+        .map(|OriginalUri(uri)| uri.clone())
+        .unwrap_or_else(|| request.uri().clone());
+    let is_head = request.method() == Method::HEAD;
+    let scope = response_signing_scope(&uri);
     let mut response = next.run(request).await;
     state.security_headers.apply(response.headers_mut());
+    if scope == ResponseSigningScope::Unsigned {
+        return response;
+    }
+    let Some(SignableResponseBody(materialized_bytes)) =
+        response.extensions().get::<SignableResponseBody>().cloned()
+    else {
+        return response;
+    };
+    let bytes = if is_head {
+        Bytes::new()
+    } else {
+        materialized_bytes
+    };
+    let (parts, _body) = response.into_parts();
+    let mut response = Response::from_parts(parts, Body::from(bytes.clone()));
+    let signing = match scope {
+        ResponseSigningScope::Default => {
+            ugoite_iceberg::integrity::build_default_response_signature(
+                state.service.operator(),
+                &bytes,
+            )
+            .await
+        }
+        ResponseSigningScope::Space(space_id) => {
+            ugoite_iceberg::integrity::build_response_signature(
+                state.service.operator(),
+                &space_id,
+                &bytes,
+            )
+            .await
+        }
+        ResponseSigningScope::Unsigned => return response,
+    };
+    let Ok((key_id, signature)) = signing else {
+        return response;
+    };
+    let (Ok(key_id), Ok(signature)) = (
+        HeaderValue::from_str(&key_id),
+        HeaderValue::from_str(&signature),
+    ) else {
+        return response;
+    };
+    response
+        .headers_mut()
+        .insert(RESPONSE_KEY_ID_HEADER, key_id);
+    response
+        .headers_mut()
+        .insert(RESPONSE_SIGNATURE_HEADER, signature);
     response
 }
 
@@ -6862,6 +7074,7 @@ pub fn openapi_snapshot() -> Value {
 #[cfg(test)]
 mod security_headers_tests {
     use super::*;
+    use http_body_util::BodyExt as _;
 
     #[test]
     fn req_sec_002_omits_hsts_for_local_origins() {
@@ -6904,6 +7117,111 @@ mod security_headers_tests {
         assert_eq!(
             headers.get("strict-transport-security").unwrap(),
             HSTS_VALUE
+        );
+    }
+
+    #[test]
+    fn req_int_003_selects_scope_from_the_original_uri() {
+        assert_eq!(
+            response_signing_scope(&Uri::from_static("/health")),
+            ResponseSigningScope::Default
+        );
+        assert_eq!(
+            response_signing_scope(&Uri::from_static("/api/health")),
+            ResponseSigningScope::Default
+        );
+        assert_eq!(
+            response_signing_scope(&Uri::from_static("/api/spaces/encoded%2Dspace/forms")),
+            ResponseSigningScope::Space("encoded-space".to_owned())
+        );
+        assert_eq!(
+            response_signing_scope(&Uri::from_static(
+                "/mcp/resources/encoded%2Dspace/entries/list"
+            )),
+            ResponseSigningScope::Space("encoded-space".to_owned())
+        );
+        assert_eq!(
+            response_signing_scope(&Uri::from_static("/api/spaces/%2F/forms")),
+            ResponseSigningScope::Unsigned
+        );
+        assert_eq!(
+            response_signing_scope(&Uri::from_static("/api/spaces/%ZZ/forms")),
+            ResponseSigningScope::Unsigned
+        );
+    }
+
+    #[test]
+    fn req_int_003_marks_only_bounded_in_memory_responses_signable() {
+        let response = Response::builder()
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        assert!(signable_response_body_size(&response).is_some());
+
+        let event_stream = Response::builder()
+            .header(header::CONTENT_TYPE, "text/event-stream")
+            .body(Body::from("data: {}\n\n"))
+            .unwrap();
+        assert!(signable_response_body_size(&event_stream).is_none());
+
+        let with_trailer = Response::builder()
+            .header(header::TRAILER, "x-checksum")
+            .body(Body::from("{}"))
+            .unwrap();
+        assert!(signable_response_body_size(&with_trailer).is_none());
+
+        let oversized = Response::builder()
+            .body(Body::from(vec![0; MAX_SIGNED_RESPONSE_BYTES + 1]))
+            .unwrap();
+        assert!(signable_response_body_size(&oversized).is_none());
+
+        let mut explicitly_unsigned = Response::builder().body(Body::from("{}")).unwrap();
+        explicitly_unsigned
+            .extensions_mut()
+            .insert(UnsignedResponse);
+        assert!(signable_response_body_size(&explicitly_unsigned).is_none());
+    }
+
+    #[tokio::test]
+    async fn response_body_collection_replays_prefix_before_failure() {
+        let body = Body::from_stream(stream::iter([
+            Ok::<Bytes, axum::Error>(Bytes::from("prefix")),
+            Err(axum::Error::new(std::io::Error::other("body failed"))),
+        ]));
+
+        let replayed = collect_response_body_preserving_failure(body, 1024)
+            .await
+            .expect_err("fallible body must remain unsigned");
+        let mut stream = replayed.into_data_stream();
+        assert_eq!(stream.next().await.unwrap().unwrap(), Bytes::from("prefix"));
+        assert!(stream.next().await.unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn response_body_collection_preserves_actual_trailers_without_signing() {
+        let mut trailers = HeaderMap::new();
+        trailers.insert("x-checksum", HeaderValue::from_static("abc"));
+        let body = http_body_util::Full::from(Bytes::from("body")).with_trailers(
+            std::future::ready(Some(Ok::<_, std::convert::Infallible>(trailers.clone()))),
+        );
+
+        let replayed = collect_response_body_preserving_failure(Body::new(body), 1024)
+            .await
+            .expect_err("trailer-bearing bodies must remain unsigned");
+        let mut frames = http_body_util::BodyStream::new(replayed);
+        assert_eq!(
+            frames.next().await.unwrap().unwrap().into_data().unwrap(),
+            Bytes::from("body")
+        );
+        assert_eq!(
+            frames
+                .next()
+                .await
+                .unwrap()
+                .unwrap()
+                .into_trailers()
+                .unwrap(),
+            trailers
         );
     }
 }
