@@ -171,7 +171,7 @@ pub async fn handle(
         return header_mismatch(&headers, &parsed);
     }
     if parsed.method == "tools/call" || parsed.method == "resources/read" {
-        if let Some(header_name) = headers.get("mcp-name").and_then(|v| decode_header_value(v)) {
+        if let Some(header_name) = headers.get("mcp-name").and_then(decode_header_value) {
             let expected = parsed.params.get(if parsed.method == "tools/call" {
                 "name"
             } else {
@@ -583,13 +583,12 @@ async fn authorize_method(
                     &[action_name(&needed)],
                 ));
             }
-        } else if name == "ugoite.delete" {
-            if auth.claims.principal_type == "agent"
+        } else if name == "ugoite.delete"
+            && (auth.claims.principal_type == "agent"
                 || auth.claims.actor_principal_id.is_some()
-                || !has_action(state, auth, Action::Delete).await
-            {
-                return None;
-            }
+                || !has_action(state, auth, Action::Delete).await)
+        {
+            return None;
         }
     }
     None
@@ -609,9 +608,7 @@ async fn check_tool_rate_limit(auth: &AuthContext, request: &RpcRequest) -> Opti
             started_at: now,
             calls: 0,
         });
-    let Some(retry_after) = consume_tool_rate_window(window, now) else {
-        return None;
-    };
+    let retry_after = consume_tool_rate_window(window, now)?;
     let retry_after = retry_after.as_secs().max(1).to_string();
     Some(json_http_with_header(
         StatusCode::TOO_MANY_REQUESTS,
@@ -670,7 +667,7 @@ async fn has_action(state: &AppState, auth: &AuthContext, action: Action) -> boo
 
 fn insufficient_scope(state: &AppState, scheme: &str, actions: &[&str]) -> Response {
     let issuer = state.identity.public_origin().trim_end_matches('/');
-    let scope = actions.iter().copied().collect::<Vec<_>>().join(" ");
+    let scope = actions.to_vec().join(" ");
     let challenge = if scheme == "dpop" {
         format!("DPoP error=\"insufficient_scope\",scope=\"{scope}\",realm=\"ugoite\",resource_metadata=\"{issuer}/.well-known/oauth-protected-resource\",algs=\"ES256\"")
     } else {
@@ -694,8 +691,8 @@ async fn dispatch(
             json!({"resultType":"complete","supportedVersions":[VERSION],"capabilities":{"tools":{"listChanged":false},"resources":{"listChanged":false,"subscribe":false}},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"ugoite","version":env!("CARGO_PKG_VERSION")}},"ttlMs":60000,"cacheScope":"private"}),
         ),
         "tools/list" => tools_list(state, auth).await,
-        "resources/templates/list" => fixed_list(request, true),
-        "resources/list" => fixed_list(request, false),
+        "resources/templates/list" => fixed_list(request, true).map_err(|response| *response),
+        "resources/list" => fixed_list(request, false).map_err(|response| *response),
         "resources/read" => resources_read(state, auth, request).await,
         "tools/call" => tools_call(state, auth, request).await,
         _ => Err(rpc_error(
@@ -708,20 +705,20 @@ async fn dispatch(
     }
 }
 
-fn fixed_list(request: &RpcRequest, templates: bool) -> Result<Value, Response> {
+fn fixed_list(request: &RpcRequest, templates: bool) -> Result<Value, Box<Response>> {
     if request
         .params
         .get("cursor")
         .and_then(Value::as_str)
         .is_some_and(|v| !v.is_empty())
     {
-        return Err(rpc_error(
+        return Err(Box::new(rpc_error(
             StatusCode::OK,
             request.id.clone(),
             -32602,
             "Invalid request target",
             json!({"code":"INVALID_CURSOR"}),
-        ));
+        )));
     }
     if templates {
         Ok(
@@ -1163,14 +1160,14 @@ async fn search(
         );
     }
     let next_cursor = if has_next {
-        results
+        let result = results
             .last()
-            .map(|r| {
-                encode_cursor(auth, &state_auth, &q, limit, r).map_err(|_| {
-                    tool_error("SERVICE_UNAVAILABLE", "The search service is unavailable")
-                })
-            })
-            .transpose()?
+            .expect("has_next implies a retained search result");
+        Some(
+            encode_cursor(auth, &state_auth, &q, limit, result).map_err(|_| {
+                tool_error("SERVICE_UNAVAILABLE", "The search service is unavailable")
+            })?,
+        )
     } else {
         None
     };
