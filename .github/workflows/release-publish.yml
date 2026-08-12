@@ -172,13 +172,37 @@ jobs:
           ref: ${{ needs.prepare.outputs.release_sha }}
           persist-credentials: false
 
+      - name: Set Deno cache directory
+        run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
 
+      - name: Resolve Deno version
+        id: deno-version
+        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+
+      - name: Restore Deno cache
+        id: deno-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
+
       - name: Install Rust CI components
         run: rustup component add rustfmt clippy
+
+      - name: Restore Rust cache
+        id: rust-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b # v2.9.2
+        with:
+          workspaces: ". -> target/rust"
+          cache-bin: "false"
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build native CLI binary
         run: cargo build -p ugoite-cli --release --locked
@@ -207,6 +231,13 @@ jobs:
         with:
           subject-path: target/artifacts/cli/*.tar.gz
 
+      - name: Save Deno cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.runner != 'ubuntu-24.04'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
+
   build-npm-helm:
     needs:
       - prepare
@@ -224,10 +255,26 @@ jobs:
           ref: ${{ needs.prepare.outputs.release_sha }}
           persist-credentials: false
 
+      - name: Set Deno cache directory
+        run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
+
+      - name: Resolve Deno version
+        id: deno-version
+        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+
+      - name: Restore Deno cache
+        id: deno-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -288,13 +335,37 @@ jobs:
           ref: ${{ needs.prepare.outputs.release_sha }}
           persist-credentials: false
 
+      - name: Set Deno cache directory
+        run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
 
+      - name: Resolve Deno version
+        id: deno-version
+        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+
+      - name: Restore Deno cache
+        id: deno-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
+
       - name: Install Rust build prerequisites
         run: rustup target add wasm32-unknown-unknown
+
+      - name: Restore Rust cache
+        id: rust-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b # v2.9.2
+        with:
+          workspaces: ". -> target/rust"
+          cache-bin: "false"
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build release inputs
         run: |
@@ -359,6 +430,8 @@ jobs:
           provenance: true
           sbom: true
           push: true
+          cache-from: type=gha,scope=ugoite-runtime-release
+          cache-to: type=gha,scope=ugoite-runtime-release,mode=min
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.prepare.outputs.release_sha }}
@@ -402,6 +475,13 @@ jobs:
         run: |
           digest="$(docker buildx imagetools inspect ghcr.io/${GITHUB_REPOSITORY}:${VERSION} --format '{{json .Manifest.Digest}}' | tr -d '\"')"
           echo "image_digest=${digest}" >>"$GITHUB_OUTPUT"
+
+      - name: Save Deno cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
 
   publish-release-assets:
     needs:
