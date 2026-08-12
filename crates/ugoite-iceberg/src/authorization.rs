@@ -472,6 +472,7 @@ impl Authorizer {
 
     /// Atomically consume an approval. A consumed token is never restored,
     /// including when the subsequent business mutation has an unknown result.
+    #[allow(clippy::too_many_arguments)]
     pub async fn consume_human_approval(
         &self,
         space_id: &str,
@@ -512,6 +513,7 @@ impl Authorizer {
             .cloned())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn consume_human_approval_with_audit<F>(
         &self,
         space_id: &str,
@@ -549,6 +551,7 @@ impl Authorizer {
     /// authorization write lock is still held. This is the linearization
     /// point for approval-bound mutations: an ACL/lifecycle write cannot land
     /// between the current authorization check and the actual mutation.
+    #[allow(clippy::too_many_arguments)]
     pub async fn consume_human_approval_with_audit_and<T, F, Fut>(
         &self,
         space_id: &str,

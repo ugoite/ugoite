@@ -1894,6 +1894,7 @@ impl NodeIdentityService {
     /// tests. This is deliberately hidden from the public product contract;
     /// production registration still requires the normal Passkey ceremony.
     #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn seed_test_human_approval_credentials(
         &self,
         space_uid: Uuid,
@@ -4839,6 +4840,7 @@ impl NodeIdentityService {
     /// holding one Node lock. This closes the issuance window in which an
     /// actor credential could be revoked after lookup but before the Space
     /// approval was persisted.
+    #[allow(clippy::too_many_arguments)]
     pub async fn with_active_human_approval_issuance<T, F, Fut>(
         &self,
         request_credential_id: Uuid,
@@ -4904,6 +4906,7 @@ impl NodeIdentityService {
     /// Space human approval while holding the same Node lock used by
     /// revocation. The callback then consumes the Space approval under its
     /// own atomic lock.
+    #[allow(clippy::too_many_arguments)]
     pub async fn with_active_approval_credentials<T, F, Fut>(
         &self,
         request_credential_id: Uuid,

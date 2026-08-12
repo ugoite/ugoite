@@ -5906,6 +5906,7 @@ struct HumanApprovalAuditDetails {
     intent_hash: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn human_approval_audit_event_with_details(
     space_id: &str,
     approval: Option<&HumanApproval>,
@@ -6035,6 +6036,7 @@ async fn append_human_approval_audit(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn append_human_approval_audit_with_subject(
     state: &AppState,
     space_id: &str,
@@ -6059,6 +6061,7 @@ async fn append_human_approval_audit_with_subject(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn append_human_approval_audit_with_details(
     state: &AppState,
     space_id: &str,
@@ -6209,6 +6212,7 @@ async fn issue_human_approval(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn require_dangerous_resource_action(
     state: &AppState,
     space_id: &str,
