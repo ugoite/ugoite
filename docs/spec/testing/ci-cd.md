@@ -15,6 +15,8 @@ Root task composition:
 
 - `build:*`: deterministic compile/build steps with declared inputs and outputs;
 - `test:*`: authoritative assertions that may reuse `build:*` outputs but always execute when called;
+- `test:frontend:coverage` and `test:docsite:coverage`: V8 coverage assertions with
+  package-owned hard thresholds for authored frontend/docsite source;
 - `package:*`: staging under `target/artifacts/` only; packaging must fail if required build outputs are absent;
 - `verify:*`: checks packaged outputs without rebuilding them;
 - `ci`: formatting check, lint, architecture/OpenAPI/type checks, and non-E2E tests;
@@ -33,6 +35,17 @@ inputs, restores the versioned Playwright browser cache, keeps the explicit
 browser-install step as a cache-miss fallback, previews the static artifact,
 and verifies Starlight navigation semantics before the heavier runtime-backed
 smoke suite runs.
+
+The required `ci-required` job runs both coverage tasks on pull requests,
+merge queues, and pushes to `main`. Their package-level Vitest thresholds are
+hard merge gates: a coverage regression fails the required job. The active
+`main only pr` repository ruleset must require the `ci-required` status-check
+context; a successful push-to-`main` run alone is not merge enforcement.
+Frontend's unit coverage gate explicitly covers the portable Rust/WASM protocol
+boundary in `frontend/src/lib/ugoite-client/protocol.ts`; UI behavior remains
+covered by behavior tests and E2E. Docsite coverage includes authored
+`src/**/*.{js,mjs,ts,tsx}` while excluding test files, `src/env.d.ts`, and
+Astro's framework-only `src/content.config.ts`.
 
 Deployable artifacts are staged below `target/artifacts/` with a machine-readable `manifest.json` and `SHA256SUMS`. The release workflow also emits installer-compatible CLI archives named `ugoite-v<version>-<target>.tar.gz` plus per-file checksums, publishes `@ugoite/ugoite` to GitHub Packages, publishes `ghcr.io/ugoite/ugoite:<version>`, and pushes the Helm chart to `oci://ghcr.io/ugoite/charts`.
 

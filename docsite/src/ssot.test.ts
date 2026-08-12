@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { docsSidebarDirectory, docsSourceDirectory } from "./docs-ssot.mjs";
-import { rewriteDocLink } from "./satteri-doc-links.mjs";
+import satteriDocLinks, { rewriteDocLink } from "./satteri-doc-links.mjs";
 
 const repoRoot = path.resolve(process.cwd(), "..");
 const docsRoot = path.join(repoRoot, "docs");
@@ -88,6 +88,28 @@ describe("documentation single source of truth", () => {
         "/repo/docs/spec/quality/error-handling.md",
       ),
     ).toBe("../../architecture/overview/");
+    expect(rewriteDocLink(null, "/repo/docs/index.md")).toBe(null);
+    expect(rewriteDocLink("index.md", "/repo/docs/index.md")).toBe("./");
+  });
+
+  test("REQ-E2E-006: Sätteri link plugin rewrites authored links", () => {
+    const rewritten: string[] = [];
+    const context = {
+      fileURL: new URL("file:///repo/docs/index.md"),
+      setProperty(_node: unknown, _key: string, value: string) {
+        rewritten.push(value);
+      },
+    };
+
+    satteriDocLinks.link({ url: "guide/automate/cli.md" }, context);
+    satteriDocLinks.link({ url: "https://example.com/file.md" }, context);
+    satteriDocLinks.link({ url: "index.md" }, {
+      setProperty(_node: unknown, _key: string, value: string) {
+        rewritten.push(value);
+      },
+    });
+
+    expect(rewritten).toEqual(["docs/guide/automate/cli/", "../"]);
   });
 
   test("all rendered Markdown pages declare Starlight metadata", async () => {

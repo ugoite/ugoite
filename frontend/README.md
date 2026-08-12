@@ -16,6 +16,7 @@ From the repository root:
 mise run build:wasm
 mise run build:frontend
 mise run test:frontend
+mise run test:frontend:coverage
 ```
 
 Package-local Deno tasks are low-level commands. The supported orchestration surface is the root Mise task graph, which activates the correct WASM output before frontend build and test runs.

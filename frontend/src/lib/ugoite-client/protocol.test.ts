@@ -1,11 +1,17 @@
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import {
   getWasmSupportedOperations,
   prepareApiRequest,
-  validateAssetReference,
+  protocolFetch,
+  protocolFetchResponse,
   UGOITE_API_OPERATIONS,
   UGOITE_WASM_PROTOCOL_VERSION,
+  UgoiteApiError,
+  validateAssetReference,
 } from "./protocol";
+import { testApiUrl } from "~/test/http-origin";
+import { server } from "~/test/mocks/server";
 
 const validReference = {
   asset_id: "01900000-0000-7000-8000-000000000001",
@@ -132,5 +138,137 @@ describe("portable Ugoite API protocol WASM", () => {
         "auth.recovery.owner_finish",
       ]),
     );
+  });
+
+  it("REQ-API-001: executes JSON protocol operations through the browser adapter", async () => {
+    server.use(
+      http.get(testApiUrl("/spaces/demo"), ({ request }) => {
+        expect(request.headers.get("x-test-header")).toBe("kept");
+        return HttpResponse.json({ id: "demo", name: "Demo" });
+      }),
+      http.post(testApiUrl("/spaces/demo/entries"), async ({ request }) => {
+        expect(request.headers.get("content-type")).toBe("application/json");
+        expect(await request.json()).toEqual({ id: "entry-1" });
+        return HttpResponse.json({ id: "entry-1", revision_id: "rev-1" });
+      }),
+    );
+
+    await expect(
+      protocolFetch(
+        "space.get",
+        { space_id: "demo" },
+        undefined,
+        { headers: { "x-test-header": "kept" }, trackLoading: false },
+      ),
+    ).resolves.toEqual({ id: "demo", name: "Demo" });
+
+    await expect(
+      protocolFetch(
+        "entry.create",
+        { space_id: "demo" },
+        { id: "entry-1" },
+        { trackLoading: false },
+      ),
+    ).resolves.toEqual({ id: "entry-1", revision_id: "rev-1" });
+  });
+
+  it("REQ-API-001: preserves multipart bodies and returns binary responses", async () => {
+    const form = new FormData();
+    form.append("file", new Blob(["contents"]), "note.txt");
+    server.use(
+      http.post(testApiUrl("/spaces/demo/assets"), ({ request }) => {
+        expect(request.headers.get("content-type")).toContain(
+          "multipart/form-data",
+        );
+        return HttpResponse.json({ status: "uploaded" });
+      }),
+      http.get(
+        testApiUrl("/spaces/demo/assets/asset-1?form=Note&entry_id=entry-1"),
+        () => new HttpResponse("asset bytes", { status: 200 }),
+      ),
+    );
+
+    await expect(
+      protocolFetch(
+        "asset.upload",
+        { space_id: "demo" },
+        undefined,
+        { body: form, trackLoading: false },
+      ),
+    ).resolves.toEqual({ status: "uploaded" });
+
+    const response = await protocolFetchResponse("asset.read", {
+      space_id: "demo",
+      asset_id: "asset-1",
+      form: "Note",
+      entry_id: "entry-1",
+    }, { trackLoading: false });
+    await expect(response.text()).resolves.toBe("asset bytes");
+  });
+
+  it("REQ-API-001: exposes protocol errors with stable error-code fallbacks", () => {
+    expect(
+      new UgoiteApiError({
+        kind: "invalid_arguments",
+        message: "invalid",
+        detail: { code: "from-detail" },
+      }).code,
+    ).toBe("from-detail");
+    expect(
+      new UgoiteApiError({
+        kind: "invalid_arguments",
+        message: "invalid",
+        detail: { code: 42 },
+        payload: { code: "from-payload" },
+      }).code,
+    ).toBe("from-payload");
+    expect(
+      new UgoiteApiError({
+        kind: "invalid_arguments",
+        message: "invalid",
+        detail: null,
+        payload: "not-an-object",
+      }).code,
+    ).toBeUndefined();
+  });
+
+  it("REQ-API-001: turns non-success protocol responses into UgoiteApiError", async () => {
+    server.use(
+      http.get(testApiUrl("/spaces/missing"), () =>
+        HttpResponse.json({
+          kind: "not_found",
+          message: "space not found",
+          code: "space_missing",
+        }, { status: 404 })),
+    );
+
+    await expect(
+      protocolFetch("space.get", { space_id: "missing" }, undefined, {
+        trackLoading: false,
+      }),
+    ).rejects.toMatchObject({
+      name: "UgoiteApiError",
+      code: "space_missing",
+      status: 404,
+    });
+
+    server.use(
+      http.get(
+        testApiUrl("/spaces/missing/assets/asset-1"),
+        () =>
+          HttpResponse.json({
+            kind: "not_found",
+            message: "asset not found",
+          }, { status: 404 }),
+      ),
+    );
+    await expect(
+      protocolFetchResponse("asset.read", {
+        space_id: "missing",
+        asset_id: "asset-1",
+        form: "Note",
+        entry_id: "entry-1",
+      }, { trackLoading: false }),
+    ).rejects.toMatchObject({ name: "UgoiteApiError", status: 404 });
   });
 });

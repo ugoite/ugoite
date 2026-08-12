@@ -329,13 +329,15 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-021
   title: Frontend Coverage Hard Gate
-  description: A numeric frontend coverage threshold should be enforced in CI. The current gate runs tests but no hard coverage threshold.
+  description: The required hosted CI job runs the root frontend coverage task, whose Vitest V8 configuration hard-fails all coverage metrics at 100% for the portable Rust/WASM protocol boundary in `frontend/src/lib/ugoite-client/protocol.ts`; UI behavior remains covered by frontend behavior tests and E2E.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: tools/coverage_gates_test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
@@ -371,13 +373,15 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-024
   title: Docsite Coverage Hard Gate
-  description: A numeric docsite coverage threshold should be enforced in CI. The current gate runs tests but no hard threshold.
+  description: The required hosted CI job runs the root docsite coverage task, whose Vitest V8 configuration hard-fails all coverage metrics at 100% for authored docsite source while excluding framework-only wiring and test files.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
-  status: planned
-  verification: untraced
+  status: implemented
+  verification: traced
+  tests:
+  - file: tools/coverage_gates_test.ts
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
