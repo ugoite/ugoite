@@ -25,6 +25,8 @@ Hosted CI restores Rust, Deno, and BuildKit caches on every event. Shared projec
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies the canonical frontend and Rust release outputs into the image instead of compiling them again inside Docker. E2E tasks require the already loaded `ugoite:e2e` image and never invoke an image build. The default Dockerfile target remains a portable source build for direct Docker and Compose use.
 
+After publication, `Release Publish` runs both release quick-start verifiers against the exact prepared version and source SHA. The release also uploads `docker-compose.release.yaml`, its checksum, and a manifest containing the prepared source SHA and published image digest. The container verifier checks that manifest, downloads that published Compose definition, pulls the versioned GHCR image, and starts it with `--no-build`; it does not build or load another image for verification. The CLI verifier uses the published checksum-verified installer and retains the local Space create/list assertions.
+
 The focused docsite-navigation lane is intentionally separate from smoke/full
 runtime E2E. It builds the docsite through the canonical `build:docsite`
 inputs, installs Playwright browsers explicitly for that lane, previews the

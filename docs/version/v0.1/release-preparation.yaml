@@ -11,14 +11,18 @@ phases:
     done: true
   - description: Build release server and CLI binaries through the local release gate.
     done: true
-  - description: Publish signed/checksummed image and CLI artifacts through repository automation.
+  - description: Provide repository automation for publishing signed/checksummed image and CLI artifacts.
+    done: true
+  - description: Complete a release with published signed/checksummed image and CLI artifacts.
     done: false
 - id: operator-documentation
   status: in_progress
   tasks:
   - description: Keep quick-start, authentication, storage, Helm, and troubleshooting docs aligned with implementation.
     done: true
-  - description: Validate published quick-start assets after release.
+  - description: Provide a post-publication gate for the published quick-start assets.
+    done: true
+  - description: Validate a published release through both quick starts.
     done: false
 - id: release-communication
   status: planned

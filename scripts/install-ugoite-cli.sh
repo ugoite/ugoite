@@ -6,6 +6,7 @@ VERSION_INPUT="${UGOITE_VERSION:-latest}"
 INSTALL_DIR="${UGOITE_INSTALL_DIR:-$HOME/.local/bin}"
 DOWNLOAD_BASE_URL="${UGOITE_DOWNLOAD_BASE_URL:-}"
 TARGET_OVERRIDE="${UGOITE_TARGET_OVERRIDE:-}"
+RELEASE_TOKEN="${UGOITE_RELEASE_TOKEN:-}"
 
 log() {
   printf '%s\n' "$*" >&2
@@ -18,6 +19,21 @@ fail() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+}
+
+download_file() {
+  local url="$1"
+  local output_path="$2"
+  local -a curl_args=(-fsSL)
+
+  if [ -n "$RELEASE_TOKEN" ]; then
+    curl_args+=(
+      -H "Authorization: Bearer ${RELEASE_TOKEN}"
+      -H "Accept: application/octet-stream"
+    )
+  fi
+
+  curl "${curl_args[@]}" "$url" -o "$output_path"
 }
 
 resolve_tag() {
@@ -121,8 +137,8 @@ else
 fi
 
 log "Downloading ugoite ${version_no_v} for ${release_target}"
-curl -fsSL "${asset_base_url}/${asset_name}" -o "${tmpdir}/${asset_name}"
-curl -fsSL "${asset_base_url}/${checksum_name}" -o "${tmpdir}/${checksum_name}"
+download_file "${asset_base_url}/${asset_name}" "${tmpdir}/${asset_name}"
+download_file "${asset_base_url}/${checksum_name}" "${tmpdir}/${checksum_name}"
 verify_checksum "${tmpdir}/${asset_name}" "${tmpdir}/${checksum_name}"
 
 mkdir -p "$INSTALL_DIR"
