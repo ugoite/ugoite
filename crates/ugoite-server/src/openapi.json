@@ -6,7 +6,7 @@
   },
   "x-ugoite-response-signing": {
     "description": "Eligible materialized /api responses carry the reusable HMAC headers below. The signature is lowercase hexadecimal HMAC-SHA256 over the exact delivered body bytes.",
-    "scope": "The default scope uses response_hmac/default.json; /spaces/{space_id}/ and /mcp/resources/{space_id}/ use spaces/{space_id}/hmac.json after exactly-once URI decoding and domain validation.",
+    "scope": "The default scope uses response_hmac/default.json; /spaces/{space_id}/ use spaces/{space_id}/hmac.json after exactly-once URI decoding and domain validation.",
     "eligible": "The shared API route marker covers materialized infallible JSON/string/bytes/empty bodies up to 8 MiB.",
     "unsigned": [
       "static files",
@@ -7370,166 +7370,6 @@
         }
       }
     },
-    "/mcp/resources/{space_id}/entries/list": {
-      "get": {
-        "summary": "MCP entry list resource",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/SpaceId"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonValue"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "400": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "404": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "409": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "410": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "422": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          },
-          "500": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "X-Ugoite-Key-Id": {
-                "$ref": "#/components/headers/X-Ugoite-Key-Id"
-              },
-              "X-Ugoite-Signature": {
-                "$ref": "#/components/headers/X-Ugoite-Signature"
-              }
-            }
-          }
-        }
-      }
-    },
     "/auth/setup/start": {
       "post": {
         "summary": "Start initial Passkey registration",
@@ -9606,6 +9446,13 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "resource": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Optional protected resource; Ugoite MCP uses the exact {issuer}/mcp value."
+                  }
+                },
                 "additionalProperties": true
               }
             }
@@ -9934,7 +9781,7 @@
     },
     "/oauth/token": {
       "post": {
-        "summary": "Issue DPoP access token",
+        "summary": "Issue an access token, optionally bound to the MCP resource",
         "responses": {
           "200": {
             "description": "Success",
@@ -10019,6 +9866,13 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "resource": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Optional protected resource; Ugoite MCP uses the exact {issuer}/mcp value."
+                  }
+                },
                 "additionalProperties": true
               }
             }
@@ -10113,6 +9967,13 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "resource": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Optional protected resource; Ugoite MCP uses the exact {issuer}/mcp value."
+                  }
+                },
                 "additionalProperties": true
               }
             }
@@ -10373,6 +10234,13 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "resource": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Optional protected resource; Ugoite MCP uses the exact {issuer}/mcp value."
+                  }
+                },
                 "additionalProperties": true
               }
             }
@@ -11694,7 +11562,8 @@
             "type": "object",
             "additionalProperties": true
           },
-          "canonical_event": {}
+          "canonical_event": {
+          }
         },
         "additionalProperties": true
       },
@@ -12241,34 +12110,6 @@
           }
         },
         "additionalProperties": true
-      },
-      "McpEntryResource": {
-        "type": "object",
-        "required": [
-          "id",
-          "title",
-          "form",
-          "tags",
-          "properties",
-          "_untrusted_content"
-        ],
-        "properties": {
-          "id": {
-          },
-          "title": {
-          },
-          "form": {
-          },
-          "tags": {
-            "type": "array"
-          },
-          "properties": {
-          },
-          "_untrusted_content": {
-            "type": "boolean",
-            "const": true
-          }
-        }
       },
       "JsonValue": {
         "description": "Arbitrary JSON value for endpoints whose DTO-specific schema is not yet generated.",

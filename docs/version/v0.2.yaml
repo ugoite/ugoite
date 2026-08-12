@@ -2,7 +2,7 @@ version: "0.2"
 status: planned
 summary: >
   Next release stream focused on user-controlled experiences and broader
-  AI-assisted workflows beyond today's resource-first MCP baseline.
+  AI-assisted workflows beyond today's small stable MCP v1 facade.
 milestones:
   - id: user-controlled-view
     status: planned

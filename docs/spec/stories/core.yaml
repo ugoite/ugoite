@@ -19,7 +19,7 @@ stories:
   - rest: POST /spaces/{space_id}/entries
   - rest: PUT /spaces/{space_id}/entries/{entry_id}
   - rest: GET /spaces/{space_id}/forms
-  - mcp: ugoite://{space_id}/forms
+  - mcp: ugoite://form/{id}
   requirements:
   - REQ-ENTRY-006
   - REQ-IDX-002

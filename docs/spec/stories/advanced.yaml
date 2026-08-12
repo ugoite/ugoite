@@ -54,13 +54,13 @@ stories:
   - Agent executes the logic and presents the result for confirmation
   requirements: []
   status: planned
-  implementation_notes: The current MCP surface is an authenticated Entry-list resource only; mutation tools and
-    confirmation workflows are not shipped.
+  implementation_notes: The current MCP v1 surface is an authenticated semantic facade with search/save/delete tools and
+    lazy Entry/Form resources; broader orchestration and confirmation workflows remain future work.
   planned_apis:
   - MCP entry-detail resources
   - MCP mutation tools with confirmation
   available_api:
-  - 'mcp: GET /mcp/resources/{space_id}/entries/list'
+  - 'mcp: POST /mcp (MCP v1 semantic facade)'
 - id: STORY-009
   title: Data Grid
   type: Form

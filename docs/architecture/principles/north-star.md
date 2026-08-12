@@ -17,7 +17,7 @@ boundary; no hosted database is required to own or recover the content.
 
 - The Rust core reads and writes operator-owned Spaces.
 - The CLI can call the core directly in local core mode.
-- The Rust server exposes REST and a resource-first MCP endpoint and can serve
+- The Rust server exposes REST and a stateless semantic MCP facade and can serve
   the compiled browser application.
 - The browser is currently server-backed and requires the server for Space
   persistence.

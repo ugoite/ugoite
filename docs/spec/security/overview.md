@@ -73,8 +73,9 @@ credential registration.
 CORS is off by default. Setting `UGOITE_CORS_ALLOWED_ORIGINS` enables
 credentialed browser access only for the exact origins in its comma-separated
 allowlist. Preflight responses advertise the server's explicit method and
-request-header allowlists; wildcard origins, methods, and request headers are
-not used with credentials. An origin outside the allowlist does not receive
+request-header allowlists, including the MCP protocol headers for `/mcp`;
+wildcard origins, methods, and request headers are not used with credentials.
+An origin outside the allowlist does not receive
 `Access-Control-Allow-Origin`, so it is not granted browser CORS access.
 
 CORS response permission is independent of CSRF protection. Cookie-authenticated
@@ -114,13 +115,14 @@ over the exact bytes delivered in the HTTP body. The server returns:
   body bytes.
 
 The default Node response scope uses `response_hmac/default.json` below the
-configured Space operator root. A valid `/spaces/{space_id}/...` or
-`/mcp/resources/{space_id}/...` request uses the corresponding
-`spaces/{space_id}/hmac.json`; the URI segment is percent-decoded exactly once
-before domain validation. The default key is Node-local and is not part of a
-Space export. Key material is intentionally not distributed by an HTTP
-endpoint; operators and offline verifiers provision or read it through their
-storage boundary.
+configured Space operator root. A valid `/spaces/{space_id}/...` request uses
+the corresponding `spaces/{space_id}/hmac.json`; the URI segment is
+percent-decoded exactly once before domain validation. The stateless `/mcp`
+facade is a separate semantic JSON-RPC surface and is not response-signed by
+the REST HMAC layer. The default key is Node-local and is not part of a Space
+export. Key material is intentionally not distributed by an HTTP endpoint;
+operators and offline verifiers provision or read it through their storage
+boundary.
 
 The shared API marker signs only bounded (at most 8 MiB), materialized,
 infallible JSON/string/bytes/empty responses, including authentication and

@@ -662,6 +662,8 @@ pub struct DeviceAuthorizationRequest {
     pub public_key_jwk: serde_json::Value,
     pub requested_space_uid: Option<Uuid>,
     pub requested_actions: BTreeSet<String>,
+    #[serde(default)]
+    pub resource: Option<String>,
     pub approved_account_id: Option<Uuid>,
     pub approved_principal_id: Option<Uuid>,
     #[serde(default)]
@@ -687,6 +689,8 @@ pub struct AuthorizationCodeGrant {
     pub principal_id: Uuid,
     pub space_uid: Uuid,
     pub granted_actions: BTreeSet<String>,
+    #[serde(default)]
+    pub resource: Option<String>,
     pub expires_at: String,
     pub used_at: Option<String>,
 }
@@ -745,6 +749,8 @@ pub struct RefreshCredential {
     pub principal_id: Uuid,
     pub space_uid: Uuid,
     pub granted_actions: BTreeSet<String>,
+    #[serde(default)]
+    pub resource: Option<String>,
     pub expires_at: String,
     pub revoked_at: Option<String>,
 }
@@ -5332,6 +5338,7 @@ impl NodeIdentityService {
         public_key_jwk: serde_json::Value,
         requested_space_uid: Option<Uuid>,
         requested_actions: BTreeSet<String>,
+        resource: Option<String>,
     ) -> Result<serde_json::Value> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
@@ -5347,6 +5354,7 @@ impl NodeIdentityService {
                 public_key_jwk,
                 requested_space_uid,
                 requested_actions,
+                resource,
                 approved_account_id: None,
                 approved_principal_id: None,
                 approved_credential_generation: None,
@@ -5379,6 +5387,7 @@ impl NodeIdentityService {
         principal_id: Uuid,
         space_uid: Uuid,
         granted_actions: BTreeSet<String>,
+        resource: Option<String>,
     ) -> Result<String> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
@@ -5409,6 +5418,7 @@ impl NodeIdentityService {
                 principal_id,
                 space_uid,
                 granted_actions,
+                resource,
                 expires_at: timestamp(Utc::now() + Duration::minutes(5)),
                 used_at: None,
             },
@@ -5474,13 +5484,14 @@ impl NodeIdentityService {
             principal_id: grant.principal_id,
             space_uid: grant.space_uid,
             granted_actions: grant.granted_actions,
+            resource: grant.resource.clone(),
             expires_at: timestamp(Utc::now() + Duration::days(30)),
             revoked_at: None,
         };
         state
             .refresh_credentials
             .insert(refresh.refresh_hash.clone(), refresh.clone());
-        let context = serde_json::json!({"issuer": state.issuer});
+        let context = serde_json::json!({"issuer": state.issuer, "resource": refresh.resource});
         self.write_state(&state).await?;
         Ok((credential, refresh, refresh_token, context))
     }
@@ -5520,6 +5531,19 @@ impl NodeIdentityService {
         &self,
         device_code: &str,
     ) -> Result<DeviceAuthorizationRequest> {
+        self.pending_device_by_device_code_for_resource(device_code, None)
+            .await
+    }
+
+    /// Polls a device grant only after checking the protected-resource
+    /// binding. A mismatched resource must not consume polling state: OAuth
+    /// clients are allowed to retry the same grant against the correct
+    /// resource without receiving a spurious `slow_down` response.
+    pub async fn pending_device_by_device_code_for_resource(
+        &self,
+        device_code: &str,
+        requested_resource: Option<&str>,
+    ) -> Result<DeviceAuthorizationRequest> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
         let request = state
@@ -5529,6 +5553,9 @@ impl NodeIdentityService {
         validate_expiry(&request.expires_at, "device authorization")?;
         if request.used_at.is_some() {
             bail!("device authorization was already used");
+        }
+        if request.resource.as_deref() != requested_resource {
+            bail!("invalid_target");
         }
         let now = Utc::now();
         if request.last_polled_at.as_deref().is_some_and(|last| {
@@ -5641,13 +5668,15 @@ impl NodeIdentityService {
             principal_id,
             space_uid,
             granted_actions: actions,
+            resource: request.resource.clone(),
             expires_at: timestamp(Utc::now() + Duration::days(30)),
             revoked_at: None,
         };
         state
             .refresh_credentials
             .insert(refresh.refresh_hash.clone(), refresh.clone());
-        let token_context = serde_json::json!({"issuer": state.issuer});
+        let token_context =
+            serde_json::json!({"issuer": state.issuer, "resource": request.resource});
         self.write_state(&state).await?;
         Ok((credential, refresh, refresh_token, token_context))
     }
@@ -5763,7 +5792,7 @@ impl NodeIdentityService {
         state
             .refresh_credentials
             .insert(rotated.refresh_hash.clone(), rotated.clone());
-        let context = serde_json::json!({"issuer": state.issuer});
+        let context = serde_json::json!({"issuer": state.issuer, "resource": rotated.resource});
         self.write_state(&state).await?;
         Ok((token, rotated, context))
     }
@@ -7970,6 +7999,7 @@ mod tests {
                 principal_id,
                 space_uid,
                 ["read".to_string()].into_iter().collect(),
+                None,
             )
             .await?;
         assert!(service

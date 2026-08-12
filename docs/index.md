@@ -43,8 +43,8 @@ remain planned work. :::
 
 - CLI core mode directly opens a local workspace and is the minimal local-first
   path.
-- The server exposes REST, a limited read-only MCP resource, and static browser
-  hosting.
+- The server exposes REST, the small authenticated MCP semantic facade, and
+  static browser hosting.
 - Passkey login, invited OIDC, CLI device pairing, Agent Principals, and
   portable Space ACLs are shipped.
 

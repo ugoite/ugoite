@@ -32,28 +32,35 @@ pub async fn search_entries_with_scopes(
     relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
     limit: usize,
 ) -> Result<Vec<KeywordSearchResult>> {
-    let rows = crate::index::query_entry_rows_authorized(
+    search_entries_with_scopes_after(op, ws_path, query, relation_scopes, limit, None).await
+}
+
+pub async fn search_entries_with_scopes_after(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
+    limit: usize,
+    after: Option<(&str, &str, &str)>,
+) -> Result<Vec<KeywordSearchResult>> {
+    let candidates = crate::index::query_entry_candidates_authorized_after(
         op,
         ws_path,
         relation_scopes,
         None,
         Some(query),
         limit,
-        0,
+        after,
     )
     .await?;
-    let mut results = Vec::with_capacity(rows.len());
-    for (form_name, row) in rows {
-        if row.deleted {
-            continue;
-        }
-        results.push(KeywordSearchResult {
-            id: row.entry_id,
-            title: row.title,
-            form: form_name,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-        });
-    }
-    Ok(results)
+    Ok(candidates
+        .into_iter()
+        .map(|candidate| KeywordSearchResult {
+            id: candidate.entry_id,
+            title: candidate.title,
+            form: candidate.form_name,
+            created_at: candidate.created_at,
+            updated_at: candidate.updated_at,
+        })
+        .collect())
 }

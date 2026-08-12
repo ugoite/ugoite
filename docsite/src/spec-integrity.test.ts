@@ -116,9 +116,11 @@ describe("executable documentation sources", () => {
     }
   });
 
-  test("REQ-API-013: MCP documentation describes the shipped resource-first boundary", async () => {
+  test("REQ-API-013: MCP documentation describes the shipped semantic facade", async () => {
     const source = await fs.readFile(path.join(specRoot, "api/mcp.md"), "utf8");
-    expect(source).toContain("ugoite://{space_uid}/entries/list");
+    expect(source).toContain("POST /mcp");
+    expect(source).toContain("ugoite.search");
+    expect(source).toContain("ugoite://entry/{id}");
     expect(source).toContain("/.well-known/oauth-protected-resource");
     expect(source).toMatch(/DPoP/i);
   });

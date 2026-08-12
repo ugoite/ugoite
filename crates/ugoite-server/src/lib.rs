@@ -2,6 +2,8 @@
 
 //! Thin HTTP and MCP adapters over `ugoite-core`.
 
+mod mcp;
+
 use anyhow::Context as _;
 use axum::{
     body::{Body, Bytes, HttpBody as _},
@@ -12,7 +14,7 @@ use axum::{
     http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
-    routing::{delete, get, post},
+    routing::{any, delete, get, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
@@ -108,7 +110,6 @@ fn response_signing_scope(uri: &Uri) -> ResponseSigningScope {
         .unwrap_or(path);
     let raw_space_id = path
         .strip_prefix("spaces/")
-        .or_else(|| path.strip_prefix("mcp/resources/"))
         .map(|rest| rest.split('/').next().unwrap_or(""));
     let Some(raw_space_id) = raw_space_id else {
         return ResponseSigningScope::Default;
@@ -726,7 +727,6 @@ fn protected_routes(state: AppState) -> Router<AppState> {
             "/spaces/{space_id}/assets/{asset_id}",
             get(get_asset).delete(delete_asset),
         )
-        .route("/mcp/resources/{space_id}/entries/list", get(mcp_entries))
         .route_layer(middleware::from_fn_with_state(state, require_auth))
 }
 
@@ -831,6 +831,9 @@ fn app_layers(router: Router<AppState>, state: AppState) -> Router {
                         HeaderName::from_static("dpop"),
                         HeaderName::from_static("x-request-id"),
                         HeaderName::from_static("x-ugoite-human-approval"),
+                        HeaderName::from_static("mcp-method"),
+                        HeaderName::from_static("mcp-name"),
+                        HeaderName::from_static("mcp-protocol-version"),
                     ]),
             );
         }
@@ -961,6 +964,7 @@ pub fn app(state: AppState) -> Router {
         metadata
             .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
             .route("/openapi.json", get(|| async { OPENAPI_JSON }))
+            .route("/mcp", any(mcp::handle))
             .route_service("/", ServeFile::new(format!("{static_dir}/index.html")))
             .nest("/api", api_routes(state.clone()))
             .fallback_service(
@@ -968,10 +972,13 @@ pub fn app(state: AppState) -> Router {
                     .fallback(ServeFile::new(format!("{static_dir}/index.html"))),
             )
     } else {
-        metadata.merge(api_routes(state.clone())).route(
-            "/",
-            get(|| async { Json(json!({"message": "Hello World!"})) }),
-        )
+        metadata
+            .merge(api_routes(state.clone()))
+            .route("/mcp", any(mcp::handle))
+            .route(
+                "/",
+                get(|| async { Json(json!({"message": "Hello World!"})) }),
+            )
     };
     app_layers(router, state)
 }
@@ -4385,11 +4392,12 @@ async fn oauth_protected_resource_metadata(
     State(state): State<AppState>,
 ) -> ApiResult<Json<Value>> {
     let (issuer, _) = state.identity.issuer_metadata().await.map_err(auth_error)?;
+    let issuer = issuer.trim_end_matches('/');
     Ok(Json(json!({
-        "resource": issuer,
+        "resource": format!("{issuer}/mcp"),
         "authorization_servers": [issuer],
-        "scopes_supported": ["read", "create", "update", "delete", "share"],
-        "bearer_methods_supported": [],
+        "scopes_supported": ["read", "create", "update", "delete"],
+        "bearer_methods_supported": ["header"],
         "resource_documentation": OAUTH_RESOURCE_DOCUMENTATION_URL
     })))
 }
@@ -4399,6 +4407,37 @@ fn api_base_url(issuer: &str) -> String {
         .unwrap_or_else(|_| issuer.to_string())
         .trim_end_matches('/')
         .to_string()
+}
+
+pub(crate) fn configured_cors_origin_allowed(origin: &str) -> bool {
+    env::var("UGOITE_CORS_ALLOWED_ORIGINS").is_ok_and(|origins| {
+        origins
+            .split(',')
+            .map(str::trim)
+            .any(|configured| configured == origin)
+    })
+}
+
+fn validate_mcp_resource(resource: &Option<String>, issuer: &str) -> ApiResult<()> {
+    let expected = format!("{}/mcp", issuer.trim_end_matches('/'));
+    if resource.as_deref().is_some_and(|value| value != expected) {
+        return Err(invalid_oauth_target());
+    }
+    Ok(())
+}
+
+fn invalid_oauth_target() -> ApiError {
+    ApiError::new(StatusCode::BAD_REQUEST, json!({"error":"invalid_target"}))
+}
+
+fn validate_stored_oauth_resource(
+    requested: Option<&String>,
+    stored: Option<&String>,
+) -> ApiResult<()> {
+    if requested != stored {
+        return Err(invalid_oauth_target());
+    }
+    Ok(())
 }
 
 async fn oauth_authorization_server_metadata(
@@ -4411,11 +4450,12 @@ async fn oauth_authorization_server_metadata(
         "device_authorization_endpoint": format!("{}/oauth/device/authorization", api_base_url(&issuer)),
         "token_endpoint": format!("{}/oauth/token", api_base_url(&issuer)),
         "revocation_endpoint": format!("{}/oauth/revoke", api_base_url(&issuer)),
-        "grant_types_supported": ["authorization_code", "urn:ietf:params:oauth:grant-type:device_code", "refresh_token", "client_credentials"],
+        "grant_types_supported": ["authorization_code", "urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["private_key_jwt"],
         "dpop_signing_alg_values_supported": ["ES256"],
-        "scopes_supported": ["read", "create", "update", "delete", "share"]
+        "scopes_supported": ["read", "create", "update", "delete", "share"],
+        "authorization_response_iss_parameter_supported": true
     })))
 }
 
@@ -4430,6 +4470,7 @@ struct AuthorizePayload {
     space_id: String,
     scope: String,
     public_key_jwk: String,
+    resource: Option<String>,
 }
 
 fn validate_authorize_payload(payload: &AuthorizePayload) -> ApiResult<(Value, BTreeSet<String>)> {
@@ -4465,16 +4506,22 @@ fn validate_authorize_payload(payload: &AuthorizePayload) -> ApiResult<(Value, B
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
     validate_action_names(&actions)?;
-    validate_access_credential_actions(&actions)?;
     Ok((public_key_jwk, actions))
 }
 
 async fn oauth_authorize(
+    State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Query(payload): Query<AuthorizePayload>,
 ) -> ApiResult<Html<String>> {
     require_recent_passkey(&identity)?;
     let (_, actions) = validate_authorize_payload(&payload)?;
+    validate_mcp_resource(&payload.resource, state.identity.public_origin())?;
+    if payload.resource.is_some() {
+        validate_mcp_requested_actions(&actions)?;
+    } else {
+        validate_access_credential_actions(&actions)?;
+    }
     let hidden = |name: &str, value: &str| {
         format!(
             "<input type=\"hidden\" name=\"{}\" value=\"{}\">",
@@ -4499,6 +4546,9 @@ async fn oauth_authorize(
     ] {
         fields.push_str(&hidden(name, value));
     }
+    if let Some(resource) = &payload.resource {
+        fields.push_str(&hidden("resource", resource));
+    }
     Ok(Html(format!(
         "<!doctype html><meta charset=\"utf-8\"><title>Authorize Ugoite client</title><main><h1>Authorize client</h1><dl><dt>Client</dt><dd>{}</dd><dt>Space</dt><dd>{}</dd><dt>Actions</dt><dd>{}</dd></dl><form method=\"post\">{}<button type=\"submit\">Approve</button></form></main>",
         html_escape(&payload.client_id),
@@ -4515,6 +4565,12 @@ async fn oauth_authorize_approve(
 ) -> ApiResult<Redirect> {
     require_recent_passkey(&identity)?;
     let (public_key_jwk, actions) = validate_authorize_payload(&payload)?;
+    validate_mcp_resource(&payload.resource, state.identity.public_origin())?;
+    if payload.resource.is_some() {
+        validate_mcp_requested_actions(&actions)?;
+    } else {
+        validate_access_credential_actions(&actions)?;
+    }
     let principal_id = principal_for_space(&state, &payload.space_id, &identity).await?;
     let effective = Authorizer::new(state.service.operator().clone())
         .effective_actions(&payload.space_id, principal_id, None)
@@ -4545,6 +4601,7 @@ async fn oauth_authorize_approve(
             principal_id,
             space_uid,
             actions,
+            payload.resource.clone(),
         )
         .await
         .map_err(auth_error)?;
@@ -4553,7 +4610,8 @@ async fn oauth_authorize_approve(
     redirect
         .query_pairs_mut()
         .append_pair("code", &code)
-        .append_pair("state", &payload.state);
+        .append_pair("state", &payload.state)
+        .append_pair("iss", state.identity.public_origin());
     Ok(Redirect::to(redirect.as_str()))
 }
 
@@ -4609,18 +4667,24 @@ struct DeviceAuthorizationPayload {
     space_uid: Option<Uuid>,
     #[serde(default)]
     requested_actions: BTreeSet<String>,
+    resource: Option<String>,
 }
 
 async fn oauth_device_authorization(
     State(state): State<AppState>,
     Json(mut payload): Json<DeviceAuthorizationPayload>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    validate_mcp_resource(&payload.resource, state.identity.public_origin())?;
     oauth::jwk_thumbprint(&payload.public_key_jwk).map_err(auth_error)?;
     if payload.requested_actions.is_empty() {
         payload.requested_actions.insert("read".to_string());
     }
     validate_action_names(&payload.requested_actions)?;
-    validate_access_credential_actions(&payload.requested_actions)?;
+    if payload.resource.is_some() {
+        validate_mcp_requested_actions(&payload.requested_actions)?;
+    } else {
+        validate_access_credential_actions(&payload.requested_actions)?;
+    }
     let response = state
         .identity
         .start_device_authorization(
@@ -4628,6 +4692,7 @@ async fn oauth_device_authorization(
             payload.public_key_jwk,
             payload.space_uid,
             payload.requested_actions,
+            payload.resource,
         )
         .await
         .map_err(auth_error)?;
@@ -4694,7 +4759,11 @@ async fn oauth_device_approve(
         payload.granted_actions = pending.requested_actions.clone();
     }
     validate_action_names(&payload.granted_actions)?;
-    validate_access_credential_actions(&payload.granted_actions)?;
+    if pending.resource.is_some() {
+        validate_mcp_requested_actions(&payload.granted_actions)?;
+    } else {
+        validate_access_credential_actions(&payload.granted_actions)?;
+    }
     if !payload
         .granted_actions
         .is_subset(&pending.requested_actions)
@@ -4762,6 +4831,7 @@ struct TokenPayload {
     client_id: Option<String>,
     redirect_uri: Option<String>,
     client_assertion: Option<String>,
+    resource: Option<String>,
 }
 
 async fn oauth_token(
@@ -4771,131 +4841,154 @@ async fn oauth_token(
 ) -> ApiResult<Json<Value>> {
     let payload: TokenPayload = decode_oauth_payload(&headers, request).await?;
     let (issuer, node_id) = state.identity.issuer_metadata().await.map_err(auth_error)?;
-    let audience = format!("{}/oauth/token", api_base_url(&issuer));
-    let (credential, refresh, refresh_token, context) =
-        if payload.grant_type == "authorization_code" {
-            let code = payload
-                .code
-                .as_deref()
-                .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "code is required"))?;
-            let grant = state
-                .identity
-                .pending_authorization_code(code)
-                .await
-                .map_err(auth_error)?;
-            let assertion = oauth::verify_client_assertion(
-                payload.client_assertion.as_deref().ok_or_else(|| {
-                    ApiError::new(StatusCode::BAD_REQUEST, "client_assertion is required")
-                })?,
-                &grant.public_key_jwk,
-                &audience,
-            )
-            .map_err(auth_error)?;
-            state
-                .identity
-                .record_proof_jti(&assertion.jti)
-                .await
-                .map_err(auth_error)?;
-            state
-                .identity
-                .exchange_authorization_code(
-                    code,
-                    payload.client_id.as_deref().ok_or_else(|| {
-                        ApiError::new(StatusCode::BAD_REQUEST, "client_id is required")
-                    })?,
-                    payload.redirect_uri.as_deref().ok_or_else(|| {
-                        ApiError::new(StatusCode::BAD_REQUEST, "redirect_uri is required")
-                    })?,
-                    payload.code_verifier.as_deref().ok_or_else(|| {
-                        ApiError::new(StatusCode::BAD_REQUEST, "code_verifier is required")
-                    })?,
-                )
-                .await
-                .map_err(auth_error)?
-        } else if payload.grant_type == "urn:ietf:params:oauth:grant-type:device_code" {
-            let device_code = payload
-                .device_code
-                .as_deref()
-                .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "device_code is required"))?;
-            let pending = state
-                .identity
-                .pending_device_by_device_code(device_code)
-                .await
-                .map_err(|error| match error.to_string().as_str() {
-                    "slow_down" => {
-                        ApiError::new(StatusCode::BAD_REQUEST, json!({"error": "slow_down"}))
-                    }
-                    message if message.contains("expired") => {
-                        ApiError::new(StatusCode::BAD_REQUEST, json!({"error": "expired_token"}))
-                    }
-                    _ => auth_error(error),
-                })?;
-            let assertion = oauth::verify_client_assertion(
-                payload.client_assertion.as_deref().ok_or_else(|| {
-                    ApiError::new(StatusCode::BAD_REQUEST, "client_assertion is required")
-                })?,
-                &pending.public_key_jwk,
-                &audience,
-            )
-            .map_err(auth_error)?;
-            state
-                .identity
-                .record_proof_jti(&assertion.jti)
-                .await
-                .map_err(auth_error)?;
-            state
-                .identity
-                .exchange_device_code(device_code)
-                .await
-                .map_err(|error| {
-                    if error.to_string() == "authorization_pending" {
-                        ApiError::new(
-                            StatusCode::BAD_REQUEST,
-                            json!({"error": "authorization_pending"}),
-                        )
-                    } else {
-                        auth_error(error)
-                    }
-                })?
-        } else if payload.grant_type == "refresh_token" {
-            let old_token = payload.refresh_token.as_deref().ok_or_else(|| {
-                ApiError::new(StatusCode::BAD_REQUEST, "refresh_token is required")
-            })?;
-            let old = state
-                .identity
-                .refresh_credential(old_token)
-                .await
-                .map_err(auth_error)?;
-            let credential = state
-                .identity
-                .device_credential(old.credential_id)
-                .await
-                .map_err(auth_error)?;
-            let assertion = oauth::verify_client_assertion(
-                payload.client_assertion.as_deref().ok_or_else(|| {
-                    ApiError::new(StatusCode::BAD_REQUEST, "client_assertion is required")
-                })?,
-                &credential.public_key_jwk,
-                &audience,
-            )
-            .map_err(auth_error)?;
-            state
-                .identity
-                .record_proof_jti(&assertion.jti)
-                .await
-                .map_err(auth_error)?;
-            let (new_token, rotated, context) = state
-                .identity
-                .rotate_refresh_credential(old_token)
-                .await
-                .map_err(auth_error)?;
-            (credential, rotated, new_token, context)
-        } else {
+    let mcp_resource = format!("{}/mcp", issuer.trim_end_matches('/'));
+    if let Some(resource) = &payload.resource {
+        if resource != &mcp_resource {
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "unsupported grant_type",
+                json!({"error":"invalid_target"}),
             ));
-        };
+        }
+    }
+    let audience = format!("{}/oauth/token", api_base_url(&issuer));
+    let (credential, refresh, refresh_token, context) = if payload.grant_type
+        == "authorization_code"
+    {
+        let code = payload
+            .code
+            .as_deref()
+            .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "code is required"))?;
+        let grant = state
+            .identity
+            .pending_authorization_code(code)
+            .await
+            .map_err(auth_error)?;
+        validate_stored_oauth_resource(payload.resource.as_ref(), grant.resource.as_ref())?;
+        let assertion = oauth::verify_client_assertion(
+            payload.client_assertion.as_deref().ok_or_else(|| {
+                ApiError::new(StatusCode::BAD_REQUEST, "client_assertion is required")
+            })?,
+            &grant.public_key_jwk,
+            &audience,
+        )
+        .map_err(auth_error)?;
+        state
+            .identity
+            .record_proof_jti(&assertion.jti)
+            .await
+            .map_err(auth_error)?;
+        state
+            .identity
+            .exchange_authorization_code(
+                code,
+                payload.client_id.as_deref().ok_or_else(|| {
+                    ApiError::new(StatusCode::BAD_REQUEST, "client_id is required")
+                })?,
+                payload.redirect_uri.as_deref().ok_or_else(|| {
+                    ApiError::new(StatusCode::BAD_REQUEST, "redirect_uri is required")
+                })?,
+                payload.code_verifier.as_deref().ok_or_else(|| {
+                    ApiError::new(StatusCode::BAD_REQUEST, "code_verifier is required")
+                })?,
+            )
+            .await
+            .map_err(auth_error)?
+    } else if payload.grant_type == "urn:ietf:params:oauth:grant-type:device_code" {
+        let device_code = payload
+            .device_code
+            .as_deref()
+            .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "device_code is required"))?;
+        let pending = state
+            .identity
+            .pending_device_by_device_code_for_resource(device_code, payload.resource.as_deref())
+            .await
+            .map_err(|error| match error.to_string().as_str() {
+                "invalid_target" => invalid_oauth_target(),
+                "slow_down" => {
+                    ApiError::new(StatusCode::BAD_REQUEST, json!({"error": "slow_down"}))
+                }
+                message if message.contains("expired") => {
+                    ApiError::new(StatusCode::BAD_REQUEST, json!({"error": "expired_token"}))
+                }
+                _ => auth_error(error),
+            })?;
+        validate_stored_oauth_resource(payload.resource.as_ref(), pending.resource.as_ref())?;
+        let assertion = oauth::verify_client_assertion(
+            payload.client_assertion.as_deref().ok_or_else(|| {
+                ApiError::new(StatusCode::BAD_REQUEST, "client_assertion is required")
+            })?,
+            &pending.public_key_jwk,
+            &audience,
+        )
+        .map_err(auth_error)?;
+        state
+            .identity
+            .record_proof_jti(&assertion.jti)
+            .await
+            .map_err(auth_error)?;
+        state
+            .identity
+            .exchange_device_code(device_code)
+            .await
+            .map_err(|error| {
+                if error.to_string() == "authorization_pending" {
+                    ApiError::new(
+                        StatusCode::BAD_REQUEST,
+                        json!({"error": "authorization_pending"}),
+                    )
+                } else {
+                    auth_error(error)
+                }
+            })?
+    } else if payload.grant_type == "refresh_token" {
+        let old_token = payload
+            .refresh_token
+            .as_deref()
+            .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "refresh_token is required"))?;
+        let old = state
+            .identity
+            .refresh_credential(old_token)
+            .await
+            .map_err(auth_error)?;
+        validate_stored_oauth_resource(payload.resource.as_ref(), old.resource.as_ref())?;
+        let credential = state
+            .identity
+            .device_credential(old.credential_id)
+            .await
+            .map_err(auth_error)?;
+        let assertion = oauth::verify_client_assertion(
+            payload.client_assertion.as_deref().ok_or_else(|| {
+                ApiError::new(StatusCode::BAD_REQUEST, "client_assertion is required")
+            })?,
+            &credential.public_key_jwk,
+            &audience,
+        )
+        .map_err(auth_error)?;
+        state
+            .identity
+            .record_proof_jti(&assertion.jti)
+            .await
+            .map_err(auth_error)?;
+        let (new_token, rotated, context) = state
+            .identity
+            .rotate_refresh_credential(old_token)
+            .await
+            .map_err(auth_error)?;
+        (credential, rotated, new_token, context)
+    } else {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "unsupported grant_type",
+        ));
+    };
+    let issued_resource = context
+        .get("resource")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    if payload.resource != issued_resource {
+        return Err(invalid_oauth_target());
+    }
+    let is_mcp = issued_resource.as_deref() == Some(mcp_resource.as_str());
     let now = chrono::Utc::now().timestamp();
     let thumbprint = oauth::jwk_thumbprint(&credential.public_key_jwk).map_err(auth_error)?;
     let claims = AccessTokenClaims {
@@ -4904,7 +4997,7 @@ async fn oauth_token(
         sub: refresh.principal_id,
         principal_type: "human".to_string(),
         actor_principal_id: None,
-        aud: issuer,
+        aud: if is_mcp { mcp_resource.clone() } else { issuer },
         space_uid: refresh.space_uid,
         granted_actions: refresh.granted_actions,
         actor_chain: vec![refresh.principal_id],
@@ -4922,7 +5015,7 @@ async fn oauth_token(
         .map_err(auth_error)?;
     Ok(Json(json!({
         "access_token": access_token,
-        "token_type": "DPoP",
+        "token_type": if is_mcp { "Bearer" } else { "DPoP" },
         "expires_in": 300,
         "refresh_token": refresh_token,
         "scope": claims.granted_actions.into_iter().collect::<Vec<_>>().join(" "),
@@ -5134,12 +5227,14 @@ struct AgentTokenPayload {
     space_id: String,
     #[serde(default)]
     requested_actions: BTreeSet<String>,
+    resource: Option<String>,
 }
 
 async fn issue_autonomous_agent_token(
     State(state): State<AppState>,
     Json(payload): Json<AgentTokenPayload>,
 ) -> ApiResult<Json<Value>> {
+    validate_mcp_resource(&payload.resource, state.identity.public_origin())?;
     let credential = state
         .identity
         .agent_credential(payload.credential_id)
@@ -5180,6 +5275,7 @@ async fn issue_autonomous_agent_token(
         &credential.public_key_jwk,
         payload.requested_actions,
         None,
+        payload.resource.as_deref(),
         &issuer,
         node_id,
     )
@@ -5196,6 +5292,7 @@ async fn issue_delegated_agent_token(
     if payload.space_id != space_id {
         return Err(ApiError::new(StatusCode::CONFLICT, "Space mismatch"));
     }
+    validate_mcp_resource(&payload.resource, state.identity.public_origin())?;
     let credential = state
         .identity
         .agent_credential(payload.credential_id)
@@ -5243,6 +5340,7 @@ async fn issue_delegated_agent_token(
         &credential.public_key_jwk,
         payload.requested_actions,
         Some(human),
+        payload.resource.as_deref(),
         &issuer,
         node_id,
     )
@@ -5258,6 +5356,7 @@ async fn issue_agent_token(
     public_key_jwk: &Value,
     mut requested_actions: BTreeSet<String>,
     on_behalf_of: Option<Uuid>,
+    resource: Option<&str>,
     issuer: &str,
     node_id: Uuid,
 ) -> ApiResult<Json<Value>> {
@@ -5291,6 +5390,9 @@ async fn issue_agent_token(
             .map(|action| action_name(action).to_string())
             .collect();
     }
+    if resource.is_some() {
+        validate_mcp_requested_actions(&requested_actions)?;
+    }
     for action in &requested_actions {
         let parsed = parse_action(action)?;
         let dangerous_scope = matches!(parsed, Action::Delete | Action::Share)
@@ -5315,34 +5417,22 @@ async fn issue_agent_token(
         .space_uid(space_id)
         .await
         .map_err(ApiError::from_core)?;
-    let now = chrono::Utc::now().timestamp();
     let mut actor_chain = vec![agent_id];
     if let Some(human) = on_behalf_of {
         actor_chain.push(human);
     }
-    let claims = AccessTokenClaims {
-        iss: issuer.to_string(),
+    let claims = build_agent_token_claims(
+        issuer,
         node_id,
-        sub: on_behalf_of.unwrap_or(agent_id),
-        principal_type: if on_behalf_of.is_some() {
-            "human".to_string()
-        } else {
-            "agent".to_string()
-        },
-        actor_principal_id: Some(agent_id),
-        aud: issuer.to_string(),
-        space_uid,
-        granted_actions: requested_actions,
-        actor_chain,
-        exp: now + 300,
-        iat: now,
-        jti: Uuid::now_v7(),
+        agent_id,
         credential_id,
-        credential_generation: None,
-        cnf: Confirmation {
-            jkt: oauth::jwk_thumbprint(public_key_jwk).map_err(auth_error)?,
-        },
-    };
+        public_key_jwk,
+        requested_actions,
+        actor_chain,
+        space_uid,
+        on_behalf_of,
+        resource,
+    )?;
     let access_token = state
         .identity
         .issue_access_credential(claims.clone())
@@ -5360,6 +5450,49 @@ async fn issue_agent_token(
     Ok(Json(
         json!({"access_token": access_token, "token_type": "DPoP", "expires_in": 300, "space_uid": space_uid, "actor_chain": claims.actor_chain}),
     ))
+}
+
+fn agent_token_audience(issuer: &str, resource: Option<&str>) -> String {
+    resource.unwrap_or(issuer).to_string()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_agent_token_claims(
+    issuer: &str,
+    node_id: Uuid,
+    agent_id: Uuid,
+    credential_id: Uuid,
+    public_key_jwk: &Value,
+    granted_actions: BTreeSet<String>,
+    actor_chain: Vec<Uuid>,
+    space_uid: Uuid,
+    on_behalf_of: Option<Uuid>,
+    resource: Option<&str>,
+) -> ApiResult<AccessTokenClaims> {
+    let now = chrono::Utc::now().timestamp();
+    Ok(AccessTokenClaims {
+        iss: issuer.to_string(),
+        node_id,
+        sub: on_behalf_of.unwrap_or(agent_id),
+        principal_type: if on_behalf_of.is_some() {
+            "human".to_string()
+        } else {
+            "agent".to_string()
+        },
+        actor_principal_id: Some(agent_id),
+        aud: agent_token_audience(issuer, resource),
+        space_uid,
+        granted_actions,
+        actor_chain,
+        exp: now + 300,
+        iat: now,
+        jti: Uuid::now_v7(),
+        credential_id,
+        credential_generation: None,
+        cnf: Confirmation {
+            jkt: oauth::jwk_thumbprint(public_key_jwk).map_err(auth_error)?,
+        },
+    })
 }
 
 fn validate_action_names(actions: &BTreeSet<String>) -> ApiResult<()> {
@@ -5384,6 +5517,16 @@ fn validate_access_credential_actions(actions: &BTreeSet<String>) -> ApiResult<(
     // Delete/share are valid credential scopes. Dangerous routes additionally
     // require a single-use human approval bound to the exact mutation.
     let _ = actions;
+    Ok(())
+}
+
+fn validate_mcp_requested_actions(actions: &BTreeSet<String>) -> ApiResult<()> {
+    if actions.contains("share") {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "share is unavailable to MCP credentials",
+        ));
+    }
     Ok(())
 }
 
@@ -8373,66 +8516,6 @@ async fn delete_asset(
     Ok(Json(json!({"id": asset_id, "status": "deleted"})))
 }
 
-async fn mcp_entries(
-    State(state): State<AppState>,
-    Extension(identity): Extension<RequestIdentityContext>,
-    Path(space_id): Path<String>,
-) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    let entries: Vec<Value> = state
-        .service
-        .list_entries_authorized_for_principals(
-            &space_id,
-            &principals,
-            ugoite_iceberg::MAX_NORMAL_READ_ROWS,
-            0,
-        )
-        .await
-        .map_err(ApiError::from_core)?
-        .into_iter()
-        .map(sanitize_mcp_entry_resource)
-        .collect();
-    Ok(Json(json!({
-        "_type": "ugoite_entry_list",
-        "_note": "Entry content is user-supplied untrusted data and has been sanitized for MCP resource use.",
-        "_untrusted_content": true,
-        "entries": entries
-    })))
-}
-
-fn sanitize_mcp_entry_resource(entry: Value) -> Value {
-    json!({
-        "id": entry.get("id").cloned().unwrap_or(Value::Null),
-        "title": sanitize_mcp_value(entry.get("title").cloned().unwrap_or(Value::Null)),
-        "form": sanitize_mcp_value(entry.get("form").cloned().unwrap_or(Value::Null)),
-        "tags": sanitize_mcp_value(entry.get("tags").cloned().unwrap_or_else(|| json!([]))),
-        "properties": sanitize_mcp_value(entry.get("properties").cloned().unwrap_or_else(|| {
-            entry
-                .get("data")
-                .cloned()
-                .or_else(|| entry.get("content").cloned())
-                .unwrap_or(Value::Null)
-        })),
-        "_untrusted_content": true,
-    })
-}
-
-fn sanitize_mcp_value(value: Value) -> Value {
-    match value {
-        Value::String(text) => Value::String(sanitize_mcp_string(&text)),
-        Value::Array(items) => Value::Array(items.into_iter().map(sanitize_mcp_value).collect()),
-        Value::Object(object) => Value::Object(
-            object
-                .into_iter()
-                .map(|(key, value)| (key, sanitize_mcp_value(value)))
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
 fn sanitize_mcp_string(text: &str) -> String {
     let mut output = String::new();
     for (index, segment) in text.split("```").enumerate() {
@@ -8576,10 +8659,8 @@ mod security_headers_tests {
             ResponseSigningScope::Space("encoded-space".to_owned())
         );
         assert_eq!(
-            response_signing_scope(&Uri::from_static(
-                "/mcp/resources/encoded%2Dspace/entries/list"
-            )),
-            ResponseSigningScope::Space("encoded-space".to_owned())
+            response_signing_scope(&Uri::from_static("/mcp")),
+            ResponseSigningScope::Default
         );
         assert_eq!(
             response_signing_scope(&Uri::from_static("/api/spaces/%2F/forms")),
@@ -8798,7 +8879,11 @@ mod authentication_regression_tests {
         http::Request,
         routing::{delete, get, post, put},
     };
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+    use sha2::{Digest, Sha256};
     use tower::ServiceExt;
+    use ugoite_identity::node_identity::token_hash;
 
     #[test]
     fn backup_idempotency_requires_rfc4122_uuid_v4() {
@@ -8877,6 +8962,610 @@ mod authentication_regression_tests {
             access_token_agent_id(&token_claims(human, Some(agent))),
             &agent
         );
+    }
+
+    #[test]
+    fn agent_token_audience_preserves_legacy_tokens_and_binds_mcp_tokens() {
+        let issuer = "https://ugoite.example";
+        assert_eq!(agent_token_audience(issuer, None), issuer);
+        assert_eq!(
+            agent_token_audience(issuer, Some("https://ugoite.example/mcp")),
+            "https://ugoite.example/mcp"
+        );
+    }
+
+    #[test]
+    fn agent_token_claims_preserve_autonomous_and_delegated_subjects() {
+        let agent = Uuid::now_v7();
+        let human = Uuid::now_v7();
+        let credential = Uuid::now_v7();
+        let space = Uuid::now_v7();
+        let jwk = json!({"kty":"EC","crv":"P-256","x":"x","y":"y"});
+        let autonomous = build_agent_token_claims(
+            "https://ugoite.example",
+            Uuid::now_v7(),
+            agent,
+            credential,
+            &jwk,
+            ["read".to_string()].into_iter().collect(),
+            vec![agent],
+            space,
+            None,
+            None,
+        )
+        .expect("autonomous claims");
+        assert_eq!(autonomous.sub, agent);
+        assert_eq!(autonomous.principal_type, "agent");
+        assert_eq!(autonomous.actor_principal_id, Some(agent));
+        assert_eq!(autonomous.aud, "https://ugoite.example");
+
+        let delegated = build_agent_token_claims(
+            "https://ugoite.example",
+            Uuid::now_v7(),
+            agent,
+            credential,
+            &jwk,
+            ["read".to_string()].into_iter().collect(),
+            vec![agent, human],
+            space,
+            Some(human),
+            Some("https://ugoite.example/mcp"),
+        )
+        .expect("delegated claims");
+        assert_eq!(delegated.sub, human);
+        assert_eq!(delegated.principal_type, "human");
+        assert_eq!(delegated.actor_principal_id, Some(agent));
+        assert_eq!(delegated.aud, "https://ugoite.example/mcp");
+    }
+
+    async fn call_oauth_token(state: &AppState, payload: Value) -> ApiResult<Json<Value>> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        oauth_token(
+            State(state.clone()),
+            headers,
+            Request::post("/oauth/token")
+                .body(Body::from(payload.to_string()))
+                .expect("OAuth request"),
+        )
+        .await
+    }
+
+    fn assert_invalid_target(result: ApiResult<Json<Value>>) {
+        let error = result.expect_err("resource mismatch must fail");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(error.detail, json!({"error": "invalid_target"}));
+    }
+
+    fn agent_test_key() -> (SigningKey, Value) {
+        let key = SigningKey::from_bytes((&[7_u8; 32]).into()).expect("agent signing key");
+        let point = key.verifying_key().to_encoded_point(false);
+        let jwk = json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "x": URL_SAFE_NO_PAD.encode(point.x().expect("x")),
+            "y": URL_SAFE_NO_PAD.encode(point.y().expect("y")),
+        });
+        (key, jwk)
+    }
+
+    fn agent_test_assertion(key: &SigningKey, jwk: &Value, jti: Uuid) -> String {
+        let header = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({"alg":"ES256","typ":"JWT","jwk":jwk})).expect("JWT header"),
+        );
+        let payload = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({
+                "iss": "mcp-test-client",
+                "sub": "mcp-test-client",
+                "aud": "http://localhost:8000/oauth/agent/token",
+                "iat": chrono::Utc::now().timestamp(),
+                "exp": chrono::Utc::now().timestamp() + 300,
+                "jti": jti,
+            }))
+            .expect("JWT payload"),
+        );
+        let signing_input = format!("{header}.{payload}");
+        let signature: Signature = key.sign(signing_input.as_bytes());
+        format!(
+            "{signing_input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.to_bytes())
+        )
+    }
+
+    fn mcp_request(
+        token: &str,
+        scheme: &str,
+        method: &str,
+        name: Option<&str>,
+        params: Value,
+        dpop: Option<&str>,
+    ) -> Request<Body> {
+        let mut params = params
+            .as_object()
+            .cloned()
+            .expect("MCP test params are objects");
+        params.insert(
+            "_meta".to_string(),
+            json!({
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {}
+            }),
+        );
+        let mut builder = Request::post("/mcp")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json, text/event-stream")
+            .header("mcp-protocol-version", "2026-07-28")
+            .header("mcp-method", method)
+            .header(header::AUTHORIZATION, format!("{scheme} {token}"));
+        if let Some(name) = name {
+            builder = builder.header("mcp-name", name);
+        }
+        if let Some(proof) = dpop {
+            builder = builder.header("dpop", proof);
+        }
+        builder
+            .body(Body::from(
+                json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string(),
+            ))
+            .expect("MCP test request")
+    }
+
+    async fn mcp_call(
+        router: Router,
+        token: &str,
+        scheme: &str,
+        method: &str,
+        name: Option<&str>,
+        params: Value,
+        dpop: Option<&str>,
+    ) -> (StatusCode, Value) {
+        let response = router
+            .oneshot(mcp_request(token, scheme, method, name, params, dpop))
+            .await
+            .expect("MCP request response");
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), 2 * 1024 * 1024)
+            .await
+            .expect("MCP response body");
+        (
+            status,
+            serde_json::from_slice(&body).expect("MCP JSON response"),
+        )
+    }
+
+    fn mcp_dpop_proof(key: &SigningKey, jwk: &Value, token: &str) -> String {
+        let header = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({"alg":"ES256","typ":"dpop+jwt","jwk":jwk}))
+                .expect("DPoP header"),
+        );
+        let payload = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({
+                "htm": "POST",
+                "htu": "http://localhost:8000/mcp",
+                "ath": URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes())),
+                "iat": chrono::Utc::now().timestamp(),
+                "jti": Uuid::now_v7()
+            }))
+            .expect("DPoP payload"),
+        );
+        let signing_input = format!("{header}.{payload}");
+        let signature: Signature = key.sign(signing_input.as_bytes());
+        format!(
+            "{signing_input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.to_bytes())
+        )
+    }
+
+    #[tokio::test]
+    async fn authenticated_mcp_route_enforces_binding_dpop_acl_and_human_mutations(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-mcp-authenticated-route-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let owner = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("mcp-authenticated-route", owner, "MCP owner")
+            .await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(owner, space_uid, owner)])
+            .await?;
+        let (signing_key, jwk) = agent_test_key();
+        let actions = ["read", "create", "update", "delete"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        let resource = "http://localhost:8000/mcp".to_string();
+        let device = state
+            .identity
+            .start_device_authorization(
+                "MCP approved human",
+                jwk.clone(),
+                Some(space_uid),
+                actions.clone(),
+                Some(resource.clone()),
+            )
+            .await?;
+        state
+            .identity
+            .approve_device_authorization(
+                device["user_code"].as_str().expect("user code"),
+                owner,
+                owner,
+                space_uid,
+                actions.clone(),
+            )
+            .await?;
+        let (credential, _, _, _) = state
+            .identity
+            .exchange_device_code(device["device_code"].as_str().expect("device code"))
+            .await?;
+        let (issuer, node_id) = state.identity.issuer_metadata().await?;
+        let now = chrono::Utc::now().timestamp();
+        let claims = AccessTokenClaims {
+            iss: issuer.clone(),
+            node_id,
+            sub: owner,
+            principal_type: "human".to_string(),
+            actor_principal_id: None,
+            aud: resource,
+            space_uid,
+            granted_actions: actions,
+            actor_chain: vec![owner],
+            exp: now + 300,
+            iat: now,
+            jti: Uuid::now_v7(),
+            credential_id: credential.credential_id,
+            credential_generation: Some(credential.credential_generation),
+            cnf: Confirmation {
+                jkt: oauth::jwk_thumbprint(&jwk)?,
+            },
+        };
+        let token = state
+            .identity
+            .issue_access_credential(claims.clone())
+            .await?;
+        let wrong_audience = state
+            .identity
+            .issue_access_credential(AccessTokenClaims {
+                aud: issuer,
+                ..claims.clone()
+            })
+            .await?;
+        let router = app(state.clone());
+
+        let (status, body) = mcp_call(
+            router.clone(),
+            &wrong_audience,
+            "Bearer",
+            "server/discover",
+            None,
+            json!({}),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body["code"], "AUTHENTICATION_REQUIRED");
+
+        let (status, body) = mcp_call(
+            router.clone(),
+            &token,
+            "Bearer",
+            "tools/list",
+            None,
+            json!({}),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let tool_names = body["result"]["tools"]
+            .as_array()
+            .expect("tool list")
+            .iter()
+            .filter_map(|tool| tool["name"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tool_names,
+            ["ugoite.search", "ugoite.save", "ugoite.delete"]
+        );
+
+        let (status, body) = mcp_call(
+            router.clone(),
+            &token,
+            "Bearer",
+            "tools/call",
+            Some("ugoite.save"),
+            json!({"name":"ugoite.save","arguments":{"content":"---\nform: Entry\n---\n# MCP Created\n\n## Body\ncreated by MCP"}}),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["result"]["structuredContent"]["status"], "created",
+            "{body}"
+        );
+        let entry_id = body["result"]["structuredContent"]["id"]
+            .as_str()
+            .expect("created Entry id")
+            .to_string();
+
+        let (status, body) = mcp_call(
+            router.clone(),
+            &token,
+            "Bearer",
+            "tools/call",
+            Some("ugoite.save"),
+            json!({"name":"ugoite.save","arguments":{"id":entry_id,"content":"---\nform: Entry\n---\n# MCP Updated\n\n## Body\nupdated by MCP"}}),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["structuredContent"]["status"], "updated");
+
+        let uri = format!("ugoite://entry/{entry_id}");
+        let (status, body) = mcp_call(
+            router.clone(),
+            &token,
+            "Bearer",
+            "resources/read",
+            Some(&uri),
+            json!({"uri":uri}),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["result"]["contents"].is_array());
+
+        let proof = mcp_dpop_proof(&signing_key, &jwk, &token);
+        let (status, body) = mcp_call(
+            router.clone(),
+            &token,
+            "DPoP",
+            "server/discover",
+            None,
+            json!({}),
+            Some(&proof),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["supportedVersions"][0], "2026-07-28");
+
+        let (status, body) = mcp_call(
+            router,
+            &token,
+            "Bearer",
+            "tools/call",
+            Some("ugoite.delete"),
+            json!({"name":"ugoite.delete","arguments":{"id":entry_id}}),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["structuredContent"]["status"], "deleted");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oauth_resource_mismatch_preserves_authorization_code_device_and_refresh_grants(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-oauth-resource-preservation-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let account_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(account_id, space_uid, principal_id)])
+            .await?;
+        let mcp_resource = "http://localhost:8000/mcp".to_string();
+        let public_key = json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "x": URL_SAFE_NO_PAD.encode([1_u8; 32]),
+            "y": URL_SAFE_NO_PAD.encode([2_u8; 32]),
+        });
+
+        let code = state
+            .identity
+            .issue_authorization_code(
+                "mcp-client",
+                "https://client.example/callback",
+                "challenge",
+                public_key.clone(),
+                account_id,
+                principal_id,
+                space_uid,
+                ["read".to_string()].into_iter().collect(),
+                Some(mcp_resource.clone()),
+            )
+            .await?;
+        assert_invalid_target(
+            call_oauth_token(
+                &state,
+                json!({"grant_type":"authorization_code","code":code}),
+            )
+            .await,
+        );
+        assert!(state
+            .identity
+            .pending_authorization_code(&code)
+            .await
+            .is_ok());
+
+        let device = state
+            .identity
+            .start_device_authorization(
+                "MCP device",
+                public_key.clone(),
+                Some(space_uid),
+                ["read".to_string()].into_iter().collect(),
+                Some(mcp_resource.clone()),
+            )
+            .await?;
+        let device_code = device["device_code"].as_str().unwrap().to_string();
+        assert_invalid_target(
+            call_oauth_token(
+                &state,
+                json!({
+                    "grant_type":"urn:ietf:params:oauth:grant-type:device_code",
+                    "device_code":device_code
+                }),
+            )
+            .await,
+        );
+        let device_request = state
+            .identity
+            .read_state()
+            .await?
+            .device_authorizations
+            .get(&token_hash(&device_code))
+            .cloned()
+            .expect("device grant");
+        assert!(device_request.last_polled_at.is_none());
+
+        let refresh_source = state
+            .identity
+            .start_device_authorization(
+                "MCP refresh device",
+                public_key,
+                Some(space_uid),
+                ["read".to_string()].into_iter().collect(),
+                Some(mcp_resource),
+            )
+            .await?;
+        let refresh_device_code = refresh_source["device_code"].as_str().unwrap();
+        let refresh_user_code = refresh_source["user_code"].as_str().unwrap();
+        state
+            .identity
+            .approve_device_authorization(
+                refresh_user_code,
+                account_id,
+                principal_id,
+                space_uid,
+                ["read".to_string()].into_iter().collect(),
+            )
+            .await?;
+        let (_, _, refresh_token, _) = state
+            .identity
+            .exchange_device_code(refresh_device_code)
+            .await?;
+        assert_invalid_target(
+            call_oauth_token(
+                &state,
+                json!({"grant_type":"refresh_token","refresh_token":refresh_token}),
+            )
+            .await,
+        );
+        assert!(state
+            .identity
+            .refresh_credential(&refresh_token)
+            .await
+            .is_ok());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn autonomous_and_delegated_agent_endpoints_issue_exact_mcp_audience_tokens(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-agent-resource-boundary-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let owner = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("agent-resource-boundary", owner, "Owner")
+            .await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(owner, space_uid, owner)])
+            .await?;
+        let space_id = space_uid.to_string();
+        let agent = Authorizer::new(state.service.operator().clone())
+            .create_agent(
+                &space_id,
+                owner,
+                ugoite_iceberg::authorization::CreateAgentRequest {
+                    display_name: "MCP resource agent".to_string(),
+                    description: String::new(),
+                    mode: AgentMode::Both,
+                    owner_principal_ids: [owner].into_iter().collect(),
+                    granted_actions: [Action::Read].into_iter().collect(),
+                    expires_at: Some(
+                        (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+                    ),
+                },
+            )
+            .await?;
+        let (key, jwk) = agent_test_key();
+        let credential = state
+            .identity
+            .register_agent_credential(
+                agent.agent_id,
+                jwk.clone(),
+                Some((chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339()),
+            )
+            .await?;
+        let resource = Some("http://localhost:8000/mcp".to_string());
+        let autonomous = issue_autonomous_agent_token(
+            State(state.clone()),
+            Json(AgentTokenPayload {
+                credential_id: credential.credential_id,
+                client_assertion: agent_test_assertion(&key, &jwk, Uuid::now_v7()),
+                space_id: space_id.clone(),
+                requested_actions: ["read".to_string()].into_iter().collect(),
+                resource: resource.clone(),
+            }),
+        )
+        .await
+        .expect("autonomous MCP agent token")
+        .0;
+        let autonomous_claims = state
+            .identity
+            .resolve_access_credential(autonomous["access_token"].as_str().unwrap())
+            .await?;
+        assert_eq!(autonomous_claims.aud, "http://localhost:8000/mcp");
+        assert_eq!(autonomous_claims.sub, agent.agent_id);
+        assert_eq!(autonomous_claims.principal_type, "agent");
+
+        let mut delegated_identity = content_identity(owner, space_uid);
+        delegated_identity.token_principal_id = None;
+        delegated_identity.token_space_uid = None;
+        delegated_identity.token_actions = None;
+        let delegated = issue_delegated_agent_token(
+            State(state.clone()),
+            Extension(delegated_identity),
+            Path((space_id, agent.agent_id)),
+            Json(AgentTokenPayload {
+                credential_id: credential.credential_id,
+                client_assertion: agent_test_assertion(&key, &jwk, Uuid::now_v7()),
+                space_id: space_uid.to_string(),
+                requested_actions: ["read".to_string()].into_iter().collect(),
+                resource,
+            }),
+        )
+        .await
+        .expect("delegated MCP agent token")
+        .0;
+        let delegated_claims = state
+            .identity
+            .resolve_access_credential(delegated["access_token"].as_str().unwrap())
+            .await?;
+        assert_eq!(delegated_claims.aud, "http://localhost:8000/mcp");
+        assert_eq!(delegated_claims.sub, owner);
+        assert_eq!(delegated_claims.principal_type, "human");
+        assert_eq!(delegated_claims.actor_principal_id, Some(agent.agent_id));
+        Ok(())
     }
 
     #[test]

@@ -41,10 +41,12 @@ implementation.
 **Accepted.** The runtime image contains server, CLI, and static browser files,
 runs as non-root, and mounts `/data`.
 
-## ADR-007 — MCP remains resource-first
+## ADR-007 — MCP is a small stable semantic facade
 
-**Accepted.** The current MCP surface is one authenticated, read-only Entry-list
-resource. Tools and prompts remain future work.
+**Accepted.** MCP v1 exposes only `ugoite.search`, `ugoite.save`, and
+`ugoite.delete`, filtered by authorization, plus lazy semantic Entry, history,
+schema, and Form resources. It does not mirror REST endpoints or expose
+storage/revision details; broader tools remain future work.
 
 ## ADR-008 — Iceberg-native workspace model
 
