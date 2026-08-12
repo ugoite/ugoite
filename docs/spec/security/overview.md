@@ -62,6 +62,19 @@ invariants are:
 be a registrable suffix of that origin host and must be configured before
 credential registration.
 
+## Credentialed CORS policy
+
+CORS is off by default. Setting `UGOITE_CORS_ALLOWED_ORIGINS` enables
+credentialed browser access only for the exact origins in its comma-separated
+allowlist. Preflight responses advertise the server's explicit method and
+request-header allowlists; wildcard origins, methods, and request headers are
+not used with credentials. An origin outside the allowlist does not receive
+`Access-Control-Allow-Origin`, so it is not granted browser CORS access.
+
+CORS response permission is independent of CSRF protection. Cookie-authenticated
+unsafe requests still require the canonical `UGOITE_PUBLIC_ORIGIN`, even when a
+different origin is present in `UGOITE_CORS_ALLOWED_ORIGINS`.
+
 ## HTTP response security policy
 
 `ugoite-server` adds the following headers to every response, including static
