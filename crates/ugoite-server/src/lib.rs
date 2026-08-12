@@ -1513,7 +1513,7 @@ async fn validate_owner_recovery_context(
     let fence = context
         .recovery_fence_id
         .and_then(|fence_id| authorization.recovery_fences.get(&fence_id))
-        .ok_or_else(|| recovery_fence_unavailable())?;
+        .ok_or_else(recovery_fence_unavailable)?;
     let fence_expires_at = chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
         .map(|expires| expires.with_timezone(&chrono::Utc))
         .map_err(|_| recovery_storage_unavailable())?;
@@ -1697,6 +1697,7 @@ async fn recovery_account_generations(
     Ok((issuer_generation, target_generation))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn owner_recovery_replay_error(
     existing: &OwnerRecoveryApproval,
     space_uid: Uuid,
@@ -1741,6 +1742,7 @@ fn owner_recovery_replay_error(
 /// commit after the Space barrier was visible but before Node had recorded its
 /// barrier. The second Node acquisition revalidates the Space snapshot after
 /// reservation, so a concurrent Space change fails closed.
+#[allow(clippy::too_many_arguments)]
 async fn reserve_recovery_pair(
     state: &AppState,
     space_id: &str,
@@ -1829,14 +1831,12 @@ async fn reserve_recovery_pair(
             || fence.target_account_id != target_account_id
             || fence.issuer_generation != issuer_generation
             || fence.target_generation != target_generation
-            || chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
+            || !chrono::DateTime::parse_from_rfc3339(&fence.expires_at)
                 .map(|expires| expires.with_timezone(&chrono::Utc) > chrono::Utc::now())
                 .unwrap_or(false)
-                == false
-            || chrono::DateTime::parse_from_rfc3339(&provisional.recovery_fence_expires_at)
+            || !chrono::DateTime::parse_from_rfc3339(&provisional.recovery_fence_expires_at)
                 .map(|expires| expires.with_timezone(&chrono::Utc) > chrono::Utc::now())
                 .unwrap_or(false)
-                == false
         {
             return Err(recovery_fence_unavailable());
         }
@@ -3250,9 +3250,7 @@ fn owner_recovery_api_error(error: anyhow::Error) -> ApiError {
     }
     let (status, code) = if message.contains("already pending") {
         (StatusCode::CONFLICT, "OWNER_RECOVERY_CHALLENGE_PENDING")
-    } else if message.contains("no longer current") {
-        (StatusCode::CONFLICT, "OWNER_RESET_ALREADY_COMPLETED")
-    } else if message.contains("already completed") {
+    } else if message.contains("no longer current") || message.contains("already completed") {
         (StatusCode::CONFLICT, "OWNER_RESET_ALREADY_COMPLETED")
     } else if message.contains("expired") {
         (StatusCode::GONE, "OWNER_APPROVAL_EXPIRED")

@@ -266,6 +266,7 @@ impl Authorizer {
         effective_actions_for_state(&state, principal_id, resource)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn reserve_recovery_fence(
         &self,
         space_id: &str,
@@ -293,6 +294,7 @@ impl Authorizer {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn reserve_recovery_fence_with_id(
         &self,
         space_id: &str,

@@ -513,6 +513,7 @@ pub struct RecoveryAuditOutboxRecord {
     pub event: serde_json::Value,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn queue_recovery_audit(
     state: &mut NodeState,
     event_id: Uuid,
@@ -570,6 +571,7 @@ fn queue_recovery_audit(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn node_audit_fingerprint(
     subject_account_id: Option<Uuid>,
     actor_account_id: Option<Uuid>,
@@ -1174,7 +1176,7 @@ impl NodeIdentityService {
             .await
         {
             let Some(existing) = self.state_store.get(&key).await? else {
-                return Err(create_error.into());
+                return Err(create_error);
             };
             let existing: NodeAuditEvent = serde_json::from_slice(&existing.value)?;
             let expected_fingerprint = node_audit_fingerprint(
@@ -2892,6 +2894,7 @@ impl NodeIdentityService {
         Ok(token)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn issue_owner_recovery_approval_with_snapshot_and_credential(
         &self,
         space_uid: Uuid,
@@ -2915,6 +2918,7 @@ impl NodeIdentityService {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn issue_owner_recovery_approval_with_snapshot_credential_and_session(
         &self,
         space_uid: Uuid,
@@ -2939,6 +2943,7 @@ impl NodeIdentityService {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn issue_owner_recovery_approval_unchecked(
         &self,
         space_uid: Uuid,
@@ -3963,10 +3968,10 @@ impl NodeIdentityService {
         state.oidc_attempts.retain(|_, attempt| {
             attempt.link_account_id != Some(account.account_id)
                 && attempt.invitation_account_id != Some(account.account_id)
-                && !attempt
+                && attempt
                     .invitation_hash
                     .as_ref()
-                    .is_some_and(|hash| invitation_accounts.get(hash) == Some(&account.account_id))
+                    .is_none_or(|hash| invitation_accounts.get(hash) != Some(&account.account_id))
         });
         state
             .authorization_codes
@@ -4001,6 +4006,7 @@ impl NodeIdentityService {
         Ok(serde_json::from_slice::<BrowserSession>(&record.value)?.session_id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn rotate_recovery_codes_with_snapshot_and_credential(
         &self,
         request_id: Uuid,
@@ -4026,6 +4032,7 @@ impl NodeIdentityService {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn rotate_recovery_codes_with_snapshot_credential_and_session(
         &self,
         request_id: Uuid,
@@ -4052,6 +4059,7 @@ impl NodeIdentityService {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn rotate_recovery_codes_unchecked(
         &self,
         request_id: Uuid,
@@ -5734,6 +5742,7 @@ impl NodeIdentityService {
         Ok(attempt)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn complete_oidc_login(
         &self,
         issuer: &str,
