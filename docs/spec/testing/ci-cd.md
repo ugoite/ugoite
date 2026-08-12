@@ -27,6 +27,8 @@ The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies 
 
 After publication, `Release Publish` runs both release quick-start verifiers against the exact prepared version and source SHA. The release also uploads `docker-compose.release.yaml`, its checksum, and a manifest containing the prepared source SHA and published image digest. The container verifier checks that manifest, downloads that published Compose definition, pulls the versioned GHCR image, and starts it with `--no-build`; it does not build or load another image for verification. The CLI verifier uses the published checksum-verified installer and retains the local Space create/list assertions.
 
+Only after the artifact and quick-start gates succeed, `Release Publish` renders `docs/version/changelog/<channel>.yaml` into the GitHub Release body. The repository-owned section uses a versioned start/end marker so reruns replace the channel section and preserve GitHub's generated commit summary without duplication. Invalid, mismatched, or incomplete channel sources fail before the release body is changed.
+
 The focused docsite-navigation lane is intentionally separate from smoke/full
 runtime E2E. It builds the docsite through the canonical `build:docsite`
 inputs, restores the versioned Playwright browser cache, keeps the explicit

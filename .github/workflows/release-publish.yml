@@ -897,3 +897,50 @@ jobs:
             echo "CLI quick start: ${CLI_OUTCOME}"
             exit 1
           fi
+
+  publish-channel-release-notes:
+    needs:
+      - prepare
+      - publish-release-assets
+      - verify-published-quickstarts
+    if: >-
+      ${{
+        needs.prepare.outputs.release_tag != '' &&
+        needs.publish-release-assets.result == 'success' &&
+        needs.verify-published-quickstarts.result == 'success'
+      }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          persist-credentials: false
+
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          install: true
+          cache: false
+
+      - name: Publish repository-owned channel release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          notes_file="$(mktemp)"
+          cleanup() {
+            rm -f "${body_file}" "${notes_file}"
+          }
+          trap cleanup EXIT
+          gh release view "${RELEASE_TAG}" --json body --jq .body >"${body_file}"
+          deno run -A tools/release-notes.ts compose \
+            --channel "${RELEASE_CHANNEL}" \
+            --version "${RELEASE_VERSION}" \
+            --body-file "${body_file}" \
+            --output "${notes_file}"
+          gh release edit "${RELEASE_TAG}" --notes-file "${notes_file}"

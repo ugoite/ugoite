@@ -22,6 +22,6 @@ release_notes:
   - Documentation now distinguishes shipped behavior from browser-local sync and other planned capability.
   - Release notes no longer imply that unpublished artifacts or split frontend/backend images exist.
   planned:
-  - Published signed/checksummed container and CLI artifacts.
+  - A completed operator-supported release with its published artifacts and verified quick starts.
   - Production passkey/TOTP login, managed service accounts, audit APIs, and browser-local optional sync.
 updated: '2026-06-23'

@@ -403,13 +403,16 @@ requirements:
   linked_specifications: *id002
   id: REQ-OPS-026
   title: Channel-Scoped Changelog Sources
-  description: Stable, beta, and alpha changelog sources must remain separate and must not imply unpublished artifacts exist.
+  description: Stable, beta, and alpha changelog sources must remain separate, must not imply unpublished artifacts exist, and must be rendered into the matching GitHub Release body after artifact and quick-start verification. Reruns replace one marked repository-owned section without duplicating generated notes.
   related_spec:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
   status: implemented
-  verification: untraced
+  verification: traced
+  tests:
+  - file: tools/release-notes_test.ts
+  - file: .github/workflows/release-publish.yml
 - set_id: REQCAT-OPS
   source_file: requirements/ops.yaml
   scope: Operational quality, workflow, and automation requirements.
