@@ -52,6 +52,7 @@ async fn test_integrity_req_int_001_real_integrity_provider() -> anyhow::Result<
 /// REQ-INT-003
 async fn test_response_hmac_material_is_space_scoped() -> anyhow::Result<()> {
     let op = setup_operator()?;
+    space::create_space(&op, "default", "/tmp").await?;
 
     let (key_id, secret) =
         ugoite_iceberg::integrity::load_response_hmac_material(&op, "default").await?;
@@ -65,6 +66,40 @@ async fn test_response_hmac_material_is_space_scoped() -> anyhow::Result<()> {
     );
     assert!(op.read("hmac.json").await.is_err());
 
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-INT-003
+async fn test_default_response_hmac_material_has_a_node_scoped_path() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+
+    let (key_id, secret) =
+        ugoite_iceberg::integrity::load_default_response_hmac_material(&op).await?;
+    let payload: serde_json::Value =
+        serde_json::from_slice(&op.read("response_hmac/default.json").await?.to_vec())?;
+
+    assert_eq!(payload["hmac_key_id"], key_id);
+    assert_eq!(
+        general_purpose::STANDARD.decode(payload["hmac_key"].as_str().unwrap())?,
+        secret
+    );
+    assert!(!op.exists("spaces/default/hmac.json").await?);
+    Ok(())
+}
+
+#[tokio::test]
+/// REQ-INT-003
+async fn test_unknown_space_does_not_create_response_hmac_storage() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+
+    let err = ugoite_iceberg::integrity::load_response_hmac_material(&op, "missing-space")
+        .await
+        .expect_err("unknown Space must fail closed");
+
+    assert!(err.to_string().contains("Space not found"));
+    assert!(!op.exists("spaces/missing-space/").await?);
+    assert!(!op.exists("spaces/missing-space/hmac.json").await?);
     Ok(())
 }
 
@@ -85,8 +120,7 @@ async fn test_response_hmac_material_rejects_invalid_space_id() -> anyhow::Resul
 /// REQ-INT-003
 async fn test_response_hmac_material_defaults_missing_key_id() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    op.create_dir("spaces/").await?;
-    op.create_dir("spaces/default/").await?;
+    space::create_space(&op, "default", "/tmp").await?;
     op.write(
         "spaces/default/hmac.json",
         serde_json::to_vec(&json!({
@@ -108,8 +142,7 @@ async fn test_response_hmac_material_defaults_missing_key_id() -> anyhow::Result
 /// REQ-INT-003
 async fn test_response_hmac_material_rejects_missing_hmac_key() -> anyhow::Result<()> {
     let op = setup_operator()?;
-    op.create_dir("spaces/").await?;
-    op.create_dir("spaces/default/").await?;
+    space::create_space(&op, "default", "/tmp").await?;
     op.write(
         "spaces/default/hmac.json",
         serde_json::to_vec(&json!({

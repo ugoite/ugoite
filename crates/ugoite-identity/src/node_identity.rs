@@ -6873,7 +6873,45 @@ fn random_user_code() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{fs, path::Path};
+    use ugoite_domain::identity::{AccountStatus, HumanAccount, NodeRole};
+    use ugoite_iceberg::service::UgoiteService;
     use ugoite_storage::operator_from_uri;
+
+    fn copy_prefix(source: &Path, destination: &Path) -> Result<()> {
+        fs::create_dir_all(destination)?;
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            let source_path = entry.path();
+            let destination_path = destination.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                copy_prefix(&source_path, &destination_path)?;
+            } else {
+                let _ = fs::copy(source_path, destination_path)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn filesystem_identity(control_root: &Path, secret: Arc<[u8]>) -> Result<NodeIdentityService> {
+        let operator = operator_from_uri(control_root.to_str().context("control path")?)?;
+        let store: Arc<dyn NodeControlStore> = Arc::new(OpenDalNodeControlStore::new(operator)?);
+        NodeIdentityService::from_parts(store, secret, "localhost", "http://localhost:8000")
+    }
+
+    fn current_totp_code(secret: &[u8]) -> String {
+        let counter = Utc::now().timestamp().div_euclid(30) as u64;
+        let mut mac = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(secret)
+            .expect("TOTP secret is valid HMAC material");
+        mac.update(&counter.to_be_bytes());
+        let digest = mac.finalize().into_bytes();
+        let index = usize::from(digest[digest.len() - 1] & 0x0f);
+        let binary = (u32::from(digest[index] & 0x7f) << 24)
+            | (u32::from(digest[index + 1]) << 16)
+            | (u32::from(digest[index + 2]) << 8)
+            | u32::from(digest[index + 3]);
+        format!("{:06}", binary % 1_000_000)
+    }
 
     fn main_invitation_json(used: bool) -> serde_json::Value {
         let account_id = Uuid::now_v7();
@@ -7087,6 +7125,150 @@ mod tests {
         assert!(!root.path().join("spaces/_ugoite").exists());
         assert!(!serde_json::to_string(&service.read_state().await?)?
             .contains(service.encryption_key.as_str()));
+        Ok(())
+    }
+
+    /// REQ-STO-001, REQ-STO-002: a filesystem backup and restore must retain
+    /// the portable Space data and the separate Node control store together.
+    #[tokio::test]
+    async fn disaster_recovery_drill_restores_space_control_store_and_secret() -> Result<()> {
+        const RECOVERY_CODE: &str = "DRILL-RECOVERY-CODE";
+        const TOTP_SECRET: &[u8] = b"12345678901234567890123456789012";
+
+        let temp = tempfile::tempdir()?;
+        let source_space = temp.path().join("source/space-prefix");
+        let source_control = temp.path().join("source/control-prefix");
+        let backup_space = temp.path().join("backup/space-prefix");
+        let backup_control = temp.path().join("backup/control-prefix");
+        fs::create_dir_all(&source_space)?;
+        fs::create_dir_all(&source_control)?;
+
+        let space_uri = source_space.to_string_lossy().into_owned();
+        let space = UgoiteService::new(&space_uri)?;
+        space.create_space("drill-space").await?;
+        let entry = space
+            .create_entry(
+                "drill-space",
+                "drill-entry",
+                "---\nform: Entry\n---\n# Recovery drill\n\n## Body\nThis survives the backup.",
+                "drill-owner",
+            )
+            .await?;
+        space
+            .create_named_checkpoint("drill-space", "before-backup")
+            .await?;
+        let entries_before = space.list_entries("drill-space").await?;
+        let health_before = space
+            .space_health("drill-space", &["before-backup".to_string()])
+            .await?;
+
+        let secret: Arc<[u8]> = Arc::from([0x42; 32]);
+        let identity = filesystem_identity(&source_control, secret.clone())?;
+        identity.bootstrap_if_needed().await?.expect("bootstrap");
+        let account_id = Uuid::now_v7();
+        let mut state = identity.read_state().await?;
+        let node_id = state.node_id;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Drill owner".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                credential_generation: 0,
+            },
+        );
+        state.recovery.insert(
+            account_id,
+            RecoveryRecord {
+                account_id,
+                code_hashes: vec![token_hash(RECOVERY_CODE)],
+                totp_secret_encrypted: Some(encrypt_recovery_secret(
+                    &identity.encryption_key,
+                    TOTP_SECRET,
+                )?),
+                created_at: timestamp(Utc::now()),
+                failed_attempts: 0,
+                locked_until: None,
+            },
+        );
+        identity.write_state(&state).await?;
+        identity
+            .append_node_audit(NodeAuditInput {
+                subject_account_id: Some(account_id),
+                actor_account_id: Some(account_id),
+                credential_id: None,
+                action: "recovery.drill_seed",
+                target_type: "node",
+                target_id: Some(node_id.to_string()),
+                outcome: "success",
+                request_id: None,
+                safe_metadata: serde_json::json!({"test": "disaster_recovery"}),
+            })
+            .await?;
+        let audit_before = identity.list_node_audit(10).await?;
+
+        drop(identity);
+        drop(space);
+        copy_prefix(&source_space, &backup_space)?;
+        copy_prefix(&source_control, &backup_control)?;
+        fs::remove_dir_all(&source_space)?;
+        fs::remove_dir_all(&source_control)?;
+        assert!(!source_space.exists());
+        assert!(!source_control.exists());
+
+        // Rebuild the configured prefixes from the backups, then open them with
+        // fresh service instances as a stopped-node restore would.
+        copy_prefix(&backup_space, &source_space)?;
+        copy_prefix(&backup_control, &source_control)?;
+
+        let restored_space = UgoiteService::new(&space_uri)?;
+        let restored_identity = filesystem_identity(&source_control, secret)?;
+        assert!(restored_identity.bootstrap_if_needed().await?.is_none());
+        assert_eq!(restored_identity.read_state().await?.node_id, node_id);
+        assert_eq!(
+            serde_json::to_value(restored_identity.list_node_audit(10).await?)?,
+            serde_json::to_value(audit_before)?,
+        );
+        assert_eq!(
+            restored_space.list_entries("drill-space").await?,
+            entries_before
+        );
+        assert_eq!(
+            restored_space
+                .get_entry("drill-space", "drill-entry")
+                .await?,
+            entry
+        );
+        let health_after = restored_space
+            .space_health("drill-space", &["before-backup".to_string()])
+            .await?;
+        assert_eq!(health_after["status"], health_before["status"]);
+        assert_eq!(health_after["checkpoints"][0]["status"], "healthy");
+
+        let wrong_secret: Arc<[u8]> = Arc::from([0x24; 32]);
+        let wrong_identity = filesystem_identity(&source_control, wrong_secret)?;
+        assert!(
+            wrong_identity
+                .start_recovery_registration(
+                    account_id,
+                    RECOVERY_CODE,
+                    &current_totp_code(TOTP_SECRET),
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            restored_identity
+                .start_recovery_registration(
+                    account_id,
+                    RECOVERY_CODE,
+                    &current_totp_code(TOTP_SECRET),
+                )
+                .await
+                .is_ok()
+        );
         Ok(())
     }
 

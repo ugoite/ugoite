@@ -8,6 +8,7 @@ export {
 } from "./http";
 export type * from "./types";
 export { assetApi } from "../asset-api";
+export { auditApi } from "../audit-api";
 export { authApi } from "../auth-api";
 export { entryApi } from "../entry-api";
 export { formApi } from "../form-api";

@@ -19,6 +19,7 @@ vi.mock("~/components/GlobalShell", () => ({
 
 vi.mock("~/lib/auth-api", () => ({
   authApi: {
+    listAudit: vi.fn(),
     listPasskeys: vi.fn(),
     listSessions: vi.fn(),
     listDevices: vi.fn(),
@@ -33,12 +34,17 @@ vi.mock("~/lib/auth-api", () => ({
   },
 }));
 
+vi.mock("~/components/AuditLogViewer", () => ({
+  NodeAuditLogViewer: () => <div>Audit viewer</div>,
+}));
+
 describe("SecuritySettingsRoute", () => {
   beforeEach(async () => {
     setLocale("en");
     for (const key of Object.keys(searchParams)) delete searchParams[key];
     setSearchParams.mockReset();
     const { authApi } = await import("~/lib/auth-api");
+    vi.mocked(authApi.listAudit).mockResolvedValue([]);
     vi.mocked(authApi.listPasskeys).mockResolvedValue([]);
     vi.mocked(authApi.listSessions).mockResolvedValue([]);
     vi.mocked(authApi.listDevices).mockResolvedValue([]);
@@ -78,6 +84,17 @@ describe("SecuritySettingsRoute", () => {
     expect(screen.getByRole("tabpanel", { name: "Sessions" }))
       .toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Sessions" }))
+      .toHaveAttribute("aria-selected", "true");
+  });
+
+  it("exposes the node audit viewer from account security settings", async () => {
+    searchParams.tab = "audit";
+    render(() => <SecuritySettingsRoute />);
+
+    expect(await screen.findByRole("tabpanel", { name: "Audit Log" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Audit viewer")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Audit Log" }))
       .toHaveAttribute("aria-selected", "true");
   });
 

@@ -22,6 +22,10 @@ vi.mock("~/routes/settings/security", () => ({
   CredentialSettings: () => <div>Credentials route</div>,
 }));
 
+vi.mock("~/components/AuditLogViewer", () => ({
+  SpaceAuditLogViewer: () => <div>Audit viewer</div>,
+}));
+
 vi.mock("~/lib/ugoite-client", () => ({
   spaceApi: {
     get: vi.fn(),
@@ -29,6 +33,7 @@ vi.mock("~/lib/ugoite-client", () => ({
     testConnection: vi.fn(),
     listMembers: vi.fn(),
     listAgents: vi.fn(),
+    listAudit: vi.fn(),
     inviteMember: vi.fn(),
     updateMemberRole: vi.fn(),
     revokeMember: vi.fn(),
@@ -56,6 +61,12 @@ describe("SpaceSettingsRoute", () => {
     vi.mocked(spaceApi.testConnection).mockResolvedValue({ status: "ok" });
     vi.mocked(spaceApi.listMembers).mockResolvedValue([]);
     vi.mocked(spaceApi.listAgents).mockResolvedValue([]);
+    vi.mocked(spaceApi.listAudit).mockResolvedValue({
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 25,
+    });
     vi.mocked(spaceApi.createAgent).mockReset();
   });
 
@@ -77,6 +88,13 @@ describe("SpaceSettingsRoute", () => {
     render(() => <SpaceSettingsRoute />);
     expect(await screen.findByRole("heading", { name: "Storage" }))
       .toBeInTheDocument();
+
+    cleanup();
+    searchParams.section = "audit";
+    render(() => <SpaceSettingsRoute />);
+    expect(await screen.findByRole("heading", { name: "Audit Log" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Audit viewer")).toBeInTheDocument();
   });
 
   it("keeps protocol role and agent-mode tokens visible on the route", async () => {

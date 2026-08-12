@@ -6,6 +6,7 @@ import { createResource } from "~/lib/recoverable-resource";
 import { t, type TranslationKey } from "~/lib/i18n";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 import { formatDateTimeLabel } from "~/lib/date-format";
+import { NodeAuditLogViewer } from "~/components/AuditLogViewer";
 
 const credentialTabs = [
   ["passkeys", "securityPage.passkeys"],
@@ -13,6 +14,7 @@ const credentialTabs = [
   ["sessions", "securityPage.sessions"],
   ["totp", "securityPage.recoveryTotp"],
   ["devices", "securityPage.cliMcp"],
+  ["audit", "securityPage.auditLog"],
 ] as const;
 
 type CredentialTab = typeof credentialTabs[number][0];
@@ -67,12 +69,15 @@ export function CredentialSettings() {
       );
     }
   };
-  const [credentials, { refetch }] = createResource(async () => ({
-    passkeys: await authApi.listPasskeys(),
-    sessions: await authApi.listSessions(),
-    devices: await authApi.listDevices(),
-    oidcProviders: await authApi.listOidcProviders(),
-  }));
+  const [credentials, { refetch }] = createResource(
+    () => activeTab() === "audit" ? null : "credentials",
+    async () => ({
+      passkeys: await authApi.listPasskeys(),
+      sessions: await authApi.listSessions(),
+      devices: await authApi.listDevices(),
+      oidcProviders: await authApi.listOidcProviders(),
+    }),
+  );
   return (
     <>
       <h2>{t("securityPage.credentials")}</h2>
@@ -341,6 +346,17 @@ export function CredentialSettings() {
               </For>
             )}
           </Show>
+        </section>
+      </Show>
+      <Show when={activeTab() === "audit"}>
+        <section
+          id="credential-panel-audit"
+          role="tabpanel"
+          aria-labelledby="credential-tab-audit"
+          class="ui-card ui-stack-sm"
+        >
+          <h2 class="text-lg font-semibold">{t("securityPage.auditLog")}</h2>
+          <NodeAuditLogViewer />
         </section>
       </Show>
     </>

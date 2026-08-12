@@ -16,6 +16,7 @@ pub const PROTOCOL_VERSION: u32 = 1;
 pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "auth.get_config",
     "auth.get_session",
+    "auth.audit",
     "auth.clear_session",
     "auth.accept_invitation",
     "auth.list_sessions",
@@ -27,6 +28,7 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "space.list",
     "space.create",
     "space.get",
+    "space.audit",
     "space.health",
     "space.checkpoint_create",
     "space.checkpoint_diff",
@@ -250,6 +252,11 @@ pub fn prepare_request(
                 vec!["auth".into(), "session".into()],
                 vec![],
             ),
+            "auth.audit" => (
+                OperationSpec::get("Failed to load node audit log"),
+                vec!["auth".into(), "audit".into()],
+                vec![],
+            ),
             "auth.clear_session" => (
                 OperationSpec::no_body(HttpMethod::Delete, "Failed to clear auth session"),
                 vec!["auth".into(), "session".into()],
@@ -324,6 +331,31 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
+            "space.audit" => {
+                let mut query = Vec::new();
+                if let Some(offset) = optional_u64(operation, args, "offset")? {
+                    query.push(("offset".into(), offset.to_string()));
+                }
+                if let Some(limit) = optional_u64(operation, args, "limit")? {
+                    query.push(("limit".into(), limit.to_string()));
+                }
+                for key in ["action", "actor_principal_id", "outcome"] {
+                    if let Some(value) = optional_string(operation, args, key)? {
+                        if !value.trim().is_empty() {
+                            query.push((key.into(), value));
+                        }
+                    }
+                }
+                (
+                    OperationSpec::get("Failed to load Space audit log"),
+                    vec![
+                        "spaces".into(),
+                        required_string(operation, args, "space_id")?,
+                        "audit".into(),
+                    ],
+                    query,
+                )
+            }
             "space.health" => {
                 let mut query = Vec::new();
                 if let Some(checkpoints) = args.get("checkpoints").and_then(Value::as_array) {
@@ -972,10 +1004,16 @@ pub fn decode_response(operation: &str, response: ApiResponse) -> Result<Value, 
         .as_ref()
         .and_then(|payload| payload.get("detail"))
         .cloned()
+        .or_else(|| (parsed.is_none() && !body.is_empty()).then(|| Value::String(body.to_string())))
         .map(Box::new);
     let detail_message = detail
         .as_ref()
-        .and_then(|detail| read_detail_message(detail.as_ref()))
+        .and_then(|detail| {
+            parsed
+                .is_some()
+                .then(|| read_detail_message(detail.as_ref()))
+                .flatten()
+        })
         .or_else(|| {
             parsed.as_ref().and_then(|payload| {
                 payload
@@ -995,8 +1033,24 @@ pub fn decode_response(operation: &str, response: ApiResponse) -> Result<Value, 
         .or_else(|| (parsed.is_none() && !body.is_empty()).then(|| body.to_string()))
         .unwrap_or_else(|| format!("HTTP {}", response.status));
 
+    let kind = parsed
+        .as_ref()
+        .and_then(|payload| payload.get("kind"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or_else(|| match response.status {
+            401 | 403 => "forbidden".to_string(),
+            404 => "not_found".to_string(),
+            409 => "conflict".to_string(),
+            410 => "expired".to_string(),
+            422 => "invalid_arguments".to_string(),
+            501 => "unimplemented".to_string(),
+            502 | 503 => "dependency_unavailable".to_string(),
+            _ => "internal".to_string(),
+        });
+
     Err(ApiProtocolError {
-        kind: "api".to_string(),
+        kind,
         message: format!("{}: {detail_message}", spec.failure_context),
         operation: Some(operation.to_string()),
         status: Some(response.status),
@@ -1082,6 +1136,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
             "Failed to load auth session",
             RequestBodyKind::None,
         ),
+        "auth.audit" => (
+            HttpMethod::Get,
+            "Failed to load node audit log",
+            RequestBodyKind::None,
+        ),
         "auth.clear_session" => (
             HttpMethod::Delete,
             "Failed to clear auth session",
@@ -1135,6 +1194,11 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
         "space.get" => (
             HttpMethod::Get,
             "Failed to get space",
+            RequestBodyKind::None,
+        ),
+        "space.audit" => (
+            HttpMethod::Get,
+            "Failed to load Space audit log",
             RequestBodyKind::None,
         ),
         "space.health" => (
@@ -1583,6 +1647,28 @@ mod tests {
     }
 
     #[test]
+    fn space_audit_encodes_viewer_filters_and_paging() {
+        let request = prepare_request(
+            "space.audit",
+            &json!({
+                "space_id": "team/東京",
+                "offset": 25,
+                "limit": 25,
+                "action": "authorization.denied",
+                "actor_principal_id": "actor-1",
+                "outcome": "deny"
+            }),
+            None,
+        )
+        .expect("request");
+
+        assert_eq!(
+            request.path,
+            "/spaces/team%2F%E6%9D%B1%E4%BA%AC/audit?offset=25&limit=25&action=authorization.denied&actor_principal_id=actor-1&outcome=deny"
+        );
+    }
+
+    #[test]
     fn test_api_req_api_002_builds_json_body_once() {
         let request = prepare_request(
             "entry.create",
@@ -1696,6 +1782,56 @@ mod tests {
             error.message,
             "Failed to create space: repeat Passkey authentication within five minutes"
         );
+    }
+
+    #[test]
+    fn decodes_plain_text_errors_with_status_derived_kind() {
+        let error = decode_response(
+            "auth.audit",
+            ApiResponse {
+                status: 403,
+                status_text: "Forbidden".into(),
+                headers: vec![],
+                body: "node admin role is required".into(),
+            },
+        )
+        .expect_err("plain-text error responses must fail");
+
+        assert_eq!(error.kind, "forbidden");
+        assert_eq!(error.status, Some(403));
+        assert_eq!(
+            error.detail.as_deref().and_then(Value::as_str),
+            Some("node admin role is required")
+        );
+        assert_eq!(error.message, "Failed to load node audit log: Forbidden");
+    }
+
+    #[test]
+    fn derives_protocol_error_kind_from_http_status() {
+        for (status, expected_kind) in [
+            (401, "forbidden"),
+            (404, "not_found"),
+            (409, "conflict"),
+            (410, "expired"),
+            (422, "invalid_arguments"),
+            (501, "unimplemented"),
+            (502, "dependency_unavailable"),
+            (503, "dependency_unavailable"),
+            (500, "internal"),
+        ] {
+            let error = decode_response(
+                "auth.audit",
+                ApiResponse {
+                    status,
+                    status_text: String::new(),
+                    headers: vec![],
+                    body: String::new(),
+                },
+            )
+            .expect_err("non-success responses must fail");
+
+            assert_eq!(error.kind, expected_kind, "status {status}");
+        }
     }
 
     #[test]

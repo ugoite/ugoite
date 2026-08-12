@@ -103,3 +103,29 @@ when `UGOITE_PUBLIC_ORIGIN` is HTTPS on a non-loopback host. HTTP origins and
 localhost, IPv4-loopback, and IPv6-loopback HTTPS origins intentionally do not
 receive HSTS, so local development does not create browser state that assumes
 TLS.
+
+## API response HMAC signing
+
+Eligible materialized responses from the shared `/api` route layer are signed
+over the exact bytes delivered in the HTTP body. The server returns:
+
+- `X-Ugoite-Key-Id`: the active scope's HMAC key identifier;
+- `X-Ugoite-Signature`: lowercase hexadecimal HMAC-SHA256 over the delivered
+  body bytes.
+
+The default Node response scope uses `response_hmac/default.json` below the
+configured Space operator root. A valid `/spaces/{space_id}/...` or
+`/mcp/resources/{space_id}/...` request uses the corresponding
+`spaces/{space_id}/hmac.json`; the URI segment is percent-decoded exactly once
+before domain validation. The default key is Node-local and is not part of a
+Space export. Key material is intentionally not distributed by an HTTP
+endpoint; operators and offline verifiers provision or read it through their
+storage boundary.
+
+The shared API marker signs only bounded (at most 8 MiB), materialized,
+infallible JSON/string/bytes/empty responses, including authentication and
+middleware-generated responses within that API layer. SSE, streaming or
+fallible bodies, trailer-bearing responses, static-file responses, and
+responses explicitly marked unsigned omit both HMAC headers. A signing or key
+storage failure also leaves the original response unsigned and does not expose
+secret material.

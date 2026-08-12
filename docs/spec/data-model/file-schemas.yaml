@@ -134,6 +134,24 @@ schemas:
         last_rotation:
           type: string
           format: date-time
+  node_response_hmac:
+    description: Lazily created Node-default response-signing material. This is
+      Node-local and is not included in a Space export.
+    path: response_hmac/default.json
+    schema:
+      type: object
+      required:
+      - hmac_key_id
+      - hmac_key
+      - last_rotation
+      properties:
+        hmac_key_id:
+          type: string
+        hmac_key:
+          type: string
+        last_rotation:
+          type: string
+          format: date-time
   form_definition:
     description: Normalized Form definition persisted through Iceberg metadata.
     path: iceberg://spaces/{space_id}/form_{form_id}

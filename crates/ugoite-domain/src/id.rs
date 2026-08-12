@@ -120,7 +120,26 @@ impl std::error::Error for IdentifierError {}
 
 pub fn validate_identifier(kind: IdentifierKind, value: &str) -> Result<(), IdentifierError> {
     let decoded = percent_decode_lossy(value);
-    let reason = invalid_reason(value, &decoded);
+    build_identifier_error(kind, value, &decoded)
+}
+
+/// Validates an identifier that has already been percent-decoded by an adapter.
+///
+/// This keeps path decoding ownership explicit when an HTTP adapter must decode
+/// a URI segment exactly once before selecting a storage scope.
+pub fn validate_decoded_identifier(
+    kind: IdentifierKind,
+    value: &str,
+) -> Result<(), IdentifierError> {
+    build_identifier_error(kind, value, value)
+}
+
+fn build_identifier_error(
+    kind: IdentifierKind,
+    value: &str,
+    decoded: &str,
+) -> Result<(), IdentifierError> {
+    let reason = invalid_reason(value, decoded);
     match reason {
         Some(reason) => Err(IdentifierError {
             kind,
@@ -133,6 +152,10 @@ pub fn validate_identifier(kind: IdentifierKind, value: &str) -> Result<(), Iden
 
 pub fn validate_space_id(value: &str) -> Result<(), IdentifierError> {
     validate_identifier(IdentifierKind::Space, value)
+}
+
+pub fn validate_decoded_space_id(value: &str) -> Result<(), IdentifierError> {
+    validate_decoded_identifier(IdentifierKind::Space, value)
 }
 
 pub fn validate_checkpoint_name(value: &str) -> Result<(), IdentifierError> {
@@ -219,7 +242,7 @@ fn hex_value(byte: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_form_name, validate_space_id};
+    use super::{validate_decoded_space_id, validate_form_name, validate_space_id};
 
     #[test]
     fn rejects_unsafe_storage_path_segments() {
@@ -247,6 +270,12 @@ mod tests {
             validate_space_id(value).unwrap();
             validate_form_name(value).unwrap();
         }
+    }
+
+    #[test]
+    fn decoded_validation_does_not_decode_a_second_time() {
+        validate_decoded_space_id("encoded-space").unwrap();
+        assert!(validate_decoded_space_id("encoded%2Dspace").is_err());
     }
 
     #[test]

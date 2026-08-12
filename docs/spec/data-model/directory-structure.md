@@ -25,6 +25,9 @@ spaces/
 users/
   {sha256(user_id)}/
     preferences.json
+
+response_hmac/
+  default.json                 # Node-default response-signing material
 ```
 
 ## Space bootstrap
@@ -69,6 +72,7 @@ theme, locale, and selected-Space preferences are user-scoped and belong in
 | Trigger | Path | Current meaning |
 |---|---|---|
 | Response signing | `spaces/{space_id}/hmac.json` | response-signing key material |
+| Node response signing | `response_hmac/default.json` | Node-default response-signing key material; not part of a Space export |
 | SQL session creation | `spaces/{space_id}/sql_sessions/{session_id}/meta.json` | query/session metadata |
 | Asset upload | `spaces/{space_id}/assets/{asset_id}` | binary object; the key is derived from the stable asset ID |
 | Preference update | `users/{sha256(user_id)}/preferences.json` | portable user UI preferences |
@@ -116,5 +120,6 @@ portable unit. Stop writes and use a complete prefix copy or backend-native
 consistent snapshot; object listing must not be used to reconstruct Catalog
 Head or Iceberg state. Node control state is node-local and is not part of a
 Space move. A complete Node recovery set also preserves the configured Node
-control-store prefix and the node secret separately. PATCHing a Space storage
-descriptor does not move existing files.
+control-store prefix, the Node-default `response_hmac/default.json`, and the
+node secret separately. PATCHing a Space storage descriptor does not move
+existing files.

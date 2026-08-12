@@ -36,6 +36,7 @@ jobs:
         run: |
           echo "epoch=$(date +%s)" >>"$GITHUB_OUTPUT"
           echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/playwright-browsers" >>"$GITHUB_ENV"
 
       - name: Free runner disk space
         run: |
@@ -77,6 +78,15 @@ jobs:
           key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
           restore-keys: |
             deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
+
+      - name: Restore Playwright browser cache
+        id: playwright-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-browsers
+          key: playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('e2e/deno.json', 'deno.lock') }}
+          restore-keys: |
+            playwright-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -295,6 +305,14 @@ jobs:
           path: ${{ runner.temp }}/deno-cache
           key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
 
+      - name: Save Playwright browser cache
+        id: playwright-cache-save
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/playwright-browsers
+          key: ${{ steps.playwright-cache-restore.outputs.cache-primary-key }}
+
       - name: Summarize CI cache and artifact state
         if: always()
         env:
@@ -309,6 +327,9 @@ jobs:
           DENO_CACHE_HIT: ${{ steps.deno-cache-restore.outputs.cache-hit }}
           DENO_CACHE_PRIMARY_KEY: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
           DENO_CACHE_MATCHED_KEY: ${{ steps.deno-cache-restore.outputs.cache-matched-key }}
+          PLAYWRIGHT_CACHE_HIT: ${{ steps.playwright-cache-restore.outputs.cache-hit }}
+          PLAYWRIGHT_CACHE_PRIMARY_KEY: ${{ steps.playwright-cache-restore.outputs.cache-primary-key }}
+          PLAYWRIGHT_CACHE_MATCHED_KEY: ${{ steps.playwright-cache-restore.outputs.cache-matched-key }}
           DOCSITE_ARTIFACT_DIGEST: ${{ steps.upload-docsite.outputs.artifact-digest }}
           IMAGE_ARTIFACT_DIGEST: ${{ steps.upload-image.outputs.artifact-digest }}
           CLI_ARTIFACT_DIGEST: ${{ steps.upload-cli.outputs.artifact-digest }}
@@ -316,10 +337,16 @@ jobs:
           MANIFEST_ARTIFACT_DIGEST: ${{ steps.upload-manifest.outputs.artifact-digest }}
           WORKFLOW_START_EPOCH: ${{ steps.workflow-start.outputs.epoch }}
           DENO_DIR_PATH: ${{ runner.temp }}/deno-cache
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
         run: |
           deno_cache_fallback="false"
           if [[ -n "${DENO_CACHE_MATCHED_KEY}" && "${DENO_CACHE_MATCHED_KEY}" != "${DENO_CACHE_PRIMARY_KEY}" ]]; then
             deno_cache_fallback="true"
+          fi
+
+          playwright_cache_fallback="false"
+          if [[ -n "${PLAYWRIGHT_CACHE_MATCHED_KEY}" && "${PLAYWRIGHT_CACHE_MATCHED_KEY}" != "${PLAYWRIGHT_CACHE_PRIMARY_KEY}" ]]; then
+            playwright_cache_fallback="true"
           fi
 
           total_duration_seconds="n/a"
@@ -335,6 +362,11 @@ jobs:
           deno_cache_size_bytes="0"
           if [[ -d "${DENO_DIR_PATH}" ]]; then
             deno_cache_size_bytes="$(du -sk "${DENO_DIR_PATH}" | awk '{print $1 * 1024}')"
+          fi
+
+          playwright_cache_size_bytes="0"
+          if [[ -d "${PLAYWRIGHT_BROWSERS_PATH}" ]]; then
+            playwright_cache_size_bytes="$(du -sk "${PLAYWRIGHT_BROWSERS_PATH}" | awk '{print $1 * 1024}')"
           fi
 
           rust_target_size_bytes="0"
@@ -354,6 +386,8 @@ jobs:
             echo "- Rust cache fallback restore: \`n/a (rust-cache exposes exact-hit only)\`"
             echo "- Deno cache exact hit: \`${DENO_CACHE_HIT:-}\`"
             echo "- Deno cache fallback restore: \`${deno_cache_fallback}\`"
+            echo "- Playwright browser cache exact hit: \`${PLAYWRIGHT_CACHE_HIT:-}\`"
+            echo "- Playwright browser cache fallback restore: \`${playwright_cache_fallback}\`"
             echo "- Saving shared caches allowed: \`${CACHE_SAVE_ALLOWED}\`"
             echo "- Docker cache scope: \`${DOCKER_CACHE_SCOPE}\`"
             echo "- Docker cache export mode: \`${DOCKER_CACHE_MODE}\`"
@@ -408,6 +442,7 @@ jobs:
             echo
             echo "- target/rust: \`${rust_target_size_bytes}\` bytes"
             echo "- DENO_DIR: \`${deno_cache_size_bytes}\` bytes"
+            echo "- Playwright browsers: \`${playwright_cache_size_bytes}\` bytes"
             echo "- BuildKit cache: \`${buildx_cache_size_bytes}\`"
             echo "- target/artifacts: \`${artifact_size_bytes}\` bytes"
           } >>"$GITHUB_STEP_SUMMARY"

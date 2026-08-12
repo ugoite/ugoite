@@ -1,6 +1,7 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { SpaceSettings } from "~/components/SpaceSettings";
+import { SpaceAuditLogViewer } from "~/components/AuditLogViewer";
 import { UiIcon } from "~/components/UiIcon";
 import { CredentialSettings } from "~/routes/settings/security";
 import { locale, t, type TranslationKey } from "~/lib/i18n";
@@ -466,6 +467,12 @@ export default function SpaceSettingsRoute() {
           <Show when={active() === "credentials"}>
             <section class="settingsMain surface">
               <CredentialSettings />
+            </section>
+          </Show>
+          <Show when={active() === "audit"}>
+            <section class="settingsMain surface">
+              <h2>{t("settings.section.audit")}</h2>
+              <SpaceAuditLogViewer spaceId={spaceId()} />
             </section>
           </Show>
         </main>

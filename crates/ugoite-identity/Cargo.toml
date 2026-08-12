@@ -27,4 +27,5 @@ webauthn-rs = { version = "0.5.3", features = ["danger-allow-state-serialisation
 
 [dev-dependencies]
 tempfile = "3"
+ugoite-iceberg = { path = "../ugoite-iceberg" }
 ugoite-storage = { path = "../ugoite-storage" }

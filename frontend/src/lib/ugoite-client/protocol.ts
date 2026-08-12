@@ -5,6 +5,7 @@ import type { AssetReference } from "../types";
 export const UGOITE_API_OPERATIONS = [
   "auth.get_config",
   "auth.get_session",
+  "auth.audit",
   "auth.clear_session",
   "auth.accept_invitation",
   "auth.list_sessions",
@@ -16,6 +17,7 @@ export const UGOITE_API_OPERATIONS = [
   "space.list",
   "space.create",
   "space.get",
+  "space.audit",
   "space.health",
   "space.checkpoint_create",
   "space.checkpoint_diff",
