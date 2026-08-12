@@ -798,7 +798,7 @@ mod tests {
     use ugoite_storage::operator_from_uri;
 
     #[tokio::test]
-    async fn test_req_sec_013_cross_process_conditional_append_deduplicates_event() -> Result<()> {
+    async fn test_req_sec_013_in_process_event_id_deduplication() -> Result<()> {
         let op = operator_from_uri("memory://audit-dedupe")?;
         let event_id = uuid::Uuid::now_v7().to_string();
         let payload = json!({
@@ -913,7 +913,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_req_sec_013_real_cross_process_conditional_delivery() -> Result<()> {
+    async fn test_req_sec_013_cross_process_conditional_append_deduplicates_event() -> Result<()> {
         let child_root = env::var_os("UGOITE_AUDIT_CHILD_ROOT");
         let event_id = env::var("UGOITE_AUDIT_CHILD_EVENT_ID")
             .unwrap_or_else(|_| uuid::Uuid::now_v7().to_string());
@@ -932,7 +932,8 @@ mod tests {
 
         let root = tempfile::tempdir()?;
         let executable = env::current_exe()?;
-        let test_filter = "audit::tests::test_req_sec_013_real_cross_process_conditional_delivery";
+        let test_filter =
+            "audit::tests::test_req_sec_013_cross_process_conditional_append_deduplicates_event";
         let mut children = Vec::new();
         for _ in 0..2 {
             children.push(

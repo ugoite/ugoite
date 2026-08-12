@@ -63,7 +63,7 @@ fn owner_recovery_contract_exposes_single_reset_response() {
 }
 
 #[test]
-fn test_req_sec_013_recovery_outbox_status_and_redaction() {
+fn owner_recovery_contract_exposes_audit_status() {
     let snapshot = ugoite_server::openapi_snapshot();
     let status = snapshot
         .pointer("/components/schemas/AuditStatus")

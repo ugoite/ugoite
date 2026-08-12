@@ -2137,6 +2137,29 @@ async fn reconcile_recovery_fences(state: &AppState, space_id: &str) -> anyhow::
             .await?;
     }
 
+    // A force-reset request has a server-generated request ID, so a caller
+    // cannot retry an ambiguous Space CAS by itself. Replay every durable
+    // provisional Node reservation during reconciliation; the exact fence and
+    // request identities make this safe whether the original Space write
+    // committed or not.
+    for provisional in state
+        .identity
+        .active_provisional_recovery_fences(space_uid)
+        .await?
+    {
+        let _ = reserve_recovery_pair(
+            state,
+            space_id,
+            space_uid,
+            provisional.issuer_principal_id,
+            provisional.issuer_account_id,
+            provisional.target_principal_id,
+            provisional.target_account_id,
+            provisional.snapshot.request_id,
+            chrono::Duration::minutes(15),
+        )
+        .await;
+    }
     let authorization = authorizer.state(space_id).await?;
     let now = chrono::Utc::now();
     let mut expired_space_fences = Vec::new();
@@ -6834,9 +6857,20 @@ mod authentication_regression_tests {
             state.identity.recovery_fence_status(fence_id).await?,
             Some("active".into())
         );
+        assert_eq!(
+            state.identity.recovery_fence_phase(fence_id).await?,
+            Some("paired".into())
+        );
+        assert_eq!(
+            Authorizer::new(state.service.operator().clone())
+                .recovery_fence(&space_id, fence_id)
+                .await?
+                .request_id,
+            request_id
+        );
 
-        // The same request identity replays the Space CAS and promotes the
-        // existing Node fence to paired instead of allocating a new fence.
+        // A later retry with the same durable request identity reuses the
+        // exact Space fence instead of allocating a new fence.
         let (authorizer, space_fence, snapshot) = reserve_recovery_pair(
             &state,
             &space_id,

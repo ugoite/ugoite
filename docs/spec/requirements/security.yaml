@@ -367,7 +367,7 @@ requirements:
   status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-server/tests/owner_recovery.rs
+  - file: crates/ugoite-identity/src/node_identity.rs
     cases:
     - test_req_sec_013_recovery_outbox_status_and_redaction
   - file: crates/ugoite-iceberg/src/audit.rs

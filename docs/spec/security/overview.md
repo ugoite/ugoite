@@ -28,8 +28,9 @@ invariants are:
 - An active human Space Owner with a recent phishing-resistant browser session
   may issue a 15-minute, 256-bit owner-approved recovery token for another
   active human member. The token is one-use, and its encrypted response copy is
-  limited to same-key retry; the target completes a five-minute WebAuthn
-  replacement flow. Reset advances a credential
+  limited to the bounded one-time response boundary; the target completes a
+  five-minute WebAuthn replacement flow. A new force-reset request deliberately
+  supersedes the previous approval. Reset advances a credential
   generation, invalidating old human sessions and credentials while preserving
   separate agent credentials.
 - Owner backup-code rotation requires a fresh UUIDv4 `Idempotency-Key`, returns

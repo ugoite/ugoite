@@ -345,6 +345,15 @@ pub struct RecoveryBindingSnapshot {
     pub target_generation: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvisionalRecoveryFence {
+    pub snapshot: RecoveryBindingSnapshot,
+    pub issuer_principal_id: Uuid,
+    pub issuer_account_id: Uuid,
+    pub target_principal_id: Uuid,
+    pub target_account_id: Uuid,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct NodeRecoveryFence {
     fence_id: Uuid,
@@ -1286,6 +1295,53 @@ impl NodeIdentityService {
             .filter(|fence| fence.space_uid == space_uid && node_recovery_fence_is_active(fence))
             .map(|fence| fence.fence_id)
             .collect())
+    }
+
+    /// Return active Node reservations whose Space half may have committed
+    /// with an ambiguous response. The server reconciler replays each
+    /// request using its durable fence identity; callers never need to supply
+    /// the generated request ID.
+    pub async fn active_provisional_recovery_fences(
+        &self,
+        space_uid: Uuid,
+    ) -> Result<Vec<ProvisionalRecoveryFence>> {
+        let state = self.read_state().await?;
+        let mut reservations = Vec::new();
+        for fence in state.node_recovery_fences.values().filter(|fence| {
+            fence.space_uid == space_uid && fence.status == "active" && fence.phase == "provisional"
+        }) {
+            let issuer_principal_id = state
+                .bindings
+                .iter()
+                .filter(|binding| {
+                    binding.space_uid == space_uid
+                        && binding.node_account_id == fence.issuer_account_id
+                })
+                .map(|binding| binding.principal_id)
+                .collect::<Vec<_>>();
+            if issuer_principal_id.len() != 1 {
+                bail!("recovery issuer binding is not unique");
+            }
+            reservations.push(ProvisionalRecoveryFence {
+                snapshot: RecoveryBindingSnapshot {
+                    request_id: fence.request_id,
+                    recovery_fence_id: fence.fence_id,
+                    recovery_fence_expires_at: fence.expires_at.clone(),
+                    space_authorization_revision: 0,
+                    issuer_space_lifecycle_epoch: 0,
+                    target_space_lifecycle_epoch: 0,
+                    issuer_node_lifecycle_epoch: fence.issuer_node_lifecycle_epoch,
+                    target_node_lifecycle_epoch: fence.target_node_lifecycle_epoch,
+                    issuer_generation: fence.issuer_generation,
+                    target_generation: fence.target_generation,
+                },
+                issuer_principal_id: issuer_principal_id[0],
+                issuer_account_id: fence.issuer_account_id,
+                target_principal_id: fence.principal_id,
+                target_account_id: fence.account_id,
+            });
+        }
+        Ok(reservations)
     }
 
     pub async fn recovery_fence_for_request(
@@ -7896,7 +7952,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_reset_audit_keeps_approver_as_issuer_and_redacts_bearer_actor() -> Result<()> {
+    async fn test_req_sec_013_recovery_outbox_status_and_redaction() -> Result<()> {
         let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
         service.bootstrap_if_needed().await?;
         let event_id = Uuid::now_v7();
@@ -7925,6 +7981,15 @@ mod tests {
             Some(issuer_credential_id),
             serde_json::json!({"credential_generation": 1}),
         );
+        service.write_state(&state).await?;
+        let persisted = service
+            .pending_recovery_audits()
+            .await?
+            .into_iter()
+            .find(|record| record.event_id == event_id)
+            .expect("redacted recovery outbox event is durable");
+        assert_eq!(persisted.status, "pending");
+        assert!(!serde_json::to_string(&persisted.event)?.contains("token"));
         let record = state
             .recovery_audit_outbox
             .get(&event_id)
