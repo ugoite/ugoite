@@ -21,6 +21,7 @@ spaces/{space_id}/
   meta.json
   settings.json
   _ugoite/catalog/        # Head plus immutable publication records
+  _ugoite/derived/        # lazy, replaceable DerivedRelation Heads/materializations
   forms/                  # Iceberg-owned table locations
   assets/
   sql_sessions/
@@ -99,13 +100,16 @@ H2 sections are parsed according to the Form field type. Supported types are exp
 
 ## Search, query, and derived data
 
-The current keyword search scans non-deleted Entry rows for a case-insensitive
-substring. It does **not** use a persistent inverted index or relevance ranking.
-The target read path is an authorized, snapshot-pinned DataFusion plan over
-Iceberg data; that transition is tracked separately and must not add a JSON
-materialization table or a second history store.
+Keyword search scans current Entry data and the authorized internal AssetText
+projection for case-insensitive substring matches. It returns Entries, applies
+authorization before AssetText joins, and degrades to native Entry search when
+the derived relation is unavailable. There is still no persistent inverted
+index or relevance ranking. AssetText is an Iceberg-backed DerivedRelation, not
+a Form, checkpoint coordinate, ACL authority, or second history store.
 
-`ugoite index stats` is available in core/local mode. Reindex and per-entry index update return an explicit “not implemented in this release” error, so persistent live-index/watch-loop behavior remains planned.
+`ugoite index stats` reports AssetText derived health. `ugoite index run` and
+`ugoite index run --component asset-text` rebuild it by scanning current
+authoritative Entry references; object listing is not a source set.
 
 ## Saved SQL and SQL sessions
 

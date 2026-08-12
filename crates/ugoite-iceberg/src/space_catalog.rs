@@ -3304,6 +3304,23 @@ impl SpaceCatalog {
     }
 }
 
+/// Builds the official Iceberg FileIO used by a relation-local derived
+/// catalog.  Derived materializations use their Relation Head for visibility;
+/// this helper only shares the operator-backed Iceberg storage mechanics.
+pub(crate) fn file_io_for_store(store: &SpaceCatalogStore) -> FileIO {
+    let storage = store.iceberg_storage();
+    if storage.scheme == "memory" {
+        FileIOBuilder::new(Arc::new(FixedOpenDalStorageFactory {
+            storage: Arc::new(OpenDalStorage::Memory(store.iceberg_operator())),
+        }))
+        .build()
+    } else {
+        FileIOBuilder::new(Arc::new(OpenDalResolvingStorageFactory::new()))
+            .with_props(storage.properties.clone())
+            .build()
+    }
+}
+
 fn checkpoint_table_matches_reference(
     coordinate: &CheckpointTable,
     reference: &TableReference,
@@ -3823,7 +3840,7 @@ fn checkpoint_issue(name: &str, code: &'static str, target: &'static str) -> Che
     }
 }
 
-fn preserve_schema_field_ids(
+pub(crate) fn preserve_schema_field_ids(
     metadata: TableMetadata,
     requested_schema: iceberg::spec::Schema,
 ) -> Result<TableMetadata> {

@@ -1,6 +1,61 @@
-version: '0.3'
-updated: 2026-06
+version: '0.4'
+updated: 2026-08-13
 schemas:
+  derived_relation_head:
+    description: Relation-local visibility coordinate for one rebuildable Iceberg materialization. It is not Catalog or checkpoint authority.
+    path: spaces/{id}/_ugoite/derived/relations/{relation_id}/head.json
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+      - format_version
+      - space_id
+      - relation_id
+      - generation
+      - definition_version
+      - definition_fingerprint
+      - producer_id
+      - producer_fingerprint
+      - compatibility_epoch
+      - materialization_id
+      - table_identifier
+      - table_uuid
+      - metadata_location
+      - schema_id
+      - base_generation
+      - target_generation
+      - build_id
+      - input_digest
+      - source_coordinate
+      - materialization_manifest_location
+      - materialization_manifest_checksum
+      - last_command_id
+      - checksum
+      properties:
+        format_version: {type: integer, const: 1}
+        space_id: {type: string}
+        relation_id: {type: string, format: uuid}
+        generation: {type: integer}
+        definition_version: {type: integer}
+        definition_fingerprint: {type: string}
+        producer_id: {type: string}
+        producer_fingerprint: {type: string}
+        compatibility_epoch: {type: integer}
+        materialization_id: {type: string, format: uuid}
+        table_identifier: {type: object}
+        table_uuid: {type: string, format: uuid}
+        metadata_location: {type: string}
+        snapshot_id: {type: [integer, 'null']}
+        schema_id: {type: integer}
+        base_generation: {type: integer}
+        target_generation: {type: integer}
+        build_id: {type: string, format: uuid}
+        input_digest: {type: string}
+        source_coordinate: {type: object}
+        materialization_manifest_location: {type: string}
+        materialization_manifest_checksum: {type: string}
+        last_command_id: {type: string}
+        checksum: {type: string}
   space_meta:
     description: Raw Space metadata written at creation.
     path: spaces/{id}/meta.json

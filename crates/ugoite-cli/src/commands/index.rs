@@ -22,6 +22,12 @@ pub enum IndexSubCmd {
             help = "Space ID in backend/api mode, or /root/spaces/<id> in core mode."
         )]
         space_path: String,
+        #[arg(
+            long,
+            value_name = "COMPONENT",
+            help = "Derived component to rebuild (currently: asset-text)."
+        )]
+        component: Option<String>,
     },
     /// Show aggregated stats for a space
     #[command(
@@ -39,12 +45,20 @@ pub enum IndexSubCmd {
 pub async fn run(cmd: IndexCmd) -> Result<()> {
     let config = load_config();
     match cmd.sub {
-        IndexSubCmd::Run { space_path } => {
+        IndexSubCmd::Run {
+            space_path,
+            component,
+        } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "index run")?;
             if validated_base_url(&config)?.is_some() {
                 bail!(
                     "index run is not available in backend/api mode in this release; use core mode for local reindexing"
                 );
+            }
+            if let Some(component) = component.as_deref() {
+                if component != "asset-text" {
+                    bail!("unsupported index component: {component}; expected asset-text");
+                }
             }
             let service = UgoiteService::new(&root)?;
             service.reindex(&space_id).await?;

@@ -35,9 +35,11 @@ browser-local North Star and must not treat planned features as shipped.
 - memory use and startup time of the single runtime image;
 - browser route responsiveness while server requests are pending.
 
-Persistent inverted-index rebuild cost and watch-loop lag are **future** metrics
-because those operations are not implemented. Keyword search currently performs
-a substring scan and has no relevance-ranking metric.
+AssetText rebuild duration, parser failure/stale rates, derived recovery time,
+and authorized AssetText search latency are current metrics. A persistent
+inverted-index rebuild and watch-loop lag remain **future** metrics because
+AssetText is still a scan-oriented searchable-text projection with no
+relevance ranking.
 
 ## Developer experience
 

@@ -67,6 +67,260 @@ pub enum CatalogWriteMode {
     SingleProcess,
 }
 
+/// Minimal durable coordinate published by one rebuildable relation.  Iceberg
+/// metadata owns the table details; this document only binds the visible
+/// materialization to a single immutable build.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DerivedRelationHead {
+    pub format_version: u32,
+    pub space_id: String,
+    pub relation_id: String,
+    pub generation: u64,
+    pub definition_version: u32,
+    pub definition_fingerprint: String,
+    pub producer_id: String,
+    pub producer_fingerprint: String,
+    pub compatibility_epoch: u64,
+    pub materialization_id: String,
+    pub table_identifier: serde_json::Value,
+    pub table_uuid: String,
+    pub metadata_location: String,
+    pub snapshot_id: Option<i64>,
+    pub schema_id: i32,
+    pub base_generation: u64,
+    pub target_generation: u64,
+    pub build_id: String,
+    pub input_digest: String,
+    pub source_coordinate: serde_json::Value,
+    pub materialization_manifest_location: String,
+    pub materialization_manifest_checksum: String,
+    pub last_command_id: String,
+    pub checksum: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExactDerivedRelationHead {
+    pub head: DerivedRelationHead,
+    pub bytes: Vec<u8>,
+    pub etag: Option<String>,
+}
+
+/// Relation-local Head storage. It deliberately shares only OpenDAL object
+/// mechanics with the authoritative Catalog store and has no Catalog history
+/// or checkpoint behavior.
+#[derive(Clone)]
+pub struct DerivedRelationHeadStore {
+    operator: Operator,
+    space_root: String,
+    relation_id: Uuid,
+    write_mode: CatalogWriteMode,
+    serializer: Arc<AsyncMutex<()>>,
+}
+
+impl std::fmt::Debug for DerivedRelationHeadStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DerivedRelationHeadStore")
+            .field("space_root", &self.space_root)
+            .field("relation_id", &self.relation_id)
+            .field("write_mode", &self.write_mode)
+            .finish()
+    }
+}
+
+impl DerivedRelationHeadStore {
+    pub fn new(operator: Operator, space_root: impl Into<String>, relation_id: Uuid) -> Self {
+        let space_root = space_root.into().trim_matches('/').to_string();
+        let serializer =
+            catalog_serializer(&operator, &format!("{space_root}/derived/{relation_id}"));
+        Self {
+            operator,
+            space_root,
+            relation_id,
+            write_mode: CatalogWriteMode::SingleProcess,
+            serializer,
+        }
+    }
+
+    pub async fn shared(mut self) -> Result<Self> {
+        // Reuse the existing full OpenDAL contract probe.  Capability bits
+        // alone are insufficient: a backend must prove changing ETags,
+        // exact reads, create-if-absent, if-match replacement, and stale
+        // rejection before shared Relation Head writes are admitted.
+        SpaceCatalogStore::new(self.operator.clone(), self.space_root.clone())?
+            .verify_shared_writes()
+            .await?;
+        self.write_mode = CatalogWriteMode::Shared;
+        Ok(self)
+    }
+
+    pub fn single_process(mut self) -> Self {
+        self.write_mode = CatalogWriteMode::SingleProcess;
+        self
+    }
+
+    pub fn write_mode(&self) -> CatalogWriteMode {
+        self.write_mode
+    }
+
+    pub fn head_path(&self) -> String {
+        format!(
+            "{}/_ugoite/derived/relations/{}/head.json",
+            self.space_root, self.relation_id
+        )
+    }
+
+    pub fn materializations_path(&self, materialization_id: &str) -> String {
+        format!(
+            "{}/_ugoite/derived/relations/{}/materializations/{materialization_id}",
+            self.space_root, self.relation_id
+        )
+    }
+
+    pub async fn read_exact(&self) -> Result<Option<ExactDerivedRelationHead>> {
+        for attempt in 0..3 {
+            let metadata = match self.operator.stat(&self.head_path()).await {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(error.into()),
+            };
+            let etag = metadata
+                .etag()
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let read = match etag.as_deref() {
+                Some(etag) => {
+                    self.operator
+                        .read_options(
+                            &self.head_path(),
+                            ReadOptions {
+                                if_match: Some(etag.to_string()),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                }
+                None if self.write_mode == CatalogWriteMode::Shared => {
+                    return Err(anyhow!(
+                        "exact DerivedRelation Head stat did not return an ETag"
+                    ))
+                }
+                None => self.operator.read(&self.head_path()).await,
+            };
+            match read {
+                Ok(bytes) => {
+                    let bytes = bytes.to_vec();
+                    let head: DerivedRelationHead =
+                        serde_json::from_slice(&bytes).context("decode DerivedRelation Head")?;
+                    validate_derived_head_checksum(&head)?;
+                    return Ok(Some(ExactDerivedRelationHead { head, bytes, etag }));
+                }
+                Err(error) if error.kind() == ErrorKind::ConditionNotMatch && attempt < 2 => {
+                    continue
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        unreachable!("exact derived Head read attempts always return or continue")
+    }
+
+    pub async fn create(&self, head: &DerivedRelationHead) -> Result<()> {
+        let bytes = canonical_head_bytes(head)?;
+        match self.write_mode {
+            CatalogWriteMode::Shared => {
+                self.operator
+                    .write_options(
+                        &self.head_path(),
+                        bytes,
+                        WriteOptions {
+                            if_not_exists: true,
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            }
+            CatalogWriteMode::SingleProcess => {
+                let _guard = self.serializer.lock().await;
+                if self.operator.exists(&self.head_path()).await? {
+                    return Err(anyhow!("DerivedRelation Head already exists"));
+                }
+                self.operator.write(&self.head_path(), bytes).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn replace(
+        &self,
+        expected_etag: Option<&str>,
+        head: &DerivedRelationHead,
+    ) -> Result<()> {
+        let bytes = canonical_head_bytes(head)?;
+        match self.write_mode {
+            CatalogWriteMode::Shared => {
+                let etag =
+                    expected_etag.context("shared DerivedRelation replacement requires an ETag")?;
+                self.operator
+                    .write_options(
+                        &self.head_path(),
+                        bytes,
+                        WriteOptions {
+                            if_match: Some(etag.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            }
+            CatalogWriteMode::SingleProcess => {
+                let _guard = self.serializer.lock().await;
+                let current = self
+                    .read_exact()
+                    .await?
+                    .context("DerivedRelation Head disappeared")?;
+                if expected_etag.is_some() && current.etag.as_deref() != expected_etag {
+                    return Err(anyhow!("DerivedRelation Head changed"));
+                }
+                self.operator.write(&self.head_path(), bytes).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn publish(
+        &self,
+        expected: Option<&ExactDerivedRelationHead>,
+        head: &DerivedRelationHead,
+    ) -> Result<()> {
+        match expected {
+            None => self.create(head).await,
+            Some(expected) => self.replace(expected.etag.as_deref(), head).await,
+        }
+    }
+}
+
+fn canonical_head_bytes(head: &DerivedRelationHead) -> Result<Vec<u8>> {
+    let mut canonical = head.clone();
+    canonical.checksum.clear();
+    canonical.checksum = ugoite_domain::derived_relation::sha256_digest(
+        &serde_json::to_vec(&canonical).context("canonicalize DerivedRelation Head")?,
+    );
+    Ok(serde_json::to_vec(&canonical).context("encode DerivedRelation Head")?)
+}
+
+fn validate_derived_head_checksum(head: &DerivedRelationHead) -> Result<()> {
+    let mut canonical = head.clone();
+    let observed = canonical.checksum.clone();
+    canonical.checksum.clear();
+    let expected = ugoite_domain::derived_relation::sha256_digest(
+        &serde_json::to_vec(&canonical).context("canonicalize DerivedRelation Head")?,
+    );
+    if observed != expected {
+        return Err(anyhow!("DerivedRelation Head checksum mismatch"));
+    }
+    Ok(())
+}
+
 /// Read-only declaration of the OpenDAL contract backing a Space Catalog.
 /// It deliberately reports only capability bits and whether shared mode was
 /// previously admitted; it never triggers a write probe.
@@ -886,7 +1140,8 @@ impl StorageBackend for OpendalStorage {
 #[cfg(test)]
 mod tests {
     use super::{
-        operator_from_uri, operator_from_uri_with_endpoint, OpendalStorage, SpaceCatalogStore,
+        canonical_head_bytes, operator_from_uri, operator_from_uri_with_endpoint,
+        DerivedRelationHead, DerivedRelationHeadStore, OpendalStorage, SpaceCatalogStore,
         StorageBackend,
     };
     use anyhow::Result;
@@ -1033,6 +1288,120 @@ mod tests {
         assert!(error
             .to_string()
             .contains("ETag-bound reads and conditional writes"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn derived_head_uses_checksum_and_single_process_publication() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA001);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id)
+            .single_process();
+        let first = DerivedRelationHead {
+            format_version: 1,
+            space_id: "demo".into(),
+            relation_id: relation_id.to_string(),
+            generation: 1,
+            definition_version: 1,
+            definition_fingerprint: "definition".into(),
+            producer_id: "producer".into(),
+            producer_fingerprint: "producer-fingerprint".into(),
+            compatibility_epoch: 1,
+            materialization_id: "materialization-a".into(),
+            table_identifier: serde_json::json!({"table":"derived"}),
+            table_uuid: "table-uuid".into(),
+            metadata_location: "memory:///metadata.json".into(),
+            snapshot_id: None,
+            schema_id: 0,
+            base_generation: 0,
+            target_generation: 1,
+            build_id: "build-a".into(),
+            input_digest: "input-a".into(),
+            source_coordinate: serde_json::json!({"catalog_head_sha256":null}),
+            materialization_manifest_location: "manifest-a.json".into(),
+            materialization_manifest_checksum: "manifest-checksum".into(),
+            last_command_id: "command-a".into(),
+            checksum: String::new(),
+        };
+        store.create(&first).await?;
+        let exact_first = store.read_exact().await?.expect("derived Head");
+        assert!(!exact_first.head.checksum.is_empty());
+
+        let mut second = first.clone();
+        second.generation = 2;
+        second.base_generation = 1;
+        second.target_generation = 2;
+        second.materialization_id = "materialization-b".into();
+        store.replace(None, &second).await?;
+        let mut invalid: serde_json::Value =
+            serde_json::from_slice(&canonical_head_bytes(&second)?)?;
+        invalid["generation"] = serde_json::json!(99);
+        operator
+            .write(&store.head_path(), serde_json::to_vec(&invalid)?)
+            .await?;
+        let corrupt = store
+            .read_exact()
+            .await
+            .expect_err("corrupt Relation Head checksum must be rejected");
+        assert!(corrupt.to_string().contains("checksum"), "{corrupt}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn derived_head_shared_mode_fails_closed_without_contract() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let operator = operator_from_uri(&format!("fs://{}", temp_dir.path().display()))?;
+        let error =
+            DerivedRelationHeadStore::new(operator, "spaces/demo", uuid::Uuid::from_u128(0xA001))
+                .shared()
+                .await
+                .expect_err("filesystem backend has no exact shared-write contract");
+        assert!(error
+            .to_string()
+            .contains("ETag-bound reads and conditional writes"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn derived_head_single_process_create_has_one_winner() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA002);
+        let store =
+            DerivedRelationHeadStore::new(operator, "spaces/demo", relation_id).single_process();
+        let head = DerivedRelationHead {
+            format_version: 1,
+            space_id: "demo".into(),
+            relation_id: relation_id.to_string(),
+            generation: 1,
+            definition_version: 1,
+            definition_fingerprint: "definition".into(),
+            producer_id: "producer".into(),
+            producer_fingerprint: "producer-fingerprint".into(),
+            compatibility_epoch: 1,
+            materialization_id: "materialization".into(),
+            table_identifier: serde_json::json!({"table":"derived"}),
+            table_uuid: "table-uuid".into(),
+            metadata_location: "memory:///metadata.json".into(),
+            snapshot_id: None,
+            schema_id: 0,
+            base_generation: 0,
+            target_generation: 1,
+            build_id: "build".into(),
+            input_digest: "input".into(),
+            source_coordinate: serde_json::json!({}),
+            materialization_manifest_location: "manifest.json".into(),
+            materialization_manifest_checksum: "manifest-checksum".into(),
+            last_command_id: "command".into(),
+            checksum: String::new(),
+        };
+        let results = join_all((0..8).map(|_| {
+            let store = store.clone();
+            let head = head.clone();
+            async move { store.create(&head).await }
+        }))
+        .await;
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert!(store.read_exact().await?.is_some());
         Ok(())
     }
 }

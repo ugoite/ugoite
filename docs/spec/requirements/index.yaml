@@ -14,13 +14,12 @@ requirements:
   - SPEC-API-REST
   id: REQ-IDX-001
   title: Persistent derived-index rebuild
-  description: A future reindex operation may materialize derived indexes from Iceberg Entry tables. In the current
-    release `reindex_all` returns an explicit not-implemented error; only direct query/stat aggregation is available.
+  description: `ugoite index run` rebuilds registered search-related DerivedRelations from current authoritative Entry references. The initial AssetText producer publishes a replaceable Iceberg materialization through its independent Relation Head without mutating the main Catalog Head.
   related_spec:
   - architecture/overview.md#architecture-overview
   - data-model/overview.md#search-query-and-derived-data
   priority: high
-  status: planned
+  status: implemented
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_indexer.rs
@@ -88,8 +87,7 @@ requirements:
   - SPEC-API-REST
   id: REQ-IDX-004
   title: Persistent inverted-index generation
-  description: Generating and storing a persistent inverted index remains planned. Current tests assert that `ugoite
-    index run` fails explicitly and does not create index files.
+  description: Generating and storing a persistent inverted index remains planned. AssetText is a typed searchable-text projection and must not be described as an inverted index.
   related_spec:
   - data-model/overview.md#search-query-and-derived-data
   priority: medium
@@ -136,8 +134,7 @@ requirements:
   - SPEC-API-REST
   id: REQ-IDX-006
   title: Indexing watch loop
-  description: A watch loop that performs per-entry persistent index updates is not implemented. The CLI exposes
-    the command surface, but the core update operation returns a not-implemented error.
+  description: A durable watch loop and generic per-entry incremental producer engine remain future work. Current maintenance uses replace-all AssetText rebuilds and best-effort hooks after authoritative Entry writes.
   related_spec:
   - architecture/overview.md#architecture-overview
   priority: low
@@ -158,8 +155,7 @@ requirements:
   - SPEC-API-REST
   id: REQ-IDX-007
   title: Keyword scan search endpoint
-  description: GET /spaces/{space_id}/search performs case-insensitive substring matching by scanning current non-deleted
-    Entry rows. It does not consult a persistent inverted index and does not rank by relevance.
+  description: GET /spaces/{space_id}/search performs case-insensitive substring matching over current Entry data and the authorized AssetText projection. It returns Entries, does not expose AssetText rows, and does not consult a persistent inverted index or rank by relevance.
   related_spec:
   - stories/core.yaml#STORY-005
   - api/rest.md#endpoints

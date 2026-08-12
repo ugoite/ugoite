@@ -1,5 +1,5 @@
-version: '0.2'
-updated: '2026-06-23'
+version: '0.3'
+updated: '2026-08-13'
 kind: search
 apis:
 - id: search.keyword
@@ -20,6 +20,7 @@ apis:
     command: ugoite search keyword
     file: crates/ugoite-cli/src/commands/search.rs
     function: run
+  notes: Keyword search includes current authorized AssetText content by default. The primary result remains the authorized Entry; AssetText is an internal derived Iceberg projection, not a public SQL relation or persistent inverted index.
 - id: search.query
   method: POST
   status: implemented

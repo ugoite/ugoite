@@ -1,5 +1,7 @@
 use anyhow::Result;
 use opendal::Operator;
+use serde_json::Value;
+use std::collections::BTreeMap;
 use ugoite_core::query::EntryScope;
 
 use crate::entry;
@@ -42,18 +44,87 @@ pub async fn search_entries_with_scopes(
         0,
     )
     .await?;
-    let mut results = Vec::with_capacity(rows.len());
+    let mut results = BTreeMap::new();
     for (form_name, row) in rows {
         if row.deleted {
             continue;
         }
-        results.push(KeywordSearchResult {
+        let result = KeywordSearchResult {
             id: row.entry_id,
             title: row.title,
             form: form_name,
             created_at: row.created_at,
             updated_at: row.updated_at,
-        });
+        };
+        results.insert((result.form.clone(), result.id.clone()), result);
     }
+
+    // AssetText is a trusted internal projection. The authorized current
+    // Entry scan remains the ACL boundary: an asset match is promoted only
+    // after its current Entry has passed the caller's Form/Entry scope.
+    // Derived failures intentionally degrade to native search.
+    if !query.trim().is_empty() {
+        if let Ok(Some(matching_assets)) =
+            crate::derived_relation::asset_text_search_matches(op, ws_path, query).await
+        {
+            if !matching_assets.is_empty() {
+                if let Ok(asset_rows) = crate::index::query_entry_rows_authorized(
+                    op,
+                    ws_path,
+                    relation_scopes,
+                    None,
+                    None,
+                    crate::MAX_NORMAL_READ_ROWS,
+                    0,
+                )
+                .await
+                {
+                    for (form_name, row) in asset_rows {
+                        if row.deleted || !row_references_asset(&row.fields, &matching_assets) {
+                            continue;
+                        }
+                        let result = KeywordSearchResult {
+                            id: row.entry_id,
+                            title: row.title,
+                            form: form_name,
+                            created_at: row.created_at,
+                            updated_at: row.updated_at,
+                        };
+                        results.insert((result.form.clone(), result.id.clone()), result);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut results = results.into_values().collect::<Vec<_>>();
+    results.sort_by(|left, right| {
+        left.title
+            .cmp(&right.title)
+            .then_with(|| left.id.cmp(&right.id))
+            .then_with(|| left.form.cmp(&right.form))
+    });
+    results.truncate(limit);
     Ok(results)
+}
+
+fn row_references_asset(
+    value: &Value,
+    matching_assets: &std::collections::HashSet<String>,
+) -> bool {
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .any(|value| row_references_asset(value, matching_assets)),
+        Value::Object(object) => {
+            object
+                .get("asset_id")
+                .and_then(Value::as_str)
+                .is_some_and(|asset_id| matching_assets.contains(asset_id))
+                || object
+                    .values()
+                    .any(|value| row_references_asset(value, matching_assets))
+        }
+        _ => false,
+    }
 }

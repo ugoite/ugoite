@@ -40,6 +40,12 @@ publication chain instead of blindly repeating the logical mutation. REST,
 Memory, pointer-manifest, external-catalog, and object-list reconstruction modes
 are not production architecture.
 
+DerivedRelations use independent Relation Heads under `_ugoite/derived`, with
+official Iceberg metadata and Parquet files in replaceable materialization
+prefixes. They do not mutate the main Catalog Head, create Form revisions, or
+enter SpaceCheckpoint. Their providers are internal unless a separate
+authorization and reproducibility contract is specified.
+
 Checkpoint capture is a read-only, reproducible coordinate over one exact
 Head: it pins immutable Iceberg metadata and snapshots without claiming a
 cross-Form transaction. Authorization-aware DataFusion reads and read-only

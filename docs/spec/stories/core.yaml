@@ -77,5 +77,6 @@ stories:
   - REQ-IDX-004
   - REQ-IDX-007
   status: implemented
-  implementation_notes: Keyword matching is case-insensitive substring search with unspecified ordering; relevance
-    ranking is not implemented.
+  implementation_notes: Keyword matching is case-insensitive substring search over current Entry data and the
+    authorized AssetText projection when available; relevance ranking and persistent inverted indexes are not
+    implemented. AssetText remains internal and derived.

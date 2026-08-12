@@ -24,7 +24,6 @@ const CODE_KEYS: Record<string, TranslationKey> = {
   LAST_ADMIN_REQUIRED: "errors.code.lastAdminRequired",
   ASSET_REFERENCED: "errors.code.assetReferenced",
   SQL_SESSION_EXPIRED: "errors.code.sqlSessionExpired",
-  REINDEX_NOT_IMPLEMENTED: "errors.code.reindexNotImplemented",
   STORAGE_CONNECTION_FAILED: "errors.code.storageConnectionFailed",
   INVALID_INPUT: "errors.code.invalidInput",
   INTERNAL_ERROR: "errors.code.internal",

@@ -33,3 +33,25 @@ requirements:
   tests:
   - file: crates/ugoite-cli/tests/test_assets.rs
   - file: crates/ugoite-iceberg/tests/test_asset.rs
+- set_id: REQCAT-ASSET
+  source_file: requirements/asset.yaml
+  scope: Asset lifecycle and metadata handling requirements.
+  linked_policies:
+  - POL-007
+  linked_specifications:
+  - SPEC-ARCH-DERIVED-RELATIONS
+  id: REQ-ASSET-002
+  title: Derived Asset Text Extraction
+  description: 'After an authoritative Asset is durable, the current Entry AssetReference
+    set MAY be materialized as the internal `ugoite.asset_text` DerivedRelation.
+    Parser failure MUST NOT roll back Asset durability, and extraction MUST NOT
+    create Form revisions or become an authorization source of truth.'
+  related_spec:
+  - architecture/derived-relations.md
+  - features/search.yaml
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-iceberg/src/derived_relation.rs
+  - file: crates/ugoite-iceberg/src/search.rs

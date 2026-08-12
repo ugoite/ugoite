@@ -18,6 +18,10 @@ spaces/
         head.json
         publications/
       checkpoints/
+      derived/
+        relations/{relation_id}/
+          head.json
+          materializations/{materialization_id}/   # Iceberg-owned layout
     forms/
     assets/
     sql_sessions/
@@ -32,7 +36,9 @@ response_hmac/
 
 ## Space bootstrap
 
-`create_space` creates the Space directory, all four child directories, `meta.json`, and `settings.json`, then bootstraps the `Entry` Form.
+`create_space` creates the Space directory, the authoritative child directories,
+`meta.json`, and `settings.json`, then bootstraps the `Entry` Form. Derived
+relation directories are lazy and are not part of bootstrap.
 
 `meta.json` currently contains:
 
@@ -75,6 +81,7 @@ theme, locale, and selected-Space preferences are user-scoped and belong in
 | Node response signing | `response_hmac/default.json` | Node-default response-signing key material; not part of a Space export |
 | SQL session creation | `spaces/{space_id}/sql_sessions/{session_id}/meta.json` | query/session metadata |
 | Asset upload | `spaces/{space_id}/assets/{asset_id}` | binary object; the key is derived from the stable asset ID |
+| Derived rebuild | `spaces/{space_id}/_ugoite/derived/relations/{relation_id}/head.json` | current materialization coordinate; non-authoritative and replaceable |
 | Preference update | `users/{sha256(user_id)}/preferences.json` | portable user UI preferences |
 
 ## Catalog and Iceberg-managed Form storage

@@ -31,8 +31,7 @@ requirements:
   - SPEC-API-REST
   id: REQ-SRCH-002
   title: Content-scan search implementation
-  description: Keyword search scans current Entry rows directly. There is no index-first branch or index-miss fallback
-    in this release.
+  description: Keyword search scans current Entry rows and the authorized AssetText projection. AssetText is an internal derived Iceberg relation; missing, stale, or corrupt derived state degrades to native Entry search. A persistent inverted index is still absent.
   priority: medium
   status: implemented
   verification: traced

@@ -133,6 +133,7 @@ Index maintenance is local-core functionality in this release:
 ```bash
 ugoite index stats /path/to/workspace/spaces/team-notes
 ugoite index run /path/to/workspace/spaces/team-notes
+ugoite index run /path/to/workspace/spaces/team-notes --component asset-text
 ```
 
 The CLI reports that these commands are unavailable in backend/API mode. Asset
@@ -144,15 +145,14 @@ in backend/API mode:
 ugoite asset upload /path/to/workspace/spaces/team-notes ./diagram.png
 ugoite asset delete /path/to/workspace/spaces/team-notes asset-id
 
-# Backend/API mode
-ugoite asset upload team-notes ./diagram.png
+# Backend/API mode: upload through the API client or REST surface; the remote
+# CLI upload command is intentionally unavailable in this release.
 ugoite asset delete team-notes asset-id
 ```
 
-Remote upload sends the file as the REST `file` multipart part with
-`application/octet-stream` media type and prints the returned `AssetReference`
-as JSON. Use `--filename` to choose the logical filename; the server applies
-the same safe-basename rules as core mode.
+The API client and frontend still send the REST `file` multipart part with
+`application/octet-stream` media type. Use `--filename` in core mode to choose
+the logical filename; the server applies the same safe-basename rules.
 
 Every command has exhaustive, version-specific help. Use
 `ugoite <command> --help` or `ugoite <command> <subcommand> --help` before

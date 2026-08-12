@@ -27,6 +27,16 @@
   - POL-014
   linked_requirements:
   - REQCAT-STORAGE
+- id: SPEC-ARCH-DERIVED-RELATIONS
+  source_file: architecture/derived-relations.md
+  linked_policies:
+  - POL-001
+  - POL-012
+  - POL-014
+  linked_requirements:
+  - REQCAT-ASSET
+  - REQCAT-INDEX
+  - REQCAT-SEARCH
 - id: SPEC-ARCH-INTERFACE
   source_file: architecture/frontend-backend-interface.md
   linked_policies:

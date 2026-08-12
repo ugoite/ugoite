@@ -89,3 +89,17 @@ transactions are explicitly unsupported.
 revision construction, and I/O-free validation. WASM exposes that logic and the
 portable API protocol; it never depends on Iceberg, Arrow, Parquet, OpenDAL, or
 a native repository interface.
+
+## ADR-012 — DerivedRelation is a sibling of Form
+
+**Accepted.** A DerivedRelation is a typed Iceberg relation whose current
+materialization can be deleted and rebuilt from authoritative Space data. Each
+relation has an independent `_ugoite/derived/relations/{relation_id}/head.json`
+published with OpenDAL conditional semantics. DerivedRelation updates never
+change the main Catalog Head, Form revision history, Form registry generation,
+or SpaceCheckpoint coordinates. AssetText is internal to trusted Quick Search
+and is not exposed to Saved SQL, SQL Sessions, or authorization.
+
+The first producer uses replace-all full rebuilds. Persistent substring
+inverted indexes, cross-relation transactions, OCR, and a mandatory external
+job queue are separate future work.

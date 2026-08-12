@@ -1827,13 +1827,8 @@ fn extract_sql_query(value: &Value) -> Option<String> {
 }
 
 pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
-    let _ = op;
-    let _ = ws_path;
-    Err(AppError::unimplemented(
-        ErrorCode::ReindexNotImplemented,
-        "reindex is not implemented in this release",
-    )
-    .into())
+    crate::derived_relation::rebuild_asset_text(op, ws_path).await?;
+    Ok(())
 }
 
 pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
@@ -1963,22 +1958,21 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
         "_uncategorized".to_string(),
         serde_json::json!({"count": 0}),
     );
+    let asset_text = crate::derived_relation::asset_text_stats(op, ws_path)
+        .await
+        .unwrap_or_else(|_| serde_json::json!({"state": "unavailable", "stale": true}));
     Ok(serde_json::json!({
         "entry_count": entry_count,
         "form_stats": form_stats,
         "tag_counts": tag_counts,
+        "asset_text": asset_text,
     }))
 }
 
 pub async fn update_entry_index(op: &Operator, ws_path: &str, entry_id: &str) -> Result<()> {
-    let _ = op;
-    let _ = ws_path;
     let _ = entry_id;
-    Err(AppError::unimplemented(
-        ErrorCode::ReindexNotImplemented,
-        "entry index update is not implemented in this release",
-    )
-    .into())
+    crate::derived_relation::rebuild_asset_text(op, ws_path).await?;
+    Ok(())
 }
 
 pub fn extract_properties(markdown: &str) -> Value {

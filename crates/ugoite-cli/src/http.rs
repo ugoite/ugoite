@@ -20,30 +20,6 @@ pub async fn execute(
     execute_prepared(base_url, prepared).await
 }
 
-/// Execute a multipart operation while keeping path, authentication, and
-/// response decoding in the same native transport as JSON operations.
-pub async fn execute_multipart(
-    base_url: &str,
-    operation: &str,
-    arguments: Value,
-    field_name: &str,
-    filename: &str,
-    data: Vec<u8>,
-    media_type: &str,
-) -> Result<Value> {
-    let prepared = prepare_request(operation, &arguments, None)?;
-    if prepared.body_kind != RequestBodyKind::Multipart {
-        bail!("operation {operation} does not require a multipart body");
-    }
-    let operation_name = prepared.operation.clone();
-    let (_, request) = authenticated_request(base_url, &prepared).await?;
-    let part = reqwest::multipart::Part::bytes(data)
-        .file_name(filename.to_string())
-        .mime_str(media_type)?;
-    let form = reqwest::multipart::Form::new().part(field_name.to_string(), part);
-    send_and_decode(&operation_name, request.multipart(form)).await
-}
-
 async fn execute_prepared(base_url: &str, prepared: PreparedRequest) -> Result<Value> {
     let operation = prepared.operation.clone();
     let (_, mut request) = authenticated_request(base_url, &prepared).await?;
