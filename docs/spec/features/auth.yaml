@@ -53,7 +53,7 @@ apis:
     method: POST
     status: implemented
     backend: {
-      path: /spaces/{space_id}/admin/recovery/force-reset|/spaces/{space_id}/admin/recovery/backup-codes|/auth/recovery/owner/start|/auth/recovery/owner/finish,
+      path: "/spaces/{space_id}/admin/recovery/force-reset|/spaces/{space_id}/admin/recovery/backup-codes|/auth/recovery/owner/start|/auth/recovery/owner/finish",
       file: crates/ugoite-server/src/lib.rs,
       function: owner_force_reset,
     }
