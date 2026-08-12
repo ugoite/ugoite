@@ -4,7 +4,8 @@
     "build": "deno run -A npm:astro@7.0.2 build",
     "preview:e2e": "deno run -A npm:astro@7.0.2 preview --host 127.0.0.1 --strictPort --port 4321",
     "check": "deno run -A npm:astro@7.0.2 check",
-    "test": "deno run -A npm:vitest@4.1.8 run"
+    "test": "deno run -A npm:vitest@4.1.8 run",
+    "coverage": "deno run -A npm:vitest@4.1.8 run --coverage --maxWorkers=1"
   },
   "imports": {
     "@astrojs/check": "npm:@astrojs/check@0.9.9",

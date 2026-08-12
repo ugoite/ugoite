@@ -6,6 +6,7 @@ This directory is only the Starlight build shell. Product and engineering docume
 deno task --cwd docsite dev
 deno task --cwd docsite check
 deno task --cwd docsite test
+deno task --cwd docsite coverage
 deno task --cwd docsite build
 ```
 
@@ -14,6 +15,7 @@ Repository-level orchestration stays at the root:
 ```bash
 mise run build:docsite
 mise run test:docsite
+mise run test:docsite:coverage
 mise run package:docsite
 mise run verify:docsite
 ```

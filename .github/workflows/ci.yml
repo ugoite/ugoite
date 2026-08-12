@@ -202,6 +202,14 @@ jobs:
         id: test-docsite
         run: scripts/measure-step.sh test-docsite mise run test:docsite
 
+      - name: Frontend coverage
+        id: test-frontend-coverage
+        run: scripts/measure-step.sh test-frontend-coverage mise run test:frontend:coverage
+
+      - name: Docsite coverage
+        id: test-docsite-coverage
+        run: scripts/measure-step.sh test-docsite-coverage mise run test:docsite:coverage
+
       - name: Docsite navigation E2E
         id: test-docsite-navigation
         run: scripts/measure-step.sh test-docsite-navigation mise run test:docsite:e2e:navigation
@@ -408,6 +416,8 @@ jobs:
             echo "- test:tools: ${{ steps.test-tools.outputs.duration_seconds }}s"
             echo "- test:frontend: ${{ steps.test-frontend.outputs.duration_seconds }}s"
             echo "- test:docsite: ${{ steps.test-docsite.outputs.duration_seconds }}s"
+            echo "- test:frontend:coverage: ${{ steps.test-frontend-coverage.outputs.duration_seconds }}s"
+            echo "- test:docsite:coverage: ${{ steps.test-docsite-coverage.outputs.duration_seconds }}s"
             echo "- test:e2e:smoke: ${{ steps.test-e2e.outputs.duration_seconds }}s"
             echo "- test:e2e:asset-owned: ${{ steps.test-e2e-asset-owned.outputs.duration_seconds }}s"
             echo "- package:docsite: ${{ steps.package-docsite.outputs.duration_seconds }}s"

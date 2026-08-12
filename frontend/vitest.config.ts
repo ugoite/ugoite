@@ -54,6 +54,11 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
+      // The portable protocol is the frontend's product-critical boundary:
+      // Rust/WASM owns operation encoding/decoding while the UI remains a
+      // replaceable adapter. UI rendering is covered by behavior tests and
+      // E2E; keep this gate focused on the protocol contract itself.
+      include: ["src/lib/ugoite-client/protocol.ts"],
       exclude: [
         "src/test/**",
         "src/**/*.test.*",
