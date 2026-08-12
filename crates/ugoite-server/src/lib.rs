@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 //! Thin HTTP and MCP adapters over `ugoite-core`.
 
 use anyhow::Context as _;
@@ -767,11 +769,10 @@ async fn require_auth(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let request_id = headers
-        .get("x-request-id")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| Uuid::parse_str(value).ok())
-        .unwrap_or_else(Uuid::now_v7);
+    // Client request IDs remain useful for transport tracing, but approval
+    // audit event IDs must be server-owned so a caller cannot deliberately
+    // replay an audit id and suppress a denial event.
+    let request_id = Uuid::now_v7();
     if let Ok(value) = HeaderValue::from_str(&request_id.to_string()) {
         request.headers_mut().insert("x-request-id", value);
     }
@@ -5602,7 +5603,25 @@ fn approval_binding_error(error: anyhow::Error) -> ApiError {
     }
 }
 
+fn human_approval_failure_phase(error: &anyhow::Error) -> &'static str {
+    match error.to_string().as_str() {
+        "HUMAN_APPROVAL_REPLAYED" => "replayed",
+        "HUMAN_APPROVAL_EXPIRED" => "expired",
+        _ => "rejected",
+    }
+}
+
 fn invalid_human_approval() -> ApiError {
+    ApiError::new(
+        StatusCode::FORBIDDEN,
+        json!({
+            "code": "HUMAN_APPROVAL_INVALID",
+            "message": "the human approval does not match the requested operation or mutation"
+        }),
+    )
+}
+
+fn invalid_human_approval_credential() -> ApiError {
     ApiError::new(
         StatusCode::FORBIDDEN,
         json!({
@@ -5754,6 +5773,13 @@ fn dangerous_operation_audit_details(
         ),
         intent_hash: intent_hash(intent).ok(),
     }
+}
+
+#[derive(Clone)]
+struct PendingHumanApproval {
+    approval: HumanApproval,
+    token: String,
+    intent_hash: String,
 }
 
 async fn append_human_approval_audit(
@@ -5961,7 +5987,7 @@ async fn require_dangerous_resource_action(
     kind: ResourceKind,
     resource_id: &str,
     intent: &Value,
-) -> ApiResult<(Uuid, Option<HumanApproval>)> {
+) -> ApiResult<(Uuid, Option<PendingHumanApproval>)> {
     let audit_details = dangerous_operation_audit_details(
         operation,
         &action,
@@ -6089,7 +6115,6 @@ async fn require_dangerous_resource_action(
         .human_approval_token
         .as_deref()
         .expect("token was required for token identity");
-    let actor_principal_id = identity.token_actor_principal_id.unwrap_or(principal_id);
     let resource = ResourceRef {
         kind: kind.clone(),
         id: resource_id.to_string(),
@@ -6100,12 +6125,6 @@ async fn require_dangerous_resource_action(
         .human_approval_for_token(space_id, token)
         .await
         .map_err(ApiError::from_core)?;
-    let live_approval = candidate.as_ref().filter(|approval| {
-        approval.consumed_at.is_none()
-            && DateTime::parse_from_rfc3339(&approval.expires_at)
-                .map(|expires_at| expires_at.with_timezone(&Utc) > Utc::now())
-                .unwrap_or(true)
-    });
     let normalized_intent = match approval_intent(operation, &resource, intent) {
         Ok(intent) => intent,
         Err(_) => {
@@ -6127,133 +6146,170 @@ async fn require_dangerous_resource_action(
     };
     let normalized_intent_hash =
         intent_hash(&normalized_intent).map_err(|_| invalid_human_approval())?;
-    if let Some(approval) = live_approval {
-        let space_uid = state
-            .service
-            .space_uid(space_id)
-            .await
-            .map_err(ApiError::from_core)?;
-        let issuer_principal = state
-            .identity
-            .principal_for_account(space_uid, approval.issuer_account_id)
-            .await
-            .map_err(ApiError::from_core)?;
-        if issuer_principal != approval.issuer_principal_id {
-            append_human_approval_audit_with_subject(
-                state,
-                space_id,
-                Some(approval),
-                Some(principal_id),
-                "rejected",
-                "error",
-                "error",
-                identity.request_id,
-            )
-            .await
-            .map_err(ApiError::from_core)?;
-            return Err(invalid_human_approval());
-        }
-    }
-    let consume = || async {
-        authorizer
-            .consume_human_approval_with_audit(
-                space_id,
-                token,
-                operation,
-                action,
-                &resource,
-                &normalized_intent_hash,
-                actor_principal_id,
-                identity.request_identity.credential_id,
-                |approval, phase, outcome, mutation_outcome| {
-                    vec![human_approval_audit_event(
-                        space_id,
-                        approval,
-                        Some(principal_id),
-                        phase,
-                        outcome,
-                        mutation_outcome,
-                        identity.request_id,
-                    )]
-                },
-            )
-            .await
+    let Some(approval) = candidate else {
+        append_human_approval_audit_with_details(
+            state,
+            space_id,
+            None,
+            Some(principal_id),
+            audit_details,
+            "rejected",
+            "error",
+            "error",
+            identity.request_id,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+        return Err(invalid_human_approval());
     };
-    let result = if let Some(approval) = live_approval {
-        state
-            .identity
-            .with_active_approval_credentials(
-                identity.request_identity.credential_id,
-                if matches!(
-                    active_credential_kind(identity),
-                    ActiveCredentialKind::Agent
-                ) {
-                    None
-                } else {
-                    Some(identity.account_id)
-                },
-                active_credential_kind(identity),
-                approval.issuer_account_id,
-                approval.issuer_credential_id,
-                approval.issuer_credential_generation,
-                approval.issuer_node_account_lifecycle_epoch,
-                consume,
-            )
-            .await
+    if approval.consumed_at.is_some() {
+        append_human_approval_audit_with_details(
+            state,
+            space_id,
+            Some(&approval),
+            Some(principal_id),
+            audit_details,
+            "replayed",
+            "error",
+            "error",
+            identity.request_id,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+        return Err(approval_binding_error(
+            AppError::conflict(ErrorCode::InvalidInput, "HUMAN_APPROVAL_REPLAYED").into(),
+        ));
+    }
+    let expires_at = DateTime::parse_from_rfc3339(&approval.expires_at)
+        .map_err(|_| invalid_human_approval())?
+        .with_timezone(&Utc);
+    if expires_at <= Utc::now() {
+        append_human_approval_audit_with_details(
+            state,
+            space_id,
+            Some(&approval),
+            Some(principal_id),
+            audit_details,
+            "expired",
+            "error",
+            "error",
+            identity.request_id,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+        return Err(approval_binding_error(
+            AppError::expired(ErrorCode::InvalidInput, "HUMAN_APPROVAL_EXPIRED").into(),
+        ));
+    }
+    let space_uid = state
+        .service
+        .space_uid(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let issuer_principal = state
+        .identity
+        .principal_for_account(space_uid, approval.issuer_account_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    if issuer_principal != approval.issuer_principal_id {
+        append_human_approval_audit_with_details(
+            state,
+            space_id,
+            Some(&approval),
+            Some(principal_id),
+            audit_details,
+            "rejected",
+            "error",
+            "error",
+            identity.request_id,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+        return Err(invalid_human_approval());
+    }
+    Ok((
+        principal_id,
+        Some(PendingHumanApproval {
+            approval,
+            token: token.to_string(),
+            intent_hash: normalized_intent_hash,
+        }),
+    ))
+}
+
+async fn execute_approved_mutation<T, F, Fut>(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+    pending: PendingHumanApproval,
+    mutation: F,
+) -> anyhow::Result<(HumanApproval, anyhow::Result<T>)>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = anyhow::Result<T>>,
+{
+    let approval = pending.approval.clone();
+    let token = pending.token;
+    let intent_hash = pending.intent_hash;
+    let operation = approval.operation.clone();
+    let space_id = space_id.to_string();
+    let resource = approval.resource.clone();
+    let actor_principal_id = identity
+        .token_actor_principal_id
+        .unwrap_or(approval.actor_principal_id);
+    let actor_credential_id = identity.request_identity.credential_id;
+    let principal_id = identity
+        .token_principal_id
+        .unwrap_or(approval.actor_principal_id);
+    let request_id = identity.request_id;
+    let kind = active_credential_kind(identity);
+    let account_id = if matches!(kind, ActiveCredentialKind::Agent) {
+        None
     } else {
-        consume().await
+        Some(identity.account_id)
     };
-    match result {
-        Ok(approval) => {
-            append_human_approval_audit_with_subject(
-                state,
-                space_id,
-                Some(&approval),
-                Some(principal_id),
-                "consumed",
-                "error",
-                "unknown",
-                identity.request_id,
-            )
-            .await
-            .map_err(ApiError::from_core)?;
-            Ok((principal_id, Some(approval)))
-        }
-        Err(error) => {
-            let error_message = error.to_string();
-            let is_binding_error = matches!(
-                error_message.as_str(),
-                "HUMAN_APPROVAL_INVALID" | "HUMAN_APPROVAL_EXPIRED" | "HUMAN_APPROVAL_REPLAYED"
-            );
-            let is_credential_error =
-                live_approval.is_some() && error_message.starts_with("human approval ");
-            let phase = match error_message.as_str() {
-                "HUMAN_APPROVAL_REPLAYED" => "replayed",
-                "HUMAN_APPROVAL_EXPIRED" => "expired",
-                _ => "rejected",
-            };
-            let api_error = if is_credential_error {
-                invalid_human_approval()
-            } else {
-                approval_binding_error(error)
-            };
-            if is_binding_error || is_credential_error {
-                append_human_approval_audit_with_subject(
-                    state,
-                    space_id,
-                    candidate.as_ref(),
-                    Some(principal_id),
-                    phase,
-                    "error",
-                    "error",
-                    identity.request_id,
-                )
-                .await
-                .map_err(ApiError::from_core)?;
-            }
-            Err(api_error)
-        }
-    }
+    state
+        .identity
+        .with_active_approval_credentials(
+            actor_credential_id,
+            account_id,
+            kind,
+            approval.issuer_account_id,
+            approval.issuer_credential_id,
+            approval.issuer_credential_generation,
+            approval.issuer_node_account_lifecycle_epoch,
+            move || {
+                let authorizer = Authorizer::new(state.service.operator().clone());
+                let audit_space_id = space_id.clone();
+                async move {
+                    authorizer
+                        .consume_human_approval_with_audit_and(
+                            &space_id,
+                            &token,
+                            &operation,
+                            approval.action.clone(),
+                            &resource,
+                            &intent_hash,
+                            actor_principal_id,
+                            actor_credential_id,
+                            move |approval, phase, outcome, mutation_outcome| {
+                                vec![human_approval_audit_event(
+                                    &audit_space_id,
+                                    approval,
+                                    Some(principal_id),
+                                    phase,
+                                    outcome,
+                                    mutation_outcome,
+                                    request_id,
+                                )]
+                            },
+                            mutation,
+                        )
+                        .await
+                }
+            },
+        )
+        .await
 }
 
 fn parse_resource_kind(kind: &str) -> ApiResult<ResourceKind> {
@@ -6336,23 +6392,50 @@ async fn put_access_policy(
         &approval_mutation,
     )
     .await?;
-    let approved_mutation = approval.is_some();
-    let mutation = with_active_request_credential(&state, &identity, || async {
-        let authorizer = Authorizer::new(state.service.operator().clone());
-        if approved_mutation {
-            authorizer
-                .set_policy_without_audit(&space_id, mutation_actor, &resource, policy.clone())
+    let approval_for_audit = approval.as_ref().map(|pending| pending.approval.clone());
+    let mutation = if let Some(pending) = approval {
+        let audit_approval = pending.approval.clone();
+        let result = execute_approved_mutation(&state, &space_id, &identity, pending, || async {
+            Authorizer::new(state.service.operator().clone())
+                .set_policy_after_approval(&space_id, mutation_actor, &resource, policy.clone())
                 .await
-        } else {
-            authorizer
+        })
+        .await;
+        let (_, mutation) = match result {
+            Ok(value) => value,
+            Err(error) => {
+                let phase = human_approval_failure_phase(&error);
+                append_human_approval_audit_with_subject(
+                    &state,
+                    &space_id,
+                    Some(&audit_approval),
+                    Some(actor),
+                    phase,
+                    "error",
+                    "error",
+                    identity.request_id,
+                )
+                .await
+                .map_err(ApiError::from_core)?;
+                return Err(if error.to_string().starts_with("human approval ") {
+                    invalid_human_approval_credential()
+                } else {
+                    approval_binding_error(error)
+                });
+            }
+        };
+        mutation
+    } else {
+        with_active_request_credential(&state, &identity, || async {
+            Authorizer::new(state.service.operator().clone())
                 .set_policy(&space_id, mutation_actor, &resource, policy.clone())
                 .await
-        }
-    })
-    .await;
+        })
+        .await
+    };
     match mutation {
         Ok(()) => {
-            if let Some(approval) = approval.as_ref() {
+            if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
                     &space_id,
@@ -6368,7 +6451,7 @@ async fn put_access_policy(
             }
         }
         Err(error) => {
-            if let Some(approval) = approval.as_ref() {
+            if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
                     &space_id,
@@ -7165,25 +7248,66 @@ async fn delete_entry(
         &json!({"target_id": entry_id, "hard_delete": query.hard_delete.unwrap_or(false)}),
     )
     .await?;
+    let approval_for_audit = approval.as_ref().map(|pending| pending.approval.clone());
     let mutation_actor = identity
         .token_actor_principal_id
         .unwrap_or(principal_id)
         .to_string();
-    let mutation = with_active_request_credential(&state, &identity, || async {
-        state
-            .service
-            .delete_entry(
-                &space_id,
-                &entry_id,
-                query.hard_delete.unwrap_or(false),
-                &mutation_actor,
-            )
-            .await
-    })
-    .await;
+    let mutation = if let Some(pending) = approval {
+        let audit_approval = pending.approval.clone();
+        let result = execute_approved_mutation(&state, &space_id, &identity, pending, || async {
+            state
+                .service
+                .delete_entry(
+                    &space_id,
+                    &entry_id,
+                    query.hard_delete.unwrap_or(false),
+                    &mutation_actor,
+                )
+                .await
+        })
+        .await;
+        let (_, mutation) = match result {
+            Ok(value) => value,
+            Err(error) => {
+                let phase = human_approval_failure_phase(&error);
+                append_human_approval_audit_with_subject(
+                    &state,
+                    &space_id,
+                    Some(&audit_approval),
+                    Some(principal_id),
+                    phase,
+                    "error",
+                    "error",
+                    identity.request_id,
+                )
+                .await
+                .map_err(ApiError::from_core)?;
+                return Err(if error.to_string().starts_with("human approval ") {
+                    invalid_human_approval_credential()
+                } else {
+                    approval_binding_error(error)
+                });
+            }
+        };
+        mutation
+    } else {
+        with_active_request_credential(&state, &identity, || async {
+            state
+                .service
+                .delete_entry(
+                    &space_id,
+                    &entry_id,
+                    query.hard_delete.unwrap_or(false),
+                    &mutation_actor,
+                )
+                .await
+        })
+        .await
+    };
     match mutation {
         Ok(()) => {
-            if let Some(approval) = approval.as_ref() {
+            if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
                     &space_id,
@@ -7199,7 +7323,7 @@ async fn delete_entry(
             }
         }
         Err(error) => {
-            if let Some(approval) = approval.as_ref() {
+            if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
                     &space_id,
@@ -7670,20 +7794,56 @@ async fn delete_sql(
         &json!({"target_id": sql_id}),
     )
     .await?;
+    let approval_for_audit = approval.as_ref().map(|pending| pending.approval.clone());
     let mutation_actor = identity
         .token_actor_principal_id
         .unwrap_or(principal_id)
         .to_string();
-    let mutation = with_active_request_credential(&state, &identity, || async {
-        state
-            .service
-            .delete_saved_sql(&space_id, &sql_id, &mutation_actor)
-            .await
-    })
-    .await;
+    let mutation = if let Some(pending) = approval {
+        let audit_approval = pending.approval.clone();
+        let result = execute_approved_mutation(&state, &space_id, &identity, pending, || async {
+            state
+                .service
+                .delete_saved_sql(&space_id, &sql_id, &mutation_actor)
+                .await
+        })
+        .await;
+        let (_, mutation) = match result {
+            Ok(value) => value,
+            Err(error) => {
+                let phase = human_approval_failure_phase(&error);
+                append_human_approval_audit_with_subject(
+                    &state,
+                    &space_id,
+                    Some(&audit_approval),
+                    Some(principal_id),
+                    phase,
+                    "error",
+                    "error",
+                    identity.request_id,
+                )
+                .await
+                .map_err(ApiError::from_core)?;
+                return Err(if error.to_string().starts_with("human approval ") {
+                    invalid_human_approval_credential()
+                } else {
+                    approval_binding_error(error)
+                });
+            }
+        };
+        mutation
+    } else {
+        with_active_request_credential(&state, &identity, || async {
+            state
+                .service
+                .delete_saved_sql(&space_id, &sql_id, &mutation_actor)
+                .await
+        })
+        .await
+    };
     match mutation {
         Ok(()) => {
-            if let Some(approval) = approval.as_ref() {
+            if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
                     &space_id,
@@ -7699,7 +7859,7 @@ async fn delete_sql(
             }
         }
         Err(error) => {
-            if let Some(approval) = approval.as_ref() {
+            if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
                     &space_id,
@@ -7871,17 +8031,53 @@ async fn delete_asset(
         &json!({"target_id": asset_id}),
     )
     .await?;
+    let approval_for_audit = approval.as_ref().map(|pending| pending.approval.clone());
     let principals = authorization_principal_ids(&identity, principal_id);
-    let mutation = with_active_request_credential(&state, &identity, || async {
-        state
-            .service
-            .delete_asset_with_principals(&space_id, &asset_id, &principals)
-            .await
-    })
-    .await;
+    let mutation = if let Some(pending) = approval {
+        let audit_approval = pending.approval.clone();
+        let result = execute_approved_mutation(&state, &space_id, &identity, pending, || async {
+            state
+                .service
+                .delete_asset_with_principals(&space_id, &asset_id, &principals)
+                .await
+        })
+        .await;
+        let (_, mutation) = match result {
+            Ok(value) => value,
+            Err(error) => {
+                let phase = human_approval_failure_phase(&error);
+                append_human_approval_audit_with_subject(
+                    &state,
+                    &space_id,
+                    Some(&audit_approval),
+                    Some(principal_id),
+                    phase,
+                    "error",
+                    "error",
+                    identity.request_id,
+                )
+                .await
+                .map_err(ApiError::from_core)?;
+                return Err(if error.to_string().starts_with("human approval ") {
+                    invalid_human_approval_credential()
+                } else {
+                    approval_binding_error(error)
+                });
+            }
+        };
+        mutation
+    } else {
+        with_active_request_credential(&state, &identity, || async {
+            state
+                .service
+                .delete_asset_with_principals(&space_id, &asset_id, &principals)
+                .await
+        })
+        .await
+    };
     match mutation {
         Ok(()) => {
-            if let Some(approval) = approval.as_ref() {
+            if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
                     &space_id,
@@ -7897,7 +8093,7 @@ async fn delete_asset(
             }
         }
         Err(error) => {
-            if let Some(approval) = approval.as_ref() {
+            if let Some(approval) = approval_for_audit.as_ref() {
                 append_human_approval_audit_with_subject(
                     &state,
                     &space_id,
@@ -9329,6 +9525,63 @@ mod authentication_regression_tests {
             )
             .await?;
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unknown_approval_token_audit_keeps_operation_attribution() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-human-approval-unknown-token")?;
+        let principal_id = Uuid::from_u128(1934);
+        let space_id = state
+            .service
+            .create_space_for_principal("human-approval-unknown-token", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let mut identity = content_identity(principal_id, space_uid);
+        identity.token_actions = Some(["delete".to_string()].into_iter().collect());
+        let credential_id = identity.request_identity.credential_id;
+        identity.human_approval_token = Some("X".repeat(43));
+        let route = Router::new()
+            .route(
+                "/spaces/{space_id}/entries/{entry_id}",
+                delete(delete_entry),
+            )
+            .layer(Extension(identity))
+            .with_state(state.clone());
+
+        let response = route
+            .oneshot(
+                Request::delete(format!("/spaces/{space_id}/entries/unknown-approval-entry"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let events = audit::list_audit_events(
+            state.service.operator(),
+            &space_id,
+            AuditListOptions {
+                action: Some("human_approval.rejected".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+        let event = events["items"]
+            .as_array()
+            .and_then(|items| items.first())
+            .expect("unknown-token rejection audit event");
+        assert_eq!(event["actor_principal_id"], json!(principal_id));
+        assert_eq!(event["credential_id"], json!(credential_id));
+        assert_eq!(event["metadata"]["operation"], "entry.delete");
+        assert_eq!(event["metadata"]["action"], "delete");
+        assert_eq!(
+            event["metadata"]["canonical_resource"],
+            "entry:unknown-approval-entry"
+        );
+        assert!(event["metadata"]["intent_hash"]
+            .as_str()
+            .is_some_and(|hash| hash.len() == 64));
         Ok(())
     }
 

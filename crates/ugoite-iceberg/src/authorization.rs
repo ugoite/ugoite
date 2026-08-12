@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
+    future::Future,
     path::Path,
     sync::{Arc, OnceLock},
 };
@@ -505,6 +506,45 @@ impl Authorizer {
     where
         F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
     {
+        let (approval, mutation) = self
+            .consume_human_approval_with_audit_and(
+                space_id,
+                token,
+                operation,
+                action,
+                resource,
+                intent_hash,
+                actor_principal_id,
+                actor_credential_id,
+                audit_events,
+                || async { Ok::<(), anyhow::Error>(()) },
+            )
+            .await?;
+        mutation?;
+        Ok(approval)
+    }
+
+    /// Consume an approval and run the dangerous mutation while the shared
+    /// authorization write lock is still held. This is the linearization
+    /// point for approval-bound mutations: an ACL/lifecycle write cannot land
+    /// between the current authorization check and the actual mutation.
+    pub async fn consume_human_approval_with_audit_and<T, F, Fut>(
+        &self,
+        space_id: &str,
+        token: &str,
+        operation: &str,
+        action: Action,
+        resource: &ResourceRef,
+        intent_hash: &str,
+        actor_principal_id: Uuid,
+        actor_credential_id: Uuid,
+        audit_events: F,
+        mutation: impl FnOnce() -> Fut,
+    ) -> Result<(HumanApproval, T)>
+    where
+        F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
+        Fut: Future<Output = T>,
+    {
         let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
@@ -522,7 +562,8 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_state(space_id, &state).await?;
+            self.write_human_approval_state(space_id, &state, None)
+                .await?;
             return Err(AppError::forbidden("HUMAN_APPROVAL_INVALID").into());
         };
         if approval.consumed_at.is_some() {
@@ -534,7 +575,8 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_state(space_id, &state).await?;
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id))
+                .await?;
             return Err(
                 AppError::conflict(ErrorCode::InvalidInput, "HUMAN_APPROVAL_REPLAYED").into(),
             );
@@ -551,7 +593,8 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_state(space_id, &state).await?;
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id))
+                .await?;
             return Err(
                 AppError::expired(ErrorCode::InvalidInput, "HUMAN_APPROVAL_EXPIRED").into(),
             );
@@ -613,7 +656,8 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_state(space_id, &state).await?;
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id))
+                .await?;
             return Err(AppError::forbidden("HUMAN_APPROVAL_INVALID").into());
         }
         queue_human_approval_audit_events(
@@ -630,8 +674,43 @@ impl Authorizer {
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-        self.write_state(space_id, &state).await?;
-        Ok(approval)
+        self.write_human_approval_state(space_id, &state, Some(approval.approval_id))
+            .await?;
+        Ok((approval, mutation().await))
+    }
+
+    async fn write_human_approval_state(
+        &self,
+        space_id: &str,
+        state: &AuthorizationState,
+        approval_id: Option<Uuid>,
+    ) -> Result<()> {
+        match self.write_state(space_id, state).await {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                // A remote CAS loser must not be exposed as an opaque 500 if
+                // another consumer already committed the single-use state.
+                // Re-read the authoritative object while the process lock is
+                // held and classify that outcome as the stable replay error.
+                let consumed_by_other = if let Some(approval_id) = approval_id {
+                    self.state(space_id)
+                        .await
+                        .ok()
+                        .and_then(|current| current.human_approvals.get(&approval_id).cloned())
+                        .is_some_and(|approval| approval.consumed_at.is_some())
+                } else {
+                    false
+                };
+                if consumed_by_other {
+                    return Err(AppError::conflict(
+                        ErrorCode::InvalidInput,
+                        "HUMAN_APPROVAL_REPLAYED",
+                    )
+                    .into());
+                }
+                Err(error)
+            }
+        }
     }
 
     pub async fn queue_human_approval_audit(
@@ -1034,6 +1113,32 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, Some(resource))
             .await?;
         let _guard = self.lock.lock().await;
+        self.set_policy_locked(space_id, actor, resource, policy, append_audit)
+            .await
+    }
+
+    /// Apply a policy from inside an approval-bound mutation. The caller must
+    /// already hold the authorizer write lock, which is what keeps ACL
+    /// revocation from racing the approved mutation.
+    pub async fn set_policy_after_approval(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        resource: &ResourceRef,
+        policy: AccessPolicy,
+    ) -> Result<()> {
+        self.set_policy_locked(space_id, actor, resource, policy, false)
+            .await
+    }
+
+    async fn set_policy_locked(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        resource: &ResourceRef,
+        policy: AccessPolicy,
+        append_audit: bool,
+    ) -> Result<()> {
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
         for grant in &policy.grants {
@@ -2148,6 +2253,26 @@ mod tests {
             .await?;
         assert_eq!(token.len(), 43);
         assert_eq!(authorizer.state("demo").await?.human_approvals.len(), 1);
+        let mismatch = authorizer
+            .consume_human_approval(
+                "demo",
+                &token,
+                "entry.delete",
+                Action::Delete,
+                &resource,
+                &"b".repeat(64),
+                owner,
+                credential,
+            )
+            .await
+            .expect_err("an execution-time intent mismatch must not consume the approval");
+        assert_eq!(mismatch.to_string(), "HUMAN_APPROVAL_INVALID");
+        assert!(authorizer
+            .state("demo")
+            .await?
+            .human_approvals
+            .values()
+            .all(|approval| approval.consumed_at.is_none()));
         let consumed = authorizer
             .consume_human_approval(
                 "demo",
@@ -2429,6 +2554,88 @@ mod tests {
             right.unwrap_err()
         };
         assert_eq!(replay.to_string(), "HUMAN_APPROVAL_REPLAYED");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn human_approval_mutation_callback_holds_the_authorization_lock() -> Result<()> {
+        let op = operator_from_uri("memory://human-approval-mutation-lock")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let credential = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), owner, "Owner")
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "entry-1".to_string(),
+            parent: None,
+        };
+        let (_, token) = authorizer
+            .issue_human_approval(
+                "demo",
+                HumanApprovalIssue {
+                    operation: "entry.delete".to_string(),
+                    action: Action::Delete,
+                    resource: resource.clone(),
+                    intent_hash: "c".repeat(64),
+                    actor_principal_id: owner,
+                    actor_credential_id: credential,
+                    issuer_principal_id: owner,
+                    issuer_account_id: Uuid::now_v7(),
+                    issuer_credential_id: credential,
+                    issuer_credential_generation: 0,
+                    issuer_node_account_lifecycle_epoch: 0,
+                    ttl: chrono::Duration::seconds(30),
+                },
+            )
+            .await?;
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let consuming_authorizer = authorizer.clone();
+        let consuming_token = token.clone();
+        let consuming_resource = resource.clone();
+        let consuming = tokio::spawn(async move {
+            consuming_authorizer
+                .consume_human_approval_with_audit_and(
+                    "demo",
+                    &consuming_token,
+                    "entry.delete",
+                    Action::Delete,
+                    &consuming_resource,
+                    &"c".repeat(64),
+                    owner,
+                    credential,
+                    |_, _, _, _| Vec::new(),
+                    || async move {
+                        let _ = started_tx.send(());
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        Ok::<(), anyhow::Error>(())
+                    },
+                )
+                .await
+        });
+        started_rx.await?;
+        let updating_authorizer = authorizer.clone();
+        let updating = tokio::spawn(async move {
+            updating_authorizer
+                .set_policy(
+                    "demo",
+                    owner,
+                    &resource,
+                    AccessPolicy {
+                        policy_id: Uuid::now_v7(),
+                        inherit_space_role: true,
+                        grants: vec![],
+                    },
+                )
+                .await
+        });
+        tokio::task::yield_now().await;
+        assert!(!updating.is_finished());
+        let (_, mutation) = consuming.await??;
+        mutation?;
+        updating.await??;
         Ok(())
     }
 

@@ -533,7 +533,7 @@ fn openapi_human_approval_is_server_derived_and_single_use() {
     );
     assert_eq!(
         snapshot["components"]["schemas"]["HumanApprovalResponse"]["properties"]["approval_token"]
-            ["writeOnly"],
+            ["readOnly"],
         true
     );
     assert_eq!(
@@ -549,4 +549,13 @@ fn openapi_human_approval_is_server_derived_and_single_use() {
         snapshot["components"]["schemas"]["HumanApprovalEntryDeleteMutation"]["required"],
         serde_json::json!(["target_id", "hard_delete"])
     );
+    let access_put = &snapshot["paths"]["/spaces/{space_id}/policies/{kind}/{resource_id}"]["put"];
+    assert_eq!(
+        access_put["parameters"].as_array().unwrap().len(),
+        4,
+        "access.put must describe every path and approval header parameter"
+    );
+    for status in ["409", "410", "500"] {
+        assert!(access_put["responses"].get(status).is_some());
+    }
 }

@@ -34,9 +34,10 @@ CI.
 - `POST /oauth/agent/token`: autonomous agent issuance.
 - `POST /spaces/{space_id}/approvals`: a recently Passkey-authenticated human
   issues a one-time approval bound to `entry.delete`, `sql.delete`,
-  `asset.delete`, or `access.put`. The returned token is sent only in
-  `X-Ugoite-Human-Approval`; it is never placed in a JSON body, query string,
-  log, or audit event.
+  `asset.delete`, or `access.put`. The issue response returns the one-time
+  token; subsequent mutation requests send it only in
+  `X-Ugoite-Human-Approval`. It is never echoed in a mutation JSON body,
+  query string, log, or audit event.
 
 Browser requests authenticate with the `ugoite_session` HttpOnly cookie. CLI,
 MCP, and agent requests use `Authorization: DPoP <opaque-access-token>` plus a DPoP

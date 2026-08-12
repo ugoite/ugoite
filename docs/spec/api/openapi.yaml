@@ -6365,6 +6365,19 @@
   "put": {
     "summary": "Set resource policy",
     "parameters": [
+      { "$ref": "#/components/parameters/SpaceId" },
+      {
+        "name": "kind",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      {
+        "name": "resource_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
       { "$ref": "#/components/parameters/HumanApprovalHeader" }
     ],
     "responses": {
@@ -6431,6 +6444,14 @@
                   "type": "object",
                   "additionalProperties": true
                 }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
               }
             }
           }
@@ -7351,7 +7372,7 @@
         "required": ["approval_id", "approval_token", "operation", "action", "resource", "intent_hash", "actor_principal_id", "actor_credential_id", "expires_at", "audit_status"],
         "properties": {
           "approval_id": { "type": "string", "format": "uuid" },
-          "approval_token": { "type": "string", "minLength": 43, "maxLength": 43, "writeOnly": true },
+          "approval_token": { "type": "string", "minLength": 43, "maxLength": 43, "readOnly": true },
           "operation": { "type": "string" },
           "action": { "type": "string", "enum": ["delete", "share"] },
           "resource": { "$ref": "#/components/schemas/HumanApprovalResource" },
