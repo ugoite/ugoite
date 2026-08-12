@@ -135,14 +135,24 @@ ugoite index stats /path/to/workspace/spaces/team-notes
 ugoite index run /path/to/workspace/spaces/team-notes
 ```
 
-The CLI reports that these commands are unavailable in backend/API mode. In core
-mode, asset upload and delete take a local Space path:
+The CLI reports that these commands are unavailable in backend/API mode. Asset
+upload and delete use the local Space path in core mode and the bare Space ID
+in backend/API mode:
 
 ```bash
+# Core mode
 ugoite asset upload /path/to/workspace/spaces/team-notes ./diagram.png
 ugoite asset delete /path/to/workspace/spaces/team-notes asset-id
+
+# Backend/API mode
+ugoite asset upload team-notes ./diagram.png
+ugoite asset delete team-notes asset-id
 ```
-Remote CLI asset upload is not available in this release.
+
+Remote upload sends the file as the REST `file` multipart part with
+`application/octet-stream` media type and prints the returned `AssetReference`
+as JSON. Use `--filename` to choose the logical filename; the server applies
+the same safe-basename rules as core mode.
 
 Every command has exhaustive, version-specific help. Use
 `ugoite <command> --help` or `ugoite <command> <subcommand> --help` before

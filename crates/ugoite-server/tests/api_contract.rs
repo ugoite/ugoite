@@ -116,6 +116,29 @@ async fn req_sec_002_covers_metadata_api_error_and_middleware_responses() {
 }
 
 #[tokio::test]
+async fn asset_upload_route_is_not_public_before_authentication() {
+    let app = initialized_app("asset-upload-auth").await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/spaces/remote-space/assets")
+                .header(
+                    "content-type",
+                    "multipart/form-data; boundary=asset-auth-boundary",
+                )
+                .body(Body::from(
+                    "--asset-auth-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"asset.bin\"\r\nContent-Type: application/octet-stream\r\n\r\ncontent\r\n--asset-auth-boundary--\r\n",
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::LOCKED);
+}
+
+#[tokio::test]
 async fn req_sec_002_covers_the_static_browser_root() {
     let _lock = APP_ENV_LOCK.get_or_init(|| Mutex::new(())).lock().await;
     let static_dir = std::env::temp_dir().join(format!(

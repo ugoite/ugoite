@@ -20,7 +20,8 @@ support, and product claims stay aligned with the implementation.
 
 ## Limited or unavailable
 
-- remote CLI asset upload is unavailable, although REST upload exists;
+- remote CLI asset upload is available in backend/API mode through the REST
+  asset operation;
 - index run/stats are local core-mode commands;
 - general audit-log listing APIs are not exposed; authorization events remain
   portable Space state;

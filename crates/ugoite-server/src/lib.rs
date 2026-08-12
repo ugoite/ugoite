@@ -64,6 +64,163 @@ struct SecurityHeadersPolicy {
     hsts: bool,
 }
 
+#[cfg(test)]
+mod remote_asset_upload_tests {
+    use super::*;
+    use axum::{body::Body, http::Request, routing::post};
+    use tower::ServiceExt;
+
+    fn test_identity(space_uid: Uuid, principal_id: Uuid) -> RequestIdentityContext {
+        RequestIdentityContext {
+            request_identity: RequestIdentity {
+                subject: AuthenticatedSubject::HumanAccount {
+                    account_id: principal_id,
+                },
+                actor: Actor::Human {
+                    account_id: principal_id,
+                },
+                credential_id: Uuid::now_v7(),
+                authentication_method: RequestAuthenticationMethod::DeviceProof,
+                assurance: AssuranceLevel::Possession,
+                constraints: CredentialConstraints::default(),
+                session_id: None,
+            },
+            account_id: principal_id,
+            display_name: "Asset upload test".to_string(),
+            node_admin: false,
+            token_principal_id: Some(principal_id),
+            token_actor_principal_id: None,
+            token_space_uid: Some(space_uid),
+            token_actions: Some(
+                ["read", "create", "update"]
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+            ),
+            recent_passkey: false,
+            credential_generation: 0,
+            session_token: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn asset_upload_app_layer_rejects_payloads_over_twenty_mib() {
+        let state =
+            AppState::new_for_tests("memory://server-asset-upload-limit").expect("test state");
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("remote-space", principal_id, "Asset upload test")
+            .await
+            .expect("create test Space");
+        let boundary = "asset-upload-limit-boundary";
+        let mut body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"large.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+        )
+        .into_bytes();
+        body.extend(std::iter::repeat_n(b'x', 20 * 1024 * 1024));
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let router = Router::new()
+            .route("/spaces/{space_id}/assets", post(upload_asset))
+            .layer(Extension(test_identity(space_uid, principal_id)));
+        let response = app_layers(router, state)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/spaces/{space_uid}/assets"))
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    async fn upload_status(
+        state: AppState,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        boundary: &str,
+        body: Vec<u8>,
+    ) -> StatusCode {
+        let router = Router::new()
+            .route("/spaces/{space_id}/assets", post(upload_asset))
+            .layer(Extension(test_identity(space_uid, principal_id)));
+        app_layers(router, state)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/spaces/{space_uid}/assets"))
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .expect("request"),
+            )
+            .await
+            .expect("response")
+            .status()
+    }
+
+    fn multipart_body(boundary: &str, fields: &[(&str, &str)]) -> Vec<u8> {
+        let mut body = Vec::new();
+        for (name, content) in fields {
+            body.extend_from_slice(
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"asset.txt\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+                )
+                .as_bytes(),
+            );
+            body.extend_from_slice(content.as_bytes());
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+        body
+    }
+
+    #[tokio::test]
+    async fn asset_upload_rejects_wrong_and_additional_multipart_fields() {
+        let state =
+            AppState::new_for_tests("memory://server-asset-upload-fields").expect("test state");
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("remote-space", principal_id, "Asset upload test")
+            .await
+            .expect("create test Space");
+
+        let wrong_field = upload_status(
+            state.clone(),
+            space_uid,
+            principal_id,
+            "wrong-field-boundary",
+            multipart_body("wrong-field-boundary", &[("other", "content")]),
+        )
+        .await;
+        assert_eq!(wrong_field, StatusCode::BAD_REQUEST);
+
+        let additional_field = upload_status(
+            state,
+            space_uid,
+            principal_id,
+            "additional-field-boundary",
+            multipart_body(
+                "additional-field-boundary",
+                &[("file", "content"), ("extra", "content")],
+            ),
+        )
+        .await;
+        assert_eq!(additional_field, StatusCode::BAD_REQUEST);
+    }
+}
+
 impl SecurityHeadersPolicy {
     fn from_public_origin(public_origin: &str) -> Self {
         let hsts = url::Url::parse(public_origin).is_ok_and(|origin| {
@@ -6416,8 +6573,14 @@ async fn upload_asset(
     let field = multipart
         .next_field()
         .await
-        .map_err(|error| ApiError::new(StatusCode::BAD_REQUEST, error.to_string()))?
+        .map_err(|error| ApiError::new(error.status(), error.body_text()))?
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "file is required"))?;
+    if field.name() != Some("file") {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "multipart field `file` is required",
+        ));
+    }
     let name = field.file_name().unwrap_or("asset").to_string();
     let media_type = field
         .content_type()
@@ -6426,7 +6589,18 @@ async fn upload_asset(
     let bytes = field
         .bytes()
         .await
-        .map_err(|error| ApiError::new(StatusCode::BAD_REQUEST, error.to_string()))?;
+        .map_err(|error| ApiError::new(error.status(), error.body_text()))?;
+    if multipart
+        .next_field()
+        .await
+        .map_err(|error| ApiError::new(error.status(), error.body_text()))?
+        .is_some()
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "only the `file` multipart field is allowed",
+        ));
+    }
     let value = state
         .service
         .save_asset_with_media_type(&space_id, &name, &bytes, &media_type)

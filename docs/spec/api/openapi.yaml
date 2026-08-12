@@ -3871,6 +3871,9 @@
           "400": {
             "description": "Invalid multipart payload"
           },
+          "413": {
+            "description": "Request payload is too large"
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -3944,6 +3947,11 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "encoding": {
+                "file": {
+                  "contentType": "application/octet-stream"
+                }
               }
             }
           }
