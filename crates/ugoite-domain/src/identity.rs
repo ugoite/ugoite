@@ -21,6 +21,11 @@ pub struct HumanAccount {
     pub created_at: String,
     #[serde(default)]
     pub node_roles: BTreeSet<NodeRole>,
+    /// Monotonic credential epoch. A reset advances it so serialized and
+    /// remotely stored human credentials can be rejected without rewriting
+    /// every credential object first.
+    #[serde(default)]
+    pub credential_generation: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]

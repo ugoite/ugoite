@@ -39,16 +39,16 @@ milestones:
   - id: testing
     status: completed
 - id: user-management
-  status: in_progress
+  status: completed
   source:
   - docs/version/v0.1/user-management.yaml
   phases:
   - id: design
     status: completed
   - id: implementation
-    status: in_progress
+    status: completed
   - id: testing
-    status: in_progress
+    status: completed
 - id: release-preparation
   status: in_progress
   source:

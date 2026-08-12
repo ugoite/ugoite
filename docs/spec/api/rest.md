@@ -23,8 +23,11 @@ CI.
   authorization code + PKCE.
 - `GET|POST /auth/oidc/providers`: Node administrator provider configuration.
 - `/auth/passkeys` and `/auth/devices`: credential inventory and revocation.
-- `/auth/recovery/*`: encrypted TOTP enrollment and recovery-code + TOTP
-  replacement Passkey registration.
+- `/auth/recovery/*`: encrypted TOTP enrollment, recovery-code + TOTP
+  self-recovery, and owner-approved WebAuthn recovery. Space Owners can issue
+  a one-time forced-reset token or rotate eight backup codes. Backup-code
+  rotation requires a UUIDv4 `Idempotency-Key`; owner recovery responses are
+  never cached.
 - `/auth/accounts`: Node administrator account inventory and suspension.
 - `POST /oauth/device/authorization`, `/oauth/device/approve`, `/oauth/token`:
   CLI/MCP device flow and rotating refresh.
@@ -32,7 +35,9 @@ CI.
 
 Browser requests authenticate with the `ugoite_session` HttpOnly cookie. CLI,
 MCP, and agent requests use `Authorization: DPoP <opaque-access-token>` plus a DPoP
-proof header. Only its hash and authorization metadata are stored server-side.
+proof header. Bearer authorization uses hashes and authorization metadata;
+force-reset response material is encrypted at rest only until its bounded
+one-time response is delivered. Plaintext bearer material is never audited.
 No endpoint accepts external OIDC tokens or preconfigured long-lived
 credentials, or setup values as API authorization.
 

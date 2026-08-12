@@ -314,3 +314,68 @@ requirements:
   tests:
   - file: crates/ugoite-cli/tests/test_cli_req_sec_011_endpoint_transport.rs
   - file: crates/ugoite-cli/tests/test_endpoint_config.rs
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-012
+  title: Owner-Approved Account Recovery
+  description: An active human Space Owner may issue a tuple-bound, one-use recovery approval; the target can replace credentials through a five-minute WebAuthn challenge, while credential generations invalidate stale human sessions and preserve Space agent credentials.
+  related_spec:
+  - security/authentication-overview.yaml
+  - api/rest.md#authentication
+  - stories/experimental.yaml
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-server/tests/owner_recovery.rs
+    cases:
+    - test_req_sec_012_owner_only_space_scope_and_target_binding
+  - file: crates/ugoite-identity/src/node_identity.rs
+    cases:
+    - test_req_sec_012_backup_rotation_idempotency_and_preservation
+    - test_req_sec_012_generation_invalidates_human_credentials_but_not_agents
+    - test_req_sec_012_concurrent_reset_winner_and_loser_session
+    - test_req_sec_012_replacement_failure_preserves_previous_approval
+  - file: crates/ugoite-api-client/src/lib.rs
+    cases:
+    - test_req_sec_012_owner_recovery_operations_and_idempotency_header
+  - file: frontend/src/lib/ugoite-client/protocol.test.ts
+    cases:
+    - test_req_sec_012_owner_recovery_protocol_forwards_header
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-013
+  title: Durable Recovery Audit Delivery
+  description: Owner recovery and backup-code operations append safe, secret-free Node audit events with stable request identifiers and expose pending delivery rather than replaying one-time secrets.
+  related_spec:
+  - security/overview.md
+  - quality/error-handling.md
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-identity/src/node_identity.rs
+    cases:
+    - test_req_sec_013_recovery_outbox_status_and_redaction
+  - file: crates/ugoite-iceberg/src/audit.rs
+    cases:
+    - test_req_sec_013_cross_process_conditional_append_deduplicates_event
+    - test_req_sec_013_retained_event_id_survives_log_compaction

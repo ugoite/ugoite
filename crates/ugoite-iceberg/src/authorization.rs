@@ -2,11 +2,14 @@
 
 use crate::audit;
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
+use fs2::FileExt;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs::{self, OpenOptions},
+    path::Path,
     sync::{Arc, OnceLock},
 };
 use tokio::sync::Mutex;
@@ -69,8 +72,37 @@ pub struct AuthorizationState {
     pub agents: BTreeMap<Uuid, AgentPrincipal>,
     #[serde(default)]
     pub agent_grants: BTreeMap<Uuid, BTreeSet<Action>>,
+    /// Monotonic lifecycle epochs for human principals. Recovery approvals
+    /// bind to these epochs so revoke/demotion/reactivation cannot resurrect
+    /// an old approval.
+    #[serde(default)]
+    pub principal_lifecycle_epochs: BTreeMap<Uuid, u64>,
+    /// Durable recovery reservations. While a fence is active, membership
+    /// mutations for this Space must fail rather than race recovery.
+    #[serde(default)]
+    pub recovery_fences: BTreeMap<Uuid, RecoveryFence>,
     /// Reserved monotonic revision for future synchronization protocols.
     pub revision: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RecoveryFence {
+    pub fence_id: Uuid,
+    pub request_id: Uuid,
+    pub space_uid: Uuid,
+    pub issuer_principal_id: Uuid,
+    pub issuer_account_id: Uuid,
+    pub target_principal_id: Uuid,
+    pub target_account_id: Uuid,
+    pub authorization_revision: u64,
+    pub issuer_space_lifecycle_epoch: u64,
+    pub target_space_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub issuer_generation: u64,
+    #[serde(default)]
+    pub target_generation: u64,
+    pub expires_at: String,
+    pub status: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -142,6 +174,8 @@ impl Authorizer {
             policy_history: BTreeMap::new(),
             agents: BTreeMap::new(),
             agent_grants: BTreeMap::new(),
+            principal_lifecycle_epochs: [(principal_id, 1)].into_iter().collect(),
+            recovery_fences: BTreeMap::new(),
             revision: 1,
         };
         self.write_state(space_id, &state).await
@@ -232,6 +266,234 @@ impl Authorizer {
         effective_actions_for_state(&state, principal_id, resource)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn reserve_recovery_fence(
+        &self,
+        space_id: &str,
+        request_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        target_principal_id: Uuid,
+        target_account_id: Uuid,
+        issuer_generation: u64,
+        target_generation: u64,
+        ttl: chrono::Duration,
+    ) -> Result<RecoveryFence> {
+        self.reserve_recovery_fence_with_id(
+            space_id,
+            request_id,
+            Uuid::now_v7(),
+            issuer_principal_id,
+            issuer_account_id,
+            target_principal_id,
+            target_account_id,
+            issuer_generation,
+            target_generation,
+            ttl,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn reserve_recovery_fence_with_id(
+        &self,
+        space_id: &str,
+        request_id: Uuid,
+        fence_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        target_principal_id: Uuid,
+        target_account_id: Uuid,
+        issuer_generation: u64,
+        target_generation: u64,
+        ttl: chrono::Duration,
+    ) -> Result<RecoveryFence> {
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        if state.space_uid == Uuid::nil() {
+            bail!("recovery fence is unavailable")
+        }
+        if let Some(existing) = state.recovery_fences.get(&fence_id).cloned() {
+            if existing.status == "active"
+                && existing.request_id == request_id
+                && existing.space_uid == state.space_uid
+                && existing.issuer_principal_id == issuer_principal_id
+                && existing.issuer_account_id == issuer_account_id
+                && existing.target_principal_id == target_principal_id
+                && existing.target_account_id == target_account_id
+                && existing.issuer_generation == issuer_generation
+                && existing.target_generation == target_generation
+            {
+                // A retry may be recovering the result of a Space CAS whose
+                // response was lost. Reusing the exact fence identity is
+                // idempotent; a different tuple must never borrow it.
+                return Ok(existing);
+            }
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
+        if state
+            .recovery_fences
+            .values()
+            .any(|fence| fence.status == "active")
+        {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
+        let _issuer = state
+            .principals
+            .get(&issuer_principal_id)
+            .filter(|principal| {
+                matches!(principal.kind, PrincipalKind::Human)
+                    && matches!(principal.state, PrincipalState::Active)
+            })
+            .ok_or_else(|| anyhow!("recovery issuer is not active"))?;
+        if !state
+            .memberships
+            .get(&issuer_principal_id)
+            .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
+            || issuer_principal_id == target_principal_id
+            || issuer_account_id == target_account_id
+        {
+            bail!("recovery fence tuple is invalid")
+        }
+        state
+            .principals
+            .get(&target_principal_id)
+            .filter(|principal| {
+                matches!(principal.kind, PrincipalKind::Human)
+                    && matches!(principal.state, PrincipalState::Active)
+            })
+            .ok_or_else(|| anyhow!("recovery target is not active"))?;
+        if !state.memberships.contains_key(&target_principal_id) {
+            bail!("recovery target is not a Space member")
+        }
+        let fence = RecoveryFence {
+            fence_id,
+            request_id,
+            space_uid: state.space_uid,
+            issuer_principal_id,
+            issuer_account_id,
+            target_principal_id,
+            target_account_id,
+            authorization_revision: state.revision,
+            issuer_space_lifecycle_epoch: state
+                .principal_lifecycle_epochs
+                .get(&issuer_principal_id)
+                .copied()
+                .unwrap_or_default(),
+            target_space_lifecycle_epoch: state
+                .principal_lifecycle_epochs
+                .get(&target_principal_id)
+                .copied()
+                .unwrap_or_default(),
+            issuer_generation,
+            target_generation,
+            expires_at: (Utc::now() + ttl).to_rfc3339_opts(SecondsFormat::Millis, true),
+            status: "active".to_string(),
+        };
+        state.recovery_fences.insert(fence.fence_id, fence.clone());
+        state.revision = state
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("authorization revision overflow"))?;
+        self.write_state(space_id, &state).await?;
+        Ok(fence)
+    }
+
+    pub async fn recovery_fence(&self, space_id: &str, fence_id: Uuid) -> Result<RecoveryFence> {
+        self.state(space_id)
+            .await?
+            .recovery_fences
+            .get(&fence_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("recovery fence is unavailable"))
+    }
+
+    pub async fn complete_recovery_fence(&self, space_id: &str, fence_id: Uuid) -> Result<()> {
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        let fence = state
+            .recovery_fences
+            .get(&fence_id)
+            .ok_or_else(|| anyhow!("recovery fence is unavailable"))?;
+        if fence.status == "completed" {
+            return Ok(());
+        }
+        if fence.status != "active" {
+            bail!("recovery fence is not active")
+        }
+        if DateTime::parse_from_rfc3339(&fence.expires_at)
+            .map(|expires_at| expires_at.with_timezone(&Utc) <= Utc::now())
+            .map_err(|_| anyhow!("invalid stored recovery fence timestamp"))?
+        {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
+        let expected_revision = fence
+            .authorization_revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("authorization revision overflow"))?;
+        if state.revision != expected_revision {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
+        if state
+            .principal_lifecycle_epochs
+            .get(&fence.issuer_principal_id)
+            .copied()
+            != Some(fence.issuer_space_lifecycle_epoch)
+            || state
+                .principal_lifecycle_epochs
+                .get(&fence.target_principal_id)
+                .copied()
+                != Some(fence.target_space_lifecycle_epoch)
+        {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
+        state
+            .recovery_fences
+            .get_mut(&fence_id)
+            .expect("fence was checked above")
+            .status = "completed".to_string();
+        state.revision = state
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("authorization revision overflow"))?;
+        self.write_state(space_id, &state).await
+    }
+
+    pub async fn release_recovery_fence(&self, space_id: &str, fence_id: Uuid) -> Result<()> {
+        let _guard = self.lock.lock().await;
+        let mut state = self.state(space_id).await?;
+        if let Some(fence) = state.recovery_fences.get_mut(&fence_id) {
+            if fence.status == "active" {
+                fence.status = "released".to_string();
+                state.revision = state
+                    .revision
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow!("authorization revision overflow"))?;
+                self.write_state(space_id, &state).await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn ensure_recovery_mutation_allowed(&self, state: &mut AuthorizationState) -> Result<()> {
+        for fence in state
+            .recovery_fences
+            .values()
+            .filter(|fence| fence.status == "active")
+        {
+            DateTime::parse_from_rfc3339(&fence.expires_at)
+                .context("invalid stored recovery fence timestamp")?;
+        }
+        if state
+            .recovery_fences
+            .values()
+            .any(|fence| fence.status == "active")
+        {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
+        Ok(())
+    }
+
     pub async fn require(
         &self,
         space_id: &str,
@@ -306,6 +568,7 @@ impl Authorizer {
             .await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         for grant in &policy.grants {
             let Some(principal) = state.principals.get(&grant.principal_id) else {
                 bail!("policy references a principal outside the space");
@@ -362,6 +625,7 @@ impl Authorizer {
         }
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         if let Some(existing) = state.principals.get(&principal.principal_id) {
             if existing.kind == principal.kind
                 && state.memberships.contains_key(&principal.principal_id)
@@ -381,6 +645,10 @@ impl Authorizer {
                 created_at,
             },
         );
+        state
+            .principal_lifecycle_epochs
+            .entry(principal_id)
+            .or_insert(1);
         state.revision += 1;
         self.write_state(space_id, &state).await?;
         audit::append_audit_event(
@@ -436,6 +704,7 @@ impl Authorizer {
         }
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         if owner_principal_ids.is_empty() || !owner_principal_ids.contains(&actor) {
             bail!("agent sponsor must be one of at least one human owner");
         }
@@ -495,6 +764,7 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, None).await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         let agent = state
             .agents
             .get_mut(&agent_id)
@@ -528,6 +798,7 @@ impl Authorizer {
     pub async fn mark_agent_used(&self, space_id: &str, agent_id: Uuid) -> Result<()> {
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         let agent = state
             .agents
             .get_mut(&agent_id)
@@ -548,6 +819,7 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, None).await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         let current = state
             .memberships
             .get(&principal_id)
@@ -567,6 +839,10 @@ impl Authorizer {
             .get_mut(&principal_id)
             .expect("checked membership")
             .role = role;
+        *state
+            .principal_lifecycle_epochs
+            .entry(principal_id)
+            .or_insert(0) += 1;
         state.revision += 1;
         self.write_state(space_id, &state).await?;
         audit::append_audit_event(
@@ -594,6 +870,7 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, None).await?;
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
         if state
             .memberships
             .get(&principal_id)
@@ -611,6 +888,10 @@ impl Authorizer {
             .get_mut(&principal_id)
             .ok_or_else(|| anyhow!("principal not found"))?;
         principal.state = PrincipalState::Revoked;
+        *state
+            .principal_lifecycle_epochs
+            .entry(principal_id)
+            .or_insert(0) += 1;
         state.revision += 1;
         self.write_state(space_id, &state).await?;
         audit::append_audit_event(
@@ -653,6 +934,7 @@ impl Authorizer {
         let path = state_path(space_id);
         let serialized = serde_json::to_vec_pretty(state)?;
         let capabilities = self.operator.info().full_capability();
+        let _local_lock = self.local_authorization_lock(space_id)?;
 
         if state.revision == 1 {
             if capabilities.write_with_if_not_exists {
@@ -661,11 +943,13 @@ impl Authorizer {
                     .if_not_exists(true)
                     .await
                     .context("atomically create Space authorization state")?;
-            } else {
+            } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
                 if self.operator.exists(&path).await? {
                     bail!("authorization state already exists");
                 }
                 self.operator.write(&path, serialized).await?;
+            } else {
+                bail!("Space authorization state requires conditional storage capabilities");
             }
             return Ok(());
         }
@@ -698,22 +982,72 @@ impl Authorizer {
             if current.revision != expected_revision {
                 bail!("Space authorization revision conflict");
             }
-            self.operator
-                .write_with(&path, serialized)
+            if let Err(error) = self
+                .operator
+                .write_with(&path, serialized.clone())
                 .if_match(&version)
                 .await
-                .context("compare-and-swap Space authorization state")?;
-        } else {
+            {
+                let error: anyhow::Error = error.into();
+                let error = error.context("compare-and-swap Space authorization state");
+                // A remote conditional write may have committed before its
+                // response was lost. Do not release the paired Node fence
+                // until the Space outcome is classified. The exact desired
+                // bytes prove this write committed; a failed verification is
+                // deliberately treated as unknown and remains fenced.
+                match self.state(space_id).await {
+                    Ok(observed) => {
+                        if serde_json::to_vec_pretty(&observed)
+                            .ok()
+                            .is_some_and(|value| value == serialized)
+                        {
+                            return Err(anyhow!(
+                                "Space authorization write committed with an ambiguous response: {error}"
+                            ));
+                        }
+                        return Err(error);
+                    }
+                    Err(read_error) => {
+                        return Err(anyhow!(
+                            "Space authorization write outcome unknown: {error}; verification failed: {read_error}"
+                        ));
+                    }
+                }
+            }
+        } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
             // Filesystem and in-memory adapters are serialized by the shared process lock.
-            // Remote production stores are required to expose conditional writes by the
-            // node-control startup capability check.
             let current = self.state(space_id).await?;
             if current.revision != expected_revision {
                 bail!("Space authorization revision conflict");
             }
             self.operator.write(&path, serialized).await?;
+        } else {
+            bail!("Space authorization state requires conditional storage capabilities");
         }
         Ok(())
+    }
+
+    fn local_authorization_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+        if !matches!(self.operator.info().scheme(), "fs" | "file") {
+            return Ok(None);
+        }
+        let root_value = self.operator.info().root();
+        let root = Path::new(root_value.as_str());
+        let lock_path = root
+            .join("spaces")
+            .join(space_id)
+            .join("security/principals.json.lock");
+        if let Some(parent) = lock_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(lock_path)?;
+        file.lock_exclusive()?;
+        Ok(Some(file))
     }
 }
 
@@ -990,6 +1324,219 @@ mod tests {
             Some(PrincipalState::Revoked)
         ));
         assert!(state.policies.contains_key(&resource.key()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_fence_serializes_membership_lifecycle_changes() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-recovery-fence")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op.clone());
+        let owner = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        let issuer_account = Uuid::now_v7();
+        let target_account = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", space_uid, owner, "Owner")
+            .await?;
+        authorizer
+            .add_human_member(
+                "demo",
+                owner,
+                SpacePrincipal {
+                    principal_id: member,
+                    kind: PrincipalKind::Human,
+                    display_name: "Member".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let fence = authorizer
+            .reserve_recovery_fence(
+                "demo",
+                Uuid::now_v7(),
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await?;
+        assert!(authorizer
+            .change_role("demo", owner, member, SpaceRole::Editor)
+            .await
+            .is_err());
+        let mut tampered = authorizer.state("demo").await?;
+        tampered.revision += 1;
+        op.write(&state_path("demo"), serde_json::to_vec_pretty(&tampered)?)
+            .await?;
+        assert!(authorizer
+            .complete_recovery_fence("demo", fence.fence_id)
+            .await
+            .is_err());
+        let error = authorizer
+            .reserve_recovery_fence(
+                "demo",
+                Uuid::now_v7(),
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await
+            .expect_err("an active recovery fence must not be superseded");
+        assert!(error.to_string().contains("RECOVERY_FENCE_UNAVAILABLE"));
+        authorizer
+            .release_recovery_fence("demo", fence.fence_id)
+            .await?;
+        authorizer
+            .change_role("demo", owner, member, SpaceRole::Editor)
+            .await?;
+        let state = authorizer.state("demo").await?;
+        assert_eq!(state.principal_lifecycle_epochs[&member], 2);
+        assert_eq!(state.recovery_fences[&fence.fence_id].status, "released");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn expired_recovery_fence_blocks_until_explicit_abort() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-expired-recovery-fence")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        let issuer_account = Uuid::now_v7();
+        let target_account = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", space_uid, owner, "Owner")
+            .await?;
+        authorizer
+            .add_human_member(
+                "demo",
+                owner,
+                SpacePrincipal {
+                    principal_id: member,
+                    kind: PrincipalKind::Human,
+                    display_name: "Member".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        let fence = authorizer
+            .reserve_recovery_fence(
+                "demo",
+                Uuid::now_v7(),
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::seconds(-1),
+            )
+            .await?;
+        assert!(authorizer
+            .change_role("demo", owner, member, SpaceRole::Editor)
+            .await
+            .is_err());
+        authorizer
+            .release_recovery_fence("demo", fence.fence_id)
+            .await?;
+        authorizer
+            .change_role("demo", owner, member, SpaceRole::Editor)
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recovery_fence_retry_reuses_exact_space_identity() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-recovery-fence-retry")?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        let issuer_account = Uuid::now_v7();
+        let target_account = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let request_id = Uuid::now_v7();
+        let fence_id = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", space_uid, owner, "Owner")
+            .await?;
+        authorizer
+            .add_human_member(
+                "demo",
+                owner,
+                SpacePrincipal {
+                    principal_id: member,
+                    kind: PrincipalKind::Human,
+                    display_name: "Member".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+
+        let first = authorizer
+            .reserve_recovery_fence_with_id(
+                "demo",
+                request_id,
+                fence_id,
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await?;
+        let retry = authorizer
+            .reserve_recovery_fence_with_id(
+                "demo",
+                request_id,
+                fence_id,
+                owner,
+                issuer_account,
+                member,
+                target_account,
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await?;
+        assert_eq!(retry.fence_id, first.fence_id);
+        assert_eq!(retry.request_id, first.request_id);
+        assert_eq!(retry.expires_at, first.expires_at);
+
+        let mismatch = authorizer
+            .reserve_recovery_fence_with_id(
+                "demo",
+                request_id,
+                fence_id,
+                owner,
+                issuer_account,
+                member,
+                Uuid::now_v7(),
+                0,
+                0,
+                chrono::Duration::minutes(5),
+            )
+            .await
+            .expect_err("a fence identity cannot be borrowed by another tuple");
+        assert!(mismatch.to_string().contains("RECOVERY_FENCE_UNAVAILABLE"));
         Ok(())
     }
 

@@ -72,8 +72,15 @@ pub struct StoredPasskey {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct RegistrationChallenge {
     account_id: Uuid,
+    #[serde(default)]
+    credential_generation: u64,
     display_name: String,
     state: PasskeyRegistration,
+    /// Keep the browser-facing challenge beside the server-side WebAuthn
+    /// state so a retry can replay the same start response after an
+    /// ambiguous Node state write.
+    #[serde(default)]
+    public_key: Option<CreationChallengeResponse>,
     purpose: RegistrationPurpose,
     expires_at: String,
 }
@@ -82,9 +89,17 @@ struct RegistrationChallenge {
 #[serde(rename_all = "snake_case")]
 enum RegistrationPurpose {
     Setup,
-    Invitation { invitation_id: Uuid },
+    Invitation {
+        invitation_id: Uuid,
+    },
     AddCredential,
     Recovery,
+    OwnerRecovery {
+        approval_id: Uuid,
+        reset_id: Uuid,
+        space_uid: Uuid,
+        principal_id: Uuid,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -103,11 +118,19 @@ pub struct BrowserSession {
     #[serde(default = "default_session_assurance")]
     pub assurance: AssuranceLevel,
     pub account_id: Uuid,
+    #[serde(default)]
+    pub credential_generation: u64,
     pub created_at: String,
     pub last_seen_at: String,
     pub expires_at: String,
     pub authenticated_at: String,
     pub revoked_at: Option<String>,
+    /// Sessions created by owner recovery are accepted only after the
+    /// matching reset marker is durably committed.
+    #[serde(default)]
+    pub recovery_reset_id: Option<Uuid>,
+    #[serde(default)]
+    pub revocation_epoch: u64,
 }
 
 fn default_session_assurance() -> AssuranceLevel {
@@ -136,6 +159,8 @@ pub struct NodeAuditEvent {
     pub outcome: String,
     pub request_id: Option<String>,
     pub safe_metadata: serde_json::Value,
+    #[serde(default)]
+    pub canonical_event: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -180,6 +205,8 @@ pub enum InvitationAcceptance {
         principal_id: Uuid,
         kind: InvitationAcceptanceKind,
         claimed_at: String,
+        #[serde(default)]
+        credential_generation: u64,
     },
     Completed {
         account_id: Uuid,
@@ -187,6 +214,8 @@ pub enum InvitationAcceptance {
         kind: InvitationAcceptanceKind,
         claimed_at: String,
         completed_at: String,
+        #[serde(default)]
+        credential_generation: u64,
     },
 }
 
@@ -208,6 +237,19 @@ impl InvitationAcceptance {
     fn kind(&self) -> &InvitationAcceptanceKind {
         match self {
             Self::Pending { kind, .. } | Self::Completed { kind, .. } => kind,
+        }
+    }
+
+    fn credential_generation(&self) -> u64 {
+        match self {
+            Self::Pending {
+                credential_generation,
+                ..
+            }
+            | Self::Completed {
+                credential_generation,
+                ..
+            } => *credential_generation,
         }
     }
 }
@@ -233,9 +275,342 @@ pub struct RecoveryRecord {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OwnerRecoveryApproval {
+    pub approval_id: Uuid,
+    pub token_hash: String,
+    pub space_uid: Uuid,
+    pub principal_id: Uuid,
+    pub account_id: Uuid,
+    pub issuer_principal_id: Uuid,
+    pub issuer_account_id: Uuid,
+    #[serde(default)]
+    pub issuer_credential_id: Option<Uuid>,
+    #[serde(default)]
+    pub target_generation: u64,
+    #[serde(default)]
+    pub issuer_generation: u64,
+    #[serde(default)]
+    pub issuer_space_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub target_space_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub issuer_node_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub target_node_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub space_authorization_revision: u64,
+    #[serde(default)]
+    pub recovery_fence_id: Option<Uuid>,
+    pub issued_at: String,
+    pub expires_at: String,
+    pub challenge_id: Option<Uuid>,
+    pub reset_id: Option<Uuid>,
+    pub used_at: Option<String>,
+    #[serde(default)]
+    pub invalidated_at: Option<String>,
+    /// Encrypted bearer retained only for the bounded one-time response
+    /// boundary. The plaintext is never included in Node audit state.
+    #[serde(default)]
+    pub encrypted_token: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct OwnerRecoveryContext {
+    pub space_uid: Uuid,
+    pub principal_id: Uuid,
+    pub account_id: Uuid,
+    pub issuer_principal_id: Uuid,
+    pub issuer_account_id: Uuid,
+    pub target_generation: u64,
+    pub issuer_generation: u64,
+    pub issuer_space_lifecycle_epoch: u64,
+    pub target_space_lifecycle_epoch: u64,
+    pub issuer_node_lifecycle_epoch: u64,
+    pub target_node_lifecycle_epoch: u64,
+    pub space_authorization_revision: u64,
+    pub recovery_fence_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryBindingSnapshot {
+    pub request_id: Uuid,
+    pub recovery_fence_id: Uuid,
+    pub recovery_fence_expires_at: String,
+    pub space_authorization_revision: u64,
+    pub issuer_space_lifecycle_epoch: u64,
+    pub target_space_lifecycle_epoch: u64,
+    pub issuer_node_lifecycle_epoch: u64,
+    pub target_node_lifecycle_epoch: u64,
+    pub issuer_generation: u64,
+    pub target_generation: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvisionalRecoveryFence {
+    pub snapshot: RecoveryBindingSnapshot,
+    pub issuer_principal_id: Uuid,
+    pub issuer_account_id: Uuid,
+    pub target_principal_id: Uuid,
+    pub target_account_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct NodeRecoveryFence {
+    fence_id: Uuid,
+    #[serde(default = "default_node_recovery_fence_request_id")]
+    request_id: Uuid,
+    space_uid: Uuid,
+    principal_id: Uuid,
+    account_id: Uuid,
+    issuer_account_id: Uuid,
+    issuer_node_lifecycle_epoch: u64,
+    target_node_lifecycle_epoch: u64,
+    issuer_generation: u64,
+    target_generation: u64,
+    expires_at: String,
+    status: String,
+    #[serde(default = "default_node_recovery_fence_phase")]
+    phase: String,
+}
+
+fn default_node_recovery_fence_phase() -> String {
+    "paired".to_string()
+}
+
+fn default_node_recovery_fence_request_id() -> Uuid {
+    Uuid::nil()
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RecoveryResetMarker {
+    pub reset_id: Uuid,
+    pub challenge_id: Uuid,
+    pub approval_id: Uuid,
+    pub account_id: Uuid,
+    pub generation_before: u64,
+    pub generation_after: u64,
+    pub session_id: Uuid,
+    #[serde(default)]
+    pub space_authorization_revision: u64,
+    #[serde(default = "Uuid::nil")]
+    pub recovery_fence_id: Uuid,
+    #[serde(default = "Uuid::nil")]
+    pub space_uid: Uuid,
+    #[serde(default = "Uuid::nil")]
+    pub principal_id: Uuid,
+    #[serde(default = "Uuid::nil")]
+    pub issuer_principal_id: Uuid,
+    #[serde(default = "default_space_fence_status")]
+    pub space_fence_status: String,
+    pub committed_at: String,
+    /// Encrypted one-time response material retained until the client has
+    /// received the replacement session and recovery codes.
+    #[serde(default)]
+    pub encrypted_response: Option<String>,
+    #[serde(default)]
+    pub response_delivered_at: Option<String>,
+    /// Stable claim identity lets a caller prove that its delivery CAS won
+    /// even when another process writes unrelated Node state before the
+    /// verification read.
+    #[serde(default)]
+    pub response_delivery_id: Option<Uuid>,
+    #[serde(default)]
+    pub response_invalidated_at: Option<String>,
+    #[serde(default)]
+    pub completion_proof_hash: Option<String>,
+}
+
+fn default_space_fence_status() -> String {
+    "node_committed_space_fence_pending".to_string()
+}
+
+fn invalidate_pending_recovery_responses(state: &mut NodeState, account_id: Uuid, now: &str) {
+    for marker in state.recovery_reset_markers.values_mut().filter(|marker| {
+        marker.account_id == account_id
+            && marker.response_delivered_at.is_none()
+            && marker.response_invalidated_at.is_none()
+    }) {
+        marker.response_invalidated_at = Some(now.to_string());
+    }
+    for record in state
+        .backup_rotation_requests
+        .values_mut()
+        .filter(|record| {
+            record.account_id == account_id
+                && record.codes_delivered_at.is_none()
+                && record.codes_invalidated_at.is_none()
+        })
+    {
+        record.codes_invalidated_at = Some(now.to_string());
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RecoveryChallengeTombstone {
+    pub challenge_id: Uuid,
+    pub approval_id: Uuid,
+    pub reset_id: Uuid,
+    pub reason: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackupRotationRecord {
+    pub request_id: Uuid,
+    pub space_uid: Uuid,
+    pub principal_id: Uuid,
+    pub account_id: Uuid,
+    pub issuer_principal_id: Uuid,
+    pub issuer_account_id: Uuid,
+    #[serde(default)]
+    pub issuer_credential_id: Option<Uuid>,
+    pub target_generation: u64,
+    #[serde(default)]
+    pub issuer_generation: u64,
+    #[serde(default)]
+    pub issuer_space_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub target_space_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub issuer_node_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub target_node_lifecycle_epoch: u64,
+    #[serde(default)]
+    pub space_authorization_revision: u64,
+    #[serde(default)]
+    pub recovery_fence_id: Option<Uuid>,
+    #[serde(default = "default_space_fence_status")]
+    pub space_fence_status: String,
+    pub issued_at: String,
+    pub code_hashes: Vec<String>,
+    /// The one-time response is encrypted with the Node key so a crash after
+    /// the Node CAS can finish fence reconciliation before delivering it.
+    #[serde(default)]
+    pub encrypted_codes: Option<String>,
+    #[serde(default)]
+    pub codes_delivered_at: Option<String>,
+    /// Stable claim identity distinguishes this delivery from a competing
+    /// process after a subsequent Node-state write.
+    #[serde(default)]
+    pub codes_delivery_id: Option<Uuid>,
+    #[serde(default)]
+    pub codes_invalidated_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RecoveryAuditOutboxRecord {
+    pub event_id: Uuid,
+    pub action: String,
+    pub request_id: Uuid,
+    pub space_uid: Uuid,
+    pub principal_id: Uuid,
+    pub account_id: Uuid,
+    pub issuer_principal_id: Option<Uuid>,
+    #[serde(default)]
+    pub issuer_account_id: Option<Uuid>,
+    #[serde(default)]
+    pub credential_id: Option<Uuid>,
+    #[serde(default)]
+    pub actor_principal_id: Option<Uuid>,
+    #[serde(default)]
+    pub actor_account_id: Option<Uuid>,
+    #[serde(default)]
+    pub actor_credential_id: Option<Uuid>,
+    pub status: String,
+    #[serde(default)]
+    pub event: serde_json::Value,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn queue_recovery_audit(
+    state: &mut NodeState,
+    event_id: Uuid,
+    action: &str,
+    request_id: Uuid,
+    challenge_id: Option<Uuid>,
+    space_uid: Uuid,
+    principal_id: Uuid,
+    account_id: Uuid,
+    actor_principal_id: Option<Uuid>,
+    actor_account_id: Option<Uuid>,
+    actor_credential_id: Option<Uuid>,
+    issuer_principal_id: Option<Uuid>,
+    issuer_account_id: Option<Uuid>,
+    issuer_credential_id: Option<Uuid>,
+    safe_metadata: serde_json::Value,
+) {
+    state.recovery_audit_outbox.insert(
+        event_id,
+        RecoveryAuditOutboxRecord {
+            event_id,
+            action: action.to_string(),
+            request_id,
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            credential_id: actor_credential_id,
+            actor_principal_id,
+            actor_account_id,
+            actor_credential_id,
+            status: "pending".to_string(),
+            event: serde_json::json!({
+                "event_id": event_id,
+                "action": action,
+                "request_id": request_id,
+                "challenge_id": challenge_id,
+                "space_uid": space_uid,
+                "subject_principal_id": principal_id,
+                "subject_account_id": account_id,
+                "actor_principal_id": serde_json::to_value(actor_principal_id)
+                    .unwrap_or(serde_json::Value::Null),
+                "actor_account_id": serde_json::to_value(actor_account_id)
+                    .unwrap_or(serde_json::Value::Null),
+                "credential_id": serde_json::to_value(actor_credential_id)
+                    .unwrap_or(serde_json::Value::Null),
+                "metadata": safe_metadata,
+                "issuer_principal_id": issuer_principal_id,
+                "issuer_account_id": issuer_account_id,
+                "issuer_credential_id": issuer_credential_id,
+                "outcome": "success"
+            }),
+        },
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn node_audit_fingerprint(
+    subject_account_id: Option<Uuid>,
+    actor_account_id: Option<Uuid>,
+    credential_id: Option<Uuid>,
+    action: &str,
+    target_type: &str,
+    target_id: Option<&str>,
+    outcome: &str,
+    request_id: Option<&str>,
+    safe_metadata: &serde_json::Value,
+) -> String {
+    serde_json::to_string(&serde_json::json!({
+        "subject_account_id": subject_account_id,
+        "actor_account_id": actor_account_id,
+        "credential_id": credential_id,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "outcome": outcome,
+        "request_id": request_id,
+        "safe_metadata": safe_metadata,
+    }))
+    .expect("node audit fingerprint serialization cannot fail")
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct PendingTotpEnrollment {
     encrypted_secret: String,
     expires_at: String,
+    #[serde(default)]
+    credential_generation: u64,
 }
 
 #[derive(Debug)]
@@ -270,6 +645,8 @@ pub struct DeviceCredential {
     pub device_name: String,
     pub public_key_jwk: serde_json::Value,
     pub account_id: Uuid,
+    #[serde(default)]
+    pub credential_generation: u64,
     pub created_at: String,
     pub last_used_at: Option<String>,
     pub expires_at: Option<String>,
@@ -286,6 +663,8 @@ pub struct DeviceAuthorizationRequest {
     pub requested_actions: BTreeSet<String>,
     pub approved_account_id: Option<Uuid>,
     pub approved_principal_id: Option<Uuid>,
+    #[serde(default)]
+    pub approved_credential_generation: Option<u64>,
     pub expires_at: String,
     pub used_at: Option<String>,
     #[serde(default)]
@@ -302,6 +681,8 @@ pub struct AuthorizationCodeGrant {
     pub code_challenge: String,
     pub public_key_jwk: serde_json::Value,
     pub account_id: Uuid,
+    #[serde(default)]
+    pub credential_generation: u64,
     pub principal_id: Uuid,
     pub space_uid: Uuid,
     pub granted_actions: BTreeSet<String>,
@@ -344,6 +725,12 @@ pub struct OidcLoginAttempt {
     pub invitation_hash: Option<String>,
     #[serde(default)]
     pub link_account_id: Option<Uuid>,
+    #[serde(default)]
+    pub link_account_generation: Option<u64>,
+    #[serde(default)]
+    pub invitation_account_id: Option<Uuid>,
+    #[serde(default)]
+    pub invitation_account_generation: Option<u64>,
     pub expires_at: String,
 }
 
@@ -352,6 +739,8 @@ pub struct RefreshCredential {
     pub refresh_hash: String,
     pub credential_id: Uuid,
     pub account_id: Uuid,
+    #[serde(default)]
+    pub credential_generation: u64,
     pub principal_id: Uuid,
     pub space_uid: Uuid,
     pub granted_actions: BTreeSet<String>,
@@ -370,6 +759,10 @@ pub struct NodeState {
     pub setup: Option<OneTimeSecret>,
     #[serde(default)]
     pub accounts: BTreeMap<Uuid, HumanAccount>,
+    /// Monotonic Node-local lifecycle epochs. Binding and account status
+    /// changes advance this value and invalidate recovery tuples.
+    #[serde(default)]
+    pub account_lifecycle_epochs: BTreeMap<Uuid, u64>,
     #[serde(default)]
     pub authentication_methods: BTreeMap<Uuid, AuthenticationMethod>,
     #[serde(default)]
@@ -382,6 +775,18 @@ pub struct NodeState {
     pub invitations: BTreeMap<Uuid, AccountInvitation>,
     #[serde(default)]
     pub recovery: BTreeMap<Uuid, RecoveryRecord>,
+    #[serde(default)]
+    pub owner_recovery_approvals: BTreeMap<Uuid, OwnerRecoveryApproval>,
+    #[serde(default)]
+    pub recovery_reset_markers: BTreeMap<Uuid, RecoveryResetMarker>,
+    #[serde(default)]
+    pub recovery_challenge_tombstones: BTreeMap<Uuid, RecoveryChallengeTombstone>,
+    #[serde(default)]
+    pub backup_rotation_requests: BTreeMap<Uuid, BackupRotationRecord>,
+    #[serde(default)]
+    pub recovery_audit_outbox: BTreeMap<Uuid, RecoveryAuditOutboxRecord>,
+    #[serde(default)]
+    node_recovery_fences: BTreeMap<Uuid, NodeRecoveryFence>,
     #[serde(default)]
     pending_totp_enrollments: BTreeMap<Uuid, PendingTotpEnrollment>,
     #[serde(default)]
@@ -402,19 +807,240 @@ pub struct NodeState {
     pub oidc_providers: BTreeMap<Uuid, OidcProvider>,
     #[serde(default)]
     pub oidc_attempts: BTreeMap<String, OidcLoginAttempt>,
+    /// Per-session durable revocation epochs. Recovery mutations include the
+    /// state CAS that observes this map, closing the cross-process window
+    /// between validating an Owner session and committing the mutation.
+    #[serde(default)]
+    pub session_revocation_epochs: BTreeMap<Uuid, u64>,
 }
 
 fn bound_principal_for_account(
     state: &NodeState,
     space_uid: Option<Uuid>,
     account_id: Uuid,
-) -> Option<Uuid> {
-    let space_uid = space_uid?;
-    state
+) -> Result<Option<Uuid>> {
+    let Some(space_uid) = space_uid else {
+        return Ok(None);
+    };
+    let matches = state
         .bindings
         .iter()
         .find(|binding| binding.space_uid == space_uid && binding.node_account_id == account_id)
-        .map(|binding| binding.principal_id)
+        .map(|binding| binding.principal_id);
+    let count = state
+        .bindings
+        .iter()
+        .filter(|binding| binding.space_uid == space_uid && binding.node_account_id == account_id)
+        .count();
+    match count {
+        0 => Ok(None),
+        1 => Ok(matches),
+        _ => bail!("account binding is not unique"),
+    }
+}
+
+fn node_recovery_fence_is_active(fence: &NodeRecoveryFence) -> bool {
+    // Expiry is not an implicit release. An active fence remains a durable
+    // write barrier until reconciliation or an explicit abort records the
+    // terminal state.
+    fence.status == "active"
+}
+
+fn node_recovery_fence_is_expired(fence: &NodeRecoveryFence) -> Result<bool> {
+    Ok(node_recovery_fence_is_active(fence) && parse_timestamp(&fence.expires_at)? <= Utc::now())
+}
+
+fn node_write_was_committed_with_ambiguous_response(error: &anyhow::Error) -> bool {
+    error
+        .to_string()
+        .contains("node control write committed with an ambiguous response")
+}
+
+fn ensure_node_recovery_mutation_allowed(state: &mut NodeState, space_uid: Uuid) -> Result<()> {
+    for fence in state
+        .node_recovery_fences
+        .values()
+        .filter(|fence| node_recovery_fence_is_active(fence))
+    {
+        parse_timestamp(&fence.expires_at)?;
+    }
+    if state
+        .node_recovery_fences
+        .values()
+        .any(|fence| fence.space_uid == space_uid && node_recovery_fence_is_active(fence))
+    {
+        bail!("RECOVERY_FENCE_UNAVAILABLE")
+    }
+    Ok(())
+}
+
+fn ensure_node_account_recovery_mutation_allowed(
+    state: &mut NodeState,
+    account_id: Uuid,
+) -> Result<()> {
+    for fence in state
+        .node_recovery_fences
+        .values()
+        .filter(|fence| node_recovery_fence_is_active(fence))
+    {
+        parse_timestamp(&fence.expires_at)?;
+    }
+    if state.node_recovery_fences.values().any(|fence| {
+        node_recovery_fence_is_active(fence)
+            && state.bindings.iter().any(|binding| {
+                binding.space_uid == fence.space_uid && binding.node_account_id == account_id
+            })
+    }) {
+        bail!("RECOVERY_FENCE_UNAVAILABLE")
+    }
+    Ok(())
+}
+
+fn acquire_node_recovery_fence(
+    state: &mut NodeState,
+    space_uid: Uuid,
+    principal_id: Uuid,
+    account_id: Uuid,
+    issuer_account_id: Uuid,
+    snapshot: &RecoveryBindingSnapshot,
+) -> Result<()> {
+    if state
+        .node_recovery_fences
+        .get(&snapshot.recovery_fence_id)
+        .is_some_and(|fence| fence.status != "active")
+    {
+        // A paired Space fence may have been released or completed while a
+        // stale challenge was still in flight. Terminal Node fences must not
+        // be reopened by that old challenge.
+        bail!("RECOVERY_FENCE_UNAVAILABLE");
+    }
+    if state
+        .accounts
+        .get(&account_id)
+        .is_none_or(|account| !matches!(account.status, AccountStatus::Active))
+        || state
+            .accounts
+            .get(&issuer_account_id)
+            .is_none_or(|account| !matches!(account.status, AccountStatus::Active))
+    {
+        bail!("recovery tuple is stale")
+    }
+    let target_generation = state
+        .accounts
+        .get(&account_id)
+        .map(|account| account.credential_generation)
+        .unwrap_or_default();
+    let issuer_generation = state
+        .accounts
+        .get(&issuer_account_id)
+        .map(|account| account.credential_generation)
+        .unwrap_or_default();
+    let target_epoch = state
+        .account_lifecycle_epochs
+        .get(&account_id)
+        .copied()
+        .unwrap_or_default();
+    let issuer_epoch = state
+        .account_lifecycle_epochs
+        .get(&issuer_account_id)
+        .copied()
+        .unwrap_or_default();
+    if target_generation != snapshot.target_generation
+        || issuer_generation != snapshot.issuer_generation
+        || target_epoch != snapshot.target_node_lifecycle_epoch
+        || issuer_epoch != snapshot.issuer_node_lifecycle_epoch
+        || state
+            .bindings
+            .iter()
+            .filter(|binding| {
+                binding.space_uid == space_uid
+                    && binding.principal_id == principal_id
+                    && binding.node_account_id == account_id
+            })
+            .count()
+            != 1
+        || state
+            .bindings
+            .iter()
+            .filter(|binding| {
+                binding.space_uid == space_uid && binding.node_account_id == issuer_account_id
+            })
+            .count()
+            != 1
+    {
+        bail!("recovery tuple is stale")
+    }
+
+    if state
+        .node_recovery_fences
+        .values()
+        .any(|fence| fence.status == "active" && fence.fence_id != snapshot.recovery_fence_id)
+    {
+        bail!("RECOVERY_FENCE_UNAVAILABLE")
+    }
+    if state
+        .node_recovery_fences
+        .get(&snapshot.recovery_fence_id)
+        .is_some_and(|fence| fence.status == "active")
+    {
+        let fence = state
+            .node_recovery_fences
+            .get(&snapshot.recovery_fence_id)
+            .expect("active fence was checked above");
+        if fence.request_id != snapshot.request_id
+            || fence.space_uid != space_uid
+            || fence.principal_id != principal_id
+            || fence.account_id != account_id
+            || fence.issuer_account_id != issuer_account_id
+            || fence.issuer_node_lifecycle_epoch != snapshot.issuer_node_lifecycle_epoch
+            || fence.target_node_lifecycle_epoch != snapshot.target_node_lifecycle_epoch
+            || fence.issuer_generation != snapshot.issuer_generation
+            || fence.target_generation != snapshot.target_generation
+        {
+            bail!("recovery tuple is stale")
+        }
+        if snapshot.space_authorization_revision != 0 {
+            state
+                .node_recovery_fences
+                .get_mut(&snapshot.recovery_fence_id)
+                .expect("active fence was checked above")
+                .phase = default_node_recovery_fence_phase();
+        }
+        return Ok(());
+    }
+
+    state.node_recovery_fences.insert(
+        snapshot.recovery_fence_id,
+        NodeRecoveryFence {
+            fence_id: snapshot.recovery_fence_id,
+            request_id: snapshot.request_id,
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_account_id,
+            issuer_node_lifecycle_epoch: snapshot.issuer_node_lifecycle_epoch,
+            target_node_lifecycle_epoch: snapshot.target_node_lifecycle_epoch,
+            issuer_generation: snapshot.issuer_generation,
+            target_generation: snapshot.target_generation,
+            expires_at: snapshot.recovery_fence_expires_at.clone(),
+            status: "active".to_string(),
+            phase: if snapshot.space_authorization_revision == 0 {
+                "provisional".to_string()
+            } else {
+                default_node_recovery_fence_phase()
+            },
+        },
+    );
+    Ok(())
+}
+
+fn release_node_recovery_fence(state: &mut NodeState, fence_id: Option<Uuid>, status: &str) {
+    if let Some(fence) = fence_id.and_then(|fence_id| state.node_recovery_fences.get_mut(&fence_id))
+    {
+        if fence.status == "active" {
+            fence.status = status.to_string();
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -465,6 +1091,12 @@ pub struct RecoveryRegistrationFinish {
     pub account: HumanAccount,
     pub session_id: String,
     pub recovery_codes: Vec<String>,
+    pub recovery_space_uid: Option<Uuid>,
+    pub recovery_principal_id: Option<Uuid>,
+    pub recovery_issuer_principal_id: Option<Uuid>,
+    pub recovery_issuer_account_id: Option<Uuid>,
+    pub recovery_issuer_credential_id: Option<Uuid>,
+    pub recovery_request_id: Option<Uuid>,
 }
 
 #[derive(Clone)]
@@ -483,6 +1115,14 @@ impl NodeIdentityService {
     }
 
     pub async fn append_node_audit(&self, input: NodeAuditInput<'_>) -> Result<NodeAuditEvent> {
+        self.append_node_audit_with_id(Uuid::now_v7(), input).await
+    }
+
+    pub async fn append_node_audit_with_id(
+        &self,
+        event_id: Uuid,
+        input: NodeAuditInput<'_>,
+    ) -> Result<NodeAuditEvent> {
         if input.action.trim().is_empty() || input.target_type.trim().is_empty() {
             bail!("node audit action and target type are required");
         }
@@ -491,7 +1131,7 @@ impl NodeIdentityService {
         }
         let state = self.read_state().await?;
         let event = NodeAuditEvent {
-            event_id: Uuid::now_v7(),
+            event_id,
             timestamp: timestamp(Utc::now()),
             node_id: state.node_id,
             subject_account_id: input.subject_account_id,
@@ -503,14 +1143,660 @@ impl NodeIdentityService {
             outcome: input.outcome.trim().to_string(),
             request_id: input.request_id,
             safe_metadata: input.safe_metadata,
+            canonical_event: state
+                .recovery_audit_outbox
+                .get(&event_id)
+                .map(|record| record.event.clone()),
         };
-        self.state_store
-            .create_if_absent(
-                &format!("nodes/{}/audit/{}.json", state.node_id, event.event_id),
-                serde_json::to_vec(&event)?,
-            )
-            .await?;
+        let key = format!("nodes/{}/audit/{}.json", state.node_id, event.event_id);
+        if let Some(existing) = self.state_store.get(&key).await? {
+            let existing: NodeAuditEvent = serde_json::from_slice(&existing.value)?;
+            let expected_fingerprint = node_audit_fingerprint(
+                event.subject_account_id,
+                event.actor_account_id,
+                event.credential_id,
+                &event.action,
+                &event.target_type,
+                event.target_id.as_deref(),
+                &event.outcome,
+                event.request_id.as_deref(),
+                &event.safe_metadata,
+            );
+            let actual_fingerprint = node_audit_fingerprint(
+                existing.subject_account_id,
+                existing.actor_account_id,
+                existing.credential_id,
+                &existing.action,
+                &existing.target_type,
+                existing.target_id.as_deref(),
+                &existing.outcome,
+                existing.request_id.as_deref(),
+                &existing.safe_metadata,
+            );
+            if expected_fingerprint != actual_fingerprint {
+                bail!("node audit event id conflicts with canonical payload");
+            }
+            return Ok(existing);
+        }
+        if let Err(create_error) = self
+            .state_store
+            .create_if_absent(&key, serde_json::to_vec(&event)?)
+            .await
+        {
+            let Some(existing) = self.state_store.get(&key).await? else {
+                return Err(create_error);
+            };
+            let existing: NodeAuditEvent = serde_json::from_slice(&existing.value)?;
+            let expected_fingerprint = node_audit_fingerprint(
+                event.subject_account_id,
+                event.actor_account_id,
+                event.credential_id,
+                &event.action,
+                &event.target_type,
+                event.target_id.as_deref(),
+                &event.outcome,
+                event.request_id.as_deref(),
+                &event.safe_metadata,
+            );
+            let actual_fingerprint = node_audit_fingerprint(
+                existing.subject_account_id,
+                existing.actor_account_id,
+                existing.credential_id,
+                &existing.action,
+                &existing.target_type,
+                existing.target_id.as_deref(),
+                &existing.outcome,
+                existing.request_id.as_deref(),
+                &existing.safe_metadata,
+            );
+            if expected_fingerprint != actual_fingerprint {
+                bail!("node audit event id conflicts with canonical payload");
+            }
+            return Ok(existing);
+        }
         Ok(event)
+    }
+
+    pub async fn mark_recovery_audit_stage(&self, event_id: Uuid, status: &str) -> Result<()> {
+        if !matches!(status, "pending" | "node" | "space" | "delivered") {
+            bail!("invalid recovery audit outbox status");
+        }
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        if let Some(record) = state.recovery_audit_outbox.get_mut(&event_id) {
+            let valid_transition = matches!(
+                (record.status.as_str(), status),
+                ("pending", "node") | ("node", "space") | ("space", "delivered")
+            );
+            if !valid_transition && record.status != status {
+                bail!("invalid recovery audit outbox transition");
+            }
+            record.status = status.to_string();
+            self.write_state(&state).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn mark_recovery_audit_delivered(&self, event_id: Uuid) -> Result<()> {
+        self.mark_recovery_audit_stage(event_id, "delivered").await
+    }
+
+    pub async fn pending_recovery_audits(&self) -> Result<Vec<RecoveryAuditOutboxRecord>> {
+        Ok(self
+            .read_state()
+            .await?
+            .recovery_audit_outbox
+            .values()
+            .filter(|record| record.status != "delivered")
+            .cloned()
+            .collect())
+    }
+
+    pub async fn recovery_audit_event(&self, event_id: Uuid) -> Result<Option<serde_json::Value>> {
+        Ok(self
+            .read_state()
+            .await?
+            .recovery_audit_outbox
+            .get(&event_id)
+            .map(|record| record.event.clone()))
+    }
+
+    pub async fn pending_recovery_fence_ids(&self, space_uid: Uuid) -> Result<Vec<Uuid>> {
+        let state = self.read_state().await?;
+        let mut ids = state
+            .recovery_reset_markers
+            .values()
+            .filter(|marker| {
+                marker.space_uid == space_uid
+                    && marker.space_fence_status == "node_committed_space_fence_pending"
+            })
+            .map(|marker| marker.recovery_fence_id)
+            .collect::<Vec<_>>();
+        ids.extend(
+            state
+                .backup_rotation_requests
+                .values()
+                .filter(|record| {
+                    record.space_uid == space_uid
+                        && record.space_fence_status == "node_committed_space_fence_pending"
+                })
+                .filter_map(|record| record.recovery_fence_id),
+        );
+        ids.sort_unstable();
+        ids.dedup();
+        Ok(ids)
+    }
+
+    pub async fn active_recovery_fence_ids(&self, space_uid: Uuid) -> Result<Vec<Uuid>> {
+        let state = self.read_state().await?;
+        Ok(state
+            .node_recovery_fences
+            .values()
+            .filter(|fence| fence.space_uid == space_uid && node_recovery_fence_is_active(fence))
+            .map(|fence| fence.fence_id)
+            .collect())
+    }
+
+    /// Return active Node reservations whose Space half may have committed
+    /// with an ambiguous response. The server reconciler replays each
+    /// request using its durable fence identity; callers never need to supply
+    /// the generated request ID.
+    pub async fn active_provisional_recovery_fences(
+        &self,
+        space_uid: Uuid,
+    ) -> Result<Vec<ProvisionalRecoveryFence>> {
+        let state = self.read_state().await?;
+        let mut reservations = Vec::new();
+        for fence in state.node_recovery_fences.values().filter(|fence| {
+            fence.space_uid == space_uid && fence.status == "active" && fence.phase == "provisional"
+        }) {
+            let issuer_principal_id = state
+                .bindings
+                .iter()
+                .filter(|binding| {
+                    binding.space_uid == space_uid
+                        && binding.node_account_id == fence.issuer_account_id
+                })
+                .map(|binding| binding.principal_id)
+                .collect::<Vec<_>>();
+            if issuer_principal_id.len() != 1 {
+                bail!("recovery issuer binding is not unique");
+            }
+            reservations.push(ProvisionalRecoveryFence {
+                snapshot: RecoveryBindingSnapshot {
+                    request_id: fence.request_id,
+                    recovery_fence_id: fence.fence_id,
+                    recovery_fence_expires_at: fence.expires_at.clone(),
+                    space_authorization_revision: 0,
+                    issuer_space_lifecycle_epoch: 0,
+                    target_space_lifecycle_epoch: 0,
+                    issuer_node_lifecycle_epoch: fence.issuer_node_lifecycle_epoch,
+                    target_node_lifecycle_epoch: fence.target_node_lifecycle_epoch,
+                    issuer_generation: fence.issuer_generation,
+                    target_generation: fence.target_generation,
+                },
+                issuer_principal_id: issuer_principal_id[0],
+                issuer_account_id: fence.issuer_account_id,
+                target_principal_id: fence.principal_id,
+                target_account_id: fence.account_id,
+            });
+        }
+        Ok(reservations)
+    }
+
+    pub async fn recovery_fence_for_request(
+        &self,
+        request_id: Uuid,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_account_id: Uuid,
+    ) -> Result<Option<RecoveryBindingSnapshot>> {
+        let state = self.read_state().await?;
+        Ok(state
+            .node_recovery_fences
+            .values()
+            .find(|fence| {
+                fence.status == "active"
+                    && fence.request_id == request_id
+                    && fence.space_uid == space_uid
+                    && fence.principal_id == principal_id
+                    && fence.account_id == account_id
+                    && fence.issuer_account_id == issuer_account_id
+            })
+            .map(|fence| RecoveryBindingSnapshot {
+                request_id,
+                recovery_fence_id: fence.fence_id,
+                recovery_fence_expires_at: fence.expires_at.clone(),
+                space_authorization_revision: 0,
+                issuer_space_lifecycle_epoch: 0,
+                target_space_lifecycle_epoch: 0,
+                issuer_node_lifecycle_epoch: fence.issuer_node_lifecycle_epoch,
+                target_node_lifecycle_epoch: fence.target_node_lifecycle_epoch,
+                issuer_generation: fence.issuer_generation,
+                target_generation: fence.target_generation,
+            }))
+    }
+
+    pub async fn recovery_fence_phase(&self, fence_id: Uuid) -> Result<Option<String>> {
+        Ok(self
+            .read_state()
+            .await?
+            .node_recovery_fences
+            .get(&fence_id)
+            .map(|fence| fence.phase.clone()))
+    }
+
+    pub async fn recovery_fence_status(&self, fence_id: Uuid) -> Result<Option<String>> {
+        Ok(self
+            .read_state()
+            .await?
+            .node_recovery_fences
+            .get(&fence_id)
+            .map(|fence| fence.status.clone()))
+    }
+
+    pub async fn owner_recovery_fence_ids_for_target(&self, account_id: Uuid) -> Result<Vec<Uuid>> {
+        let state = self.read_state().await?;
+        Ok(state
+            .owner_recovery_approvals
+            .values()
+            .filter(|approval| {
+                approval.account_id == account_id
+                    && approval.used_at.is_none()
+                    && approval.invalidated_at.is_none()
+            })
+            .filter_map(|approval| approval.recovery_fence_id)
+            .collect())
+    }
+
+    /// Return the active approval's paired Node fence snapshot so a deliberate
+    /// replacement can reuse that fence when the Space tuple is unchanged.
+    pub async fn active_owner_recovery_fence(
+        &self,
+        account_id: Uuid,
+    ) -> Result<Option<(Uuid, RecoveryBindingSnapshot)>> {
+        let state = self.read_state().await?;
+        let Some(approval) = state
+            .owner_recovery_approvals
+            .values()
+            .find(|approval| {
+                approval.account_id == account_id
+                    && approval.used_at.is_none()
+                    && approval.invalidated_at.is_none()
+                    && approval.recovery_fence_id.is_some()
+            })
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let Some(fence_id) = approval.recovery_fence_id else {
+            return Ok(None);
+        };
+        let Some(fence) = state.node_recovery_fences.get(&fence_id) else {
+            return Ok(None);
+        };
+        if !node_recovery_fence_is_active(fence) {
+            return Ok(None);
+        }
+        Ok(Some((
+            approval.space_uid,
+            RecoveryBindingSnapshot {
+                request_id: fence.request_id,
+                recovery_fence_id: fence.fence_id,
+                recovery_fence_expires_at: fence.expires_at.clone(),
+                space_authorization_revision: approval.space_authorization_revision,
+                issuer_space_lifecycle_epoch: approval.issuer_space_lifecycle_epoch,
+                target_space_lifecycle_epoch: approval.target_space_lifecycle_epoch,
+                issuer_node_lifecycle_epoch: fence.issuer_node_lifecycle_epoch,
+                target_node_lifecycle_epoch: fence.target_node_lifecycle_epoch,
+                issuer_generation: fence.issuer_generation,
+                target_generation: fence.target_generation,
+            },
+        )))
+    }
+
+    pub async fn expired_recovery_fence(&self, fence_id: Uuid) -> Result<bool> {
+        let state = self.read_state().await?;
+        match state.node_recovery_fences.get(&fence_id) {
+            Some(fence) => node_recovery_fence_is_expired(fence),
+            None => Ok(false),
+        }
+    }
+
+    /// Reserve the Node-side half of a recovery fence with the same
+    /// conditional-CAS state transition used by all Node lifecycle writes.
+    /// The server first records a provisional Node fence and then reserves the
+    /// Space half. A later call promotes the same Node identity to paired once
+    /// the Space CAS is observable.
+    pub async fn acquire_recovery_fence(
+        &self,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: Option<&RecoveryBindingSnapshot>,
+    ) -> Result<()> {
+        let Some(snapshot) = snapshot else {
+            return Ok(());
+        };
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        acquire_node_recovery_fence(
+            &mut state,
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_account_id,
+            snapshot,
+        )?;
+        self.write_state(&state).await
+    }
+
+    pub async fn complete_recovery_fence(&self, fence_id: Uuid) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let Some(fence) = state.node_recovery_fences.get(&fence_id).cloned() else {
+            bail!("recovery fence is unavailable")
+        };
+        if fence.status == "completed" {
+            return Ok(());
+        }
+        if fence.status != "active" {
+            bail!("recovery fence is not active")
+        }
+        if parse_timestamp(&fence.expires_at)? <= Utc::now() {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
+        let issuer_epoch = state
+            .account_lifecycle_epochs
+            .get(&fence.issuer_account_id)
+            .copied()
+            .unwrap_or_default();
+        let target_epoch = state
+            .account_lifecycle_epochs
+            .get(&fence.account_id)
+            .copied()
+            .unwrap_or_default();
+        let target_epoch_after_reset = fence.target_node_lifecycle_epoch.checked_add(1);
+        if issuer_epoch != fence.issuer_node_lifecycle_epoch
+            || (target_epoch != fence.target_node_lifecycle_epoch
+                && Some(target_epoch) != target_epoch_after_reset)
+        {
+            bail!("RECOVERY_FENCE_UNAVAILABLE")
+        }
+        state
+            .node_recovery_fences
+            .get_mut(&fence_id)
+            .expect("fence was checked above")
+            .status = "completed".to_string();
+        self.write_state(&state).await
+    }
+
+    pub async fn release_recovery_fence(&self, fence_id: Uuid) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let Some(fence) = state.node_recovery_fences.get_mut(&fence_id) else {
+            return Ok(());
+        };
+        if fence.status == "active" {
+            fence.status = "released".to_string();
+            self.write_state(&state).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn recovery_account_lifecycle_epoch(&self, account_id: Uuid) -> Result<u64> {
+        Ok(self
+            .read_state()
+            .await?
+            .account_lifecycle_epochs
+            .get(&account_id)
+            .copied()
+            .unwrap_or_default())
+    }
+
+    pub async fn backup_rotation_request(
+        &self,
+        request_id: Uuid,
+    ) -> Result<Option<BackupRotationRecord>> {
+        Ok(self
+            .read_state()
+            .await?
+            .backup_rotation_requests
+            .get(&request_id)
+            .cloned())
+    }
+
+    /// Atomically claim the encrypted plaintext codes for their single
+    /// response. The ciphertext remains for forensic durability, but the
+    /// delivery timestamp makes subsequent idempotency retries terminal.
+    pub async fn take_backup_rotation_codes(&self, request_id: Uuid) -> Result<Vec<String>> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let record = state
+            .backup_rotation_requests
+            .get(&request_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("backup rotation request is missing"))?;
+        if record.codes_delivered_at.is_some() {
+            bail!("backup rotation codes already delivered");
+        }
+        if record.codes_invalidated_at.is_some() {
+            bail!("backup rotation codes are no longer current");
+        }
+        let encrypted_codes = record
+            .encrypted_codes
+            .as_deref()
+            .ok_or_else(|| anyhow!("backup rotation response is unavailable"))?;
+        let codes: Vec<String> = serde_json::from_slice(&decrypt_recovery_secret(
+            &self.encryption_key,
+            encrypted_codes,
+        )?)
+        .context("decode backup rotation response")?;
+        let delivery_id = Uuid::now_v7();
+        state
+            .backup_rotation_requests
+            .get_mut(&request_id)
+            .expect("backup rotation request was checked above")
+            .codes_delivered_at = Some(timestamp(Utc::now()));
+        state
+            .backup_rotation_requests
+            .get_mut(&request_id)
+            .expect("backup rotation request was checked above")
+            .codes_delivery_id = Some(delivery_id);
+        if let Err(error) = self.write_state(&state).await {
+            let observed =
+                self.read_state().await.ok().and_then(|observed| {
+                    observed.backup_rotation_requests.get(&request_id).cloned()
+                });
+            if observed
+                .as_ref()
+                .and_then(|record| record.codes_delivery_id)
+                == Some(delivery_id)
+            {
+                // The claim is ours even if a later state write changed the
+                // enclosing Node document before verification completed.
+            } else if observed
+                .as_ref()
+                .and_then(|record| record.codes_delivered_at.as_ref())
+                .is_some()
+            {
+                bail!("backup rotation codes already delivered");
+            } else {
+                // An unknown/pre-CAS outcome is fail-closed. A later retry
+                // can still recover the encrypted material if this marker
+                // write did not commit; only a matching claim may be returned
+                // from this delivery attempt.
+                return Err(error);
+            }
+        }
+        Ok(codes)
+    }
+
+    pub async fn recovery_reset_marker(
+        &self,
+        reset_id: Uuid,
+    ) -> Result<Option<RecoveryResetMarker>> {
+        Ok(self
+            .read_state()
+            .await?
+            .recovery_reset_markers
+            .get(&reset_id)
+            .cloned())
+    }
+
+    /// Claim the encrypted one-time owner-reset response after the paired
+    /// recovery fence is terminal. Retrying requires the same WebAuthn
+    /// completion payload, so a challenge identifier alone cannot disclose a
+    /// replacement session or recovery codes.
+    pub async fn take_owner_recovery_response_for_challenge(
+        &self,
+        challenge_id: Uuid,
+        credential: &RegisterPublicKeyCredential,
+    ) -> Result<Option<(HumanAccount, String, Vec<String>, RecoveryResetMarker)>> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let Some((reset_id, marker)) = state
+            .recovery_reset_markers
+            .iter()
+            .find(|(_, marker)| marker.challenge_id == challenge_id)
+            .map(|(reset_id, marker)| (*reset_id, marker.clone()))
+        else {
+            return Ok(None);
+        };
+        if marker.response_delivered_at.is_some() {
+            bail!("owner reset response already delivered");
+        }
+        if marker.response_invalidated_at.is_some() {
+            bail!("owner reset response is no longer current");
+        }
+        if marker.space_fence_status != "reconciled" {
+            bail!("RECOVERY_FENCE_UNAVAILABLE");
+        }
+        let proof = marker
+            .completion_proof_hash
+            .as_deref()
+            .ok_or_else(|| anyhow!("owner reset response is unavailable"))?;
+        if proof != token_hash(&serde_json::to_string(credential)?) {
+            bail!("owner reset response proof is invalid");
+        }
+        let encrypted_response = marker
+            .encrypted_response
+            .as_deref()
+            .ok_or_else(|| anyhow!("owner reset response is unavailable"))?;
+        let (session_token, recovery_codes): (String, Vec<String>) = serde_json::from_slice(
+            &decrypt_recovery_secret(&self.encryption_key, encrypted_response)?,
+        )
+        .context("decode owner reset response")?;
+        let account = state
+            .accounts
+            .get(&marker.account_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("recovery account is missing"))?;
+        let delivery_id = Uuid::now_v7();
+        state
+            .recovery_reset_markers
+            .get_mut(&reset_id)
+            .expect("owner reset marker was checked above")
+            .response_delivered_at = Some(timestamp(Utc::now()));
+        state
+            .recovery_reset_markers
+            .get_mut(&reset_id)
+            .expect("owner reset marker was checked above")
+            .response_delivery_id = Some(delivery_id);
+        if let Err(error) = self.write_state(&state).await {
+            let observed = self
+                .read_state()
+                .await
+                .ok()
+                .and_then(|observed| observed.recovery_reset_markers.get(&reset_id).cloned());
+            if observed
+                .as_ref()
+                .and_then(|marker| marker.response_delivery_id)
+                == Some(delivery_id)
+            {
+                // The claim is ours even if a later state write changed the
+                // enclosing Node document before verification completed.
+            } else if observed
+                .as_ref()
+                .and_then(|marker| marker.response_delivered_at.as_ref())
+                .is_some()
+            {
+                bail!("owner reset response already delivered");
+            } else {
+                return Err(error);
+            }
+        }
+        Ok(Some((account, session_token, recovery_codes, marker)))
+    }
+
+    pub async fn mark_recovery_fence_reconciled(&self, fence_id: Uuid) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let mut changed = false;
+        for marker in state.recovery_reset_markers.values_mut() {
+            if marker.recovery_fence_id == fence_id
+                && marker.space_fence_status == "node_committed_space_fence_pending"
+            {
+                marker.space_fence_status = "reconciled".to_string();
+                changed = true;
+            }
+        }
+        for record in state.backup_rotation_requests.values_mut() {
+            if record.recovery_fence_id == Some(fence_id)
+                && record.space_fence_status == "node_committed_space_fence_pending"
+            {
+                record.space_fence_status = "reconciled".to_string();
+                changed = true;
+            }
+        }
+        if changed {
+            self.write_state(&state).await?;
+        }
+        Ok(())
+    }
+
+    /// Terminally reconcile a durable Node recovery mutation when the paired
+    /// Space fence was explicitly released or expired before it could be
+    /// completed. No Space membership mutation is made by the recovery
+    /// operation, so releasing both barriers is safe once the pending marker
+    /// proves the Node mutation is durable.
+    pub async fn abort_recovery_fence_after_space_abort(&self, fence_id: Uuid) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let mut changed = false;
+        let mut has_pending_marker = false;
+        for marker in state.recovery_reset_markers.values_mut() {
+            if marker.recovery_fence_id == fence_id
+                && marker.space_fence_status == "node_committed_space_fence_pending"
+            {
+                marker.space_fence_status = "reconciled".to_string();
+                has_pending_marker = true;
+                changed = true;
+            }
+        }
+        for record in state.backup_rotation_requests.values_mut() {
+            if record.recovery_fence_id == Some(fence_id)
+                && record.space_fence_status == "node_committed_space_fence_pending"
+            {
+                record.space_fence_status = "reconciled".to_string();
+                has_pending_marker = true;
+                changed = true;
+            }
+        }
+        if has_pending_marker {
+            if let Some(fence) = state.node_recovery_fences.get_mut(&fence_id) {
+                if fence.status == "active" {
+                    fence.status = "released".to_string();
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.write_state(&state).await?;
+        }
+        Ok(())
     }
 
     pub async fn list_node_audit(&self, limit: usize) -> Result<Vec<NodeAuditEvent>> {
@@ -554,6 +1840,46 @@ impl NodeIdentityService {
             rp_id,
             public_origin,
         )
+    }
+
+    /// Seed the minimal Node-local identity records needed by server
+    /// recovery coordinator tests. This intentionally creates no credential
+    /// material; the coordinator only needs active accounts and unique
+    /// account-to-Principal bindings to exercise the two-store fence saga.
+    #[doc(hidden)]
+    pub async fn seed_test_recovery_accounts(&self, accounts: &[(Uuid, Uuid, Uuid)]) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let now = timestamp(Utc::now());
+        state.lifecycle = NodeLifecycle::Active;
+        state.setup = None;
+        for (account_id, space_uid, principal_id) in accounts {
+            state.accounts.insert(
+                *account_id,
+                HumanAccount {
+                    account_id: *account_id,
+                    display_name: format!("Recovery test account {account_id}"),
+                    status: AccountStatus::Active,
+                    created_at: now.clone(),
+                    node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+                    credential_generation: 0,
+                },
+            );
+            state
+                .account_lifecycle_epochs
+                .entry(*account_id)
+                .or_insert(0);
+            let binding = PrincipalBinding {
+                space_uid: *space_uid,
+                principal_id: *principal_id,
+                node_account_id: *account_id,
+                binding_method: BindingMethod::Setup,
+            };
+            if !state.bindings.contains(&binding) {
+                state.bindings.push(binding);
+            }
+        }
+        self.write_state(&state).await
     }
 
     fn from_parts(
@@ -626,12 +1952,19 @@ impl NodeIdentityService {
                 used_at: None,
             }),
             accounts: BTreeMap::new(),
+            account_lifecycle_epochs: BTreeMap::new(),
             authentication_methods: BTreeMap::new(),
             passkeys: BTreeMap::new(),
             registration_challenges: BTreeMap::new(),
             authentication_challenges: BTreeMap::new(),
             invitations: BTreeMap::new(),
             recovery: BTreeMap::new(),
+            owner_recovery_approvals: BTreeMap::new(),
+            recovery_reset_markers: BTreeMap::new(),
+            recovery_challenge_tombstones: BTreeMap::new(),
+            backup_rotation_requests: BTreeMap::new(),
+            recovery_audit_outbox: BTreeMap::new(),
+            node_recovery_fences: BTreeMap::new(),
             pending_totp_enrollments: BTreeMap::new(),
             bindings: Vec::new(),
             device_credentials: BTreeMap::new(),
@@ -642,6 +1975,7 @@ impl NodeIdentityService {
             proof_replay_cache: BTreeMap::new(),
             oidc_providers: BTreeMap::new(),
             oidc_attempts: BTreeMap::new(),
+            session_revocation_epochs: BTreeMap::new(),
         };
         self.write_state(&state).await?;
         Ok(Some(BootstrapResult {
@@ -697,8 +2031,10 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id,
+                credential_generation: 0,
                 display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::Setup,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -742,6 +2078,7 @@ impl NodeIdentityService {
             status: AccountStatus::Active,
             created_at: now.clone(),
             node_roles: [NodeRole::NodeAdmin].into_iter().collect(),
+            credential_generation: 0,
         };
         state.accounts.insert(account.account_id, account.clone());
         let method_id = Uuid::now_v7();
@@ -852,6 +2189,9 @@ impl NodeIdentityService {
             .find(|invitation| invitation.token_hash == token_hash(invitation_token))
             .cloned()
             .ok_or_else(|| anyhow!("invitation is invalid"))?;
+        if let Some(space_uid) = invitation.space_uid {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+        }
         if let Some(acceptance) = invitation.acceptance.as_ref() {
             if matches!(
                 acceptance.kind(),
@@ -885,8 +2225,10 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id,
+                credential_generation: 0,
                 display_name: invitation.display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::Invitation {
                     invitation_id: invitation.invitation_id,
                 },
@@ -926,6 +2268,9 @@ impl NodeIdentityService {
         {
             bail!("invitation is invalid or used");
         }
+        if let Some(space_uid) = invitation.space_uid {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+        }
         validate_expiry(&invitation.expires_at, "invitation")?;
         let passkey = self
             .webauthn
@@ -942,6 +2287,7 @@ impl NodeIdentityService {
             status: AccountStatus::Active,
             created_at: now.clone(),
             node_roles: BTreeSet::new(),
+            credential_generation: 0,
         };
         state.accounts.insert(account.account_id, account.clone());
         let method_id = Uuid::now_v7();
@@ -977,6 +2323,7 @@ impl NodeIdentityService {
             principal_id: Uuid::now_v7(),
             kind: InvitationAcceptanceKind::PasskeyRegistration,
             claimed_at: timestamp(Utc::now()),
+            credential_generation: 0,
         });
         let invitation = invitation.clone();
         state.registration_challenges.remove(&challenge_id);
@@ -1065,6 +2412,7 @@ impl NodeIdentityService {
     pub async fn start_add_passkey(&self, account_id: Uuid) -> Result<RegistrationStart> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let account = state
             .accounts
             .get(&account_id)
@@ -1089,8 +2437,14 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id,
+                credential_generation: state
+                    .accounts
+                    .get(&account_id)
+                    .map(|account| account.credential_generation)
+                    .unwrap_or_default(),
                 display_name: account.display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::AddCredential,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -1119,6 +2473,14 @@ impl NodeIdentityService {
         {
             bail!("registration challenge has wrong account or purpose");
         }
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != challenge.credential_generation)
+        {
+            bail!("registration challenge is stale");
+        }
         validate_expiry(&challenge.expires_at, "registration challenge")?;
         let passkey = self
             .webauthn
@@ -1128,6 +2490,7 @@ impl NodeIdentityService {
             bail!("credential is already registered");
         }
         let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         let method_id = Uuid::now_v7();
         state.passkeys.insert(
             credential_id.clone(),
@@ -1175,9 +2538,22 @@ impl NodeIdentityService {
         )
     }
 
-    pub async fn revoke_passkey(&self, account_id: Uuid, credential_id: &str) -> Result<()> {
+    pub async fn revoke_passkey(
+        &self,
+        account_id: Uuid,
+        expected_generation: u64,
+        credential_id: &str,
+    ) -> Result<()> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != expected_generation)
+        {
+            bail!("credential generation is stale");
+        }
         let owned_count = state
             .passkeys
             .values()
@@ -1193,6 +2569,8 @@ impl NodeIdentityService {
         {
             bail!("Passkey not found");
         }
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         state.passkeys.remove(credential_id);
         self.write_state(&state).await
     }
@@ -1200,6 +2578,7 @@ impl NodeIdentityService {
     pub async fn start_totp_enrollment(&self, account_id: Uuid) -> Result<serde_json::Value> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let account = state
             .accounts
             .get(&account_id)
@@ -1215,6 +2594,7 @@ impl NodeIdentityService {
                 expires_at: timestamp(
                     Utc::now() + Duration::minutes(TOTP_ENROLLMENT_LIFETIME_MINUTES),
                 ),
+                credential_generation: account.credential_generation,
             },
         );
         let label = format!("Ugoite:{}", account.account_id);
@@ -1235,6 +2615,8 @@ impl NodeIdentityService {
             .read_state()
             .await
             .map_err(TotpEnrollmentFinishError::Internal)?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)
+            .map_err(TotpEnrollmentFinishError::Internal)?;
         let pending = state
             .pending_totp_enrollments
             .get(&account_id)
@@ -1245,6 +2627,13 @@ impl NodeIdentityService {
         if expires_at <= Utc::now() {
             return Err(TotpEnrollmentFinishError::InvalidOrExpired);
         }
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != pending.credential_generation)
+        {
+            return Err(TotpEnrollmentFinishError::InvalidOrExpired);
+        }
         let secret = decrypt_recovery_secret(&self.encryption_key, &pending.encrypted_secret)
             .map_err(TotpEnrollmentFinishError::Internal)?;
         if !verify_totp(&secret, code, Utc::now().timestamp())
@@ -1252,6 +2641,8 @@ impl NodeIdentityService {
         {
             return Err(TotpEnrollmentFinishError::InvalidOrExpired);
         }
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         state.pending_totp_enrollments.remove(&account_id);
         let recovery = state.recovery.get_mut(&account_id).ok_or_else(|| {
             TotpEnrollmentFinishError::Internal(anyhow!("recovery record not found"))
@@ -1279,6 +2670,7 @@ impl NodeIdentityService {
     ) -> Result<RegistrationStart> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let account = state
             .accounts
             .get(&account_id)
@@ -1353,8 +2745,14 @@ impl NodeIdentityService {
             challenge_id,
             RegistrationChallenge {
                 account_id,
+                credential_generation: state
+                    .accounts
+                    .get(&account_id)
+                    .map(|account| account.credential_generation)
+                    .unwrap_or_default(),
                 display_name: account.display_name,
                 state: registration,
+                public_key: Some(public_key.clone()),
                 purpose: RegistrationPurpose::Recovery,
                 expires_at: timestamp(Utc::now() + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
             },
@@ -1384,6 +2782,14 @@ impl NodeIdentityService {
         {
             bail!("recovery challenge has the wrong account or purpose");
         }
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != challenge.credential_generation)
+        {
+            bail!("recovery challenge is stale");
+        }
         let passkey = self
             .webauthn
             .finish_passkey_registration(credential, &challenge.state)
@@ -1393,6 +2799,7 @@ impl NodeIdentityService {
             bail!("credential is already registered");
         }
         let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
         let method_id = Uuid::now_v7();
         state.passkeys.insert(
             credential_id.clone(),
@@ -1445,7 +2852,1549 @@ impl NodeIdentityService {
             account,
             session_id,
             recovery_codes,
+            recovery_space_uid: None,
+            recovery_principal_id: None,
+            recovery_issuer_principal_id: None,
+            recovery_issuer_account_id: None,
+            recovery_issuer_credential_id: None,
+            recovery_request_id: None,
         })
+    }
+
+    pub async fn owner_recovery_approval(
+        &self,
+        approval_id: Uuid,
+    ) -> Result<Option<OwnerRecoveryApproval>> {
+        Ok(self
+            .read_state()
+            .await?
+            .owner_recovery_approvals
+            .get(&approval_id)
+            .cloned())
+    }
+
+    /// Mark an expired approval terminal and release its Node-side fence.
+    /// The server releases the paired Space fence after this CAS succeeds.
+    pub async fn expire_owner_recovery_approval(
+        &self,
+        approval_id: Uuid,
+    ) -> Result<Option<(Uuid, Uuid)>> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let Some(approval) = state.owner_recovery_approvals.get(&approval_id).cloned() else {
+            return Ok(None);
+        };
+        if approval.used_at.is_some() {
+            return Ok(None);
+        }
+        let expired = parse_timestamp(&approval.expires_at)? <= Utc::now();
+        if approval.invalidated_at.is_none() && !expired {
+            return Ok(None);
+        }
+        let now = timestamp(Utc::now());
+        let approval_mut = state
+            .owner_recovery_approvals
+            .get_mut(&approval_id)
+            .expect("approval was checked above");
+        if approval_mut.invalidated_at.is_none() {
+            approval_mut.invalidated_at = Some(now);
+            approval_mut.challenge_id = None;
+            approval_mut.reset_id = None;
+        }
+        if let Some(fence_id) = approval.recovery_fence_id {
+            if let Some(fence) = state.node_recovery_fences.get_mut(&fence_id) {
+                if fence.status == "active" {
+                    fence.status = "released".to_string();
+                }
+            }
+        }
+        self.write_state(&state).await?;
+        Ok(approval
+            .recovery_fence_id
+            .map(|fence_id| (approval.space_uid, fence_id)))
+    }
+
+    pub async fn owner_recovery_approval_token(&self, approval_id: Uuid) -> Result<String> {
+        let state = self.read_state().await?;
+        let approval = state
+            .owner_recovery_approvals
+            .get(&approval_id)
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        if approval.invalidated_at.is_some() || approval.used_at.is_some() {
+            bail!("owner approval is no longer current");
+        }
+        validate_expiry(&approval.expires_at, "owner approval")?;
+        let encrypted_token = approval
+            .encrypted_token
+            .as_deref()
+            .ok_or_else(|| anyhow!("owner approval response is unavailable"))?;
+        let token: String = serde_json::from_slice(&decrypt_recovery_secret(
+            &self.encryption_key,
+            encrypted_token,
+        )?)
+        .context("decode owner approval response")?;
+        if token_hash(&token) != approval.token_hash {
+            bail!("owner approval response is invalid");
+        }
+        Ok(token)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn issue_owner_recovery_approval_with_snapshot_and_credential(
+        &self,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+    ) -> Result<(Uuid, String, String)> {
+        self.issue_owner_recovery_approval_unchecked(
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+            None,
+            None,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn issue_owner_recovery_approval_with_snapshot_credential_and_session(
+        &self,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+        session_token: &str,
+    ) -> Result<(Uuid, String, String)> {
+        self.issue_owner_recovery_approval_unchecked(
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+            Some(session_token),
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// Replace the active approval for an account as one Node-state CAS.
+    /// `snapshot` may reuse the current paired fence when the replacement has
+    /// the same Space tuple; otherwise `old_fence_id` identifies the active
+    /// Node fence that is atomically superseded before the new fence is
+    /// inserted. No old approval is invalidated until the replacement can be
+    /// committed in the same durable state transition.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn replace_owner_recovery_approval_with_snapshot_credential_and_session(
+        &self,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+        session_token: &str,
+        approval_id: Uuid,
+        old_fence_id: Option<Uuid>,
+    ) -> Result<(Uuid, String, String)> {
+        self.issue_owner_recovery_approval_unchecked(
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+            Some(session_token),
+            Some(approval_id),
+            old_fence_id,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn issue_owner_recovery_approval_unchecked(
+        &self,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: Option<RecoveryBindingSnapshot>,
+        issuer_credential_id: Option<Uuid>,
+        session_token: Option<&str>,
+        approval_id_override: Option<Uuid>,
+        old_fence_id: Option<Uuid>,
+    ) -> Result<(Uuid, String, String)> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        if let Some(session_token) = session_token {
+            self.validate_recent_passkey_session_state(
+                &state,
+                session_token,
+                issuer_account_id,
+                issuer_credential_id
+                    .ok_or_else(|| anyhow!("owner recovery credential is missing"))?,
+                state
+                    .accounts
+                    .get(&issuer_account_id)
+                    .map(|account| account.credential_generation)
+                    .unwrap_or_default(),
+            )
+            .await?;
+        }
+        if account_id == issuer_account_id || principal_id == issuer_principal_id {
+            bail!("owner cannot approve their own recovery");
+        }
+        if !state
+            .accounts
+            .get(&issuer_account_id)
+            .is_some_and(|account| matches!(account.status, AccountStatus::Active))
+        {
+            bail!("recovery issuer is inactive");
+        }
+        let target = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| matches!(account.status, AccountStatus::Active))
+            .ok_or_else(|| anyhow!("recovery target is invalid"))?;
+        let target_generation = target.credential_generation;
+        let target_node_lifecycle_epoch = state
+            .account_lifecycle_epochs
+            .get(&account_id)
+            .copied()
+            .unwrap_or_default();
+        let issuer_node_lifecycle_epoch = state
+            .account_lifecycle_epochs
+            .get(&issuer_account_id)
+            .copied()
+            .unwrap_or_default();
+        let issuer_generation = state
+            .accounts
+            .get(&issuer_account_id)
+            .map(|account| account.credential_generation)
+            .unwrap_or_default();
+        if let Some(snapshot) = &snapshot {
+            if snapshot.issuer_node_lifecycle_epoch != issuer_node_lifecycle_epoch
+                || snapshot.target_node_lifecycle_epoch != target_node_lifecycle_epoch
+                || snapshot.issuer_generation != issuer_generation
+                || snapshot.target_generation != target_generation
+            {
+                bail!("recovery tuple is stale")
+            }
+        }
+        let target_bindings = state
+            .bindings
+            .iter()
+            .filter(|binding| {
+                binding.space_uid == space_uid
+                    && binding.principal_id == principal_id
+                    && binding.node_account_id == account_id
+            })
+            .count();
+        if target_bindings != 1 {
+            bail!("recovery target binding is not unique");
+        }
+        let issuer_bindings = state
+            .bindings
+            .iter()
+            .filter(|binding| {
+                binding.space_uid == space_uid
+                    && binding.principal_id == issuer_principal_id
+                    && binding.node_account_id == issuer_account_id
+            })
+            .count();
+        if issuer_bindings != 1 {
+            bail!("recovery issuer binding is not unique");
+        }
+        let now = Utc::now();
+        let token = random_token(32)?;
+        let encrypted_token =
+            encrypt_recovery_secret(&self.encryption_key, &serde_json::to_vec(&token)?)?;
+        let approval_id = approval_id_override
+            .or_else(|| snapshot.as_ref().map(|snapshot| snapshot.request_id))
+            .unwrap_or_else(Uuid::now_v7);
+        let expires_at = timestamp(now + Duration::minutes(15));
+        let superseded_challenges = state
+            .owner_recovery_approvals
+            .values()
+            .filter(|approval| approval.account_id == account_id && approval.used_at.is_none())
+            .filter_map(|approval| {
+                approval.challenge_id.map(|challenge_id| {
+                    (
+                        challenge_id,
+                        approval.approval_id,
+                        approval.reset_id.unwrap_or_else(Uuid::now_v7),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let superseded_fence_ids = state
+            .owner_recovery_approvals
+            .values()
+            .filter(|approval| approval.account_id == account_id && approval.used_at.is_none())
+            .filter_map(|approval| approval.recovery_fence_id)
+            .collect::<Vec<_>>();
+        for approval in state
+            .owner_recovery_approvals
+            .values_mut()
+            .filter(|approval| approval.account_id == account_id && approval.used_at.is_none())
+        {
+            approval.invalidated_at = Some(timestamp(now));
+        }
+        for fence_id in &superseded_fence_ids {
+            let is_reused_fence = old_fence_id.is_none()
+                && snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.recovery_fence_id == *fence_id);
+            if !is_reused_fence {
+                release_node_recovery_fence(&mut state, Some(*fence_id), "superseded");
+            }
+        }
+        if let Some(snapshot) = snapshot.as_ref() {
+            if approval_id_override.is_some() {
+                if let Some(old_fence_id) = old_fence_id {
+                    if !superseded_fence_ids.contains(&old_fence_id) {
+                        bail!("recovery fence is unavailable");
+                    }
+                }
+                // This is deliberately inside the same state transaction as
+                // approval invalidation/insertion. An invalid replacement
+                // leaves the previous approval and fence untouched.
+                acquire_node_recovery_fence(
+                    &mut state,
+                    space_uid,
+                    principal_id,
+                    account_id,
+                    issuer_account_id,
+                    snapshot,
+                )?;
+            }
+        }
+        for (challenge_id, approval_id, reset_id) in superseded_challenges {
+            state.registration_challenges.remove(&challenge_id);
+            state.recovery_challenge_tombstones.insert(
+                challenge_id,
+                RecoveryChallengeTombstone {
+                    challenge_id,
+                    approval_id,
+                    reset_id,
+                    reason: "superseded".to_string(),
+                    created_at: timestamp(now),
+                },
+            );
+        }
+        state.owner_recovery_approvals.insert(
+            approval_id,
+            OwnerRecoveryApproval {
+                approval_id,
+                token_hash: token_hash(&token),
+                space_uid,
+                principal_id,
+                account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                issuer_credential_id,
+                target_generation,
+                issuer_generation,
+                issuer_space_lifecycle_epoch: snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.issuer_space_lifecycle_epoch)
+                    .unwrap_or_default(),
+                target_space_lifecycle_epoch: snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.target_space_lifecycle_epoch)
+                    .unwrap_or_default(),
+                issuer_node_lifecycle_epoch,
+                target_node_lifecycle_epoch,
+                space_authorization_revision: snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.space_authorization_revision)
+                    .unwrap_or_default(),
+                recovery_fence_id: snapshot.as_ref().map(|snapshot| snapshot.recovery_fence_id),
+                issued_at: timestamp(now),
+                expires_at: expires_at.clone(),
+                challenge_id: None,
+                reset_id: None,
+                used_at: None,
+                invalidated_at: None,
+                encrypted_token: Some(encrypted_token),
+            },
+        );
+        queue_recovery_audit(
+            &mut state,
+            approval_id,
+            "recovery.owner_approval_issued",
+            approval_id,
+            None,
+            space_uid,
+            principal_id,
+            account_id,
+            Some(issuer_principal_id),
+            Some(issuer_account_id),
+            issuer_credential_id,
+            Some(issuer_principal_id),
+            Some(issuer_account_id),
+            issuer_credential_id,
+            serde_json::json!({
+                "space_uid": space_uid,
+                "principal_id": principal_id,
+                "issuer_principal_id": issuer_principal_id
+            }),
+        );
+        if let Err(error) = self.write_state(&state).await {
+            let committed = self.read_state().await.ok().is_some_and(|observed| {
+                observed
+                    .owner_recovery_approvals
+                    .get(&approval_id)
+                    .is_some_and(|approval| approval.token_hash == token_hash(&token))
+            });
+            if !committed {
+                return Err(error);
+            }
+        }
+        Ok((approval_id, token, expires_at))
+    }
+
+    pub async fn owner_recovery_approval_context(
+        &self,
+        token: &str,
+    ) -> Result<OwnerRecoveryContext> {
+        let state = self.read_state().await?;
+        let approval = state
+            .owner_recovery_approvals
+            .values()
+            .find(|approval| approval.token_hash == token_hash(token.trim()))
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        if approval.invalidated_at.is_some() || approval.used_at.is_some() {
+            bail!("owner approval is invalid");
+        }
+        validate_expiry(&approval.expires_at, "owner approval")?;
+        Ok(OwnerRecoveryContext {
+            space_uid: approval.space_uid,
+            principal_id: approval.principal_id,
+            account_id: approval.account_id,
+            issuer_principal_id: approval.issuer_principal_id,
+            issuer_account_id: approval.issuer_account_id,
+            target_generation: approval.target_generation,
+            issuer_generation: approval.issuer_generation,
+            issuer_space_lifecycle_epoch: approval.issuer_space_lifecycle_epoch,
+            target_space_lifecycle_epoch: approval.target_space_lifecycle_epoch,
+            issuer_node_lifecycle_epoch: approval.issuer_node_lifecycle_epoch,
+            target_node_lifecycle_epoch: approval.target_node_lifecycle_epoch,
+            space_authorization_revision: approval.space_authorization_revision,
+            recovery_fence_id: approval.recovery_fence_id,
+        })
+    }
+
+    /// Return the paired fence coordinates for an approval that is already
+    /// terminal without mutating either store. The server uses this before
+    /// mapping an expired/invalidated bearer so it can abort the Space half
+    /// together with the Node half.
+    pub async fn owner_recovery_abort_fence_for_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<(Uuid, Uuid)>> {
+        let state = self.read_state().await?;
+        let Some(approval) = state
+            .owner_recovery_approvals
+            .values()
+            .find(|approval| approval.token_hash == token_hash(token.trim()))
+        else {
+            return Ok(None);
+        };
+        if approval.used_at.is_some() {
+            return Ok(None);
+        }
+        let approval_expired = parse_timestamp(&approval.expires_at)? <= Utc::now();
+        if approval.invalidated_at.is_some() || approval_expired {
+            return Ok(approval
+                .recovery_fence_id
+                .map(|fence_id| (approval.space_uid, fence_id)));
+        }
+        Ok(None)
+    }
+
+    pub async fn owner_recovery_abort_fence_for_challenge(
+        &self,
+        challenge_id: Uuid,
+    ) -> Result<Option<(Uuid, Uuid)>> {
+        let state = self.read_state().await?;
+        let (approval_id, terminal) = if let Some(challenge) =
+            state.registration_challenges.get(&challenge_id)
+        {
+            let RegistrationPurpose::OwnerRecovery { approval_id, .. } = &challenge.purpose else {
+                return Ok(None);
+            };
+            parse_timestamp(&challenge.expires_at)?;
+            (*approval_id, false)
+        } else if let Some(tombstone) = state.recovery_challenge_tombstones.get(&challenge_id) {
+            (
+                tombstone.approval_id,
+                matches!(tombstone.reason.as_str(), "superseded" | "account_reset"),
+            )
+        } else {
+            return Ok(None);
+        };
+        let Some(approval) = state.owner_recovery_approvals.get(&approval_id) else {
+            return Ok(None);
+        };
+        if approval.challenge_id != Some(challenge_id) {
+            return Ok(None);
+        }
+        let approval_invalidated = approval.invalidated_at.is_some()
+            || parse_timestamp(&approval.expires_at)? <= Utc::now();
+        if approval.used_at.is_some() || (!terminal && !approval_invalidated) {
+            return Ok(None);
+        }
+        Ok(approval
+            .recovery_fence_id
+            .map(|fence_id| (approval.space_uid, fence_id)))
+    }
+
+    pub async fn owner_recovery_challenge_context(
+        &self,
+        challenge_id: Uuid,
+    ) -> Result<OwnerRecoveryContext> {
+        let mut state = self.read_state().await?;
+        let challenge = match state.registration_challenges.get(&challenge_id) {
+            Some(challenge) => challenge,
+            None => {
+                if let Some(tombstone) = state.recovery_challenge_tombstones.get(&challenge_id) {
+                    if let Some(marker) = state.recovery_reset_markers.get(&tombstone.reset_id) {
+                        if marker.space_fence_status != "reconciled" {
+                            bail!("RECOVERY_FENCE_UNAVAILABLE");
+                        }
+                        bail!("owner reset already completed");
+                    }
+                    if matches!(
+                        tombstone.reason.as_str(),
+                        "expired" | "superseded" | "account_reset"
+                    ) {
+                        bail!("owner recovery challenge expired");
+                    }
+                }
+                bail!("owner recovery challenge is invalid");
+            }
+        };
+        let RegistrationPurpose::OwnerRecovery { approval_id, .. } = &challenge.purpose else {
+            bail!("recovery challenge has the wrong purpose");
+        };
+        let approval = state
+            .owner_recovery_approvals
+            .get(approval_id)
+            .filter(|approval| {
+                approval.challenge_id == Some(challenge_id)
+                    && approval.used_at.is_none()
+                    && approval.invalidated_at.is_none()
+            })
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        validate_expiry(&approval.expires_at, "owner approval")?;
+        if parse_timestamp(&challenge.expires_at)? <= Utc::now() {
+            if let RegistrationPurpose::OwnerRecovery {
+                approval_id,
+                reset_id,
+                ..
+            } = challenge.purpose.clone()
+            {
+                let now = timestamp(Utc::now());
+                state.registration_challenges.remove(&challenge_id);
+                state.recovery_challenge_tombstones.insert(
+                    challenge_id,
+                    RecoveryChallengeTombstone {
+                        challenge_id,
+                        approval_id,
+                        reset_id,
+                        reason: "expired".to_string(),
+                        created_at: now.clone(),
+                    },
+                );
+                if let Some(approval) = state.owner_recovery_approvals.get_mut(&approval_id) {
+                    approval.challenge_id = None;
+                    approval.reset_id = None;
+                }
+                self.write_state(&state).await?;
+            }
+            bail!("owner recovery challenge expired");
+        }
+        Ok(OwnerRecoveryContext {
+            space_uid: approval.space_uid,
+            principal_id: approval.principal_id,
+            account_id: approval.account_id,
+            issuer_principal_id: approval.issuer_principal_id,
+            issuer_account_id: approval.issuer_account_id,
+            target_generation: approval.target_generation,
+            issuer_generation: approval.issuer_generation,
+            issuer_space_lifecycle_epoch: approval.issuer_space_lifecycle_epoch,
+            target_space_lifecycle_epoch: approval.target_space_lifecycle_epoch,
+            issuer_node_lifecycle_epoch: approval.issuer_node_lifecycle_epoch,
+            target_node_lifecycle_epoch: approval.target_node_lifecycle_epoch,
+            space_authorization_revision: approval.space_authorization_revision,
+            recovery_fence_id: approval.recovery_fence_id,
+        })
+    }
+
+    pub async fn start_owner_recovery_registration(
+        &self,
+        token: &str,
+    ) -> Result<RegistrationStart> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let now = Utc::now();
+        let approval_id = state
+            .owner_recovery_approvals
+            .values()
+            .find(|approval| approval.token_hash == token_hash(token.trim()))
+            .map(|approval| approval.approval_id)
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        let approval = state
+            .owner_recovery_approvals
+            .get(&approval_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        if approval.invalidated_at.is_some() || approval.used_at.is_some() {
+            bail!("owner approval is invalid");
+        }
+        validate_expiry(&approval.expires_at, "owner approval")?;
+        if let Some(challenge_id) = approval.challenge_id {
+            let pending = state
+                .registration_challenges
+                .get(&challenge_id)
+                .map(|challenge| {
+                    parse_timestamp(&challenge.expires_at).map(|expires_at| expires_at > now)
+                })
+                .transpose()?
+                .unwrap_or(false);
+            if pending {
+                let challenge = state
+                    .registration_challenges
+                    .get(&challenge_id)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("owner recovery challenge is unavailable"))?;
+                if let Some(public_key) = challenge.public_key.clone() {
+                    return Ok(RegistrationStart {
+                        challenge_id,
+                        public_key,
+                    });
+                }
+
+                // Older v0.1 pending challenges did not persist the browser
+                // response. Retire that challenge and issue a replacement
+                // bound to the same approval/fence; the new public response
+                // is persisted so a retry after an ambiguous write can
+                // converge through the normal pending-challenge path.
+                let RegistrationPurpose::OwnerRecovery {
+                    approval_id,
+                    reset_id,
+                    space_uid,
+                    principal_id,
+                } = challenge.purpose.clone()
+                else {
+                    bail!("owner recovery challenge has the wrong purpose");
+                };
+                let (mut public_key, registration) = self.webauthn.start_passkey_registration(
+                    Uuid::now_v7(),
+                    &challenge.account_id.to_string(),
+                    &challenge.display_name,
+                    None,
+                )?;
+                if let Some(selection) = public_key.public_key.authenticator_selection.as_mut() {
+                    selection.resident_key =
+                        Some(serde_json::from_value(serde_json::json!("required"))?);
+                    selection.require_resident_key = true;
+                }
+                let replacement_id = Uuid::now_v7();
+                state.registration_challenges.remove(&challenge_id);
+                state.recovery_challenge_tombstones.insert(
+                    challenge_id,
+                    RecoveryChallengeTombstone {
+                        challenge_id,
+                        approval_id,
+                        reset_id,
+                        reason: "superseded".to_string(),
+                        created_at: timestamp(now),
+                    },
+                );
+                state.registration_challenges.insert(
+                    replacement_id,
+                    RegistrationChallenge {
+                        account_id: challenge.account_id,
+                        credential_generation: challenge.credential_generation,
+                        display_name: challenge.display_name,
+                        state: registration,
+                        public_key: Some(public_key.clone()),
+                        purpose: RegistrationPurpose::OwnerRecovery {
+                            approval_id,
+                            reset_id,
+                            space_uid,
+                            principal_id,
+                        },
+                        expires_at: timestamp(now + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
+                    },
+                );
+                state
+                    .owner_recovery_approvals
+                    .get_mut(&approval_id)
+                    .ok_or_else(|| anyhow!("owner approval is invalid"))?
+                    .challenge_id = Some(replacement_id);
+                self.write_state(&state).await?;
+                return Ok(RegistrationStart {
+                    challenge_id: replacement_id,
+                    public_key,
+                });
+            }
+            state.registration_challenges.remove(&challenge_id);
+            state.recovery_challenge_tombstones.insert(
+                challenge_id,
+                RecoveryChallengeTombstone {
+                    challenge_id,
+                    approval_id,
+                    reset_id: approval.reset_id.unwrap_or_else(Uuid::now_v7),
+                    reason: "expired".to_string(),
+                    created_at: timestamp(now),
+                },
+            );
+            let approval_mut = state
+                .owner_recovery_approvals
+                .get_mut(&approval_id)
+                .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+            approval_mut.challenge_id = None;
+            approval_mut.reset_id = None;
+        }
+        let account = state
+            .accounts
+            .get(&approval.account_id)
+            .filter(|account| {
+                matches!(account.status, AccountStatus::Active)
+                    && account.credential_generation == approval.target_generation
+            })
+            .cloned()
+            .ok_or_else(|| anyhow!("owner approval is stale"))?;
+        if state
+            .bindings
+            .iter()
+            .filter(|binding| {
+                binding.space_uid == approval.space_uid
+                    && binding.principal_id == approval.principal_id
+                    && binding.node_account_id == approval.account_id
+            })
+            .count()
+            != 1
+        {
+            bail!("owner approval binding is stale");
+        }
+        if !state
+            .accounts
+            .get(&approval.issuer_account_id)
+            .is_some_and(|account| matches!(account.status, AccountStatus::Active))
+            || state
+                .bindings
+                .iter()
+                .filter(|binding| {
+                    binding.space_uid == approval.space_uid
+                        && binding.principal_id == approval.issuer_principal_id
+                        && binding.node_account_id == approval.issuer_account_id
+                })
+                .count()
+                != 1
+        {
+            bail!("owner approval issuer is stale");
+        }
+        let recovery_snapshot =
+            approval
+                .recovery_fence_id
+                .map(|recovery_fence_id| RecoveryBindingSnapshot {
+                    request_id: state
+                        .node_recovery_fences
+                        .get(&recovery_fence_id)
+                        .map(|fence| fence.request_id)
+                        .unwrap_or(approval.approval_id),
+                    recovery_fence_id,
+                    recovery_fence_expires_at: approval.expires_at.clone(),
+                    space_authorization_revision: approval.space_authorization_revision,
+                    issuer_space_lifecycle_epoch: approval.issuer_space_lifecycle_epoch,
+                    target_space_lifecycle_epoch: approval.target_space_lifecycle_epoch,
+                    issuer_node_lifecycle_epoch: approval.issuer_node_lifecycle_epoch,
+                    target_node_lifecycle_epoch: approval.target_node_lifecycle_epoch,
+                    issuer_generation: approval.issuer_generation,
+                    target_generation: approval.target_generation,
+                });
+        if let Some(recovery_snapshot) = recovery_snapshot.as_ref() {
+            acquire_node_recovery_fence(
+                &mut state,
+                approval.space_uid,
+                approval.principal_id,
+                approval.account_id,
+                approval.issuer_account_id,
+                recovery_snapshot,
+            )?;
+        }
+        let (mut public_key, registration) = self.webauthn.start_passkey_registration(
+            Uuid::now_v7(),
+            &approval.account_id.to_string(),
+            &account.display_name,
+            None,
+        )?;
+        if let Some(selection) = public_key.public_key.authenticator_selection.as_mut() {
+            selection.resident_key = Some(serde_json::from_value(serde_json::json!("required"))?);
+            selection.require_resident_key = true;
+        }
+        let challenge_id = Uuid::now_v7();
+        let reset_id = Uuid::now_v7();
+        state.registration_challenges.insert(
+            challenge_id,
+            RegistrationChallenge {
+                account_id: approval.account_id,
+                credential_generation: approval.target_generation,
+                display_name: account.display_name,
+                state: registration,
+                public_key: Some(public_key.clone()),
+                purpose: RegistrationPurpose::OwnerRecovery {
+                    approval_id,
+                    reset_id,
+                    space_uid: approval.space_uid,
+                    principal_id: approval.principal_id,
+                },
+                expires_at: timestamp(now + Duration::minutes(CHALLENGE_LIFETIME_MINUTES)),
+            },
+        );
+        let approval = state
+            .owner_recovery_approvals
+            .get_mut(&approval_id)
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        approval.challenge_id = Some(challenge_id);
+        approval.reset_id = Some(reset_id);
+        self.write_state(&state).await?;
+        Ok(RegistrationStart {
+            challenge_id,
+            public_key,
+        })
+    }
+
+    pub async fn finish_owner_recovery_registration(
+        &self,
+        challenge_id: Uuid,
+        credential: &RegisterPublicKeyCredential,
+    ) -> Result<RecoveryRegistrationFinish> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let challenge = match state.registration_challenges.get(&challenge_id).cloned() {
+            Some(challenge) => challenge,
+            None => {
+                if let Some(tombstone) = state.recovery_challenge_tombstones.get(&challenge_id) {
+                    if let Some(marker) = state.recovery_reset_markers.get(&tombstone.reset_id) {
+                        if marker.space_fence_status != "reconciled" {
+                            bail!("RECOVERY_FENCE_UNAVAILABLE");
+                        }
+                        bail!("owner reset already completed");
+                    }
+                    bail!("owner recovery challenge expired");
+                }
+                bail!("unknown or consumed owner recovery challenge");
+            }
+        };
+        if parse_timestamp(&challenge.expires_at)? <= Utc::now() {
+            if let RegistrationPurpose::OwnerRecovery {
+                approval_id,
+                reset_id,
+                ..
+            } = challenge.purpose.clone()
+            {
+                let now = timestamp(Utc::now());
+                state.registration_challenges.remove(&challenge_id);
+                state.recovery_challenge_tombstones.insert(
+                    challenge_id,
+                    RecoveryChallengeTombstone {
+                        challenge_id,
+                        approval_id,
+                        reset_id,
+                        reason: "expired".to_string(),
+                        created_at: now.clone(),
+                    },
+                );
+                if let Some(approval) = state.owner_recovery_approvals.get_mut(&approval_id) {
+                    approval.challenge_id = None;
+                    approval.reset_id = None;
+                }
+                self.write_state(&state).await?;
+            }
+            bail!("owner recovery challenge expired");
+        }
+        let RegistrationPurpose::OwnerRecovery {
+            approval_id,
+            reset_id,
+            space_uid,
+            principal_id,
+        } = challenge.purpose.clone()
+        else {
+            bail!("recovery challenge has the wrong purpose");
+        };
+        let approval = state
+            .owner_recovery_approvals
+            .get(&approval_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        validate_expiry(&approval.expires_at, "owner approval")?;
+        if approval.challenge_id != Some(challenge_id)
+            || approval.reset_id != Some(reset_id)
+            || approval.used_at.is_some()
+            || approval.invalidated_at.is_some()
+        {
+            if let Some(marker) = state.recovery_reset_markers.get(&reset_id) {
+                if marker.space_fence_status != "reconciled" {
+                    bail!("RECOVERY_FENCE_UNAVAILABLE");
+                }
+                bail!("owner reset already completed");
+            }
+            bail!("owner approval is invalid");
+        }
+        let account_before = state
+            .accounts
+            .get(&challenge.account_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("recovery account is missing"))?;
+        if account_before.credential_generation != approval.target_generation {
+            bail!("owner approval is stale");
+        }
+        let target_node_lifecycle_epoch = state
+            .account_lifecycle_epochs
+            .get(&challenge.account_id)
+            .copied()
+            .unwrap_or_default();
+        let issuer_node_lifecycle_epoch = state
+            .account_lifecycle_epochs
+            .get(&approval.issuer_account_id)
+            .copied()
+            .unwrap_or_default();
+        if target_node_lifecycle_epoch != approval.target_node_lifecycle_epoch
+            || issuer_node_lifecycle_epoch != approval.issuer_node_lifecycle_epoch
+            || !state
+                .accounts
+                .get(&approval.issuer_account_id)
+                .is_some_and(|account| matches!(account.status, AccountStatus::Active))
+        {
+            bail!("owner approval is stale");
+        }
+        let recovery_fence_id = approval
+            .recovery_fence_id
+            .ok_or_else(|| anyhow!("owner recovery fence is unavailable"))?;
+        let fence = state
+            .node_recovery_fences
+            .get(&recovery_fence_id)
+            .ok_or_else(|| anyhow!("RECOVERY_FENCE_UNAVAILABLE"))?;
+        if !node_recovery_fence_is_active(fence)
+            || parse_timestamp(&fence.expires_at)? <= Utc::now()
+        {
+            bail!("RECOVERY_FENCE_UNAVAILABLE");
+        }
+        let recovery_request_id = state
+            .node_recovery_fences
+            .get(&recovery_fence_id)
+            .map(|fence| fence.request_id)
+            .unwrap_or(approval.approval_id);
+        acquire_node_recovery_fence(
+            &mut state,
+            space_uid,
+            principal_id,
+            challenge.account_id,
+            approval.issuer_account_id,
+            &RecoveryBindingSnapshot {
+                request_id: recovery_request_id,
+                recovery_fence_id,
+                recovery_fence_expires_at: approval.expires_at.clone(),
+                space_authorization_revision: approval.space_authorization_revision,
+                issuer_space_lifecycle_epoch: approval.issuer_space_lifecycle_epoch,
+                target_space_lifecycle_epoch: approval.target_space_lifecycle_epoch,
+                issuer_node_lifecycle_epoch: approval.issuer_node_lifecycle_epoch,
+                target_node_lifecycle_epoch: approval.target_node_lifecycle_epoch,
+                issuer_generation: approval.issuer_generation,
+                target_generation: approval.target_generation,
+            },
+        )?;
+        let passkey = self
+            .webauthn
+            .finish_passkey_registration(credential, &challenge.state)
+            .context("verify owner recovery Passkey registration")?;
+        let completion_proof_hash = token_hash(&serde_json::to_string(credential)?);
+        let credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id());
+        if state.passkeys.contains_key(&credential_id) {
+            bail!("credential is already registered");
+        }
+
+        let now = timestamp(Utc::now());
+        let superseded_owner_challenges = state
+            .registration_challenges
+            .iter()
+            .filter_map(|(candidate_id, candidate)| {
+                if *candidate_id == challenge_id || candidate.account_id != challenge.account_id {
+                    return None;
+                }
+                let RegistrationPurpose::OwnerRecovery {
+                    approval_id,
+                    reset_id,
+                    ..
+                } = &candidate.purpose
+                else {
+                    return None;
+                };
+                Some((*candidate_id, *approval_id, *reset_id))
+            })
+            .collect::<Vec<_>>();
+        let generation_after = account_before
+            .credential_generation
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("credential generation exhausted"))?;
+        let method_id = Uuid::now_v7();
+        let session_token = self
+            .prepare_owner_reset(
+                &mut state,
+                &account_before,
+                generation_after,
+                method_id,
+                reset_id,
+            )
+            .await?;
+        state.passkeys.insert(
+            credential_id.clone(),
+            StoredPasskey {
+                credential_id,
+                account_id: challenge.account_id,
+                method_id,
+                passkey,
+                created_at: now.clone(),
+                last_used_at: Some(now.clone()),
+                rp_id: self.rp_id.clone(),
+            },
+        );
+        state.authentication_methods.insert(
+            method_id,
+            AuthenticationMethod {
+                method_id,
+                account_id: challenge.account_id,
+                kind: AuthenticationMethodKind::Passkey,
+                external_subject: None,
+                created_at: now.clone(),
+                last_used_at: Some(now.clone()),
+            },
+        );
+        let recovery_codes = (0..8)
+            .map(|_| random_recovery_code())
+            .collect::<Result<Vec<_>>>()?;
+        let recovery = state
+            .recovery
+            .entry(challenge.account_id)
+            .or_insert_with(|| RecoveryRecord {
+                account_id: challenge.account_id,
+                code_hashes: Vec::new(),
+                totp_secret_encrypted: None,
+                created_at: now.clone(),
+                failed_attempts: 0,
+                locked_until: None,
+            });
+        recovery.code_hashes = recovery_codes.iter().map(|code| token_hash(code)).collect();
+        recovery.totp_secret_encrypted = None;
+        recovery.failed_attempts = 0;
+        recovery.locked_until = None;
+        let session_id = self.session_id_for_token(&session_token).await?;
+        for (superseded_challenge_id, superseded_approval_id, superseded_reset_id) in
+            superseded_owner_challenges
+        {
+            state.recovery_challenge_tombstones.insert(
+                superseded_challenge_id,
+                RecoveryChallengeTombstone {
+                    challenge_id: superseded_challenge_id,
+                    approval_id: superseded_approval_id,
+                    reset_id: superseded_reset_id,
+                    reason: "account_reset".to_string(),
+                    created_at: now.clone(),
+                },
+            );
+        }
+        for approval in state
+            .owner_recovery_approvals
+            .values_mut()
+            .filter(|approval| {
+                approval.account_id == challenge.account_id
+                    && approval.approval_id != approval_id
+                    && approval.used_at.is_none()
+            })
+        {
+            approval.invalidated_at = Some(now.clone());
+        }
+        *state
+            .account_lifecycle_epochs
+            .entry(challenge.account_id)
+            .or_insert(0) += 1;
+        state.accounts.insert(
+            challenge.account_id,
+            HumanAccount {
+                credential_generation: generation_after,
+                ..account_before.clone()
+            },
+        );
+        state.registration_challenges.remove(&challenge_id);
+        state.recovery_challenge_tombstones.insert(
+            challenge_id,
+            RecoveryChallengeTombstone {
+                challenge_id,
+                approval_id,
+                reset_id,
+                reason: "committed".to_string(),
+                created_at: now.clone(),
+            },
+        );
+        let approval_mut = state
+            .owner_recovery_approvals
+            .get_mut(&approval_id)
+            .ok_or_else(|| anyhow!("owner approval is invalid"))?;
+        approval_mut.used_at = Some(now.clone());
+        let marker = RecoveryResetMarker {
+            reset_id,
+            challenge_id,
+            approval_id,
+            account_id: challenge.account_id,
+            generation_before: account_before.credential_generation,
+            generation_after,
+            session_id,
+            space_authorization_revision: approval.space_authorization_revision,
+            recovery_fence_id: approval.recovery_fence_id.unwrap_or_default(),
+            space_uid,
+            principal_id,
+            issuer_principal_id: approval.issuer_principal_id,
+            space_fence_status: default_space_fence_status(),
+            committed_at: now,
+            encrypted_response: Some(encrypt_recovery_secret(
+                &self.encryption_key,
+                &serde_json::to_vec(&(session_token.clone(), recovery_codes.clone()))?,
+            )?),
+            response_delivered_at: None,
+            response_delivery_id: None,
+            response_invalidated_at: None,
+            completion_proof_hash: Some(completion_proof_hash),
+        };
+        state.recovery_reset_markers.insert(reset_id, marker);
+        queue_recovery_audit(
+            &mut state,
+            reset_id,
+            "recovery.owner_reset_completed",
+            reset_id,
+            Some(challenge_id),
+            space_uid,
+            principal_id,
+            challenge.account_id,
+            None,
+            None,
+            None,
+            Some(approval.issuer_principal_id),
+            Some(approval.issuer_account_id),
+            approval.issuer_credential_id,
+            serde_json::json!({
+                "credential_generation": generation_after
+            }),
+        );
+        if let Err(error) = self.write_state(&state).await {
+            let committed = self.read_state().await.ok().is_some_and(|observed| {
+                observed
+                    .recovery_reset_markers
+                    .get(&reset_id)
+                    .is_some_and(|marker| {
+                        marker.session_id == session_id
+                            && marker.generation_after == generation_after
+                    })
+            });
+            if !committed {
+                return Err(error);
+            }
+        }
+        let _ = self
+            .revoke_account_sessions_except(
+                state.node_id,
+                challenge.account_id,
+                &timestamp(Utc::now()),
+                Some(session_id),
+            )
+            .await;
+        let account = state
+            .accounts
+            .get(&challenge.account_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("recovery account is missing"))?;
+        Ok(RecoveryRegistrationFinish {
+            account,
+            session_id: session_token,
+            recovery_codes,
+            recovery_space_uid: Some(space_uid),
+            recovery_principal_id: Some(principal_id),
+            recovery_issuer_principal_id: Some(approval.issuer_principal_id),
+            recovery_issuer_account_id: Some(approval.issuer_account_id),
+            recovery_issuer_credential_id: approval.issuer_credential_id,
+            recovery_request_id: Some(reset_id),
+        })
+    }
+
+    async fn prepare_owner_reset(
+        &self,
+        state: &mut NodeState,
+        account: &HumanAccount,
+        generation_after: u64,
+        credential_id: Uuid,
+        reset_id: Uuid,
+    ) -> Result<String> {
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(state, account.account_id, &now);
+        state
+            .passkeys
+            .retain(|_, passkey| passkey.account_id != account.account_id);
+        state
+            .authentication_methods
+            .retain(|_, method| method.account_id != account.account_id);
+        state.pending_totp_enrollments.remove(&account.account_id);
+        state
+            .registration_challenges
+            .retain(|_, challenge| challenge.account_id != account.account_id);
+        for credential in state.device_credentials.values_mut() {
+            if credential.account_id == account.account_id {
+                credential.revoked_at = Some(now.clone());
+            }
+        }
+        for credential in state.refresh_credentials.values_mut() {
+            if credential.account_id == account.account_id {
+                credential.revoked_at = Some(now.clone());
+            }
+        }
+        let invitation_accounts = state
+            .invitations
+            .values()
+            .filter_map(|invitation| {
+                invitation
+                    .acceptance
+                    .as_ref()
+                    .map(|acceptance| (invitation.token_hash.clone(), acceptance.account_id()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        state.oidc_attempts.retain(|_, attempt| {
+            attempt.link_account_id != Some(account.account_id)
+                && attempt.invitation_account_id != Some(account.account_id)
+                && attempt
+                    .invitation_hash
+                    .as_ref()
+                    .is_none_or(|hash| invitation_accounts.get(hash) != Some(&account.account_id))
+        });
+        state
+            .authorization_codes
+            .retain(|_, grant| grant.account_id != account.account_id);
+        state
+            .device_authorizations
+            .retain(|_, request| request.approved_account_id != Some(account.account_id));
+        state.accounts.insert(
+            account.account_id,
+            HumanAccount {
+                credential_generation: generation_after,
+                ..account.clone()
+            },
+        );
+        self.create_session_with_recovery(
+            state,
+            account.account_id,
+            credential_id,
+            AssuranceLevel::PhishingResistant,
+            Some(reset_id),
+        )
+        .await
+    }
+
+    async fn session_id_for_token(&self, token: &str) -> Result<Uuid> {
+        let state = self.read_state().await?;
+        let record = self
+            .state_store
+            .get(&session_key(state.node_id, &token_hash(token)))
+            .await?
+            .ok_or_else(|| anyhow!("new recovery session is missing"))?;
+        Ok(serde_json::from_slice::<BrowserSession>(&record.value)?.session_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn rotate_recovery_codes_with_snapshot_and_credential(
+        &self,
+        request_id: Uuid,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+    ) -> Result<Vec<String>> {
+        self.rotate_recovery_codes_unchecked(
+            request_id,
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn rotate_recovery_codes_with_snapshot_credential_and_session(
+        &self,
+        request_id: Uuid,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: RecoveryBindingSnapshot,
+        issuer_credential_id: Option<Uuid>,
+        session_token: &str,
+    ) -> Result<Vec<String>> {
+        self.rotate_recovery_codes_unchecked(
+            request_id,
+            space_uid,
+            principal_id,
+            account_id,
+            issuer_principal_id,
+            issuer_account_id,
+            Some(snapshot),
+            issuer_credential_id,
+            Some(session_token),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn rotate_recovery_codes_unchecked(
+        &self,
+        request_id: Uuid,
+        space_uid: Uuid,
+        principal_id: Uuid,
+        account_id: Uuid,
+        issuer_principal_id: Uuid,
+        issuer_account_id: Uuid,
+        snapshot: Option<RecoveryBindingSnapshot>,
+        issuer_credential_id: Option<Uuid>,
+        session_token: Option<&str>,
+    ) -> Result<Vec<String>> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        if let Some(session_token) = session_token {
+            self.validate_recent_passkey_session_state(
+                &state,
+                session_token,
+                issuer_account_id,
+                issuer_credential_id
+                    .ok_or_else(|| anyhow!("owner recovery credential is missing"))?,
+                state
+                    .accounts
+                    .get(&issuer_account_id)
+                    .map(|account| account.credential_generation)
+                    .unwrap_or_default(),
+            )
+            .await?;
+        }
+        if let Some(existing) = state.backup_rotation_requests.get(&request_id) {
+            if existing.space_uid != space_uid
+                || existing.principal_id != principal_id
+                || existing.account_id != account_id
+                || existing.issuer_principal_id != issuer_principal_id
+                || existing.issuer_account_id != issuer_account_id
+                || existing.issuer_credential_id != issuer_credential_id
+                || snapshot.as_ref().is_some_and(|snapshot| {
+                    existing.recovery_fence_id != Some(snapshot.recovery_fence_id)
+                        || existing.space_authorization_revision
+                            != snapshot.space_authorization_revision
+                        || existing.issuer_space_lifecycle_epoch
+                            != snapshot.issuer_space_lifecycle_epoch
+                        || existing.target_space_lifecycle_epoch
+                            != snapshot.target_space_lifecycle_epoch
+                        || existing.issuer_node_lifecycle_epoch
+                            != snapshot.issuer_node_lifecycle_epoch
+                        || existing.target_node_lifecycle_epoch
+                            != snapshot.target_node_lifecycle_epoch
+                        || existing.issuer_generation != snapshot.issuer_generation
+                        || existing.target_generation != snapshot.target_generation
+                })
+            {
+                bail!("backup rotation request key mismatch");
+            }
+            bail!("backup rotation already committed");
+        }
+        let account = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| matches!(account.status, AccountStatus::Active))
+            .cloned()
+            .ok_or_else(|| anyhow!("recovery target is invalid"))?;
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
+        if !state
+            .accounts
+            .get(&issuer_account_id)
+            .is_some_and(|account| matches!(account.status, AccountStatus::Active))
+        {
+            bail!("recovery issuer is inactive");
+        }
+        let target_node_lifecycle_epoch = state
+            .account_lifecycle_epochs
+            .get(&account_id)
+            .copied()
+            .unwrap_or_default();
+        let issuer_node_lifecycle_epoch = state
+            .account_lifecycle_epochs
+            .get(&issuer_account_id)
+            .copied()
+            .unwrap_or_default();
+        let issuer_generation = state
+            .accounts
+            .get(&issuer_account_id)
+            .map(|account| account.credential_generation)
+            .unwrap_or_default();
+        if let Some(snapshot) = &snapshot {
+            if snapshot.target_node_lifecycle_epoch != target_node_lifecycle_epoch
+                || snapshot.issuer_node_lifecycle_epoch != issuer_node_lifecycle_epoch
+                || snapshot.issuer_generation != issuer_generation
+                || snapshot.target_generation != account.credential_generation
+            {
+                bail!("recovery tuple is stale");
+            }
+        }
+        if state
+            .bindings
+            .iter()
+            .filter(|binding| {
+                binding.space_uid == space_uid
+                    && binding.principal_id == principal_id
+                    && binding.node_account_id == account_id
+            })
+            .count()
+            != 1
+        {
+            bail!("recovery target binding is not unique");
+        }
+        if let Some(snapshot) = snapshot.as_ref() {
+            acquire_node_recovery_fence(
+                &mut state,
+                space_uid,
+                principal_id,
+                account_id,
+                issuer_account_id,
+                snapshot,
+            )?;
+        }
+        let codes = (0..8)
+            .map(|_| random_recovery_code())
+            .collect::<Result<Vec<_>>>()?;
+        let code_hashes: Vec<String> = codes.iter().map(|code| token_hash(code)).collect();
+        let recovery = state
+            .recovery
+            .entry(account_id)
+            .or_insert_with(|| RecoveryRecord {
+                account_id,
+                code_hashes: Vec::new(),
+                totp_secret_encrypted: None,
+                created_at: timestamp(Utc::now()),
+                failed_attempts: 0,
+                locked_until: None,
+            });
+        recovery.code_hashes = code_hashes.clone();
+        recovery.failed_attempts = 0;
+        recovery.locked_until = None;
+        state.registration_challenges.retain(|_, challenge| {
+            challenge.account_id != account_id
+                || !matches!(challenge.purpose, RegistrationPurpose::Recovery)
+        });
+        state.backup_rotation_requests.insert(
+            request_id,
+            BackupRotationRecord {
+                request_id,
+                space_uid,
+                principal_id,
+                account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                issuer_credential_id,
+                target_generation: account.credential_generation,
+                issuer_generation,
+                issuer_space_lifecycle_epoch: snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.issuer_space_lifecycle_epoch)
+                    .unwrap_or_default(),
+                target_space_lifecycle_epoch: snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.target_space_lifecycle_epoch)
+                    .unwrap_or_default(),
+                issuer_node_lifecycle_epoch,
+                target_node_lifecycle_epoch,
+                space_authorization_revision: snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.space_authorization_revision)
+                    .unwrap_or_default(),
+                recovery_fence_id: snapshot.as_ref().map(|snapshot| snapshot.recovery_fence_id),
+                space_fence_status: default_space_fence_status(),
+                issued_at: timestamp(Utc::now()),
+                code_hashes: code_hashes.clone(),
+                encrypted_codes: Some(encrypt_recovery_secret(
+                    &self.encryption_key,
+                    &serde_json::to_vec(&codes)?,
+                )?),
+                codes_delivered_at: None,
+                codes_delivery_id: None,
+                codes_invalidated_at: None,
+            },
+        );
+        queue_recovery_audit(
+            &mut state,
+            request_id,
+            "recovery.backup_codes_rotated",
+            request_id,
+            None,
+            space_uid,
+            principal_id,
+            account_id,
+            Some(issuer_principal_id),
+            Some(issuer_account_id),
+            issuer_credential_id,
+            Some(issuer_principal_id),
+            Some(issuer_account_id),
+            issuer_credential_id,
+            serde_json::json!({
+                "space_uid": space_uid,
+                "principal_id": principal_id,
+                "issuer_principal_id": issuer_principal_id,
+                "code_count": codes.len()
+            }),
+        );
+        if let Err(error) = self.write_state(&state).await {
+            let committed = self.read_state().await.ok().is_some_and(|observed| {
+                observed
+                    .backup_rotation_requests
+                    .get(&request_id)
+                    .is_some_and(|record| record.code_hashes == code_hashes)
+            });
+            if !committed {
+                return Err(error);
+            }
+        }
+        Ok(codes)
     }
 
     pub async fn authenticate_session(&self, session_token: &str) -> Result<AuthenticatedSession> {
@@ -1477,6 +4426,21 @@ impl NodeIdentityService {
             .filter(|account| matches!(account.status, AccountStatus::Active))
             .cloned()
             .ok_or_else(|| anyhow!("account is not active"))?;
+        if session.credential_generation != account.credential_generation {
+            bail!("session credential generation is stale");
+        }
+        if session.revocation_epoch
+            != state
+                .session_revocation_epochs
+                .get(&session.session_id)
+                .copied()
+                .unwrap_or_default()
+        {
+            bail!("session revocation epoch is stale");
+        }
+        if !recovery_session_is_committed(&session, &state.recovery_reset_markers) {
+            bail!("recovery session was not the committed reset winner");
+        }
         let authenticated = AuthenticatedSession {
             account,
             session_id: session.session_id,
@@ -1512,12 +4476,24 @@ impl NodeIdentityService {
 
     pub async fn revoke_session(&self, session_token: &str) -> Result<()> {
         let _guard = self.state_lock.lock().await;
-        let state = self.read_state().await?;
+        let mut state = self.read_state().await?;
         let key = session_key(state.node_id, &token_hash(session_token));
         let Some(record) = self.state_store.get(&key).await? else {
             return Ok(());
         };
         let mut session: BrowserSession = serde_json::from_slice(&record.value)?;
+        if session.revoked_at.is_some() {
+            return Ok(());
+        }
+        let revocation_epoch = state
+            .session_revocation_epochs
+            .entry(session.session_id)
+            .or_insert(0);
+        *revocation_epoch = revocation_epoch
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("session revocation epoch exhausted"))?;
+        session.revocation_epoch = *revocation_epoch;
+        self.write_state(&state).await?;
         session.revoked_at = Some(timestamp(Utc::now()));
         self.state_store
             .compare_and_swap(&key, &record.version, serde_json::to_vec(&session)?)
@@ -1556,7 +4532,7 @@ impl NodeIdentityService {
 
     pub async fn revoke_session_by_id(&self, account_id: Uuid, session_id: Uuid) -> Result<()> {
         let _guard = self.state_lock.lock().await;
-        let state = self.read_state().await?;
+        let mut state = self.read_state().await?;
         let prefix = format!("nodes/{}/sessions", state.node_id);
         for key in self.state_store.list_prefix(&prefix).await? {
             let Some(record) = self.state_store.get(&key).await? else {
@@ -1567,6 +4543,15 @@ impl NodeIdentityService {
                 continue;
             }
             if session.revoked_at.is_none() {
+                let revocation_epoch = state
+                    .session_revocation_epochs
+                    .entry(session.session_id)
+                    .or_insert(0);
+                *revocation_epoch = revocation_epoch
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow!("session revocation epoch exhausted"))?;
+                session.revocation_epoch = *revocation_epoch;
+                self.write_state(&state).await?;
                 session.revoked_at = Some(timestamp(Utc::now()));
                 self.state_store
                     .compare_and_swap(&key, &record.version, serde_json::to_vec(&session)?)
@@ -1589,6 +4574,7 @@ impl NodeIdentityService {
     ) -> Result<HumanAccount> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let target = state
             .accounts
             .get(&account_id)
@@ -1610,6 +4596,13 @@ impl NodeIdentityService {
             }
         }
         let now = timestamp(Utc::now());
+        if target.status != status {
+            invalidate_pending_recovery_responses(&mut state, account_id, &now);
+            *state
+                .account_lifecycle_epochs
+                .entry(account_id)
+                .or_insert(0) += 1;
+        }
         let account = state.accounts.get_mut(&account_id).expect("checked above");
         account.status = status.clone();
         let account = account.clone();
@@ -1644,6 +4637,73 @@ impl NodeIdentityService {
         Ok(Utc::now() - parse_timestamp(&session.authenticated_at)? <= Duration::minutes(5))
     }
 
+    pub async fn revalidate_recent_passkey_session(
+        &self,
+        session_token: &str,
+        account_id: Uuid,
+        credential_id: Uuid,
+        expected_generation: u64,
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let state = self.read_state().await?;
+        self.validate_recent_passkey_session_state(
+            &state,
+            session_token,
+            account_id,
+            credential_id,
+            expected_generation,
+        )
+        .await
+    }
+
+    async fn validate_recent_passkey_session_state(
+        &self,
+        state: &NodeState,
+        session_token: &str,
+        account_id: Uuid,
+        credential_id: Uuid,
+        expected_generation: u64,
+    ) -> Result<()> {
+        let account = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| {
+                matches!(account.status, AccountStatus::Active)
+                    && account.credential_generation == expected_generation
+            })
+            .ok_or_else(|| anyhow!("owner recovery session account is stale"))?;
+        let record = self
+            .state_store
+            .get(&session_key(state.node_id, &token_hash(session_token)))
+            .await?
+            .ok_or_else(|| anyhow!("owner recovery session is invalid"))?;
+        let session: BrowserSession = serde_json::from_slice(&record.value)?;
+        if session.revoked_at.is_some()
+            || session.account_id != account.account_id
+            || session.credential_id != credential_id
+            || session.credential_generation != expected_generation
+            || session.revocation_epoch
+                != state
+                    .session_revocation_epochs
+                    .get(&session.session_id)
+                    .copied()
+                    .unwrap_or_default()
+            || !matches!(session.assurance, AssuranceLevel::PhishingResistant)
+            || parse_timestamp(&session.expires_at)? <= Utc::now()
+            || Utc::now() - parse_timestamp(&session.authenticated_at)? > Duration::minutes(5)
+        {
+            bail!("owner recovery session is no longer valid")
+        }
+        if !state
+            .passkeys
+            .values()
+            .any(|passkey| passkey.account_id == account_id && passkey.method_id == credential_id)
+        {
+            bail!("owner recovery Passkey is no longer registered")
+        }
+        Ok(())
+    }
+
     pub async fn issue_invitation(
         &self,
         actor: Uuid,
@@ -1659,6 +4719,9 @@ impl NodeIdentityService {
             .ok_or_else(|| anyhow!("unknown actor"))?;
         if !actor_account.node_roles.contains(&NodeRole::NodeAdmin) && space_uid.is_none() {
             bail!("node admin role is required");
+        }
+        if let Some(space_uid) = space_uid {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
         }
         let token = random_token(32)?;
         let invitation_id = Uuid::now_v7();
@@ -1696,6 +4759,14 @@ impl NodeIdentityService {
             .find(|invitation| invitation.token_hash == token_hash(invitation_token))
             .map(|invitation| invitation.invitation_id)
             .ok_or_else(|| anyhow!("invitation is invalid"))?;
+        if let Some(space_uid) = state
+            .invitations
+            .get(&invitation_id)
+            .and_then(|invitation| invitation.space_uid)
+        {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        }
         let existing_principal_id = bound_principal_for_account(
             &state,
             state
@@ -1703,7 +4774,7 @@ impl NodeIdentityService {
                 .get(&invitation_id)
                 .and_then(|invitation| invitation.space_uid),
             account_id,
-        );
+        )?;
         let mut write_state = false;
         let invitation = {
             let invitation = state
@@ -1712,6 +4783,11 @@ impl NodeIdentityService {
                 .ok_or_else(|| anyhow!("invitation is invalid"))?;
             if let Some(acceptance) = invitation.acceptance.as_ref() {
                 if acceptance.account_id() == account_id {
+                    if matches!(acceptance, InvitationAcceptance::Pending { .. })
+                        && acceptance.credential_generation() != account.credential_generation
+                    {
+                        bail!("invitation acceptance is stale");
+                    }
                     invitation.clone()
                 } else {
                     bail!("invitation is invalid");
@@ -1723,6 +4799,7 @@ impl NodeIdentityService {
                     principal_id: existing_principal_id.unwrap_or_else(Uuid::now_v7),
                     kind: InvitationAcceptanceKind::ExistingAccount,
                     claimed_at: timestamp(Utc::now()),
+                    credential_generation: account.credential_generation,
                 });
                 write_state = true;
                 invitation.clone()
@@ -1740,6 +4817,8 @@ impl NodeIdentityService {
         if state.bindings.iter().any(|candidate| candidate == &binding) {
             return Ok(());
         }
+        ensure_node_recovery_mutation_allowed(&mut state, binding.space_uid)?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, binding.node_account_id)?;
         if state.bindings.iter().any(|candidate| {
             candidate.space_uid == binding.space_uid
                 && (candidate.principal_id == binding.principal_id
@@ -1747,8 +4826,114 @@ impl NodeIdentityService {
         }) {
             bail!("principal or account is already bound in this space");
         }
+        let account_id = binding.node_account_id;
         state.bindings.push(binding);
+        let now = timestamp(Utc::now());
+        invalidate_pending_recovery_responses(&mut state, account_id, &now);
+        *state
+            .account_lifecycle_epochs
+            .entry(account_id)
+            .or_insert(0) += 1;
         self.write_state(&state).await
+    }
+
+    /// Atomically commits the Node half of a Space invitation finalization.
+    ///
+    /// The acceptance generation, binding, and completed marker must be one
+    /// Node CAS. The server can therefore commit the Space membership after
+    /// this operation; a recovery that wins before this CAS leaves no active
+    /// Space membership to clean up.
+    pub async fn finalize_invitation_binding(
+        &self,
+        invitation_id: Uuid,
+        account_id: Uuid,
+        principal_id: Uuid,
+        binding_method: BindingMethod,
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let space_uid = state
+            .invitations
+            .get(&invitation_id)
+            .and_then(|invitation| invitation.space_uid)
+            .ok_or_else(|| anyhow!("invitation is not Space-scoped"))?;
+        ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+        ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        let current_generation = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| matches!(account.status, AccountStatus::Active))
+            .map(|account| account.credential_generation)
+            .ok_or_else(|| anyhow!("invitation account is invalid"))?;
+        let acceptance = state
+            .invitations
+            .get(&invitation_id)
+            .and_then(|invitation| invitation.acceptance.clone())
+            .ok_or_else(|| anyhow!("invitation acceptance is incomplete"))?;
+        match acceptance {
+            InvitationAcceptance::Pending {
+                account_id: claimed_account_id,
+                principal_id: claimed_principal_id,
+                kind,
+                claimed_at,
+                credential_generation,
+            } if claimed_account_id == account_id
+                && claimed_principal_id == principal_id
+                && credential_generation == current_generation =>
+            {
+                if state.bindings.iter().any(|binding| {
+                    binding.space_uid == space_uid && binding.principal_id == principal_id
+                }) {
+                    bail!("invitation principal is already bound");
+                }
+                if state.bindings.iter().any(|binding| {
+                    binding.space_uid == space_uid && binding.node_account_id == account_id
+                }) {
+                    bail!("invitation account is already bound");
+                }
+                state.bindings.push(PrincipalBinding {
+                    space_uid,
+                    principal_id,
+                    node_account_id: account_id,
+                    binding_method,
+                });
+                let now = timestamp(Utc::now());
+                invalidate_pending_recovery_responses(&mut state, account_id, &now);
+                *state
+                    .account_lifecycle_epochs
+                    .entry(account_id)
+                    .or_insert(0) += 1;
+                state
+                    .invitations
+                    .get_mut(&invitation_id)
+                    .expect("invitation was checked above")
+                    .acceptance = Some(InvitationAcceptance::Completed {
+                    account_id,
+                    principal_id,
+                    kind,
+                    claimed_at,
+                    credential_generation,
+                    completed_at: now,
+                });
+                self.write_state(&state).await
+            }
+            InvitationAcceptance::Completed {
+                account_id: claimed_account_id,
+                principal_id: claimed_principal_id,
+                ..
+            } if claimed_account_id == account_id && claimed_principal_id == principal_id => {
+                if state.bindings.iter().any(|binding| {
+                    binding.space_uid == space_uid
+                        && binding.principal_id == principal_id
+                        && binding.node_account_id == account_id
+                }) {
+                    Ok(())
+                } else {
+                    bail!("completed invitation binding is missing")
+                }
+            }
+            _ => bail!("invitation acceptance does not match finalization"),
+        }
     }
 
     pub async fn complete_invitation_acceptance(
@@ -1759,6 +4944,19 @@ impl NodeIdentityService {
     ) -> Result<()> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        let space_uid = state
+            .invitations
+            .get(&invitation_id)
+            .and_then(|invitation| invitation.space_uid);
+        if let Some(space_uid) = space_uid {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        }
+        let current_generation = state
+            .accounts
+            .get(&account_id)
+            .map(|account| account.credential_generation)
+            .ok_or_else(|| anyhow!("invitation account is invalid"))?;
         let invitation = state
             .invitations
             .get_mut(&invitation_id)
@@ -1773,16 +4971,23 @@ impl NodeIdentityService {
                 principal_id: claimed_principal_id,
                 kind,
                 claimed_at,
-            } if claimed_account_id == account_id && claimed_principal_id == principal_id => (
-                InvitationAcceptance::Completed {
-                    account_id,
-                    principal_id,
-                    kind,
-                    claimed_at,
-                    completed_at: timestamp(Utc::now()),
-                },
-                true,
-            ),
+                credential_generation,
+            } if claimed_account_id == account_id
+                && claimed_principal_id == principal_id
+                && credential_generation == current_generation =>
+            {
+                (
+                    InvitationAcceptance::Completed {
+                        account_id,
+                        principal_id,
+                        kind,
+                        claimed_at,
+                        credential_generation,
+                        completed_at: timestamp(Utc::now()),
+                    },
+                    true,
+                )
+            }
             completed @ InvitationAcceptance::Completed {
                 account_id: claimed_account_id,
                 principal_id: claimed_principal_id,
@@ -1805,11 +5010,7 @@ impl NodeIdentityService {
         account_id: Uuid,
     ) -> Result<Option<Uuid>> {
         let state = self.read_state().await?;
-        Ok(bound_principal_for_account(
-            &state,
-            Some(space_uid),
-            account_id,
-        ))
+        bound_principal_for_account(&state, Some(space_uid), account_id)
     }
 
     pub async fn principal_for_account(&self, space_uid: Uuid, account_id: Uuid) -> Result<Uuid> {
@@ -1856,6 +5057,7 @@ impl NodeIdentityService {
                 requested_actions,
                 approved_account_id: None,
                 approved_principal_id: None,
+                approved_credential_generation: None,
                 expires_at: expires_at.clone(),
                 used_at: None,
                 last_polled_at: None,
@@ -1895,6 +5097,11 @@ impl NodeIdentityService {
         {
             bail!("authorization account is not active");
         }
+        let credential_generation = state
+            .accounts
+            .get(&account_id)
+            .map(|account| account.credential_generation)
+            .ok_or_else(|| anyhow!("authorization account is not active"))?;
         let code = random_token(32)?;
         let code_hash = token_hash(&code);
         state.authorization_codes.insert(
@@ -1906,6 +5113,7 @@ impl NodeIdentityService {
                 code_challenge: code_challenge.to_string(),
                 public_key_jwk,
                 account_id,
+                credential_generation,
                 principal_id,
                 space_uid,
                 granted_actions,
@@ -1941,6 +5149,10 @@ impl NodeIdentityService {
             || grant.redirect_uri != redirect_uri
             || URL_SAFE_NO_PAD.encode(Sha256::digest(code_verifier.as_bytes()))
                 != grant.code_challenge
+            || state.accounts.get(&grant.account_id).is_none_or(|account| {
+                !matches!(account.status, AccountStatus::Active)
+                    || account.credential_generation != grant.credential_generation
+            })
         {
             bail!("authorization code is invalid");
         }
@@ -1952,6 +5164,7 @@ impl NodeIdentityService {
             device_name: grant.client_id,
             public_key_jwk: grant.public_key_jwk,
             account_id: grant.account_id,
+            credential_generation: grant.credential_generation,
             created_at: timestamp(Utc::now()),
             last_used_at: None,
             expires_at: None,
@@ -1965,6 +5178,7 @@ impl NodeIdentityService {
             refresh_hash: token_hash(&refresh_token),
             credential_id,
             account_id: grant.account_id,
+            credential_generation: grant.credential_generation,
             principal_id: grant.principal_id,
             space_uid: grant.space_uid,
             granted_actions: grant.granted_actions,
@@ -2048,6 +5262,12 @@ impl NodeIdentityService {
     ) -> Result<()> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        let approved_credential_generation = state
+            .accounts
+            .get(&account_id)
+            .filter(|account| matches!(account.status, AccountStatus::Active))
+            .map(|account| account.credential_generation)
+            .ok_or_else(|| anyhow!("device authorization account is not active"))?;
         let hash = token_hash(&user_code.trim().to_uppercase());
         let request = state
             .device_authorizations
@@ -2062,6 +5282,7 @@ impl NodeIdentityService {
         request.requested_actions = granted_actions;
         request.approved_account_id = Some(account_id);
         request.approved_principal_id = Some(principal_id);
+        request.approved_credential_generation = Some(approved_credential_generation);
         self.write_state(&state).await
     }
 
@@ -2094,6 +5315,14 @@ impl NodeIdentityService {
         let space_uid = request
             .requested_space_uid
             .ok_or_else(|| anyhow!("authorization_pending"))?;
+        let credential_generation = request.approved_credential_generation.unwrap_or_default();
+        if state
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.credential_generation != credential_generation)
+        {
+            bail!("device authorization is stale");
+        }
         request.used_at = Some(timestamp(Utc::now()));
         let credential_id = Uuid::now_v7();
         let credential = DeviceCredential {
@@ -2101,6 +5330,7 @@ impl NodeIdentityService {
             device_name: request.device_name.clone(),
             public_key_jwk: request.public_key_jwk.clone(),
             account_id,
+            credential_generation,
             created_at: timestamp(Utc::now()),
             last_used_at: None,
             expires_at: None,
@@ -2115,6 +5345,7 @@ impl NodeIdentityService {
             refresh_hash: token_hash(&refresh_token),
             credential_id,
             account_id,
+            credential_generation,
             principal_id,
             space_uid,
             granted_actions: actions,
@@ -2131,12 +5362,23 @@ impl NodeIdentityService {
 
     pub async fn device_credential(&self, credential_id: Uuid) -> Result<DeviceCredential> {
         let state = self.read_state().await?;
-        state
+        let credential = state
             .device_credentials
             .get(&credential_id)
             .filter(|credential| credential.revoked_at.is_none())
             .cloned()
-            .ok_or_else(|| anyhow!("device credential is missing or revoked"))
+            .ok_or_else(|| anyhow!("device credential is missing or revoked"))?;
+        if state
+            .accounts
+            .get(&credential.account_id)
+            .is_none_or(|account| {
+                !matches!(account.status, AccountStatus::Active)
+                    || account.credential_generation != credential.credential_generation
+            })
+        {
+            bail!("device credential generation is stale");
+        }
+        Ok(credential)
     }
 
     pub async fn refresh_credential(&self, refresh_token: &str) -> Result<RefreshCredential> {
@@ -2164,6 +5406,16 @@ impl NodeIdentityService {
             bail!("refresh credential reuse detected; device grant revoked");
         }
         validate_expiry(&refresh.expires_at, "refresh credential")?;
+        if state
+            .accounts
+            .get(&refresh.account_id)
+            .is_none_or(|account| {
+                !matches!(account.status, AccountStatus::Active)
+                    || account.credential_generation != refresh.credential_generation
+            })
+        {
+            bail!("refresh credential generation is stale");
+        }
         Ok(refresh)
     }
 
@@ -2204,6 +5456,12 @@ impl NodeIdentityService {
             .filter(|refresh| refresh.revoked_at.is_none())
             .ok_or_else(|| anyhow!("refresh credential is invalid or revoked"))?;
         validate_expiry(&old.expires_at, "refresh credential")?;
+        if state.accounts.get(&old.account_id).is_none_or(|account| {
+            !matches!(account.status, AccountStatus::Active)
+                || account.credential_generation != old.credential_generation
+        }) {
+            bail!("refresh credential generation is stale");
+        }
         old.revoked_at = Some(timestamp(Utc::now()));
         let mut rotated = old.clone();
         let token = random_token(48)?;
@@ -2311,7 +5569,12 @@ impl NodeIdentityService {
             let _account = state
                 .accounts
                 .get(&credential.account_id)
-                .filter(|account| matches!(account.status, AccountStatus::Active))
+                .filter(|account| {
+                    matches!(account.status, AccountStatus::Active)
+                        && account.credential_generation == credential.credential_generation
+                        && claims.credential_generation.unwrap_or_default()
+                            == account.credential_generation
+                })
                 .ok_or_else(|| anyhow!("device account is not active"))?;
         }
         Ok(claims)
@@ -2323,7 +5586,15 @@ impl NodeIdentityService {
     ) -> Result<serde_json::Value> {
         let state = self.read_state().await?;
         if let Some(device) = state.device_credentials.get(&credential_id) {
-            if device.revoked_at.is_some() {
+            if device.revoked_at.is_some()
+                || state
+                    .accounts
+                    .get(&device.account_id)
+                    .is_none_or(|account| {
+                        !matches!(account.status, AccountStatus::Active)
+                            || account.credential_generation != device.credential_generation
+                    })
+            {
                 bail!("OAuth client credential is revoked");
             }
             return Ok(device.public_key_jwk.clone());
@@ -2473,6 +5744,41 @@ impl NodeIdentityService {
         {
             bail!("OIDC provider is not enabled");
         }
+        if let Some(account_id) = link_account_id {
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        }
+        if let Some(space_uid) = invitation_token.and_then(|token| {
+            state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == token_hash(token))
+                .and_then(|invitation| invitation.space_uid)
+        }) {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+        }
+        let invitation_account_id = invitation_token.and_then(|token| {
+            state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == token_hash(token))
+                .and_then(|invitation| invitation.acceptance.as_ref())
+                .map(InvitationAcceptance::account_id)
+        });
+        if let Some(account_id) = invitation_account_id {
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+        }
+        let invitation_account_generation = invitation_account_id.and_then(|account_id| {
+            state
+                .accounts
+                .get(&account_id)
+                .map(|account| account.credential_generation)
+        });
+        let link_account_generation = link_account_id.and_then(|account_id| {
+            state
+                .accounts
+                .get(&account_id)
+                .map(|account| account.credential_generation)
+        });
         state.oidc_attempts.insert(
             token_hash(state_token),
             OidcLoginAttempt {
@@ -2482,6 +5788,9 @@ impl NodeIdentityService {
                 pkce_verifier: pkce_verifier.to_string(),
                 invitation_hash: invitation_token.map(token_hash),
                 link_account_id,
+                link_account_generation,
+                invitation_account_id,
+                invitation_account_generation,
                 expires_at: timestamp(Utc::now() + Duration::minutes(10)),
             },
         );
@@ -2496,10 +5805,66 @@ impl NodeIdentityService {
             .remove(&token_hash(state_token))
             .ok_or_else(|| anyhow!("invalid OIDC state"))?;
         validate_expiry(&attempt.expires_at, "OIDC login attempt")?;
+        if let (Some(account_id), Some(expected_generation)) =
+            (attempt.link_account_id, attempt.link_account_generation)
+        {
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+            if state
+                .accounts
+                .get(&account_id)
+                .is_none_or(|account| account.credential_generation != expected_generation)
+            {
+                bail!("OIDC login attempt is stale");
+            }
+        }
+        if let (Some(account_id), Some(expected_generation)) = (
+            attempt.invitation_account_id,
+            attempt.invitation_account_generation,
+        ) {
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+            if state
+                .accounts
+                .get(&account_id)
+                .is_none_or(|account| account.credential_generation != expected_generation)
+            {
+                bail!("OIDC invitation login attempt is stale");
+            }
+        }
+        let legacy_invitation_account = attempt.invitation_hash.as_ref().and_then(|hash| {
+            state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == *hash)
+                .and_then(|invitation| invitation.acceptance.as_ref())
+                .map(InvitationAcceptance::account_id)
+        });
+        if let Some(account_id) = legacy_invitation_account {
+            let expected_generation = attempt
+                .invitation_account_generation
+                .ok_or_else(|| anyhow!("OIDC invitation login attempt is stale"))?;
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+            if state
+                .accounts
+                .get(&account_id)
+                .is_none_or(|account| account.credential_generation != expected_generation)
+            {
+                bail!("OIDC invitation login attempt is stale");
+            }
+        }
+        if let Some(space_uid) = attempt.invitation_hash.as_deref().and_then(|hash| {
+            state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == hash)
+                .and_then(|invitation| invitation.space_uid)
+        }) {
+            ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+        }
         self.write_state(&state).await?;
         Ok(attempt)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn complete_oidc_login(
         &self,
         issuer: &str,
@@ -2507,9 +5872,23 @@ impl NodeIdentityService {
         display_name: &str,
         invitation_hash: Option<&str>,
         link_account_id: Option<Uuid>,
+        link_account_generation: Option<u64>,
+        invitation_account_generation: Option<u64>,
     ) -> Result<(HumanAccount, String, Option<AccountInvitation>)> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        if let Some(link_account_id) = link_account_id {
+            let expected_generation = link_account_generation
+                .ok_or_else(|| anyhow!("OIDC login attempt is missing credential generation"))?;
+            ensure_node_account_recovery_mutation_allowed(&mut state, link_account_id)?;
+            if state
+                .accounts
+                .get(&link_account_id)
+                .is_none_or(|account| account.credential_generation != expected_generation)
+            {
+                bail!("OIDC login attempt is stale");
+            }
+        }
         let external_subject = ugoite_domain::identity::oidc_external_subject(issuer, subject)?;
         let existing_account = state
             .authentication_methods
@@ -2529,8 +5908,33 @@ impl NodeIdentityService {
                 .filter(|account| matches!(account.status, AccountStatus::Active))
                 .cloned()
                 .ok_or_else(|| anyhow!("account is not active"))?;
+            if link_account_generation
+                .is_some_and(|generation| account.credential_generation != generation)
+            {
+                bail!("OIDC login attempt is stale");
+            }
             (account, None)
         } else if let Some(account_id) = existing_account {
+            let invitation_is_already_bound = invitation_hash.is_some_and(|hash| {
+                state
+                    .invitations
+                    .values()
+                    .find(|invitation| invitation.token_hash == hash)
+                    .and_then(|invitation| invitation.acceptance.as_ref())
+                    .is_some()
+            });
+            if invitation_is_already_bound && invitation_account_generation.is_none() {
+                bail!("OIDC invitation login attempt is stale");
+            }
+            ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
+            if invitation_account_generation.is_some_and(|generation| {
+                state
+                    .accounts
+                    .get(&account_id)
+                    .is_none_or(|account| account.credential_generation != generation)
+            }) {
+                bail!("OIDC invitation login attempt is stale");
+            }
             let account = state
                 .accounts
                 .get(&account_id)
@@ -2543,8 +5947,11 @@ impl NodeIdentityService {
                     .values()
                     .find(|invitation| invitation.token_hash == invitation_hash)
                     .and_then(|invitation| invitation.space_uid);
+                if let Some(space_uid) = invitation_space_uid {
+                    ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+                }
                 let existing_principal_id =
-                    bound_principal_for_account(&state, invitation_space_uid, account_id);
+                    bound_principal_for_account(&state, invitation_space_uid, account_id)?;
                 let invitation = state
                     .invitations
                     .values_mut()
@@ -2563,6 +5970,7 @@ impl NodeIdentityService {
                         principal_id: existing_principal_id.unwrap_or_else(Uuid::now_v7),
                         kind: InvitationAcceptanceKind::Oidc,
                         claimed_at: timestamp(Utc::now()),
+                        credential_generation: account.credential_generation,
                     });
                 }
                 Some(invitation.clone())
@@ -2573,6 +5981,14 @@ impl NodeIdentityService {
         } else {
             let invitation_hash =
                 invitation_hash.ok_or_else(|| anyhow!("new OIDC users require an invitation"))?;
+            let invitation_space_uid = state
+                .invitations
+                .values()
+                .find(|invitation| invitation.token_hash == invitation_hash)
+                .and_then(|invitation| invitation.space_uid);
+            if let Some(space_uid) = invitation_space_uid {
+                ensure_node_recovery_mutation_allowed(&mut state, space_uid)?;
+            }
             let invitation = state
                 .invitations
                 .values_mut()
@@ -2592,12 +6008,14 @@ impl NodeIdentityService {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             };
             invitation.acceptance = Some(InvitationAcceptance::Pending {
                 account_id: account.account_id,
                 principal_id: Uuid::now_v7(),
                 kind: InvitationAcceptanceKind::Oidc,
                 claimed_at: timestamp(Utc::now()),
+                credential_generation: account.credential_generation,
             });
             let invitation_copy = invitation.clone();
             state.accounts.insert(account.account_id, account.clone());
@@ -2725,12 +6143,27 @@ impl NodeIdentityService {
 
     pub async fn account_for_principal(&self, space_uid: Uuid, principal_id: Uuid) -> Result<Uuid> {
         let state = self.read_state().await?;
-        state
+        let bindings = state
             .bindings
             .iter()
-            .find(|binding| binding.space_uid == space_uid && binding.principal_id == principal_id)
-            .map(|binding| binding.node_account_id)
-            .ok_or_else(|| anyhow!("principal has no Node account binding"))
+            .filter(|binding| {
+                binding.space_uid == space_uid && binding.principal_id == principal_id
+            })
+            .collect::<Vec<_>>();
+        if bindings.len() != 1 {
+            bail!("principal does not have exactly one Node account binding");
+        }
+        Ok(bindings[0].node_account_id)
+    }
+
+    pub async fn bindings_for_space(&self, space_uid: Uuid) -> Result<Vec<PrincipalBinding>> {
+        Ok(self
+            .read_state()
+            .await?
+            .bindings
+            .into_iter()
+            .filter(|binding| binding.space_uid == space_uid)
+            .collect())
     }
 
     async fn create_session(
@@ -2740,21 +6173,45 @@ impl NodeIdentityService {
         credential_id: Uuid,
         assurance: AssuranceLevel,
     ) -> Result<String> {
+        self.create_session_with_recovery(state, account_id, credential_id, assurance, None)
+            .await
+    }
+
+    async fn create_session_with_recovery(
+        &self,
+        state: &NodeState,
+        account_id: Uuid,
+        credential_id: Uuid,
+        assurance: AssuranceLevel,
+        recovery_reset_id: Option<Uuid>,
+    ) -> Result<String> {
         let session_token = random_token(32)?;
         let now = Utc::now();
         let now_text = timestamp(now);
         let hash = token_hash(&session_token);
+        let session_id = Uuid::now_v7();
         let session = BrowserSession {
-            session_id: Uuid::now_v7(),
+            session_id,
             session_hash: hash.clone(),
             credential_id,
             assurance,
             account_id,
+            credential_generation: state
+                .accounts
+                .get(&account_id)
+                .map(|account| account.credential_generation)
+                .unwrap_or_default(),
             created_at: now_text.clone(),
             last_seen_at: now_text.clone(),
             expires_at: timestamp(now + Duration::days(SESSION_ABSOLUTE_DAYS)),
             authenticated_at: now_text,
             revoked_at: None,
+            recovery_reset_id,
+            revocation_epoch: state
+                .session_revocation_epochs
+                .get(&session_id)
+                .copied()
+                .unwrap_or_default(),
         };
         self.state_store
             .create_if_absent(
@@ -2771,13 +6228,27 @@ impl NodeIdentityService {
         account_id: Uuid,
         revoked_at: &str,
     ) -> Result<()> {
+        self.revoke_account_sessions_except(node_id, account_id, revoked_at, None)
+            .await
+    }
+
+    async fn revoke_account_sessions_except(
+        &self,
+        node_id: Uuid,
+        account_id: Uuid,
+        revoked_at: &str,
+        except_session_id: Option<Uuid>,
+    ) -> Result<()> {
         let prefix = format!("nodes/{node_id}/sessions");
         for key in self.state_store.list_prefix(&prefix).await? {
             let Some(record) = self.state_store.get(&key).await? else {
                 continue;
             };
             let mut session: BrowserSession = serde_json::from_slice(&record.value)?;
-            if session.account_id != account_id || session.revoked_at.is_some() {
+            if session.account_id != account_id
+                || session.revoked_at.is_some()
+                || except_session_id == Some(session.session_id)
+            {
                 continue;
             }
             session.revoked_at = Some(revoked_at.to_string());
@@ -2817,9 +6288,41 @@ impl NodeIdentityService {
         let bytes = serde_json::to_vec(state)?;
         let state_key = node_state_key(state.node_id);
         if let Some(version) = &state.control_version {
-            self.state_store
-                .compare_and_swap(&state_key, version, bytes)
-                .await?;
+            if let Err(error) = self
+                .state_store
+                .compare_and_swap(&state_key, version, bytes.clone())
+                .await
+            {
+                // A remote conditional write may have committed before its
+                // post-write version probe failed. Read the object once to
+                // distinguish a pre-commit conflict from a committed or
+                // genuinely unknown outcome. Recovery callers keep their
+                // durable fence for the latter two cases so reconciliation
+                // can converge without exposing one-time secrets twice.
+                match self.read_state().await {
+                    Ok(observed) => {
+                        if serde_json::to_vec(&observed)
+                            .ok()
+                            .is_some_and(|value| value == bytes)
+                        {
+                            return Err(anyhow!(
+                                "node control write committed with an ambiguous response: {error}"
+                            ));
+                        }
+                        return Err(error);
+                    }
+                    Err(read_error) if node_write_was_committed_with_ambiguous_response(&error) => {
+                        return Err(anyhow!(
+                            "node control write committed with an ambiguous response: {error}; verification failed: {read_error}"
+                        ));
+                    }
+                    Err(read_error) => {
+                        return Err(anyhow!(
+                            "node control write outcome unknown: {error}; verification failed: {read_error}"
+                        ));
+                    }
+                }
+            }
         } else {
             self.state_store.create_if_absent(&state_key, bytes).await?;
             self.state_store
@@ -2850,6 +6353,21 @@ fn normalized_display_name(value: &str) -> Result<String> {
 
 fn session_key(node_id: Uuid, session_hash: &str) -> String {
     format!("nodes/{node_id}/sessions/{session_hash}.json")
+}
+
+fn recovery_session_is_committed(
+    session: &BrowserSession,
+    markers: &BTreeMap<Uuid, RecoveryResetMarker>,
+) -> bool {
+    let Some(reset_id) = session.recovery_reset_id else {
+        return true;
+    };
+    markers.get(&reset_id).is_some_and(|marker| {
+        marker.session_id == session.session_id
+            && marker.account_id == session.account_id
+            && marker.generation_after == session.credential_generation
+            && marker.space_fence_status == "reconciled"
+    })
 }
 
 fn access_credential_key(node_id: Uuid, token_hash: &str) -> String {
@@ -3013,6 +6531,58 @@ mod tests {
     }
 
     #[test]
+    fn test_req_sec_012_concurrent_reset_winner_and_loser_session() {
+        let account_id = Uuid::now_v7();
+        let reset_id = Uuid::now_v7();
+        let session_id = Uuid::now_v7();
+        let session = BrowserSession {
+            session_id,
+            session_hash: "hash".to_string(),
+            credential_id: Uuid::now_v7(),
+            assurance: AssuranceLevel::PhishingResistant,
+            account_id,
+            credential_generation: 2,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            last_seen_at: "2026-01-01T00:00:00Z".to_string(),
+            expires_at: "2099-01-01T00:00:00Z".to_string(),
+            authenticated_at: "2026-01-01T00:00:00Z".to_string(),
+            revoked_at: None,
+            recovery_reset_id: Some(reset_id),
+            revocation_epoch: 0,
+        };
+        let mut markers = BTreeMap::new();
+        assert!(!recovery_session_is_committed(&session, &markers));
+        markers.insert(
+            reset_id,
+            RecoveryResetMarker {
+                reset_id,
+                challenge_id: Uuid::now_v7(),
+                approval_id: Uuid::now_v7(),
+                account_id,
+                generation_before: 1,
+                generation_after: 2,
+                session_id,
+                space_authorization_revision: 3,
+                recovery_fence_id: Uuid::now_v7(),
+                space_uid: Uuid::now_v7(),
+                principal_id: Uuid::now_v7(),
+                issuer_principal_id: Uuid::now_v7(),
+                space_fence_status: "reconciled".to_string(),
+                committed_at: "2026-01-01T00:00:00Z".to_string(),
+                encrypted_response: None,
+                response_delivered_at: None,
+                response_delivery_id: None,
+                response_invalidated_at: None,
+                completion_proof_hash: None,
+            },
+        );
+        assert!(recovery_session_is_committed(&session, &markers));
+        let mut loser = session.clone();
+        loser.session_id = Uuid::now_v7();
+        assert!(!recovery_session_is_committed(&loser, &markers));
+    }
+
+    #[test]
     fn invitation_acceptance_states_round_trip() -> Result<()> {
         let account_id = Uuid::now_v7();
         let principal_id = Uuid::now_v7();
@@ -3023,6 +6593,7 @@ mod tests {
                 principal_id,
                 kind: InvitationAcceptanceKind::ExistingAccount,
                 claimed_at: "2026-07-31T00:00:00.000Z".to_string(),
+                credential_generation: 0,
             }),
             Some(InvitationAcceptance::Completed {
                 account_id,
@@ -3030,6 +6601,7 @@ mod tests {
                 kind: InvitationAcceptanceKind::PasskeyRegistration,
                 claimed_at: "2026-07-31T00:00:00.000Z".to_string(),
                 completed_at: "2026-07-31T00:01:00.000Z".to_string(),
+                credential_generation: 0,
             }),
         ];
 
@@ -3147,6 +6719,17 @@ mod tests {
         service.bootstrap_if_needed().await?;
         let account_id = Uuid::now_v7();
         let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "TOTP test".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
         state.recovery.insert(
             account_id,
             RecoveryRecord {
@@ -3166,6 +6749,7 @@ mod tests {
                     b"12345678901234567890123456789012",
                 )?,
                 expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+                credential_generation: 0,
             },
         );
         service.write_state(&state).await?;
@@ -3221,6 +6805,7 @@ mod tests {
             iat: now,
             jti: Uuid::now_v7(),
             credential_id: credential.credential_id,
+            credential_generation: None,
             cnf: crate::oauth::Confirmation {
                 jkt: "thumbprint".to_string(),
             },
@@ -3250,6 +6835,7 @@ mod tests {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             },
         );
         service.write_state(&state).await?;
@@ -3285,6 +6871,7 @@ mod tests {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             },
         );
         service.write_state(&state).await?;
@@ -3316,6 +6903,7 @@ mod tests {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             },
         );
         service.write_state(&state).await?;
@@ -3365,6 +6953,7 @@ mod tests {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             },
         );
         state.bindings.push(PrincipalBinding {
@@ -3413,6 +7002,162 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pending_invitation_claim_cannot_finalize_after_account_reset() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let invitation_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Invited member".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.invitations.insert(
+            invitation_id,
+            AccountInvitation {
+                invitation_id,
+                token_hash: "stale-invitation".to_string(),
+                display_name: "Invited member".to_string(),
+                space_uid: None,
+                role: Some("viewer".to_string()),
+                expires_at: timestamp(Utc::now() + Duration::hours(1)),
+                acceptance: Some(InvitationAcceptance::Pending {
+                    account_id,
+                    principal_id,
+                    kind: InvitationAcceptanceKind::ExistingAccount,
+                    claimed_at: timestamp(Utc::now()),
+                    credential_generation: 0,
+                }),
+                created_by: account_id,
+            },
+        );
+        service.write_state(&state).await?;
+        let mut reset_state = service.read_state().await?;
+        reset_state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation = 1;
+        service.write_state(&reset_state).await?;
+
+        let error = service
+            .complete_invitation_acceptance(invitation_id, account_id, principal_id)
+            .await
+            .expect_err("a pre-reset invitation claim must be stale");
+        assert!(error.to_string().contains("does not match finalization"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_invitation_binding_checks_generation_before_node_commit() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let invitation_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Invited member".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.invitations.insert(
+            invitation_id,
+            AccountInvitation {
+                invitation_id,
+                token_hash: "atomic-invitation".to_string(),
+                display_name: "Invited member".to_string(),
+                space_uid: Some(space_uid),
+                role: Some("viewer".to_string()),
+                expires_at: timestamp(Utc::now() + Duration::hours(1)),
+                acceptance: Some(InvitationAcceptance::Pending {
+                    account_id,
+                    principal_id,
+                    kind: InvitationAcceptanceKind::ExistingAccount,
+                    claimed_at: timestamp(Utc::now()),
+                    credential_generation: 0,
+                }),
+                created_by: account_id,
+            },
+        );
+        service.write_state(&state).await?;
+        let mut reset_state = service.read_state().await?;
+        reset_state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation = 1;
+        service.write_state(&reset_state).await?;
+
+        let error = service
+            .finalize_invitation_binding(
+                invitation_id,
+                account_id,
+                principal_id,
+                BindingMethod::Invite,
+            )
+            .await
+            .expect_err("stale invitation must not create a Node binding");
+        assert!(error.to_string().contains("does not match finalization"));
+        let state = service.read_state().await?;
+        assert!(!state.bindings.iter().any(|binding| {
+            binding.space_uid == space_uid && binding.node_account_id == account_id
+        }));
+        assert!(matches!(
+            state
+                .invitations
+                .get(&invitation_id)
+                .and_then(|invitation| invitation.acceptance.as_ref()),
+            Some(InvitationAcceptance::Pending { .. })
+        ));
+
+        let mut current_state = service.read_state().await?;
+        current_state
+            .accounts
+            .get_mut(&account_id)
+            .expect("account")
+            .credential_generation = 0;
+        service.write_state(&current_state).await?;
+        service
+            .finalize_invitation_binding(
+                invitation_id,
+                account_id,
+                principal_id,
+                BindingMethod::Invite,
+            )
+            .await?;
+        let state = service.read_state().await?;
+        assert!(state.bindings.iter().any(|binding| {
+            binding.space_uid == space_uid
+                && binding.principal_id == principal_id
+                && binding.node_account_id == account_id
+        }));
+        assert!(matches!(
+            state
+                .invitations
+                .get(&invitation_id)
+                .and_then(|invitation| invitation.acceptance.as_ref()),
+            Some(InvitationAcceptance::Completed { .. })
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn claimed_invitation_principal_is_immutable_and_retry_ignores_expiry() -> Result<()> {
         let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
         service.bootstrap_if_needed().await?;
@@ -3429,6 +7174,7 @@ mod tests {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             },
         );
         state.accounts.insert(
@@ -3439,6 +7185,7 @@ mod tests {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             },
         );
         state.bindings.push(PrincipalBinding {
@@ -3494,6 +7241,7 @@ mod tests {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             },
         );
         service.write_state(&state).await?;
@@ -3544,6 +7292,7 @@ mod tests {
                     status: AccountStatus::Active,
                     created_at: timestamp(Utc::now()),
                     node_roles: BTreeSet::new(),
+                    credential_generation: 0,
                 },
             );
         }
@@ -3551,7 +7300,15 @@ mod tests {
         let issuer = "https://identity.example";
         let subject = "stable-subject";
         let (account, _, _) = service
-            .complete_oidc_login(issuer, subject, "ignored", None, Some(account_id))
+            .complete_oidc_login(
+                issuer,
+                subject,
+                "ignored",
+                None,
+                Some(account_id),
+                Some(0),
+                None,
+            )
             .await?;
         assert_eq!(account.account_id, account_id);
         let (invitation, invitation_token) = service
@@ -3569,6 +7326,8 @@ mod tests {
                 "ignored",
                 Some(&token_hash(&invitation_token)),
                 None,
+                None,
+                None,
             )
             .await?;
         assert_eq!(
@@ -3576,7 +7335,15 @@ mod tests {
             Some(invitation.invitation_id)
         );
         assert!(service
-            .complete_oidc_login(issuer, subject, "ignored", None, Some(other_account_id))
+            .complete_oidc_login(
+                issuer,
+                subject,
+                "ignored",
+                None,
+                Some(other_account_id),
+                Some(0),
+                None,
+            )
             .await
             .is_err());
         Ok(())
@@ -3598,6 +7365,7 @@ mod tests {
                 status: AccountStatus::Active,
                 created_at: timestamp(Utc::now()),
                 node_roles: BTreeSet::new(),
+                credential_generation: 0,
             },
         );
         service.write_state(&state).await?;
@@ -3647,5 +7415,1245 @@ mod tests {
             .await
             .is_err());
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_012_backup_rotation_idempotency_and_preservation() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        for (account_id, name) in [(issuer_account_id, "Issuer"), (target_account_id, "Target")] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.bindings.extend([
+            PrincipalBinding {
+                space_uid,
+                principal_id: issuer_principal_id,
+                node_account_id: issuer_account_id,
+                binding_method: BindingMethod::Setup,
+            },
+            PrincipalBinding {
+                space_uid,
+                principal_id: target_principal_id,
+                node_account_id: target_account_id,
+                binding_method: BindingMethod::Invite,
+            },
+        ]);
+        state.recovery.insert(
+            target_account_id,
+            RecoveryRecord {
+                account_id: target_account_id,
+                code_hashes: Vec::new(),
+                totp_secret_encrypted: None,
+                created_at: timestamp(Utc::now()),
+                failed_attempts: 0,
+                locked_until: None,
+            },
+        );
+        service.write_state(&state).await?;
+
+        let issuer_credential_id = Uuid::now_v7();
+        let (approval_id, token, _) = service
+            .issue_owner_recovery_approval_with_snapshot_and_credential(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                RecoveryBindingSnapshot {
+                    request_id: Uuid::now_v7(),
+                    recovery_fence_id: Uuid::now_v7(),
+                    recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(15)),
+                    space_authorization_revision: 1,
+                    issuer_space_lifecycle_epoch: 1,
+                    target_space_lifecycle_epoch: 1,
+                    issuer_node_lifecycle_epoch: 0,
+                    target_node_lifecycle_epoch: 0,
+                    issuer_generation: 0,
+                    target_generation: 0,
+                },
+                Some(issuer_credential_id),
+            )
+            .await?;
+        assert!(token.len() >= 43);
+        assert_eq!(
+            service.owner_recovery_approval_token(approval_id).await?,
+            token
+        );
+        let approval_state = service.read_state().await?;
+        let approval_event = &approval_state
+            .recovery_audit_outbox
+            .values()
+            .next()
+            .unwrap()
+            .event;
+        assert_eq!(
+            approval_state
+                .recovery_audit_outbox
+                .values()
+                .next()
+                .unwrap()
+                .credential_id,
+            Some(issuer_credential_id)
+        );
+        assert_eq!(
+            approval_event["actor_principal_id"],
+            serde_json::json!(issuer_principal_id)
+        );
+        assert_eq!(
+            approval_event["actor_account_id"],
+            serde_json::json!(issuer_account_id)
+        );
+        assert_eq!(
+            approval_event["credential_id"],
+            serde_json::json!(issuer_credential_id)
+        );
+        assert!(serde_json::to_string(approval_event)?
+            .find(&token)
+            .is_none());
+        assert_eq!(
+            approval_state
+                .recovery_audit_outbox
+                .values()
+                .next()
+                .unwrap()
+                .status,
+            "pending"
+        );
+        service
+            .mark_recovery_audit_stage(approval_id, "node")
+            .await?;
+        service
+            .mark_recovery_audit_stage(approval_id, "space")
+            .await?;
+        service.mark_recovery_audit_delivered(approval_id).await?;
+        assert_eq!(
+            service.read_state().await?.recovery_audit_outbox[&approval_id].status,
+            "delivered"
+        );
+        let first_registration = service.start_owner_recovery_registration(&token).await?;
+        let resumed_registration = service.start_owner_recovery_registration(&token).await?;
+        assert_eq!(
+            resumed_registration.challenge_id,
+            first_registration.challenge_id
+        );
+        assert_eq!(
+            serde_json::to_value(resumed_registration.public_key)?,
+            serde_json::to_value(first_registration.public_key)?
+        );
+
+        let (_, replacement_token, _) = service
+            .issue_owner_recovery_approval_unchecked(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+        assert!(service
+            .start_owner_recovery_registration(&token)
+            .await
+            .is_err());
+        let superseded_state = service.read_state().await?;
+        assert!(superseded_state
+            .recovery_challenge_tombstones
+            .values()
+            .any(|tombstone| tombstone.reason == "superseded"));
+        let superseded_error = service
+            .owner_recovery_challenge_context(first_registration.challenge_id)
+            .await
+            .expect_err("superseded challenges must remain a terminal expiry");
+        assert!(superseded_error
+            .to_string()
+            .contains("owner recovery challenge expired"));
+        service
+            .start_owner_recovery_registration(&replacement_token)
+            .await?;
+
+        let request_id = Uuid::new_v4();
+        let rotation_snapshot = RecoveryBindingSnapshot {
+            request_id,
+            recovery_fence_id: Uuid::now_v7(),
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            space_authorization_revision: 1,
+            issuer_space_lifecycle_epoch: 1,
+            target_space_lifecycle_epoch: 1,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        let codes = service
+            .rotate_recovery_codes_with_snapshot_and_credential(
+                request_id,
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                rotation_snapshot.clone(),
+                None,
+            )
+            .await?;
+        assert_eq!(codes.len(), 8);
+        let delivered_codes = service.take_backup_rotation_codes(request_id).await?;
+        assert_eq!(delivered_codes, codes);
+        assert!(service
+            .take_backup_rotation_codes(request_id)
+            .await
+            .expect_err("backup codes must be single-delivery")
+            .to_string()
+            .contains("already delivered"));
+        let mut mismatched_snapshot = rotation_snapshot.clone();
+        mismatched_snapshot.target_generation = 1;
+        let mismatch = service
+            .rotate_recovery_codes_with_snapshot_and_credential(
+                request_id,
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                mismatched_snapshot,
+                None,
+            )
+            .await
+            .expect_err("an idempotency key must not cross generations");
+        assert!(mismatch.to_string().contains("key mismatch"));
+        let rotation_state = service.read_state().await?;
+        let rotation_event = rotation_state
+            .recovery_audit_outbox
+            .values()
+            .find(|record| record.action == "recovery.backup_codes_rotated")
+            .expect("rotation outbox event");
+        assert!(serde_json::to_string(&rotation_event.event)?
+            .find(&codes[0])
+            .is_none());
+        assert!(service
+            .rotate_recovery_codes_with_snapshot_and_credential(
+                request_id,
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                rotation_snapshot,
+                None,
+            )
+            .await
+            .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_012_replacement_failure_preserves_previous_approval() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let fence_id = Uuid::now_v7();
+        let snapshot = RecoveryBindingSnapshot {
+            request_id: Uuid::now_v7(),
+            recovery_fence_id: fence_id,
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(15)),
+            space_authorization_revision: 1,
+            issuer_space_lifecycle_epoch: 0,
+            target_space_lifecycle_epoch: 0,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        let mut state = service.read_state().await?;
+        for (account_id, name) in [(issuer_account_id, "Issuer"), (target_account_id, "Target")] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.bindings.extend([
+            PrincipalBinding {
+                space_uid,
+                principal_id: issuer_principal_id,
+                node_account_id: issuer_account_id,
+                binding_method: BindingMethod::Setup,
+            },
+            PrincipalBinding {
+                space_uid,
+                principal_id: target_principal_id,
+                node_account_id: target_account_id,
+                binding_method: BindingMethod::Invite,
+            },
+        ]);
+        service.write_state(&state).await?;
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&snapshot),
+            )
+            .await?;
+        let (old_approval_id, old_token, _) = service
+            .issue_owner_recovery_approval_with_snapshot_and_credential(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                snapshot.clone(),
+                None,
+            )
+            .await?;
+
+        let error = service
+            .issue_owner_recovery_approval_unchecked(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                Some(snapshot.clone()),
+                None,
+                None,
+                Some(Uuid::now_v7()),
+                Some(fence_id),
+            )
+            .await
+            .expect_err("a replacement cannot reopen its old fence");
+        assert!(error.to_string().contains("RECOVERY_FENCE_UNAVAILABLE"));
+        let state = service.read_state().await?;
+        assert!(state.owner_recovery_approvals[&old_approval_id]
+            .invalidated_at
+            .is_none());
+        assert_eq!(
+            service
+                .owner_recovery_approval_token(old_approval_id)
+                .await?,
+            old_token
+        );
+        assert_eq!(state.node_recovery_fences[&fence_id].status, "active");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn expired_owner_approval_is_terminal_and_releases_node_fence() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let request_id = Uuid::new_v4();
+        let fence_id = Uuid::now_v7();
+        let snapshot = RecoveryBindingSnapshot {
+            request_id,
+            recovery_fence_id: fence_id,
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(15)),
+            space_authorization_revision: 1,
+            issuer_space_lifecycle_epoch: 1,
+            target_space_lifecycle_epoch: 1,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        let mut state = service.read_state().await?;
+        for (account_id, name) in [(issuer_account_id, "Issuer"), (target_account_id, "Target")] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.bindings.extend([
+            PrincipalBinding {
+                space_uid,
+                principal_id: issuer_principal_id,
+                node_account_id: issuer_account_id,
+                binding_method: BindingMethod::Setup,
+            },
+            PrincipalBinding {
+                space_uid,
+                principal_id: target_principal_id,
+                node_account_id: target_account_id,
+                binding_method: BindingMethod::Invite,
+            },
+        ]);
+        service.write_state(&state).await?;
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&snapshot),
+            )
+            .await?;
+        let (approval_id, _, _) = service
+            .issue_owner_recovery_approval_with_snapshot_and_credential(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                snapshot,
+                None,
+            )
+            .await?;
+        let mut state = service.read_state().await?;
+        state
+            .owner_recovery_approvals
+            .get_mut(&approval_id)
+            .expect("approval")
+            .expires_at = timestamp(Utc::now() - Duration::seconds(1));
+        service.write_state(&state).await?;
+
+        assert_eq!(
+            service.expire_owner_recovery_approval(approval_id).await?,
+            Some((space_uid, fence_id))
+        );
+        let state = service.read_state().await?;
+        assert!(state.owner_recovery_approvals[&approval_id]
+            .invalidated_at
+            .is_some());
+        assert_eq!(state.node_recovery_fences[&fence_id].status, "released");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn binding_lifecycle_changes_invalidate_pending_recovery_responses() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let marker_id = Uuid::now_v7();
+        let rotation_id = Uuid::new_v4();
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "Binding target".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.recovery_reset_markers.insert(
+            marker_id,
+            RecoveryResetMarker {
+                reset_id: marker_id,
+                challenge_id: Uuid::now_v7(),
+                approval_id: Uuid::now_v7(),
+                account_id,
+                generation_before: 0,
+                generation_after: 1,
+                session_id: Uuid::now_v7(),
+                space_authorization_revision: 1,
+                recovery_fence_id: Uuid::now_v7(),
+                space_uid,
+                principal_id: Uuid::now_v7(),
+                issuer_principal_id: Uuid::now_v7(),
+                space_fence_status: "reconciled".to_string(),
+                committed_at: timestamp(Utc::now()),
+                encrypted_response: Some("encrypted".to_string()),
+                response_delivered_at: None,
+                response_delivery_id: None,
+                response_invalidated_at: None,
+                completion_proof_hash: None,
+            },
+        );
+        state.backup_rotation_requests.insert(
+            rotation_id,
+            BackupRotationRecord {
+                request_id: rotation_id,
+                space_uid,
+                principal_id: Uuid::now_v7(),
+                account_id,
+                issuer_principal_id: Uuid::now_v7(),
+                issuer_account_id: Uuid::now_v7(),
+                issuer_credential_id: None,
+                target_generation: 0,
+                issuer_generation: 0,
+                issuer_space_lifecycle_epoch: 0,
+                target_space_lifecycle_epoch: 0,
+                issuer_node_lifecycle_epoch: 0,
+                target_node_lifecycle_epoch: 0,
+                space_authorization_revision: 1,
+                recovery_fence_id: None,
+                space_fence_status: "reconciled".to_string(),
+                issued_at: timestamp(Utc::now()),
+                code_hashes: vec!["hash".to_string()],
+                encrypted_codes: Some("encrypted".to_string()),
+                codes_delivered_at: None,
+                codes_delivery_id: None,
+                codes_invalidated_at: None,
+            },
+        );
+        service.write_state(&state).await?;
+
+        service
+            .add_binding(PrincipalBinding {
+                space_uid,
+                principal_id: Uuid::now_v7(),
+                node_account_id: account_id,
+                binding_method: BindingMethod::Invite,
+            })
+            .await?;
+        let state = service.read_state().await?;
+        assert!(state.recovery_reset_markers[&marker_id]
+            .response_invalidated_at
+            .is_some());
+        assert!(state.backup_rotation_requests[&rotation_id]
+            .codes_invalidated_at
+            .is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_013_recovery_outbox_status_and_redaction() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let event_id = Uuid::now_v7();
+        let request_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let issuer_account_id = Uuid::now_v7();
+        let issuer_credential_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        queue_recovery_audit(
+            &mut state,
+            event_id,
+            "recovery.owner_reset_completed",
+            request_id,
+            Some(Uuid::now_v7()),
+            space_uid,
+            principal_id,
+            account_id,
+            None,
+            None,
+            None,
+            Some(issuer_principal_id),
+            Some(issuer_account_id),
+            Some(issuer_credential_id),
+            serde_json::json!({"credential_generation": 1}),
+        );
+        service.write_state(&state).await?;
+        let persisted = service
+            .pending_recovery_audits()
+            .await?
+            .into_iter()
+            .find(|record| record.event_id == event_id)
+            .expect("redacted recovery outbox event is durable");
+        assert_eq!(persisted.status, "pending");
+        assert!(!serde_json::to_string(&persisted.event)?.contains("token"));
+        let record = state
+            .recovery_audit_outbox
+            .get(&event_id)
+            .expect("queued recovery audit");
+        assert_eq!(record.actor_principal_id, None);
+        assert_eq!(record.actor_account_id, None);
+        assert_eq!(record.actor_credential_id, None);
+        assert_eq!(record.issuer_principal_id, Some(issuer_principal_id));
+        assert_eq!(record.issuer_account_id, Some(issuer_account_id));
+        assert_eq!(record.event["actor_principal_id"], serde_json::Value::Null);
+        assert_eq!(record.event["actor_account_id"], serde_json::Value::Null);
+        assert_eq!(record.event["credential_id"], serde_json::Value::Null);
+        assert_eq!(
+            record.event["issuer_credential_id"],
+            serde_json::json!(issuer_credential_id)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn owner_approval_rejects_a_target_generation_changed_after_issue() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        for (account_id, name) in [(issuer_account_id, "Issuer"), (target_account_id, "Target")] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.bindings.extend([
+            PrincipalBinding {
+                space_uid,
+                principal_id: issuer_principal_id,
+                node_account_id: issuer_account_id,
+                binding_method: BindingMethod::Setup,
+            },
+            PrincipalBinding {
+                space_uid,
+                principal_id: target_principal_id,
+                node_account_id: target_account_id,
+                binding_method: BindingMethod::Invite,
+            },
+        ]);
+        service.write_state(&state).await?;
+        let (_, token, _) = service
+            .issue_owner_recovery_approval_unchecked(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_principal_id,
+                issuer_account_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+        let mut state = service.read_state().await?;
+        state
+            .accounts
+            .get_mut(&target_account_id)
+            .expect("target account")
+            .credential_generation = 1;
+        service.write_state(&state).await?;
+        let error = service
+            .start_owner_recovery_registration(&token)
+            .await
+            .expect_err("an approval must not cross a credential generation change");
+        assert!(error.to_string().contains("owner approval is stale"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_013_node_recovery_fence_blocks_status_until_commit() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        for (account_id, name) in [(issuer_account_id, "Issuer"), (target_account_id, "Target")] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: name.to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.bindings.extend([
+            PrincipalBinding {
+                space_uid,
+                principal_id: issuer_principal_id,
+                node_account_id: issuer_account_id,
+                binding_method: BindingMethod::Setup,
+            },
+            PrincipalBinding {
+                space_uid,
+                principal_id: target_principal_id,
+                node_account_id: target_account_id,
+                binding_method: BindingMethod::Invite,
+            },
+        ]);
+        let invitation_id = Uuid::now_v7();
+        state.invitations.insert(
+            invitation_id,
+            AccountInvitation {
+                invitation_id,
+                token_hash: token_hash("blocked-invitation"),
+                display_name: "Blocked invite".to_string(),
+                space_uid: Some(space_uid),
+                role: Some("viewer".to_string()),
+                expires_at: timestamp(Utc::now() + Duration::hours(1)),
+                acceptance: None,
+                created_by: issuer_account_id,
+            },
+        );
+        service.write_state(&state).await?;
+        let snapshot = RecoveryBindingSnapshot {
+            request_id: Uuid::now_v7(),
+            recovery_fence_id: Uuid::now_v7(),
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            space_authorization_revision: 1,
+            issuer_space_lifecycle_epoch: 1,
+            target_space_lifecycle_epoch: 1,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&snapshot),
+            )
+            .await?;
+        assert!(service.start_add_passkey(target_account_id).await.is_err());
+        assert!(service
+            .start_totp_enrollment(target_account_id)
+            .await
+            .is_err());
+        assert!(service
+            .start_recovery_registration(target_account_id, "unused", "000000")
+            .await
+            .is_err());
+        assert!(service
+            .complete_oidc_login(
+                "https://issuer.example",
+                "blocked-subject",
+                "Blocked",
+                None,
+                Some(target_account_id),
+                Some(0),
+                None,
+            )
+            .await
+            .is_err());
+        assert!(service
+            .issue_invitation(
+                issuer_account_id,
+                "Blocked invite",
+                Some(space_uid),
+                Some("viewer".to_string()),
+            )
+            .await
+            .is_err());
+        assert!(service
+            .start_invitation_registration("blocked-invitation")
+            .await
+            .is_err());
+        assert!(service
+            .set_account_status(target_account_id, AccountStatus::Suspended)
+            .await
+            .is_err());
+        service
+            .complete_recovery_fence(snapshot.recovery_fence_id)
+            .await?;
+        service
+            .set_account_status(target_account_id, AccountStatus::Suspended)
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_req_sec_012_generation_invalidates_human_credentials_but_not_agents() -> Result<()>
+    {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let device_id = Uuid::now_v7();
+        let reset_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        let account = HumanAccount {
+            account_id,
+            display_name: "Target".to_string(),
+            status: AccountStatus::Active,
+            created_at: timestamp(Utc::now()),
+            node_roles: BTreeSet::new(),
+            credential_generation: 0,
+        };
+        state.accounts.insert(account_id, account.clone());
+        let old_session_token = service
+            .create_session(
+                &state,
+                account_id,
+                Uuid::now_v7(),
+                AssuranceLevel::PhishingResistant,
+            )
+            .await?;
+        state.device_credentials.insert(
+            device_id,
+            DeviceCredential {
+                credential_id: device_id,
+                device_name: "cli".to_string(),
+                public_key_jwk: serde_json::json!({"kty": "EC"}),
+                account_id,
+                credential_generation: 0,
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+                expires_at: None,
+                revoked_at: None,
+            },
+        );
+        state.agent_credentials.insert(
+            agent_id,
+            AgentCredential {
+                credential_id: Uuid::now_v7(),
+                agent_id,
+                public_key_jwk: serde_json::json!({"kty": "EC"}),
+                created_at: timestamp(Utc::now()),
+                last_used_at: None,
+                expires_at: None,
+                revoked_at: None,
+            },
+        );
+        service.write_state(&state).await?;
+
+        let mut state = service.read_state().await?;
+        let session_token = service
+            .prepare_owner_reset(&mut state, &account, 1, Uuid::now_v7(), reset_id)
+            .await?;
+        assert!(!session_token.is_empty());
+        assert_eq!(state.accounts[&account_id].credential_generation, 1);
+        assert!(state.device_credentials[&device_id].revoked_at.is_some());
+        assert!(state.agent_credentials[&agent_id].revoked_at.is_none());
+        let winner_session_id = service.session_id_for_token(&session_token).await?;
+        service
+            .revoke_account_sessions_except(
+                state.node_id,
+                account_id,
+                &timestamp(Utc::now()),
+                Some(winner_session_id),
+            )
+            .await?;
+        let sessions = service.list_sessions(account_id).await?;
+        assert_eq!(sessions.len(), 2);
+        assert!(sessions
+            .iter()
+            .any(|session| session["revoked_at"].is_string()));
+        assert!(service
+            .authenticate_session(&old_session_token)
+            .await
+            .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oidc_invitation_attempt_rejects_a_recovery_generation_change() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let invitation_id = Uuid::now_v7();
+        let provider_id = Uuid::now_v7();
+        let token = "oidc-invitation";
+        let mut state = service.read_state().await?;
+        state.accounts.insert(
+            account_id,
+            HumanAccount {
+                account_id,
+                display_name: "OIDC member".to_string(),
+                status: AccountStatus::Active,
+                created_at: timestamp(Utc::now()),
+                node_roles: BTreeSet::new(),
+                credential_generation: 0,
+            },
+        );
+        state.bindings.push(PrincipalBinding {
+            space_uid,
+            principal_id: Uuid::now_v7(),
+            node_account_id: account_id,
+            binding_method: BindingMethod::Invite,
+        });
+        state.invitations.insert(
+            invitation_id,
+            AccountInvitation {
+                invitation_id,
+                token_hash: token_hash(token),
+                display_name: "OIDC member".to_string(),
+                space_uid: Some(space_uid),
+                role: Some("viewer".to_string()),
+                expires_at: timestamp(Utc::now() + Duration::hours(1)),
+                acceptance: Some(InvitationAcceptance::Pending {
+                    account_id,
+                    principal_id: Uuid::now_v7(),
+                    kind: InvitationAcceptanceKind::Oidc,
+                    claimed_at: timestamp(Utc::now()),
+                    credential_generation: 0,
+                }),
+                created_by: account_id,
+            },
+        );
+        state.oidc_providers.insert(
+            provider_id,
+            OidcProvider {
+                provider_id,
+                issuer: "https://issuer.example".to_string(),
+                client_id: "client".to_string(),
+                client_secret: None,
+                enabled: true,
+                created_at: timestamp(Utc::now()),
+            },
+        );
+        service.write_state(&state).await?;
+        service
+            .save_oidc_attempt(
+                provider_id,
+                "oidc-state",
+                "nonce",
+                "pkce",
+                Some(token),
+                None,
+            )
+            .await?;
+        let mut state = service.read_state().await?;
+        state
+            .oidc_attempts
+            .get_mut(&token_hash("oidc-state"))
+            .expect("saved OIDC attempt")
+            .invitation_account_generation = None;
+        state
+            .accounts
+            .get_mut(&account_id)
+            .unwrap()
+            .credential_generation = 1;
+        service.write_state(&state).await?;
+        let error = service
+            .consume_oidc_attempt("oidc-state")
+            .await
+            .expect_err("an OIDC invitation flow must not cross a reset");
+        assert!(error
+            .to_string()
+            .contains("OIDC invitation login attempt is stale"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_owner_reset_marker_is_not_reported_as_completed() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let challenge_id = Uuid::now_v7();
+        let approval_id = Uuid::now_v7();
+        let reset_id = Uuid::now_v7();
+        let mut state = service.read_state().await?;
+        state.recovery_challenge_tombstones.insert(
+            challenge_id,
+            RecoveryChallengeTombstone {
+                challenge_id,
+                approval_id,
+                reset_id,
+                reason: "account_reset".to_string(),
+                created_at: timestamp(Utc::now()),
+            },
+        );
+        state.recovery_reset_markers.insert(
+            reset_id,
+            RecoveryResetMarker {
+                reset_id,
+                challenge_id,
+                approval_id,
+                account_id: Uuid::now_v7(),
+                generation_before: 0,
+                generation_after: 1,
+                session_id: Uuid::now_v7(),
+                space_authorization_revision: 1,
+                recovery_fence_id: Uuid::now_v7(),
+                space_uid: Uuid::now_v7(),
+                principal_id: Uuid::now_v7(),
+                issuer_principal_id: Uuid::now_v7(),
+                space_fence_status: default_space_fence_status(),
+                committed_at: timestamp(Utc::now()),
+                encrypted_response: None,
+                response_delivered_at: None,
+                response_delivery_id: None,
+                response_invalidated_at: None,
+                completion_proof_hash: None,
+            },
+        );
+        service.write_state(&state).await?;
+
+        let pending = service
+            .owner_recovery_challenge_context(challenge_id)
+            .await
+            .expect_err("a pending Space fence must remain retryable");
+        assert!(pending.to_string().contains("RECOVERY_FENCE_UNAVAILABLE"));
+
+        let mut state = service.read_state().await?;
+        state
+            .recovery_reset_markers
+            .get_mut(&reset_id)
+            .expect("reset marker")
+            .space_fence_status = "reconciled".to_string();
+        service.write_state(&state).await?;
+        let completed = service
+            .owner_recovery_challenge_context(challenge_id)
+            .await
+            .expect_err("a reconciled reset must be terminal");
+        assert!(completed
+            .to_string()
+            .contains("owner reset already completed"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn expired_node_recovery_fence_cannot_be_completed() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let issuer_account_id = Uuid::now_v7();
+        let target_account_id = Uuid::now_v7();
+        let issuer_principal_id = Uuid::now_v7();
+        let target_principal_id = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let snapshot = RecoveryBindingSnapshot {
+            request_id: Uuid::now_v7(),
+            recovery_fence_id: Uuid::now_v7(),
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            space_authorization_revision: 1,
+            issuer_space_lifecycle_epoch: 1,
+            target_space_lifecycle_epoch: 1,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        let mut state = service.read_state().await?;
+        for account_id in [issuer_account_id, target_account_id] {
+            state.accounts.insert(
+                account_id,
+                HumanAccount {
+                    account_id,
+                    display_name: "Recovery test".to_string(),
+                    status: AccountStatus::Active,
+                    created_at: timestamp(Utc::now()),
+                    node_roles: BTreeSet::new(),
+                    credential_generation: 0,
+                },
+            );
+        }
+        state.bindings.extend([
+            PrincipalBinding {
+                space_uid,
+                principal_id: issuer_principal_id,
+                node_account_id: issuer_account_id,
+                binding_method: BindingMethod::Setup,
+            },
+            PrincipalBinding {
+                space_uid,
+                principal_id: target_principal_id,
+                node_account_id: target_account_id,
+                binding_method: BindingMethod::Invite,
+            },
+        ]);
+        service.write_state(&state).await?;
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&snapshot),
+            )
+            .await?;
+        let mut state = service.read_state().await?;
+        state
+            .node_recovery_fences
+            .get_mut(&snapshot.recovery_fence_id)
+            .unwrap()
+            .expires_at = timestamp(Utc::now() - Duration::seconds(1));
+        service.write_state(&state).await?;
+        assert!(service
+            .start_add_passkey(target_account_id)
+            .await
+            .expect_err("an expired but unreconciled fence must still block Node writes")
+            .to_string()
+            .contains("RECOVERY_FENCE_UNAVAILABLE"));
+        assert!(service
+            .complete_recovery_fence(snapshot.recovery_fence_id)
+            .await
+            .is_err());
+        let mut state = service.read_state().await?;
+        state.recovery_reset_markers.insert(
+            Uuid::now_v7(),
+            RecoveryResetMarker {
+                reset_id: Uuid::now_v7(),
+                challenge_id: Uuid::now_v7(),
+                approval_id: Uuid::now_v7(),
+                account_id: target_account_id,
+                generation_before: 0,
+                generation_after: 1,
+                session_id: Uuid::now_v7(),
+                space_authorization_revision: 1,
+                recovery_fence_id: snapshot.recovery_fence_id,
+                space_uid,
+                principal_id: target_principal_id,
+                issuer_principal_id,
+                space_fence_status: default_space_fence_status(),
+                committed_at: timestamp(Utc::now()),
+                encrypted_response: None,
+                response_delivered_at: None,
+                response_delivery_id: None,
+                response_invalidated_at: None,
+                completion_proof_hash: None,
+            },
+        );
+        service.write_state(&state).await?;
+        service
+            .abort_recovery_fence_after_space_abort(snapshot.recovery_fence_id)
+            .await?;
+        let state = service.read_state().await?;
+        assert_eq!(
+            state.node_recovery_fences[&snapshot.recovery_fence_id].status,
+            "released"
+        );
+        assert!(state
+            .recovery_reset_markers
+            .values()
+            .all(|marker| marker.space_fence_status == "reconciled"));
+        let reopened = RecoveryBindingSnapshot {
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            ..snapshot.clone()
+        };
+        assert!(service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&reopened),
+            )
+            .await
+            .expect_err("a released Node fence must not be reopened by a stale challenge")
+            .to_string()
+            .contains("RECOVERY_FENCE_UNAVAILABLE"));
+        let provisional = RecoveryBindingSnapshot {
+            request_id: Uuid::now_v7(),
+            recovery_fence_id: Uuid::now_v7(),
+            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
+            space_authorization_revision: 0,
+            issuer_space_lifecycle_epoch: 0,
+            target_space_lifecycle_epoch: 0,
+            issuer_node_lifecycle_epoch: 0,
+            target_node_lifecycle_epoch: 0,
+            issuer_generation: 0,
+            target_generation: 0,
+        };
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&provisional),
+            )
+            .await?;
+        assert_eq!(
+            service
+                .recovery_fence_phase(provisional.recovery_fence_id)
+                .await?
+                .as_deref(),
+            Some("provisional")
+        );
+        assert_eq!(
+            service
+                .recovery_fence_for_request(
+                    provisional.request_id,
+                    space_uid,
+                    target_principal_id,
+                    target_account_id,
+                    issuer_account_id,
+                )
+                .await?,
+            Some(provisional.clone())
+        );
+        let paired = RecoveryBindingSnapshot {
+            space_authorization_revision: 1,
+            ..provisional.clone()
+        };
+        service
+            .acquire_recovery_fence(
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+                Some(&paired),
+            )
+            .await?;
+        assert_eq!(
+            service
+                .recovery_fence_phase(provisional.recovery_fence_id)
+                .await?
+                .as_deref(),
+            Some("paired")
+        );
+        let found_paired = service
+            .recovery_fence_for_request(
+                provisional.request_id,
+                space_uid,
+                target_principal_id,
+                target_account_id,
+                issuer_account_id,
+            )
+            .await?
+            .expect("paired fence remains discoverable by its request key");
+        assert_eq!(
+            found_paired.recovery_fence_id,
+            provisional.recovery_fence_id
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn committed_node_write_errors_are_distinguished_from_unknown_outcomes() {
+        assert!(node_write_was_committed_with_ambiguous_response(&anyhow!(
+            "node control write committed with an ambiguous response: timeout"
+        )));
+        assert!(!node_write_was_committed_with_ambiguous_response(&anyhow!(
+            "node control write outcome unknown: timeout"
+        )));
+        assert!(!node_write_was_committed_with_ambiguous_response(&anyhow!(
+            "node control write outcome unknown: timeout"
+        )));
     }
 }

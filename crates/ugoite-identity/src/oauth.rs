@@ -26,6 +26,10 @@ pub struct AccessTokenClaims {
     pub iat: i64,
     pub jti: Uuid,
     pub credential_id: Uuid,
+    /// Human tokens carry the account generation captured at issuance.
+    /// Agent tokens intentionally leave this unset.
+    #[serde(default)]
+    pub credential_generation: Option<u64>,
     pub cnf: Confirmation,
 }
 

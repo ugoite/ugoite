@@ -168,7 +168,9 @@ impl NodeControlStore for OpenDalNodeControlStore {
                     .if_match(expected_version)
                     .await
                     .context("compare-and-swap node control object")?;
-                remote_version(operator, &path).await
+                remote_version(operator, &path).await.map_err(|error| {
+                    anyhow!("node control write committed with an ambiguous response: {error}")
+                })
             }
             Self::Memory(records) => {
                 let mut records = records

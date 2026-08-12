@@ -15,6 +15,13 @@ node_identity:
     recovery_code: { hashed: true, one_use: true }
     totp: { encrypted_at_rest: true, sufficient_alone: false }
     passkey_replacement_requires: [recovery_code, totp]
+    owner_approved:
+      authority: active_human_space_owner_with_recent_passkey
+      approval_ttl_minutes: 15
+      token: { entropy_bits_minimum: 256, hashed_at_rest: true, encrypted_for_one_time_response: true, one_use: true }
+      challenge_ttl_minutes: 5
+      reset: { credential_generation: monotonic, old_human_credentials_invalidated: true, agent_credentials_preserved: true }
+      backup_codes: { count: 8, idempotency_key: uuid_v4, plaintext_returned_once: true }
 space_identity:
   id: UUIDv7 space_uid
   portable: [principals, memberships, acl, attribution, authorization_audit]
