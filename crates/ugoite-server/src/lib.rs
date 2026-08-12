@@ -5784,6 +5784,9 @@ fn dangerous_operation_audit_details(
 struct PendingHumanApproval {
     approval: HumanApproval,
     token: String,
+    operation: String,
+    action: Action,
+    resource: ResourceRef,
     intent_hash: String,
 }
 
@@ -6167,6 +6170,26 @@ async fn require_dangerous_resource_action(
         .map_err(ApiError::from_core)?;
         return Err(invalid_human_approval());
     };
+    if approval.operation != operation
+        || approval.action != action
+        || approval.resource != resource
+        || approval.intent_hash != normalized_intent_hash
+    {
+        append_human_approval_audit_with_details(
+            state,
+            space_id,
+            Some(&approval),
+            Some(principal_id),
+            audit_details,
+            "rejected",
+            "error",
+            "error",
+            identity.request_id,
+        )
+        .await
+        .map_err(ApiError::from_core)?;
+        return Err(invalid_human_approval());
+    }
     if approval.consumed_at.is_some() {
         append_human_approval_audit_with_details(
             state,
@@ -6237,6 +6260,9 @@ async fn require_dangerous_resource_action(
         Some(PendingHumanApproval {
             approval,
             token: token.to_string(),
+            operation: operation.to_string(),
+            action,
+            resource,
             intent_hash: normalized_intent_hash,
         }),
     ))
@@ -6255,10 +6281,11 @@ where
 {
     let approval = pending.approval.clone();
     let token = pending.token;
+    let operation = pending.operation;
+    let action = pending.action;
+    let resource = pending.resource;
     let intent_hash = pending.intent_hash;
-    let operation = approval.operation.clone();
     let space_id = space_id.to_string();
-    let resource = approval.resource.clone();
     let actor_principal_id = identity
         .token_actor_principal_id
         .unwrap_or(approval.actor_principal_id);
@@ -6292,7 +6319,7 @@ where
                             &space_id,
                             &token,
                             &operation,
-                            approval.action.clone(),
+                            action,
                             &resource,
                             &intent_hash,
                             actor_principal_id,
@@ -9314,6 +9341,86 @@ mod authentication_regression_tests {
     }
 
     #[tokio::test]
+    async fn cross_kind_delete_approval_is_rejected_without_consuming_it() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-human-approval-cross-kind")?;
+        let principal_id = Uuid::from_u128(1950);
+        let space_id = state
+            .service
+            .create_space_for_principal("human-approval-cross-kind", principal_id, "Route test")
+            .await?
+            .to_string();
+        let space_uid = state.service.space_uid(&space_id).await?;
+        let actor_credential_id = Uuid::now_v7();
+        let target_id = Uuid::now_v7().to_string();
+        let (asset_approval_id, asset_token) = issue_route_test_delete_approval(
+            &state,
+            &space_id,
+            principal_id,
+            actor_credential_id,
+            "asset.delete",
+            ResourceKind::Asset,
+            target_id.clone(),
+        )
+        .await?;
+        let (sql_approval_id, sql_token) = issue_route_test_delete_approval(
+            &state,
+            &space_id,
+            principal_id,
+            actor_credential_id,
+            "sql.delete",
+            ResourceKind::SavedSql,
+            target_id.clone(),
+        )
+        .await?;
+
+        let mut sql_identity = content_identity(principal_id, space_uid);
+        sql_identity.request_identity.credential_id = actor_credential_id;
+        sql_identity.token_actions = Some(["delete".to_string()].into_iter().collect());
+        sql_identity.human_approval_token = Some(asset_token);
+        let sql_route = Router::new()
+            .route("/spaces/{space_id}/sql/{sql_id}", delete(delete_sql))
+            .layer(Extension(sql_identity))
+            .with_state(state.clone());
+        let sql_response = sql_route
+            .oneshot(
+                Request::delete(format!("/spaces/{space_id}/sql/{target_id}"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        let sql_body = axum::body::to_bytes(sql_response.into_body(), usize::MAX).await?;
+        let sql_body: Value = serde_json::from_slice(&sql_body)?;
+        assert_eq!(sql_body["code"], "HUMAN_APPROVAL_INVALID");
+
+        let mut asset_identity = content_identity(principal_id, space_uid);
+        asset_identity.request_identity.credential_id = actor_credential_id;
+        asset_identity.token_actions = Some(["delete".to_string()].into_iter().collect());
+        asset_identity.human_approval_token = Some(sql_token);
+        let asset_route = Router::new()
+            .route("/spaces/{space_id}/assets/{asset_id}", delete(delete_asset))
+            .layer(Extension(asset_identity))
+            .with_state(state.clone());
+        let asset_response = asset_route
+            .oneshot(
+                Request::delete(format!("/spaces/{space_id}/assets/{target_id}"))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        let asset_body = axum::body::to_bytes(asset_response.into_body(), usize::MAX).await?;
+        let asset_body: Value = serde_json::from_slice(&asset_body)?;
+        assert_eq!(asset_body["code"], "HUMAN_APPROVAL_INVALID");
+
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        let approvals = authorizer.state(&space_id).await?.human_approvals;
+        assert!(approvals
+            .get(&asset_approval_id)
+            .is_some_and(|approval| approval.consumed_at.is_none()));
+        assert!(approvals
+            .get(&sql_approval_id)
+            .is_some_and(|approval| approval.consumed_at.is_none()));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn dangerous_route_audits_acl_refusal_before_approval_processing() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("memory://server-human-approval-route-required")?;
         let principal_id = Uuid::from_u128(1927);
@@ -9628,6 +9735,45 @@ mod authentication_regression_tests {
         Ok((entry_id, token))
     }
 
+    async fn issue_route_test_delete_approval(
+        state: &AppState,
+        space_id: &str,
+        principal_id: Uuid,
+        actor_credential_id: Uuid,
+        operation: &str,
+        resource_kind: ResourceKind,
+        resource_id: String,
+    ) -> anyhow::Result<(Uuid, String)> {
+        let intent = json!({"target_id": resource_id});
+        let intent_digest = intent_hash(&intent)
+            .map_err(|error| anyhow::anyhow!("invalid test intent: {}", error.detail))?;
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        let (approval, token) = authorizer
+            .issue_human_approval(
+                space_id,
+                HumanApprovalIssue {
+                    operation: operation.to_string(),
+                    action: Action::Delete,
+                    resource: ResourceRef {
+                        kind: resource_kind,
+                        id: resource_id,
+                        parent: None,
+                    },
+                    intent_hash: intent_digest,
+                    actor_principal_id: principal_id,
+                    actor_credential_id,
+                    issuer_principal_id: principal_id,
+                    issuer_account_id: principal_id,
+                    issuer_credential_id: Uuid::now_v7(),
+                    issuer_credential_generation: 0,
+                    issuer_node_account_lifecycle_epoch: 0,
+                    ttl: chrono::Duration::seconds(30),
+                },
+            )
+            .await?;
+        Ok((approval.approval_id, token))
+    }
+
     #[tokio::test]
     async fn human_approval_issue_then_consume_uses_node_credential_lock() -> anyhow::Result<()> {
         let state = AppState::new_for_tests("memory://server-human-approval-node-lock")?;
@@ -9732,6 +9878,9 @@ mod authentication_regression_tests {
         identity.token_principal_id = Some(actor_principal_id);
         identity.token_actor_principal_id = Some(actor_principal_id);
         let pending = PendingHumanApproval {
+            operation: approval.operation.clone(),
+            action: approval.action.clone(),
+            resource: approval.resource.clone(),
             approval,
             token,
             intent_hash: intent_digest,
@@ -9807,6 +9956,9 @@ mod authentication_regression_tests {
             &space_id,
             &identity,
             PendingHumanApproval {
+                operation: second_approval.operation.clone(),
+                action: second_approval.action.clone(),
+                resource: second_approval.resource.clone(),
                 approval: second_approval.clone(),
                 token: second_token,
                 intent_hash: second_digest,
