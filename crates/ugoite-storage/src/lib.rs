@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
@@ -648,6 +649,10 @@ pub trait StorageBackend: Send + Sync {
     async fn exists(&self, path: &str) -> Result<bool>;
     async fn read(&self, path: &str) -> Result<Vec<u8>>;
     async fn write(&self, path: &str, data: Vec<u8>) -> Result<()>;
+    async fn write_if_absent(&self, path: &str, data: Vec<u8>) -> Result<()>;
+    async fn set_private(&self, _path: &str) -> Result<()> {
+        Ok(())
+    }
     async fn create_dir(&self, path: &str) -> Result<()>;
     async fn list_dir(&self, path: &str) -> Result<Vec<StorageEntry>>;
 
@@ -741,6 +746,13 @@ impl OpendalStorage {
     pub fn from_operator(operator: &Operator) -> Self {
         Self::new(operator.clone())
     }
+
+    fn local_path(&self, path: &str) -> Option<std::path::PathBuf> {
+        match self.operator.info().scheme() {
+            "fs" | "file" => Some(Path::new(self.operator.info().root().as_str()).join(path)),
+            _ => None,
+        }
+    }
 }
 
 #[async_trait]
@@ -755,6 +767,101 @@ impl StorageBackend for OpendalStorage {
 
     async fn write(&self, path: &str, data: Vec<u8>) -> Result<()> {
         self.operator.write(path, data).await?;
+        Ok(())
+    }
+
+    async fn write_if_absent(&self, path: &str, data: Vec<u8>) -> Result<()> {
+        if let Some(target) = self.local_path(path) {
+            let parent = target
+                .parent()
+                .ok_or_else(|| anyhow!("storage path has no parent: {path}"))?;
+            let file_name = target
+                .file_name()
+                .ok_or_else(|| anyhow!("storage path has no file name: {path}"))?
+                .to_string_lossy();
+            let temporary = parent.join(format!(".{file_name}.{}.tmp", Uuid::now_v7()));
+            let mut options = tokio::fs::OpenOptions::new();
+            options.create_new(true).write(true);
+            #[cfg(unix)]
+            {
+                options.mode(0o600);
+            }
+            let mut file = options.open(&temporary).await?;
+            file.write_all(&data).await?;
+            file.sync_all().await?;
+
+            // A direct create_new(target) makes a partially written target
+            // visible to readers. Publish a fully written, synced temporary
+            // file through a hard link instead: link(2) is atomic and fails
+            // when another writer already owns the destination.
+            drop(file);
+            let link_result = tokio::fs::hard_link(&temporary, &target).await;
+            let cleanup_result = tokio::fs::remove_file(&temporary).await;
+            if let Err(error) = link_result {
+                let _ = cleanup_result;
+                return Err(error.into());
+            }
+            cleanup_result?;
+
+            #[cfg(unix)]
+            if let Ok(directory) = tokio::fs::File::open(parent).await {
+                directory.sync_all().await?;
+            }
+
+            return Ok(());
+        }
+
+        if !self
+            .operator
+            .info()
+            .full_capability()
+            .write_with_if_not_exists
+        {
+            return Err(anyhow!(
+                "storage backend does not support conditional object creation"
+            ));
+        }
+        self.operator
+            .write_options(
+                path,
+                data,
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn set_private(&self, path: &str) -> Result<()> {
+        let Some(target) = self.local_path(path) else {
+            return Ok(());
+        };
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let root_path = self.operator.info().root();
+            let root = Path::new(root_path.as_str());
+            let mut current = target.parent();
+            while let Some(directory) = current {
+                if directory == root {
+                    break;
+                }
+                if tokio::fs::try_exists(directory).await? {
+                    tokio::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))
+                        .await?;
+                }
+                current = directory.parent();
+            }
+
+            if tokio::fs::try_exists(&target).await? {
+                tokio::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).await?;
+            }
+        }
+
         Ok(())
     }
 
@@ -783,6 +890,7 @@ mod tests {
         StorageBackend,
     };
     use anyhow::Result;
+    use futures::future::join_all;
     use opendal::services::Memory;
     use opendal::Operator;
 
@@ -839,6 +947,47 @@ mod tests {
                 is_dir: true,
             }]
         );
+
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn local_conditional_create_is_private_and_single_winner() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir()?;
+        let op = operator_from_uri(&format!("fs://{}", temp_dir.path().display()))?;
+        let storage = OpendalStorage::from_operator(&op);
+        storage.create_dir("response_hmac/").await?;
+
+        let results = join_all((0..8).map(|index| {
+            let storage = storage.clone();
+            async move {
+                storage
+                    .write_if_absent(
+                        "response_hmac/default.json",
+                        format!("key-{index}").into_bytes(),
+                    )
+                    .await
+            }
+        }))
+        .await;
+
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        let published = storage.read("response_hmac/default.json").await?;
+        assert!(published.starts_with(b"key-"));
+        storage.set_private("response_hmac/default.json").await?;
+        let file_mode = std::fs::metadata(temp_dir.path().join("response_hmac/default.json"))?
+            .permissions()
+            .mode()
+            & 0o777;
+        let dir_mode = std::fs::metadata(temp_dir.path().join("response_hmac"))?
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(file_mode, 0o600);
+        assert_eq!(dir_mode, 0o700);
 
         Ok(())
     }

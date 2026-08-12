@@ -61,12 +61,15 @@ requirements:
   - SPEC-TESTING-STRATEGY
   id: REQ-INT-003
   title: API response HMAC signing
-  description: The core can create Space-scoped response-signing material and compute a body signature, but the
-    HTTP server does not attach an HMAC signature header. Server middleware/header integration remains planned.
+  description: The server signs eligible materialized HTTP response bodies with the scope-owned HMAC material and
+    exposes the key ID and lowercase-hex signature in response headers. Streaming, fallible, and otherwise
+    explicitly unsigned responses remain unsigned.
   related_spec:
   - security/overview.md
   priority: low
-  status: planned
+  status: implemented
   verification: traced
   tests:
   - file: crates/ugoite-iceberg/tests/test_integrity.rs
+  - file: crates/ugoite-server/src/lib.rs
+  - file: crates/ugoite-server/tests/api_contract.rs
