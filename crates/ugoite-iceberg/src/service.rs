@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::time::Duration;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -64,6 +65,8 @@ struct AssetTextRefreshWorker {
 static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
     StdMutex<BTreeMap<String, Arc<AssetTextRefreshWorker>>>,
 > = OnceLock::new();
+
+const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
@@ -132,6 +135,12 @@ impl UgoiteService {
             tokio::spawn(async move {
                 loop {
                     worker.notify.notified().await;
+                    // Let the authoritative request and a short burst of
+                    // follow-up mutations/read-backs settle before opening
+                    // the derived read snapshot. Refresh remains best effort
+                    // and process-local; this only avoids making an immediate
+                    // post-mutation read contend with the rebuild.
+                    tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
                     while worker.pending.swap(false, Ordering::AcqRel) {
                         let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
                         let result = if shared {
@@ -342,8 +351,8 @@ impl UgoiteService {
             &integrity,
         )
         .await?;
-        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         self.schedule_asset_text_refresh(space_id);
+        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         Ok(result)
     }
 
@@ -390,8 +399,8 @@ impl UgoiteService {
             Some(&scopes),
         )
         .await?;
-        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         self.schedule_asset_text_refresh(space_id);
+        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         Ok(result)
     }
 
