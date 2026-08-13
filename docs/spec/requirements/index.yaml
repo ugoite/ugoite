@@ -14,7 +14,11 @@ requirements:
   - SPEC-API-REST
   id: REQ-IDX-001
   title: Persistent derived-index rebuild
-  description: `ugoite index run` rebuilds registered search-related DerivedRelations from current authoritative Entry references. The initial AssetText producer publishes a replaceable Iceberg materialization through its independent Relation Head without mutating the main Catalog Head.
+  description: >-
+    `ugoite index run` rebuilds registered search-related DerivedRelations from
+    current authoritative Entry references. The initial AssetText producer
+    publishes a replaceable Iceberg materialization through its independent
+    Relation Head without mutating the main Catalog Head.
   related_spec:
   - architecture/overview.md#architecture-overview
   - data-model/overview.md#search-query-and-derived-data

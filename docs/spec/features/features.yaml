@@ -33,7 +33,7 @@ files:
   - REQCAT-ASSET
   - REQCAT-API
 - kind: derived_relations
-  file: architecture/derived-relations.md
+  file: derived-relations.yaml
   linked_requirements:
   - REQCAT-ASSET
   - REQCAT-SEARCH

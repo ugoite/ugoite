@@ -40,7 +40,7 @@ requirements:
   - POL-003
   linked_specifications:
   - SPEC-ARCH-DERIVED-RELATIONS
-  id: REQ-STO-008
+  id: REQ-STO-013
   title: Rebuildable Derived Relations
   description: 'DerivedRelation Heads and immutable Iceberg materializations MUST
     remain under the owning Space prefix. They MUST use exact conditional Head

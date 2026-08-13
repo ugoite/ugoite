@@ -4,8 +4,6 @@ sidebar:
   order: 4
 ---
 
-# Derived relations
-
 Ugoite has two sibling kinds of typed Iceberg relation:
 
 - a Form is authoritative, append-only user data and participates in Catalog
