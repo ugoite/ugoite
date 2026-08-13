@@ -118,12 +118,13 @@ pub async fn search_entries_with_scopes_after(
     Ok(results)
 }
 
-fn is_after_cursor(
-    result: &KeywordSearchResult,
-    after: Option<(&str, &str, &str)>,
-) -> bool {
+fn is_after_cursor(result: &KeywordSearchResult, after: Option<(&str, &str, &str)>) -> bool {
     after.is_none_or(|(title, id, form)| {
-        (result.title.as_str(), result.id.as_str(), result.form.as_str()) > (title, id, form)
+        (
+            result.title.as_str(),
+            result.id.as_str(),
+            result.form.as_str(),
+        ) > (title, id, form)
     })
 }
 
