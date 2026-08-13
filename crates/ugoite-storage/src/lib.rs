@@ -305,7 +305,7 @@ fn canonical_head_bytes(head: &DerivedRelationHead) -> Result<Vec<u8>> {
     canonical.checksum = ugoite_domain::derived_relation::sha256_digest(
         &serde_json::to_vec(&canonical).context("canonicalize DerivedRelation Head")?,
     );
-    Ok(serde_json::to_vec(&canonical).context("encode DerivedRelation Head")?)
+    serde_json::to_vec(&canonical).context("encode DerivedRelation Head")
 }
 
 fn validate_derived_head_checksum(head: &DerivedRelationHead) -> Result<()> {
