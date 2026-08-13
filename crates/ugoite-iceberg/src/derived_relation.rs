@@ -1,0 +1,1733 @@
+//! Rebuildable, non-authoritative Iceberg relations.
+//!
+//! The Relation Head in `ugoite-storage` is the only durable visibility
+//! coordinate in this module.  Iceberg metadata and data files are immutable
+//! build products below a materialization prefix; a failed build therefore
+//! cannot replace the currently visible result or the authoritative Catalog.
+
+use anyhow::{bail, Context, Result};
+use arrow_array::builder::{Int64Builder, StringBuilder};
+use arrow_array::{Array, RecordBatch, StringArray, TimestampMicrosecondArray};
+use chrono::Utc;
+use datafusion::prelude::SessionContext;
+use futures::TryStreamExt;
+use iceberg::io::FileIO;
+use iceberg::spec::TableMetadataBuilder;
+use iceberg::spec::{NestedField, PrimitiveType, Schema, SortOrder, Type, UnboundPartitionSpec};
+use iceberg::table::Table;
+use iceberg::transaction::{ApplyTransactionAction, Transaction};
+use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
+use iceberg::writer::file_writer::location_generator::{
+    DefaultFileNameGenerator, DefaultLocationGenerator,
+};
+use iceberg::writer::file_writer::rolling_writer::RollingFileWriterBuilder;
+use iceberg::writer::file_writer::ParquetWriterBuilder;
+use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
+use iceberg::{
+    Catalog, Error as IcebergError, ErrorKind as IcebergErrorKind, MetadataLocation, Namespace,
+    NamespaceIdent, Runtime, TableCreation, TableIdent,
+};
+use iceberg_datafusion::IcebergStaticTableProvider;
+use opendal::options::WriteOptions;
+use opendal::{ErrorKind, Operator};
+use quick_xml::events::Event;
+use quick_xml::Reader;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::{Cursor, Read, Seek};
+use std::str::FromStr;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use ugoite_domain::derived_relation::DerivedRelationId;
+use ugoite_domain::derived_relation::{
+    canonical_json, sha256_digest, DerivedErrorCode, DerivedExposure, DerivedRelationDefinition,
+    DerivedValueType, RelationField, TypedSchema,
+};
+use ugoite_domain::entry::AssetReference;
+use ugoite_domain::form::{FieldType, FormDefinition};
+use ugoite_storage::{DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore};
+use uuid::Uuid;
+use zip::ZipArchive;
+
+pub const ASSET_TEXT_PRODUCER_ID: &str = "ugoite.asset_text";
+pub const ASSET_TEXT_PARSER_VERSION: &str = "1";
+pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 1;
+const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_ZIP_ENTRIES: usize = 10_000;
+const MAX_ZIP_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_PDF_PAGES: usize = 10_000;
+const MAX_PDF_TEXT_OPERATORS: usize = 1_000_000;
+const MAX_XML_DEPTH: usize = 256;
+const MAX_EXTRACTED_TEXT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TEXT_CHUNK_CHARS: usize = 16 * 1024;
+const READER_CHUNK_BYTES: usize = 256 * 1024;
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub struct AssetTextRow {
+    pub form_id: String,
+    pub entry_id: String,
+    pub entry_version: i64,
+    pub asset_id: String,
+    pub source_sha256: String,
+    pub source_size_bytes: i64,
+    pub parser_id: String,
+    pub parser_version: String,
+    pub producer_fingerprint: String,
+    pub status: String,
+    pub chunk_index: i64,
+    pub source_locator: Option<String>,
+    pub text: Option<String>,
+    pub text_length: i64,
+    pub parsed_at: String,
+    pub error_code: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+struct AssetTextManifest {
+    format_version: u32,
+    relation_id: String,
+    materialization_id: String,
+    producer_fingerprint: String,
+    input_digest: String,
+    row_count: usize,
+    source_coordinate: Value,
+    row_digest: String,
+    #[serde(default)]
+    assets_referenced: usize,
+    #[serde(default)]
+    assets_ready: usize,
+    #[serde(default)]
+    assets_empty: usize,
+    #[serde(default)]
+    assets_failed: usize,
+    #[serde(default)]
+    assets_unsupported: usize,
+}
+
+#[derive(Default)]
+struct AssetTextStatusCounts {
+    assets_referenced: usize,
+    assets_ready: usize,
+    assets_empty: usize,
+    assets_failed: usize,
+    assets_unsupported: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct SourceReference {
+    form_id: String,
+    entry_id: String,
+    entry_version: u64,
+    asset_id: String,
+    name: String,
+    media_type: String,
+    source_sha256: String,
+    source_size_bytes: u64,
+    integrity_error: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ExtractedChunk {
+    locator: Value,
+    text: String,
+}
+
+#[derive(Clone, Debug)]
+struct ParserIdentity {
+    id: &'static str,
+    version: &'static str,
+}
+
+#[derive(Clone, Debug)]
+enum Dispatch {
+    PlainText(ParserIdentity),
+    Pdf(ParserIdentity),
+    Docx(ParserIdentity),
+    Xlsx(ParserIdentity),
+    Pptx(ParserIdentity),
+    Unsupported(ParserIdentity),
+}
+
+impl Dispatch {
+    fn parser(&self) -> &ParserIdentity {
+        match self {
+            Self::PlainText(parser)
+            | Self::Pdf(parser)
+            | Self::Docx(parser)
+            | Self::Xlsx(parser)
+            | Self::Pptx(parser)
+            | Self::Unsupported(parser) => parser,
+        }
+    }
+}
+
+pub fn asset_text_definition() -> DerivedRelationDefinition {
+    let fields = vec![
+        (1, "form_id", DerivedValueType::String, false),
+        (2, "entry_id", DerivedValueType::String, false),
+        (3, "entry_version", DerivedValueType::Long, false),
+        (4, "asset_id", DerivedValueType::String, false),
+        (5, "source_sha256", DerivedValueType::String, false),
+        (6, "source_size_bytes", DerivedValueType::Long, false),
+        (7, "parser_id", DerivedValueType::String, false),
+        (8, "parser_version", DerivedValueType::String, false),
+        (9, "producer_fingerprint", DerivedValueType::String, false),
+        (10, "status", DerivedValueType::String, false),
+        (11, "chunk_index", DerivedValueType::Long, false),
+        (12, "source_locator", DerivedValueType::String, true),
+        (13, "text", DerivedValueType::String, true),
+        (14, "text_length", DerivedValueType::Long, false),
+        (15, "parsed_at", DerivedValueType::Timestamp, false),
+        (16, "error_code", DerivedValueType::String, true),
+    ]
+    .into_iter()
+    .map(|(field_id, name, value_type, nullable)| RelationField {
+        field_id,
+        name: name.to_string(),
+        value_type,
+        nullable,
+    })
+    .collect();
+    DerivedRelationDefinition {
+        relation_id: DerivedRelationId::ASSET_TEXT,
+        name: ASSET_TEXT_PRODUCER_ID.to_string(),
+        definition_version: 1,
+        schema: TypedSchema { fields },
+        logical_key: vec![
+            "form_id".into(),
+            "entry_id".into(),
+            "entry_version".into(),
+            "asset_id".into(),
+            "chunk_index".into(),
+        ],
+        exposure: DerivedExposure::Internal,
+        producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
+    }
+}
+
+pub fn asset_text_producer_fingerprint() -> String {
+    // This is deliberately a semantic contract, not a crate version.  Any
+    // parser, normalization, dispatch, or chunking change must update it.
+    sha256_digest(
+        b"ugoite.asset_text/protocol=1;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=text-layer;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+128MiB-zip+10000-pdf-pages+16MiB-text+256-xml-depth;schema=1",
+    )
+}
+
+pub fn asset_text_definition_fingerprint() -> String {
+    asset_text_definition().fingerprint()
+}
+
+fn parser_identity(id: &'static str) -> ParserIdentity {
+    ParserIdentity {
+        id,
+        version: ASSET_TEXT_PARSER_VERSION,
+    }
+}
+
+fn asset_text_schema() -> Schema {
+    fn field(id: i32, name: &str, ty: Type, required: bool) -> Arc<NestedField> {
+        Arc::new(NestedField::new(id, name, ty, required))
+    }
+    Schema::builder()
+        .with_fields(vec![
+            field(1, "form_id", Type::Primitive(PrimitiveType::String), true),
+            field(2, "entry_id", Type::Primitive(PrimitiveType::String), true),
+            field(
+                3,
+                "entry_version",
+                Type::Primitive(PrimitiveType::Long),
+                true,
+            ),
+            field(4, "asset_id", Type::Primitive(PrimitiveType::String), true),
+            field(
+                5,
+                "source_sha256",
+                Type::Primitive(PrimitiveType::String),
+                true,
+            ),
+            field(
+                6,
+                "source_size_bytes",
+                Type::Primitive(PrimitiveType::Long),
+                true,
+            ),
+            field(7, "parser_id", Type::Primitive(PrimitiveType::String), true),
+            field(
+                8,
+                "parser_version",
+                Type::Primitive(PrimitiveType::String),
+                true,
+            ),
+            field(
+                9,
+                "producer_fingerprint",
+                Type::Primitive(PrimitiveType::String),
+                true,
+            ),
+            field(10, "status", Type::Primitive(PrimitiveType::String), true),
+            field(
+                11,
+                "chunk_index",
+                Type::Primitive(PrimitiveType::Long),
+                true,
+            ),
+            field(
+                12,
+                "source_locator",
+                Type::Primitive(PrimitiveType::String),
+                false,
+            ),
+            field(13, "text", Type::Primitive(PrimitiveType::String), false),
+            field(
+                14,
+                "text_length",
+                Type::Primitive(PrimitiveType::Long),
+                true,
+            ),
+            field(
+                15,
+                "parsed_at",
+                Type::Primitive(PrimitiveType::Timestamptz),
+                true,
+            ),
+            field(
+                16,
+                "error_code",
+                Type::Primitive(PrimitiveType::String),
+                false,
+            ),
+        ])
+        .build()
+        .expect("AssetText schema is static and valid")
+}
+
+/// A relation-local implementation of the official Iceberg Catalog API. It
+/// deliberately has no Space Catalog state. The in-process table pointer is
+/// only a transaction helper; the durable Relation Head is published by the
+/// caller after all immutable objects are complete.
+#[derive(Debug, Clone)]
+struct DerivedRelationCatalog {
+    table: Arc<Mutex<Option<Table>>>,
+    file_io: FileIO,
+    runtime: Runtime,
+    namespace: NamespaceIdent,
+}
+
+impl DerivedRelationCatalog {
+    fn new(file_io: FileIO, runtime: Runtime, namespace: NamespaceIdent) -> Self {
+        Self {
+            table: Arc::new(Mutex::new(None)),
+            file_io,
+            runtime,
+            namespace,
+        }
+    }
+
+    async fn current(&self) -> iceberg::Result<Table> {
+        self.table.lock().await.clone().ok_or_else(|| {
+            IcebergError::new(
+                IcebergErrorKind::TableNotFound,
+                "derived table is not created",
+            )
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl Catalog for DerivedRelationCatalog {
+    async fn list_namespaces(
+        &self,
+        parent: Option<&NamespaceIdent>,
+    ) -> iceberg::Result<Vec<NamespaceIdent>> {
+        Ok(parent
+            .is_none()
+            .then_some(self.namespace.clone())
+            .into_iter()
+            .collect())
+    }
+
+    async fn create_namespace(
+        &self,
+        namespace: &NamespaceIdent,
+        _properties: HashMap<String, String>,
+    ) -> iceberg::Result<Namespace> {
+        self.get_namespace(namespace).await
+    }
+
+    async fn get_namespace(&self, namespace: &NamespaceIdent) -> iceberg::Result<Namespace> {
+        if namespace == &self.namespace {
+            Ok(Namespace::new(namespace.clone()))
+        } else {
+            Err(IcebergError::new(
+                IcebergErrorKind::DataInvalid,
+                "unknown derived namespace",
+            ))
+        }
+    }
+
+    async fn namespace_exists(&self, namespace: &NamespaceIdent) -> iceberg::Result<bool> {
+        Ok(namespace == &self.namespace)
+    }
+
+    async fn update_namespace(
+        &self,
+        _namespace: &NamespaceIdent,
+        _properties: HashMap<String, String>,
+    ) -> iceberg::Result<()> {
+        Err(IcebergError::new(
+            IcebergErrorKind::FeatureUnsupported,
+            "derived namespace properties are immutable",
+        ))
+    }
+
+    async fn drop_namespace(&self, _namespace: &NamespaceIdent) -> iceberg::Result<()> {
+        Err(IcebergError::new(
+            IcebergErrorKind::FeatureUnsupported,
+            "derived namespaces cannot be dropped",
+        ))
+    }
+
+    async fn list_tables(&self, namespace: &NamespaceIdent) -> iceberg::Result<Vec<TableIdent>> {
+        if namespace != &self.namespace {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .table
+            .lock()
+            .await
+            .as_ref()
+            .map(|table| table.identifier().clone())
+            .into_iter()
+            .collect())
+    }
+
+    async fn create_table(
+        &self,
+        namespace: &NamespaceIdent,
+        creation: TableCreation,
+    ) -> iceberg::Result<Table> {
+        if namespace != &self.namespace {
+            return Err(IcebergError::new(
+                IcebergErrorKind::DataInvalid,
+                "derived table namespace mismatch",
+            ));
+        }
+        let requested_schema = creation.schema.clone();
+        let table_name = creation.name.clone();
+        let metadata = TableMetadataBuilder::from_table_creation(creation)?
+            .build()?
+            .metadata;
+        let metadata = crate::space_catalog::preserve_schema_field_ids(metadata, requested_schema)?;
+        let metadata_location = MetadataLocation::try_new_with_metadata(&metadata)?;
+        metadata.write_to(&self.file_io, &metadata_location).await?;
+        let table = Table::builder()
+            .identifier(TableIdent::new(namespace.clone(), table_name))
+            .metadata(metadata)
+            .metadata_location(metadata_location.to_string())
+            .file_io(self.file_io.clone())
+            .runtime(self.runtime.clone())
+            .build()?;
+        let mut guard = self.table.lock().await;
+        if guard.is_some() {
+            return Err(IcebergError::new(
+                IcebergErrorKind::TableAlreadyExists,
+                "derived table already exists",
+            ));
+        }
+        *guard = Some(table.clone());
+        Ok(guard.clone().expect("derived table was just stored"))
+    }
+
+    async fn load_table(&self, table: &TableIdent) -> iceberg::Result<Table> {
+        let current = self.current().await?;
+        if current.identifier() == table {
+            Ok(current)
+        } else {
+            Err(IcebergError::new(
+                IcebergErrorKind::TableNotFound,
+                "unknown derived table",
+            ))
+        }
+    }
+
+    async fn drop_table(&self, _table: &TableIdent) -> iceberg::Result<()> {
+        Err(IcebergError::new(
+            IcebergErrorKind::FeatureUnsupported,
+            "derived tables are replaced by materialization swap",
+        ))
+    }
+
+    async fn purge_table(&self, _table: &TableIdent) -> iceberg::Result<()> {
+        Err(IcebergError::new(
+            IcebergErrorKind::FeatureUnsupported,
+            "derived tables are garbage collected by prefix",
+        ))
+    }
+
+    async fn table_exists(&self, table: &TableIdent) -> iceberg::Result<bool> {
+        Ok(self
+            .table
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|current| current.identifier() == table))
+    }
+
+    async fn rename_table(&self, _src: &TableIdent, _dest: &TableIdent) -> iceberg::Result<()> {
+        Err(IcebergError::new(
+            IcebergErrorKind::FeatureUnsupported,
+            "derived table identifiers are stable",
+        ))
+    }
+
+    async fn register_table(
+        &self,
+        table: &TableIdent,
+        metadata_location: String,
+    ) -> iceberg::Result<Table> {
+        let metadata =
+            iceberg::spec::TableMetadata::read_from(&self.file_io, &metadata_location).await?;
+        let loaded = Table::builder()
+            .identifier(table.clone())
+            .metadata(metadata)
+            .metadata_location(metadata_location)
+            .file_io(self.file_io.clone())
+            .runtime(self.runtime.clone())
+            .build()?;
+        *self.table.lock().await = Some(loaded.clone());
+        Ok(loaded)
+    }
+
+    async fn update_table(&self, commit: iceberg::TableCommit) -> iceberg::Result<Table> {
+        let current = self.current().await?;
+        let staged = commit.apply(current)?;
+        let location = MetadataLocation::from_str(staged.metadata_location_result()?)?;
+        staged
+            .metadata()
+            .write_to(staged.file_io(), &location)
+            .await?;
+        *self.table.lock().await = Some(staged.clone());
+        Ok(staged)
+    }
+}
+
+pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedRelationHead> {
+    let definition = asset_text_definition();
+    let producer_fingerprint = asset_text_producer_fingerprint();
+    let relation_uuid = definition.relation_id.as_uuid();
+    let head_store =
+        DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process();
+    let expected = head_store.read_exact().await?;
+    let base_generation = expected
+        .as_ref()
+        .map(|head| head.head.generation)
+        .unwrap_or(0);
+    let target_generation = base_generation
+        .checked_add(1)
+        .context("derived generation overflow")?;
+    let source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
+    let source_rows = collect_source_references(op, ws_path).await?;
+    let source_coordinate_after_scan = authoritative_source_coordinate(op, ws_path).await?;
+    if source_coordinate != source_coordinate_after_scan {
+        bail!("authoritative source changed during AssetText rebuild; retry");
+    }
+    let input_digest = sha256_digest(&canonical_json(&source_rows)?);
+    let rows = build_asset_text_rows(op, ws_path, &source_rows, &producer_fingerprint).await?;
+    let row_digest = sha256_digest(&canonical_json(&rows)?);
+    let materialization_id = Uuid::now_v7().to_string();
+    let materialization_path = format!(
+        "{ws_path}/_ugoite/derived/relations/{relation_uuid}/materializations/{materialization_id}"
+    );
+    let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
+    // Iceberg locations must use the same URI namespace as the official
+    // SpaceCatalog FileIO.  `Operator::info().root()` is not a portable
+    // warehouse URI for all OpenDAL backends (notably memory and remote
+    // stores), so do not manufacture a second location scheme here.
+    let table_location = format!("{}{}", iceberg_root_uri(&store), materialization_path);
+    let catalog = DerivedRelationCatalog::new(
+        crate::space_catalog::file_io_for_store(&store),
+        Runtime::current(),
+        NamespaceIdent::new("derived".to_string()),
+    );
+    let namespace = NamespaceIdent::new("derived".to_string());
+    catalog.create_namespace(&namespace, HashMap::new()).await?;
+    let table_name = format!("derived_{}", relation_uuid.simple());
+    let table = catalog
+        .create_table(
+            &namespace,
+            TableCreation::builder()
+                .name(table_name.clone())
+                .location(table_location)
+                .schema(asset_text_schema())
+                .partition_spec(UnboundPartitionSpec::default())
+                .sort_order(SortOrder::unsorted_order())
+                .build(),
+        )
+        .await?;
+    if !rows.is_empty() {
+        append_rows(&table, &catalog, &rows).await?;
+    }
+    let final_table = catalog
+        .load_table(&TableIdent::new(namespace.clone(), table_name.clone()))
+        .await?;
+    let metadata_location = final_table.metadata_location_result()?.to_string();
+    let status_counts = asset_text_status_counts(&source_rows, &rows);
+    let manifest = AssetTextManifest {
+        format_version: 1,
+        relation_id: relation_uuid.to_string(),
+        materialization_id: materialization_id.clone(),
+        producer_fingerprint: producer_fingerprint.clone(),
+        input_digest: input_digest.clone(),
+        row_count: rows.len(),
+        source_coordinate: source_coordinate.clone(),
+        row_digest: row_digest.clone(),
+        assets_referenced: status_counts.assets_referenced,
+        assets_ready: status_counts.assets_ready,
+        assets_empty: status_counts.assets_empty,
+        assets_failed: status_counts.assets_failed,
+        assets_unsupported: status_counts.assets_unsupported,
+    };
+    let manifest_bytes = serde_json::to_vec(&manifest)?;
+    let manifest_location = format!("{materialization_path}/manifest.json");
+    op.write_options(
+        &manifest_location,
+        manifest_bytes.clone(),
+        WriteOptions {
+            if_not_exists: true,
+            ..Default::default()
+        },
+    )
+    .await?;
+    let head = DerivedRelationHead {
+        format_version: 1,
+        space_id: space_id_from_metadata(op, ws_path).await?,
+        relation_id: relation_uuid.to_string(),
+        generation: target_generation,
+        definition_version: definition.definition_version,
+        definition_fingerprint: definition.fingerprint(),
+        producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
+        producer_fingerprint,
+        compatibility_epoch: ASSET_TEXT_COMPATIBILITY_EPOCH,
+        materialization_id,
+        table_identifier: serde_json::to_value(final_table.identifier())?,
+        table_uuid: final_table.metadata().uuid().to_string(),
+        metadata_location,
+        snapshot_id: final_table.metadata().current_snapshot_id(),
+        schema_id: final_table.metadata().current_schema_id(),
+        base_generation,
+        target_generation,
+        build_id: Uuid::now_v7().to_string(),
+        input_digest,
+        source_coordinate,
+        materialization_manifest_location: manifest_location,
+        materialization_manifest_checksum: sha256_digest(&manifest_bytes),
+        last_command_id: format!("index:asset-text:{target_generation}"),
+        checksum: String::new(),
+    };
+    if let Err(publication_error) = head_store.publish(expected.as_ref(), &head).await {
+        // A conditional write can succeed at the storage boundary while its
+        // response is lost.  Derived relations do not need the authoritative
+        // publication-chain proof, but they still reread their own Head and
+        // accept the outcome when this build command is visibly current.
+        if let Ok(Some(current)) = head_store.read_exact().await {
+            if current.head.last_command_id == head.last_command_id {
+                return Ok(current.head);
+            }
+        }
+        return Err(publication_error);
+    }
+    Ok(head_store
+        .read_exact()
+        .await?
+        .context("published derived Head disappeared")?
+        .head)
+}
+
+fn iceberg_root_uri(store: &SpaceCatalogStore) -> String {
+    let warehouse_uri = &store.iceberg_storage().warehouse_uri;
+    if warehouse_uri == "memory:" {
+        "memory:///".to_string()
+    } else {
+        format!("{}/", warehouse_uri.trim_end_matches('/'))
+    }
+}
+
+async fn append_rows(
+    table: &Table,
+    catalog: &DerivedRelationCatalog,
+    rows: &[AssetTextRow],
+) -> Result<()> {
+    let arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
+        table.metadata().current_schema(),
+    )?);
+    let mut form_id = StringBuilder::new();
+    let mut entry_id = StringBuilder::new();
+    let mut entry_version = Int64Builder::new();
+    let mut asset_id = StringBuilder::new();
+    let mut source_sha256 = StringBuilder::new();
+    let mut source_size_bytes = Int64Builder::new();
+    let mut parser_id = StringBuilder::new();
+    let mut parser_version = StringBuilder::new();
+    let mut producer_fingerprint = StringBuilder::new();
+    let mut status = StringBuilder::new();
+    let mut chunk_index = Int64Builder::new();
+    let mut source_locator = StringBuilder::new();
+    let mut text = StringBuilder::new();
+    let mut text_length = Int64Builder::new();
+    let mut parsed_at = Vec::with_capacity(rows.len());
+    let mut error_code = StringBuilder::new();
+    for row in rows {
+        form_id.append_value(&row.form_id);
+        entry_id.append_value(&row.entry_id);
+        entry_version.append_value(row.entry_version);
+        asset_id.append_value(&row.asset_id);
+        source_sha256.append_value(&row.source_sha256);
+        source_size_bytes.append_value(row.source_size_bytes);
+        parser_id.append_value(&row.parser_id);
+        parser_version.append_value(&row.parser_version);
+        producer_fingerprint.append_value(&row.producer_fingerprint);
+        status.append_value(&row.status);
+        chunk_index.append_value(row.chunk_index);
+        source_locator.append_option(row.source_locator.as_deref());
+        text.append_option(row.text.as_deref());
+        text_length.append_value(row.text_length);
+        parsed_at.push(chrono::DateTime::parse_from_rfc3339(&row.parsed_at)?.timestamp_micros());
+        error_code.append_option(row.error_code.as_deref());
+    }
+    let batch = RecordBatch::try_new(
+        arrow_schema,
+        vec![
+            Arc::new(form_id.finish()),
+            Arc::new(entry_id.finish()),
+            Arc::new(entry_version.finish()),
+            Arc::new(asset_id.finish()),
+            Arc::new(source_sha256.finish()),
+            Arc::new(source_size_bytes.finish()),
+            Arc::new(parser_id.finish()),
+            Arc::new(parser_version.finish()),
+            Arc::new(producer_fingerprint.finish()),
+            Arc::new(status.finish()),
+            Arc::new(chunk_index.finish()),
+            Arc::new(source_locator.finish()),
+            Arc::new(text.finish()),
+            Arc::new(text_length.finish()),
+            Arc::new(TimestampMicrosecondArray::from_iter_values(parsed_at).with_timezone_utc()),
+            Arc::new(error_code.finish()),
+        ],
+    )?;
+    let table_properties = table.metadata().table_properties()?;
+    let parquet_writer = ParquetWriterBuilder::from_table_properties(
+        &table_properties,
+        table.metadata().current_schema().clone(),
+    );
+    let location_generator = DefaultLocationGenerator::new(table.metadata())?;
+    let file_name_generator = DefaultFileNameGenerator::new(
+        Uuid::now_v7().to_string(),
+        None,
+        iceberg::spec::DataFileFormat::Parquet,
+    );
+    let rolling_writer = RollingFileWriterBuilder::new(
+        parquet_writer,
+        table_properties.write_target_file_size_bytes,
+        table.file_io().clone(),
+        location_generator,
+        file_name_generator,
+    );
+    let mut writer = DataFileWriterBuilder::new(rolling_writer)
+        .build(None)
+        .await?;
+    writer.write(batch).await?;
+    let data_files = writer.close().await?;
+    if data_files.is_empty() {
+        bail!("AssetText writer produced no data files");
+    }
+    let tx = Transaction::new(table);
+    tx.fast_append()
+        .add_data_files(data_files)
+        .apply(tx)?
+        .commit(catalog)
+        .await?;
+    Ok(())
+}
+
+async fn space_id_from_metadata(op: &Operator, ws_path: &str) -> Result<String> {
+    let path = format!("{ws_path}/meta.json");
+    let value: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
+    value
+        .get("space_uid")
+        .or_else(|| value.get("space_id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .context("Space metadata has no immutable space ID")
+}
+
+async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result<Value> {
+    let store = SpaceCatalogStore::new(op.clone(), ws_path)?.single_process();
+    let Some(exact) = store.read_exact_head().await? else {
+        // A newly created, still-empty Space has no Catalog Head.  This is a
+        // valid empty source coordinate, not a derived corruption state.
+        return Ok(json!({"catalog_head_sha256": Value::Null, "catalog_head_etag": Value::Null}));
+    };
+    Ok(json!({
+        "catalog_head_sha256": sha256_digest(&exact.bytes),
+        "catalog_head_etag": exact.etag,
+    }))
+}
+
+async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<SourceReference>> {
+    let form_names = crate::entry::list_form_names(op, ws_path).await?;
+    let mut definitions = BTreeMap::<String, FormDefinition>::new();
+    for name in &form_names {
+        let definition = crate::iceberg_store::load_domain_form(op, ws_path, name).await?;
+        definitions.insert(name.clone(), definition);
+    }
+    let mut references = BTreeMap::<(String, String, u64, String), SourceReference>::new();
+    let mut asset_checksums = BTreeMap::<String, (String, u64)>::new();
+    let mut conflicting_assets = HashSet::new();
+    for form_name in form_names {
+        let definition = definitions
+            .get(&form_name)
+            .context("current Entry Form missing")?;
+        // This canonical latest-revision view scans the authoritative Form
+        // table directly and is not subject to the normal 10k search window.
+        // Delete tombstones are deliberately excluded after max-version
+        // selection, so deleted Entries cannot seed a derived source set.
+        let (_, revisions) =
+            crate::iceberg_store::latest_revisions_for_form(op, ws_path, &form_name).await?;
+        for revision in revisions {
+            if matches!(
+                revision.operation,
+                ugoite_domain::entry::EntryOperation::Delete
+            ) {
+                continue;
+            }
+            for field in &definition.fields {
+                if !matches!(
+                    field.field_type,
+                    FieldType::AssetReference | FieldType::List
+                ) {
+                    continue;
+                }
+                let Some(value) = revision.values.get(&field.id) else {
+                    continue;
+                };
+                let mut asset_references = Vec::new();
+                collect_asset_references(&serde_json::to_value(value)?, &mut asset_references);
+                for reference in asset_references {
+                    let key = (
+                        definition.id.to_string(),
+                        revision.entry.external_id.clone(),
+                        revision.entry_version,
+                        reference.asset_id.clone(),
+                    );
+                    let candidate = SourceReference {
+                        form_id: definition.id.to_string(),
+                        entry_id: revision.entry.external_id.clone(),
+                        entry_version: revision.entry_version,
+                        asset_id: reference.asset_id,
+                        name: reference.name,
+                        media_type: reference.media_type,
+                        source_sha256: reference.sha256,
+                        source_size_bytes: reference.size_bytes,
+                        integrity_error: None,
+                    };
+                    if let Some((sha256, size_bytes)) = asset_checksums.get(&candidate.asset_id) {
+                        if sha256 != &candidate.source_sha256
+                            || *size_bytes != candidate.source_size_bytes
+                        {
+                            conflicting_assets.insert(candidate.asset_id.clone());
+                        }
+                    } else {
+                        asset_checksums.insert(
+                            candidate.asset_id.clone(),
+                            (candidate.source_sha256.clone(), candidate.source_size_bytes),
+                        );
+                    }
+                    if let Some(existing) = references.get(&key) {
+                        if existing.source_sha256 != candidate.source_sha256
+                            || existing.source_size_bytes != candidate.source_size_bytes
+                        {
+                            // Keep one deterministic row and mark every reference
+                            // to this asset as an integrity diagnostic below.
+                            conflicting_assets.insert(candidate.asset_id.clone());
+                            continue;
+                        }
+                    } else {
+                        references.insert(key, candidate);
+                    }
+                }
+            }
+        }
+    }
+    Ok(references
+        .into_values()
+        .map(|mut reference| {
+            if conflicting_assets.contains(&reference.asset_id) {
+                reference.integrity_error = Some(
+                    DerivedErrorCode::SourceRevisionIntegrityFailed
+                        .as_str()
+                        .to_string(),
+                );
+            }
+            reference
+        })
+        .collect())
+}
+
+fn collect_asset_references(value: &Value, output: &mut Vec<AssetReference>) {
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .for_each(|value| collect_asset_references(value, output)),
+        Value::Object(object) => {
+            if let Ok(reference) =
+                serde_json::from_value::<AssetReference>(Value::Object(object.clone()))
+            {
+                output.push(reference);
+            } else {
+                object
+                    .values()
+                    .for_each(|value| collect_asset_references(value, output));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn asset_text_status_counts(
+    references: &[SourceReference],
+    rows: &[AssetTextRow],
+) -> AssetTextStatusCounts {
+    let mut status_by_asset = BTreeMap::<String, String>::new();
+    for reference in references {
+        status_by_asset
+            .entry(reference.asset_id.clone())
+            .or_insert_with(|| "failed".to_string());
+    }
+    for row in rows {
+        let status = status_by_asset
+            .entry(row.asset_id.clone())
+            .or_insert_with(|| row.status.clone());
+        if status == "failed" || status == "missing" || status == "source_mismatch" {
+            *status = row.status.clone();
+        } else if row.status == "ready" {
+            *status = "ready".to_string();
+        }
+    }
+    let mut counts = AssetTextStatusCounts {
+        assets_referenced: status_by_asset.len(),
+        ..Default::default()
+    };
+    for status in status_by_asset.values() {
+        match status.as_str() {
+            "ready" => counts.assets_ready += 1,
+            "empty" => counts.assets_empty += 1,
+            "unsupported" => counts.assets_unsupported += 1,
+            _ => counts.assets_failed += 1,
+        }
+    }
+    counts
+}
+
+async fn build_asset_text_rows(
+    op: &Operator,
+    ws_path: &str,
+    references: &[SourceReference],
+    producer_fingerprint: &str,
+) -> Result<Vec<AssetTextRow>> {
+    let parsed_at = Utc::now().to_rfc3339();
+    let mut rows = Vec::new();
+    for reference in references {
+        let base = |parser_id: String,
+                    parser_version: String,
+                    status: &str,
+                    chunk_index: i64,
+                    locator: Option<String>,
+                    text: Option<String>,
+                    error_code: Option<&str>| AssetTextRow {
+            form_id: reference.form_id.clone(),
+            entry_id: reference.entry_id.clone(),
+            entry_version: i64::try_from(reference.entry_version).unwrap_or(i64::MAX),
+            asset_id: reference.asset_id.clone(),
+            source_sha256: reference.source_sha256.clone(),
+            source_size_bytes: i64::try_from(reference.source_size_bytes).unwrap_or(i64::MAX),
+            parser_id,
+            parser_version,
+            producer_fingerprint: producer_fingerprint.to_string(),
+            status: status.to_string(),
+            chunk_index,
+            source_locator: locator,
+            text_length: text
+                .as_ref()
+                .map(|value| value.chars().count() as i64)
+                .unwrap_or(0),
+            text,
+            parsed_at: parsed_at.clone(),
+            error_code: error_code.map(str::to_string),
+        };
+        let path = format!("{ws_path}/assets/{}", reference.asset_id);
+        if let Some(error_code) = reference.integrity_error.as_deref() {
+            rows.push(base(
+                "integrity".into(),
+                ASSET_TEXT_PARSER_VERSION.into(),
+                "failed",
+                0,
+                None,
+                None,
+                Some(error_code),
+            ));
+            continue;
+        }
+        let bytes = match read_asset_exact(op, &path).await {
+            Ok(bytes) => bytes,
+            Err(error)
+                if error
+                    .downcast_ref::<opendal::Error>()
+                    .is_some_and(|error| error.kind() == ErrorKind::NotFound) =>
+            {
+                rows.push(base(
+                    "missing".into(),
+                    ASSET_TEXT_PARSER_VERSION.into(),
+                    "missing",
+                    0,
+                    None,
+                    None,
+                    Some(DerivedErrorCode::AssetMissing.as_str()),
+                ));
+                continue;
+            }
+            Err(_) => {
+                rows.push(base(
+                    "reader".into(),
+                    ASSET_TEXT_PARSER_VERSION.into(),
+                    "failed",
+                    0,
+                    None,
+                    None,
+                    Some(DerivedErrorCode::AssetParserFailed.as_str()),
+                ));
+                continue;
+            }
+        };
+        if bytes.len() as u64 != reference.source_size_bytes {
+            rows.push(base(
+                "integrity".into(),
+                ASSET_TEXT_PARSER_VERSION.into(),
+                "source_mismatch",
+                0,
+                None,
+                None,
+                Some(DerivedErrorCode::AssetSizeMismatch.as_str()),
+            ));
+            continue;
+        }
+        let actual_sha = hex::encode(Sha256::digest(&bytes));
+        if actual_sha != reference.source_sha256 {
+            rows.push(base(
+                "integrity".into(),
+                ASSET_TEXT_PARSER_VERSION.into(),
+                "source_mismatch",
+                0,
+                None,
+                None,
+                Some(DerivedErrorCode::AssetChecksumMismatch.as_str()),
+            ));
+            continue;
+        }
+        if bytes.len() as u64 > MAX_ASSET_BYTES {
+            rows.push(base(
+                "limits".into(),
+                ASSET_TEXT_PARSER_VERSION.into(),
+                "failed",
+                0,
+                None,
+                None,
+                Some(DerivedErrorCode::AssetParserLimit.as_str()),
+            ));
+            continue;
+        }
+        let dispatch = detect_dispatch(&reference.name, &reference.media_type, &bytes);
+        let parser = dispatch.parser().clone();
+        let chunks = match extract_chunks(&dispatch, &bytes) {
+            Ok(chunks) => chunks,
+            Err(code) => {
+                rows.push(base(
+                    parser.id.into(),
+                    parser.version.into(),
+                    "failed",
+                    0,
+                    None,
+                    None,
+                    Some(code),
+                ));
+                continue;
+            }
+        };
+        if matches!(dispatch, Dispatch::Unsupported(_)) {
+            rows.push(base(
+                parser.id.into(),
+                parser.version.into(),
+                "unsupported",
+                0,
+                None,
+                None,
+                Some(DerivedErrorCode::AssetUnsupportedFormat.as_str()),
+            ));
+        } else if chunks.is_empty() {
+            rows.push(base(
+                parser.id.into(),
+                parser.version.into(),
+                "empty",
+                0,
+                None,
+                None,
+                None,
+            ));
+        } else {
+            for (index, chunk) in chunks.into_iter().enumerate() {
+                let text = normalize_text(&chunk.text);
+                let status = if text.is_empty() { "empty" } else { "ready" };
+                rows.push(base(
+                    parser.id.into(),
+                    parser.version.into(),
+                    status,
+                    i64::try_from(index).unwrap_or(i64::MAX),
+                    Some(serde_json::to_string(&chunk.locator)?),
+                    (!text.is_empty()).then_some(text),
+                    None,
+                ));
+            }
+        }
+    }
+    Ok(rows)
+}
+
+async fn read_asset_exact(op: &Operator, path: &str) -> Result<Vec<u8>> {
+    let metadata = op.stat(path).await?;
+    let mut reader = op.reader_with(path);
+    if let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) {
+        reader = reader.if_match(etag);
+    }
+    let reader = reader.chunk(READER_CHUNK_BYTES).await?;
+    let mut stream = reader.into_stream(0..).await?;
+    let mut bytes = Vec::new();
+    while let Some(buffer) = stream.try_next().await? {
+        bytes.extend(buffer.into_iter().flatten());
+        if bytes.len() > MAX_ASSET_BYTES as usize {
+            bail!("asset parser input exceeds configured limit");
+        }
+    }
+    Ok(bytes)
+}
+
+fn detect_dispatch(name: &str, media_type: &str, bytes: &[u8]) -> Dispatch {
+    let lower_name = name.to_ascii_lowercase();
+    let lower_media = media_type.to_ascii_lowercase();
+    if lower_media == "application/pdf"
+        || lower_name.ends_with(".pdf")
+        || bytes.starts_with(b"%PDF-")
+    {
+        return Dispatch::Pdf(parser_identity("pdf_text_layer"));
+    }
+    if lower_name.ends_with(".docx")
+        || lower_media == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    {
+        return Dispatch::Docx(parser_identity("docx_xml"));
+    }
+    if lower_name.ends_with(".xlsx")
+        || lower_media == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    {
+        return Dispatch::Xlsx(parser_identity("xlsx_xml"));
+    }
+    if lower_name.ends_with(".pptx")
+        || lower_media
+            == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    {
+        return Dispatch::Pptx(parser_identity("pptx_xml"));
+    }
+    // MIME and filename are only hints. Valid OOXML containers are also
+    // recognized by their internal part names, while malformed recognized
+    // containers remain on the format-specific parser path above.
+    if bytes.starts_with(b"PK") {
+        if let Ok(mut archive) = ZipArchive::new(Cursor::new(bytes)) {
+            if archive.len() <= MAX_ZIP_ENTRIES {
+                let mut has_document = false;
+                let mut has_workbook = false;
+                let mut has_slides = false;
+                for index in 0..archive.len() {
+                    if let Ok(file) = archive.by_index(index) {
+                        let part = file.name();
+                        has_document |= part == "word/document.xml";
+                        has_workbook |= part.starts_with("xl/workbook") && part.ends_with(".xml");
+                        has_slides |=
+                            part.starts_with("ppt/slides/slide") && part.ends_with(".xml");
+                    }
+                }
+                if has_document {
+                    return Dispatch::Docx(parser_identity("docx_xml"));
+                }
+                if has_workbook {
+                    return Dispatch::Xlsx(parser_identity("xlsx_xml"));
+                }
+                if has_slides {
+                    return Dispatch::Pptx(parser_identity("pptx_xml"));
+                }
+            }
+        }
+    }
+    if lower_media == "text/plain"
+        || lower_media == "text/markdown"
+        || lower_name.ends_with(".txt")
+        || lower_name.ends_with(".md")
+    {
+        return Dispatch::PlainText(parser_identity(
+            if lower_media == "text/markdown" || lower_name.ends_with(".md") {
+                "markdown"
+            } else {
+                "plain_text"
+            },
+        ));
+    }
+    Dispatch::Unsupported(parser_identity("unsupported"))
+}
+
+fn extract_chunks(
+    dispatch: &Dispatch,
+    bytes: &[u8],
+) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    match dispatch {
+        Dispatch::PlainText(_) => Ok(split_text_chunks(
+            String::from_utf8_lossy(bytes).as_ref(),
+            json!({"block": 0}),
+        )),
+        Dispatch::Pdf(_) => extract_pdf_chunks(bytes),
+        Dispatch::Docx(_) => extract_ooxml_chunks(bytes, "word/document.xml", "paragraph"),
+        Dispatch::Xlsx(_) => extract_ooxml_workbook_chunks(bytes),
+        Dispatch::Pptx(_) => extract_ooxml_slides(bytes),
+        Dispatch::Unsupported(_) => Ok(Vec::new()),
+    }
+}
+
+fn split_text_chunks(text: &str, locator: Value) -> Vec<ExtractedChunk> {
+    let normalized = normalize_text(text);
+    let mut blocks = normalized
+        .split("\n\n")
+        .filter(|block| !block.is_empty())
+        .collect::<Vec<_>>();
+    if blocks.is_empty() && !normalized.is_empty() {
+        blocks.push(&normalized);
+    }
+    let mut chunks = Vec::new();
+    for block in blocks {
+        let mut current = String::new();
+        for character in block.chars() {
+            current.push(character);
+            if current.chars().count() >= MAX_TEXT_CHUNK_CHARS {
+                chunks.push(ExtractedChunk {
+                    locator: locator.clone(),
+                    text: std::mem::take(&mut current),
+                });
+            }
+        }
+        if !current.is_empty() {
+            chunks.push(ExtractedChunk {
+                locator: locator.clone(),
+                text: current,
+            });
+        }
+    }
+    chunks
+}
+
+fn normalize_text(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .chars()
+        .filter(|character| *character == '\n' || *character == '\t' || !character.is_control())
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+#[cfg(test)]
+fn extract_pdf_text(bytes: &[u8]) -> String {
+    let mut text = String::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'(' {
+            index += 1;
+            continue;
+        }
+        index += 1;
+        let mut value = Vec::new();
+        let mut depth = 1usize;
+        while index < bytes.len() && depth > 0 {
+            match bytes[index] {
+                b'\\' if index + 1 < bytes.len() => {
+                    index += 1;
+                    value.push(match bytes[index] {
+                        b'n' => b'\n',
+                        b'r' => b'\r',
+                        b't' => b'\t',
+                        other => other,
+                    });
+                }
+                b'(' => {
+                    depth += 1;
+                    value.push(b'(');
+                }
+                b')' => {
+                    depth -= 1;
+                    if depth > 0 {
+                        value.push(b')');
+                    }
+                }
+                byte => value.push(byte),
+            }
+            index += 1;
+        }
+        if let Ok(value) = String::from_utf8(value) {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(&value);
+        }
+    }
+    text
+}
+
+fn extract_pdf_chunks(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    // pdf-extract handles compressed content streams, text encodings, and
+    // page boundaries.  Keep the call behind the explicit input/page limits
+    // and convert parser failures to a coarse diagnostic; source bytes never
+    // become a durable error payload.
+    let page_markers = bytes
+        .windows(b"/Type /Page".len() + 1)
+        .filter(|window| window.starts_with(b"/Type /Page") && window[b"/Type /Page".len()] != b's')
+        .count();
+    let text_operators = bytes.windows(2).filter(|window| *window == b"Tj").count()
+        + bytes.windows(2).filter(|window| *window == b"TJ").count();
+    if page_markers > MAX_PDF_PAGES || text_operators > MAX_PDF_TEXT_OPERATORS {
+        return Err("parser_limit");
+    }
+    let pages = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        pdf_extract::extract_text_from_mem_by_pages(bytes)
+    }))
+    .map_err(|_| "malformed_pdf")?
+    .map_err(|_| "malformed_pdf")?;
+    if pages.len() > MAX_PDF_PAGES {
+        return Err("parser_limit");
+    }
+    let mut chunks = Vec::new();
+    for (index, page) in pages.into_iter().enumerate() {
+        chunks.extend(split_text_chunks(&page, json!({"page": index + 1})));
+    }
+    Ok(chunks)
+}
+
+fn extract_ooxml_chunks(
+    bytes: &[u8],
+    target: &str,
+    kind: &str,
+) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
+    validate_zip_limits(&mut archive)?;
+    let mut file = archive.by_name(target).map_err(|_| "malformed_container")?;
+    let xml = read_zip_entry(&mut file)?;
+    let text = xml_text(&xml)?;
+    Ok(split_text_chunks(&text, json!({kind: 1})))
+}
+
+fn extract_ooxml_slides(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
+    validate_zip_limits(&mut archive)?;
+    let mut chunks = Vec::new();
+    let mut slide_index = 0usize;
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).map_err(|_| "malformed_container")?;
+        let name = file.name().to_string();
+        if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
+            slide_index += 1;
+            let xml = read_zip_entry(&mut file)?;
+            chunks.extend(split_text_chunks(
+                &xml_text(&xml)?,
+                json!({"slide": slide_index}),
+            ));
+        }
+    }
+    if chunks.is_empty() {
+        return Err("malformed_container");
+    }
+    Ok(chunks)
+}
+
+fn extract_ooxml_workbook_chunks(
+    bytes: &[u8],
+) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
+    validate_zip_limits(&mut archive)?;
+    let mut chunks = Vec::new();
+    let mut sheet_index = 0usize;
+    if let Ok(mut shared_strings) = archive.by_name("xl/sharedStrings.xml") {
+        let xml = read_zip_entry(&mut shared_strings)?;
+        chunks.extend(split_text_chunks(
+            &xml_text(&xml)?,
+            json!({"sheet": "shared_strings"}),
+        ));
+    }
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).map_err(|_| "malformed_container")?;
+        let name = file.name().to_string();
+        if name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml") {
+            sheet_index += 1;
+            let xml = read_zip_entry(&mut file)?;
+            chunks.extend(split_text_chunks(
+                &xml_text(&xml)?,
+                json!({"sheet": sheet_index}),
+            ));
+        }
+    }
+    if chunks.is_empty() {
+        return Err("malformed_container");
+    }
+    Ok(chunks)
+}
+
+fn read_zip_entry<R: Read>(
+    file: &mut zip::read::ZipFile<'_, R>,
+) -> std::result::Result<Vec<u8>, &'static str> {
+    if file.size() > MAX_ZIP_EXPANDED_BYTES {
+        return Err("parser_limit");
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|_| "malformed_container")?;
+    Ok(bytes)
+}
+
+fn validate_zip_limits<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+) -> std::result::Result<(), &'static str> {
+    if archive.len() > MAX_ZIP_ENTRIES {
+        return Err("parser_limit");
+    }
+    let mut expanded = 0u64;
+    for index in 0..archive.len() {
+        let file = archive.by_index(index).map_err(|_| "malformed_container")?;
+        expanded = expanded.saturating_add(file.size());
+        if expanded > MAX_ZIP_EXPANDED_BYTES {
+            return Err("parser_limit");
+        }
+    }
+    Ok(())
+}
+
+fn xml_text(bytes: &[u8]) -> std::result::Result<String, &'static str> {
+    let mut reader = Reader::from_reader(bytes);
+    reader.config_mut().trim_text(true);
+    let mut buffer = Vec::new();
+    let mut output = String::new();
+    let mut depth = 0usize;
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Eof) => break,
+            Ok(Event::Start(_)) => {
+                depth = depth.saturating_add(1);
+                if depth > MAX_XML_DEPTH {
+                    return Err("parser_limit");
+                }
+            }
+            Ok(Event::End(_)) => {
+                depth = depth.checked_sub(1).ok_or("malformed_xml")?;
+            }
+            Ok(Event::Text(text)) => {
+                let value = text.decode().map_err(|_| "malformed_xml")?;
+                if !value.is_empty() {
+                    if !output.is_empty() {
+                        output.push(' ');
+                    }
+                    output.push_str(&value);
+                    if output.len() > MAX_EXTRACTED_TEXT_BYTES {
+                        return Err("parser_limit");
+                    }
+                }
+            }
+            Ok(Event::CData(text)) => {
+                if !output.is_empty() {
+                    output.push(' ');
+                }
+                output.push_str(&String::from_utf8_lossy(&text));
+                if output.len() > MAX_EXTRACTED_TEXT_BYTES {
+                    return Err("parser_limit");
+                }
+            }
+            Ok(_) => {}
+            Err(_) => return Err("malformed_xml"),
+        }
+        buffer.clear();
+    }
+    if depth != 0 {
+        return Err("malformed_xml");
+    }
+    Ok(output)
+}
+
+pub async fn asset_text_search_matches(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+) -> Result<Option<HashSet<String>>> {
+    let store = SpaceCatalogStore::new(op.clone(), ws_path)?.single_process();
+    let head_store =
+        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
+            .single_process();
+    let Some(head) = head_store.read_exact().await? else {
+        return Ok(None);
+    };
+    if head.head.definition_fingerprint != asset_text_definition_fingerprint()
+        || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH
+    {
+        return Ok(None);
+    }
+    let file_io = crate::space_catalog::file_io_for_store(&store);
+    let metadata =
+        iceberg::spec::TableMetadata::read_from(&file_io, &head.head.metadata_location).await?;
+    let table_ident: TableIdent = serde_json::from_value(head.head.table_identifier.clone())?;
+    let table = Table::builder()
+        .identifier(table_ident)
+        .metadata(metadata)
+        .metadata_location(head.head.metadata_location.clone())
+        .file_io(file_io)
+        .runtime(Runtime::current())
+        .build()?;
+    let provider = IcebergStaticTableProvider::try_new_from_table(table).await?;
+    let context = SessionContext::new();
+    context.register_table("__ugoite_internal_asset_text", Arc::new(provider))?;
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+        .replace('\'', "''");
+    let sql = format!("SELECT asset_id FROM __ugoite_internal_asset_text WHERE status = 'ready' AND text IS NOT NULL AND lower(text) LIKE lower('%{escaped}%') ESCAPE '\\'");
+    let batches = context.sql(&sql).await?.collect().await?;
+    let mut matches = HashSet::new();
+    for batch in batches {
+        let values = batch
+            .column_by_name("asset_id")
+            .context("AssetText provider omitted asset_id")?;
+        let values = values
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("AssetText asset_id has invalid type")?;
+        for index in 0..values.len() {
+            if !values.is_null(index) {
+                matches.insert(values.value(index).to_string());
+            }
+        }
+    }
+    Ok(Some(matches))
+}
+
+pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
+    let head_store =
+        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
+            .single_process();
+    let Some(head) = head_store.read_exact().await? else {
+        return Ok(json!({"state":"missing","stale":true}));
+    };
+    let manifest: AssetTextManifest = serde_json::from_slice(
+        &op.read(&head.head.materialization_manifest_location)
+            .await?
+            .to_vec(),
+    )
+    .context("decode AssetText materialization manifest")?;
+    let stale = head.head.producer_fingerprint != asset_text_producer_fingerprint()
+        || head.head.definition_fingerprint != asset_text_definition_fingerprint()
+        || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH;
+    Ok(json!({
+        "state": "ready",
+        "current_producer_fingerprint": asset_text_producer_fingerprint(),
+        "materialized_producer_fingerprint": head.head.producer_fingerprint,
+        "compatibility_epoch": head.head.compatibility_epoch,
+        "stale": stale,
+        "materialization_id": head.head.materialization_id,
+        "generation": head.head.generation,
+        "assets_referenced": manifest.assets_referenced,
+        "assets_ready": manifest.assets_ready,
+        "assets_empty": manifest.assets_empty,
+        "assets_failed": manifest.assets_failed,
+        "assets_unsupported": manifest.assets_unsupported,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asset_text_schema_and_definition_share_stable_fields() {
+        let definition = asset_text_definition();
+        assert_eq!(
+            definition.schema.fields.len(),
+            asset_text_schema().as_struct().fields().len()
+        );
+        assert_eq!(
+            definition.logical_key.last().map(String::as_str),
+            Some("chunk_index")
+        );
+    }
+
+    #[test]
+    fn text_normalization_is_deterministic_and_unicode_aware() {
+        assert_eq!(normalize_text("a\r\nb\r\n\u{0000}c"), "a\nb\nc");
+        assert_eq!("設備投資".chars().count(), 4);
+    }
+
+    #[test]
+    fn pdf_text_layer_literals_are_searchable_without_executing_content() {
+        assert_eq!(
+            extract_pdf_text("BT (設備投資) Tj ET".as_bytes()),
+            "設備投資"
+        );
+    }
+
+    #[test]
+    fn pdf_text_layer_parser_handles_page_content_streams() {
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = vec![0usize];
+        {
+            let mut append = |object: &str| {
+                offsets.push(pdf.len());
+                pdf.extend_from_slice(object.as_bytes());
+            };
+            append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+            append("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+            append("3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
+            let stream = "BT /F1 12 Tf 72 720 Td (Investment) Tj ET\n";
+            append(&format!(
+                "4 0 obj\n<< /Length {} >>\nstream\n{}endstream\nendobj\n",
+                stream.len(),
+                stream
+            ));
+            append("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
+        }
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
+        for offset in offsets.iter().skip(1) {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+        let chunks = extract_pdf_chunks(&pdf).expect("valid PDF fixture");
+        assert!(chunks.iter().any(|chunk| chunk.text.contains("Investment")));
+        assert_eq!(chunks[0].locator, json!({"page": 1}));
+    }
+
+    #[test]
+    fn parser_limits_reject_hostile_pdf_and_xml_work() {
+        let hostile_pdf = b"/Type /Page ".repeat(MAX_PDF_PAGES + 1);
+        assert!(matches!(
+            extract_pdf_chunks(&hostile_pdf),
+            Err("parser_limit")
+        ));
+
+        let mut deeply_nested = String::new();
+        for index in 0..=MAX_XML_DEPTH {
+            deeply_nested.push_str(&format!("<n{index}>"));
+        }
+        deeply_nested.push_str("text");
+        for index in (0..=MAX_XML_DEPTH).rev() {
+            deeply_nested.push_str(&format!("</n{index}>"));
+        }
+        assert_eq!(xml_text(deeply_nested.as_bytes()), Err("parser_limit"));
+    }
+
+    #[tokio::test]
+    async fn empty_space_rebuild_publishes_only_a_derived_head() -> anyhow::Result<()> {
+        let op = opendal::Operator::new(opendal::services::Memory::default())?.finish();
+        crate::space::create_space(&op, "derived-empty", "memory:///").await?;
+        let catalog_head_path = "spaces/derived-empty/_ugoite/catalog/head.json";
+        let before = if op.exists(catalog_head_path).await? {
+            Some(op.read(catalog_head_path).await?.to_vec())
+        } else {
+            None
+        };
+        let head = rebuild_asset_text(&op, "spaces/derived-empty").await?;
+        assert_eq!(head.relation_id, DerivedRelationId::ASSET_TEXT.to_string());
+        assert_eq!(head.generation, 1);
+        let after = if op.exists(catalog_head_path).await? {
+            Some(op.read(catalog_head_path).await?.to_vec())
+        } else {
+            None
+        };
+        assert_eq!(before, after);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn text_asset_materializes_and_is_searchable() -> anyhow::Result<()> {
+        let op = opendal::Operator::new(opendal::services::Memory::default())?.finish();
+        crate::space::create_space(&op, "derived-text", "memory:///").await?;
+        let ws_path = "spaces/derived-text";
+        crate::form::upsert_form(
+            &op,
+            ws_path,
+            &json!({"name":"Notes","fields":{"Attachment":{"type":"asset_reference"}}}),
+        )
+        .await?;
+        let reference =
+            crate::asset::save_asset(&op, ws_path, "report.txt", "設備投資".as_bytes()).await?;
+        let orphan =
+            crate::asset::save_asset(&op, ws_path, "orphan.txt", "未参照秘密".as_bytes()).await?;
+        let content = format!(
+            "---\nform: Notes\nAttachment: {}\n---\n# August meeting",
+            serde_json::to_string(&reference)?
+        );
+        crate::entry::create_entry(
+            &op,
+            ws_path,
+            "meeting-1",
+            &content,
+            "author",
+            &crate::integrity::FakeIntegrityProvider,
+        )
+        .await?;
+        let catalog_head_path = format!("{ws_path}/_ugoite/catalog/head.json");
+        let catalog_head_before = op.read(&catalog_head_path).await?.to_vec();
+        let head = rebuild_asset_text(&op, ws_path).await?;
+        assert!(head.snapshot_id.is_some());
+        assert_eq!(
+            op.read(&catalog_head_path).await?.to_vec(),
+            catalog_head_before
+        );
+        let matches = asset_text_search_matches(&op, ws_path, "設備投資")
+            .await?
+            .expect("published AssetText relation");
+        assert!(matches.contains(&reference.asset_id));
+        let results = crate::search::search_entries(&op, ws_path, "設備投資", 10).await?;
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["meeting-1"]
+        );
+        assert!(!asset_text_search_matches(&op, ws_path, "未参照秘密")
+            .await?
+            .expect("published AssetText relation")
+            .contains(&orphan.asset_id));
+        let scopes = std::collections::BTreeMap::from([(
+            "notes".to_string(),
+            ugoite_core::query::EntryScope::Only(std::collections::BTreeSet::new()),
+        )]);
+        assert!(
+            crate::search::search_entries_with_scopes(&op, ws_path, "設備投資", &scopes, 10)
+                .await?
+                .is_empty()
+        );
+        Ok(())
+    }
+}

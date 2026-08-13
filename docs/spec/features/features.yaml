@@ -32,6 +32,12 @@ files:
   linked_requirements:
   - REQCAT-ASSET
   - REQCAT-API
+- kind: derived_relations
+  file: derived-relations.yaml
+  linked_requirements:
+  - REQCAT-ASSET
+  - REQCAT-SEARCH
+  - REQCAT-STORAGE
 - kind: auth
   file: auth.yaml
   linked_requirements:

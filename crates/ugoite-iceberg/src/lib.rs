@@ -6,6 +6,7 @@
 
 #![recursion_limit = "512"]
 
+pub mod derived_relation;
 mod read_schema_provider;
 mod space_catalog;
 

@@ -2,6 +2,7 @@
 #![deny(clippy::all)]
 
 pub mod checkpoint;
+pub mod derived_relation;
 pub mod entry;
 pub mod form;
 pub mod id;

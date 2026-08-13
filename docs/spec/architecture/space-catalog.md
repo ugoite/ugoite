@@ -28,6 +28,12 @@ publication records live at `_ugoite/catalog/publications/<generation>-<command-
 Only records reachable from Head through `previous_publication` are authoritative.
 Object listing never establishes current state or order.
 
+DerivedRelation Heads under `_ugoite/derived/relations/{relation_id}/head.json`
+are independent, non-authoritative pointers. They may be absent, stale, or
+replaced without changing this Catalog Head or any SpaceCheckpoint. Relation
+materializations use the official Iceberg Rust FileIO and are visible only
+after their own Head CAS.
+
 ## Exact reads and publication
 
 An exact Head read first obtains a real ETag with `stat`, then reads Head with

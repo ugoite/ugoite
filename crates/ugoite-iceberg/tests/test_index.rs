@@ -10,13 +10,19 @@ async fn test_index_req_idx_001_reindex_writes_index_files() -> anyhow::Result<(
     space::create_space(&op, "test-space", "/tmp").await?;
     let ws_path = "spaces/test-space";
 
-    let error = index::reindex_all(&op, ws_path).await.unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("reindex is not implemented in this release"));
+    index::reindex_all(&op, ws_path).await?;
 
-    // Indexes are derived from Iceberg; no on-disk index files are created
+    // AssetText is a derived Iceberg relation; legacy ad-hoc index files are
+    // not created.
     assert!(!op.exists(&format!("{}/index/index.json", ws_path)).await?);
+    assert!(
+        op.exists(&format!(
+            "{}/_ugoite/derived/relations/{}/head.json",
+            ws_path,
+            ugoite_domain::derived_relation::DerivedRelationId::ASSET_TEXT
+        ))
+        .await?
+    );
 
     Ok(())
 }
@@ -78,10 +84,7 @@ async fn test_index_req_idx_004_inverted_index_generation() -> anyhow::Result<()
     space::create_space(&op, "test-ws", "/tmp").await?;
     let ws_path = "spaces/test-ws";
 
-    let error = index::reindex_all(&op, ws_path).await.unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("reindex is not implemented in this release"));
+    index::reindex_all(&op, ws_path).await?;
     assert!(
         !op.exists(&format!("{}/index/inverted_index.json", ws_path))
             .await?

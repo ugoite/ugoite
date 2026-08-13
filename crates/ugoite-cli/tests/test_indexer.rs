@@ -66,7 +66,7 @@ fn setup_space_with_entries(
     (root, space_path, config_path, relation)
 }
 
-/// REQ-IDX-001: Indexer run does not report false success in this release.
+/// REQ-IDX-001: Indexer run rebuilds the internal DerivedRelation.
 #[test]
 fn test_indexer_run_once() {
     let dir = tempfile::tempdir().unwrap();
@@ -78,11 +78,10 @@ fn test_indexer_run_once() {
         .output()
         .expect("failed to execute");
 
-    assert!(!output.status.success(), "index run should be de-scoped");
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("reindex is not implemented in this release"),
-        "{stderr}"
+        output.status.success(),
+        "index run stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -380,7 +379,7 @@ fn test_validate_properties_valid() {
     );
 }
 
-/// REQ-IDX-004: Indexer does not claim to generate inverted index files in this release.
+/// REQ-IDX-004: AssetText rebuild does not claim to be an inverted index.
 #[test]
 fn test_indexer_generates_inverted_index() {
     let dir = tempfile::tempdir().unwrap();
@@ -392,15 +391,10 @@ fn test_indexer_generates_inverted_index() {
         .output()
         .expect("failed to execute");
 
-    assert!(!output.status.success(), "index run should be de-scoped");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("reindex is not implemented in this release"),
-        "{stderr}"
-    );
+    assert!(output.status.success(), "{output:?}");
 }
 
-/// REQ-IDX-005: Indexer word-count rebuild is not advertised as implemented in this release.
+/// REQ-IDX-005: Derived rebuild remains separate from word-count helpers.
 #[test]
 fn test_indexer_computes_word_count() {
     let dir = tempfile::tempdir().unwrap();
@@ -412,12 +406,7 @@ fn test_indexer_computes_word_count() {
         .output()
         .expect("failed to execute");
 
-    assert!(!output.status.success(), "index run should be de-scoped");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("reindex is not implemented in this release"),
-        "{stderr}"
-    );
+    assert!(output.status.success(), "{output:?}");
 }
 
 /// REQ-IDX-006: Indexer watch loop triggers re-indexing on file changes.

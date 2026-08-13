@@ -1,5 +1,5 @@
-version: 2
-updated: 2026-06
+version: 3
+updated: 2026-08-13
 roots:
 - path: spaces
   kind: directory
@@ -43,6 +43,10 @@ space_layout:
       - Iceberg owns table data and metadata locations beneath the Space.
     - path: spaces/{space_id}/assets
       kind: directory
+    - path: spaces/{space_id}/_ugoite/derived/relations
+      kind: directory
+      notes:
+      - Lazy, non-authoritative DerivedRelation roots; absence is recoverable.
     - path: spaces/{space_id}/sql_sessions
       kind: directory
     post_bootstrap:
@@ -70,6 +74,16 @@ space_layout:
       entries:
       - path_glob: spaces/{space_id}/assets/{asset_id}
         kind: file
+    derived_relation_rebuild:
+      operation: ugoite_index_run
+      entries:
+      - path: spaces/{space_id}/_ugoite/derived/relations/{relation_id}/head.json
+        kind: file
+        schema: derived_relation_head
+      - path_glob: spaces/{space_id}/_ugoite/derived/relations/{relation_id}/materializations/{materialization_id}
+        kind: directory
+        notes:
+        - Official Iceberg metadata, manifests, and Parquet files are owned by Iceberg.
 user_layout:
   trigger: patch_user_preferences
   entries:

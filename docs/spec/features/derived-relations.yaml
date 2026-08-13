@@ -1,0 +1,18 @@
+version: '0.1'
+updated: '2026-08-13'
+kind: derived_relations
+implementation:
+  domain:
+    file: crates/ugoite-domain/src/derived_relation.rs
+  storage:
+    file: crates/ugoite-storage/src/lib.rs
+  iceberg:
+    file: crates/ugoite-iceberg/src/derived_relation.rs
+  search:
+    file: crates/ugoite-iceberg/src/search.rs
+  cli:
+    file: crates/ugoite-cli/src/commands/index.rs
+  tests:
+    files:
+    - crates/ugoite-iceberg/tests/test_index.rs
+    - crates/ugoite-cli/tests/test_indexer.rs

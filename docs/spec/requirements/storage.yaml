@@ -38,6 +38,30 @@ requirements:
   - POL-001
   - POL-002
   - POL-003
+  linked_specifications:
+  - SPEC-ARCH-DERIVED-RELATIONS
+  id: REQ-STO-013
+  title: Rebuildable Derived Relations
+  description: 'DerivedRelation Heads and immutable Iceberg materializations MUST
+    remain under the owning Space prefix. They MUST use exact conditional Head
+    publication, remain outside the authoritative Catalog Head and SpaceCheckpoint,
+    and be safely rebuildable from authoritative data.'
+  related_spec:
+  - architecture/derived-relations.md
+  - data-model/directory-layout.yaml
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-storage/src/lib.rs
+  - file: crates/ugoite-iceberg/src/derived_relation.rs
+- set_id: REQCAT-STORAGE
+  source_file: requirements/storage.yaml
+  scope: Storage architecture, data persistence, and portability requirements.
+  linked_policies:
+  - POL-001
+  - POL-002
+  - POL-003
   - POL-011
   - POL-014
   linked_specifications:

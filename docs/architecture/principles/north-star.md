@@ -42,11 +42,11 @@ separate inputs. The default `/data` layout contains the two filesystem
 prefixes, but a `/data` copy is complete only when the secret is preserved with
 it too.
 
-`_ugoite/catalog/head.json` is the only mutable catalog root. It is published
-with an actual OpenDAL ETag compare-and-swap. Immutable, checksum-protected
-publication records under `_ugoite/catalog/publications/` link each successful
-Head generation to the preceding one. Iceberg metadata, manifests, and data
-files remain Iceberg-owned immutable objects.
+`_ugoite/catalog/head.json` is the only authoritative mutable catalog root. It
+is published with an actual OpenDAL ETag compare-and-swap. Immutable,
+checksum-protected publication records under `_ugoite/catalog/publications/`
+link each successful Head generation to the preceding one. Iceberg metadata,
+manifests, and data files remain Iceberg-owned immutable objects.
 
 Readers pin immutable Head and snapshot coordinates and never lock. Writers can
 prepare immutable objects concurrently, but make a mutation visible only by
@@ -69,8 +69,9 @@ not become the mandatory owner of user data.
    one table and recovery never depends on a hidden database.
 3. Catalog Head is the only authoritative mutable root. Object listing never
    establishes catalog state or publication order.
-4. Indexes, projections, health reports, checkpoints, and query sessions are
-   derived or explicitly pinned coordinates, never competing authority.
+4. Forms own authoritative history. DerivedRelation Heads own only replaceable
+   current materializations for indexes and projections; they never enter
+   SpaceCheckpoint or authorization authority.
 5. Domain and use-case behavior lives in reusable Rust crates.
 6. CLI, server, WASM, and browser transport code remain adapters.
 7. Authentication and authorization do not change ownership of Space data.
