@@ -489,6 +489,15 @@ impl AppState {
             );
         }
         for space_id in self.service.list_space_ids().await? {
+            // Rehydrate relation-local GC on every server start. A previous
+            // process may have left durable garbage markers after the grace
+            // timer was lost; derived cleanup must not depend on a new write
+            // or delay authoritative startup recovery.
+            let gc_service = self.service.clone();
+            let gc_space_id = space_id.clone();
+            tokio::spawn(async move {
+                let _ = gc_service.rearm_asset_text_gc(&gc_space_id).await;
+            });
             reconcile_recovery_fences(self, &space_id).await?;
             reconcile_recovery_audit_outbox(self, &space_id).await?;
             reconcile_human_approval_audit_outbox(self, &space_id).await?;

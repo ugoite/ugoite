@@ -539,6 +539,7 @@ struct AuthorizedAssetReferenceStreamState {
     relation_scopes: BTreeMap<String, EntryScope>,
     form_names: Vec<String>,
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    initial_after: Option<(String, String, String)>,
     form_index: usize,
     current_rows: Option<Vec<(String, entry::EntryRow)>>,
     current_offset: usize,
@@ -571,9 +572,6 @@ impl AuthorizedAssetReferenceStreamState {
                 }
                 self.current_rows = None;
                 self.current_offset = 0;
-                if self.current_after.is_none() {
-                    self.form_index += 1;
-                }
                 continue;
             }
             let Some(form_name) = self.form_names.get(self.form_index).cloned() else {
@@ -597,7 +595,11 @@ impl AuthorizedAssetReferenceStreamState {
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
             if rows.is_empty() {
-                self.current_after = None;
+                // Each Form is an independent sorted branch. Retain the
+                // caller's initial keyset cursor when advancing to the next
+                // branch; otherwise a large later Form is rescanned from its
+                // beginning and the join can time out before finding a match.
+                self.current_after = self.initial_after.clone();
                 self.form_index += 1;
             } else {
                 self.current_rows = Some(rows);
@@ -648,6 +650,7 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             relation_scopes: self.relation_scopes.clone(),
             form_names: self.form_names.clone(),
             asset_reference_fields: self.asset_reference_fields.clone(),
+            initial_after: self.initial_after.clone(),
             form_index: 0,
             current_rows: None,
             current_offset: 0,

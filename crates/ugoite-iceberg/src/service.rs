@@ -1439,6 +1439,14 @@ impl UgoiteService {
         .await
     }
 
+    /// Rehydrates derived GC after a server restart. Derived cleanup is
+    /// best-effort and never blocks authoritative startup recovery.
+    pub async fn rearm_asset_text_gc(&self, space_id: &str) -> Result<()> {
+        validate_storage_id(validate_space_id(space_id))?;
+        crate::derived_relation::rearm_asset_text_gc(&self.operator, &self.workspace_path(space_id))
+            .await
+    }
+
     pub async fn space_stats(&self, space_id: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         index::get_space_stats(&self.operator, &self.workspace_path(space_id)).await

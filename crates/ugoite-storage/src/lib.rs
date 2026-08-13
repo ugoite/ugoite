@@ -289,6 +289,17 @@ impl DerivedRelationHeadStore {
             .is_some_and(|age| age >= DERIVED_BUILD_CLAIM_TTL)
     }
 
+    fn claim_role(bytes: &[u8]) -> Option<String> {
+        serde_json::from_slice::<serde_json::Value>(bytes)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("role")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+    }
+
     async fn replace_build_claim(
         &self,
         build_id: &str,
@@ -344,9 +355,15 @@ impl DerivedRelationHeadStore {
             if error.kind() != ErrorKind::ConditionNotMatch {
                 return Err(error.into());
             }
-            let Some((_, etag, last_modified)) = self.read_build_claim(build_id).await? else {
+            let Some((bytes, etag, last_modified)) = self.read_build_claim(build_id).await? else {
                 return Err(anyhow!("DerivedRelation build claim disappeared"));
             };
+            // A garbage collector owns a reclaimed build permanently. A
+            // publisher must never take that claim back after its lease age,
+            // because GC may already be deleting the immutable prefix.
+            if Self::claim_role(&bytes).as_deref() != Some("publishing") {
+                return Err(anyhow!("DerivedRelation build claim is held"));
+            }
             if !Self::claim_is_stale(last_modified)
                 || !self
                     .replace_build_claim(build_id, etag.as_deref(), "publishing")
@@ -379,9 +396,16 @@ impl DerivedRelationHeadStore {
         {
             Ok(_) => Ok(true),
             Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
-                let Some((_, etag, last_modified)) = self.read_build_claim(build_id).await? else {
+                let Some((bytes, etag, last_modified)) = self.read_build_claim(build_id).await?
+                else {
                     return Ok(false);
                 };
+                if !matches!(
+                    Self::claim_role(&bytes).as_deref(),
+                    Some("publishing") | Some("garbage")
+                ) {
+                    return Ok(false);
+                }
                 if !Self::claim_is_stale(last_modified) {
                     return Ok(false);
                 }
@@ -390,6 +414,20 @@ impl DerivedRelationHeadStore {
             }
             Err(error) => Err(error.into()),
         }
+    }
+
+    /// Refresh the garbage claim before each destructive object operation.
+    /// This keeps a long-running deletion from becoming an apparently stale
+    /// claim and fences publication from a reclaimed build.
+    async fn renew_garbage_claim(&self, build_id: &str) -> Result<bool> {
+        let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
+            return Ok(false);
+        };
+        if Self::claim_role(&bytes).as_deref() != Some("garbage") {
+            return Ok(false);
+        }
+        self.replace_build_claim(build_id, etag.as_deref(), "garbage")
+            .await
     }
 
     /// Mark a build at the moment it stops being current.  GC uses this
@@ -634,6 +672,7 @@ impl DerivedRelationHeadStore {
                 .recursive(true)
                 .await?;
             let mut garbage_marker = None;
+            let mut publishing_marker = None;
             let mut build_objects = Vec::new();
             for entry in entries {
                 if entry.metadata().mode() != EntryMode::FILE {
@@ -645,12 +684,22 @@ impl DerivedRelationHeadStore {
                     // so a crash during cleanup leaves the build discoverable
                     // on the next GC pass.
                     garbage_marker = Some(entry.path().to_string());
+                } else if entry.path() == self.publishing_marker_path(&build_id) {
+                    // Keep the garbage claim until all build data is gone.
+                    // The claim itself is removed immediately before the
+                    // garbage marker, so a crash still leaves a durable
+                    // cleanup record.
+                    publishing_marker = Some(entry.path().to_string());
                 } else {
                     build_objects.push(entry.path().to_string());
                 }
             }
             let mut fully_deleted = true;
             for path in build_objects {
+                if !self.renew_garbage_claim(&build_id).await? {
+                    fully_deleted = false;
+                    break;
+                }
                 // Re-check the Head for every object as a fail-closed guard
                 // against a concurrent publication.
                 if self
@@ -668,6 +717,23 @@ impl DerivedRelationHeadStore {
                 // Keep garbage.json until the build prefix is otherwise empty.
                 // If this process crashes before this final delete, the marker
                 // remains available for the next candidate-discovery pass.
+                if self
+                    .read_exact()
+                    .await?
+                    .as_ref()
+                    .is_some_and(|head| head.head.build_id == build_id)
+                {
+                    continue;
+                }
+                if let Some(path) = publishing_marker {
+                    if !self.renew_garbage_claim(&build_id).await? {
+                        continue;
+                    }
+                    self.operator.delete(&path).await?;
+                }
+                // The garbage marker is the final durable cleanup record. If
+                // a publisher won the Head CAS after the previous check, the
+                // marker must remain so the build is rediscovered safely.
                 if self
                     .read_exact()
                     .await?

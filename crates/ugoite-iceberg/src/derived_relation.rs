@@ -66,6 +66,7 @@ const MAX_EXTRACTED_TEXT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TEXT_CHUNK_CHARS: usize = 16 * 1024;
 const READER_CHUNK_BYTES: usize = 256 * 1024;
 const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
+const GC_RETRY_DELAY: Duration = Duration::from_secs(60);
 
 struct AssetTextGcScheduler {
     notify: Notify,
@@ -741,6 +742,10 @@ async fn rebuild_asset_text_with_mode(
 }
 
 fn schedule_asset_text_gc(op: &Operator, ws_path: &str) {
+    schedule_asset_text_gc_after_delay(op, ws_path, MINIMUM_GC_AGE);
+}
+
+fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Duration) {
     let relation_id = asset_text_definition().relation_id.as_uuid();
     let key = format!(
         "{}:{}:{}:{}:{}",
@@ -769,7 +774,7 @@ fn schedule_asset_text_gc(op: &Operator, ws_path: &str) {
             .deadline
             .lock()
             .expect("AssetText GC deadline poisoned");
-        let next = Instant::now() + MINIMUM_GC_AGE;
+        let next = Instant::now() + delay;
         if deadline.is_none_or(|current| next > current) {
             *deadline = Some(next);
         }
@@ -828,16 +833,34 @@ fn schedule_asset_text_gc(op: &Operator, ws_path: &str) {
                         } else {
                             Some(base.single_process())
                         };
-                        if let Some(head_store) = head_store {
-                            if let Ok(current_build_id) = head_store.read_exact().await {
-                                let current_build_id = current_build_id.map(|head| head.head.build_id);
-                                let _ = head_store
-                                    .garbage_collect(
-                                        current_build_id.as_deref(),
-                                        MINIMUM_GC_AGE,
-                                    )
-                                    .await;
+                        let gc_result = if let Some(head_store) = head_store {
+                            match head_store.read_exact().await {
+                                Ok(current_build) => {
+                                    let current_build_id =
+                                        current_build.map(|head| head.head.build_id);
+                                    head_store
+                                        .garbage_collect(
+                                            current_build_id.as_deref(),
+                                            MINIMUM_GC_AGE,
+                                        )
+                                        .await
+                                        .map(|_| ())
+                                }
+                                Err(error) => Err(error),
                             }
+                        } else {
+                            Err(anyhow::anyhow!("unable to configure AssetText GC backend"))
+                        };
+                        if gc_result.is_err() {
+                            // GC is maintenance, not request authority. Keep
+                            // the scheduler alive and retry transient storage
+                            // failures instead of losing the only process-local
+                            // wake-up for durable garbage markers.
+                            schedule_asset_text_gc_after_delay(
+                                &operator,
+                                &workspace_path,
+                                GC_RETRY_DELAY,
+                            );
                         }
                         let should_exit = {
                             // Schedule and retirement both take the map lock
@@ -909,6 +932,22 @@ pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<
     head_store
         .garbage_collect(current_build_id.as_deref(), MINIMUM_GC_AGE)
         .await
+}
+
+/// Rehydrates the process-local GC wake-up for an existing Space. This is
+/// called during server startup so durable markers from a previous process are
+/// discovered without waiting for a new rebuild.
+pub async fn rearm_asset_text_gc(op: &Operator, ws_path: &str) -> Result<()> {
+    match garbage_collect_asset_text(op, ws_path).await {
+        Ok(_) => {
+            schedule_asset_text_gc(op, ws_path);
+            Ok(())
+        }
+        Err(error) => {
+            schedule_asset_text_gc_after_delay(op, ws_path, GC_RETRY_DELAY);
+            Err(error)
+        }
+    }
 }
 
 fn iceberg_root_uri(store: &SpaceCatalogStore) -> String {
