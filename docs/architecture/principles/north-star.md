@@ -70,8 +70,8 @@ not become the mandatory owner of user data.
 3. Catalog Head is the only authoritative mutable root. Object listing never
    establishes catalog state or publication order.
 4. Forms own authoritative history. DerivedRelation Heads own only replaceable
-   current builds for indexes and projections; they never enter
-   SpaceCheckpoint or authorization authority.
+   current builds for indexes and projections; they never enter SpaceCheckpoint
+   or authorization authority.
 5. Domain and use-case behavior lives in reusable Rust crates.
 6. CLI, server, WASM, and browser transport code remain adapters.
 7. Authentication and authorization do not change ownership of Space data.
