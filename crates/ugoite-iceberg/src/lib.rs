@@ -70,7 +70,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
-#[cfg(test)]
+#[cfg(debug_assertions)]
 use tokio::sync::Notify;
 use tokio::sync::Semaphore;
 use ugoite_core::error::{AppError, ErrorCode};
