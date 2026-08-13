@@ -780,7 +780,7 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
     let form_names = crate::entry::list_form_names(op, ws_path).await?;
     let mut definitions = BTreeMap::<String, FormDefinition>::new();
     for name in &form_names {
-        let definition = crate::iceberg_store::load_domain_form(op, ws_path, &name).await?;
+        let definition = crate::iceberg_store::load_domain_form(op, ws_path, name).await?;
         definitions.insert(name.clone(), definition);
     }
     let mut references = BTreeMap::<(String, String, u64, String), SourceReference>::new();
@@ -1597,21 +1597,22 @@ mod tests {
     fn pdf_text_layer_parser_handles_page_content_streams() {
         let mut pdf = b"%PDF-1.4\n".to_vec();
         let mut offsets = vec![0usize];
-        let mut append = |object: &str| {
-            offsets.push(pdf.len());
-            pdf.extend_from_slice(object.as_bytes());
-        };
-        append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-        append("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
-        append("3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
-        let stream = "BT /F1 12 Tf 72 720 Td (Investment) Tj ET\n";
-        append(&format!(
-            "4 0 obj\n<< /Length {} >>\nstream\n{}endstream\nendobj\n",
-            stream.len(),
-            stream
-        ));
-        append("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
-        drop(append);
+        {
+            let mut append = |object: &str| {
+                offsets.push(pdf.len());
+                pdf.extend_from_slice(object.as_bytes());
+            };
+            append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+            append("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+            append("3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
+            let stream = "BT /F1 12 Tf 72 720 Td (Investment) Tj ET\n";
+            append(&format!(
+                "4 0 obj\n<< /Length {} >>\nstream\n{}endstream\nendobj\n",
+                stream.len(),
+                stream
+            ));
+            append("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
+        }
         let xref = pdf.len();
         pdf.extend_from_slice(b"xref\n0 6\n0000000000 65535 f \n");
         for offset in offsets.iter().skip(1) {
@@ -1697,7 +1698,7 @@ mod tests {
         let catalog_head_path = format!("{ws_path}/_ugoite/catalog/head.json");
         let catalog_head_before = op.read(&catalog_head_path).await?.to_vec();
         let head = rebuild_asset_text(&op, ws_path).await?;
-        assert_eq!(head.snapshot_id.is_some(), true);
+        assert!(head.snapshot_id.is_some());
         assert_eq!(
             op.read(&catalog_head_path).await?.to_vec(),
             catalog_head_before
