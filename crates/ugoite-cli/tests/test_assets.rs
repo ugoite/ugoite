@@ -4,9 +4,6 @@
 use std::path::Path;
 use std::process::Command;
 
-#[path = "support/mod.rs"]
-mod support;
-
 fn ugoite_bin() -> String {
     let mut path = std::env::current_exe().unwrap();
     path.pop();
