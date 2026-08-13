@@ -23,7 +23,8 @@ Requirement IDs embedded in test names/source provide traceability. A requiremen
 
 The focused `tools/coverage_gates_test.ts` contract tests keep the package
 coverage tasks, thresholds, canonical root test graph, aggregate CI lane wiring,
-required status aggregator, and `REQ-OPS-021`/`REQ-OPS-024` traceability aligned.
+required status aggregator, single-writer dependency/Deno caches, and
+`REQ-OPS-021`/`REQ-OPS-024` traceability aligned.
 
 Use focused crate/package tests while developing, then run `mise run ci` or the merge/release gates as appropriate.
 

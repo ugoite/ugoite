@@ -154,7 +154,7 @@ jobs:
           cache-bin: "false"
           shared-key: "cargo-deps"
           add-job-id-key: "false"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          save-if: "false"
 
       - name: Install sccache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -299,13 +299,6 @@ jobs:
             target/artifacts/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
-
-      - name: Save Deno cache
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/deno-cache
-          key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
 
       - name: Save Playwright browser cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'

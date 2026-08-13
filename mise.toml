@@ -153,6 +153,7 @@ sources = [
   "crates/ugoite-storage/**/*",
   "crates/ugoite-iceberg/**/*",
   "crates/ugoite-core/**/*",
+  "crates/ugoite-identity/**/*",
   "crates/ugoite-server/**/*",
   "crates/ugoite-cli/**/*",
   "vendor/**/*",

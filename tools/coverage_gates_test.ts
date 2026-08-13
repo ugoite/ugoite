@@ -46,6 +46,19 @@ function workflowJobBlock(source: string, job: string): string {
   );
 }
 
+function workflowStepBlock(source: string, step: string): string {
+  const header = `\n      - name: ${step}\n`;
+  const start = source.indexOf(header);
+  assertEquals(start >= 0, true, `workflow is missing step ${step}`);
+  const nextStep = source.slice(start + header.length).search(
+    /^\x20{6}- name: /m,
+  );
+  return source.slice(
+    start + header.length,
+    nextStep < 0 ? undefined : start + header.length + nextStep,
+  );
+}
+
 function assertMainTrigger(source: string, trigger: string): void {
   assertContainsAll(
     source,
@@ -58,6 +71,14 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
   const qualityJob = workflowJobBlock(workflow, "quality");
   const artifactsJob = workflowJobBlock(workflow, "artifacts");
   const requiredJob = workflowJobBlock(workflow, "required");
+  const qualityCargoCache = workflowStepBlock(
+    qualityJob,
+    "Restore Cargo dependency cache",
+  );
+  const artifactsCargoCache = workflowStepBlock(
+    artifactsJob,
+    "Restore Cargo dependency cache",
+  );
   const canonicalTest = taskBlock(mise, "test");
   const releaseBuild = taskBlock(mise, "build:rust:release");
   const artifactsTask = taskBlock(mise, "ci:artifacts");
@@ -86,7 +107,10 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
 
   assertContainsAll(
     releaseBuild,
-    ["cargo build -p ugoite-server -p ugoite-cli --release --locked"],
+    [
+      "crates/ugoite-identity/**/*",
+      "cargo build -p ugoite-server -p ugoite-cli --release --locked",
+    ],
     "release build task",
   );
   assertContainsAll(
@@ -139,6 +163,28 @@ function assertAggregateWorkflow(workflow: string, mise: string): void {
     qualityJob.includes("Buildx"),
     false,
     "quality lane must not configure Buildx",
+  );
+  assertContainsAll(
+    qualityCargoCache,
+    [
+      "save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}",
+    ],
+    "quality Cargo dependency cache",
+  );
+  assertContainsAll(
+    artifactsCargoCache,
+    ['save-if: "false"'],
+    "artifact Cargo dependency cache",
+  );
+  assertEquals(
+    qualityJob.includes("- name: Save Deno cache"),
+    true,
+    "quality lane must own the Deno archive writer",
+  );
+  assertEquals(
+    artifactsJob.includes("- name: Save Deno cache"),
+    false,
+    "artifact lane must not write the Deno archive",
   );
   assertEquals(
     workflow.includes("mise run test:frontend:coverage"),
