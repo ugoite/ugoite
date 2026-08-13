@@ -23,7 +23,7 @@ MCP may add resources, prompts, and tools only with explicit authorization and u
 DerivedRelation is the storage primitive for rebuildable OCR/text/embedding/
 graph-style projections. A producer must publish a semantic fingerprint,
 compatibility epoch, typed schema, source coordinate, and bounded rebuild
-contract. New materializations swap through an independent Relation Head; they
+contract. New builds swap through an independent Relation Head; they
 do not become Forms or alter the meaning of SpaceCheckpoint. AssetText is the
 first internal example and remains a searchable-text projection rather than a
 full-text inverted index.

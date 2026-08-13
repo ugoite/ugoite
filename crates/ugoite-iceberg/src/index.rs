@@ -488,10 +488,54 @@ pub(crate) async fn query_entry_rows_authorized(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<(String, entry::EntryRow)>> {
+    query_entry_rows_authorized_internal(
+        op,
+        ws_path,
+        relation_scopes,
+        form_filter,
+        keyword,
+        limit,
+        offset,
+        Some(crate::MAX_NORMAL_READ_ROWS),
+    )
+    .await
+}
+
+/// Internal derived-relation source scan. It has no API response ceiling:
+/// the result is still produced from the provider-side authorized current
+/// view, but a rebuild must not silently omit Entry 10,001.
+pub(crate) async fn query_entry_rows_authorized_unbounded(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Vec<(String, entry::EntryRow)>> {
+    query_entry_rows_authorized_internal(
+        op,
+        ws_path,
+        relation_scopes,
+        None,
+        None,
+        i64::MAX as usize / 2,
+        0,
+        None,
+    )
+    .await
+}
+
+async fn query_entry_rows_authorized_internal(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    form_filter: Option<&str>,
+    keyword: Option<&str>,
+    limit: usize,
+    offset: usize,
+    response_limit: Option<usize>,
+) -> Result<Vec<(String, entry::EntryRow)>> {
     if limit == 0 {
         return Ok(Vec::new());
     }
-    if limit > crate::MAX_NORMAL_READ_ROWS.saturating_add(1) {
+    if response_limit.is_some_and(|max| limit > max.saturating_add(1)) {
         return Err(anyhow!(
             "normal Entry reads are limited to {} rows",
             crate::MAX_NORMAL_READ_ROWS
@@ -506,7 +550,7 @@ pub(crate) async fn query_entry_rows_authorized(
         Some(relation_scopes),
         None,
         BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
-        crate::MAX_NORMAL_READ_ROWS,
+        response_limit.unwrap_or(i64::MAX as usize / 2),
         true,
     )
     .await

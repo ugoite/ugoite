@@ -74,18 +74,6 @@ impl UgoiteService {
         &self.root_uri
     }
 
-    /// Derived extraction is deliberately best-effort.  Authoritative Entry
-    /// and Asset writes have already committed before this hook runs, and a
-    /// parser or materialization failure is observable through index stats and
-    /// recoverable with `ugoite index run`.
-    async fn best_effort_asset_text_rebuild(&self, space_id: &str) {
-        let _ = crate::derived_relation::rebuild_asset_text(
-            &self.operator,
-            &self.workspace_path(space_id),
-        )
-        .await;
-    }
-
     pub fn workspace_path(&self, space_id: &str) -> String {
         format!("spaces/{space_id}")
     }
@@ -245,7 +233,6 @@ impl UgoiteService {
             &integrity,
         )
         .await?;
-        self.best_effort_asset_text_rebuild(space_id).await;
         entry::get_entry(&self.operator, &workspace, entry_id).await
     }
 
@@ -292,7 +279,6 @@ impl UgoiteService {
             Some(&scopes),
         )
         .await?;
-        self.best_effort_asset_text_rebuild(space_id).await;
         entry::get_entry(&self.operator, &workspace, entry_id).await
     }
 
@@ -382,7 +368,6 @@ impl UgoiteService {
             scopes.as_ref(),
         )
         .await?;
-        self.best_effort_asset_text_rebuild(space_id).await;
         Ok(result)
     }
 
@@ -403,7 +388,6 @@ impl UgoiteService {
             actor,
         )
         .await?;
-        self.best_effort_asset_text_rebuild(space_id).await;
         Ok(())
     }
 

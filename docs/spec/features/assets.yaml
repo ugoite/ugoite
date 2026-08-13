@@ -20,7 +20,7 @@ apis:
     command: ugoite asset upload
     file: crates/ugoite-cli/src/commands/asset.rs
     function: run
-  notes: Upload returns an AssetReference and does not create an Entry. Core/local CLI upload is implemented; remote CLI asset upload is intentionally unavailable in this release, while the API client, REST, and frontend multipart surfaces remain implemented.
+  notes: Upload returns an AssetReference and does not create an Entry. Core/local and backend/api CLI multipart upload are implemented through the portable operation protocol.
 - id: asset.delete
   method: DELETE
   status: implemented

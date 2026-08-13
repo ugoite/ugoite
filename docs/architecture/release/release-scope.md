@@ -21,8 +21,8 @@ support, and product claims stay aligned with the implementation.
 
 ## Limited or unavailable
 
-- remote CLI asset upload is intentionally unavailable in this release; the API
-  client, REST, and frontend asset upload surfaces remain available;
+- remote CLI asset upload uses the same portable multipart operation as the API
+  client, REST, and frontend surfaces;
 - index run/stats are local core-mode commands. `index run` rebuilds the
   internal AssetText DerivedRelation, while stats reports derived health;
 - general audit-log listing APIs are not exposed; authorization events remain

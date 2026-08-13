@@ -1,7 +1,13 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use arrow_array::builder::{Float64Builder, StringBuilder};
+use arrow_array::{Array, Float64Array, RecordBatch, StringArray};
+use arrow_schema::{DataType, Field, Schema};
+use datafusion::datasource::MemTable;
+use datafusion::prelude::SessionContext;
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use ugoite_core::query::EntryScope;
 
 use crate::entry;
@@ -67,41 +73,17 @@ pub async fn search_entries_with_scopes_after(
         results.insert((result.form.clone(), result.id.clone()), result);
     }
 
-    // AssetText is a trusted internal projection. The authorized current
-    // Entry scan remains the ACL boundary: an asset match is promoted only
-    // after its current Entry has passed the caller's Form/Entry scope.
-    // Derived failures intentionally degrade to native search.
+    // AssetText is joined only after the provider-side authorized current
+    // Entry scan. The join itself runs in DataFusion, so a match after the
+    // normal 10k response window is still eligible and no matching-asset
+    // HashSet or fixed-size payload scan is used.
     if !query.trim().is_empty() {
-        if let Ok(Some(matching_assets)) =
-            crate::derived_relation::asset_text_search_matches(op, ws_path, query).await
+        if let Ok(Some(asset_results)) =
+            asset_text_search_authorized(op, ws_path, query, relation_scopes).await
         {
-            if !matching_assets.is_empty() {
-                if let Ok(asset_rows) = crate::index::query_entry_rows_authorized(
-                    op,
-                    ws_path,
-                    relation_scopes,
-                    None,
-                    None,
-                    crate::MAX_NORMAL_READ_ROWS,
-                    0,
-                )
-                .await
-                {
-                    for (form_name, row) in asset_rows {
-                        if row.deleted || !row_references_asset(&row.fields, &matching_assets) {
-                            continue;
-                        }
-                        let result = KeywordSearchResult {
-                            id: row.entry_id,
-                            title: row.title,
-                            form: form_name,
-                            created_at: row.created_at,
-                            updated_at: row.updated_at,
-                        };
-                        if is_after_cursor(&result, after) {
-                            results.insert((result.form.clone(), result.id.clone()), result);
-                        }
-                    }
+            for result in asset_results {
+                if is_after_cursor(&result, after) {
+                    results.insert((result.form.clone(), result.id.clone()), result);
                 }
             }
         }
@@ -128,23 +110,139 @@ fn is_after_cursor(result: &KeywordSearchResult, after: Option<(&str, &str, &str
     })
 }
 
-fn row_references_asset(
-    value: &Value,
-    matching_assets: &std::collections::HashSet<String>,
-) -> bool {
+async fn asset_text_search_authorized(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Option<Vec<KeywordSearchResult>>> {
+    let context = SessionContext::new();
+    if !crate::derived_relation::register_asset_text_table(
+        &context,
+        op,
+        ws_path,
+        "__ugoite_internal_asset_text",
+    )
+    .await?
+    {
+        return Ok(None);
+    }
+    let authorized_rows =
+        crate::index::query_entry_rows_authorized_unbounded(op, ws_path, relation_scopes).await?;
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("form", DataType::Utf8, false),
+        Field::new("entry_id", DataType::Utf8, false),
+        Field::new("title", DataType::Utf8, false),
+        Field::new("created_at", DataType::Float64, false),
+        Field::new("updated_at", DataType::Float64, false),
+        Field::new("asset_id", DataType::Utf8, false),
+    ]));
+    let mut forms = StringBuilder::new();
+    let mut entry_ids = StringBuilder::new();
+    let mut titles = StringBuilder::new();
+    let mut created_at = Float64Builder::new();
+    let mut updated_at = Float64Builder::new();
+    let mut asset_ids = StringBuilder::new();
+    for (form_name, row) in authorized_rows {
+        if row.deleted {
+            continue;
+        }
+        let mut ids = Vec::new();
+        collect_asset_ids(&row.fields, &mut ids);
+        ids.sort();
+        ids.dedup();
+        for asset_id in ids {
+            forms.append_value(&form_name);
+            entry_ids.append_value(&row.entry_id);
+            titles.append_value(&row.title);
+            created_at.append_value(row.created_at);
+            updated_at.append_value(row.updated_at);
+            asset_ids.append_value(asset_id);
+        }
+    }
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(forms.finish()),
+            Arc::new(entry_ids.finish()),
+            Arc::new(titles.finish()),
+            Arc::new(created_at.finish()),
+            Arc::new(updated_at.finish()),
+            Arc::new(asset_ids.finish()),
+        ],
+    )?;
+    context.register_table(
+        "__ugoite_authorized_asset_refs",
+        Arc::new(MemTable::try_new(schema, vec![vec![batch]])?),
+    )?;
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+        .replace('\'', "''");
+    let sql = format!(
+        "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND lower(a.text) LIKE lower('%{escaped}%') ESCAPE '\\'"
+    );
+    let batches = context.sql(&sql).await?.collect().await?;
+    let mut results = Vec::new();
+    for batch in batches {
+        let form = batch
+            .column_by_name("form")
+            .context("asset search join omitted form")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("asset search form has invalid type")?;
+        let entry_id = batch
+            .column_by_name("entry_id")
+            .context("asset search join omitted entry_id")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("asset search entry_id has invalid type")?;
+        let title = batch
+            .column_by_name("title")
+            .context("asset search join omitted title")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("asset search title has invalid type")?;
+        let created = batch
+            .column_by_name("created_at")
+            .context("asset search join omitted created_at")?
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .context("asset search created_at has invalid type")?;
+        let updated = batch
+            .column_by_name("updated_at")
+            .context("asset search join omitted updated_at")?
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .context("asset search updated_at has invalid type")?;
+        for index in 0..batch.num_rows() {
+            results.push(KeywordSearchResult {
+                id: entry_id.value(index).to_string(),
+                title: title.value(index).to_string(),
+                form: form.value(index).to_string(),
+                created_at: created.value(index),
+                updated_at: updated.value(index),
+            });
+        }
+    }
+    Ok(Some(results))
+}
+
+fn collect_asset_ids(value: &Value, output: &mut Vec<String>) {
     match value {
         Value::Array(values) => values
             .iter()
-            .any(|value| row_references_asset(value, matching_assets)),
+            .for_each(|value| collect_asset_ids(value, output)),
         Value::Object(object) => {
-            object
-                .get("asset_id")
-                .and_then(Value::as_str)
-                .is_some_and(|asset_id| matching_assets.contains(asset_id))
-                || object
+            if let Some(asset_id) = object.get("asset_id").and_then(Value::as_str) {
+                output.push(asset_id.to_string());
+            } else {
+                object
                     .values()
-                    .any(|value| row_references_asset(value, matching_assets))
+                    .for_each(|value| collect_asset_ids(value, output));
+            }
         }
-        _ => false,
+        _ => {}
     }
 }

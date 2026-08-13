@@ -21,7 +21,7 @@ spaces/
       derived/
         relations/{relation_id}/
           head.json
-          materializations/{materialization_id}/   # Iceberg-owned layout
+          builds/{build_id}/                       # Iceberg-owned current/garbage builds
     forms/
     assets/
     sql_sessions/
@@ -81,7 +81,7 @@ theme, locale, and selected-Space preferences are user-scoped and belong in
 | Node response signing | `response_hmac/default.json` | Node-default response-signing key material; not part of a Space export |
 | SQL session creation | `spaces/{space_id}/sql_sessions/{session_id}/meta.json` | query/session metadata |
 | Asset upload | `spaces/{space_id}/assets/{asset_id}` | binary object; the key is derived from the stable asset ID |
-| Derived rebuild | `spaces/{space_id}/_ugoite/derived/relations/{relation_id}/head.json` | current materialization coordinate; non-authoritative and replaceable |
+| Derived rebuild | `spaces/{space_id}/_ugoite/derived/relations/{relation_id}/head.json` | current build coordinate; non-authoritative and replaceable |
 | Preference update | `users/{sha256(user_id)}/preferences.json` | portable user UI preferences |
 
 ## Catalog and Iceberg-managed Form storage

@@ -1662,8 +1662,14 @@ impl IcebergWorkspace {
                 .await?
             }
             RevisionView::LatestIncludingTombstones | RevisionView::Current => {
-                self.read_latest_revision_batches(&table, &entry_scope, snapshot_id, view)
-                    .await?
+                self.read_latest_revision_batches(
+                    &table,
+                    &entry_scope,
+                    snapshot_id,
+                    view,
+                    Some(MAX_NORMAL_READ_ROWS),
+                )
+                .await?
             }
         };
         let schema = table.metadata().current_schema().clone();
@@ -1707,6 +1713,7 @@ impl IcebergWorkspace {
                 &EntryScope::Only(entry_ids.iter().copied().collect()),
                 None,
                 RevisionView::LatestIncludingTombstones,
+                Some(MAX_NORMAL_READ_ROWS),
             )
             .await?;
         let mut revisions = Vec::new();
@@ -1877,6 +1884,7 @@ impl IcebergWorkspace {
         entry_scope: &EntryScope,
         snapshot_id: Option<i64>,
         view: RevisionView,
+        max_rows: Option<usize>,
     ) -> Result<Vec<RecordBatch>> {
         let (provider, query_snapshot_id) = self.revision_provider(table, snapshot_id).await?;
         let context = self
@@ -1887,7 +1895,7 @@ impl IcebergWorkspace {
                 entry_scope,
                 QueryLimits {
                     max_memory_bytes: 64 * 1024 * 1024,
-                    max_rows: MAX_NORMAL_READ_ROWS,
+                    max_rows: max_rows.unwrap_or(i64::MAX as usize / 2),
                     timeout: Duration::from_secs(30),
                     max_concurrency: 1,
                     allowed_functions: BTreeSet::new(),
@@ -1915,7 +1923,7 @@ impl IcebergWorkspace {
                 revision_ids.push(uuid_at(revision_values, row)?);
             }
         }
-        if entry_ids.len() > MAX_NORMAL_READ_ROWS {
+        if max_rows.is_some_and(|max_rows| entry_ids.len() > max_rows) {
             return Err(anyhow!(
                 "normal Entry reads are limited to {MAX_NORMAL_READ_ROWS} current rows"
             ));
@@ -1947,6 +1955,32 @@ impl IcebergWorkspace {
                 revision_ids.len(),
             )
             .await
+    }
+
+    /// Derived rebuilds must see every current Entry. This intentionally
+    /// bypasses the API response ceiling; authorization and deletion semantics
+    /// remain the same because the canonical latest-state plan is unchanged.
+    pub(crate) async fn read_current_revision_view_for_derived(
+        &self,
+        form_id: FormId,
+    ) -> Result<Vec<EntryRevision>> {
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let batches = self
+            .read_latest_revision_batches(
+                &table,
+                &EntryScope::AllCurrent,
+                None,
+                RevisionView::LatestIncludingTombstones,
+                None,
+            )
+            .await?;
+        let schema = table.metadata().current_schema().clone();
+        let mut revisions = Vec::new();
+        for batch in &batches {
+            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+        }
+        Ok(revisions)
     }
 
     pub async fn query(&self, sql: &str) -> Result<Vec<RecordBatch>> {

@@ -80,7 +80,7 @@ space_layout:
       - path: spaces/{space_id}/_ugoite/derived/relations/{relation_id}/head.json
         kind: file
         schema: derived_relation_head
-      - path_glob: spaces/{space_id}/_ugoite/derived/relations/{relation_id}/materializations/{materialization_id}
+      - path_glob: spaces/{space_id}/_ugoite/derived/relations/{relation_id}/builds/{build_id}
         kind: directory
         notes:
         - Official Iceberg metadata, manifests, and Parquet files are owned by Iceberg.

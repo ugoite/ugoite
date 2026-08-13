@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::time::{Duration, SystemTime};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
@@ -67,9 +68,10 @@ pub enum CatalogWriteMode {
     SingleProcess,
 }
 
-/// Minimal durable coordinate published by one rebuildable relation.  Iceberg
+/// Minimal durable coordinate published by one rebuildable relation. Iceberg
 /// metadata owns the table details; this document only binds the visible
-/// materialization to a single immutable build.
+/// current build. Previous builds are garbage-collection candidates, not
+/// relation history.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DerivedRelationHead {
@@ -82,20 +84,14 @@ pub struct DerivedRelationHead {
     pub producer_id: String,
     pub producer_fingerprint: String,
     pub compatibility_epoch: u64,
-    pub materialization_id: String,
+    pub build_id: String,
     pub table_identifier: serde_json::Value,
     pub table_uuid: String,
     pub metadata_location: String,
     pub snapshot_id: Option<i64>,
     pub schema_id: i32,
-    pub base_generation: u64,
-    pub target_generation: u64,
-    pub build_id: String,
     pub input_digest: String,
     pub source_coordinate: serde_json::Value,
-    pub materialization_manifest_location: String,
-    pub materialization_manifest_checksum: String,
-    pub last_command_id: String,
     pub checksum: String,
 }
 
@@ -171,11 +167,84 @@ impl DerivedRelationHeadStore {
         )
     }
 
-    pub fn materializations_path(&self, materialization_id: &str) -> String {
+    pub fn builds_path(&self, build_id: &str) -> String {
         format!(
-            "{}/_ugoite/derived/relations/{}/materializations/{materialization_id}",
+            "{}/_ugoite/derived/relations/{}/builds/{build_id}",
             self.space_root, self.relation_id
         )
+    }
+
+    /// The relation-local mutex covers an entire single-process rebuild. Head
+    /// CAS alone is intentionally insufficient: two local builders must not
+    /// scan, parse, and publish concurrently for the same relation.
+    pub fn single_process_lock(&self) -> Arc<AsyncMutex<()>> {
+        self.serializer.clone()
+    }
+
+    pub fn operator(&self) -> &Operator {
+        &self.operator
+    }
+
+    /// Remove non-current build prefixes after the caller-selected grace
+    /// period. Listing is used only to discover garbage candidates; Head is
+    /// the sole authority for the current build.
+    pub async fn garbage_collect(
+        &self,
+        current_build_id: Option<&str>,
+        minimum_gc_age: Duration,
+    ) -> Result<Vec<String>> {
+        let prefix = format!(
+            "{}/_ugoite/derived/relations/{}/builds/",
+            self.space_root, self.relation_id
+        );
+        let entries = self.operator.list_with(&prefix).recursive(true).await?;
+        let mut candidates = std::collections::BTreeMap::<String, bool>::new();
+        for entry in entries {
+            if entry.metadata().mode() != EntryMode::FILE {
+                continue;
+            }
+            let Some(build_id) = entry
+                .path()
+                .strip_prefix(&prefix)
+                .and_then(|path| path.split('/').next())
+                .filter(|build_id| !build_id.is_empty())
+            else {
+                continue;
+            };
+            if Some(build_id) != current_build_id {
+                let old_enough = minimum_gc_age.is_zero()
+                    || entry
+                        .metadata()
+                        .last_modified()
+                        .and_then(|timestamp| {
+                            SystemTime::now().duration_since(timestamp.into()).ok()
+                        })
+                        .is_some_and(|age| age >= minimum_gc_age);
+                candidates
+                    .entry(build_id.to_string())
+                    .and_modify(|eligible| *eligible &= old_enough)
+                    .or_insert(old_enough);
+            }
+        }
+        let mut deleted = Vec::new();
+        for (build_id, eligible) in candidates {
+            if !eligible {
+                continue;
+            }
+            let build_prefix = self.builds_path(&build_id);
+            let entries = self
+                .operator
+                .list_with(&build_prefix)
+                .recursive(true)
+                .await?;
+            for entry in entries {
+                if entry.metadata().mode() == EntryMode::FILE {
+                    self.operator.delete(entry.path()).await?;
+                }
+            }
+            deleted.push(build_id);
+        }
+        Ok(deleted)
     }
 
     pub async fn read_exact(&self) -> Result<Option<ExactDerivedRelationHead>> {
@@ -292,10 +361,52 @@ impl DerivedRelationHeadStore {
         expected: Option<&ExactDerivedRelationHead>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        if self.write_mode == CatalogWriteMode::SingleProcess {
+            let _guard = self.serializer.lock().await;
+            return self.publish_with_single_process_lock(expected, head).await;
+        }
         match expected {
             None => self.create(head).await,
             Some(expected) => self.replace(expected.etag.as_deref(), head).await,
         }
+    }
+
+    /// Publish while the caller already owns [`Self::single_process_lock`].
+    /// This is used by a full rebuild so the relation mutex spans source scan,
+    /// build, validation, and swap without self-deadlocking on Head I/O.
+    pub async fn publish_with_single_process_lock(
+        &self,
+        expected: Option<&ExactDerivedRelationHead>,
+        head: &DerivedRelationHead,
+    ) -> Result<()> {
+        if self.write_mode != CatalogWriteMode::SingleProcess {
+            return match expected {
+                None => self.create(head).await,
+                Some(expected) => self.replace(expected.etag.as_deref(), head).await,
+            };
+        }
+        let bytes = canonical_head_bytes(head)?;
+        match expected {
+            None => {
+                if self.operator.exists(&self.head_path()).await? {
+                    return Err(anyhow!("DerivedRelation Head already exists"));
+                }
+                self.operator.write(&self.head_path(), bytes).await?;
+            }
+            Some(expected) => {
+                let current = self
+                    .read_exact()
+                    .await?
+                    .context("DerivedRelation Head disappeared")?;
+                if (expected.etag.is_some() && current.etag != expected.etag)
+                    || (expected.etag.is_none() && current.bytes != expected.bytes)
+                {
+                    return Err(anyhow!("DerivedRelation Head changed"));
+                }
+                self.operator.write(&self.head_path(), bytes).await?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1148,6 +1259,9 @@ mod tests {
     use futures::future::join_all;
     use opendal::services::Memory;
     use opendal::Operator;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn operator_from_uri_supports_fs_and_memory() -> Result<()> {
@@ -1307,20 +1421,14 @@ mod tests {
             producer_id: "producer".into(),
             producer_fingerprint: "producer-fingerprint".into(),
             compatibility_epoch: 1,
-            materialization_id: "materialization-a".into(),
+            build_id: "build-a".into(),
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: "table-uuid".into(),
             metadata_location: "memory:///metadata.json".into(),
             snapshot_id: None,
             schema_id: 0,
-            base_generation: 0,
-            target_generation: 1,
-            build_id: "build-a".into(),
             input_digest: "input-a".into(),
             source_coordinate: serde_json::json!({"catalog_head_sha256":null}),
-            materialization_manifest_location: "manifest-a.json".into(),
-            materialization_manifest_checksum: "manifest-checksum".into(),
-            last_command_id: "command-a".into(),
             checksum: String::new(),
         };
         store.create(&first).await?;
@@ -1329,9 +1437,7 @@ mod tests {
 
         let mut second = first.clone();
         second.generation = 2;
-        second.base_generation = 1;
-        second.target_generation = 2;
-        second.materialization_id = "materialization-b".into();
+        second.build_id = "build-b".into();
         store.replace(None, &second).await?;
         let mut invalid: serde_json::Value =
             serde_json::from_slice(&canonical_head_bytes(&second)?)?;
@@ -1378,20 +1484,14 @@ mod tests {
             producer_id: "producer".into(),
             producer_fingerprint: "producer-fingerprint".into(),
             compatibility_epoch: 1,
-            materialization_id: "materialization".into(),
+            build_id: "build".into(),
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: "table-uuid".into(),
             metadata_location: "memory:///metadata.json".into(),
             snapshot_id: None,
             schema_id: 0,
-            base_generation: 0,
-            target_generation: 1,
-            build_id: "build".into(),
             input_digest: "input".into(),
             source_coordinate: serde_json::json!({}),
-            materialization_manifest_location: "manifest.json".into(),
-            materialization_manifest_checksum: "manifest-checksum".into(),
-            last_command_id: "command".into(),
             checksum: String::new(),
         };
         let results = join_all((0..8).map(|_| {
@@ -1402,6 +1502,107 @@ mod tests {
         .await;
         assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
         assert!(store.read_exact().await?.is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn derived_build_gc_never_removes_current_build() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA003);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        operator
+            .write(
+                &format!("{}/manifest.json", store.builds_path("current")),
+                b"current".to_vec(),
+            )
+            .await?;
+        operator
+            .write(
+                &format!("{}/manifest.json", store.builds_path("stale")),
+                b"stale".to_vec(),
+            )
+            .await?;
+        let deleted = store
+            .garbage_collect(Some("current"), Duration::ZERO)
+            .await?;
+        assert_eq!(deleted, vec!["stale"]);
+        assert!(
+            operator
+                .exists(&format!("{}/manifest.json", store.builds_path("current")))
+                .await?
+        );
+        assert!(
+            !operator
+                .exists(&format!("{}/manifest.json", store.builds_path("stale")))
+                .await?
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn derived_publish_rejects_a_stale_single_process_writer() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA004);
+        let store = DerivedRelationHeadStore::new(operator, "spaces/demo", relation_id);
+        let mut first = DerivedRelationHead {
+            format_version: 1,
+            space_id: "demo".into(),
+            relation_id: relation_id.to_string(),
+            generation: 1,
+            definition_version: 1,
+            definition_fingerprint: "definition".into(),
+            producer_id: "producer".into(),
+            producer_fingerprint: "producer".into(),
+            compatibility_epoch: 1,
+            build_id: "build-1".into(),
+            table_identifier: serde_json::json!({"table":"derived"}),
+            table_uuid: "table".into(),
+            metadata_location: "memory:///metadata".into(),
+            snapshot_id: None,
+            schema_id: 0,
+            input_digest: "input".into(),
+            source_coordinate: serde_json::json!({}),
+            checksum: String::new(),
+        };
+        store.publish(None, &first).await?;
+        let expected = store.read_exact().await?.expect("initial Head");
+        first.generation = 2;
+        first.build_id = "build-2".into();
+        store.publish(Some(&expected), &first).await?;
+        let mut loser = first.clone();
+        loser.generation = 3;
+        loser.build_id = "build-3".into();
+        let error = store
+            .publish(Some(&expected), &loser)
+            .await
+            .expect_err("stale writer must lose CAS");
+        assert!(error.to_string().contains("changed"));
+        assert_eq!(store.read_exact().await?.unwrap().head.build_id, "build-2");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn single_process_relation_lock_serializes_full_rebuilds() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let store =
+            DerivedRelationHeadStore::new(operator, "spaces/demo", uuid::Uuid::from_u128(0xA005));
+        let active = Arc::new(AtomicUsize::new(0));
+        let maximum = Arc::new(AtomicUsize::new(0));
+        let results = join_all((0..8).map(|_| {
+            let lock = store.single_process_lock();
+            let active = Arc::clone(&active);
+            let maximum = Arc::clone(&maximum);
+            async move {
+                let _guard = lock.lock().await;
+                let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                maximum.fetch_max(now, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                active.fetch_sub(1, Ordering::SeqCst);
+            }
+        }))
+        .await;
+        assert_eq!(results.len(), 8);
+        assert_eq!(maximum.load(Ordering::SeqCst), 1);
         Ok(())
     }
 }

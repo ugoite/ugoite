@@ -42,7 +42,7 @@ requirements:
   - SPEC-ARCH-DERIVED-RELATIONS
   id: REQ-STO-013
   title: Rebuildable Derived Relations
-  description: 'DerivedRelation Heads and immutable Iceberg materializations MUST
+  description: 'DerivedRelation Heads and immutable Iceberg builds MUST
     remain under the owning Space prefix. They MUST use exact conditional Head
     publication, remain outside the authoritative Catalog Head and SpaceCheckpoint,
     and be safely rebuildable from authoritative data.'

@@ -2,7 +2,7 @@
 //!
 //! The Relation Head in `ugoite-storage` is the only durable visibility
 //! coordinate in this module.  Iceberg metadata and data files are immutable
-//! build products below a materialization prefix; a failed build therefore
+//! build products below a build prefix; a failed build therefore
 //! cannot replace the currently visible result or the authoritative Catalog.
 
 use anyhow::{bail, Context, Result};
@@ -38,8 +38,9 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Read, Seek};
 use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
+use tokio::sync::{Mutex, Semaphore};
 use ugoite_domain::derived_relation::DerivedRelationId;
 use ugoite_domain::derived_relation::{
     canonical_json, sha256_digest, DerivedErrorCode, DerivedExposure, DerivedRelationDefinition,
@@ -52,8 +53,8 @@ use uuid::Uuid;
 use zip::ZipArchive;
 
 pub const ASSET_TEXT_PRODUCER_ID: &str = "ugoite.asset_text";
-pub const ASSET_TEXT_PARSER_VERSION: &str = "1";
-pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 1;
+pub const ASSET_TEXT_PARSER_VERSION: &str = "2";
+pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 2;
 const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ZIP_ENTRIES: usize = 10_000;
 const MAX_ZIP_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
@@ -63,12 +64,10 @@ const MAX_XML_DEPTH: usize = 256;
 const MAX_EXTRACTED_TEXT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TEXT_CHUNK_CHARS: usize = 16 * 1024;
 const READER_CHUNK_BYTES: usize = 256 * 1024;
+const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct AssetTextRow {
-    pub form_id: String,
-    pub entry_id: String,
-    pub entry_version: i64,
     pub asset_id: String,
     pub source_sha256: String,
     pub source_size_bytes: i64,
@@ -88,7 +87,7 @@ pub struct AssetTextRow {
 struct AssetTextManifest {
     format_version: u32,
     relation_id: String,
-    materialization_id: String,
+    build_id: String,
     producer_fingerprint: String,
     input_digest: String,
     row_count: usize,
@@ -117,9 +116,6 @@ struct AssetTextStatusCounts {
 
 #[derive(Clone, Debug, Serialize)]
 struct SourceReference {
-    form_id: String,
-    entry_id: String,
-    entry_version: u64,
     asset_id: String,
     name: String,
     media_type: String,
@@ -165,22 +161,19 @@ impl Dispatch {
 
 pub fn asset_text_definition() -> DerivedRelationDefinition {
     let fields = vec![
-        (1, "form_id", DerivedValueType::String, false),
-        (2, "entry_id", DerivedValueType::String, false),
-        (3, "entry_version", DerivedValueType::Long, false),
-        (4, "asset_id", DerivedValueType::String, false),
-        (5, "source_sha256", DerivedValueType::String, false),
-        (6, "source_size_bytes", DerivedValueType::Long, false),
-        (7, "parser_id", DerivedValueType::String, false),
-        (8, "parser_version", DerivedValueType::String, false),
-        (9, "producer_fingerprint", DerivedValueType::String, false),
-        (10, "status", DerivedValueType::String, false),
-        (11, "chunk_index", DerivedValueType::Long, false),
-        (12, "source_locator", DerivedValueType::String, true),
-        (13, "text", DerivedValueType::String, true),
-        (14, "text_length", DerivedValueType::Long, false),
-        (15, "parsed_at", DerivedValueType::Timestamp, false),
-        (16, "error_code", DerivedValueType::String, true),
+        (1, "asset_id", DerivedValueType::String, false),
+        (2, "source_sha256", DerivedValueType::String, false),
+        (3, "source_size_bytes", DerivedValueType::Long, false),
+        (4, "parser_id", DerivedValueType::String, false),
+        (5, "parser_version", DerivedValueType::String, false),
+        (6, "producer_fingerprint", DerivedValueType::String, false),
+        (7, "status", DerivedValueType::String, false),
+        (8, "chunk_index", DerivedValueType::Long, false),
+        (9, "source_locator", DerivedValueType::String, true),
+        (10, "text", DerivedValueType::String, true),
+        (11, "text_length", DerivedValueType::Long, false),
+        (12, "parsed_at", DerivedValueType::Timestamp, false),
+        (13, "error_code", DerivedValueType::String, true),
     ]
     .into_iter()
     .map(|(field_id, name, value_type, nullable)| RelationField {
@@ -193,15 +186,9 @@ pub fn asset_text_definition() -> DerivedRelationDefinition {
     DerivedRelationDefinition {
         relation_id: DerivedRelationId::ASSET_TEXT,
         name: ASSET_TEXT_PRODUCER_ID.to_string(),
-        definition_version: 1,
+        definition_version: 2,
         schema: TypedSchema { fields },
-        logical_key: vec![
-            "form_id".into(),
-            "entry_id".into(),
-            "entry_version".into(),
-            "asset_id".into(),
-            "chunk_index".into(),
-        ],
+        logical_key: vec!["asset_id".into(), "chunk_index".into()],
         exposure: DerivedExposure::Internal,
         producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
     }
@@ -211,7 +198,7 @@ pub fn asset_text_producer_fingerprint() -> String {
     // This is deliberately a semantic contract, not a crate version.  Any
     // parser, normalization, dispatch, or chunking change must update it.
     sha256_digest(
-        b"ugoite.asset_text/protocol=1;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=text-layer;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+128MiB-zip+10000-pdf-pages+16MiB-text+256-xml-depth;schema=1",
+        b"ugoite.asset_text/protocol=2;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=text-layer;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+128MiB-zip+10000-pdf-pages+16MiB-text+256-xml-depth;blocking=bounded-4;schema=2",
     )
 }
 
@@ -232,68 +219,55 @@ fn asset_text_schema() -> Schema {
     }
     Schema::builder()
         .with_fields(vec![
-            field(1, "form_id", Type::Primitive(PrimitiveType::String), true),
-            field(2, "entry_id", Type::Primitive(PrimitiveType::String), true),
+            field(1, "asset_id", Type::Primitive(PrimitiveType::String), true),
             field(
-                3,
-                "entry_version",
-                Type::Primitive(PrimitiveType::Long),
-                true,
-            ),
-            field(4, "asset_id", Type::Primitive(PrimitiveType::String), true),
-            field(
-                5,
+                2,
                 "source_sha256",
                 Type::Primitive(PrimitiveType::String),
                 true,
             ),
             field(
-                6,
+                3,
                 "source_size_bytes",
                 Type::Primitive(PrimitiveType::Long),
                 true,
             ),
-            field(7, "parser_id", Type::Primitive(PrimitiveType::String), true),
+            field(4, "parser_id", Type::Primitive(PrimitiveType::String), true),
             field(
-                8,
+                5,
                 "parser_version",
                 Type::Primitive(PrimitiveType::String),
                 true,
             ),
             field(
-                9,
+                6,
                 "producer_fingerprint",
                 Type::Primitive(PrimitiveType::String),
                 true,
             ),
-            field(10, "status", Type::Primitive(PrimitiveType::String), true),
+            field(7, "status", Type::Primitive(PrimitiveType::String), true),
+            field(8, "chunk_index", Type::Primitive(PrimitiveType::Long), true),
             field(
-                11,
-                "chunk_index",
-                Type::Primitive(PrimitiveType::Long),
-                true,
-            ),
-            field(
-                12,
+                9,
                 "source_locator",
                 Type::Primitive(PrimitiveType::String),
                 false,
             ),
-            field(13, "text", Type::Primitive(PrimitiveType::String), false),
+            field(10, "text", Type::Primitive(PrimitiveType::String), false),
             field(
-                14,
+                11,
                 "text_length",
                 Type::Primitive(PrimitiveType::Long),
                 true,
             ),
             field(
-                15,
+                12,
                 "parsed_at",
                 Type::Primitive(PrimitiveType::Timestamptz),
                 true,
             ),
             field(
-                16,
+                13,
                 "error_code",
                 Type::Primitive(PrimitiveType::String),
                 false,
@@ -455,7 +429,7 @@ impl Catalog for DerivedRelationCatalog {
     async fn drop_table(&self, _table: &TableIdent) -> iceberg::Result<()> {
         Err(IcebergError::new(
             IcebergErrorKind::FeatureUnsupported,
-            "derived tables are replaced by materialization swap",
+            "derived tables are replaced by current-build swap",
         ))
     }
 
@@ -514,17 +488,45 @@ impl Catalog for DerivedRelationCatalog {
 }
 
 pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedRelationHead> {
+    rebuild_asset_text_with_mode(op, ws_path, false).await
+}
+
+/// Shared backends use the exact-read/if-match path and deliberately do not
+/// take the process-local rebuild mutex. A losing build remains an immutable
+/// garbage candidate and is never published.
+pub async fn rebuild_asset_text_shared(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<DerivedRelationHead> {
+    rebuild_asset_text_with_mode(op, ws_path, true).await
+}
+
+async fn rebuild_asset_text_with_mode(
+    op: &Operator,
+    ws_path: &str,
+    shared: bool,
+) -> Result<DerivedRelationHead> {
     let definition = asset_text_definition();
     let producer_fingerprint = asset_text_producer_fingerprint();
     let relation_uuid = definition.relation_id.as_uuid();
-    let head_store =
-        DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process();
+    let head_store = if shared {
+        DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid)
+            .shared()
+            .await?
+    } else {
+        DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process()
+    };
+    let _rebuild_guard = if shared {
+        None
+    } else {
+        Some(head_store.single_process_lock().lock_owned().await)
+    };
     let expected = head_store.read_exact().await?;
-    let base_generation = expected
+    let current_generation = expected
         .as_ref()
         .map(|head| head.head.generation)
         .unwrap_or(0);
-    let target_generation = base_generation
+    let generation = current_generation
         .checked_add(1)
         .context("derived generation overflow")?;
     let source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
@@ -536,16 +538,14 @@ pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedR
     let input_digest = sha256_digest(&canonical_json(&source_rows)?);
     let rows = build_asset_text_rows(op, ws_path, &source_rows, &producer_fingerprint).await?;
     let row_digest = sha256_digest(&canonical_json(&rows)?);
-    let materialization_id = Uuid::now_v7().to_string();
-    let materialization_path = format!(
-        "{ws_path}/_ugoite/derived/relations/{relation_uuid}/materializations/{materialization_id}"
-    );
+    let build_id = Uuid::now_v7().to_string();
+    let build_path = head_store.builds_path(&build_id);
     let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
     // Iceberg locations must use the same URI namespace as the official
     // SpaceCatalog FileIO.  `Operator::info().root()` is not a portable
     // warehouse URI for all OpenDAL backends (notably memory and remote
     // stores), so do not manufacture a second location scheme here.
-    let table_location = format!("{}{}", iceberg_root_uri(&store), materialization_path);
+    let table_location = format!("{}{}", iceberg_root_uri(&store), build_path);
     let catalog = DerivedRelationCatalog::new(
         crate::space_catalog::file_io_for_store(&store),
         Runtime::current(),
@@ -575,9 +575,9 @@ pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedR
     let metadata_location = final_table.metadata_location_result()?.to_string();
     let status_counts = asset_text_status_counts(&source_rows, &rows);
     let manifest = AssetTextManifest {
-        format_version: 1,
+        format_version: 2,
         relation_id: relation_uuid.to_string(),
-        materialization_id: materialization_id.clone(),
+        build_id: build_id.clone(),
         producer_fingerprint: producer_fingerprint.clone(),
         input_digest: input_digest.clone(),
         row_count: rows.len(),
@@ -590,7 +590,7 @@ pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedR
         assets_unsupported: status_counts.assets_unsupported,
     };
     let manifest_bytes = serde_json::to_vec(&manifest)?;
-    let manifest_location = format!("{materialization_path}/manifest.json");
+    let manifest_location = format!("{build_path}/manifest.json");
     op.write_options(
         &manifest_location,
         manifest_bytes.clone(),
@@ -604,45 +604,50 @@ pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedR
         format_version: 1,
         space_id: space_id_from_metadata(op, ws_path).await?,
         relation_id: relation_uuid.to_string(),
-        generation: target_generation,
+        generation,
         definition_version: definition.definition_version,
         definition_fingerprint: definition.fingerprint(),
         producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
         producer_fingerprint,
         compatibility_epoch: ASSET_TEXT_COMPATIBILITY_EPOCH,
-        materialization_id,
+        build_id,
         table_identifier: serde_json::to_value(final_table.identifier())?,
         table_uuid: final_table.metadata().uuid().to_string(),
         metadata_location,
         snapshot_id: final_table.metadata().current_snapshot_id(),
         schema_id: final_table.metadata().current_schema_id(),
-        base_generation,
-        target_generation,
-        build_id: Uuid::now_v7().to_string(),
         input_digest,
         source_coordinate,
-        materialization_manifest_location: manifest_location,
-        materialization_manifest_checksum: sha256_digest(&manifest_bytes),
-        last_command_id: format!("index:asset-text:{target_generation}"),
         checksum: String::new(),
     };
-    if let Err(publication_error) = head_store.publish(expected.as_ref(), &head).await {
+    let publish_result = if shared {
+        head_store.publish(expected.as_ref(), &head).await
+    } else {
+        head_store
+            .publish_with_single_process_lock(expected.as_ref(), &head)
+            .await
+    };
+    if let Err(publication_error) = publish_result {
         // A conditional write can succeed at the storage boundary while its
         // response is lost.  Derived relations do not need the authoritative
         // publication-chain proof, but they still reread their own Head and
         // accept the outcome when this build command is visibly current.
         if let Ok(Some(current)) = head_store.read_exact().await {
-            if current.head.last_command_id == head.last_command_id {
+            if current.head.build_id == head.build_id {
                 return Ok(current.head);
             }
         }
         return Err(publication_error);
     }
-    Ok(head_store
+    let current = head_store
         .read_exact()
         .await?
         .context("published derived Head disappeared")?
-        .head)
+        .head;
+    let _ = head_store
+        .garbage_collect(Some(&current.build_id), MINIMUM_GC_AGE)
+        .await;
+    Ok(current)
 }
 
 fn iceberg_root_uri(store: &SpaceCatalogStore) -> String {
@@ -662,9 +667,6 @@ async fn append_rows(
     let arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
         table.metadata().current_schema(),
     )?);
-    let mut form_id = StringBuilder::new();
-    let mut entry_id = StringBuilder::new();
-    let mut entry_version = Int64Builder::new();
     let mut asset_id = StringBuilder::new();
     let mut source_sha256 = StringBuilder::new();
     let mut source_size_bytes = Int64Builder::new();
@@ -679,9 +681,6 @@ async fn append_rows(
     let mut parsed_at = Vec::with_capacity(rows.len());
     let mut error_code = StringBuilder::new();
     for row in rows {
-        form_id.append_value(&row.form_id);
-        entry_id.append_value(&row.entry_id);
-        entry_version.append_value(row.entry_version);
         asset_id.append_value(&row.asset_id);
         source_sha256.append_value(&row.source_sha256);
         source_size_bytes.append_value(row.source_size_bytes);
@@ -699,9 +698,6 @@ async fn append_rows(
     let batch = RecordBatch::try_new(
         arrow_schema,
         vec![
-            Arc::new(form_id.finish()),
-            Arc::new(entry_id.finish()),
-            Arc::new(entry_version.finish()),
             Arc::new(asset_id.finish()),
             Arc::new(source_sha256.finish()),
             Arc::new(source_size_bytes.finish()),
@@ -777,13 +773,14 @@ async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result
 }
 
 async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<SourceReference>> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     let form_names = crate::entry::list_form_names(op, ws_path).await?;
     let mut definitions = BTreeMap::<String, FormDefinition>::new();
     for name in &form_names {
         let definition = crate::iceberg_store::load_domain_form(op, ws_path, name).await?;
         definitions.insert(name.clone(), definition);
     }
-    let mut references = BTreeMap::<(String, String, u64, String), SourceReference>::new();
+    let mut references = BTreeMap::<String, SourceReference>::new();
     let mut asset_checksums = BTreeMap::<String, (String, u64)>::new();
     let mut conflicting_assets = HashSet::new();
     for form_name in form_names {
@@ -794,8 +791,9 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
         // table directly and is not subject to the normal 10k search window.
         // Delete tombstones are deliberately excluded after max-version
         // selection, so deleted Entries cannot seed a derived source set.
-        let (_, revisions) =
-            crate::iceberg_store::latest_revisions_for_form(op, ws_path, &form_name).await?;
+        let revisions = workspace
+            .read_current_revision_view_for_derived(definition.id)
+            .await?;
         for revision in revisions {
             if matches!(
                 revision.operation,
@@ -816,16 +814,7 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
                 let mut asset_references = Vec::new();
                 collect_asset_references(&serde_json::to_value(value)?, &mut asset_references);
                 for reference in asset_references {
-                    let key = (
-                        definition.id.to_string(),
-                        revision.entry.external_id.clone(),
-                        revision.entry_version,
-                        reference.asset_id.clone(),
-                    );
                     let candidate = SourceReference {
-                        form_id: definition.id.to_string(),
-                        entry_id: revision.entry.external_id.clone(),
-                        entry_version: revision.entry_version,
                         asset_id: reference.asset_id,
                         name: reference.name,
                         media_type: reference.media_type,
@@ -833,30 +822,12 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
                         source_size_bytes: reference.size_bytes,
                         integrity_error: None,
                     };
-                    if let Some((sha256, size_bytes)) = asset_checksums.get(&candidate.asset_id) {
-                        if sha256 != &candidate.source_sha256
-                            || *size_bytes != candidate.source_size_bytes
-                        {
-                            conflicting_assets.insert(candidate.asset_id.clone());
-                        }
-                    } else {
-                        asset_checksums.insert(
-                            candidate.asset_id.clone(),
-                            (candidate.source_sha256.clone(), candidate.source_size_bytes),
-                        );
-                    }
-                    if let Some(existing) = references.get(&key) {
-                        if existing.source_sha256 != candidate.source_sha256
-                            || existing.source_size_bytes != candidate.source_size_bytes
-                        {
-                            // Keep one deterministic row and mark every reference
-                            // to this asset as an integrity diagnostic below.
-                            conflicting_assets.insert(candidate.asset_id.clone());
-                            continue;
-                        }
-                    } else {
-                        references.insert(key, candidate);
-                    }
+                    merge_source_reference(
+                        &mut references,
+                        &mut asset_checksums,
+                        &mut conflicting_assets,
+                        candidate,
+                    );
                 }
             }
         }
@@ -874,6 +845,34 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
             reference
         })
         .collect())
+}
+
+fn merge_source_reference(
+    references: &mut BTreeMap<String, SourceReference>,
+    asset_checksums: &mut BTreeMap<String, (String, u64)>,
+    conflicting_assets: &mut HashSet<String>,
+    candidate: SourceReference,
+) {
+    if let Some((sha256, size_bytes)) = asset_checksums.get(&candidate.asset_id) {
+        if sha256 != &candidate.source_sha256 || *size_bytes != candidate.source_size_bytes {
+            conflicting_assets.insert(candidate.asset_id.clone());
+        }
+    } else {
+        asset_checksums.insert(
+            candidate.asset_id.clone(),
+            (candidate.source_sha256.clone(), candidate.source_size_bytes),
+        );
+    }
+    references
+        .entry(candidate.asset_id.clone())
+        .and_modify(|existing| {
+            if existing.source_sha256 != candidate.source_sha256
+                || existing.source_size_bytes != candidate.source_size_bytes
+            {
+                conflicting_assets.insert(candidate.asset_id.clone());
+            }
+        })
+        .or_insert(candidate);
 }
 
 fn collect_asset_references(value: &Value, output: &mut Vec<AssetReference>) {
@@ -947,9 +946,6 @@ async fn build_asset_text_rows(
                     locator: Option<String>,
                     text: Option<String>,
                     error_code: Option<&str>| AssetTextRow {
-            form_id: reference.form_id.clone(),
-            entry_id: reference.entry_id.clone(),
-            entry_version: i64::try_from(reference.entry_version).unwrap_or(i64::MAX),
             asset_id: reference.asset_id.clone(),
             source_sha256: reference.source_sha256.clone(),
             source_size_bytes: i64::try_from(reference.source_size_bytes).unwrap_or(i64::MAX),
@@ -1050,7 +1046,7 @@ async fn build_asset_text_rows(
         }
         let dispatch = detect_dispatch(&reference.name, &reference.media_type, &bytes);
         let parser = dispatch.parser().clone();
-        let chunks = match extract_chunks(&dispatch, &bytes) {
+        let chunks = match extract_chunks_async(dispatch.clone(), bytes.clone()).await {
             Ok(chunks) => chunks,
             Err(code) => {
                 rows.push(base(
@@ -1060,7 +1056,7 @@ async fn build_asset_text_rows(
                     0,
                     None,
                     None,
-                    Some(code),
+                    Some(coarse_parser_error_code(code)),
                 ));
                 continue;
             }
@@ -1197,7 +1193,7 @@ fn extract_chunks(
     dispatch: &Dispatch,
     bytes: &[u8],
 ) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
-    match dispatch {
+    let chunks = match dispatch {
         Dispatch::PlainText(_) => Ok(split_text_chunks(
             String::from_utf8_lossy(bytes).as_ref(),
             json!({"block": 0}),
@@ -1207,6 +1203,45 @@ fn extract_chunks(
         Dispatch::Xlsx(_) => extract_ooxml_workbook_chunks(bytes),
         Dispatch::Pptx(_) => extract_ooxml_slides(bytes),
         Dispatch::Unsupported(_) => Ok(Vec::new()),
+    }?;
+    let total_bytes = chunks
+        .iter()
+        .try_fold(0usize, |total, chunk| total.checked_add(chunk.text.len()))
+        .ok_or("parser_limit")?;
+    if total_bytes > MAX_EXTRACTED_TEXT_BYTES {
+        return Err("parser_limit");
+    }
+    Ok(chunks)
+}
+
+fn coarse_parser_error_code(code: &str) -> &'static str {
+    match code {
+        "parser_limit" => DerivedErrorCode::AssetParserLimit.as_str(),
+        _ => DerivedErrorCode::AssetParserFailed.as_str(),
+    }
+}
+
+async fn extract_chunks_async(
+    dispatch: Dispatch,
+    bytes: Vec<u8>,
+) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    if matches!(
+        dispatch,
+        Dispatch::Pdf(_) | Dispatch::Docx(_) | Dispatch::Xlsx(_) | Dispatch::Pptx(_)
+    ) {
+        static PARSER_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+        let semaphore = PARSER_SEMAPHORE
+            .get_or_init(|| Arc::new(Semaphore::new(4)))
+            .clone();
+        let _permit = semaphore
+            .acquire_owned()
+            .await
+            .map_err(|_| "parser_failed")?;
+        tokio::task::spawn_blocking(move || extract_chunks(&dispatch, &bytes))
+            .await
+            .map_err(|_| "parser_failed")?
+    } else {
+        extract_chunks(&dispatch, &bytes)
     }
 }
 
@@ -1222,13 +1257,16 @@ fn split_text_chunks(text: &str, locator: Value) -> Vec<ExtractedChunk> {
     let mut chunks = Vec::new();
     for block in blocks {
         let mut current = String::new();
+        let mut current_chars = 0usize;
         for character in block.chars() {
             current.push(character);
-            if current.chars().count() >= MAX_TEXT_CHUNK_CHARS {
+            current_chars += 1;
+            if current_chars >= MAX_TEXT_CHUNK_CHARS {
                 chunks.push(ExtractedChunk {
                     locator: locator.clone(),
                     text: std::mem::take(&mut current),
                 });
+                current_chars = 0;
             }
         }
         if !current.is_empty() {
@@ -1474,22 +1512,23 @@ fn xml_text(bytes: &[u8]) -> std::result::Result<String, &'static str> {
     Ok(output)
 }
 
-pub async fn asset_text_search_matches(
+pub async fn register_asset_text_table(
+    context: &SessionContext,
     op: &Operator,
     ws_path: &str,
-    query: &str,
-) -> Result<Option<HashSet<String>>> {
+    table_name: &str,
+) -> Result<bool> {
     let store = SpaceCatalogStore::new(op.clone(), ws_path)?.single_process();
     let head_store =
         DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
             .single_process();
     let Some(head) = head_store.read_exact().await? else {
-        return Ok(None);
+        return Ok(false);
     };
     if head.head.definition_fingerprint != asset_text_definition_fingerprint()
         || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH
     {
-        return Ok(None);
+        return Ok(false);
     }
     let file_io = crate::space_catalog::file_io_for_store(&store);
     let metadata =
@@ -1503,8 +1542,19 @@ pub async fn asset_text_search_matches(
         .runtime(Runtime::current())
         .build()?;
     let provider = IcebergStaticTableProvider::try_new_from_table(table).await?;
+    context.register_table(table_name, Arc::new(provider))?;
+    Ok(true)
+}
+
+pub async fn asset_text_search_matches(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+) -> Result<Option<HashSet<String>>> {
     let context = SessionContext::new();
-    context.register_table("__ugoite_internal_asset_text", Arc::new(provider))?;
+    if !register_asset_text_table(&context, op, ws_path, "__ugoite_internal_asset_text").await? {
+        return Ok(None);
+    }
     let escaped = query
         .replace('\\', "\\\\")
         .replace('%', "\\%")
@@ -1537,12 +1587,13 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
     let Some(head) = head_store.read_exact().await? else {
         return Ok(json!({"state":"missing","stale":true}));
     };
-    let manifest: AssetTextManifest = serde_json::from_slice(
-        &op.read(&head.head.materialization_manifest_location)
-            .await?
-            .to_vec(),
-    )
-    .context("decode AssetText materialization manifest")?;
+    let manifest_location = format!(
+        "{}/manifest.json",
+        head_store.builds_path(&head.head.build_id)
+    );
+    let manifest: AssetTextManifest =
+        serde_json::from_slice(&op.read(&manifest_location).await?.to_vec())
+            .context("decode AssetText build manifest")?;
     let stale = head.head.producer_fingerprint != asset_text_producer_fingerprint()
         || head.head.definition_fingerprint != asset_text_definition_fingerprint()
         || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH;
@@ -1552,7 +1603,7 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
         "materialized_producer_fingerprint": head.head.producer_fingerprint,
         "compatibility_epoch": head.head.compatibility_epoch,
         "stale": stale,
-        "materialization_id": head.head.materialization_id,
+        "build_id": head.head.build_id,
         "generation": head.head.generation,
         "assets_referenced": manifest.assets_referenced,
         "assets_ready": manifest.assets_ready,
@@ -1576,6 +1627,29 @@ mod tests {
         assert_eq!(
             definition.logical_key.last().map(String::as_str),
             Some("chunk_index")
+        );
+        assert_eq!(
+            definition
+                .schema
+                .fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "asset_id",
+                "source_sha256",
+                "source_size_bytes",
+                "parser_id",
+                "parser_version",
+                "producer_fingerprint",
+                "status",
+                "chunk_index",
+                "source_locator",
+                "text",
+                "text_length",
+                "parsed_at",
+                "error_code",
+            ]
         );
     }
 
@@ -1645,6 +1719,15 @@ mod tests {
         assert_eq!(xml_text(deeply_nested.as_bytes()), Err("parser_limit"));
     }
 
+    #[test]
+    fn extracted_text_limit_is_shared_by_plain_text_dispatch() {
+        let bytes = vec![b'x'; MAX_EXTRACTED_TEXT_BYTES + 1];
+        assert!(matches!(
+            extract_chunks(&Dispatch::PlainText(parser_identity("plain_text")), &bytes),
+            Err("parser_limit")
+        ));
+    }
+
     #[tokio::test]
     async fn empty_space_rebuild_publishes_only_a_derived_head() -> anyhow::Result<()> {
         let op = opendal::Operator::new(opendal::services::Memory::default())?.finish();
@@ -1699,6 +1782,15 @@ mod tests {
         let catalog_head_before = op.read(&catalog_head_path).await?.to_vec();
         let head = rebuild_asset_text(&op, ws_path).await?;
         assert!(head.snapshot_id.is_some());
+        let manifest: AssetTextManifest = serde_json::from_slice(
+            &op.read(&format!(
+                "{ws_path}/_ugoite/derived/relations/{}/builds/{}/manifest.json",
+                head.relation_id, head.build_id
+            ))
+            .await?
+            .to_vec(),
+        )?;
+        assert_eq!(manifest.assets_referenced, 1);
         assert_eq!(
             op.read(&catalog_head_path).await?.to_vec(),
             catalog_head_before
@@ -1729,5 +1821,29 @@ mod tests {
                 .is_empty()
         );
         Ok(())
+    }
+
+    #[test]
+    fn same_asset_referenced_by_one_hundred_entries_is_one_source() {
+        let mut references = BTreeMap::new();
+        let mut checksums = BTreeMap::new();
+        let mut conflicts = HashSet::new();
+        for _ in 0..100 {
+            merge_source_reference(
+                &mut references,
+                &mut checksums,
+                &mut conflicts,
+                SourceReference {
+                    asset_id: "asset-1".into(),
+                    name: "report.txt".into(),
+                    media_type: "text/plain".into(),
+                    source_sha256: "sha".into(),
+                    source_size_bytes: 3,
+                    integrity_error: None,
+                },
+            );
+        }
+        assert_eq!(references.len(), 1);
+        assert!(conflicts.is_empty());
     }
 }

@@ -8,7 +8,7 @@ Ugoite has two sibling kinds of typed Iceberg relation:
 
 - a Form is authoritative, append-only user data and participates in Catalog
   Head and SpaceCheckpoint coordinates;
-- a DerivedRelation is a replaceable current materialization computed from
+- a DerivedRelation is a replaceable current build computed from
   authoritative Space data.
 
 Derived data remains inside the operator-owned Space. It is not a second
@@ -23,16 +23,16 @@ Built-in relations are created lazily below:
 ```text
 spaces/{space_id}/_ugoite/derived/relations/{relation_id}/
 ├── head.json
-└── materializations/{materialization_id}/
+└── builds/{build_id}/
     ├── metadata/                 # official Iceberg metadata
     ├── data/                     # official Parquet data files
     └── manifest.json             # Ugoite integrity inventory
 ```
 
 Each relation has an independent mutable `head.json`. It contains the
-definition and producer fingerprints, compatibility epoch, materialization
-identity, Iceberg table identifier/UUID/metadata location/snapshot, source and
-build coordinates, and a checksum. It does not contain Entry revision,
+definition and producer fingerprints, compatibility epoch, build identity,
+Iceberg table identifier/UUID/metadata location/snapshot, source and
+generation coordinates, and a checksum. It does not contain Entry revision,
 author, ACL, publication-chain, or checkpoint-retention semantics.
 
 Readers establish visibility from this Head only. Object listing is reserved
@@ -41,12 +41,13 @@ must prove OpenDAL ETag-bound exact read, create-if-absent, conditional
 replacement, and stale rejection before using Head CAS. Single-process mode
 uses a process-local serializer while keeping all durable I/O on OpenDAL.
 
-A rebuild writes a new materialization completely, validates it, then performs
-one conditional Head swap. A failed build leaves the old materialization
-usable. An uncertain CAS outcome is resolved by exact Head reread and
-`last_command_id`; it does not require the authoritative Catalog publication
-chain. Old materialization prefixes are replaceable GC candidates and are
-never checkpoint roots.
+A rebuild writes a staging build completely, validates it, then performs one
+conditional Head swap. A failed or losing build is never visible. After the
+swap the old build is garbage; it is retained only for a conservative grace
+period so readers that already opened it can finish, then its prefix is deleted.
+There is no DerivedRelation rollback, history, or generation-retention API.
+An uncertain CAS outcome is resolved by exact Head reread and `build_id`; it
+does not require the authoritative Catalog publication chain.
 
 ## AssetText
 
@@ -57,17 +58,18 @@ DOCX, XLSX, and PPTX. OCR, legacy Office formats, macros, executable content,
 external relationships, network fetches, and embedded execution are not part
 of this producer.
 
-The relation has a typed Iceberg schema with stable field IDs for Form ID,
-external Entry ID/version, Asset ID/checksum/size, parser and producer
-identity, status, chunk index/locator, text, Unicode text length, parse time,
-and coarse error code. Parser output is normalized deterministically and
+The relation has a typed Iceberg schema with stable field IDs for Asset
+ID/checksum/size, parser and producer identity, status, chunk index/locator,
+text, Unicode text length, parse time, and coarse error code. One unique Asset
+is parsed once per rebuild; Entry/Form identity is resolved from authoritative
+current AssetReferences at search time. Parser output is normalized deterministically and
 chunked at semantic boundaries with a bounded maximum size. Failure produces a
 diagnostic row and never rolls back the authoritative Asset upload or Entry
 commit.
 
 The rebuild source is the current authoritative Entry view, not an `assets/`
 object listing. Deleted or orphaned references therefore cannot seed a new
-materialization. AssetText rows do not carry ACLs: Quick Search first obtains
+build. AssetText rows do not carry ACLs: Quick Search first obtains
 authorized current Entries, joins their AssetReferences to the internal
 AssetText provider, and returns the Entry as the primary result. If the derived
 relation is missing, stale, corrupt, or unavailable, native Entry search still
