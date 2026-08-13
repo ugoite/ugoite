@@ -397,7 +397,8 @@ impl DerivedRelationHeadStore {
     /// old, long-lived current build still gets a full reader grace period
     /// after the Head swap.
     pub async fn mark_garbage(&self, build_id: &str) -> Result<()> {
-        self.operator
+        match self
+            .operator
             .write_options(
                 &self.garbage_marker_path(build_id),
                 br"{}".to_vec(),
@@ -407,8 +408,13 @@ impl DerivedRelationHeadStore {
                 },
             )
             .await
-            .map(|_| ())
-            .map_err(Into::into)
+        {
+            Ok(_) => Ok(()),
+            // A concurrent publisher/GC may have already made the marker
+            // durable. Marker creation is an idempotent lifecycle transition.
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub async fn clear_garbage(&self, build_id: &str) -> Result<()> {
@@ -446,8 +452,9 @@ impl DerivedRelationHeadStore {
     }
 
     /// Remove non-current build prefixes after the caller-selected grace
-    /// period. Listing is used only to discover garbage candidates; Head is
-    /// the sole authority for the current build.
+    /// period. Listing discovers explicit markers and sufficiently old
+    /// marker-less orphan prefixes; Head is the sole authority for the current
+    /// build.
     pub async fn garbage_collect(
         &self,
         current_build_id: Option<&str>,
@@ -480,6 +487,11 @@ impl DerivedRelationHeadStore {
         struct Candidate {
             garbage_marker_old_enough: bool,
             stale_staging_old_enough: bool,
+            has_garbage_marker: bool,
+            has_staging_marker: bool,
+            has_publishing_marker: bool,
+            newest_object_modified: Option<SystemTime>,
+            orphan_old_enough: bool,
         }
 
         let mut candidates = std::collections::BTreeMap::<String, Candidate>::new();
@@ -500,41 +512,61 @@ impl DerivedRelationHeadStore {
             }
             let is_garbage_marker = entry.path() == self.garbage_marker_path(build_id);
             let is_staging_marker = entry.path() == self.staging_marker_path(build_id);
-            if !is_garbage_marker && !is_staging_marker {
-                continue;
-            }
+            let is_publishing_marker = entry.path() == self.publishing_marker_path(build_id);
             let age = entry
                 .metadata()
                 .last_modified()
                 .and_then(|timestamp| SystemTime::now().duration_since(timestamp.into()).ok());
             let old_enough =
                 minimum_gc_age.is_zero() || age.is_some_and(|age| age >= minimum_gc_age);
-            // A build has many files, but only the explicit garbage marker is
-            // lifecycle authority. In particular, a stale staging heartbeat or
-            // an old manifest is not enough: the builder may be paused and
-            // still able to publish that build after this listing.
-            candidates
-                .entry(build_id.to_string())
-                .and_modify(|candidate| {
-                    if is_garbage_marker {
-                        candidate.garbage_marker_old_enough |= old_enough;
-                    }
-                    if is_staging_marker {
-                        candidate.stale_staging_old_enough |= old_enough;
-                    }
-                })
-                .or_insert_with(|| Candidate {
-                    garbage_marker_old_enough: is_garbage_marker && old_enough,
-                    stale_staging_old_enough: is_staging_marker && old_enough,
-                });
+            let modified = entry.metadata().last_modified().map(Into::into);
+            let candidate = candidates.entry(build_id.to_string()).or_default();
+            if is_garbage_marker {
+                candidate.has_garbage_marker = true;
+                candidate.garbage_marker_old_enough |= old_enough;
+            }
+            if is_staging_marker {
+                candidate.has_staging_marker = true;
+                candidate.stale_staging_old_enough |= old_enough;
+            }
+            if is_publishing_marker {
+                candidate.has_publishing_marker = true;
+            }
+            if let Some(modified) = modified {
+                candidate.newest_object_modified = Some(
+                    candidate
+                        .newest_object_modified
+                        .map_or(modified, |current| current.max(modified)),
+                );
+            }
+        }
+        for candidate in candidates.values_mut() {
+            // A marker-less prefix can be left behind by a crash immediately
+            // after Head CAS and before the superseded build is marked garbage.
+            // Only consider it after every object has been quiet for the full
+            // grace period, and never while a staging or publishing claim is
+            // present. Head remains the authority for the final deletion check.
+            candidate.orphan_old_enough = !candidate.has_garbage_marker
+                && !candidate.has_staging_marker
+                && !candidate.has_publishing_marker
+                && (candidate.newest_object_modified.is_none() && minimum_gc_age.is_zero()
+                    || candidate.newest_object_modified.is_some_and(|modified| {
+                        minimum_gc_age.is_zero()
+                            || SystemTime::now()
+                                .duration_since(modified)
+                                .is_ok_and(|age| age >= minimum_gc_age)
+                    }));
         }
         let mut deleted = Vec::new();
         for (build_id, candidate) in candidates {
-            // A garbage marker is written only after a build has either lost
+            // A garbage marker is written after a build has either lost
             // publication or stopped being current. A stale staging marker is
             // also a durable cleanup candidate: it covers a process crash
             // between staging and the failure path that writes garbage.json.
-            if !candidate.garbage_marker_old_enough && !candidate.stale_staging_old_enough {
+            if !candidate.garbage_marker_old_enough
+                && !candidate.stale_staging_old_enough
+                && !candidate.orphan_old_enough
+            {
                 continue;
             }
             // GC is discovery-only and must never decide authority from the
@@ -548,13 +580,30 @@ impl DerivedRelationHeadStore {
             {
                 continue;
             }
+            if candidate.orphan_old_enough {
+                // Make the fallback candidate durable before taking the
+                // publishing claim. If this process crashes at either point,
+                // garbage.json remains available for the next GC pass.
+                self.mark_garbage(&build_id).await?;
+                if self
+                    .read_exact()
+                    .await?
+                    .as_ref()
+                    .is_some_and(|head| head.head.build_id == build_id)
+                {
+                    let _ = self.clear_garbage(&build_id).await;
+                    continue;
+                }
+            }
             // Publication and GC claim the same object with conditional
             // create/replace. A fresh claim belongs to the other operation;
             // a stale claim can be atomically taken over for recovery.
             if !self.claim_build_for_garbage(&build_id).await? {
                 continue;
             }
-            if candidate.stale_staging_old_enough && !candidate.garbage_marker_old_enough {
+            if (candidate.stale_staging_old_enough || candidate.orphan_old_enough)
+                && !candidate.garbage_marker_old_enough
+            {
                 // Make cleanup intent durable before deleting an abandoned
                 // staging prefix. Publishers reject this marker, so a stale
                 // builder cannot turn a reclaimed prefix into the current
@@ -2085,6 +2134,26 @@ mod tests {
                 .exists(&format!("{}/garbage.json", store.builds_path("crashed")))
                 .await?
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn markerless_old_orphan_build_is_collectable() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA00A);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let orphan = format!("{}/metadata/orphan.json", store.builds_path("orphan"));
+        operator.write(&orphan, b"orphan".to_vec()).await?;
+
+        assert!(store
+            .garbage_collect(None, Duration::from_secs(3600))
+            .await?
+            .is_empty());
+        assert!(operator.exists(&orphan).await?);
+
+        let deleted = store.garbage_collect(None, Duration::ZERO).await?;
+        assert_eq!(deleted, vec!["orphan"]);
+        assert!(!operator.exists(&orphan).await?);
         Ok(())
     }
 
