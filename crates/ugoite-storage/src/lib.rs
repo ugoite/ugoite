@@ -355,9 +355,7 @@ impl DerivedRelationHeadStore {
                 return Err(anyhow!("DerivedRelation build claim is held"));
             }
         }
-        if let Err(error) = self.ensure_build_publishable(build_id).await {
-            return Err(error);
-        }
+        self.ensure_build_publishable(build_id).await?;
         Ok(())
     }
 
