@@ -112,6 +112,10 @@ fn is_after_cursor(result: &KeywordSearchResult, after: Option<(&str, &str, &str
     })
 }
 
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
+}
+
 async fn asset_text_search_authorized(
     op: &Operator,
     ws_path: &str,
@@ -124,14 +128,21 @@ async fn asset_text_search_authorized(
         return Ok(Some(Vec::new()));
     }
     let context = SessionContext::new();
-    if !crate::derived_relation::register_asset_text_table(
+    let registered = match crate::derived_relation::register_asset_text_table(
         &context,
         op,
         ws_path,
         "__ugoite_internal_asset_text",
     )
-    .await?
+    .await
     {
+        Ok(registered) => registered,
+        // AssetText is optional derived data. A missing, stale, corrupt, or
+        // temporarily unavailable build must not make the authoritative typed
+        // Entry search fail.
+        Err(_) => return Ok(None),
+    };
+    if !registered {
         return Ok(None);
     }
     let escaped = query
@@ -139,10 +150,20 @@ async fn asset_text_search_authorized(
         .replace('%', "\\%")
         .replace('_', "\\_")
         .replace('\'', "''");
+    let after_predicate = after
+        .map(|(title, entry_id, form)| {
+            format!(
+                " AND (e.title > {title} OR (e.title = {title} AND e.entry_id > {entry_id}) OR (e.title = {title} AND e.entry_id = {entry_id} AND e.form > {form}))",
+                title = sql_string_literal(title),
+                entry_id = sql_string_literal(entry_id),
+                form = sql_string_literal(form),
+            )
+        })
+        .unwrap_or_default();
     let sql = format!(
-        "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND lower(a.text) LIKE lower('%{escaped}%') ESCAPE '\\'"
+        "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND lower(a.text) LIKE lower('%{escaped}%') ESCAPE '\\'{after_predicate} ORDER BY e.title, e.entry_id, e.form LIMIT {limit}"
     );
-    let mut results = BTreeMap::<(String, String, String), KeywordSearchResult>::new();
+    let mut authorized_batches = Vec::new();
     // Scope keys are normalized Form or relation names, while the provider
     // query's form filter must use the authoritative display name.
     for form_name in crate::entry::list_form_names(op, ws_path).await? {
@@ -161,63 +182,8 @@ async fn asset_text_search_authorized(
                 break;
             }
             let batch = authorized_asset_reference_batch(&authorized_rows)?;
-            context.deregister_table("__ugoite_authorized_asset_refs")?;
-            context.register_table(
-                "__ugoite_authorized_asset_refs",
-                Arc::new(MemTable::try_new(batch.schema(), vec![vec![batch]])?),
-            )?;
-            for batch in context.sql(&sql).await?.collect().await? {
-                let form = batch
-                    .column_by_name("form")
-                    .context("asset search join omitted form")?
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .context("asset search form has invalid type")?;
-                let entry_id = batch
-                    .column_by_name("entry_id")
-                    .context("asset search join omitted entry_id")?
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .context("asset search entry_id has invalid type")?;
-                let title = batch
-                    .column_by_name("title")
-                    .context("asset search join omitted title")?
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .context("asset search title has invalid type")?;
-                let created = batch
-                    .column_by_name("created_at")
-                    .context("asset search join omitted created_at")?
-                    .as_any()
-                    .downcast_ref::<Float64Array>()
-                    .context("asset search created_at has invalid type")?;
-                let updated = batch
-                    .column_by_name("updated_at")
-                    .context("asset search join omitted updated_at")?
-                    .as_any()
-                    .downcast_ref::<Float64Array>()
-                    .context("asset search updated_at has invalid type")?;
-                for index in 0..batch.num_rows() {
-                    let result = KeywordSearchResult {
-                        id: entry_id.value(index).to_string(),
-                        title: title.value(index).to_string(),
-                        form: form.value(index).to_string(),
-                        created_at: created.value(index),
-                        updated_at: updated.value(index),
-                    };
-                    if is_after_cursor(&result, after) {
-                        results.insert(
-                            (result.title.clone(), result.id.clone(), result.form.clone()),
-                            result,
-                        );
-                    }
-                }
-            }
-            while results.len() > limit {
-                let Some(key) = results.keys().next_back().cloned() else {
-                    break;
-                };
-                results.remove(&key);
+            if batch.num_rows() > 0 {
+                authorized_batches.push(batch);
             }
             let page_len = authorized_rows.len();
             offset = offset.saturating_add(page_len);
@@ -226,7 +192,72 @@ async fn asset_text_search_authorized(
             }
         }
     }
-    Ok(Some(results.into_values().collect()))
+    if authorized_batches.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let schema = authorized_batches[0].schema();
+    context.deregister_table("__ugoite_authorized_asset_refs")?;
+    context.register_table(
+        "__ugoite_authorized_asset_refs",
+        Arc::new(MemTable::try_new(schema, vec![authorized_batches])?),
+    )?;
+    let frame = match context.sql(&sql).await {
+        Ok(frame) => frame,
+        // Derived provider/planning failures degrade to the authoritative
+        // typed search path. Errors while reading authorized Entry pages above
+        // are intentionally still propagated.
+        Err(_) => return Ok(None),
+    };
+    let batches = match frame.collect().await {
+        Ok(batches) => batches,
+        Err(_) => return Ok(None),
+    };
+    let mut results = Vec::new();
+    for batch in batches {
+        let form = batch
+            .column_by_name("form")
+            .context("asset search join omitted form")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("asset search form has invalid type")?;
+        let entry_id = batch
+            .column_by_name("entry_id")
+            .context("asset search join omitted entry_id")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("asset search entry_id has invalid type")?;
+        let title = batch
+            .column_by_name("title")
+            .context("asset search join omitted title")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("asset search title has invalid type")?;
+        let created = batch
+            .column_by_name("created_at")
+            .context("asset search join omitted created_at")?
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .context("asset search created_at has invalid type")?;
+        let updated = batch
+            .column_by_name("updated_at")
+            .context("asset search join omitted updated_at")?
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .context("asset search updated_at has invalid type")?;
+        for index in 0..batch.num_rows() {
+            let result = KeywordSearchResult {
+                id: entry_id.value(index).to_string(),
+                title: title.value(index).to_string(),
+                form: form.value(index).to_string(),
+                created_at: created.value(index),
+                updated_at: updated.value(index),
+            };
+            if is_after_cursor(&result, after) {
+                results.push(result);
+            }
+        }
+    }
+    Ok(Some(results))
 }
 
 fn authorized_asset_reference_batch(

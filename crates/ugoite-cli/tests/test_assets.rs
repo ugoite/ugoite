@@ -221,6 +221,7 @@ fn test_asset_remote_upload_uses_multipart_transport() {
             asset_file.to_str().unwrap(),
         ])
         .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env("UGOITE_ENABLE_REMOTE_ASSET_UPLOAD", "1")
         .output()
         .expect("run remote asset upload");
     server_handle.join().unwrap();

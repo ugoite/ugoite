@@ -102,6 +102,17 @@ pub struct ExactDerivedRelationHead {
     pub etag: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct LegacyDerivedRelationHead;
+
+impl std::fmt::Display for LegacyDerivedRelationHead {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("legacy DerivedRelation Head format")
+    }
+}
+
+impl std::error::Error for LegacyDerivedRelationHead {}
+
 /// Relation-local Head storage. It deliberately shares only OpenDAL object
 /// mechanics with the authoritative Catalog store and has no Catalog history
 /// or checkpoint behavior.
@@ -174,6 +185,29 @@ impl DerivedRelationHeadStore {
         )
     }
 
+    fn garbage_marker_path(&self, build_id: &str) -> String {
+        format!("{}/garbage.json", self.builds_path(build_id))
+    }
+
+    /// Mark a build at the moment it stops being current.  GC uses this
+    /// marker's timestamp rather than the build's creation timestamp so an
+    /// old, long-lived current build still gets a full reader grace period
+    /// after the Head swap.
+    pub async fn mark_garbage(&self, build_id: &str) -> Result<()> {
+        self.operator
+            .write_options(
+                &self.garbage_marker_path(build_id),
+                br"{}".to_vec(),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     /// The relation-local mutex covers an entire single-process rebuild. Head
     /// CAS alone is intentionally insufficient: two local builders must not
     /// scan, parse, and publish concurrently for the same relation.
@@ -212,23 +246,38 @@ impl DerivedRelationHeadStore {
                 continue;
             };
             if Some(build_id) != current_build_id {
-                let old_enough = minimum_gc_age.is_zero()
-                    || entry
+                let old_enough = if minimum_gc_age.is_zero() {
+                    true
+                } else if entry.path() == self.garbage_marker_path(build_id) {
+                    entry
                         .metadata()
                         .last_modified()
                         .and_then(|timestamp| {
                             SystemTime::now().duration_since(timestamp.into()).ok()
                         })
-                        .is_some_and(|age| age >= minimum_gc_age);
-                candidates
-                    .entry(build_id.to_string())
-                    .and_modify(|eligible| *eligible &= old_enough)
-                    .or_insert(old_enough);
+                        .is_some_and(|age| age >= minimum_gc_age)
+                } else {
+                    false
+                };
+                candidates.insert(build_id.to_string(), old_enough);
+            } else {
+                candidates.entry(build_id.to_string()).or_insert(false);
             }
         }
         let mut deleted = Vec::new();
         for (build_id, eligible) in candidates {
             if !eligible {
+                continue;
+            }
+            // GC is discovery-only and must never decide authority from the
+            // listing. Re-read the durable Head immediately before deleting
+            // each candidate so a concurrent shared publisher is protected.
+            if self
+                .read_exact()
+                .await?
+                .as_ref()
+                .is_some_and(|head| head.head.build_id == build_id)
+            {
                 continue;
             }
             let build_prefix = self.builds_path(&build_id);
@@ -237,12 +286,27 @@ impl DerivedRelationHeadStore {
                 .list_with(&build_prefix)
                 .recursive(true)
                 .await?;
+            let mut fully_deleted = true;
             for entry in entries {
                 if entry.metadata().mode() == EntryMode::FILE {
+                    // A build is never eligible until it has a garbage
+                    // marker. Re-check the Head for every object as a
+                    // fail-closed guard against a concurrent publication.
+                    if self
+                        .read_exact()
+                        .await?
+                        .as_ref()
+                        .is_some_and(|head| head.head.build_id == build_id)
+                    {
+                        fully_deleted = false;
+                        break;
+                    }
                     self.operator.delete(entry.path()).await?;
                 }
             }
-            deleted.push(build_id);
+            if fully_deleted {
+                deleted.push(build_id);
+            }
         }
         Ok(deleted)
     }
@@ -280,8 +344,16 @@ impl DerivedRelationHeadStore {
             match read {
                 Ok(bytes) => {
                     let bytes = bytes.to_vec();
-                    let head: DerivedRelationHead =
+                    let value: serde_json::Value =
                         serde_json::from_slice(&bytes).context("decode DerivedRelation Head")?;
+                    let head: DerivedRelationHead =
+                        serde_json::from_value(value.clone()).map_err(|error| {
+                            if is_legacy_derived_head(&value) {
+                                LegacyDerivedRelationHead.into()
+                            } else {
+                                anyhow!("decode DerivedRelation Head: {error}")
+                            }
+                        })?;
                     validate_derived_head_checksum(&head)?;
                     return Ok(Some(ExactDerivedRelationHead { head, bytes, etag }));
                 }
@@ -292,6 +364,46 @@ impl DerivedRelationHeadStore {
             }
         }
         unreachable!("exact derived Head read attempts always return or continue")
+    }
+
+    /// v1 is intentionally not kept as an active compatibility format: its
+    /// Head points at the removed materializations/manifest layout.  A local
+    /// rebuild may explicitly invalidate that derived-only Head and recreate
+    /// the relation under the current-build layout. Shared mode fails closed
+    /// because OpenDAL has no conditional delete operation.
+    pub async fn invalidate_legacy_head(&self) -> Result<()> {
+        if self.write_mode == CatalogWriteMode::Shared {
+            return Err(anyhow!(
+                "legacy DerivedRelation Head requires a single-process rebuild"
+            ));
+        }
+        let _guard = self.serializer.lock().await;
+        let Some(metadata) = self.operator.stat(&self.head_path()).await.ok() else {
+            return Ok(());
+        };
+        let etag = metadata
+            .etag()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        let bytes = match etag.as_deref() {
+            Some(etag) => {
+                self.operator
+                    .read_options(
+                        &self.head_path(),
+                        ReadOptions {
+                            if_match: Some(etag.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await?
+            }
+            None => self.operator.read(&self.head_path()).await?,
+        };
+        let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
+        if is_legacy_derived_head(&value) {
+            self.operator.delete(&self.head_path()).await?;
+        }
+        Ok(())
     }
 
     pub async fn create(&self, head: &DerivedRelationHead) -> Result<()> {
@@ -430,6 +542,14 @@ fn validate_derived_head_checksum(head: &DerivedRelationHead) -> Result<()> {
         return Err(anyhow!("DerivedRelation Head checksum mismatch"));
     }
     Ok(())
+}
+
+fn is_legacy_derived_head(value: &serde_json::Value) -> bool {
+    value.get("materialization_id").is_some()
+        || value.get("base_generation").is_some()
+        || value.get("target_generation").is_some()
+        || value.get("materialization_manifest_location").is_some()
+        || value.get("last_command_id").is_some()
 }
 
 /// Read-only declaration of the OpenDAL contract backing a Space Catalog.
@@ -1465,6 +1585,73 @@ mod tests {
         assert!(error
             .to_string()
             .contains("ETag-bound reads and conditional writes"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_derived_head_is_explicitly_invalidated_for_rebuild() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA006);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        operator
+            .write(
+                &store.head_path(),
+                serde_json::to_vec(&serde_json::json!({
+                    "format_version": 1,
+                    "space_id": "demo",
+                    "relation_id": relation_id,
+                    "generation": 1,
+                    "definition_version": 1,
+                    "definition_fingerprint": "old",
+                    "producer_id": "old",
+                    "producer_fingerprint": "old",
+                    "compatibility_epoch": 1,
+                    "materialization_id": "old-materialization",
+                    "table_identifier": {"table":"derived"},
+                    "table_uuid": "old-table",
+                    "metadata_location": "memory:///old",
+                    "snapshot_id": null,
+                    "schema_id": 0,
+                    "base_generation": 0,
+                    "target_generation": 1,
+                    "build_id": "old-build",
+                    "input_digest": "old-input",
+                    "source_coordinate": {},
+                    "materialization_manifest_location": "old/manifest.json",
+                    "materialization_manifest_checksum": "old",
+                    "last_command_id": "index:asset-text:1",
+                    "checksum": "old"
+                }))?,
+            )
+            .await?;
+        let error = store
+            .read_exact()
+            .await
+            .expect_err("legacy Head must not be treated as a current build");
+        assert!(error
+            .downcast_ref::<super::LegacyDerivedRelationHead>()
+            .is_some());
+        store.invalidate_legacy_head().await?;
+        assert!(!operator.exists(&store.head_path()).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn garbage_age_starts_when_build_is_marked_garbage() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA007);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let path = format!("{}/manifest.json", store.builds_path("stale"));
+        operator.write(&path, b"stale".to_vec()).await?;
+        assert!(store
+            .garbage_collect(None, Duration::from_secs(3600))
+            .await?
+            .is_empty());
+        assert!(operator.exists(&path).await?);
+        store.mark_garbage("stale").await?;
+        let deleted = store.garbage_collect(None, Duration::ZERO).await?;
+        assert_eq!(deleted, vec!["stale"]);
+        assert!(!operator.exists(&path).await?);
         Ok(())
     }
 

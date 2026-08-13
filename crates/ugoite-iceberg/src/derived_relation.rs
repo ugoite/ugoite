@@ -516,6 +516,20 @@ async fn rebuild_asset_text_with_mode(
     } else {
         DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process()
     };
+    // v1 Heads point to the removed materializations layout.  Derived state
+    // is disposable, so a local rebuild explicitly invalidates that Head
+    // before creating the first current-build Head. Shared mode fails closed
+    // and asks the operator to run the migration in single-process mode.
+    if let Err(error) = head_store.read_exact().await {
+        if error
+            .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
+            .is_some()
+        {
+            head_store.invalidate_legacy_head().await?;
+        } else {
+            return Err(error);
+        }
+    }
     let _rebuild_guard = if shared {
         None
     } else {
@@ -634,9 +648,13 @@ async fn rebuild_asset_text_with_mode(
         // accept the outcome when this build command is visibly current.
         if let Ok(Some(current)) = head_store.read_exact().await {
             if current.head.build_id == head.build_id {
+                if let Some(expected) = expected.as_ref() {
+                    let _ = head_store.mark_garbage(&expected.head.build_id).await;
+                }
                 return Ok(current.head);
             }
         }
+        let _ = head_store.mark_garbage(&head.build_id).await;
         return Err(publication_error);
     }
     let current = head_store
@@ -644,6 +662,9 @@ async fn rebuild_asset_text_with_mode(
         .await?
         .context("published derived Head disappeared")?
         .head;
+    if let Some(expected) = expected.as_ref() {
+        let _ = head_store.mark_garbage(&expected.head.build_id).await;
+    }
     let _ = head_store
         .garbage_collect(Some(&current.build_id), MINIMUM_GC_AGE)
         .await;

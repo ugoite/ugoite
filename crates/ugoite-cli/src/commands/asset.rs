@@ -14,7 +14,7 @@ pub struct AssetCmd {
 pub enum AssetSubCmd {
     /// Upload an asset
     #[command(
-        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\n  # Backend mode\n  ugoite asset upload my-space ./logo.png"
+        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\nRemote CLI upload is reserved for an explicitly enabled transport capability in this release."
     )]
     Upload {
         #[arg(
@@ -60,6 +60,11 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .to_string()
             });
             if let Some(base) = validated_base_url(&config)? {
+                if std::env::var_os("UGOITE_ENABLE_REMOTE_ASSET_UPLOAD").is_none() {
+                    anyhow::bail!(
+                        "remote CLI asset upload is unavailable in this release; use the API client or REST surface"
+                    );
+                }
                 let result = http::execute_multipart(
                     &base,
                     "asset.upload",

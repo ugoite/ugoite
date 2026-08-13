@@ -57,7 +57,10 @@ struct CurrentSqlSessionExecutionAuthorization {
 
 struct AssetTextRefreshWorker {
     notify: Notify,
+    idle: Notify,
     started: AtomicBool,
+    pending: AtomicBool,
+    running: AtomicBool,
 }
 
 static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
@@ -107,11 +110,15 @@ impl UgoiteService {
                 .or_insert_with(|| {
                     Arc::new(AssetTextRefreshWorker {
                         notify: Notify::new(),
+                        idle: Notify::new(),
                         started: AtomicBool::new(false),
+                        pending: AtomicBool::new(false),
+                        running: AtomicBool::new(false),
                     })
                 })
                 .clone()
         };
+        worker.pending.store(true, Ordering::Release);
         worker.notify.notify_one();
         if worker
             .started
@@ -120,15 +127,63 @@ impl UgoiteService {
         {
             let op = self.operator.clone();
             let ws_path = self.workspace_path(space_id);
+            let worker = worker.clone();
             tokio::spawn(async move {
                 loop {
                     worker.notify.notified().await;
-                    // Absorb notifications that arrived in the same write
-                    // burst before starting one full replacement build.
-                    tokio::task::yield_now().await;
-                    let _ = crate::derived_relation::rebuild_asset_text(&op, &ws_path).await;
+                    while worker.pending.swap(false, Ordering::AcqRel) {
+                        // Absorb notifications that arrived in the same write
+                        // burst before starting one full replacement build.
+                        tokio::task::yield_now().await;
+                        worker.running.store(true, Ordering::Release);
+                        let _ = if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+                            crate::derived_relation::rebuild_asset_text_shared(&op, &ws_path).await
+                        } else {
+                            crate::derived_relation::rebuild_asset_text(&op, &ws_path).await
+                        };
+                        worker.running.store(false, Ordering::Release);
+                        worker.idle.notify_waiters();
+                    }
                 }
             });
+        }
+    }
+
+    /// One-shot CLI processes must keep the process-local worker alive until
+    /// queued refreshes finish; server runtimes remain free to continue
+    /// serving requests while the same worker runs in the background.
+    pub async fn wait_for_background_asset_text_refreshes() {
+        loop {
+            let workers = ASSET_TEXT_REFRESH_WORKERS
+                .get()
+                .map(|workers| {
+                    workers
+                        .lock()
+                        .expect("AssetText refresh worker map poisoned")
+                        .values()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let mut waiting = false;
+            for worker in workers {
+                if !worker.pending.load(Ordering::Acquire)
+                    && !worker.running.load(Ordering::Acquire)
+                {
+                    continue;
+                }
+                waiting = true;
+                let notified = worker.idle.notified();
+                if !worker.pending.load(Ordering::Acquire)
+                    && !worker.running.load(Ordering::Acquire)
+                {
+                    continue;
+                }
+                notified.await;
+            }
+            if !waiting {
+                return;
+            }
         }
     }
 

@@ -93,7 +93,11 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let result = rt.block_on(run(cli));
+    let result = rt.block_on(async {
+        let result = run(cli).await;
+        ugoite_iceberg::service::UgoiteService::wait_for_background_asset_text_refreshes().await;
+        result
+    });
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);
