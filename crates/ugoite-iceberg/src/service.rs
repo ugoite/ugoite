@@ -319,9 +319,7 @@ impl UgoiteService {
 
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
-        form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await?;
-        self.schedule_asset_text_refresh(space_id);
-        Ok(())
+        form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await
     }
 
     pub async fn create_entry(
@@ -344,8 +342,9 @@ impl UgoiteService {
             &integrity,
         )
         .await?;
+        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         self.schedule_asset_text_refresh(space_id);
-        entry::get_entry(&self.operator, &workspace, entry_id).await
+        Ok(result)
     }
 
     pub async fn create_entry_authorized(
@@ -391,8 +390,9 @@ impl UgoiteService {
             Some(&scopes),
         )
         .await?;
+        let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         self.schedule_asset_text_refresh(space_id);
-        entry::get_entry(&self.operator, &workspace, entry_id).await
+        Ok(result)
     }
 
     pub async fn list_entries(&self, space_id: &str) -> Result<Vec<Value>> {
