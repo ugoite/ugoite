@@ -8,7 +8,7 @@ use opendal::services::{Fs, Memory, S3};
 use opendal::{EntryMode, ErrorKind, Operator};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -245,24 +245,26 @@ impl DerivedRelationHeadStore {
             else {
                 continue;
             };
-            if Some(build_id) != current_build_id {
-                let old_enough = if minimum_gc_age.is_zero() {
-                    true
-                } else if entry.path() == self.garbage_marker_path(build_id) {
-                    entry
-                        .metadata()
-                        .last_modified()
-                        .and_then(|timestamp| {
-                            SystemTime::now().duration_since(timestamp.into()).ok()
-                        })
-                        .is_some_and(|age| age >= minimum_gc_age)
-                } else {
-                    false
-                };
-                candidates.insert(build_id.to_string(), old_enough);
-            } else {
-                candidates.entry(build_id.to_string()).or_insert(false);
+            if Some(build_id) == current_build_id {
+                continue;
             }
+            let old_enough = if minimum_gc_age.is_zero() {
+                true
+            } else if entry.path() == self.garbage_marker_path(build_id) {
+                entry
+                    .metadata()
+                    .last_modified()
+                    .and_then(|timestamp| SystemTime::now().duration_since(timestamp.into()).ok())
+                    .is_some_and(|age| age >= minimum_gc_age)
+            } else {
+                false
+            };
+            // A build has many files. Preserve a positive marker result when
+            // later data/metadata entries are visited.
+            candidates
+                .entry(build_id.to_string())
+                .and_modify(|eligible| *eligible |= old_enough)
+                .or_insert(old_enough);
         }
         let mut deleted = Vec::new();
         for (build_id, eligible) in candidates {
@@ -638,6 +640,19 @@ impl SpaceCatalogStore {
                 "shared Catalog writes require ETag-bound reads and conditional writes"
             ));
         }
+        let cache_key = (self.operator.info().scheme() != "memory")
+            .then(|| self.shared_write_verification_key());
+        if let Some(cache_key) = &cache_key {
+            if SHARED_WRITE_VERIFICATIONS
+                .get_or_init(|| Mutex::new(HashSet::new()))
+                .lock()
+                .expect("shared-write verification cache poisoned")
+                .contains(cache_key)
+            {
+                self.write_mode = CatalogWriteMode::Shared;
+                return Ok(self);
+            }
+        }
         let path = self.catalog_path(&format!("probes/{}.json", Uuid::now_v7()));
         let initial = b"{\"format_version\":1,\"stage\":\"created\"}".to_vec();
         self.operator
@@ -757,6 +772,16 @@ impl SpaceCatalogStore {
             return Err(anyhow!(
                 "shared Catalog probe replacement returned different bytes"
             ));
+        }
+        // The probe proves the contract but is not durable coordination state.
+        // Remove it so repeated process starts cannot accumulate probe objects.
+        let _ = self.operator.delete(&path).await;
+        if let Some(cache_key) = cache_key {
+            SHARED_WRITE_VERIFICATIONS
+                .get_or_init(|| Mutex::new(HashSet::new()))
+                .lock()
+                .expect("shared-write verification cache poisoned")
+                .insert(cache_key);
         }
         self.write_mode = CatalogWriteMode::Shared;
         Ok(self)
@@ -1074,6 +1099,15 @@ impl SpaceCatalogStore {
             && capabilities.write_with_if_not_exists
     }
 
+    fn shared_write_verification_key(&self) -> String {
+        format!(
+            "{}:{}:{}",
+            self.operator.info().scheme(),
+            self.operator.info().root(),
+            self.space_root
+        )
+    }
+
     pub fn backend_capabilities(&self) -> CatalogBackendCapabilities {
         let capabilities = self.operator.info().full_capability();
         let shared_write_contract = self.supports_shared_writes();
@@ -1104,6 +1138,7 @@ impl SpaceCatalogStore {
 
 static CATALOG_SERIALIZERS: OnceLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> =
     OnceLock::new();
+static SHARED_WRITE_VERIFICATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 fn catalog_serializer(operator: &Operator, space_root: &str) -> Arc<AsyncMutex<()>> {
     let key = format!(

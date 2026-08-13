@@ -163,7 +163,7 @@ async fn asset_text_search_authorized(
     let sql = format!(
         "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND lower(a.text) LIKE lower('%{escaped}%') ESCAPE '\\'{after_predicate} ORDER BY e.title, e.entry_id, e.form LIMIT {limit}"
     );
-    let mut authorized_batches = Vec::new();
+    let mut results = BTreeMap::new();
     // Scope keys are normalized Form or relation names, while the provider
     // query's form filter must use the authoritative display name.
     for form_name in crate::entry::list_form_names(op, ws_path).await? {
@@ -183,7 +183,28 @@ async fn asset_text_search_authorized(
             }
             let batch = authorized_asset_reference_batch(&authorized_rows)?;
             if batch.num_rows() > 0 {
-                authorized_batches.push(batch);
+                // Keep only one bounded authorization page in memory at a
+                // time. The AssetText side remains a DataFusion table, while
+                // the authoritative side is streamed page-by-page and the
+                // globally best `limit` rows are retained.
+                let _ = context.deregister_table("__ugoite_authorized_asset_refs");
+                context.register_table(
+                    "__ugoite_authorized_asset_refs",
+                    Arc::new(MemTable::try_new(batch.schema(), vec![vec![batch]])?),
+                )?;
+                let frame = match context.sql(&sql).await {
+                    Ok(frame) => frame,
+                    // Derived provider/planning failures degrade to the
+                    // authoritative typed search path. Errors while reading
+                    // authorized Entry pages above are still propagated.
+                    Err(_) => return Ok(None),
+                };
+                let matches = match frame.collect().await {
+                    Ok(matches) => matches,
+                    Err(_) => return Ok(None),
+                };
+                merge_asset_search_batches(&mut results, matches, after)?;
+                retain_top_asset_search_results(&mut results, limit);
             }
             let page_len = authorized_rows.len();
             offset = offset.saturating_add(page_len);
@@ -192,27 +213,22 @@ async fn asset_text_search_authorized(
             }
         }
     }
-    if authorized_batches.is_empty() {
-        return Ok(Some(Vec::new()));
-    }
-    let schema = authorized_batches[0].schema();
-    context.deregister_table("__ugoite_authorized_asset_refs")?;
-    context.register_table(
-        "__ugoite_authorized_asset_refs",
-        Arc::new(MemTable::try_new(schema, vec![authorized_batches])?),
-    )?;
-    let frame = match context.sql(&sql).await {
-        Ok(frame) => frame,
-        // Derived provider/planning failures degrade to the authoritative
-        // typed search path. Errors while reading authorized Entry pages above
-        // are intentionally still propagated.
-        Err(_) => return Ok(None),
-    };
-    let batches = match frame.collect().await {
-        Ok(batches) => batches,
-        Err(_) => return Ok(None),
-    };
-    let mut results = Vec::new();
+    let mut results = results.into_values().collect::<Vec<_>>();
+    results.sort_by(|left, right| {
+        left.title
+            .cmp(&right.title)
+            .then_with(|| left.id.cmp(&right.id))
+            .then_with(|| left.form.cmp(&right.form))
+    });
+    results.truncate(limit);
+    Ok(Some(results))
+}
+
+fn merge_asset_search_batches(
+    results: &mut BTreeMap<(String, String), KeywordSearchResult>,
+    batches: Vec<RecordBatch>,
+    after: Option<(&str, &str, &str)>,
+) -> Result<()> {
     for batch in batches {
         let form = batch
             .column_by_name("form")
@@ -253,11 +269,33 @@ async fn asset_text_search_authorized(
                 updated_at: updated.value(index),
             };
             if is_after_cursor(&result, after) {
-                results.push(result);
+                results.insert((result.form.clone(), result.id.clone()), result);
             }
         }
     }
-    Ok(Some(results))
+    Ok(())
+}
+
+fn retain_top_asset_search_results(
+    results: &mut BTreeMap<(String, String), KeywordSearchResult>,
+    limit: usize,
+) {
+    if results.len() <= limit {
+        return;
+    }
+    let mut values = std::mem::take(results).into_values().collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        left.title
+            .cmp(&right.title)
+            .then_with(|| left.id.cmp(&right.id))
+            .then_with(|| left.form.cmp(&right.form))
+    });
+    values.truncate(limit);
+    results.extend(
+        values
+            .into_iter()
+            .map(|result| ((result.form.clone(), result.id.clone()), result)),
+    );
 }
 
 fn authorized_asset_reference_batch(

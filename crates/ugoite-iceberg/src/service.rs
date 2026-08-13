@@ -131,19 +131,32 @@ impl UgoiteService {
             tokio::spawn(async move {
                 loop {
                     worker.notify.notified().await;
+                    // Mark the worker active before consuming `pending`. The
+                    // CLI drain must not observe the transition between
+                    // clearing the flag and starting the rebuild.
+                    worker.running.store(true, Ordering::Release);
                     while worker.pending.swap(false, Ordering::AcqRel) {
-                        // Absorb notifications that arrived in the same write
-                        // burst before starting one full replacement build.
-                        tokio::task::yield_now().await;
-                        worker.running.store(true, Ordering::Release);
-                        let _ = if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+                        let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+                        let result = if shared {
                             crate::derived_relation::rebuild_asset_text_shared(&op, &ws_path).await
                         } else {
                             crate::derived_relation::rebuild_asset_text(&op, &ws_path).await
                         };
-                        worker.running.store(false, Ordering::Release);
-                        worker.idle.notify_waiters();
+                        // A shared CAS loser has already built a valid
+                        // immutable candidate. Retry from the newest Head so
+                        // a quiet Space does not remain stale indefinitely.
+                        if shared
+                            && result
+                                .as_ref()
+                                .is_err_and(crate::derived_relation::is_shared_publish_conflict)
+                        {
+                            worker.pending.store(true, Ordering::Release);
+                            worker.notify.notify_one();
+                            tokio::task::yield_now().await;
+                        }
                     }
+                    worker.running.store(false, Ordering::Release);
+                    worker.idle.notify_waiters();
                 }
             });
         }

@@ -501,6 +501,18 @@ pub async fn rebuild_asset_text_shared(
     rebuild_asset_text_with_mode(op, ws_path, true).await
 }
 
+/// Returns true when a shared Relation Head replacement lost its conditional
+/// write race. The immutable build is garbage, but the refresh worker should
+/// retry from the newest Head instead of allowing a quiet Space to remain
+/// stale indefinitely.
+pub fn is_shared_publish_conflict(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<opendal::Error>()
+            .is_some_and(|error| error.kind() == ErrorKind::ConditionNotMatch)
+    })
+}
+
 async fn rebuild_asset_text_with_mode(
     op: &Operator,
     ws_path: &str,
