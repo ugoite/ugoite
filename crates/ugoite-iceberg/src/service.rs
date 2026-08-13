@@ -1474,6 +1474,18 @@ impl UgoiteService {
         index::reindex_all(&self.operator, &self.workspace_path(space_id)).await
     }
 
+    /// Performs the synchronous cleanup pass used by one-shot local index
+    /// maintenance. Server workers can keep the delayed grace-period task
+    /// alive; a CLI process must run the pass before its runtime exits.
+    pub async fn garbage_collect_asset_text_builds(&self, space_id: &str) -> Result<Vec<String>> {
+        validate_storage_id(validate_space_id(space_id))?;
+        crate::derived_relation::garbage_collect_asset_text(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await
+    }
+
     pub async fn space_stats(&self, space_id: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         index::get_space_stats(&self.operator, &self.workspace_path(space_id)).await

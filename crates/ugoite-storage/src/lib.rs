@@ -964,127 +964,145 @@ impl SpaceCatalogStore {
         }
         let path = self.catalog_path(&format!("probes/{}.json", Uuid::now_v7()));
         let initial = b"{\"format_version\":1,\"stage\":\"created\"}".to_vec();
-        self.operator
-            .write_options(
-                &path,
-                initial.clone(),
-                WriteOptions {
-                    if_not_exists: true,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        let duplicate_create = self
-            .operator
-            .write_options(
-                &path,
-                initial.clone(),
-                WriteOptions {
-                    if_not_exists: true,
-                    ..Default::default()
-                },
-            )
-            .await
-            .expect_err("conditional create probe must reject an existing object");
-        if duplicate_create.kind() != ErrorKind::ConditionNotMatch {
-            return Err(duplicate_create.into());
+        let verification: Result<()> = async {
+            self.operator
+                .write_options(
+                    &path,
+                    initial.clone(),
+                    WriteOptions {
+                        if_not_exists: true,
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let duplicate_create = self
+                .operator
+                .write_options(
+                    &path,
+                    initial.clone(),
+                    WriteOptions {
+                        if_not_exists: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect_err("conditional create probe must reject an existing object");
+            if duplicate_create.kind() != ErrorKind::ConditionNotMatch {
+                return Err(duplicate_create.into());
+            }
+            let first_etag = self
+                .operator
+                .stat(&path)
+                .await?
+                .etag()
+                .filter(|etag| !etag.is_empty())
+                .map(str::to_owned)
+                .context("shared Catalog probe write did not return an ETag")?;
+            let observed = self
+                .operator
+                .read_options(
+                    &path,
+                    ReadOptions {
+                        if_match: Some(first_etag.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await?
+                .to_vec();
+            if observed != initial {
+                return Err(anyhow!(
+                    "shared Catalog probe read returned different bytes"
+                ));
+            }
+            let replaced = b"{\"format_version\":1,\"stage\":\"replaced\"}".to_vec();
+            self.operator
+                .write_options(
+                    &path,
+                    replaced.clone(),
+                    WriteOptions {
+                        if_match: Some(first_etag.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let second_etag = self
+                .operator
+                .stat(&path)
+                .await?
+                .etag()
+                .filter(|etag| !etag.is_empty())
+                .map(str::to_owned)
+                .context("shared Catalog probe replacement did not return an ETag")?;
+            if second_etag == first_etag {
+                return Err(anyhow!(
+                    "shared Catalog probe replacement did not change the ETag"
+                ));
+            }
+            let stale_read = self
+                .operator
+                .read_options(
+                    &path,
+                    ReadOptions {
+                        if_match: Some(first_etag.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect_err("conditional read probe must reject a stale ETag");
+            if stale_read.kind() != ErrorKind::ConditionNotMatch {
+                return Err(stale_read.into());
+            }
+            let stale_replace = self
+                .operator
+                .write_options(
+                    &path,
+                    b"{\"format_version\":1,\"stage\":\"stale\"}".to_vec(),
+                    WriteOptions {
+                        if_match: Some(first_etag),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect_err("conditional replacement probe must reject a stale ETag");
+            if stale_replace.kind() != ErrorKind::ConditionNotMatch {
+                return Err(stale_replace.into());
+            }
+            let observed = self
+                .operator
+                .read_options(
+                    &path,
+                    ReadOptions {
+                        if_match: Some(second_etag),
+                        ..Default::default()
+                    },
+                )
+                .await?
+                .to_vec();
+            if observed != replaced {
+                return Err(anyhow!(
+                    "shared Catalog probe replacement returned different bytes"
+                ));
+            }
+            Ok(())
         }
-        let first_etag = self
-            .operator
-            .stat(&path)
-            .await?
-            .etag()
-            .filter(|etag| !etag.is_empty())
-            .map(str::to_owned)
-            .context("shared Catalog probe write did not return an ETag")?;
-        let observed = self
-            .operator
-            .read_options(
-                &path,
-                ReadOptions {
-                    if_match: Some(first_etag.clone()),
-                    ..Default::default()
-                },
-            )
-            .await?
-            .to_vec();
-        if observed != initial {
-            return Err(anyhow!(
-                "shared Catalog probe read returned different bytes"
-            ));
+        .await;
+        // Probe objects are never coordination state. Always attempt cleanup,
+        // including when a capability check fails halfway through; otherwise
+        // repeated startup verification leaks one object per attempt.
+        let cleanup = match self.operator.delete(&path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(anyhow!(error)),
+        };
+        if let Err(error) = verification {
+            if let Err(cleanup_error) = cleanup {
+                return Err(error.context(format!(
+                    "shared Catalog probe cleanup also failed: {cleanup_error:#}"
+                )));
+            }
+            return Err(error);
         }
-        let replaced = b"{\"format_version\":1,\"stage\":\"replaced\"}".to_vec();
-        self.operator
-            .write_options(
-                &path,
-                replaced.clone(),
-                WriteOptions {
-                    if_match: Some(first_etag.clone()),
-                    ..Default::default()
-                },
-            )
-            .await?;
-        let second_etag = self
-            .operator
-            .stat(&path)
-            .await?
-            .etag()
-            .filter(|etag| !etag.is_empty())
-            .map(str::to_owned)
-            .context("shared Catalog probe replacement did not return an ETag")?;
-        if second_etag == first_etag {
-            return Err(anyhow!(
-                "shared Catalog probe replacement did not change the ETag"
-            ));
-        }
-        let stale_read = self
-            .operator
-            .read_options(
-                &path,
-                ReadOptions {
-                    if_match: Some(first_etag.clone()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .expect_err("conditional read probe must reject a stale ETag");
-        if stale_read.kind() != ErrorKind::ConditionNotMatch {
-            return Err(stale_read.into());
-        }
-        let stale_replace = self
-            .operator
-            .write_options(
-                &path,
-                b"{\"format_version\":1,\"stage\":\"stale\"}".to_vec(),
-                WriteOptions {
-                    if_match: Some(first_etag),
-                    ..Default::default()
-                },
-            )
-            .await
-            .expect_err("conditional replacement probe must reject a stale ETag");
-        if stale_replace.kind() != ErrorKind::ConditionNotMatch {
-            return Err(stale_replace.into());
-        }
-        let observed = self
-            .operator
-            .read_options(
-                &path,
-                ReadOptions {
-                    if_match: Some(second_etag),
-                    ..Default::default()
-                },
-            )
-            .await?
-            .to_vec();
-        if observed != replaced {
-            return Err(anyhow!(
-                "shared Catalog probe replacement returned different bytes"
-            ));
-        }
-        // The probe proves the contract but is not durable coordination state.
-        // Remove it so repeated process starts cannot accumulate probe objects.
-        let _ = self.operator.delete(&path).await;
+        cleanup.context("remove shared Catalog verification probe")?;
         if let Some(cache_key) = cache_key {
             SHARED_WRITE_VERIFICATIONS
                 .get_or_init(|| Mutex::new(Vec::new()))

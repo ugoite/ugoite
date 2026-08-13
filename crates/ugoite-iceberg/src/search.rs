@@ -14,11 +14,11 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
     SendableRecordBatchStream,
 };
-use datafusion::prelude::SessionContext;
 use opendal::Operator;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use std::time::Duration;
 use ugoite_core::query::EntryScope;
 use ugoite_domain::entry::AssetReference;
 use ugoite_domain::form::FieldType;
@@ -27,6 +27,8 @@ use crate::entry;
 pub use ugoite_domain::search::KeywordSearchResult;
 
 const ASSET_TEXT_SEARCH_PAGE_SIZE: usize = 2_048;
+const ASSET_TEXT_SEARCH_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
+const ASSET_TEXT_SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Keyword search over one bounded, authorized current-state DataFusion
 /// payload plan.
@@ -143,7 +145,21 @@ async fn asset_text_search_authorized(
     if limit == 0 {
         return Ok(Some(Vec::new()));
     }
-    let context = SessionContext::new();
+    // The authorized-reference provider deliberately cannot push the AssetText
+    // predicate down into the authoritative Form tables: doing so would make
+    // authorization depend on derived data. Bound the remaining join with the
+    // same DataFusion memory pool and timeout used by authorized SQL queries.
+    let context =
+        match crate::query_context::bounded_session_context(&ugoite_core::query::QueryLimits {
+            max_memory_bytes: ASSET_TEXT_SEARCH_MAX_MEMORY_BYTES,
+            max_rows: crate::MAX_NORMAL_READ_ROWS,
+            timeout: ASSET_TEXT_SEARCH_TIMEOUT,
+            max_concurrency: 1,
+            allowed_functions: BTreeSet::from(["lower".to_string()]),
+        }) {
+            Ok(context) => context,
+            Err(_) => return Ok(None),
+        };
     let registered = match crate::derived_relation::register_asset_text_table(
         &context,
         op,
@@ -205,16 +221,19 @@ async fn asset_text_search_authorized(
     {
         return Ok(None);
     }
-    let frame = match context.sql(&sql).await {
-        Ok(frame) => frame,
-        // Derived provider/planning failures degrade to the authoritative
-        // typed search path. Errors while reading authorized Entry pages in
-        // the execution stream are handled by the same fallback below.
-        Err(_) => return Ok(None),
-    };
-    let matches = match frame.collect().await {
-        Ok(matches) => matches,
-        Err(_) => return Ok(None),
+    let matches = match tokio::time::timeout(ASSET_TEXT_SEARCH_TIMEOUT, async {
+        let frame = context.sql(&sql).await?;
+        frame.collect().await
+    })
+    .await
+    {
+        Ok(Ok(matches)) => matches,
+        // Derived provider/planning failures, memory exhaustion, and an
+        // overlong authorized scan all degrade to the authoritative typed
+        // search path. The DataFusion memory pool bounds sort/join state while
+        // this timeout bounds total work even when the current Entry set is
+        // much larger than the requested result page.
+        _ => return Ok(None),
     };
     let mut results = BTreeMap::new();
     merge_asset_search_batches(&mut results, matches, after)?;

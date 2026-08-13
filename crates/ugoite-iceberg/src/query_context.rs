@@ -152,7 +152,9 @@ impl AuthorizedQueryError {
     }
 }
 
-fn bounded_session_context(limits: &ugoite_core::query::QueryLimits) -> Result<SessionContext> {
+pub(crate) fn bounded_session_context(
+    limits: &ugoite_core::query::QueryLimits,
+) -> Result<SessionContext> {
     limits.validate().map_err(|message| anyhow!(message))?;
     let config = SessionConfig::new()
         .with_information_schema(false)

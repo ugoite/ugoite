@@ -62,6 +62,7 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
             }
             let service = UgoiteService::new(&root)?;
             service.reindex(&space_id).await?;
+            service.garbage_collect_asset_text_builds(&space_id).await?;
             print_json(&serde_json::json!({"reindexed": true}));
         }
         IndexSubCmd::Stats { space_path } => {

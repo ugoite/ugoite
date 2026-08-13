@@ -677,7 +677,7 @@ async fn rebuild_asset_text_with_mode(
     let head = match build_result {
         Ok(head) => head,
         Err(error) => {
-            let _ = mark_garbage_with_retry(&head_store, &build_id).await;
+            let _ = ensure_cleanup_marker(&head_store, &build_id).await;
             schedule_asset_text_gc(op, ws_path);
             return Err(error);
         }
@@ -697,7 +697,7 @@ async fn rebuild_asset_text_with_mode(
         if let Ok(Some(current)) = head_store.read_exact().await {
             if current.head.build_id == head.build_id {
                 if let Some(expected) = expected.as_ref() {
-                    let _ = mark_garbage_with_retry(&head_store, &expected.head.build_id).await;
+                    let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
                 }
                 // Keep staging protection until the successful Head outcome
                 // is observed. A slow GC must not delete this build between
@@ -707,7 +707,7 @@ async fn rebuild_asset_text_with_mode(
                 return Ok(current.head);
             }
         }
-        let _ = mark_garbage_with_retry(&head_store, &head.build_id).await;
+        let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
         schedule_asset_text_gc(op, ws_path);
         return Err(publication_error);
     }
@@ -717,18 +717,22 @@ async fn rebuild_asset_text_with_mode(
         .context("published derived Head disappeared")?
         .head;
     if let Some(expected) = expected.as_ref() {
-        let _ = mark_garbage_with_retry(&head_store, &expected.head.build_id).await;
+        let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
     }
-    if current.build_id != head.build_id {
+    let candidate_cleanup_marked = if current.build_id != head.build_id {
         // A shared writer may have won immediately after this writer's CAS.
         // The successful candidate is then garbage too; leaving only its
         // staging marker would make it invisible to lifecycle GC forever.
-        let _ = mark_garbage_with_retry(&head_store, &head.build_id).await;
-    }
+        ensure_cleanup_marker(&head_store, &head.build_id).await
+    } else {
+        true
+    };
     // A completed build no longer needs its active-build heartbeat. If this
     // delete is interrupted, the conservative staging marker still keeps the
     // build protected until the grace period has elapsed.
-    let _ = head_store.clear_staging(&head.build_id).await;
+    if candidate_cleanup_marked {
+        let _ = head_store.clear_staging(&head.build_id).await;
+    }
     let _ = head_store
         .garbage_collect_with_single_process_lock(Some(&current.build_id), MINIMUM_GC_AGE)
         .await;
@@ -870,18 +874,42 @@ fn schedule_asset_text_gc(op: &Operator, ws_path: &str) {
     }
 }
 
-async fn mark_garbage_with_retry(
-    head_store: &DerivedRelationHeadStore,
-    build_id: &str,
-) -> Result<()> {
-    let mut last_error = None;
+async fn ensure_cleanup_marker(head_store: &DerivedRelationHeadStore, build_id: &str) -> bool {
     for _ in 0..3 {
         match head_store.mark_garbage(build_id).await {
-            Ok(()) => return Ok(()),
-            Err(error) => last_error = Some(error),
+            Ok(()) => return true,
+            Err(_) => {}
         }
     }
-    Err(last_error.expect("garbage marker attempts are non-empty"))
+    // A staging marker is also a durable GC candidate. Keep it when writing
+    // garbage.json is temporarily unavailable, so a successful Head swap can
+    // never make the superseded prefix undiscoverable to a later GC pass.
+    for _ in 0..3 {
+        if head_store.mark_staging(build_id).await.is_ok() {
+            return false;
+        }
+    }
+    false
+}
+
+/// Runs the relation GC synchronously for one-shot local maintenance commands.
+/// The normal server path schedules the same work after the reader grace
+/// period; a short-lived CLI cannot keep that timer task alive after exit.
+pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    let relation_id = asset_text_definition().relation_id.as_uuid();
+    let base = DerivedRelationHeadStore::new(op.clone(), ws_path, relation_id);
+    let head_store = if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+        base.shared().await?
+    } else {
+        base.single_process()
+    };
+    let current_build_id = head_store
+        .read_exact()
+        .await?
+        .map(|head| head.head.build_id);
+    head_store
+        .garbage_collect(current_build_id.as_deref(), MINIMUM_GC_AGE)
+        .await
 }
 
 fn iceberg_root_uri(store: &SpaceCatalogStore) -> String {
