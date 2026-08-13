@@ -5,7 +5,6 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
-use std::time::Duration;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -58,10 +57,8 @@ struct CurrentSqlSessionExecutionAuthorization {
 
 struct AssetTextRefreshWorker {
     notify: Notify,
-    idle: Notify,
     started: AtomicBool,
     pending: AtomicBool,
-    running: AtomicBool,
 }
 
 static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
@@ -111,10 +108,8 @@ impl UgoiteService {
                 .or_insert_with(|| {
                     Arc::new(AssetTextRefreshWorker {
                         notify: Notify::new(),
-                        idle: Notify::new(),
                         started: AtomicBool::new(false),
                         pending: AtomicBool::new(false),
-                        running: AtomicBool::new(false),
                     })
                 })
                 .clone();
@@ -137,10 +132,6 @@ impl UgoiteService {
             tokio::spawn(async move {
                 loop {
                     worker.notify.notified().await;
-                    // Mark the worker active before consuming `pending`. The
-                    // CLI drain must not observe the transition between
-                    // clearing the flag and starting the rebuild.
-                    worker.running.store(true, Ordering::Release);
                     while worker.pending.swap(false, Ordering::AcqRel) {
                         let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
                         let result = if shared {
@@ -161,8 +152,6 @@ impl UgoiteService {
                             tokio::task::yield_now().await;
                         }
                     }
-                    worker.running.store(false, Ordering::Release);
-                    worker.idle.notify_waiters();
                     let should_exit = if !worker.pending.load(Ordering::Acquire) {
                         let workers = ASSET_TEXT_REFRESH_WORKERS
                             .get_or_init(|| StdMutex::new(BTreeMap::new()));
@@ -196,51 +185,6 @@ impl UgoiteService {
             self.root_uri,
             Arc::as_ptr(self.operator.inner()),
         )
-    }
-
-    /// One-shot CLI processes must keep the process-local worker alive until
-    /// queued refreshes finish; server runtimes remain free to continue
-    /// serving requests while the same worker runs in the background.
-    pub async fn wait_for_background_asset_text_refreshes() {
-        loop {
-            let workers = ASSET_TEXT_REFRESH_WORKERS
-                .get()
-                .map(|workers| {
-                    workers
-                        .lock()
-                        .expect("AssetText refresh worker map poisoned")
-                        .values()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            let mut waiting = false;
-            for worker in workers {
-                if !worker.pending.load(Ordering::Acquire)
-                    && !worker.running.load(Ordering::Acquire)
-                {
-                    continue;
-                }
-                waiting = true;
-                let notified = worker.idle.notified();
-                if !worker.pending.load(Ordering::Acquire)
-                    && !worker.running.load(Ordering::Acquire)
-                {
-                    continue;
-                }
-                // `Notify::notify_waiters` does not retain a permit for a
-                // future that has not been polled yet. Keep a bounded retry
-                // so a worker that completed between the state check and the
-                // registration cannot strand a one-shot CLI forever.
-                tokio::select! {
-                    _ = notified => {}
-                    _ = tokio::time::sleep(Duration::from_millis(10)) => {}
-                }
-            }
-            if !waiting {
-                return;
-            }
-        }
     }
 
     pub async fn create_space(&self, space_id: &str) -> Result<()> {

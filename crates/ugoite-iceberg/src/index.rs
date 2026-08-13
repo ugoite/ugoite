@@ -533,6 +533,7 @@ pub(crate) async fn query_entry_rows_authorized_after(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn query_entry_rows_authorized_internal(
     op: &Operator,
     ws_path: &str,

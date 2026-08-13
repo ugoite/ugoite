@@ -876,9 +876,8 @@ fn schedule_asset_text_gc(op: &Operator, ws_path: &str) {
 
 async fn ensure_cleanup_marker(head_store: &DerivedRelationHeadStore, build_id: &str) -> bool {
     for _ in 0..3 {
-        match head_store.mark_garbage(build_id).await {
-            Ok(()) => return true,
-            Err(_) => {}
+        if let Ok(()) = head_store.mark_garbage(build_id).await {
+            return true;
         }
     }
     // A staging marker is also a durable GC candidate. Keep it when writing

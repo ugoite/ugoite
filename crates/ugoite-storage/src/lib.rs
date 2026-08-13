@@ -578,24 +578,52 @@ impl DerivedRelationHeadStore {
                 .list_with(&build_prefix)
                 .recursive(true)
                 .await?;
-            let mut fully_deleted = true;
+            let mut garbage_marker = None;
+            let mut build_objects = Vec::new();
             for entry in entries {
-                if entry.metadata().mode() == EntryMode::FILE {
-                    // Re-check the Head for every object as a fail-closed
-                    // guard against a concurrent publication.
-                    if self
-                        .read_exact()
-                        .await?
-                        .as_ref()
-                        .is_some_and(|head| head.head.build_id == build_id)
-                    {
-                        fully_deleted = false;
-                        break;
-                    }
-                    self.operator.delete(entry.path()).await?;
+                if entry.metadata().mode() != EntryMode::FILE {
+                    continue;
+                }
+                if entry.path() == self.garbage_marker_path(&build_id) {
+                    // The marker is the durable discovery record. It must be
+                    // removed only after every other object has been deleted,
+                    // so a crash during cleanup leaves the build discoverable
+                    // on the next GC pass.
+                    garbage_marker = Some(entry.path().to_string());
+                } else {
+                    build_objects.push(entry.path().to_string());
                 }
             }
+            let mut fully_deleted = true;
+            for path in build_objects {
+                // Re-check the Head for every object as a fail-closed guard
+                // against a concurrent publication.
+                if self
+                    .read_exact()
+                    .await?
+                    .as_ref()
+                    .is_some_and(|head| head.head.build_id == build_id)
+                {
+                    fully_deleted = false;
+                    break;
+                }
+                self.operator.delete(&path).await?;
+            }
             if fully_deleted {
+                // Keep garbage.json until the build prefix is otherwise empty.
+                // If this process crashes before this final delete, the marker
+                // remains available for the next candidate-discovery pass.
+                if self
+                    .read_exact()
+                    .await?
+                    .as_ref()
+                    .is_some_and(|head| head.head.build_id == build_id)
+                {
+                    continue;
+                }
+                if let Some(path) = garbage_marker {
+                    self.operator.delete(&path).await?;
+                }
                 deleted.push(build_id);
             }
         }
