@@ -38,9 +38,10 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Read, Seek};
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
-use std::time::Duration;
-use tokio::sync::{Mutex, Semaphore};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::time::{Duration, Instant};
+use tokio::sync::{Mutex, Notify, Semaphore};
 use ugoite_domain::derived_relation::DerivedRelationId;
 use ugoite_domain::derived_relation::{
     canonical_json, sha256_digest, DerivedErrorCode, DerivedExposure, DerivedRelationDefinition,
@@ -65,6 +66,15 @@ const MAX_EXTRACTED_TEXT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TEXT_CHUNK_CHARS: usize = 16 * 1024;
 const READER_CHUNK_BYTES: usize = 256 * 1024;
 const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
+
+struct AssetTextGcScheduler {
+    notify: Notify,
+    deadline: StdMutex<Option<Instant>>,
+    started: AtomicBool,
+}
+
+static ASSET_TEXT_GC_SCHEDULERS: OnceLock<StdMutex<BTreeMap<String, Arc<AssetTextGcScheduler>>>> =
+    OnceLock::new();
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct AssetTextRow {
@@ -566,85 +576,111 @@ async fn rebuild_asset_text_with_mode(
     let row_digest = sha256_digest(&canonical_json(&rows)?);
     let build_id = Uuid::now_v7().to_string();
     let build_path = head_store.builds_path(&build_id);
-    let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
-    // Iceberg locations must use the same URI namespace as the official
-    // SpaceCatalog FileIO.  `Operator::info().root()` is not a portable
-    // warehouse URI for all OpenDAL backends (notably memory and remote
-    // stores), so do not manufacture a second location scheme here.
-    let table_location = format!("{}{}", iceberg_root_uri(&store), build_path);
-    let catalog = DerivedRelationCatalog::new(
-        crate::space_catalog::file_io_for_store(&store),
-        Runtime::current(),
-        NamespaceIdent::new("derived".to_string()),
-    );
-    let namespace = NamespaceIdent::new("derived".to_string());
-    catalog.create_namespace(&namespace, HashMap::new()).await?;
-    let table_name = format!("derived_{}", relation_uuid.simple());
-    let table = catalog
-        .create_table(
-            &namespace,
-            TableCreation::builder()
-                .name(table_name.clone())
-                .location(table_location)
-                .schema(asset_text_schema())
-                .partition_spec(UnboundPartitionSpec::default())
-                .sort_order(SortOrder::unsorted_order())
-                .build(),
+    head_store.mark_staging(&build_id).await?;
+    let heartbeat_operator = op.clone();
+    let heartbeat_path = format!("{build_path}/staging.json");
+    let staging_heartbeat = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let _ = heartbeat_operator
+                .write(&heartbeat_path, br"{}".to_vec())
+                .await;
+        }
+    });
+    // Every object written below belongs to this immutable build. If staging
+    // fails before publication, leave an explicit garbage marker and staging
+    // marker so relation GC can reclaim the partial prefix as well.
+    let build_result: Result<DerivedRelationHead> = async {
+        let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
+        // Iceberg locations must use the same URI namespace as the official
+        // SpaceCatalog FileIO.  `Operator::info().root()` is not a portable
+        // warehouse URI for all OpenDAL backends (notably memory and remote
+        // stores), so do not manufacture a second location scheme here.
+        let table_location = format!("{}{}", iceberg_root_uri(&store), build_path);
+        let catalog = DerivedRelationCatalog::new(
+            crate::space_catalog::file_io_for_store(&store),
+            Runtime::current(),
+            NamespaceIdent::new("derived".to_string()),
+        );
+        let namespace = NamespaceIdent::new("derived".to_string());
+        catalog.create_namespace(&namespace, HashMap::new()).await?;
+        let table_name = format!("derived_{}", relation_uuid.simple());
+        let table = catalog
+            .create_table(
+                &namespace,
+                TableCreation::builder()
+                    .name(table_name.clone())
+                    .location(table_location)
+                    .schema(asset_text_schema())
+                    .partition_spec(UnboundPartitionSpec::default())
+                    .sort_order(SortOrder::unsorted_order())
+                    .build(),
+            )
+            .await?;
+        if !rows.is_empty() {
+            append_rows(&table, &catalog, &rows).await?;
+        }
+        let final_table = catalog
+            .load_table(&TableIdent::new(namespace.clone(), table_name.clone()))
+            .await?;
+        let metadata_location = final_table.metadata_location_result()?.to_string();
+        let status_counts = asset_text_status_counts(&source_rows, &rows);
+        let manifest = AssetTextManifest {
+            format_version: 2,
+            relation_id: relation_uuid.to_string(),
+            build_id: build_id.clone(),
+            producer_fingerprint: producer_fingerprint.clone(),
+            input_digest: input_digest.clone(),
+            row_count: rows.len(),
+            source_coordinate: source_coordinate.clone(),
+            row_digest: row_digest.clone(),
+            assets_referenced: status_counts.assets_referenced,
+            assets_ready: status_counts.assets_ready,
+            assets_empty: status_counts.assets_empty,
+            assets_failed: status_counts.assets_failed,
+            assets_unsupported: status_counts.assets_unsupported,
+        };
+        let manifest_bytes = serde_json::to_vec(&manifest)?;
+        let manifest_location = format!("{build_path}/manifest.json");
+        op.write_options(
+            &manifest_location,
+            manifest_bytes,
+            WriteOptions {
+                if_not_exists: true,
+                ..Default::default()
+            },
         )
         .await?;
-    if !rows.is_empty() {
-        append_rows(&table, &catalog, &rows).await?;
+        Ok(DerivedRelationHead {
+            format_version: 1,
+            space_id: space_id_from_metadata(op, ws_path).await?,
+            relation_id: relation_uuid.to_string(),
+            generation,
+            definition_version: definition.definition_version,
+            definition_fingerprint: definition.fingerprint(),
+            producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
+            producer_fingerprint,
+            compatibility_epoch: ASSET_TEXT_COMPATIBILITY_EPOCH,
+            build_id: build_id.clone(),
+            table_identifier: serde_json::to_value(final_table.identifier())?,
+            table_uuid: final_table.metadata().uuid().to_string(),
+            metadata_location,
+            snapshot_id: final_table.metadata().current_snapshot_id(),
+            schema_id: final_table.metadata().current_schema_id(),
+            input_digest,
+            source_coordinate,
+            checksum: String::new(),
+        })
     }
-    let final_table = catalog
-        .load_table(&TableIdent::new(namespace.clone(), table_name.clone()))
-        .await?;
-    let metadata_location = final_table.metadata_location_result()?.to_string();
-    let status_counts = asset_text_status_counts(&source_rows, &rows);
-    let manifest = AssetTextManifest {
-        format_version: 2,
-        relation_id: relation_uuid.to_string(),
-        build_id: build_id.clone(),
-        producer_fingerprint: producer_fingerprint.clone(),
-        input_digest: input_digest.clone(),
-        row_count: rows.len(),
-        source_coordinate: source_coordinate.clone(),
-        row_digest: row_digest.clone(),
-        assets_referenced: status_counts.assets_referenced,
-        assets_ready: status_counts.assets_ready,
-        assets_empty: status_counts.assets_empty,
-        assets_failed: status_counts.assets_failed,
-        assets_unsupported: status_counts.assets_unsupported,
-    };
-    let manifest_bytes = serde_json::to_vec(&manifest)?;
-    let manifest_location = format!("{build_path}/manifest.json");
-    op.write_options(
-        &manifest_location,
-        manifest_bytes.clone(),
-        WriteOptions {
-            if_not_exists: true,
-            ..Default::default()
-        },
-    )
-    .await?;
-    let head = DerivedRelationHead {
-        format_version: 1,
-        space_id: space_id_from_metadata(op, ws_path).await?,
-        relation_id: relation_uuid.to_string(),
-        generation,
-        definition_version: definition.definition_version,
-        definition_fingerprint: definition.fingerprint(),
-        producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
-        producer_fingerprint,
-        compatibility_epoch: ASSET_TEXT_COMPATIBILITY_EPOCH,
-        build_id,
-        table_identifier: serde_json::to_value(final_table.identifier())?,
-        table_uuid: final_table.metadata().uuid().to_string(),
-        metadata_location,
-        snapshot_id: final_table.metadata().current_snapshot_id(),
-        schema_id: final_table.metadata().current_schema_id(),
-        input_digest,
-        source_coordinate,
-        checksum: String::new(),
+    .await;
+    staging_heartbeat.abort();
+    let head = match build_result {
+        Ok(head) => head,
+        Err(error) => {
+            let _ = mark_garbage_with_retry(&head_store, &build_id).await;
+            schedule_asset_text_gc(op, ws_path);
+            return Err(error);
+        }
     };
     let publish_result = if shared {
         head_store.publish(expected.as_ref(), &head).await
@@ -661,12 +697,18 @@ async fn rebuild_asset_text_with_mode(
         if let Ok(Some(current)) = head_store.read_exact().await {
             if current.head.build_id == head.build_id {
                 if let Some(expected) = expected.as_ref() {
-                    let _ = head_store.mark_garbage(&expected.head.build_id).await;
+                    let _ = mark_garbage_with_retry(&head_store, &expected.head.build_id).await;
                 }
+                // Keep staging protection until the successful Head outcome
+                // is observed. A slow GC must not delete this build between
+                // validation and publication.
+                let _ = head_store.clear_staging(&head.build_id).await;
+                schedule_asset_text_gc(op, ws_path);
                 return Ok(current.head);
             }
         }
-        let _ = head_store.mark_garbage(&head.build_id).await;
+        let _ = mark_garbage_with_retry(&head_store, &head.build_id).await;
+        schedule_asset_text_gc(op, ws_path);
         return Err(publication_error);
     }
     let current = head_store
@@ -675,12 +717,165 @@ async fn rebuild_asset_text_with_mode(
         .context("published derived Head disappeared")?
         .head;
     if let Some(expected) = expected.as_ref() {
-        let _ = head_store.mark_garbage(&expected.head.build_id).await;
+        let _ = mark_garbage_with_retry(&head_store, &expected.head.build_id).await;
     }
+    // A completed build no longer needs its active-build heartbeat. If this
+    // delete is interrupted, the conservative staging marker still keeps the
+    // build protected until the grace period has elapsed.
+    let _ = head_store.clear_staging(&head.build_id).await;
     let _ = head_store
         .garbage_collect(Some(&current.build_id), MINIMUM_GC_AGE)
         .await;
+    schedule_asset_text_gc(op, ws_path);
     Ok(current)
+}
+
+fn schedule_asset_text_gc(op: &Operator, ws_path: &str) {
+    let relation_id = asset_text_definition().relation_id.as_uuid();
+    let key = format!(
+        "{}:{}:{}:{}:{}",
+        op.info().scheme(),
+        op.info().name(),
+        op.info().root(),
+        ws_path,
+        relation_id,
+    );
+    let schedulers = ASSET_TEXT_GC_SCHEDULERS.get_or_init(|| StdMutex::new(BTreeMap::new()));
+    let scheduler = {
+        let mut schedulers = schedulers
+            .lock()
+            .expect("AssetText GC scheduler map poisoned");
+        let scheduler = schedulers
+            .entry(key.clone())
+            .or_insert_with(|| {
+                Arc::new(AssetTextGcScheduler {
+                    notify: Notify::new(),
+                    deadline: StdMutex::new(None),
+                    started: AtomicBool::new(false),
+                })
+            })
+            .clone();
+        let mut deadline = scheduler
+            .deadline
+            .lock()
+            .expect("AssetText GC deadline poisoned");
+        let next = Instant::now() + MINIMUM_GC_AGE;
+        if deadline.is_none_or(|current| next > current) {
+            *deadline = Some(next);
+        }
+        drop(deadline);
+        scheduler
+    };
+    scheduler.notify.notify_one();
+    if scheduler
+        .started
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        let operator = op.clone();
+        let workspace_path = ws_path.to_string();
+        let scheduler_key = key;
+        let scheduler = scheduler.clone();
+        tokio::spawn(async move {
+            loop {
+                let deadline = scheduler
+                    .deadline
+                    .lock()
+                    .expect("AssetText GC deadline poisoned")
+                    .to_owned();
+                let Some(deadline) = deadline else {
+                    scheduler.notify.notified().await;
+                    continue;
+                };
+                tokio::select! {
+                    _ = scheduler.notify.notified() => {}
+                    _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                        let due = {
+                            let mut deadline_slot = scheduler
+                                .deadline
+                                .lock()
+                                .expect("AssetText GC deadline poisoned");
+                            if deadline_slot.is_some_and(|current| current <= Instant::now()) {
+                                *deadline_slot = None;
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                        if !due {
+                            continue;
+                        }
+                        let base = DerivedRelationHeadStore::new(
+                            operator.clone(),
+                            &workspace_path,
+                            relation_id,
+                        );
+                        let head_store = if matches!(
+                            operator.info().scheme(),
+                            "s3" | "gcs" | "oss" | "azdls"
+                        ) {
+                            base.shared().await.ok()
+                        } else {
+                            Some(base.single_process())
+                        };
+                        if let Some(head_store) = head_store {
+                            if let Ok(current_build_id) = head_store.read_exact().await {
+                                let current_build_id = current_build_id.map(|head| head.head.build_id);
+                                let _ = head_store
+                                    .garbage_collect(
+                                        current_build_id.as_deref(),
+                                        MINIMUM_GC_AGE,
+                                    )
+                                    .await;
+                            }
+                        }
+                        let should_exit = {
+                            // Schedule and retirement both take the map lock
+                            // before the scheduler deadline lock. This makes
+                            // the final idle check atomic with respect to a
+                            // new refresh notification and lets the task
+                            // remove its own per-Space entry safely.
+                            let mut schedulers = ASSET_TEXT_GC_SCHEDULERS
+                                .get_or_init(|| StdMutex::new(BTreeMap::new()))
+                                .lock()
+                                .expect("AssetText GC scheduler map poisoned");
+                            let is_current = schedulers
+                                .get(&scheduler_key)
+                                .is_some_and(|current| Arc::ptr_eq(current, &scheduler));
+                            let idle = scheduler
+                                .deadline
+                                .lock()
+                                .expect("AssetText GC deadline poisoned")
+                                .is_none();
+                            if is_current && idle {
+                                schedulers.remove(&scheduler_key);
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                        if should_exit {
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+async fn mark_garbage_with_retry(
+    head_store: &DerivedRelationHeadStore,
+    build_id: &str,
+) -> Result<()> {
+    let mut last_error = None;
+    for _ in 0..3 {
+        match head_store.mark_garbage(build_id).await {
+            Ok(()) => return Ok(()),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.expect("garbage marker attempts are non-empty"))
 }
 
 fn iceberg_root_uri(store: &SpaceCatalogStore) -> String {
@@ -903,9 +1098,7 @@ fn merge_source_reference(
                 || existing.source_size_bytes != candidate.source_size_bytes
             {
                 conflicting_assets.insert(candidate.asset_id.clone());
-            } else if source_reference_metadata_rank(&candidate)
-                > source_reference_metadata_rank(existing)
-            {
+            } else if source_reference_is_preferred(&candidate, existing) {
                 // Asset metadata is Entry-owned and can be represented by
                 // several references. Keep the most useful parser hint so a
                 // generic first reference cannot make a parse unsupported.
@@ -914,6 +1107,23 @@ fn merge_source_reference(
             }
         })
         .or_insert(candidate);
+}
+
+fn source_reference_is_preferred(candidate: &SourceReference, existing: &SourceReference) -> bool {
+    let candidate_rank = source_reference_metadata_rank(candidate);
+    let existing_rank = source_reference_metadata_rank(existing);
+    candidate_rank > existing_rank
+        || (candidate_rank == existing_rank
+            && source_reference_tie_break_key(candidate) < source_reference_tie_break_key(existing))
+}
+
+fn source_reference_tie_break_key(reference: &SourceReference) -> (String, String, String, String) {
+    (
+        reference.name.to_ascii_lowercase(),
+        reference.media_type.to_ascii_lowercase(),
+        reference.name.clone(),
+        reference.media_type.clone(),
+    )
 }
 
 fn source_reference_metadata_rank(reference: &SourceReference) -> u8 {

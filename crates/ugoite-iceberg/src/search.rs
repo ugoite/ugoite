@@ -2,13 +2,26 @@ use anyhow::{Context, Result};
 use arrow_array::builder::{Float64Builder, StringBuilder};
 use arrow_array::{Array, Float64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
-use datafusion::datasource::MemTable;
+use async_trait::async_trait;
+use datafusion::datasource::{TableProvider, TableType};
+use datafusion::error::Result as DfResult;
+use datafusion::execution::TaskContext;
+use datafusion::logical_expr::{Expr, TableProviderFilterPushDown};
+use datafusion::physical_expr::EquivalenceProperties;
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
+use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
+use datafusion::physical_plan::{
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+    SendableRecordBatchStream,
+};
 use datafusion::prelude::SessionContext;
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use ugoite_core::query::EntryScope;
+use ugoite_domain::entry::AssetReference;
+use ugoite_domain::form::FieldType;
 
 use crate::entry;
 pub use ugoite_domain::search::KeywordSearchResult;
@@ -113,7 +126,10 @@ fn is_after_cursor(result: &KeywordSearchResult, after: Option<(&str, &str, &str
 }
 
 fn sql_string_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
+    // Ordinary DataFusion string literals preserve backslashes.  Doubling one
+    // here would change cursor ordering for Entry IDs or titles containing a
+    // backslash; only the SQL quote itself needs escaping.
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 async fn asset_text_search_authorized(
@@ -163,56 +179,45 @@ async fn asset_text_search_authorized(
     let sql = format!(
         "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND lower(a.text) LIKE lower('%{escaped}%') ESCAPE '\\'{after_predicate} ORDER BY e.title, e.entry_id, e.form LIMIT {limit}"
     );
-    let mut results = BTreeMap::new();
-    // Scope keys are normalized Form or relation names, while the provider
-    // query's form filter must use the authoritative display name.
-    for form_name in crate::entry::list_form_names(op, ws_path).await? {
-        let mut offset = 0;
-        loop {
-            let authorized_rows = crate::index::query_entry_rows_authorized_page(
-                op,
-                ws_path,
-                relation_scopes,
-                &form_name,
-                ASSET_TEXT_SEARCH_PAGE_SIZE,
-                offset,
-            )
-            .await?;
-            if authorized_rows.is_empty() {
-                break;
-            }
-            let batch = authorized_asset_reference_batch(&authorized_rows)?;
-            if batch.num_rows() > 0 {
-                // Keep only one bounded authorization page in memory at a
-                // time. The AssetText side remains a DataFusion table, while
-                // the authoritative side is streamed page-by-page and the
-                // globally best `limit` rows are retained.
-                let _ = context.deregister_table("__ugoite_authorized_asset_refs");
-                context.register_table(
-                    "__ugoite_authorized_asset_refs",
-                    Arc::new(MemTable::try_new(batch.schema(), vec![vec![batch]])?),
-                )?;
-                let frame = match context.sql(&sql).await {
-                    Ok(frame) => frame,
-                    // Derived provider/planning failures degrade to the
-                    // authoritative typed search path. Errors while reading
-                    // authorized Entry pages above are still propagated.
-                    Err(_) => return Ok(None),
-                };
-                let matches = match frame.collect().await {
-                    Ok(matches) => matches,
-                    Err(_) => return Ok(None),
-                };
-                merge_asset_search_batches(&mut results, matches, after)?;
-                retain_top_asset_search_results(&mut results, limit);
-            }
-            let page_len = authorized_rows.len();
-            offset = offset.saturating_add(page_len);
-            if page_len < ASSET_TEXT_SEARCH_PAGE_SIZE {
-                break;
-            }
-        }
+    // The provider streams bounded authorization pages into one DataFusion
+    // scan. This keeps the authorization source bounded per batch while the
+    // AssetText provider is planned and scanned only once for the whole join.
+    let form_names = match crate::entry::list_form_names(op, ws_path).await {
+        Ok(form_names) => form_names,
+        Err(_) => return Ok(None),
+    };
+    let asset_reference_fields = match load_asset_reference_fields(op, ws_path, &form_names).await {
+        Ok(fields) => fields,
+        Err(_) => return Ok(None),
+    };
+    if context
+        .register_table(
+            "__ugoite_authorized_asset_refs",
+            Arc::new(AuthorizedAssetReferenceProvider::new(
+                op.clone(),
+                ws_path.to_string(),
+                relation_scopes.clone(),
+                form_names,
+                asset_reference_fields,
+            )),
+        )
+        .is_err()
+    {
+        return Ok(None);
     }
+    let frame = match context.sql(&sql).await {
+        Ok(frame) => frame,
+        // Derived provider/planning failures degrade to the authoritative
+        // typed search path. Errors while reading authorized Entry pages in
+        // the execution stream are handled by the same fallback below.
+        Err(_) => return Ok(None),
+    };
+    let matches = match frame.collect().await {
+        Ok(matches) => matches,
+        Err(_) => return Ok(None),
+    };
+    let mut results = BTreeMap::new();
+    merge_asset_search_batches(&mut results, matches, after)?;
     let mut results = results.into_values().collect::<Vec<_>>();
     results.sort_by(|left, right| {
         left.title
@@ -276,39 +281,11 @@ fn merge_asset_search_batches(
     Ok(())
 }
 
-fn retain_top_asset_search_results(
-    results: &mut BTreeMap<(String, String), KeywordSearchResult>,
-    limit: usize,
-) {
-    if results.len() <= limit {
-        return;
-    }
-    let mut values = std::mem::take(results).into_values().collect::<Vec<_>>();
-    values.sort_by(|left, right| {
-        left.title
-            .cmp(&right.title)
-            .then_with(|| left.id.cmp(&right.id))
-            .then_with(|| left.form.cmp(&right.form))
-    });
-    values.truncate(limit);
-    results.extend(
-        values
-            .into_iter()
-            .map(|result| ((result.form.clone(), result.id.clone()), result)),
-    );
-}
-
 fn authorized_asset_reference_batch(
     authorized_rows: &[(String, entry::EntryRow)],
+    asset_reference_fields: &BTreeMap<String, Vec<AssetReferenceField>>,
 ) -> Result<RecordBatch> {
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("form", DataType::Utf8, false),
-        Field::new("entry_id", DataType::Utf8, false),
-        Field::new("title", DataType::Utf8, false),
-        Field::new("created_at", DataType::Float64, false),
-        Field::new("updated_at", DataType::Float64, false),
-        Field::new("asset_id", DataType::Utf8, false),
-    ]));
+    let schema = authorized_asset_reference_schema();
     let mut forms = StringBuilder::new();
     let mut entry_ids = StringBuilder::new();
     let mut titles = StringBuilder::new();
@@ -320,7 +297,23 @@ fn authorized_asset_reference_batch(
             continue;
         }
         let mut ids = Vec::new();
-        collect_asset_ids(&row.fields, &mut ids);
+        if let Some(fields) = asset_reference_fields.get(form_name) {
+            let values = row.fields.as_object();
+            for field in fields {
+                let Some(value) = values.and_then(|values| values.get(&field.name)) else {
+                    continue;
+                };
+                if field.list {
+                    if let Value::Array(values) = value {
+                        for value in values {
+                            append_asset_reference(value, &mut ids);
+                        }
+                    }
+                } else {
+                    append_asset_reference(value, &mut ids);
+                }
+            }
+        }
         ids.sort();
         ids.dedup();
         for asset_id in ids {
@@ -346,20 +339,289 @@ fn authorized_asset_reference_batch(
     .context("build authorized AssetReference join page")
 }
 
-fn collect_asset_ids(value: &Value, output: &mut Vec<String>) {
-    match value {
-        Value::Array(values) => values
+fn authorized_asset_reference_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new("form", DataType::Utf8, false),
+        Field::new("entry_id", DataType::Utf8, false),
+        Field::new("title", DataType::Utf8, false),
+        Field::new("created_at", DataType::Float64, false),
+        Field::new("updated_at", DataType::Float64, false),
+        Field::new("asset_id", DataType::Utf8, false),
+    ]))
+}
+
+#[derive(Clone, Debug)]
+struct AssetReferenceField {
+    name: String,
+    list: bool,
+}
+
+async fn load_asset_reference_fields(
+    op: &Operator,
+    ws_path: &str,
+    form_names: &[String],
+) -> Result<BTreeMap<String, Vec<AssetReferenceField>>> {
+    let mut fields = BTreeMap::new();
+    for form_name in form_names {
+        let definition = crate::iceberg_store::load_domain_form(op, ws_path, form_name).await?;
+        let asset_fields = definition
+            .fields
             .iter()
-            .for_each(|value| collect_asset_ids(value, output)),
-        Value::Object(object) => {
-            if let Some(asset_id) = object.get("asset_id").and_then(Value::as_str) {
-                output.push(asset_id.to_string());
-            } else {
-                object
-                    .values()
-                    .for_each(|value| collect_asset_ids(value, output));
-            }
+            .filter_map(|field| match &field.field_type {
+                FieldType::AssetReference => Some(AssetReferenceField {
+                    name: field.name.clone(),
+                    list: false,
+                }),
+                FieldType::List
+                    if field
+                        .list_item
+                        .as_ref()
+                        .is_some_and(|item| item.field_type == FieldType::AssetReference) =>
+                {
+                    Some(AssetReferenceField {
+                        name: field.name.clone(),
+                        list: true,
+                    })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        fields.insert(definition.name.to_string(), asset_fields);
+    }
+    Ok(fields)
+}
+
+fn append_asset_reference(value: &Value, output: &mut Vec<String>) {
+    let Ok(reference) = serde_json::from_value::<AssetReference>(value.clone()) else {
+        return;
+    };
+    output.push(reference.asset_id);
+}
+
+#[derive(Debug)]
+struct AuthorizedAssetReferenceProvider {
+    operator: Operator,
+    workspace_path: String,
+    relation_scopes: BTreeMap<String, EntryScope>,
+    form_names: Vec<String>,
+    asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    schema: Arc<Schema>,
+}
+
+impl AuthorizedAssetReferenceProvider {
+    fn new(
+        operator: Operator,
+        workspace_path: String,
+        relation_scopes: BTreeMap<String, EntryScope>,
+        form_names: Vec<String>,
+        asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    ) -> Self {
+        Self {
+            operator,
+            workspace_path,
+            relation_scopes,
+            form_names,
+            asset_reference_fields,
+            schema: authorized_asset_reference_schema(),
         }
-        _ => {}
+    }
+}
+
+#[async_trait]
+impl TableProvider for AuthorizedAssetReferenceProvider {
+    fn schema(&self) -> Arc<Schema> {
+        self.schema.clone()
+    }
+
+    fn table_type(&self) -> TableType {
+        TableType::Base
+    }
+
+    async fn scan(
+        &self,
+        _state: &dyn datafusion::catalog::Session,
+        _projection: Option<&Vec<usize>>,
+        _filters: &[Expr],
+        _limit: Option<usize>,
+    ) -> DfResult<Arc<dyn ExecutionPlan>> {
+        Ok(Arc::new(AuthorizedAssetReferenceExec::new(
+            self.operator.clone(),
+            self.workspace_path.clone(),
+            self.relation_scopes.clone(),
+            self.form_names.clone(),
+            self.asset_reference_fields.clone(),
+            self.schema.clone(),
+        )))
+    }
+
+    fn supports_filters_pushdown(
+        &self,
+        filters: &[&Expr],
+    ) -> DfResult<Vec<TableProviderFilterPushDown>> {
+        Ok(vec![
+            TableProviderFilterPushDown::Unsupported;
+            filters.len()
+        ])
+    }
+}
+
+#[derive(Debug)]
+struct AuthorizedAssetReferenceExec {
+    operator: Operator,
+    workspace_path: String,
+    relation_scopes: BTreeMap<String, EntryScope>,
+    form_names: Vec<String>,
+    asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    schema: Arc<Schema>,
+    properties: Arc<PlanProperties>,
+}
+
+impl AuthorizedAssetReferenceExec {
+    fn new(
+        operator: Operator,
+        workspace_path: String,
+        relation_scopes: BTreeMap<String, EntryScope>,
+        form_names: Vec<String>,
+        asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+        schema: Arc<Schema>,
+    ) -> Self {
+        let properties = Arc::new(PlanProperties::new(
+            EquivalenceProperties::new(schema.clone()),
+            Partitioning::UnknownPartitioning(1),
+            EmissionType::Incremental,
+            Boundedness::Bounded,
+        ));
+        Self {
+            operator,
+            workspace_path,
+            relation_scopes,
+            form_names,
+            asset_reference_fields,
+            schema,
+            properties,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct AuthorizedAssetReferenceStreamState {
+    operator: Operator,
+    workspace_path: String,
+    relation_scopes: BTreeMap<String, EntryScope>,
+    form_names: Vec<String>,
+    asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    form_index: usize,
+    current_rows: Option<Vec<(String, entry::EntryRow)>>,
+    current_offset: usize,
+}
+
+impl AuthorizedAssetReferenceStreamState {
+    async fn next_batch(&mut self) -> DfResult<Option<RecordBatch>> {
+        loop {
+            if let Some(rows) = self.current_rows.as_ref() {
+                if self.current_offset < rows.len() {
+                    let start = self.current_offset;
+                    let end = (start + ASSET_TEXT_SEARCH_PAGE_SIZE).min(rows.len());
+                    let batch = authorized_asset_reference_batch(
+                        &rows[start..end],
+                        &self.asset_reference_fields,
+                    )
+                    .map_err(|error| {
+                        datafusion::error::DataFusionError::Execution(error.to_string())
+                    })?;
+                    self.current_offset = end;
+                    if batch.num_rows() == 0 {
+                        continue;
+                    }
+                    return Ok(Some(batch));
+                }
+                self.current_rows = None;
+                self.current_offset = 0;
+                self.form_index += 1;
+                continue;
+            }
+            let Some(form_name) = self.form_names.get(self.form_index).cloned() else {
+                return Ok(None);
+            };
+            // Load one Form's authorized current view once. Re-running a new
+            // DataFusion context with a larger OFFSET for every output batch
+            // would rescan and resort the same rows quadratically.
+            let rows = crate::index::query_entry_rows_authorized_all(
+                &self.operator,
+                &self.workspace_path,
+                &self.relation_scopes,
+                &form_name,
+            )
+            .await
+            .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
+            self.current_rows = Some(rows);
+        }
+    }
+}
+
+impl ExecutionPlan for AuthorizedAssetReferenceExec {
+    fn name(&self) -> &str {
+        "AuthorizedAssetReferenceScan"
+    }
+
+    fn properties(&self) -> &Arc<PlanProperties> {
+        &self.properties
+    }
+
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        Vec::new()
+    }
+
+    fn with_new_children(
+        self: Arc<Self>,
+        children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> DfResult<Arc<dyn ExecutionPlan>> {
+        if children.is_empty() {
+            Ok(self)
+        } else {
+            Err(datafusion::error::DataFusionError::Internal(
+                "authorized AssetReference scan is a leaf".to_string(),
+            ))
+        }
+    }
+
+    fn execute(
+        &self,
+        partition: usize,
+        _context: Arc<TaskContext>,
+    ) -> DfResult<SendableRecordBatchStream> {
+        if partition != 0 {
+            return Err(datafusion::error::DataFusionError::Execution(
+                "authorized AssetReference scan has one partition".to_string(),
+            ));
+        }
+        let state = AuthorizedAssetReferenceStreamState {
+            operator: self.operator.clone(),
+            workspace_path: self.workspace_path.clone(),
+            relation_scopes: self.relation_scopes.clone(),
+            form_names: self.form_names.clone(),
+            asset_reference_fields: self.asset_reference_fields.clone(),
+            form_index: 0,
+            current_rows: None,
+            current_offset: 0,
+        };
+        let schema = self.schema.clone();
+        let stream = futures::stream::try_unfold(state, |mut state| async move {
+            match state.next_batch().await? {
+                Some(batch) => Ok(Some((batch, state))),
+                None => Ok(None),
+            }
+        });
+        Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
+    }
+}
+
+impl DisplayAs for AuthorizedAssetReferenceExec {
+    fn fmt_as(
+        &self,
+        _format: DisplayFormatType,
+        formatter: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        formatter.write_str("AuthorizedAssetReferenceScan")
     }
 }

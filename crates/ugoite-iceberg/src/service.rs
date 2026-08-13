@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::time::Duration;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -99,13 +100,13 @@ impl UgoiteService {
     /// participates in the Entry commit latency or becomes an authority for
     /// the current Form state; an explicit `index run` remains the repair path.
     fn schedule_asset_text_refresh(&self, space_id: &str) {
-        let key = format!("{}:{space_id}", self.root_uri);
+        let key = self.asset_text_refresh_worker_key(space_id);
         let workers = ASSET_TEXT_REFRESH_WORKERS.get_or_init(|| StdMutex::new(BTreeMap::new()));
         let worker = {
             let mut workers = workers
                 .lock()
                 .expect("AssetText refresh worker map poisoned");
-            workers
+            let worker = workers
                 .entry(key)
                 .or_insert_with(|| {
                     Arc::new(AssetTextRefreshWorker {
@@ -116,10 +117,14 @@ impl UgoiteService {
                         running: AtomicBool::new(false),
                     })
                 })
-                .clone()
+                .clone();
+            // Keep lookup, coalescing flag, and notification under the same
+            // map lock as idle-worker removal. A caller that already found an
+            // old worker cannot enqueue work after that worker has exited.
+            worker.pending.store(true, Ordering::Release);
+            worker.notify.notify_one();
+            worker
         };
-        worker.pending.store(true, Ordering::Release);
-        worker.notify.notify_one();
         if worker
             .started
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -127,6 +132,7 @@ impl UgoiteService {
         {
             let op = self.operator.clone();
             let ws_path = self.workspace_path(space_id);
+            let worker_key = self.asset_text_refresh_worker_key(space_id);
             let worker = worker.clone();
             tokio::spawn(async move {
                 loop {
@@ -157,9 +163,39 @@ impl UgoiteService {
                     }
                     worker.running.store(false, Ordering::Release);
                     worker.idle.notify_waiters();
+                    let should_exit = if !worker.pending.load(Ordering::Acquire) {
+                        let workers = ASSET_TEXT_REFRESH_WORKERS
+                            .get_or_init(|| StdMutex::new(BTreeMap::new()));
+                        let mut workers = workers
+                            .lock()
+                            .expect("AssetText refresh worker map poisoned");
+                        let is_current = workers
+                            .get(&worker_key)
+                            .is_some_and(|current| Arc::ptr_eq(current, &worker));
+                        if is_current && !worker.pending.load(Ordering::Acquire) {
+                            workers.remove(&worker_key);
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if should_exit {
+                        worker.started.store(false, Ordering::Release);
+                        return;
+                    }
                 }
             });
         }
+    }
+
+    fn asset_text_refresh_worker_key(&self, space_id: &str) -> String {
+        format!(
+            "{}:{space_id}:operator={:p}",
+            self.root_uri,
+            Arc::as_ptr(self.operator.inner()),
+        )
     }
 
     /// One-shot CLI processes must keep the process-local worker alive until
@@ -192,7 +228,14 @@ impl UgoiteService {
                 {
                     continue;
                 }
-                notified.await;
+                // `Notify::notify_waiters` does not retain a permit for a
+                // future that has not been polled yet. Keep a bounded retry
+                // so a worker that completed between the state check and the
+                // registration cannot strand a one-shot CLI forever.
+                tokio::select! {
+                    _ = notified => {}
+                    _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+                }
             }
             if !waiting {
                 return;

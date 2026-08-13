@@ -274,7 +274,7 @@ pub(crate) struct EntryCandidate {
 }
 
 struct EntryCandidatePage<'a> {
-    limit: usize,
+    limit: Option<usize>,
     offset: usize,
     after: Option<(&'a str, &'a str, &'a str)>,
 }
@@ -339,7 +339,7 @@ pub(crate) async fn query_entry_candidates_authorized_after(
         form_filter,
         keyword,
         &EntryCandidatePage {
-            limit,
+            limit: Some(limit),
             offset: 0,
             after,
         },
@@ -402,12 +402,16 @@ async fn query_entry_candidates_in_context(
             )
         })
         .unwrap_or_default();
+    let pagination = match (page.limit, page.offset) {
+        (Some(limit), offset) => format!(" LIMIT {limit} OFFSET {offset}"),
+        (None, 0) => String::new(),
+        (None, offset) => format!(" OFFSET {offset}"),
+    };
     let sql = format!(
-        "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\"{} ORDER BY \"_ugoite_title\", \"_ugoite_id\", \"_ugoite_form\" LIMIT {} OFFSET {}",
+        "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\"{} ORDER BY \"_ugoite_title\", \"_ugoite_id\", \"_ugoite_form\"{}",
         branches.join(" UNION ALL "),
         after_clause,
-        page.limit,
-        page.offset,
+        pagination,
     );
     let values = record_batches_to_values(&context.execute(&sql).await.map_err(map_sql_error)?)?;
     let mut candidates = values
@@ -472,7 +476,9 @@ async fn query_entry_candidates_in_context(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    candidates.truncate(page.limit);
+    if let Some(limit) = page.limit {
+        candidates.truncate(limit);
+    }
     Ok(candidates)
 }
 
@@ -494,25 +500,22 @@ pub(crate) async fn query_entry_rows_authorized(
         relation_scopes,
         form_filter,
         keyword,
-        limit,
+        Some(limit),
         offset,
         Some(crate::MAX_NORMAL_READ_ROWS),
     )
     .await
 }
 
-/// Reads one bounded page from the provider-side authorized current view.
-///
-/// Derived searches use this instead of materializing an entire Space in Rust.
-/// The caller can continue with the next offset, so the page size is a memory
-/// bound rather than a result ceiling.
-pub(crate) async fn query_entry_rows_authorized_page(
+/// Reads all authorized current rows for one Form through one DataFusion
+/// context. Derived AssetText search uses this as a stream source and slices
+/// the returned rows into batches locally; it must not re-run the ordered
+/// current-state plan with OFFSET for every batch.
+pub(crate) async fn query_entry_rows_authorized_all(
     op: &Operator,
     ws_path: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     form_name: &str,
-    limit: usize,
-    offset: usize,
 ) -> Result<Vec<(String, entry::EntryRow)>> {
     query_entry_rows_authorized_internal(
         op,
@@ -520,9 +523,9 @@ pub(crate) async fn query_entry_rows_authorized_page(
         relation_scopes,
         Some(form_name),
         None,
-        limit,
-        offset,
-        Some(crate::MAX_NORMAL_READ_ROWS),
+        None,
+        0,
+        None,
     )
     .await
 }
@@ -533,14 +536,14 @@ async fn query_entry_rows_authorized_internal(
     relation_scopes: &BTreeMap<String, EntryScope>,
     form_filter: Option<&str>,
     keyword: Option<&str>,
-    limit: usize,
+    limit: Option<usize>,
     offset: usize,
     response_limit: Option<usize>,
 ) -> Result<Vec<(String, entry::EntryRow)>> {
-    if limit == 0 {
+    if limit == Some(0) {
         return Ok(Vec::new());
     }
-    if response_limit.is_some_and(|max| limit > max.saturating_add(1)) {
+    if response_limit.is_some_and(|max| limit.is_some_and(|limit| limit > max.saturating_add(1))) {
         return Err(anyhow!(
             "normal Entry reads are limited to {} rows",
             crate::MAX_NORMAL_READ_ROWS

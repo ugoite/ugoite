@@ -8,7 +8,7 @@ use opendal::services::{Fs, Memory, S3};
 use opendal::{EntryMode, ErrorKind, Operator};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -185,8 +185,49 @@ impl DerivedRelationHeadStore {
         )
     }
 
+    fn legacy_materializations_prefix(&self) -> String {
+        format!(
+            "{}/_ugoite/derived/relations/{}/materializations/",
+            self.space_root, self.relation_id
+        )
+    }
+
     fn garbage_marker_path(&self, build_id: &str) -> String {
         format!("{}/garbage.json", self.builds_path(build_id))
+    }
+
+    fn staging_marker_path(&self, build_id: &str) -> String {
+        format!("{}/staging.json", self.builds_path(build_id))
+    }
+
+    /// Create the marker before any immutable build object is written.  A
+    /// failed marker write aborts staging before it can leave an unidentifiable
+    /// prefix behind.
+    pub async fn mark_staging(&self, build_id: &str) -> Result<()> {
+        self.operator
+            .write_options(
+                &self.staging_marker_path(build_id),
+                br"{}".to_vec(),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    pub async fn clear_staging(&self, build_id: &str) -> Result<()> {
+        match self
+            .operator
+            .delete(&self.staging_marker_path(build_id))
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Mark a build at the moment it stops being current.  GC uses this
@@ -206,6 +247,29 @@ impl DerivedRelationHeadStore {
             .await
             .map(|_| ())
             .map_err(Into::into)
+    }
+
+    pub async fn clear_garbage(&self, build_id: &str) -> Result<()> {
+        match self
+            .operator
+            .delete(&self.garbage_marker_path(build_id))
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn ensure_build_publishable(&self, build_id: &str) -> Result<()> {
+        if self
+            .operator
+            .exists(&self.garbage_marker_path(build_id))
+            .await?
+        {
+            return Err(anyhow!("DerivedRelation build is marked garbage"));
+        }
+        Ok(())
     }
 
     /// The relation-local mutex covers an entire single-process rebuild. Head
@@ -232,7 +296,13 @@ impl DerivedRelationHeadStore {
             self.space_root, self.relation_id
         );
         let entries = self.operator.list_with(&prefix).recursive(true).await?;
-        let mut candidates = std::collections::BTreeMap::<String, bool>::new();
+        #[derive(Default)]
+        struct Candidate {
+            garbage_marker_old_enough: bool,
+            stale_staging_old_enough: bool,
+        }
+
+        let mut candidates = std::collections::BTreeMap::<String, Candidate>::new();
         for entry in entries {
             if entry.metadata().mode() != EntryMode::FILE {
                 continue;
@@ -248,27 +318,43 @@ impl DerivedRelationHeadStore {
             if Some(build_id) == current_build_id {
                 continue;
             }
-            let old_enough = if minimum_gc_age.is_zero() {
-                true
-            } else if entry.path() == self.garbage_marker_path(build_id) {
-                entry
-                    .metadata()
-                    .last_modified()
-                    .and_then(|timestamp| SystemTime::now().duration_since(timestamp.into()).ok())
-                    .is_some_and(|age| age >= minimum_gc_age)
-            } else {
-                false
-            };
-            // A build has many files. Preserve a positive marker result when
-            // later data/metadata entries are visited.
+            let is_garbage_marker = entry.path() == self.garbage_marker_path(build_id);
+            let is_staging_marker = entry.path() == self.staging_marker_path(build_id);
+            if !is_garbage_marker && !is_staging_marker {
+                continue;
+            }
+            let age = entry
+                .metadata()
+                .last_modified()
+                .and_then(|timestamp| SystemTime::now().duration_since(timestamp.into()).ok());
+            let old_enough =
+                minimum_gc_age.is_zero() || age.is_some_and(|age| age >= minimum_gc_age);
+            // A build has many files, but only the explicit garbage marker is
+            // lifecycle authority. In particular, a stale staging heartbeat or
+            // an old manifest is not enough: the builder may be paused and
+            // still able to publish that build after this listing.
             candidates
                 .entry(build_id.to_string())
-                .and_modify(|eligible| *eligible |= old_enough)
-                .or_insert(old_enough);
+                .and_modify(|candidate| {
+                    if is_garbage_marker {
+                        candidate.garbage_marker_old_enough |= old_enough;
+                    }
+                    if is_staging_marker {
+                        candidate.stale_staging_old_enough |= old_enough;
+                    }
+                })
+                .or_insert_with(|| Candidate {
+                    garbage_marker_old_enough: is_garbage_marker && old_enough,
+                    stale_staging_old_enough: is_staging_marker && old_enough,
+                });
         }
         let mut deleted = Vec::new();
-        for (build_id, eligible) in candidates {
-            if !eligible {
+        for (build_id, candidate) in candidates {
+            // A garbage marker is written only after a build has either lost
+            // publication or stopped being current. A stale staging marker is
+            // also a durable cleanup candidate: it covers a process crash
+            // between staging and the failure path that writes garbage.json.
+            if !candidate.garbage_marker_old_enough && !candidate.stale_staging_old_enough {
                 continue;
             }
             // GC is discovery-only and must never decide authority from the
@@ -282,6 +368,24 @@ impl DerivedRelationHeadStore {
             {
                 continue;
             }
+            if candidate.stale_staging_old_enough && !candidate.garbage_marker_old_enough {
+                // Make cleanup intent durable before deleting an abandoned
+                // staging prefix. Publishers reject this marker, so a stale
+                // builder cannot turn a reclaimed prefix into the current
+                // Head after this point.
+                if self.mark_garbage(&build_id).await.is_err() {
+                    continue;
+                }
+                if self
+                    .read_exact()
+                    .await?
+                    .as_ref()
+                    .is_some_and(|head| head.head.build_id == build_id)
+                {
+                    let _ = self.clear_garbage(&build_id).await;
+                    continue;
+                }
+            }
             let build_prefix = self.builds_path(&build_id);
             let entries = self
                 .operator
@@ -291,9 +395,8 @@ impl DerivedRelationHeadStore {
             let mut fully_deleted = true;
             for entry in entries {
                 if entry.metadata().mode() == EntryMode::FILE {
-                    // A build is never eligible until it has a garbage
-                    // marker. Re-check the Head for every object as a
-                    // fail-closed guard against a concurrent publication.
+                    // Re-check the Head for every object as a fail-closed
+                    // guard against a concurrent publication.
                     if self
                         .read_exact()
                         .await?
@@ -403,12 +506,26 @@ impl DerivedRelationHeadStore {
         };
         let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
         if is_legacy_derived_head(&value) {
+            // Remove the disposable legacy prefix first. If listing or any
+            // delete fails, keep the legacy Head so the next rebuild retries
+            // the cleanup instead of losing the only migration signal.
+            let entries = self
+                .operator
+                .list_with(&self.legacy_materializations_prefix())
+                .recursive(true)
+                .await?;
+            for entry in entries {
+                if entry.metadata().mode() == EntryMode::FILE {
+                    self.operator.delete(entry.path()).await?;
+                }
+            }
             self.operator.delete(&self.head_path()).await?;
         }
         Ok(())
     }
 
     pub async fn create(&self, head: &DerivedRelationHead) -> Result<()> {
+        self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
         match self.write_mode {
             CatalogWriteMode::Shared => {
@@ -439,6 +556,7 @@ impl DerivedRelationHeadStore {
         expected_etag: Option<&str>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
         match self.write_mode {
             CatalogWriteMode::Shared => {
@@ -493,6 +611,7 @@ impl DerivedRelationHeadStore {
         expected: Option<&ExactDerivedRelationHead>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_build_publishable(&head.build_id).await?;
         if self.write_mode != CatalogWriteMode::SingleProcess {
             return match expected {
                 None => self.create(head).await,
@@ -644,10 +763,11 @@ impl SpaceCatalogStore {
             .then(|| self.shared_write_verification_key());
         if let Some(cache_key) = &cache_key {
             if SHARED_WRITE_VERIFICATIONS
-                .get_or_init(|| Mutex::new(HashSet::new()))
+                .get_or_init(|| Mutex::new(Vec::new()))
                 .lock()
                 .expect("shared-write verification cache poisoned")
-                .contains(cache_key)
+                .iter()
+                .any(|(key, _)| key == cache_key)
             {
                 self.write_mode = CatalogWriteMode::Shared;
                 return Ok(self);
@@ -778,10 +898,10 @@ impl SpaceCatalogStore {
         let _ = self.operator.delete(&path).await;
         if let Some(cache_key) = cache_key {
             SHARED_WRITE_VERIFICATIONS
-                .get_or_init(|| Mutex::new(HashSet::new()))
+                .get_or_init(|| Mutex::new(Vec::new()))
                 .lock()
                 .expect("shared-write verification cache poisoned")
-                .insert(cache_key);
+                .push((cache_key, self.operator.clone()));
         }
         self.write_mode = CatalogWriteMode::Shared;
         Ok(self)
@@ -1101,10 +1221,12 @@ impl SpaceCatalogStore {
 
     fn shared_write_verification_key(&self) -> String {
         format!(
-            "{}:{}:{}",
+            "{}:{}:{}:{}:accessor={:p}",
             self.operator.info().scheme(),
+            self.operator.info().name(),
             self.operator.info().root(),
-            self.space_root
+            self.space_root,
+            Arc::as_ptr(self.operator.inner()),
         )
     }
 
@@ -1138,7 +1260,7 @@ impl SpaceCatalogStore {
 
 static CATALOG_SERIALIZERS: OnceLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> =
     OnceLock::new();
-static SHARED_WRITE_VERIFICATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static SHARED_WRITE_VERIFICATIONS: OnceLock<Mutex<Vec<(String, Operator)>>> = OnceLock::new();
 
 fn catalog_serializer(operator: &Operator, space_root: &str) -> Arc<AsyncMutex<()>> {
     let key = format!(
@@ -1628,6 +1750,13 @@ mod tests {
         let operator = Operator::new(Memory::default())?.finish();
         let relation_id = uuid::Uuid::from_u128(0xA006);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let legacy_data_path = format!(
+            "{}/data/old.parquet",
+            store.legacy_materializations_prefix().trim_end_matches('/')
+        );
+        operator
+            .write(&legacy_data_path, b"legacy".to_vec())
+            .await?;
         operator
             .write(
                 &store.head_path(),
@@ -1668,6 +1797,7 @@ mod tests {
             .is_some());
         store.invalidate_legacy_head().await?;
         assert!(!operator.exists(&store.head_path()).await?);
+        assert!(!operator.exists(&legacy_data_path).await?);
         Ok(())
     }
 
@@ -1687,6 +1817,41 @@ mod tests {
         let deleted = store.garbage_collect(None, Duration::ZERO).await?;
         assert_eq!(deleted, vec!["stale"]);
         assert!(!operator.exists(&path).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn garbage_marked_partial_staging_build_is_garbage_collectable() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA008);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let partial = format!("{}/data/partial.parquet", store.builds_path("partial"));
+        store.mark_staging("partial").await?;
+        operator.write(&partial, b"partial".to_vec()).await?;
+        store.mark_garbage("partial").await?;
+        let deleted = store.garbage_collect(None, Duration::ZERO).await?;
+        assert_eq!(deleted, vec!["partial"]);
+        assert!(!operator.exists(&partial).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stale_staging_build_gets_durable_cleanup_intent_and_is_collectable() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA009);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let partial = format!("{}/data/crashed.parquet", store.builds_path("crashed"));
+        store.mark_staging("crashed").await?;
+        operator.write(&partial, b"crashed".to_vec()).await?;
+
+        let deleted = store.garbage_collect(None, Duration::ZERO).await?;
+        assert_eq!(deleted, vec!["crashed"]);
+        assert!(!operator.exists(&partial).await?);
+        assert!(
+            !operator
+                .exists(&format!("{}/garbage.json", store.builds_path("crashed")))
+                .await?
+        );
         Ok(())
     }
 
@@ -1744,6 +1909,7 @@ mod tests {
                 b"stale".to_vec(),
             )
             .await?;
+        store.mark_garbage("stale").await?;
         let deleted = store
             .garbage_collect(Some("current"), Duration::ZERO)
             .await?;

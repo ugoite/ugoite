@@ -59,24 +59,10 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .unwrap_or("asset")
                     .to_string()
             });
-            if let Some(base) = validated_base_url(&config)? {
-                if std::env::var_os("UGOITE_ENABLE_REMOTE_ASSET_UPLOAD").is_none() {
-                    anyhow::bail!(
-                        "remote CLI asset upload is unavailable in this release; use the API client or REST surface"
-                    );
-                }
-                let result = http::execute_multipart(
-                    &base,
-                    "asset.upload",
-                    serde_json::json!({"space_id": space_id}),
-                    "file",
-                    &name,
-                    data,
-                    "application/octet-stream",
-                )
-                .await?;
-                print_json(&result);
-                return Ok(());
+            if validated_base_url(&config)?.is_some() {
+                anyhow::bail!(
+                    "asset upload is not available in backend/api mode in this release; upload through the API client or REST surface"
+                );
             }
             let service = UgoiteService::new(&root)?;
             let asset = service.save_asset(&space_id, &name, &data).await?;

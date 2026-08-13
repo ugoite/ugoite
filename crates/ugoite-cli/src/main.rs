@@ -95,7 +95,15 @@ fn main() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let result = rt.block_on(async {
         let result = run(cli).await;
-        ugoite_iceberg::service::UgoiteService::wait_for_background_asset_text_refreshes().await;
+        // A one-shot CLI process would otherwise drop the Tokio runtime and
+        // cancel its process-local coalesced refresh before it can run. The
+        // server keeps this worker detached from request latency; CLI drains
+        // it only to preserve the same eventual-refresh contract across a
+        // process boundary.
+        if result.is_ok() {
+            ugoite_iceberg::service::UgoiteService::wait_for_background_asset_text_refreshes()
+                .await;
+        }
         result
     });
     if let Err(e) = result {
