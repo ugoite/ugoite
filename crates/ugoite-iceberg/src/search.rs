@@ -215,6 +215,7 @@ async fn asset_text_search_authorized(
                 relation_scopes.clone(),
                 form_names,
                 asset_reference_fields,
+                after,
             )),
         )
         .is_err()
@@ -424,6 +425,7 @@ struct AuthorizedAssetReferenceProvider {
     relation_scopes: BTreeMap<String, EntryScope>,
     form_names: Vec<String>,
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    initial_after: Option<(String, String, String)>,
     schema: Arc<Schema>,
 }
 
@@ -434,6 +436,7 @@ impl AuthorizedAssetReferenceProvider {
         relation_scopes: BTreeMap<String, EntryScope>,
         form_names: Vec<String>,
         asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+        after: Option<(&str, &str, &str)>,
     ) -> Self {
         Self {
             operator,
@@ -441,6 +444,9 @@ impl AuthorizedAssetReferenceProvider {
             relation_scopes,
             form_names,
             asset_reference_fields,
+            initial_after: after.map(|(title, entry_id, form)| {
+                (title.to_string(), entry_id.to_string(), form.to_string())
+            }),
             schema: authorized_asset_reference_schema(),
         }
     }
@@ -469,6 +475,7 @@ impl TableProvider for AuthorizedAssetReferenceProvider {
             self.relation_scopes.clone(),
             self.form_names.clone(),
             self.asset_reference_fields.clone(),
+            self.initial_after.clone(),
             self.schema.clone(),
         )))
     }
@@ -491,6 +498,7 @@ struct AuthorizedAssetReferenceExec {
     relation_scopes: BTreeMap<String, EntryScope>,
     form_names: Vec<String>,
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    initial_after: Option<(String, String, String)>,
     schema: Arc<Schema>,
     properties: Arc<PlanProperties>,
 }
@@ -502,6 +510,7 @@ impl AuthorizedAssetReferenceExec {
         relation_scopes: BTreeMap<String, EntryScope>,
         form_names: Vec<String>,
         asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+        initial_after: Option<(String, String, String)>,
         schema: Arc<Schema>,
     ) -> Self {
         let properties = Arc::new(PlanProperties::new(
@@ -516,6 +525,7 @@ impl AuthorizedAssetReferenceExec {
             relation_scopes,
             form_names,
             asset_reference_fields,
+            initial_after,
             schema,
             properties,
         }
@@ -641,7 +651,7 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             form_index: 0,
             current_rows: None,
             current_offset: 0,
-            current_after: None,
+            current_after: self.initial_after.clone(),
         };
         let schema = self.schema.clone();
         let stream = futures::stream::try_unfold(state, |mut state| async move {

@@ -563,10 +563,16 @@ impl DerivedRelationHeadStore {
             // publication or stopped being current. A stale staging marker is
             // also a durable cleanup candidate: it covers a process crash
             // between staging and the failure path that writes garbage.json.
-            if !candidate.garbage_marker_old_enough
-                && !candidate.stale_staging_old_enough
-                && !candidate.orphan_old_enough
-            {
+            // Once garbage.json exists it is the cleanup record for this
+            // build. Its own age is the grace-period boundary; an older
+            // staging marker must not allow a freshly marked build to be
+            // reclaimed early.
+            let cleanup_old_enough = if candidate.has_garbage_marker {
+                candidate.garbage_marker_old_enough
+            } else {
+                candidate.stale_staging_old_enough || candidate.orphan_old_enough
+            };
+            if !cleanup_old_enough {
                 continue;
             }
             // GC is discovery-only and must never decide authority from the
@@ -2132,6 +2138,29 @@ mod tests {
         assert!(
             !operator
                 .exists(&format!("{}/garbage.json", store.builds_path("crashed")))
+                .await?
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fresh_garbage_marker_preserves_staging_grace_period() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA00B);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let data = format!("{}/data/crashed.parquet", store.builds_path("crashed"));
+        store.mark_staging("crashed").await?;
+        operator.write(&data, b"crashed".to_vec()).await?;
+        store.mark_garbage("crashed").await?;
+
+        assert!(store
+            .garbage_collect(None, Duration::from_secs(3600))
+            .await?
+            .is_empty());
+        assert!(operator.exists(&data).await?);
+        assert!(
+            operator
+                .exists(&store.garbage_marker_path("crashed"))
                 .await?
         );
         Ok(())
