@@ -100,10 +100,7 @@ fn main() {
         // server keeps this worker detached from request latency; CLI drains
         // it only to preserve the same eventual-refresh contract across a
         // process boundary.
-        if result.is_ok() {
-            ugoite_iceberg::service::UgoiteService::wait_for_background_asset_text_refreshes()
-                .await;
-        }
+        ugoite_iceberg::service::UgoiteService::wait_for_background_asset_text_refreshes().await;
         result
     });
     if let Err(e) = result {

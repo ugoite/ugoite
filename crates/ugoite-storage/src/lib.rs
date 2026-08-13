@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
@@ -101,6 +101,8 @@ pub struct ExactDerivedRelationHead {
     pub bytes: Vec<u8>,
     pub etag: Option<String>,
 }
+
+const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Debug)]
 pub struct LegacyDerivedRelationHead;
@@ -234,34 +236,160 @@ impl DerivedRelationHeadStore {
         format!("{}/publishing.json", self.builds_path(build_id))
     }
 
+    fn build_claim_bytes(build_id: &str, role: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "build_id": build_id,
+            "role": role,
+            "claimed_at": SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        }))
+        .expect("derived build claim is serializable")
+    }
+
+    async fn read_build_claim(
+        &self,
+        build_id: &str,
+    ) -> Result<Option<(Vec<u8>, Option<String>, Option<SystemTime>)>> {
+        let path = self.publishing_marker_path(build_id);
+        let metadata = match self.operator.stat(&path).await {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let etag = metadata
+            .etag()
+            .filter(|etag| !etag.is_empty())
+            .map(str::to_owned);
+        let bytes = match etag.as_deref() {
+            Some(etag) => {
+                self.operator
+                    .read_options(
+                        &path,
+                        ReadOptions {
+                            if_match: Some(etag.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+            }
+            None => self.operator.read(&path).await,
+        }?;
+        Ok(Some((
+            bytes.to_vec(),
+            etag,
+            metadata.last_modified().map(|timestamp| timestamp.into()),
+        )))
+    }
+
+    fn claim_is_stale(last_modified: Option<SystemTime>) -> bool {
+        last_modified
+            .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+            .is_some_and(|age| age >= DERIVED_BUILD_CLAIM_TTL)
+    }
+
+    async fn replace_build_claim(
+        &self,
+        build_id: &str,
+        expected_etag: Option<&str>,
+        role: &str,
+    ) -> Result<bool> {
+        let path = self.publishing_marker_path(build_id);
+        let result = match (self.write_mode, expected_etag) {
+            (CatalogWriteMode::Shared, Some(etag)) => {
+                self.operator
+                    .write_options(
+                        &path,
+                        Self::build_claim_bytes(build_id, role),
+                        WriteOptions {
+                            if_match: Some(etag.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+            }
+            (CatalogWriteMode::SingleProcess, _) => {
+                self.operator
+                    .write(&path, Self::build_claim_bytes(build_id, role))
+                    .await
+            }
+            (CatalogWriteMode::Shared, None) => {
+                return Err(anyhow!(
+                    "shared DerivedRelation build claim did not return an ETag"
+                ));
+            }
+        };
+        match result {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     async fn begin_publishing(&self, build_id: &str) -> Result<()> {
-        self.operator
+        let path = self.publishing_marker_path(build_id);
+        let result = self
+            .operator
             .write_options(
-                &self.publishing_marker_path(build_id),
-                br"{}".to_vec(),
+                &path,
+                Self::build_claim_bytes(build_id, "publishing"),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await;
+        if let Err(error) = result {
+            if error.kind() != ErrorKind::ConditionNotMatch {
+                return Err(error.into());
+            }
+            let Some((_, etag, last_modified)) = self.read_build_claim(build_id).await? else {
+                return Err(anyhow!("DerivedRelation build claim disappeared"));
+            };
+            if !Self::claim_is_stale(last_modified)
+                || !self
+                    .replace_build_claim(build_id, etag.as_deref(), "publishing")
+                    .await?
+            {
+                return Err(anyhow!("DerivedRelation build claim is held"));
+            }
+        }
+        if let Err(error) = self.ensure_build_publishable(build_id).await {
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Claims the same durable marker used by publication before GC writes a
+    /// garbage marker or deletes any build object. The if-match replacement
+    /// is the shared-backend exclusion primitive: either publication owns the
+    /// marker, or GC owns it, never both.
+    async fn claim_build_for_garbage(&self, build_id: &str) -> Result<bool> {
+        let path = self.publishing_marker_path(build_id);
+        match self
+            .operator
+            .write_options(
+                &path,
+                Self::build_claim_bytes(build_id, "garbage"),
                 WriteOptions {
                     if_not_exists: true,
                     ..Default::default()
                 },
             )
             .await
-            .map(|_| ())
-            .map_err(|error| anyhow!(error))?;
-        if let Err(error) = self.ensure_build_publishable(build_id).await {
-            let _ = self.clear_publishing(build_id).await;
-            return Err(error);
-        }
-        Ok(())
-    }
-
-    pub async fn clear_publishing(&self, build_id: &str) -> Result<()> {
-        match self
-            .operator
-            .delete(&self.publishing_marker_path(build_id))
-            .await
         {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
+                let Some((_, etag, last_modified)) = self.read_build_claim(build_id).await? else {
+                    return Ok(false);
+                };
+                if !Self::claim_is_stale(last_modified) {
+                    return Ok(false);
+                }
+                self.replace_build_claim(build_id, etag.as_deref(), "garbage")
+                    .await
+            }
             Err(error) => Err(error.into()),
         }
     }
@@ -422,14 +550,10 @@ impl DerivedRelationHeadStore {
             {
                 continue;
             }
-            // A builder that has claimed the publication fence is allowed to
-            // finish its Head CAS. If GC wins the race to claim garbage first,
-            // the publisher's second fence check rejects the build.
-            if self
-                .operator
-                .exists(&self.publishing_marker_path(&build_id))
-                .await?
-            {
+            // Publication and GC claim the same object with conditional
+            // create/replace. A fresh claim belongs to the other operation;
+            // a stale claim can be atomically taken over for recovery.
+            if !self.claim_build_for_garbage(&build_id).await? {
                 continue;
             }
             if candidate.stale_staging_old_enough && !candidate.garbage_marker_old_enough {

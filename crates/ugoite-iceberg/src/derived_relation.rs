@@ -703,13 +703,11 @@ async fn rebuild_asset_text_with_mode(
                 // is observed. A slow GC must not delete this build between
                 // validation and publication.
                 let _ = head_store.clear_staging(&head.build_id).await;
-                let _ = head_store.clear_publishing(&head.build_id).await;
                 schedule_asset_text_gc(op, ws_path);
                 return Ok(current.head);
             }
         }
         let _ = mark_garbage_with_retry(&head_store, &head.build_id).await;
-        let _ = head_store.clear_publishing(&head.build_id).await;
         schedule_asset_text_gc(op, ws_path);
         return Err(publication_error);
     }
@@ -731,7 +729,6 @@ async fn rebuild_asset_text_with_mode(
     // delete is interrupted, the conservative staging marker still keeps the
     // build protected until the grace period has elapsed.
     let _ = head_store.clear_staging(&head.build_id).await;
-    let _ = head_store.clear_publishing(&head.build_id).await;
     let _ = head_store
         .garbage_collect_with_single_process_lock(Some(&current.build_id), MINIMUM_GC_AGE)
         .await;
