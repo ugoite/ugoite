@@ -14,16 +14,20 @@ The required build/test gate is `.github/workflows/ci.yml`. Separate workflows r
 Root task composition:
 
 - `build:*`: deterministic compile/build steps with declared inputs and outputs;
-- `test:*`: authoritative assertions that may reuse `build:*` outputs but always execute when called;
+- `test:*`: authoritative assertions that may reuse `build:*` outputs but always execute when called; focused frontend/docsite tasks remain useful during development;
+- `test`: the canonical non-E2E suite, including Rust and tooling tests plus the frontend and docsite coverage gates;
 - `test:frontend:coverage` and `test:docsite:coverage`: V8 coverage assertions with
   package-owned hard thresholds for authored frontend/docsite source;
 - `package:*`: staging under `target/artifacts/` only; packaging must fail if required build outputs are absent;
 - `verify:*`: checks packaged outputs without rebuilding them;
-- `ci`: formatting check, lint, architecture/OpenAPI/type checks, and non-E2E tests;
-- `ci:merge`: `ci`, build/package/verify, a focused docsite-navigation E2E lane, and E2E smoke;
-- `ci:release`: `validate:release`, `ci:merge`, npm packaging/verification, and the full E2E suite.
+- `ci`: formatting check, lint, architecture/OpenAPI/type checks, and `test`;
+- `ci:artifacts`: build/package/verify, a focused docsite-navigation E2E lane, E2E smoke plus Form-owned Asset acceptance, and release metadata validation;
+- `ci:merge`: `ci` plus `ci:artifacts`;
+- `ci:release`: `ci:merge`, npm packaging/verification, and the full E2E suite.
 
-Hosted CI restores Rust, Deno, Playwright browser, and BuildKit caches on every event. Shared project caches are refreshed only after successful pushes to `main`. Release build jobs use the same Rust/Deno dependency cache policy, with one Ubuntu release path writing the shared Deno key to avoid concurrent partial saves, and a separate release-image BuildKit scope. Successful `main` runs also upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
+Hosted CI schedules the `quality` and `artifacts` lanes in parallel, then the `ci-required` aggregator preserves the required status-check context. The quality lane runs only `mise run ci` and does not install Playwright or configure Buildx. The artifact lane runs only `mise run ci:artifacts` and owns Playwright/BuildKit setup plus verified artifact upload.
+
+Both lanes restore the Rust registry/git dependency cache without caching `target/`; sccache owns compiler artifact reuse. sccache is read-only for pull requests and merge queues and writes only on successful `main` pushes. Deno, Playwright browser, and BuildKit caches remain separately keyed and are refreshed only after successful pushes to `main`. Successful `main` runs upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies the canonical frontend and Rust release outputs into the image instead of compiling them again inside Docker. E2E tasks require the already loaded `ugoite:e2e` image and never invoke an image build. The default Dockerfile target remains a portable source build for direct Docker and Compose use.
 
@@ -38,11 +42,13 @@ browser-install step as a cache-miss fallback, previews the static artifact,
 and verifies Starlight navigation semantics before the heavier runtime-backed
 smoke suite runs.
 
-The required `ci-required` job runs both coverage tasks on pull requests,
-merge queues, and pushes to `main`. Their package-level Vitest thresholds are
-hard merge gates: a coverage regression fails the required job. The active
-`main only pr` repository ruleset must require the `ci-required` status-check
-context; a successful push-to-`main` run alone is not merge enforcement.
+The required `ci-required` aggregator runs after both lanes on pull requests,
+merge queues, and pushes to `main`. It fails unless both lane results are
+successful. The canonical `test` Mise task invokes both package-level Vitest
+coverage gates, so their hard thresholds remain merge gates without duplicating
+individual coverage commands in GitHub Actions. The active `main only pr`
+repository ruleset must require the `ci-required` status-check context; a
+successful push-to-`main` run alone is not merge enforcement.
 Frontend's unit coverage gate explicitly covers the portable Rust/WASM protocol
 boundary in `frontend/src/lib/ugoite-client/protocol.ts`; UI behavior remains
 covered by behavior tests and E2E. Docsite coverage includes authored

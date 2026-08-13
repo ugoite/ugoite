@@ -161,10 +161,7 @@ outputs = [
   "target/rust/release/ugoite",
   "target/rust/release/ugoite-server",
 ]
-run = [
-  "cargo build -p ugoite-server --release --locked",
-  "cargo build -p ugoite-cli --release --locked",
-]
+run = "cargo build -p ugoite-server -p ugoite-cli --release --locked"
 
 [tasks."build:image"]
 description = "Build the runtime image once for E2E and packaging"
@@ -255,7 +252,8 @@ run = "deno task docsite:e2e:navigation"
 
 [tasks.test]
 depends = ["build:wasm:debug"]
-run = [{ tasks = ["test:rust", "test:tools", "test:frontend:after-wasm", "test:docsite"] }]
+description = "Run the authoritative non-E2E test suite with coverage gates"
+run = [{ tasks = ["test:rust", "test:tools", "test:frontend:coverage", "test:docsite:coverage"] }]
 
 [tasks."test:e2e"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:full"
@@ -361,6 +359,7 @@ description = "Print the canonical repository release version"
 run = "deno run -A tools/release.ts print-version"
 
 [tasks.ci]
+description = "Run the repository quality gate"
 run = [
   { task = "fmt:check" },
   { task = "lint" },
@@ -368,18 +367,28 @@ run = [
   { task = "test" },
 ]
 
-[tasks."ci:merge"]
+[tasks."ci:artifacts"]
+description = "Build and verify merge-gated deployable artifacts"
 run = [
-  { task = "ci" },
   { task = "build" },
   { task = "package" },
   { task = "verify" },
-  { task = "test:e2e:smoke" },
+  { tasks = [
+    "test:docsite:e2e:navigation",
+    "test:e2e:smoke-and-asset-owned",
+    "validate:release",
+  ] },
+]
+
+[tasks."ci:merge"]
+description = "Run the complete merge gate locally"
+run = [
+  { task = "ci" },
+  { task = "ci:artifacts" },
 ]
 
 [tasks."ci:release"]
 run = [
-  { task = "validate:release" },
   { task = "ci:merge" },
   { task = "package:npm" },
   { task = "verify:npm" },
