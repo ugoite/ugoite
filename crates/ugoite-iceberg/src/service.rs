@@ -3,6 +3,9 @@ use opendal::Operator;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use tokio::sync::Notify;
 use uuid::Uuid;
 
 use crate::integrity::RealIntegrityProvider;
@@ -52,6 +55,15 @@ struct CurrentSqlSessionExecutionAuthorization {
     query_policy: index::SqlSessionQueryPolicy,
 }
 
+struct AssetTextRefreshWorker {
+    notify: Notify,
+    started: AtomicBool,
+}
+
+static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
+    StdMutex<BTreeMap<String, Arc<AssetTextRefreshWorker>>>,
+> = OnceLock::new();
+
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
         let root_uri = root_uri.into();
@@ -76,6 +88,48 @@ impl UgoiteService {
 
     pub fn workspace_path(&self, space_id: &str) -> String {
         format!("spaces/{space_id}")
+    }
+
+    /// Schedules a best-effort derived refresh after an authoritative write.
+    ///
+    /// The worker is process-local and coalesces notifications. It never
+    /// participates in the Entry commit latency or becomes an authority for
+    /// the current Form state; an explicit `index run` remains the repair path.
+    fn schedule_asset_text_refresh(&self, space_id: &str) {
+        let key = format!("{}:{space_id}", self.root_uri);
+        let workers = ASSET_TEXT_REFRESH_WORKERS.get_or_init(|| StdMutex::new(BTreeMap::new()));
+        let worker = {
+            let mut workers = workers
+                .lock()
+                .expect("AssetText refresh worker map poisoned");
+            workers
+                .entry(key)
+                .or_insert_with(|| {
+                    Arc::new(AssetTextRefreshWorker {
+                        notify: Notify::new(),
+                        started: AtomicBool::new(false),
+                    })
+                })
+                .clone()
+        };
+        worker.notify.notify_one();
+        if worker
+            .started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            let op = self.operator.clone();
+            let ws_path = self.workspace_path(space_id);
+            tokio::spawn(async move {
+                loop {
+                    worker.notify.notified().await;
+                    // Absorb notifications that arrived in the same write
+                    // burst before starting one full replacement build.
+                    tokio::task::yield_now().await;
+                    let _ = crate::derived_relation::rebuild_asset_text(&op, &ws_path).await;
+                }
+            });
+        }
     }
 
     pub async fn create_space(&self, space_id: &str) -> Result<()> {
@@ -210,7 +264,9 @@ impl UgoiteService {
 
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
-        form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await
+        form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(())
     }
 
     pub async fn create_entry(
@@ -233,6 +289,7 @@ impl UgoiteService {
             &integrity,
         )
         .await?;
+        self.schedule_asset_text_refresh(space_id);
         entry::get_entry(&self.operator, &workspace, entry_id).await
     }
 
@@ -279,6 +336,7 @@ impl UgoiteService {
             Some(&scopes),
         )
         .await?;
+        self.schedule_asset_text_refresh(space_id);
         entry::get_entry(&self.operator, &workspace, entry_id).await
     }
 
@@ -368,6 +426,7 @@ impl UgoiteService {
             scopes.as_ref(),
         )
         .await?;
+        self.schedule_asset_text_refresh(space_id);
         Ok(result)
     }
 
@@ -388,6 +447,7 @@ impl UgoiteService {
             actor,
         )
         .await?;
+        self.schedule_asset_text_refresh(space_id);
         Ok(())
     }
 
@@ -505,7 +565,7 @@ impl UgoiteService {
                     .await?,
             )
         };
-        entry::restore_entry_authorized(
+        let result = entry::restore_entry_authorized(
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
@@ -514,7 +574,9 @@ impl UgoiteService {
             &integrity,
             scopes.as_ref(),
         )
-        .await
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(result)
     }
 
     pub async fn restore_entry_from_checkpoint_authorized_for_principals(
@@ -538,7 +600,7 @@ impl UgoiteService {
         let scopes = self
             .checkpoint_form_scopes_for_principals(space_id, principal_ids)
             .await?;
-        entry::restore_entry_from_checkpoint_authorized(
+        let result = entry::restore_entry_from_checkpoint_authorized(
             &self.operator,
             &self.workspace_path(space_id),
             entry_id,
@@ -549,7 +611,9 @@ impl UgoiteService {
             scopes.as_ref(),
         )
         .await
-        .map_err(map_checkpoint_error)
+        .map_err(map_checkpoint_error)?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(result)
     }
 
     pub async fn entry_at_checkpoint_authorized_for_principals(

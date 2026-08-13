@@ -501,23 +501,28 @@ pub(crate) async fn query_entry_rows_authorized(
     .await
 }
 
-/// Internal derived-relation source scan. It has no API response ceiling:
-/// the result is still produced from the provider-side authorized current
-/// view, but a rebuild must not silently omit Entry 10,001.
-pub(crate) async fn query_entry_rows_authorized_unbounded(
+/// Reads one bounded page from the provider-side authorized current view.
+///
+/// Derived searches use this instead of materializing an entire Space in Rust.
+/// The caller can continue with the next offset, so the page size is a memory
+/// bound rather than a result ceiling.
+pub(crate) async fn query_entry_rows_authorized_page(
     op: &Operator,
     ws_path: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
+    form_name: &str,
+    limit: usize,
+    offset: usize,
 ) -> Result<Vec<(String, entry::EntryRow)>> {
     query_entry_rows_authorized_internal(
         op,
         ws_path,
         relation_scopes,
+        Some(form_name),
         None,
-        None,
-        i64::MAX as usize / 2,
-        0,
-        None,
+        limit,
+        offset,
+        Some(crate::MAX_NORMAL_READ_ROWS),
     )
     .await
 }

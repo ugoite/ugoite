@@ -145,8 +145,8 @@ in backend/API mode:
 ugoite asset upload /path/to/workspace/spaces/team-notes ./diagram.png
 ugoite asset delete /path/to/workspace/spaces/team-notes asset-id
 
-# Backend/API mode: the same command uses the portable multipart operation.
-ugoite asset upload team-notes ./report.pdf
+# Backend/API mode: upload through the API client or REST surface; the remote
+# CLI upload command is intentionally unavailable in this release.
 ugoite asset delete team-notes asset-id
 ```
 

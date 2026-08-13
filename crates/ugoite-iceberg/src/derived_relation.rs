@@ -870,9 +870,38 @@ fn merge_source_reference(
                 || existing.source_size_bytes != candidate.source_size_bytes
             {
                 conflicting_assets.insert(candidate.asset_id.clone());
+            } else if source_reference_metadata_rank(&candidate)
+                > source_reference_metadata_rank(existing)
+            {
+                // Asset metadata is Entry-owned and can be represented by
+                // several references. Keep the most useful parser hint so a
+                // generic first reference cannot make a parse unsupported.
+                existing.name = candidate.name.clone();
+                existing.media_type = candidate.media_type.clone();
             }
         })
         .or_insert(candidate);
+}
+
+fn source_reference_metadata_rank(reference: &SourceReference) -> u8 {
+    let name = reference.name.to_ascii_lowercase();
+    let media_type = reference.media_type.to_ascii_lowercase();
+    if media_type == "application/pdf"
+        || media_type == "text/plain"
+        || media_type == "text/markdown"
+        || media_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        || media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        || media_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        || [".pdf", ".txt", ".md", ".docx", ".xlsx", ".pptx"]
+            .iter()
+            .any(|extension| name.ends_with(extension))
+    {
+        2
+    } else if !reference.name.is_empty() || !reference.media_type.is_empty() {
+        1
+    } else {
+        0
+    }
 }
 
 fn collect_asset_references(value: &Value, output: &mut Vec<AssetReference>) {

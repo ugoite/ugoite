@@ -13,6 +13,8 @@ use ugoite_core::query::EntryScope;
 use crate::entry;
 pub use ugoite_domain::search::KeywordSearchResult;
 
+const ASSET_TEXT_SEARCH_PAGE_SIZE: usize = 2_048;
+
 /// Keyword search over one bounded, authorized current-state DataFusion
 /// payload plan.
 pub async fn search_entries(
@@ -78,8 +80,8 @@ pub async fn search_entries_with_scopes_after(
     // normal 10k response window is still eligible and no matching-asset
     // HashSet or fixed-size payload scan is used.
     if !query.trim().is_empty() {
-        if let Ok(Some(asset_results)) =
-            asset_text_search_authorized(op, ws_path, query, relation_scopes).await
+        if let Some(asset_results) =
+            asset_text_search_authorized(op, ws_path, query, relation_scopes, limit, after).await?
         {
             for result in asset_results {
                 if is_after_cursor(&result, after) {
@@ -115,7 +117,12 @@ async fn asset_text_search_authorized(
     ws_path: &str,
     query: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
+    limit: usize,
+    after: Option<(&str, &str, &str)>,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
+    if limit == 0 {
+        return Ok(Some(Vec::new()));
+    }
     let context = SessionContext::new();
     if !crate::derived_relation::register_asset_text_table(
         &context,
@@ -127,8 +134,104 @@ async fn asset_text_search_authorized(
     {
         return Ok(None);
     }
-    let authorized_rows =
-        crate::index::query_entry_rows_authorized_unbounded(op, ws_path, relation_scopes).await?;
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+        .replace('\'', "''");
+    let sql = format!(
+        "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND lower(a.text) LIKE lower('%{escaped}%') ESCAPE '\\'"
+    );
+    let mut results = BTreeMap::<(String, String, String), KeywordSearchResult>::new();
+    // Scope keys are normalized Form or relation names, while the provider
+    // query's form filter must use the authoritative display name.
+    for form_name in crate::entry::list_form_names(op, ws_path).await? {
+        let mut offset = 0;
+        loop {
+            let authorized_rows = crate::index::query_entry_rows_authorized_page(
+                op,
+                ws_path,
+                relation_scopes,
+                &form_name,
+                ASSET_TEXT_SEARCH_PAGE_SIZE,
+                offset,
+            )
+            .await?;
+            if authorized_rows.is_empty() {
+                break;
+            }
+            let batch = authorized_asset_reference_batch(&authorized_rows)?;
+            context.deregister_table("__ugoite_authorized_asset_refs")?;
+            context.register_table(
+                "__ugoite_authorized_asset_refs",
+                Arc::new(MemTable::try_new(batch.schema(), vec![vec![batch]])?),
+            )?;
+            for batch in context.sql(&sql).await?.collect().await? {
+                let form = batch
+                    .column_by_name("form")
+                    .context("asset search join omitted form")?
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .context("asset search form has invalid type")?;
+                let entry_id = batch
+                    .column_by_name("entry_id")
+                    .context("asset search join omitted entry_id")?
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .context("asset search entry_id has invalid type")?;
+                let title = batch
+                    .column_by_name("title")
+                    .context("asset search join omitted title")?
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .context("asset search title has invalid type")?;
+                let created = batch
+                    .column_by_name("created_at")
+                    .context("asset search join omitted created_at")?
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .context("asset search created_at has invalid type")?;
+                let updated = batch
+                    .column_by_name("updated_at")
+                    .context("asset search join omitted updated_at")?
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .context("asset search updated_at has invalid type")?;
+                for index in 0..batch.num_rows() {
+                    let result = KeywordSearchResult {
+                        id: entry_id.value(index).to_string(),
+                        title: title.value(index).to_string(),
+                        form: form.value(index).to_string(),
+                        created_at: created.value(index),
+                        updated_at: updated.value(index),
+                    };
+                    if is_after_cursor(&result, after) {
+                        results.insert(
+                            (result.title.clone(), result.id.clone(), result.form.clone()),
+                            result,
+                        );
+                    }
+                }
+            }
+            while results.len() > limit {
+                let Some(key) = results.keys().next_back().cloned() else {
+                    break;
+                };
+                results.remove(&key);
+            }
+            let page_len = authorized_rows.len();
+            offset = offset.saturating_add(page_len);
+            if page_len < ASSET_TEXT_SEARCH_PAGE_SIZE {
+                break;
+            }
+        }
+    }
+    Ok(Some(results.into_values().collect()))
+}
+
+fn authorized_asset_reference_batch(
+    authorized_rows: &[(String, entry::EntryRow)],
+) -> Result<RecordBatch> {
     let schema = Arc::new(Schema::new(vec![
         Field::new("form", DataType::Utf8, false),
         Field::new("entry_id", DataType::Utf8, false),
@@ -152,7 +255,7 @@ async fn asset_text_search_authorized(
         ids.sort();
         ids.dedup();
         for asset_id in ids {
-            forms.append_value(&form_name);
+            forms.append_value(form_name);
             entry_ids.append_value(&row.entry_id);
             titles.append_value(&row.title);
             created_at.append_value(row.created_at);
@@ -160,8 +263,8 @@ async fn asset_text_search_authorized(
             asset_ids.append_value(asset_id);
         }
     }
-    let batch = RecordBatch::try_new(
-        schema.clone(),
+    RecordBatch::try_new(
+        schema,
         vec![
             Arc::new(forms.finish()),
             Arc::new(entry_ids.finish()),
@@ -170,63 +273,8 @@ async fn asset_text_search_authorized(
             Arc::new(updated_at.finish()),
             Arc::new(asset_ids.finish()),
         ],
-    )?;
-    context.register_table(
-        "__ugoite_authorized_asset_refs",
-        Arc::new(MemTable::try_new(schema, vec![vec![batch]])?),
-    )?;
-    let escaped = query
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
-        .replace('\'', "''");
-    let sql = format!(
-        "SELECT DISTINCT e.form, e.entry_id, e.title, e.created_at, e.updated_at FROM __ugoite_authorized_asset_refs e INNER JOIN __ugoite_internal_asset_text a ON e.asset_id = a.asset_id WHERE a.status = 'ready' AND a.text IS NOT NULL AND lower(a.text) LIKE lower('%{escaped}%') ESCAPE '\\'"
-    );
-    let batches = context.sql(&sql).await?.collect().await?;
-    let mut results = Vec::new();
-    for batch in batches {
-        let form = batch
-            .column_by_name("form")
-            .context("asset search join omitted form")?
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .context("asset search form has invalid type")?;
-        let entry_id = batch
-            .column_by_name("entry_id")
-            .context("asset search join omitted entry_id")?
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .context("asset search entry_id has invalid type")?;
-        let title = batch
-            .column_by_name("title")
-            .context("asset search join omitted title")?
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .context("asset search title has invalid type")?;
-        let created = batch
-            .column_by_name("created_at")
-            .context("asset search join omitted created_at")?
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .context("asset search created_at has invalid type")?;
-        let updated = batch
-            .column_by_name("updated_at")
-            .context("asset search join omitted updated_at")?
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .context("asset search updated_at has invalid type")?;
-        for index in 0..batch.num_rows() {
-            results.push(KeywordSearchResult {
-                id: entry_id.value(index).to_string(),
-                title: title.value(index).to_string(),
-                form: form.value(index).to_string(),
-                created_at: created.value(index),
-                updated_at: updated.value(index),
-            });
-        }
-    }
-    Ok(Some(results))
+    )
+    .context("build authorized AssetReference join page")
 }
 
 fn collect_asset_ids(value: &Value, output: &mut Vec<String>) {

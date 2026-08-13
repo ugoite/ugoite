@@ -15,9 +15,8 @@ Static browser files may be served from `UGOITE_STATIC_DIR`.
 ## Native CLI
 
 Core mode constructs `UgoiteService` against a local root. Backend/API mode uses
-`ugoite-api-client` request preparation and a native HTTP transport. Index
-maintenance remains a local core-mode operation; remote upload remains
-available through the portable multipart operation.
+`ugoite-api-client` request preparation and a native HTTP transport. Local-only
+index maintenance is intentionally unavailable in remote mode.
 
 ## Browser
 
