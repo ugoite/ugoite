@@ -42,11 +42,11 @@ separate inputs. The default `/data` layout contains the two filesystem
 prefixes, but a `/data` copy is complete only when the secret is preserved with
 it too.
 
-`_ugoite/catalog/head.json` is the only authoritative mutable catalog root. It is published
-with an actual OpenDAL ETag compare-and-swap. Immutable, checksum-protected
-publication records under `_ugoite/catalog/publications/` link each successful
-Head generation to the preceding one. Iceberg metadata, manifests, and data
-files remain Iceberg-owned immutable objects.
+`_ugoite/catalog/head.json` is the only authoritative mutable catalog root. It
+is published with an actual OpenDAL ETag compare-and-swap. Immutable,
+checksum-protected publication records under `_ugoite/catalog/publications/`
+link each successful Head generation to the preceding one. Iceberg metadata,
+manifests, and data files remain Iceberg-owned immutable objects.
 
 Readers pin immutable Head and snapshot coordinates and never lock. Writers can
 prepare immutable objects concurrently, but make a mutation visible only by
