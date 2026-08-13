@@ -230,6 +230,42 @@ impl DerivedRelationHeadStore {
         }
     }
 
+    fn publishing_marker_path(&self, build_id: &str) -> String {
+        format!("{}/publishing.json", self.builds_path(build_id))
+    }
+
+    async fn begin_publishing(&self, build_id: &str) -> Result<()> {
+        self.operator
+            .write_options(
+                &self.publishing_marker_path(build_id),
+                br"{}".to_vec(),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| anyhow!(error))?;
+        if let Err(error) = self.ensure_build_publishable(build_id).await {
+            let _ = self.clear_publishing(build_id).await;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub async fn clear_publishing(&self, build_id: &str) -> Result<()> {
+        match self
+            .operator
+            .delete(&self.publishing_marker_path(build_id))
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     /// Mark a build at the moment it stops being current.  GC uses this
     /// marker's timestamp rather than the build's creation timestamp so an
     /// old, long-lived current build still gets a full reader grace period
@@ -287,6 +323,24 @@ impl DerivedRelationHeadStore {
     /// period. Listing is used only to discover garbage candidates; Head is
     /// the sole authority for the current build.
     pub async fn garbage_collect(
+        &self,
+        current_build_id: Option<&str>,
+        minimum_gc_age: Duration,
+    ) -> Result<Vec<String>> {
+        if self.write_mode == CatalogWriteMode::SingleProcess {
+            let _guard = self.serializer.lock().await;
+            return self
+                .garbage_collect_with_single_process_lock(current_build_id, minimum_gc_age)
+                .await;
+        }
+        self.garbage_collect_with_single_process_lock(current_build_id, minimum_gc_age)
+            .await
+    }
+
+    /// Runs GC while the caller already owns the relation-local single-process
+    /// lock. Rebuild publication uses this variant so the GC scan/delete
+    /// cannot interleave with its final Head swap.
+    pub async fn garbage_collect_with_single_process_lock(
         &self,
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
@@ -365,6 +419,16 @@ impl DerivedRelationHeadStore {
                 .await?
                 .as_ref()
                 .is_some_and(|head| head.head.build_id == build_id)
+            {
+                continue;
+            }
+            // A builder that has claimed the publication fence is allowed to
+            // finish its Head CAS. If GC wins the race to claim garbage first,
+            // the publisher's second fence check rejects the build.
+            if self
+                .operator
+                .exists(&self.publishing_marker_path(&build_id))
+                .await?
             {
                 continue;
             }
@@ -597,6 +661,7 @@ impl DerivedRelationHeadStore {
             let _guard = self.serializer.lock().await;
             return self.publish_with_single_process_lock(expected, head).await;
         }
+        self.begin_publishing(&head.build_id).await?;
         match expected {
             None => self.create(head).await,
             Some(expected) => self.replace(expected.etag.as_deref(), head).await,
@@ -611,7 +676,7 @@ impl DerivedRelationHeadStore {
         expected: Option<&ExactDerivedRelationHead>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
-        self.ensure_build_publishable(&head.build_id).await?;
+        self.begin_publishing(&head.build_id).await?;
         if self.write_mode != CatalogWriteMode::SingleProcess {
             return match expected {
                 None => self.create(head).await,

@@ -51,6 +51,11 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             filename,
         } => {
             let (root, space_id) = resolve_space_reference(&config, &space_path, "asset upload")?;
+            if validated_base_url(&config)?.is_some() {
+                anyhow::bail!(
+                    "asset upload is not available in backend/api mode in this release; upload through the API client or REST surface"
+                );
+            }
             let data = std::fs::read(&file_path)?;
             let name = filename.unwrap_or_else(|| {
                 std::path::Path::new(&file_path)
@@ -59,11 +64,6 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .unwrap_or("asset")
                     .to_string()
             });
-            if validated_base_url(&config)?.is_some() {
-                anyhow::bail!(
-                    "asset upload is not available in backend/api mode in this release; upload through the API client or REST surface"
-                );
-            }
             let service = UgoiteService::new(&root)?;
             let asset = service.save_asset(&space_id, &name, &data).await?;
             print_json(&asset);

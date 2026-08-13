@@ -703,11 +703,13 @@ async fn rebuild_asset_text_with_mode(
                 // is observed. A slow GC must not delete this build between
                 // validation and publication.
                 let _ = head_store.clear_staging(&head.build_id).await;
+                let _ = head_store.clear_publishing(&head.build_id).await;
                 schedule_asset_text_gc(op, ws_path);
                 return Ok(current.head);
             }
         }
         let _ = mark_garbage_with_retry(&head_store, &head.build_id).await;
+        let _ = head_store.clear_publishing(&head.build_id).await;
         schedule_asset_text_gc(op, ws_path);
         return Err(publication_error);
     }
@@ -719,12 +721,19 @@ async fn rebuild_asset_text_with_mode(
     if let Some(expected) = expected.as_ref() {
         let _ = mark_garbage_with_retry(&head_store, &expected.head.build_id).await;
     }
+    if current.build_id != head.build_id {
+        // A shared writer may have won immediately after this writer's CAS.
+        // The successful candidate is then garbage too; leaving only its
+        // staging marker would make it invisible to lifecycle GC forever.
+        let _ = mark_garbage_with_retry(&head_store, &head.build_id).await;
+    }
     // A completed build no longer needs its active-build heartbeat. If this
     // delete is interrupted, the conservative staging marker still keeps the
     // build protected until the grace period has elapsed.
     let _ = head_store.clear_staging(&head.build_id).await;
+    let _ = head_store.clear_publishing(&head.build_id).await;
     let _ = head_store
-        .garbage_collect(Some(&current.build_id), MINIMUM_GC_AGE)
+        .garbage_collect_with_single_process_lock(Some(&current.build_id), MINIMUM_GC_AGE)
         .await;
     schedule_asset_text_gc(op, ws_path);
     Ok(current)
@@ -1039,8 +1048,7 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
                 let Some(value) = revision.values.get(&field.id) else {
                     continue;
                 };
-                let mut asset_references = Vec::new();
-                collect_asset_references(&serde_json::to_value(value)?, &mut asset_references);
+                let asset_references = typed_asset_references_for_field(field, value)?;
                 for reference in asset_references {
                     let candidate = SourceReference {
                         asset_id: reference.asset_id,
@@ -1147,23 +1155,27 @@ fn source_reference_metadata_rank(reference: &SourceReference) -> u8 {
     }
 }
 
-fn collect_asset_references(value: &Value, output: &mut Vec<AssetReference>) {
-    match value {
-        Value::Array(values) => values
-            .iter()
-            .for_each(|value| collect_asset_references(value, output)),
-        Value::Object(object) => {
-            if let Ok(reference) =
-                serde_json::from_value::<AssetReference>(Value::Object(object.clone()))
-            {
-                output.push(reference);
-            } else {
-                object
-                    .values()
-                    .for_each(|value| collect_asset_references(value, output));
-            }
+fn typed_asset_references_for_field(
+    field: &ugoite_domain::form::FormField,
+    value: &ugoite_domain::entry::FieldValue,
+) -> Result<Vec<AssetReference>> {
+    let encoded = serde_json::to_value(value)?;
+    match (&field.field_type, field.list_item.as_ref(), encoded) {
+        (_, _, Value::Null) => Ok(Vec::new()),
+        (FieldType::AssetReference, _, value) => {
+            Ok(vec![serde_json::from_value::<AssetReference>(value)?])
         }
-        _ => {}
+        (FieldType::List, Some(item), Value::Array(values))
+            if item.field_type == FieldType::AssetReference =>
+        {
+            values
+                .into_iter()
+                .filter(|value| !value.is_null())
+                .map(serde_json::from_value::<AssetReference>)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
+        }
+        _ => Ok(Vec::new()),
     }
 }
 
@@ -1797,7 +1809,8 @@ pub async fn register_asset_text_table(
     let Some(head) = head_store.read_exact().await? else {
         return Ok(false);
     };
-    if head.head.definition_fingerprint != asset_text_definition_fingerprint()
+    if head.head.producer_fingerprint != asset_text_producer_fingerprint()
+        || head.head.definition_fingerprint != asset_text_definition_fingerprint()
         || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH
     {
         return Ok(false);

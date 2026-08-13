@@ -513,6 +513,7 @@ struct AuthorizedAssetReferenceStreamState {
     form_index: usize,
     current_rows: Option<Vec<(String, entry::EntryRow)>>,
     current_offset: usize,
+    current_after: Option<(String, String, String)>,
 }
 
 impl AuthorizedAssetReferenceStreamState {
@@ -535,26 +536,43 @@ impl AuthorizedAssetReferenceStreamState {
                     }
                     return Ok(Some(batch));
                 }
+                if let Some((form_name, row)) = rows.last() {
+                    self.current_after =
+                        Some((row.title.clone(), row.entry_id.clone(), form_name.clone()));
+                }
                 self.current_rows = None;
                 self.current_offset = 0;
-                self.form_index += 1;
+                if self.current_after.is_none() {
+                    self.form_index += 1;
+                }
                 continue;
             }
             let Some(form_name) = self.form_names.get(self.form_index).cloned() else {
                 return Ok(None);
             };
-            // Load one Form's authorized current view once. Re-running a new
-            // DataFusion context with a larger OFFSET for every output batch
-            // would rescan and resort the same rows quadratically.
-            let rows = crate::index::query_entry_rows_authorized_all(
+            // Load one bounded keyset page. This keeps authorization work and
+            // Rust allocations bounded even for very large Forms, without
+            // the quadratic rescans of OFFSET pagination.
+            let after = self
+                .current_after
+                .as_ref()
+                .map(|(title, entry_id, form)| (title.as_str(), entry_id.as_str(), form.as_str()));
+            let rows = crate::index::query_entry_rows_authorized_after(
                 &self.operator,
                 &self.workspace_path,
                 &self.relation_scopes,
                 &form_name,
+                after,
+                ASSET_TEXT_SEARCH_PAGE_SIZE,
             )
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
-            self.current_rows = Some(rows);
+            if rows.is_empty() {
+                self.current_after = None;
+                self.form_index += 1;
+            } else {
+                self.current_rows = Some(rows);
+            }
         }
     }
 }
@@ -604,6 +622,7 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             form_index: 0,
             current_rows: None,
             current_offset: 0,
+            current_after: None,
         };
         let schema = self.schema.clone();
         let stream = futures::stream::try_unfold(state, |mut state| async move {

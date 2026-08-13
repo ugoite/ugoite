@@ -502,20 +502,22 @@ pub(crate) async fn query_entry_rows_authorized(
         keyword,
         Some(limit),
         offset,
+        None,
         Some(crate::MAX_NORMAL_READ_ROWS),
     )
     .await
 }
 
-/// Reads all authorized current rows for one Form through one DataFusion
-/// context. Derived AssetText search uses this as a stream source and slices
-/// the returned rows into batches locally; it must not re-run the ordered
-/// current-state plan with OFFSET for every batch.
-pub(crate) async fn query_entry_rows_authorized_all(
+/// Reads one bounded, keyset-paginated page of authorized current rows for one
+/// Form. AssetText search advances by the last `(title, entry_id, form)` tuple
+/// rather than repeatedly materializing a growing OFFSET window.
+pub(crate) async fn query_entry_rows_authorized_after(
     op: &Operator,
     ws_path: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     form_name: &str,
+    after: Option<(&str, &str, &str)>,
+    limit: usize,
 ) -> Result<Vec<(String, entry::EntryRow)>> {
     query_entry_rows_authorized_internal(
         op,
@@ -523,8 +525,9 @@ pub(crate) async fn query_entry_rows_authorized_all(
         relation_scopes,
         Some(form_name),
         None,
-        None,
+        Some(limit),
         0,
+        after,
         None,
     )
     .await
@@ -538,6 +541,7 @@ async fn query_entry_rows_authorized_internal(
     keyword: Option<&str>,
     limit: Option<usize>,
     offset: usize,
+    after: Option<(&str, &str, &str)>,
     response_limit: Option<usize>,
 ) -> Result<Vec<(String, entry::EntryRow)>> {
     if limit == Some(0) {
@@ -572,7 +576,7 @@ async fn query_entry_rows_authorized_internal(
         &EntryCandidatePage {
             limit,
             offset,
-            after: None,
+            after,
         },
     )
     .await?;
