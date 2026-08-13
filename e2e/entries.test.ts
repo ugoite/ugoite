@@ -426,7 +426,7 @@ test.describe("Entries CRUD", () => {
 		expect(entry.content).not.toContain(projectBetaId);
 	});
 
-	test("REQ-FE-1877: unrelated Forms own independently named scalar and list Assets", async ({
+	test("REQ-FE-1877: unrelated Forms own independently named scalar and list Assets", { tag: "@asset-owned" }, async ({
 		page,
 		request,
 	}) => {
@@ -552,7 +552,7 @@ test.describe("Entries CRUD", () => {
 				},
 				{ timeout: 15_000 },
 			);
-			await thumbnail.getByRole("button", { name: "Open or download" }).click();
+			await thumbnail.getByRole("button", { name: "Download" }).click();
 			const assetReadResponse = await readResponse;
 			expect(assetReadResponse.status()).toBe(200);
 			expect(await assetReadResponse.body()).toEqual(Buffer.from("thumbnail"));

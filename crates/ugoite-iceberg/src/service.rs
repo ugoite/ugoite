@@ -1074,15 +1074,34 @@ impl UgoiteService {
         query: &str,
         limit: usize,
     ) -> Result<Vec<search::KeywordSearchResult>> {
+        self.search_entries_authorized_for_principals_after(
+            space_id,
+            principal_ids,
+            query,
+            limit,
+            None,
+        )
+        .await
+    }
+
+    pub async fn search_entries_authorized_for_principals_after(
+        &self,
+        space_id: &str,
+        principal_ids: &[Uuid],
+        query: &str,
+        limit: usize,
+        after: Option<(&str, &str, &str)>,
+    ) -> Result<Vec<search::KeywordSearchResult>> {
         let scopes = self
             .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
             .await?;
-        search::search_entries_with_scopes(
+        search::search_entries_with_scopes_after(
             &self.operator,
             &self.workspace_path(space_id),
             query,
             &scopes,
             limit,
+            after,
         )
         .await
     }

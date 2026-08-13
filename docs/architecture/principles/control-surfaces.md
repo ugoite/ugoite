@@ -14,7 +14,7 @@ Ugoite exposes one application model through several adapters.
 | REST       | `ugoite-server`               | authenticated/authorized HTTP adapter                                     |
 | Browser    | SolidStart frontend           | portable operation protocol + JavaScript `fetch`; currently server-backed |
 | WASM       | `ugoite-wasm`                 | JSON/C ABI over portable Rust crates; no persistence/transport            |
-| MCP        | one entry-list resource route | read-only, resource-first integration                                     |
+| MCP        | stateless `/mcp` facade with three filtered tools and lazy resources | stable semantic integration; breadth is cheap and depth is lazy |
 
 Rules:
 

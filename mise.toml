@@ -30,6 +30,10 @@ run = [
   "deno task dev",
 ]
 
+[tasks.seed]
+description = "Seed local sample data with the development helper"
+run = "bash scripts/dev-seed.sh"
+
 [tasks.fmt]
 run = [
   "cargo fmt --all",
@@ -225,6 +229,9 @@ run = "deno test -A tools/*_test.ts"
 
 [tasks."test:frontend"]
 depends = ["build:wasm:debug"]
+run = { task = "test:frontend:after-wasm" }
+
+[tasks."test:frontend:after-wasm"]
 run = [
   "bash scripts/activate-ugoite-wasm.sh debug",
   "deno task frontend:test",
@@ -247,7 +254,8 @@ run = "deno task docsite:coverage"
 run = "deno task docsite:e2e:navigation"
 
 [tasks.test]
-run = [{ tasks = ["test:rust", "test:tools", "test:frontend", "test:docsite"] }]
+depends = ["build:wasm:debug"]
+run = [{ tasks = ["test:rust", "test:tools", "test:frontend:after-wasm", "test:docsite"] }]
 
 [tasks."test:e2e"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:full"
@@ -257,6 +265,9 @@ run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2
 
 [tasks."test:e2e:asset-owned"]
 run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:asset-owned"
+
+[tasks."test:e2e:smoke-and-asset-owned"]
+run = "docker image inspect \"${UGOITE_IMAGE_TAG:-ugoite:e2e}\" >/dev/null && E2E_BUILD_IMAGES=false deno task e2e:smoke-and-asset-owned"
 
 [tasks.e2e]
 description = "Run CI-parity E2E tests, preferring Docker Compose and falling back to host processes"

@@ -500,13 +500,13 @@ requirements:
   - SPEC-STORIES-EXPERIMENTAL
   id: REQ-API-013
   title: Current MCP Surface Documentation
-  description: 'Current-state MCP documentation MUST describe the shipped surface
+  description: 'Current-state MCP documentation MUST describe the shipped v1
 
-    as a resource-first baseline: one registered `ugoite://{space_id}/entries/list`
+    semantic facade: `ugoite.search`, `ugoite.save`, and `ugoite.delete` when
 
-    resource with no MCP tools or prompts. Broader MCP resource and tool coverage
+    authorized, plus lazy stable Entry/Form resources. Storage-specific routes,
 
-    MUST be framed as planned `v0.2` work rather than current behavior.
+    prompts, SQL, and revision tools remain future work.
 
     '
   related_spec:
@@ -557,9 +557,9 @@ requirements:
 
     The positioning guide MUST trace PHIL-004 through policies and requirements,
 
-    and it MUST keep today''s MCP scope framed as the current resource-first
+    and it MUST keep the small stable MCP v1 scope distinct from broader future
 
-    baseline rather than broader future capability.
+    capabilities.
 
     '
   related_spec:

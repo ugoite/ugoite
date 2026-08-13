@@ -3,7 +3,7 @@ version: '0.1'
 status: completed
 title: Minimum Viable Product (MVP)
 goal: Establish the operator-owned Space model, Rust application core, local CLI path, server-backed browser, REST
-  baseline, and read-only MCP resource.
+  baseline, and the stable MCP v1 semantic facade.
 phases:
 - id: design
   status: completed
@@ -12,7 +12,7 @@ phases:
     done: true
   - description: Define OpenDAL-backed Space storage and portable directory layout.
     done: true
-  - description: Define the resource-first MCP baseline and browser/server boundary.
+  - description: Define the small MCP v1 semantic facade and browser/server boundary.
     done: true
 - id: implementation
   status: completed
@@ -23,7 +23,7 @@ phases:
     done: true
   - description: Implement the Axum REST server and server-backed SolidStart browser.
     done: true
-  - description: Implement local/remote CLI modes and one read-only MCP Entry-list resource.
+  - description: Implement local/remote CLI modes and the authenticated MCP v1 facade.
     done: true
 - id: testing
   status: completed

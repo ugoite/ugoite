@@ -14,7 +14,8 @@ support, and product claims stay aligned with the implementation.
   assets, preferences, search, saved SQL, and SQL query sessions;
 - server-backed browser application;
 - single non-root container image and Helm chart;
-- read-only MCP entry-list resource;
+- MCP v1 search/save/delete facade with lazy Entry, history, schema, and Form
+  resources;
 - portable API protocol shared by CLI and browser/WASM;
 - Rust/Deno tests and CI gates.
 

@@ -282,7 +282,7 @@ policies:
   description: |
     This policy defines MCP as the operator surface for AI clients when they
     need structured, protocol-level access to Ugoite resources inside explicit
-    trust boundaries. It keeps the current resource-first scope visible,
+    trust boundaries. It keeps the current small semantic facade visible,
     separates AI-facing access from CLI-driven human automation and REST
     application integration, and requires expansion through documented,
     reviewable contracts.
