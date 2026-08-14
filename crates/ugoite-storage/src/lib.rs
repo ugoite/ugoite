@@ -102,6 +102,18 @@ pub struct ExactDerivedRelationHead {
     pub etag: Option<String>,
 }
 
+/// Raw exact coordinate for the pre-current-build DerivedRelation Head.
+///
+/// This is not a compatibility representation.  It exists only so a shared
+/// writer can replace disposable v1 derived state with a new build through the
+/// same ETag-bound CAS used for every current Head publication.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExactLegacyDerivedRelationHead {
+    pub bytes: Vec<u8>,
+    pub etag: Option<String>,
+    pub generation: u64,
+}
+
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Debug)]
@@ -825,6 +837,41 @@ impl DerivedRelationHeadStore {
     }
 
     pub async fn read_exact(&self) -> Result<Option<ExactDerivedRelationHead>> {
+        let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
+            return Ok(None);
+        };
+        let head: DerivedRelationHead = serde_json::from_value(value.clone()).map_err(|error| {
+            if is_legacy_derived_head(&value) {
+                LegacyDerivedRelationHead.into()
+            } else {
+                anyhow!("decode DerivedRelation Head: {error}")
+            }
+        })?;
+        validate_derived_head_checksum(&head)?;
+        Ok(Some(ExactDerivedRelationHead { head, bytes, etag }))
+    }
+
+    /// Reads the disposable v1 Head without treating it as a current
+    /// coordinate. Shared rebuilds use the returned ETag to replace it after
+    /// the new immutable build has been fully validated.
+    pub async fn read_legacy_exact(&self) -> Result<Option<ExactLegacyDerivedRelationHead>> {
+        let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
+            return Ok(None);
+        };
+        if !is_legacy_derived_head(&value) {
+            return Ok(None);
+        }
+        Ok(Some(ExactLegacyDerivedRelationHead {
+            generation: value
+                .get("generation")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default(),
+            bytes,
+            etag,
+        }))
+    }
+
+    async fn read_raw_exact(&self) -> Result<Option<(serde_json::Value, Vec<u8>, Option<String>)>> {
         for attempt in 0..3 {
             let metadata = match self.operator.stat(&self.head_path()).await {
                 Ok(metadata) => metadata,
@@ -859,16 +906,7 @@ impl DerivedRelationHeadStore {
                     let bytes = bytes.to_vec();
                     let value: serde_json::Value =
                         serde_json::from_slice(&bytes).context("decode DerivedRelation Head")?;
-                    let head: DerivedRelationHead =
-                        serde_json::from_value(value.clone()).map_err(|error| {
-                            if is_legacy_derived_head(&value) {
-                                LegacyDerivedRelationHead.into()
-                            } else {
-                                anyhow!("decode DerivedRelation Head: {error}")
-                            }
-                        })?;
-                    validate_derived_head_checksum(&head)?;
-                    return Ok(Some(ExactDerivedRelationHead { head, bytes, etag }));
+                    return Ok(Some((value, bytes, etag)));
                 }
                 Err(error) if error.kind() == ErrorKind::ConditionNotMatch && attempt < 2 => {
                     continue
@@ -876,7 +914,7 @@ impl DerivedRelationHeadStore {
                 Err(error) => return Err(error.into()),
             }
         }
-        unreachable!("exact derived Head read attempts always return or continue")
+        unreachable!("exact derived Head reads always return or continue")
     }
 
     /// v1 is intentionally not kept as an active compatibility format: its
@@ -1010,6 +1048,55 @@ impl DerivedRelationHeadStore {
             None => self.create(head).await,
             Some(expected) => self.replace(expected.etag.as_deref(), head).await,
         }
+    }
+
+    /// Replaces a disposable legacy Head after a complete build has been
+    /// staged. Shared backends use the legacy Head's exact ETag, so a concurrent
+    /// writer that already moved the relation to the current format wins the
+    /// race and this build becomes garbage instead of overwriting it.
+    pub async fn publish_over_legacy(
+        &self,
+        expected: &ExactLegacyDerivedRelationHead,
+        head: &DerivedRelationHead,
+    ) -> Result<()> {
+        if self.write_mode != CatalogWriteMode::Shared {
+            return Err(anyhow!(
+                "legacy DerivedRelation replacement requires shared mode"
+            ));
+        }
+        self.begin_publishing(&head.build_id).await?;
+        let etag = expected
+            .etag
+            .as_deref()
+            .context("shared legacy DerivedRelation replacement requires an ETag")?;
+        self.operator
+            .write_options(
+                &self.head_path(),
+                canonical_head_bytes(head)?,
+                WriteOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Deletes the removed v1 materialization prefix after its Head has been
+    /// replaced. It is deliberately idempotent and is also called by derived
+    /// maintenance so a crash after the CAS cannot strand old derived bytes.
+    pub async fn remove_legacy_materializations(&self) -> Result<()> {
+        let entries = self
+            .operator
+            .list_with(&self.legacy_materializations_prefix())
+            .recursive(true)
+            .await?;
+        for entry in entries {
+            if entry.metadata().mode() == EntryMode::FILE {
+                self.operator.delete(entry.path()).await?;
+            }
+        }
+        Ok(())
     }
 
     /// Publish while the caller already owns [`Self::single_process_lock`].
@@ -2222,6 +2309,11 @@ mod tests {
         assert!(error
             .downcast_ref::<super::LegacyDerivedRelationHead>()
             .is_some());
+        let legacy = store
+            .read_legacy_exact()
+            .await?
+            .expect("legacy Head remains an exact disposable coordinate");
+        assert_eq!(legacy.generation, 1);
         store.invalidate_legacy_head().await?;
         assert!(!operator.exists(&store.head_path()).await?);
         assert!(!operator.exists(&legacy_data_path).await?);

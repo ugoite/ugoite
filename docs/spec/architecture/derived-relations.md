@@ -49,6 +49,12 @@ There is no DerivedRelation rollback, history, or generation-retention API.
 An uncertain CAS outcome is resolved by exact Head reread and `build_id`; it
 does not require the authoritative Catalog publication chain.
 
+The pre-release materializations Head format is not read as a compatibility
+format. A local rebuild discards that derived-only Head before staging; a
+shared rebuild retains its exact ETag and replaces it with the new current-build
+Head after validation. The removed materialization prefix is then retried by
+derived maintenance until cleanup succeeds.
+
 ## AssetText
 
 `ugoite.asset_text` is the first internal DerivedRelation. Its producer reads

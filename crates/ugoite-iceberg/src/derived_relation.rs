@@ -539,16 +539,27 @@ async fn rebuild_asset_text_with_mode(
     } else {
         DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process()
     };
-    // v1 Heads point to the removed materializations layout.  Derived state
-    // is disposable, so a local rebuild explicitly invalidates that Head
-    // before creating the first current-build Head. Shared mode fails closed
-    // and asks the operator to run the migration in single-process mode.
+    // v1 Heads point to the removed materializations layout. Derived state is
+    // disposable, so local rebuilds can remove that Head before creating the
+    // first current-build Head. Shared rebuilds retain the exact legacy
+    // coordinate and replace it with a conditional Head swap after staging;
+    // this is a format discard, not a legacy-read compatibility path.
+    let mut legacy_expected = None;
     if let Err(error) = head_store.read_exact().await {
         if error
             .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
             .is_some()
         {
-            head_store.invalidate_legacy_head().await?;
+            if shared {
+                legacy_expected = Some(
+                    head_store
+                        .read_legacy_exact()
+                        .await?
+                        .context("legacy DerivedRelation Head disappeared")?,
+                );
+            } else {
+                head_store.invalidate_legacy_head().await?;
+            }
         } else {
             return Err(error);
         }
@@ -558,10 +569,15 @@ async fn rebuild_asset_text_with_mode(
     } else {
         Some(head_store.single_process_lock().lock_owned().await)
     };
-    let expected = head_store.read_exact().await?;
+    let expected = if legacy_expected.is_some() {
+        None
+    } else {
+        head_store.read_exact().await?
+    };
     let current_generation = expected
         .as_ref()
         .map(|head| head.head.generation)
+        .or_else(|| legacy_expected.as_ref().map(|head| head.generation))
         .unwrap_or(0);
     let generation = current_generation
         .checked_add(1)
@@ -682,7 +698,11 @@ async fn rebuild_asset_text_with_mode(
         }
     };
     let publish_result = if shared {
-        head_store.publish(expected.as_ref(), &head).await
+        if let Some(legacy_expected) = legacy_expected.as_ref() {
+            head_store.publish_over_legacy(legacy_expected, &head).await
+        } else {
+            head_store.publish(expected.as_ref(), &head).await
+        }
     } else {
         head_store
             .publish_with_single_process_lock(expected.as_ref(), &head)
@@ -697,6 +717,9 @@ async fn rebuild_asset_text_with_mode(
             if current.head.build_id == head.build_id {
                 if let Some(expected) = expected.as_ref() {
                     let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
+                }
+                if legacy_expected.is_some() {
+                    let _ = head_store.remove_legacy_materializations().await;
                 }
                 // Keep staging protection until the successful Head outcome
                 // is observed. A slow GC must not delete this build between
@@ -715,6 +738,13 @@ async fn rebuild_asset_text_with_mode(
         // build before the confirmation read so a transient read failure does
         // not strand it without a durable cleanup candidate.
         let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
+    }
+    if legacy_expected.is_some() {
+        // The new Head is now authoritative. The old v1 prefix is disposable
+        // and must not remain a second, undiscoverable materialization tree.
+        // Maintenance retries this cleanup after a crash or transient delete
+        // failure.
+        let _ = head_store.remove_legacy_materializations().await;
     }
     schedule_asset_text_gc(op, ws_path);
     let current = match head_store.read_exact().await {
@@ -929,10 +959,25 @@ pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<
     } else {
         base.single_process()
     };
-    let current_build_id = head_store
-        .read_exact()
-        .await?
-        .map(|head| head.head.build_id);
+    let current_build_id = match head_store.read_exact().await {
+        Ok(head) => {
+            // A current-build Head is authoritative. Any v1 materialization
+            // prefix is now detached garbage, including one left by a crash
+            // immediately after a shared legacy-to-current swap.
+            head_store.remove_legacy_materializations().await?;
+            head.map(|head| head.head.build_id)
+        }
+        Err(error)
+            if error
+                .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
+                .is_some() =>
+        {
+            // Never delete the v1 prefix while its legacy Head still points at
+            // it. A later rebuild will replace that Head by exact CAS first.
+            None
+        }
+        Err(error) => return Err(error),
+    };
     head_store
         .garbage_collect(current_build_id.as_deref(), MINIMUM_GC_AGE)
         .await
