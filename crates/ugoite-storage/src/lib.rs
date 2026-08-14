@@ -209,7 +209,7 @@ impl DerivedRelationHeadStore {
         self.operator
             .write_options(
                 &self.staging_marker_path(build_id),
-                br"{}".to_vec(),
+                Self::build_marker_bytes(),
                 WriteOptions {
                     if_not_exists: true,
                     ..Default::default()
@@ -283,10 +283,45 @@ impl DerivedRelationHeadStore {
         )))
     }
 
-    fn claim_is_stale(last_modified: Option<SystemTime>) -> bool {
-        last_modified
+    fn claim_is_stale(bytes: &[u8], last_modified: Option<SystemTime>) -> bool {
+        Self::json_time(bytes, "claimed_at")
+            .or(last_modified)
             .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
             .is_some_and(|age| age >= DERIVED_BUILD_CLAIM_TTL)
+    }
+
+    fn build_marker_bytes() -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "marked_at": SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        }))
+        .expect("derived build marker is serializable")
+    }
+
+    fn json_time(bytes: &[u8], key: &str) -> Option<SystemTime> {
+        serde_json::from_slice::<serde_json::Value>(bytes)
+            .ok()
+            .and_then(|value| value.get(key).and_then(serde_json::Value::as_u64))
+            .map(|seconds| UNIX_EPOCH + Duration::from_secs(seconds))
+    }
+
+    fn marker_time(bytes: &[u8]) -> Option<SystemTime> {
+        Self::json_time(bytes, "marked_at")
+    }
+
+    async fn marker_time_or_metadata(
+        &self,
+        path: &str,
+        metadata_time: Option<SystemTime>,
+    ) -> Option<SystemTime> {
+        self.operator
+            .read(path)
+            .await
+            .ok()
+            .and_then(|bytes| Self::marker_time(&bytes.to_vec()))
+            .or(metadata_time)
     }
 
     fn claim_role(bytes: &[u8]) -> Option<String> {
@@ -364,7 +399,7 @@ impl DerivedRelationHeadStore {
             if Self::claim_role(&bytes).as_deref() != Some("publishing") {
                 return Err(anyhow!("DerivedRelation build claim is held"));
             }
-            if !Self::claim_is_stale(last_modified)
+            if !Self::claim_is_stale(&bytes, last_modified)
                 || !self
                     .replace_build_claim(build_id, etag.as_deref(), "publishing")
                     .await?
@@ -406,7 +441,7 @@ impl DerivedRelationHeadStore {
                 ) {
                     return Ok(false);
                 }
-                if !Self::claim_is_stale(last_modified) {
+                if !Self::claim_is_stale(&bytes, last_modified) {
                     return Ok(false);
                 }
                 self.replace_build_claim(build_id, etag.as_deref(), "garbage")
@@ -439,7 +474,7 @@ impl DerivedRelationHeadStore {
             .operator
             .write_options(
                 &self.garbage_marker_path(build_id),
-                br"{}".to_vec(),
+                Self::build_marker_bytes(),
                 WriteOptions {
                     if_not_exists: true,
                     ..Default::default()
@@ -552,13 +587,16 @@ impl DerivedRelationHeadStore {
             let is_garbage_marker = entry.path() == self.garbage_marker_path(build_id);
             let is_staging_marker = entry.path() == self.staging_marker_path(build_id);
             let is_publishing_marker = entry.path() == self.publishing_marker_path(build_id);
-            let age = entry
-                .metadata()
-                .last_modified()
-                .and_then(|timestamp| SystemTime::now().duration_since(timestamp.into()).ok());
+            let modified = entry.metadata().last_modified().map(Into::into);
+            let marker_modified = if is_garbage_marker || is_staging_marker {
+                self.marker_time_or_metadata(entry.path(), modified).await
+            } else {
+                modified
+            };
+            let age = marker_modified
+                .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok());
             let old_enough =
                 minimum_gc_age.is_zero() || age.is_some_and(|age| age >= minimum_gc_age);
-            let modified = entry.metadata().last_modified().map(Into::into);
             let candidate = candidates.entry(build_id.to_string()).or_default();
             if is_garbage_marker {
                 candidate.has_garbage_marker = true;
@@ -589,7 +627,7 @@ impl DerivedRelationHeadStore {
                 if let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? {
                     candidate.stale_publishing_old_enough = Self::claim_role(&bytes).as_deref()
                         == Some("publishing")
-                        && Self::claim_is_stale(last_modified);
+                        && Self::claim_is_stale(&bytes, last_modified);
                 }
             }
             // A marker-less prefix can be left behind by a crash immediately
@@ -659,7 +697,12 @@ impl DerivedRelationHeadStore {
                     let _ = self.clear_garbage(&build_id).await;
                     continue;
                 }
-                if !minimum_gc_age.is_zero() {
+                // Markerless orphans have no durable cleanup timestamp, so a
+                // zero-age maintenance pass may claim and delete them in one
+                // pass. Staging/publishing recovery must always defer after
+                // recording garbage.json: its timestamp is the reader grace
+                // boundary, even when the caller explicitly selected zero.
+                if !(candidate.orphan_old_enough && minimum_gc_age.is_zero()) {
                     continue;
                 }
             }
@@ -1892,7 +1935,7 @@ mod tests {
     use opendal::Operator;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[tokio::test]
     async fn operator_from_uri_supports_fs_and_memory() -> Result<()> {
@@ -2270,6 +2313,34 @@ mod tests {
                 .exists(&store.garbage_marker_path("crashed"))
                 .await?
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn garbage_marker_age_uses_persisted_timestamp_on_memory_backend() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA00D);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let data = format!("{}/data/old.parquet", store.builds_path("old"));
+        operator.write(&data, b"old".to_vec()).await?;
+        let marked_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .as_secs()
+            .saturating_sub(3600);
+        operator
+            .write(
+                &store.garbage_marker_path("old"),
+                serde_json::to_vec(&serde_json::json!({ "marked_at": marked_at }))?,
+            )
+            .await?;
+
+        assert_eq!(
+            store
+                .garbage_collect(None, Duration::from_secs(1800))
+                .await?,
+            vec!["old"]
+        );
+        assert!(!operator.exists(&data).await?);
         Ok(())
     }
 
