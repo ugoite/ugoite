@@ -123,6 +123,10 @@ pub struct ExactLegacyDerivedRelationHead {
 enum GarbageHeadFence {
     CandidateIsCurrent,
     Contended,
+    /// A legacy v1 Head is still authoritative for the old disposable
+    /// materialization layout. It fences only that old coordinate; unrelated
+    /// current-build prefixes can still be reclaimed.
+    LegacyHead,
     Fenced {
         empty_head: bool,
         etag: Option<String>,
@@ -797,14 +801,13 @@ impl DerivedRelationHeadStore {
                         return Ok(GarbageHeadFence::Contended);
                     }
 
-                    let current: DerivedRelationHead = serde_json::from_value(value.clone())
-                        .map_err(|error| {
-                            if is_legacy_derived_head(&value) {
-                                LegacyDerivedRelationHead.into()
-                            } else {
-                                anyhow!("decode DerivedRelation Head: {error}")
-                            }
-                        })?;
+                    let current: DerivedRelationHead = match serde_json::from_value(value.clone()) {
+                        Ok(current) => current,
+                        Err(_error) if is_legacy_derived_head(&value) => {
+                            return Ok(GarbageHeadFence::LegacyHead);
+                        }
+                        Err(error) => return Err(anyhow!("decode DerivedRelation Head: {error}")),
+                    };
                     validate_derived_head_checksum(&current)?;
                     if current.build_id == build_id {
                         return Ok(GarbageHeadFence::CandidateIsCurrent);
@@ -1302,12 +1305,7 @@ impl DerivedRelationHeadStore {
             // GC is discovery-only and must never decide authority from the
             // listing. Re-read the durable Head immediately before deleting
             // each candidate so a concurrent shared publisher is protected.
-            if self
-                .read_exact()
-                .await?
-                .as_ref()
-                .is_some_and(|head| head.head.build_id == build_id)
-            {
+            if self.current_build_id().await?.as_deref() == Some(build_id.as_str()) {
                 // A build can become current again after an uncertain
                 // publication response left a conservative garbage marker.
                 // Clear that marker while it is still current so its old
@@ -1356,12 +1354,12 @@ impl DerivedRelationHeadStore {
                 // marker timestamp the grace-period boundary even when an
                 // old staging/publishing object is being reclaimed.
                 self.mark_garbage(&build_id).await?;
-                if self
-                    .read_exact()
-                    .await?
-                    .as_ref()
-                    .is_some_and(|head| head.head.build_id == build_id)
-                {
+                // The marker may not be visible in an immediately following
+                // object listing on every backend. Keep its exact path in the
+                // deletion set once this pass has created it, especially for
+                // zero-age orphan cleanup that intentionally finishes in one
+                // pass.
+                if self.current_build_id().await?.as_deref() == Some(build_id.as_str()) {
                     let _ = self.release_garbage_claim(&build_id, &garbage_claim).await;
                     let _ = self.clear_garbage(&build_id).await;
                     continue;
@@ -1392,7 +1390,11 @@ impl DerivedRelationHeadStore {
                 .list_with(&build_prefix)
                 .recursive(true)
                 .await?;
-            let mut garbage_marker = None;
+            let created_garbage_marker = needs_fresh_garbage_marker
+                && candidate.orphan_old_enough
+                && minimum_gc_age.is_zero();
+            let mut garbage_marker = (candidate.has_garbage_marker || created_garbage_marker)
+                .then(|| self.garbage_marker_path(&build_id));
             let mut build_objects = Vec::new();
             for entry in entries {
                 if entry.metadata().mode() != EntryMode::FILE {
@@ -1421,12 +1423,7 @@ impl DerivedRelationHeadStore {
                 }
                 // Re-check the Head for every object as a fail-closed guard
                 // against a concurrent publication.
-                if self
-                    .read_exact()
-                    .await?
-                    .as_ref()
-                    .is_some_and(|head| head.head.build_id == build_id)
-                {
+                if self.current_build_id().await?.as_deref() == Some(build_id.as_str()) {
                     fully_deleted = false;
                     break;
                 }
@@ -1436,12 +1433,7 @@ impl DerivedRelationHeadStore {
                 // Keep garbage.json until the build prefix is otherwise empty.
                 // If this process crashes before this final delete, the marker
                 // remains available for the next candidate-discovery pass.
-                if self
-                    .read_exact()
-                    .await?
-                    .as_ref()
-                    .is_some_and(|head| head.head.build_id == build_id)
-                {
+                if self.current_build_id().await?.as_deref() == Some(build_id.as_str()) {
                     continue;
                 }
                 // The garbage marker is the final durable cleanup record. If
@@ -1449,12 +1441,7 @@ impl DerivedRelationHeadStore {
                 // marker must remain so the build is rediscovered safely. The
                 // The claim is intentionally retained as a terminal tombstone,
                 // fencing delayed publishers even after this marker is removed.
-                if self
-                    .read_exact()
-                    .await?
-                    .as_ref()
-                    .is_some_and(|head| head.head.build_id == build_id)
-                {
+                if self.current_build_id().await?.as_deref() == Some(build_id.as_str()) {
                     continue;
                 }
                 if let Some(path) = garbage_marker {
@@ -1568,6 +1555,18 @@ impl DerivedRelationHeadStore {
         })?;
         validate_derived_head_checksum(&head)?;
         Ok(Some(ExactDerivedRelationHead { head, bytes, etag }))
+    }
+
+    /// Returns the current build coordinate for GC authority checks. A legacy
+    /// v1 Head still pins its old materialization prefix, but it does not pin
+    /// any build under the current `builds/` layout; it must therefore be
+    /// treated as an empty current-build coordinate while remaining untouched.
+    async fn current_build_id(&self) -> Result<Option<String>> {
+        match self.read_exact().await {
+            Ok(head) => Ok(head.map(|head| head.head.build_id)),
+            Err(error) if error.downcast_ref::<LegacyDerivedRelationHead>().is_some() => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// Reads the disposable v1 Head without treating it as a current
@@ -3343,6 +3342,38 @@ mod tests {
         let deleted = store.garbage_collect(None, Duration::ZERO).await?;
         assert_eq!(deleted, vec!["orphan"]);
         assert!(!operator.exists(&orphan).await?);
+        assert!(
+            !operator
+                .exists(&store.garbage_marker_path("orphan"))
+                .await?
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn gc_does_not_block_on_active_legacy_head() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA010);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        operator
+            .write(
+                &store.head_path(),
+                serde_json::to_vec(&serde_json::json!({
+                    "format_version": 1,
+                    "materialization_id": "legacy-materialization",
+                    "generation": 1
+                }))?,
+            )
+            .await?;
+        let orphan = format!("{}/data/orphan.parquet", store.builds_path("orphan"));
+        operator.write(&orphan, b"orphan".to_vec()).await?;
+
+        assert_eq!(
+            store.garbage_collect(None, Duration::ZERO).await?,
+            vec!["orphan"]
+        );
+        assert!(!operator.exists(&orphan).await?);
+        assert!(operator.exists(&store.head_path()).await?);
         Ok(())
     }
 
