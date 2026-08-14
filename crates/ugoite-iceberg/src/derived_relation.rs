@@ -893,13 +893,11 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                                         head_store
                                             .mark_legacy_materializations_garbage()
                                             .await?;
-                                        Ok::<bool, anyhow::Error>(
-                                            head_store
-                                                .garbage_collect_legacy_materializations(
-                                                    MINIMUM_GC_AGE,
-                                                )
-                                                .await?,
-                                        )
+                                        head_store
+                                            .garbage_collect_legacy_materializations(
+                                                MINIMUM_GC_AGE,
+                                            )
+                                            .await
                                     }
                                     .await
                                     .unwrap_or(true);

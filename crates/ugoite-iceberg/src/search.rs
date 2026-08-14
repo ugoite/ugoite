@@ -503,6 +503,7 @@ impl fmt::Debug for AuthorizedAssetReferenceProvider {
 }
 
 impl AuthorizedAssetReferenceProvider {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         operator: Operator,
         workspace_path: String,
@@ -600,6 +601,7 @@ impl fmt::Debug for AuthorizedAssetReferenceExec {
 }
 
 impl AuthorizedAssetReferenceExec {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         operator: Operator,
         workspace_path: String,
