@@ -593,7 +593,16 @@ async fn rebuild_asset_text_with_mode(
     let row_digest = sha256_digest(&canonical_json(&rows)?);
     let build_id = Uuid::now_v7().to_string();
     let build_path = head_store.builds_path(&build_id);
-    head_store.mark_staging(&build_id).await?;
+    if let Err(error) = head_store.mark_staging(&build_id).await {
+        // Shared marker installation is two durable writes. If the claim was
+        // installed but staging.json was not, wake relation maintenance now;
+        // the claim/marker recovery path will reclaim the partial build after
+        // its normal grace boundary instead of waiting for another mutation or
+        // a process restart.
+        let _ = ensure_cleanup_marker(&head_store, &build_id).await;
+        schedule_asset_text_gc(op, ws_path);
+        return Err(error);
+    }
     let heartbeat_store = head_store.clone();
     let heartbeat_build_id = build_id.clone();
     let staging_heartbeat = tokio::spawn(async move {

@@ -911,6 +911,21 @@ impl DerivedRelationHeadStore {
             .await
     }
 
+    /// Turn a successfully cleaned garbage claim into a terminal tombstone.
+    /// OpenDAL cannot conditionally delete the claim object, so the explicit
+    /// terminal role prevents `has_pending_garbage` from repeatedly waking for
+    /// an already-empty build while still fencing delayed publishers.
+    async fn complete_garbage_claim(&self, build_id: &str) -> Result<bool> {
+        let Some((bytes, current_etag, _)) = self.read_build_claim(build_id).await? else {
+            return Ok(false);
+        };
+        if Self::claim_role(&bytes).as_deref() != Some("garbage") {
+            return Ok(false);
+        }
+        self.replace_build_claim(build_id, current_etag.as_deref(), "complete")
+            .await
+    }
+
     async fn ensure_build_publishable(&self, build_id: &str) -> Result<()> {
         if self
             .operator
@@ -926,7 +941,7 @@ impl DerivedRelationHeadStore {
         if let Some((bytes, _, _)) = self.read_build_claim(build_id).await? {
             match Self::claim_role(&bytes).as_deref() {
                 Some("publishing") => {}
-                Some("garbage") => {
+                Some("garbage") | Some("complete") => {
                     return Err(anyhow!(
                         "DerivedRelation build has a terminal garbage claim"
                     ));
@@ -970,8 +985,8 @@ impl DerivedRelationHeadStore {
 
     /// Reports whether a non-current build still needs a future maintenance
     /// pass. A terminal `publishing.json` tombstone after marker-last cleanup
-    /// is intentional fencing state, but a stale garbage claim without its
-    /// marker is recoverable cleanup intent and must wake maintenance.
+    /// is intentional fencing state, but an incomplete garbage claim without
+    /// its marker is recoverable cleanup intent and must wake maintenance.
     pub async fn has_pending_garbage(
         &self,
         current_build_id: Option<&str>,
@@ -1045,9 +1060,14 @@ impl DerivedRelationHeadStore {
                     self.read_build_claim(&build_id).await?.is_some_and(
                         |(bytes, _, last_modified)| match Self::claim_role(&bytes).as_deref() {
                             Some("released") => true,
-                            Some("publishing") | Some("garbage") => {
-                                Self::claim_is_stale(&bytes, last_modified)
-                            }
+                            Some("complete") => false,
+                            Some("publishing") => Self::claim_is_stale(&bytes, last_modified),
+                            // A garbage claim without garbage.json means the
+                            // final marker deletion already happened but the
+                            // terminal-role transition may not have. Keep it
+                            // pending until that transition is observed.
+                            Some("garbage") if !candidate.has_garbage_marker => true,
+                            Some("garbage") => false,
                             _ => false,
                         },
                     )
@@ -1162,13 +1182,14 @@ impl DerivedRelationHeadStore {
             // A crash after publication claim creation can leave only
             // publishing.json behind. A live claim protects the build, while
             // a stale publishing claim is recoverable cleanup intent. A
-            // A terminal garbage claim with its marker remains a tombstone;
+            // terminal garbage claim with its marker remains a tombstone;
             // an unmarked stale garbage claim is recoverable cleanup intent.
             if candidate.has_publishing_marker {
                 if let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? {
                     candidate.stale_publishing_old_enough =
                         match Self::claim_role(&bytes).as_deref() {
                             Some("released") => true,
+                            Some("complete") => false,
                             Some("staging") | Some("publishing") | Some("garbage") => {
                                 Self::claim_is_stale(&bytes, last_modified)
                             }
@@ -1320,11 +1341,10 @@ impl DerivedRelationHeadStore {
                     // on the next GC pass.
                     garbage_marker = Some(entry.path().to_string());
                 } else if entry.path() == self.publishing_marker_path(&build_id) {
-                    // A garbage claim is also the terminal tombstone.  It
-                    // must remain after cleanup: a publisher that was paused
-                    // before its claim attempt can otherwise create a fresh
-                    // claim after garbage.json is removed and publish a Head
-                    // for this already-deleted build.
+                    // The claim remains after cleanup as a terminal tombstone.
+                    // It is transitioned to role=complete after garbage.json
+                    // is removed, so a paused publisher cannot create a fresh
+                    // claim for this already-deleted build.
                 } else {
                     build_objects.push(entry.path().to_string());
                 }
@@ -1363,9 +1383,8 @@ impl DerivedRelationHeadStore {
                 // The garbage marker is the final durable cleanup record. If
                 // a publisher won the Head CAS after the previous check, the
                 // marker must remain so the build is rediscovered safely. The
-                // garbage claim is intentionally retained as a terminal
-                // tombstone, fencing delayed publishers even after this
-                // marker is removed.
+                // The claim is intentionally retained as a terminal tombstone,
+                // fencing delayed publishers even after this marker is removed.
                 if self
                     .read_exact()
                     .await?
@@ -1376,6 +1395,14 @@ impl DerivedRelationHeadStore {
                 }
                 if let Some(path) = garbage_marker {
                     self.operator.delete(&path).await?;
+                }
+                // Keep a durable terminal claim after marker-last cleanup so
+                // a delayed publisher remains fenced. The explicit complete
+                // role also makes the terminal tombstone invisible to pending
+                // maintenance checks; a crash before this transition leaves
+                // role=garbage and is safely retried.
+                if !self.complete_garbage_claim(&build_id).await? {
+                    continue;
                 }
                 if let GarbageHeadFence::Fenced {
                     empty_head: true,

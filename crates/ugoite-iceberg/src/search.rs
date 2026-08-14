@@ -24,6 +24,7 @@ use ugoite_domain::entry::AssetReference;
 use ugoite_domain::form::FieldType;
 
 use crate::entry;
+use crate::index::AuthorizedAssetReferenceRow;
 pub use ugoite_domain::search::KeywordSearchResult;
 
 const ASSET_TEXT_SEARCH_PAGE_SIZE: usize = 2_048;
@@ -333,7 +334,7 @@ fn merge_asset_search_batches(
 }
 
 fn authorized_asset_reference_batch(
-    authorized_rows: &[(String, entry::EntryRow)],
+    authorized_rows: &[(String, AuthorizedAssetReferenceRow)],
     asset_reference_fields: &BTreeMap<String, Vec<AssetReferenceField>>,
 ) -> Result<RecordBatch> {
     let schema = authorized_asset_reference_schema();
@@ -573,7 +574,7 @@ struct AuthorizedAssetReferenceStreamState {
     initial_after: Option<(String, String, String)>,
     form_index: usize,
     current_form_index: Option<usize>,
-    current_rows: Option<Vec<(String, entry::EntryRow)>>,
+    current_rows: Option<Vec<(String, AuthorizedAssetReferenceRow)>>,
     current_offset: usize,
     current_after: Option<(String, String, String)>,
 }
@@ -625,13 +626,21 @@ impl AuthorizedAssetReferenceStreamState {
                 .current_after
                 .as_ref()
                 .map(|(title, entry_id, form)| (title.as_str(), entry_id.as_str(), form.as_str()));
-            let rows = crate::index::query_entry_rows_authorized_after(
+            let asset_field_names = self
+                .asset_reference_fields
+                .get(&form_name)
+                .into_iter()
+                .flatten()
+                .map(|field| field.name.clone())
+                .collect::<BTreeSet<_>>();
+            let rows = crate::index::query_asset_reference_rows_authorized_after(
                 &self.operator,
                 &self.workspace_path,
                 &self.relation_scopes,
                 &form_name,
                 after,
                 ASSET_TEXT_SEARCH_PAGE_SIZE,
+                &asset_field_names,
             )
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
@@ -639,7 +648,11 @@ impl AuthorizedAssetReferenceStreamState {
                 self.form_index += 1;
                 self.current_form_index = None;
             } else {
-                self.current_rows = Some(rows);
+                self.current_rows = Some(
+                    rows.into_iter()
+                        .map(|row| (form_name.clone(), row))
+                        .collect(),
+                );
             }
         }
     }

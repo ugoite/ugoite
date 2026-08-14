@@ -508,29 +508,95 @@ pub(crate) async fn query_entry_rows_authorized(
     .await
 }
 
-/// Reads one bounded, keyset-paginated page of authorized current rows for one
-/// Form. AssetText search advances by the last `(title, entry_id, form)` tuple
-/// rather than repeatedly materializing a growing OFFSET window.
-pub(crate) async fn query_entry_rows_authorized_after(
+/// The AssetText authorization join needs only current Entry identity and the
+/// declared AssetReference fields. Keeping this projection separate from the
+/// ordinary EntryRow reader prevents large unrelated field values and opaque
+/// extra attributes from being materialized in Rust during a search.
+#[derive(Debug, Clone)]
+pub(crate) struct AuthorizedAssetReferenceRow {
+    pub entry_id: String,
+    pub title: String,
+    pub created_at: f64,
+    pub updated_at: f64,
+    pub deleted: bool,
+    pub fields: Value,
+}
+
+pub(crate) async fn query_asset_reference_rows_authorized_after(
     op: &Operator,
     ws_path: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
     form_name: &str,
     after: Option<(&str, &str, &str)>,
     limit: usize,
-) -> Result<Vec<(String, entry::EntryRow)>> {
-    query_entry_rows_authorized_internal(
+    asset_field_names: &BTreeSet<String>,
+) -> Result<Vec<AuthorizedAssetReferenceRow>> {
+    if limit == 0 || asset_field_names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let forms = load_forms(op, ws_path).await?;
+    let context = datafusion_sql_context_with_limits(
         op,
         ws_path,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        None,
+        BTreeSet::new(),
+        crate::MAX_NORMAL_READ_ROWS,
+        true,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let candidates = query_entry_candidates_in_context(
+        &context,
+        &forms,
         relation_scopes,
         Some(form_name),
         None,
-        Some(limit),
-        0,
-        after,
-        None,
+        &EntryCandidatePage {
+            limit: Some(limit),
+            offset: 0,
+            after,
+        },
     )
-    .await
+    .await?;
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let form = forms
+        .get(form_name)
+        .with_context(|| format!("missing Form definition {form_name}"))?;
+    let relation = form
+        .get("sql_relation")
+        .and_then(Value::as_str)
+        .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+    let ids = candidates
+        .iter()
+        .map(|candidate| lit(candidate.entry_id.as_str()))
+        .collect::<Vec<_>>();
+    let batches = context
+        .execute_relation_plan(
+            relation,
+            &[],
+            vec![col("_ugoite_id").in_list(ids, false)],
+            asset_reference_projection(form, asset_field_names)?,
+            Vec::new(),
+            true,
+            false,
+            candidates.len(),
+        )
+        .await
+        .map_err(map_sql_error)?;
+    let projected = asset_reference_rows_from_batches(form, &batches, asset_field_names)?;
+    let mut by_id = projected
+        .into_iter()
+        .map(|row| (row.entry_id.clone(), row))
+        .collect::<HashMap<_, _>>();
+    Ok(candidates
+        .into_iter()
+        .filter_map(|candidate| by_id.remove(&candidate.entry_id))
+        .collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -758,6 +824,93 @@ fn payload_projection(form: &Value, preserved_inputs: &BTreeSet<String>) -> Resu
         }
     }
     Ok(projection)
+}
+
+fn asset_reference_projection(
+    form: &Value,
+    asset_field_names: &BTreeSet<String>,
+) -> Result<Vec<Expr>> {
+    let mut projection = vec![
+        col("_ugoite_id"),
+        col("_ugoite_title"),
+        col("_ugoite_created_at"),
+        col("_ugoite_updated_at"),
+        col("_ugoite_deleted"),
+    ];
+    if let Some(fields) = form.get("fields").and_then(Value::as_object) {
+        for (name, field) in fields {
+            if asset_field_names.contains(name) {
+                let column = field_sql_column(field)?;
+                projection.push(col(&column).alias(column));
+            }
+        }
+    }
+    Ok(projection)
+}
+
+fn asset_reference_rows_from_batches(
+    form: &Value,
+    batches: &[arrow_array::RecordBatch],
+    asset_field_names: &BTreeSet<String>,
+) -> Result<Vec<AuthorizedAssetReferenceRow>> {
+    let fields = form
+        .get("fields")
+        .and_then(Value::as_object)
+        .context("Form definition is missing fields")?;
+    let mut rows = Vec::new();
+    for batch in batches {
+        for row in 0..batch.num_rows() {
+            let projected_fields = fields
+                .iter()
+                .filter(|(name, _)| asset_field_names.contains(*name))
+                .map(|(name, definition)| {
+                    let column = field_sql_column(definition)?;
+                    let array = batch.column_by_name(&column).with_context(|| {
+                        format!("Entry payload is missing field column {column}")
+                    })?;
+                    let field_type: ugoite_domain::form::FieldType = serde_json::from_value(
+                        definition
+                            .get("type")
+                            .cloned()
+                            .context("Form field is missing its type")?,
+                    )?;
+                    let list_item = definition
+                        .get("items")
+                        .filter(|items| !items.is_null())
+                        .cloned()
+                        .map(serde_json::from_value)
+                        .transpose()?;
+                    let value = crate::field_value_at(
+                        array.as_ref(),
+                        row,
+                        &field_type,
+                        list_item.as_ref(),
+                    )?
+                    .unwrap_or(ugoite_domain::entry::FieldValue::Null);
+                    Ok((name.clone(), serde_json::to_value(value)?))
+                })
+                .collect::<Result<Map<_, _>>>()?;
+            rows.push(AuthorizedAssetReferenceRow {
+                entry_id: required_string_column(batch, row, "_ugoite_id", "external ID")?,
+                title: required_string_column(batch, row, "_ugoite_title", "title")?,
+                created_at: required_timestamp_seconds_column(
+                    batch,
+                    row,
+                    "_ugoite_created_at",
+                    "created_at",
+                )?,
+                updated_at: required_timestamp_seconds_column(
+                    batch,
+                    row,
+                    "_ugoite_updated_at",
+                    "updated_at",
+                )?,
+                deleted: required_bool_column(batch, row, "_ugoite_deleted", "deleted")?,
+                fields: Value::Object(projected_fields),
+            });
+        }
+    }
+    Ok(rows)
 }
 
 fn entry_rows_from_batches(
@@ -2918,12 +3071,15 @@ async fn build_record(
 
 #[cfg(test)]
 mod tests {
-    use super::{datafusion_parameters, filter_literal, sql_session_page_relation};
+    use super::{
+        asset_reference_projection, datafusion_parameters, filter_literal,
+        sql_session_page_relation,
+    };
     use chrono::DateTime;
     use datafusion::logical_expr::Expr;
     use datafusion::scalar::ScalarValue;
-    use serde_json::{Map, Value};
-    use std::collections::BTreeMap;
+    use serde_json::{json, Map, Value};
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn sql_session_relation_parser_uses_identifier_value_without_quotes() {
@@ -3037,5 +3193,29 @@ mod tests {
             ),
             ScalarValue::TimestampNanosecond(Some(_), Some(_))
         ));
+    }
+
+    #[test]
+    fn asset_reference_projection_excludes_unrelated_payload_fields() {
+        let form = json!({
+            "fields": {
+                "attachment": {"id": 1, "type": "asset_reference"},
+                "large_body": {"id": 2, "type": "long_text"}
+            }
+        });
+        let projection =
+            asset_reference_projection(&form, &BTreeSet::from(["attachment".to_string()]))
+                .expect("asset projection");
+        let rendered = projection
+            .iter()
+            .map(|expression| format!("{expression:?}"))
+            .collect::<Vec<_>>();
+        assert_eq!(projection.len(), 6);
+        assert!(rendered
+            .iter()
+            .any(|expression| expression.contains("field_1")));
+        assert!(!rendered
+            .iter()
+            .any(|expression| expression.contains("field_2")));
     }
 }
