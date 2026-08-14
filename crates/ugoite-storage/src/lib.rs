@@ -119,6 +119,16 @@ pub struct ExactLegacyDerivedRelationHead {
     pub generation: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GarbageHeadFence {
+    CandidateIsCurrent,
+    Contended,
+    Fenced {
+        empty_head: bool,
+        etag: Option<String>,
+    },
+}
+
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
 
@@ -198,6 +208,24 @@ impl DerivedRelationHeadStore {
         )
     }
 
+    fn head_fence_bytes(&self, state: &str, build_id: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "state": state,
+            "relation_id": self.relation_id.to_string(),
+            "build_id": build_id,
+        }))
+        .expect("derived Head fence is serializable")
+    }
+
+    fn head_fence(value: &serde_json::Value) -> Option<(&str, &str)> {
+        let state = value.get("state").and_then(serde_json::Value::as_str)?;
+        let build_id = value.get("build_id").and_then(serde_json::Value::as_str)?;
+        match state {
+            "garbage_fence" | "head_fence_released" => Some((state, build_id)),
+            _ => None,
+        }
+    }
+
     pub fn builds_path(&self, build_id: &str) -> String {
         format!(
             "{}/_ugoite/derived/relations/{}/builds/{build_id}",
@@ -224,6 +252,20 @@ impl DerivedRelationHeadStore {
     /// failed marker write aborts staging before it can leave an unidentifiable
     /// prefix behind.
     pub async fn mark_staging(&self, build_id: &str) -> Result<()> {
+        if self.write_mode == CatalogWriteMode::Shared {
+            self.operator
+                .write_options(
+                    &self.publishing_marker_path(build_id),
+                    Self::build_claim_bytes(build_id, "staging"),
+                    WriteOptions {
+                        if_not_exists: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map(|_| ())
+                .map_err(anyhow::Error::from)?;
+        }
         self.operator
             .write_options(
                 &self.staging_marker_path(build_id),
@@ -255,6 +297,11 @@ impl DerivedRelationHeadStore {
     /// without object modification metadata still need a durable age boundary
     /// after a process crash.
     pub async fn renew_staging(&self, build_id: &str) -> Result<()> {
+        if self.write_mode == CatalogWriteMode::Shared
+            && !self.renew_claim_role(build_id, "staging").await?
+        {
+            return Ok(());
+        }
         self.operator
             .write(
                 &self.staging_marker_path(build_id),
@@ -357,6 +404,22 @@ impl DerivedRelationHeadStore {
             .or(metadata_time)
     }
 
+    async fn marker_old_enough(&self, path: &str, minimum_gc_age: Duration) -> Result<bool> {
+        let metadata = match self.operator.stat(path).await {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(true),
+            Err(error) => return Err(error.into()),
+        };
+        if minimum_gc_age.is_zero() {
+            return Ok(true);
+        }
+        Ok(self
+            .marker_time_or_metadata(path, metadata.last_modified().map(Into::into))
+            .await
+            .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+            .is_some_and(|age| age >= minimum_gc_age))
+    }
+
     fn claim_role(bytes: &[u8]) -> Option<String> {
         serde_json::from_slice::<serde_json::Value>(bytes)
             .ok()
@@ -429,15 +492,29 @@ impl DerivedRelationHeadStore {
             // A garbage collector owns a reclaimed build permanently. A
             // publisher must never take that claim back after its lease age,
             // because GC may already be deleting the immutable prefix.
-            if Self::claim_role(&bytes).as_deref() != Some("publishing") {
-                return Err(anyhow!("DerivedRelation build claim is held"));
-            }
-            if !Self::claim_is_stale(&bytes, last_modified)
-                || !self
-                    .replace_build_claim(build_id, etag.as_deref(), "publishing")
-                    .await?
-            {
-                return Err(anyhow!("DerivedRelation build claim is held"));
+            match Self::claim_role(&bytes).as_deref() {
+                // The builder owns this build's staging claim and is the only
+                // actor allowed to transition it to publication.  This
+                // transition must not wait for the claim TTL: a healthy build
+                // can finish staging while its heartbeat is still fresh.
+                Some("staging") => {
+                    if !self
+                        .replace_build_claim(build_id, etag.as_deref(), "publishing")
+                        .await?
+                    {
+                        return Err(anyhow!("DerivedRelation build claim is held"));
+                    }
+                }
+                Some("publishing") => {
+                    if !Self::claim_is_stale(&bytes, last_modified)
+                        || !self
+                            .replace_build_claim(build_id, etag.as_deref(), "publishing")
+                            .await?
+                    {
+                        return Err(anyhow!("DerivedRelation build claim is held"));
+                    }
+                }
+                _ => return Err(anyhow!("DerivedRelation build claim is held")),
             }
         }
         self.ensure_build_publishable(build_id).await?;
@@ -470,9 +547,18 @@ impl DerivedRelationHeadStore {
                 };
                 if !matches!(
                     Self::claim_role(&bytes).as_deref(),
-                    Some("publishing") | Some("garbage")
+                    Some("staging") | Some("publishing") | Some("garbage")
                 ) {
                     return Ok(false);
+                }
+                if self.write_mode == CatalogWriteMode::SingleProcess
+                    && Self::claim_role(&bytes).as_deref() == Some("garbage")
+                {
+                    // The relation-local mutex is the single-process
+                    // exclusion primitive. A prior maintenance pass may
+                    // have left its own terminal claim while deliberately
+                    // waiting for the garbage marker grace boundary.
+                    return Ok(true);
                 }
                 if !Self::claim_is_stale(&bytes, last_modified) {
                     return Ok(false);
@@ -484,18 +570,22 @@ impl DerivedRelationHeadStore {
         }
     }
 
+    async fn renew_claim_role(&self, build_id: &str, role: &str) -> Result<bool> {
+        let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
+            return Ok(false);
+        };
+        if Self::claim_role(&bytes).as_deref() != Some(role) {
+            return Ok(false);
+        }
+        self.replace_build_claim(build_id, etag.as_deref(), role)
+            .await
+    }
+
     /// Keep a shared publisher's claim fresh until its final Head CAS returns.
     /// The claim is durable coordination state, so a slow object-store write
     /// must not look like a crashed publisher to GC.
     async fn renew_publishing_claim(&self, build_id: &str) -> Result<bool> {
-        let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
-            return Ok(false);
-        };
-        if Self::claim_role(&bytes).as_deref() != Some("publishing") {
-            return Ok(false);
-        }
-        self.replace_build_claim(build_id, etag.as_deref(), "publishing")
-            .await
+        self.renew_claim_role(build_id, "publishing").await
     }
 
     fn start_publishing_claim_heartbeat(&self, build_id: &str) -> tokio::task::JoinHandle<()> {
@@ -533,59 +623,156 @@ impl DerivedRelationHeadStore {
     /// ETag-bound Head CAS closes the race.  A publisher using the old exact
     /// Head loses the CAS; a publisher that starts afterwards sees the garbage
     /// claim and cannot claim the build.
-    async fn fence_head_before_garbage(&self, build_id: &str) -> Result<bool> {
+    async fn fence_head_before_garbage(&self, build_id: &str) -> Result<GarbageHeadFence> {
         if self.write_mode != CatalogWriteMode::Shared {
             // The relation-local single-process mutex already excludes a
             // rebuild from this GC path.
-            return Ok(true);
+            return Ok(GarbageHeadFence::Fenced {
+                empty_head: false,
+                etag: None,
+            });
         }
         for _ in 0..3 {
-            let Some(current) = self.read_exact().await? else {
-                // There is no Head to fence.  The terminal garbage claim now
-                // prevents a publisher from creating this build; the caller
-                // still performs a final Head check before deletion.
-                return Ok(true);
-            };
-            if current.head.build_id == build_id {
-                return Ok(false);
-            }
-            let mut fenced = current.head;
-            fenced.head_fence = Uuid::new_v4().to_string();
-            let bytes = canonical_head_bytes(&fenced)?;
-            let Some(etag) = current.etag else {
-                return Err(anyhow!(
-                    "shared DerivedRelation Head fence requires an ETag"
-                ));
-            };
-            match self
-                .operator
-                .write_options(
-                    &self.head_path(),
-                    bytes,
-                    WriteOptions {
-                        if_match: Some(etag),
-                        ..Default::default()
-                    },
-                )
-                .await
-            {
-                Ok(_) => return Ok(true),
-                Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
-                    if self
-                        .read_exact()
-                        .await?
-                        .as_ref()
-                        .is_some_and(|head| head.head.build_id == build_id)
-                    {
-                        return Ok(false);
+            match self.read_raw_exact().await? {
+                None => {
+                    // A shared first publication uses if-not-exists.  Install
+                    // a temporary object at that exact coordinate so a
+                    // publisher cannot pass its preflight check and create a
+                    // Head while GC is deleting this build.
+                    let result = self
+                        .operator
+                        .write_options(
+                            &self.head_path(),
+                            self.head_fence_bytes("garbage_fence", build_id),
+                            WriteOptions {
+                                if_not_exists: true,
+                                ..Default::default()
+                            },
+                        )
+                        .await;
+                    match result {
+                        Ok(_) => {
+                            let etag = self
+                                .operator
+                                .stat(&self.head_path())
+                                .await?
+                                .etag()
+                                .filter(|etag| !etag.is_empty())
+                                .map(str::to_owned)
+                                .ok_or_else(|| {
+                                    anyhow!(
+                                        "shared empty DerivedRelation Head fence requires an ETag"
+                                    )
+                                })?;
+                            return Ok(GarbageHeadFence::Fenced {
+                                empty_head: true,
+                                etag: Some(etag),
+                            });
+                        }
+                        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
+                        Err(error) => return Err(error.into()),
                     }
                 }
-                Err(error) => return Err(error.into()),
+                Some((value, _, etag)) => {
+                    if let Some((state, fenced_build_id)) = Self::head_fence(&value) {
+                        if state == "head_fence_released" {
+                            // The empty Head was already released by another
+                            // GC.  Do not touch this candidate without a fresh
+                            // authority check.
+                            return Ok(GarbageHeadFence::Contended);
+                        }
+                        if fenced_build_id == build_id {
+                            return Ok(GarbageHeadFence::Fenced {
+                                empty_head: true,
+                                etag,
+                            });
+                        }
+                        return Ok(GarbageHeadFence::Contended);
+                    }
+
+                    let current: DerivedRelationHead = serde_json::from_value(value.clone())
+                        .map_err(|error| {
+                            if is_legacy_derived_head(&value) {
+                                LegacyDerivedRelationHead.into()
+                            } else {
+                                anyhow!("decode DerivedRelation Head: {error}")
+                            }
+                        })?;
+                    validate_derived_head_checksum(&current)?;
+                    if current.build_id == build_id {
+                        return Ok(GarbageHeadFence::CandidateIsCurrent);
+                    }
+                    let fenced = DerivedRelationHead {
+                        head_fence: Uuid::new_v4().to_string(),
+                        ..current
+                    };
+                    let bytes = canonical_head_bytes(&fenced)?;
+                    let Some(etag) = etag else {
+                        return Err(anyhow!(
+                            "shared DerivedRelation Head fence requires an ETag"
+                        ));
+                    };
+                    match self
+                        .operator
+                        .write_options(
+                            &self.head_path(),
+                            bytes,
+                            WriteOptions {
+                                if_match: Some(etag),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            return Ok(GarbageHeadFence::Fenced {
+                                empty_head: false,
+                                etag: None,
+                            })
+                        }
+                        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
+                        Err(error) => return Err(error.into()),
+                    }
+                }
             }
         }
         Err(anyhow!(
             "DerivedRelation Head changed while GC was fencing publication"
         ))
+    }
+
+    async fn release_empty_head_fence(&self, build_id: &str, expected_etag: &str) -> Result<bool> {
+        let Some((value, _, etag)) = self.read_raw_exact().await? else {
+            return Ok(false);
+        };
+        let Some((state, fenced_build_id)) = Self::head_fence(&value) else {
+            return Ok(false);
+        };
+        if fenced_build_id != build_id {
+            return Ok(false);
+        }
+        if state == "head_fence_released" {
+            return Ok(true);
+        }
+        if etag.as_deref() != Some(expected_etag) {
+            return Ok(false);
+        }
+        match self
+            .operator
+            .write_options(
+                &self.head_path(),
+                self.head_fence_bytes("head_fence_released", build_id),
+                WriteOptions {
+                    if_match: Some(expected_etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(false),
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Mark a build at the moment it stops being current.  GC uses this
@@ -617,6 +804,18 @@ impl DerivedRelationHeadStore {
         match self
             .operator
             .delete(&self.garbage_marker_path(build_id))
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn release_garbage_claim(&self, build_id: &str) -> Result<()> {
+        match self
+            .operator
+            .delete(&self.publishing_marker_path(build_id))
             .await
         {
             Ok(()) => Ok(()),
@@ -853,6 +1052,20 @@ impl DerivedRelationHeadStore {
                 );
             }
         }
+        // A process can crash after installing the empty-Head fence and
+        // before the first garbage marker is written.  The fence itself is
+        // then the durable recovery record; listing the build prefix alone is
+        // not sufficient because the crash may have happened before any
+        // marker object was created.
+        if let Some((value, _, _)) = self.read_raw_exact().await? {
+            if let Some((state, build_id)) = Self::head_fence(&value) {
+                if state == "garbage_fence" && Some(build_id) != current_build_id {
+                    let candidate = candidates.entry(build_id.to_string()).or_default();
+                    candidate.has_garbage_marker = true;
+                    candidate.garbage_marker_old_enough = true;
+                }
+            }
+        }
         for (build_id, candidate) in &mut candidates {
             // A crash after publication claim creation can leave only
             // publishing.json behind. A live claim protects the build, while
@@ -861,9 +1074,11 @@ impl DerivedRelationHeadStore {
             // reclaimed.
             if candidate.has_publishing_marker {
                 if let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? {
-                    candidate.stale_publishing_old_enough = Self::claim_role(&bytes).as_deref()
-                        == Some("publishing")
-                        && Self::claim_is_stale(&bytes, last_modified);
+                    candidate.stale_publishing_old_enough =
+                        matches!(
+                            Self::claim_role(&bytes).as_deref(),
+                            Some("staging") | Some("publishing")
+                        ) && Self::claim_is_stale(&bytes, last_modified);
                 }
             }
             // A marker-less prefix can be left behind by a crash immediately
@@ -919,6 +1134,33 @@ impl DerivedRelationHeadStore {
                 && (candidate.stale_staging_old_enough
                     || candidate.orphan_old_enough
                     || candidate.stale_publishing_old_enough);
+            // The listing is only a hint. Recheck the staging timestamp after
+            // discovery and immediately before claiming the build, so a
+            // heartbeat that raced the listing cannot be converted into a
+            // garbage claim from stale observations.
+            if needs_fresh_garbage_marker
+                && candidate.has_staging_marker
+                && !self
+                    .marker_old_enough(&self.staging_marker_path(&build_id), minimum_gc_age)
+                    .await?
+            {
+                continue;
+            }
+            // Publication and GC claim the same object with conditional
+            // create/replace. A fresh claim belongs to the other operation;
+            // a stale claim can be atomically taken over for recovery.
+            if !self.claim_build_for_garbage(&build_id).await? {
+                continue;
+            }
+            if needs_fresh_garbage_marker
+                && candidate.has_staging_marker
+                && !self
+                    .marker_old_enough(&self.staging_marker_path(&build_id), minimum_gc_age)
+                    .await?
+            {
+                let _ = self.release_garbage_claim(&build_id).await;
+                continue;
+            }
             if needs_fresh_garbage_marker {
                 // The first pass only records cleanup intent. This makes the
                 // marker timestamp the grace-period boundary even when an
@@ -930,6 +1172,7 @@ impl DerivedRelationHeadStore {
                     .as_ref()
                     .is_some_and(|head| head.head.build_id == build_id)
                 {
+                    let _ = self.release_garbage_claim(&build_id).await;
                     let _ = self.clear_garbage(&build_id).await;
                     continue;
                 }
@@ -942,19 +1185,17 @@ impl DerivedRelationHeadStore {
                     continue;
                 }
             }
-            // Publication and GC claim the same object with conditional
-            // create/replace. A fresh claim belongs to the other operation;
-            // a stale claim can be atomically taken over for recovery.
-            if !self.claim_build_for_garbage(&build_id).await? {
-                continue;
-            }
             // Claiming the build fences a delayed publisher, while fencing
             // the current Head makes the claim participate in the same CAS
             // sequence as publication.  If a publisher won first, this
             // returns false and the final Head is protected as current.
-            if !self.fence_head_before_garbage(&build_id).await? {
-                continue;
-            }
+            let head_fence = match self.fence_head_before_garbage(&build_id).await? {
+                GarbageHeadFence::CandidateIsCurrent | GarbageHeadFence::Contended => {
+                    let _ = self.release_garbage_claim(&build_id).await;
+                    continue;
+                }
+                fenced => fenced,
+            };
             let build_prefix = self.builds_path(&build_id);
             let entries = self
                 .operator
@@ -1031,6 +1272,19 @@ impl DerivedRelationHeadStore {
                 if let Some(path) = garbage_marker {
                     self.operator.delete(&path).await?;
                 }
+                if let GarbageHeadFence::Fenced {
+                    empty_head: true,
+                    etag: Some(etag),
+                } = &head_fence
+                {
+                    // Do not remove the temporary first-Head fence. Convert
+                    // it conditionally into an empty-head release marker so
+                    // a new publisher can replace it only after every build
+                    // object and garbage marker has been deleted.
+                    if !self.release_empty_head_fence(&build_id, etag).await? {
+                        continue;
+                    }
+                }
                 deleted.push(build_id);
             }
         }
@@ -1041,6 +1295,9 @@ impl DerivedRelationHeadStore {
         let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
             return Ok(None);
         };
+        if Self::head_fence(&value).is_some() {
+            return Ok(None);
+        }
         let head: DerivedRelationHead = serde_json::from_value(value.clone()).map_err(|error| {
             if is_legacy_derived_head(&value) {
                 LegacyDerivedRelationHead.into()
@@ -1059,6 +1316,9 @@ impl DerivedRelationHeadStore {
         let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
             return Ok(None);
         };
+        if Self::head_fence(&value).is_some() {
+            return Ok(None);
+        }
         if !is_legacy_derived_head(&value) {
             return Ok(None);
         }
@@ -1175,18 +1435,43 @@ impl DerivedRelationHeadStore {
         self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
         match self.write_mode {
-            CatalogWriteMode::Shared => {
-                self.operator
-                    .write_options(
-                        &self.head_path(),
-                        bytes,
-                        WriteOptions {
-                            if_not_exists: true,
-                            ..Default::default()
-                        },
-                    )
-                    .await?;
-            }
+            CatalogWriteMode::Shared => match self.read_raw_exact().await? {
+                Some((value, _, Some(etag)))
+                    if Self::head_fence(&value)
+                        .is_some_and(|(state, _)| state == "head_fence_released") =>
+                {
+                    self.operator
+                        .write_options(
+                            &self.head_path(),
+                            bytes,
+                            WriteOptions {
+                                if_match: Some(etag),
+                                ..Default::default()
+                            },
+                        )
+                        .await?;
+                }
+                Some((value, _, None))
+                    if Self::head_fence(&value)
+                        .is_some_and(|(state, _)| state == "head_fence_released") =>
+                {
+                    return Err(anyhow!(
+                        "shared empty DerivedRelation Head fence did not return an ETag"
+                    ));
+                }
+                _ => {
+                    self.operator
+                        .write_options(
+                            &self.head_path(),
+                            bytes,
+                            WriteOptions {
+                                if_not_exists: true,
+                                ..Default::default()
+                            },
+                        )
+                        .await?;
+                }
+            },
             CatalogWriteMode::SingleProcess => {
                 let _guard = self.serializer.lock().await;
                 if self.operator.exists(&self.head_path()).await? {
