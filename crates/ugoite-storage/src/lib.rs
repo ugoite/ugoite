@@ -657,8 +657,11 @@ impl DerivedRelationHeadStore {
                     .is_some_and(|head| head.head.build_id == build_id)
                 {
                     let _ = self.clear_garbage(&build_id).await;
+                    continue;
                 }
-                continue;
+                if !minimum_gc_age.is_zero() {
+                    continue;
+                }
             }
             // Publication and GC claim the same object with conditional
             // create/replace. A fresh claim belongs to the other operation;
