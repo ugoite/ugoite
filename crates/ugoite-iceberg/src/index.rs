@@ -7,6 +7,7 @@ use arrow_json::writer::ArrayWriter;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use datafusion::logical_expr::SortExpr;
 use datafusion::prelude::{array_has, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use opendal::Operator;
@@ -36,6 +37,7 @@ pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
 pub const SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS: usize = SQL_SESSION_MAX_ROWS;
 pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const AUTHORIZED_ASSET_REFERENCE_PAGE_SIZE: usize = 2_048;
 
 /// Immutable execution inputs for one authorized SQL-session page.
 ///
@@ -542,7 +544,7 @@ pub(crate) async fn authorized_asset_reference_query_context(
         Some(relation_scopes),
         None,
         BTreeSet::new(),
-        usize::MAX / 4,
+        AUTHORIZED_ASSET_REFERENCE_PAGE_SIZE,
         true,
     )
     .await
@@ -559,6 +561,8 @@ pub(crate) async fn query_asset_reference_rows_authorized_in_context(
     forms: &HashMap<String, Value>,
     form_name: &str,
     asset_field_names: &BTreeSet<String>,
+    after_entry_id: Option<&str>,
+    limit: usize,
 ) -> Result<Vec<AuthorizedAssetReferenceRow>> {
     if asset_field_names.is_empty() {
         return Ok(Vec::new());
@@ -570,16 +574,24 @@ pub(crate) async fn query_asset_reference_rows_authorized_in_context(
         .get("sql_relation")
         .and_then(Value::as_str)
         .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+    let mut predicates = Vec::new();
+    if let Some(after_entry_id) = after_entry_id {
+        predicates.push(col("_ugoite_id").gt(lit(after_entry_id.to_string())));
+    }
     let batches = context
         .execute_relation_plan(
             relation,
             &[],
-            Vec::new(),
+            predicates,
             asset_reference_projection(form, asset_field_names)?,
-            Vec::new(),
+            vec![SortExpr {
+                expr: col("_ugoite_id"),
+                asc: true,
+                nulls_first: true,
+            }],
             false,
             false,
-            usize::MAX / 4,
+            limit,
         )
         .await
         .map_err(map_sql_error)?;

@@ -224,21 +224,6 @@ async fn asset_text_search_authorized_inner(
         Ok(fields) => fields,
         Err(_) => return Ok(None),
     };
-    // Do not make the provider walk current rows for Forms that cannot emit an
-    // AssetReference. This keeps the derived join work proportional to the
-    // authorized AssetReference-bearing Forms, rather than to every large Form
-    // in the Space.
-    let asset_form_names = form_names
-        .into_iter()
-        .filter(|form_name| {
-            asset_reference_fields
-                .get(form_name)
-                .is_some_and(|fields| !fields.is_empty())
-        })
-        .collect::<Vec<_>>();
-    if asset_form_names.is_empty() {
-        return Ok(Some(Vec::new()));
-    }
     let (authorized_context, authorized_forms) =
         match crate::index::authorized_asset_reference_query_context(op, ws_path, relation_scopes)
             .await
@@ -246,6 +231,33 @@ async fn asset_text_search_authorized_inner(
             Ok(value) => value,
             Err(_) => return Ok(None),
         };
+    // Do not make the provider walk current rows for Forms that cannot emit an
+    // AssetReference or are absent from the authorization context. This keeps
+    // the derived join both authorization-safe and proportional to the
+    // authorized AssetReference-bearing Forms, rather than every Form in the
+    // Space.
+    let asset_form_names = form_names
+        .into_iter()
+        .filter(|form_name| {
+            let Some(fields) = asset_reference_fields.get(form_name) else {
+                return false;
+            };
+            if fields.is_empty() {
+                return false;
+            }
+            let Some(form) = authorized_forms.get(form_name) else {
+                return false;
+            };
+            let relation = form.get("sql_relation").and_then(Value::as_str);
+            relation_scopes.contains_key(&form_name.to_ascii_lowercase())
+                || relation.is_some_and(|relation| {
+                    relation_scopes.contains_key(&relation.to_ascii_lowercase())
+                })
+        })
+        .collect::<Vec<_>>();
+    if asset_form_names.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
     let authorized_context = Arc::new(authorized_context);
     let authorized_forms = Arc::new(authorized_forms);
     if context
@@ -278,7 +290,8 @@ async fn asset_text_search_authorized_inner(
         // search path. The DataFusion memory pool bounds sort/join state while
         // this timeout bounds total work even when the current Entry set is
         // much larger than the requested result page.
-        _ => return Ok(None),
+        Ok(Err(_)) => return Ok(None),
+        Err(_) => return Ok(None),
     };
     let mut results = BTreeMap::new();
     merge_asset_search_batches(&mut results, matches, after)?;
@@ -628,6 +641,9 @@ struct AuthorizedAssetReferenceStreamState {
     form_index: usize,
     current_rows: Option<Vec<(String, AuthorizedAssetReferenceRow)>>,
     current_offset: usize,
+    after_entry_id: Option<String>,
+    next_after_entry_id: Option<String>,
+    current_page_complete: bool,
 }
 
 impl AuthorizedAssetReferenceStreamState {
@@ -652,7 +668,12 @@ impl AuthorizedAssetReferenceStreamState {
                 }
                 self.current_rows = None;
                 self.current_offset = 0;
-                self.form_index += 1;
+                self.after_entry_id = self.next_after_entry_id.take();
+                if !self.current_page_complete {
+                    self.form_index += 1;
+                    self.after_entry_id = None;
+                }
+                self.current_page_complete = false;
                 continue;
             }
             let form_index = self.form_index;
@@ -671,9 +692,13 @@ impl AuthorizedAssetReferenceStreamState {
                 &self.authorized_forms,
                 &form_name,
                 &asset_field_names,
+                self.after_entry_id.as_deref(),
+                ASSET_TEXT_SEARCH_PAGE_SIZE,
             )
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
+            let page_complete = rows.len() == ASSET_TEXT_SEARCH_PAGE_SIZE;
+            let next_after_entry_id = rows.last().map(|row| row.entry_id.clone());
             let rows = rows
                 .into_iter()
                 .filter(|row| {
@@ -690,9 +715,15 @@ impl AuthorizedAssetReferenceStreamState {
                 .map(|row| (form_name.clone(), row))
                 .collect::<Vec<_>>();
             if rows.is_empty() {
-                self.form_index += 1;
+                self.after_entry_id = next_after_entry_id;
+                if !page_complete {
+                    self.form_index += 1;
+                    self.after_entry_id = None;
+                }
             } else {
                 self.current_rows = Some(rows);
+                self.next_after_entry_id = next_after_entry_id;
+                self.current_page_complete = page_complete;
             }
         }
     }
@@ -743,6 +774,9 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             form_index: 0,
             current_rows: None,
             current_offset: 0,
+            after_entry_id: None,
+            next_after_entry_id: None,
+            current_page_complete: false,
         };
         let schema = self.schema.clone();
         let stream = futures::stream::try_unfold(state, |mut state| async move {

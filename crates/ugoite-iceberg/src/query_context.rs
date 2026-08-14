@@ -105,7 +105,10 @@ pub struct AuthorizedQueryContext {
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
     duplicate_head_checks: Vec<(Arc<dyn TableProvider>, DataFrame)>,
-    latest_revision_cache: Arc<AsyncMutex<Option<Vec<arrow_array::RecordBatch>>>>,
+    // Cache the authorized latest-state logical plan, not its result.  Each
+    // maintenance page adds its cursor and row limit before execution so a
+    // large Form never becomes one unbounded Arrow allocation.
+    latest_revision_cache: Arc<AsyncMutex<Option<LogicalPlan>>>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -524,48 +527,39 @@ impl AuthorizedQueryContext {
                 .map_err(AuthorizedQueryError::execution_failed)?;
             let heads = latest_revision_dataframe(source, entry_scope, view)
                 .map_err(AuthorizedQueryError::invalid_query)?
-                .sort(vec![SortExpr {
-                    expr: col("entry_id"),
-                    asc: true,
-                    nulls_first: true,
-                }])
-                .map_err(AuthorizedQueryError::invalid_query)?;
-            *cache = Some(self.execute_frame_without_row_limit(heads).await?);
+                .logical_plan()
+                .clone();
+            *cache = Some(heads);
         }
         let after = after_entry_id
             .map(uuid::Uuid::from_slice)
             .transpose()
             .map_err(AuthorizedQueryError::invalid_query)?;
-        let mut page = Vec::new();
-        let mut page_rows = 0usize;
-        'batches: for batch in cache.as_ref().expect("latest revision cache is set") {
-            let entry_ids = batch.column_by_name("entry_id").ok_or_else(|| {
-                AuthorizedQueryError::execution_failed(anyhow!(
-                    "latest revision page is missing entry_id"
-                ))
-            })?;
-            let mut first = None;
-            for row in 0..batch.num_rows() {
-                let entry_id = crate::uuid_value_at(entry_ids.as_ref(), row)
-                    .map_err(AuthorizedQueryError::execution_failed)?;
-                if after.is_some_and(|after| entry_id <= after) {
-                    continue;
-                }
-                first.get_or_insert(row);
-                page_rows += 1;
-                if page_rows == limit {
-                    page.push(batch.slice(
-                        first.expect("page row has a start"),
-                        row + 1 - first.unwrap(),
-                    ));
-                    break 'batches;
-                }
-            }
-            if let Some(first) = first {
-                page.push(batch.slice(first, batch.num_rows() - first));
-            }
+        let plan = cache
+            .as_ref()
+            .expect("latest revision plan cache is set")
+            .clone();
+        drop(cache);
+        let mut frame = self
+            .context
+            .execute_logical_plan(plan)
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        if let Some(after) = after {
+            frame = frame
+                .filter(col("entry_id").gt(lit(after.as_bytes().to_vec())))
+                .map_err(AuthorizedQueryError::invalid_query)?;
         }
-        Ok(page)
+        frame = frame
+            .sort(vec![SortExpr {
+                expr: col("entry_id"),
+                asc: true,
+                nulls_first: true,
+            }])
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .limit(0, Some(limit))
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        self.execute_frame(frame, limit).await
     }
 
     /// Executes a trusted relation plan assembled by a typed read surface.
@@ -795,37 +789,6 @@ impl AuthorizedQueryContext {
                 ))
                 .into());
             }
-            self.validate_revision_invariants(&validation_plan).await?;
-            Ok(batches)
-        })
-        .await
-        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
-    }
-
-    async fn execute_frame_without_row_limit(
-        &self,
-        frame: DataFrame,
-    ) -> Result<Vec<arrow_array::RecordBatch>> {
-        let _permit = self
-            .permits
-            .clone()
-            .try_acquire_owned()
-            .map_err(AuthorizedQueryError::resource_limit)?;
-        tokio::time::timeout(self.limits.timeout, async {
-            let plan = self
-                .context
-                .state()
-                .optimize(&frame.logical_plan().clone())
-                .map_err(AuthorizedQueryError::invalid_query)?;
-            validate_logical_plan(&plan, &self.authorized_relations)
-                .map_err(AuthorizedQueryError::unauthorized)?;
-            let validation_plan = plan.clone();
-            let frame = self
-                .context
-                .execute_logical_plan(plan)
-                .await
-                .map_err(AuthorizedQueryError::execution_failed)?;
-            let batches = self.collect_frame(frame).await?;
             self.validate_revision_invariants(&validation_plan).await?;
             Ok(batches)
         })

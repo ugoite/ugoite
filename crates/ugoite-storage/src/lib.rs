@@ -1648,19 +1648,10 @@ impl DerivedRelationHeadStore {
         };
         let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
         if is_legacy_derived_head(&value) {
-            // Remove the disposable legacy prefix first. If listing or any
-            // delete fails, keep the legacy Head so the next rebuild retries
-            // the cleanup instead of losing the only migration signal.
-            let entries = self
-                .operator
-                .list_with(&self.legacy_materializations_prefix())
-                .recursive(true)
-                .await?;
-            for entry in entries {
-                if entry.metadata().mode() == EntryMode::FILE {
-                    self.operator.delete(entry.path()).await?;
-                }
-            }
+            // Detach the old Head, but retain its immutable prefix behind a
+            // durable grace-period marker so an already-open legacy reader is
+            // not broken by this explicit format discard.
+            self.mark_legacy_materializations_garbage().await?;
             self.operator.delete(&self.head_path()).await?;
         }
         Ok(())
@@ -1826,6 +1817,35 @@ impl DerivedRelationHeadStore {
             .map_err(Into::into);
         heartbeat.abort();
         result
+    }
+
+    /// Replaces a disposable legacy Head while the caller already owns the
+    /// single-process relation lock. The legacy coordinate remains readable
+    /// until this exact swap completes; GC is marked only afterward.
+    pub async fn publish_over_legacy_with_single_process_lock(
+        &self,
+        expected: &ExactLegacyDerivedRelationHead,
+        head: &DerivedRelationHead,
+    ) -> Result<()> {
+        if self.write_mode != CatalogWriteMode::SingleProcess {
+            return Err(anyhow!(
+                "single-process legacy DerivedRelation replacement requires local mode"
+            ));
+        }
+        self.begin_publishing(&head.build_id).await?;
+        let Some((_, current_bytes, current_etag)) = self.read_raw_exact().await? else {
+            return Err(anyhow!("legacy DerivedRelation Head disappeared"));
+        };
+        if current_bytes != expected.bytes
+            || (expected.etag.is_some() && current_etag != expected.etag)
+        {
+            return Err(anyhow!("legacy DerivedRelation Head changed"));
+        }
+        self.operator
+            .write(&self.head_path(), canonical_head_bytes(head)?)
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
     }
 
     /// Publish while the caller already owns [`Self::single_process_lock`].
@@ -3046,7 +3066,8 @@ mod tests {
         assert_eq!(legacy.generation, 1);
         store.invalidate_legacy_head().await?;
         assert!(!operator.exists(&store.head_path()).await?);
-        assert!(!operator.exists(&legacy_data_path).await?);
+        assert!(operator.exists(&legacy_data_path).await?);
+        assert!(operator.exists(&store.legacy_garbage_marker_path()).await?);
         Ok(())
     }
 

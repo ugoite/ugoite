@@ -539,36 +539,31 @@ async fn rebuild_asset_text_with_mode(
     } else {
         DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process()
     };
-    // v1 Heads point to the removed materializations layout. Derived state is
-    // disposable, so local rebuilds can remove that Head before creating the
-    // first current-build Head. Shared rebuilds retain the exact legacy
-    // coordinate and replace it with a conditional Head swap after staging;
-    // this is a format discard, not a legacy-read compatibility path.
+    // v1 Heads point to the removed materializations layout. Keep the exact
+    // disposable coordinate pinned until the new build is ready, then replace
+    // it under the same relation-local mutex/CAS used for current Heads. The
+    // detached prefix is marked for grace-period GC only after that swap.
+    let _rebuild_guard = if shared {
+        None
+    } else {
+        Some(head_store.single_process_lock().lock_owned().await)
+    };
     let mut legacy_expected = None;
     if let Err(error) = head_store.read_exact().await {
         if error
             .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
             .is_some()
         {
-            if shared {
-                legacy_expected = Some(
-                    head_store
-                        .read_legacy_exact()
-                        .await?
-                        .context("legacy DerivedRelation Head disappeared")?,
-                );
-            } else {
-                head_store.invalidate_legacy_head().await?;
-            }
+            legacy_expected = Some(
+                head_store
+                    .read_legacy_exact()
+                    .await?
+                    .context("legacy DerivedRelation Head disappeared")?,
+            );
         } else {
             return Err(error);
         }
     }
-    let _rebuild_guard = if shared {
-        None
-    } else {
-        Some(head_store.single_process_lock().lock_owned().await)
-    };
     let expected = if legacy_expected.is_some() {
         None
     } else {
@@ -707,12 +702,16 @@ async fn rebuild_asset_text_with_mode(
             return Err(error);
         }
     };
-    let publish_result = if shared {
-        if let Some(legacy_expected) = legacy_expected.as_ref() {
+    let publish_result = if let Some(legacy_expected) = legacy_expected.as_ref() {
+        if shared {
             head_store.publish_over_legacy(legacy_expected, &head).await
         } else {
-            head_store.publish(expected.as_ref(), &head).await
+            head_store
+                .publish_over_legacy_with_single_process_lock(legacy_expected, &head)
+                .await
         }
+    } else if shared {
+        head_store.publish(expected.as_ref(), &head).await
     } else {
         head_store
             .publish_with_single_process_lock(expected.as_ref(), &head)
