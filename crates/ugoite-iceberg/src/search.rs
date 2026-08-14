@@ -29,6 +29,11 @@ use crate::index::AuthorizedAssetReferenceRow;
 pub use ugoite_domain::search::KeywordSearchResult;
 
 const ASSET_TEXT_SEARCH_PAGE_SIZE: usize = 2_048;
+// This is an internal maintenance/search bound rather than the public Entry
+// response ceiling. The bounded DataFusion memory pool and timeout remain the
+// actual protection for unusually large current Forms.
+const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize =
+    crate::index::AUTHORIZED_ASSET_REFERENCE_MAX_ROWS;
 const ASSET_TEXT_SEARCH_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const ASSET_TEXT_SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -643,9 +648,6 @@ struct AuthorizedAssetReferenceStreamState {
     form_index: usize,
     current_rows: Option<Vec<(String, AuthorizedAssetReferenceRow)>>,
     current_offset: usize,
-    after_entry_id: Option<String>,
-    next_after_entry_id: Option<String>,
-    current_page_complete: bool,
 }
 
 impl AuthorizedAssetReferenceStreamState {
@@ -670,12 +672,7 @@ impl AuthorizedAssetReferenceStreamState {
                 }
                 self.current_rows = None;
                 self.current_offset = 0;
-                self.after_entry_id = self.next_after_entry_id.take();
-                if !self.current_page_complete {
-                    self.form_index += 1;
-                    self.after_entry_id = None;
-                }
-                self.current_page_complete = false;
+                self.form_index += 1;
                 continue;
             }
             let form_index = self.form_index;
@@ -694,13 +691,11 @@ impl AuthorizedAssetReferenceStreamState {
                 &self.authorized_forms,
                 &form_name,
                 &asset_field_names,
-                self.after_entry_id.as_deref(),
-                ASSET_TEXT_SEARCH_PAGE_SIZE,
+                None,
+                AUTHORIZED_ASSET_REFERENCE_MAX_ROWS,
             )
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
-            let page_complete = rows.len() == ASSET_TEXT_SEARCH_PAGE_SIZE;
-            let next_after_entry_id = rows.last().map(|row| row.entry_id.clone());
             let rows = rows
                 .into_iter()
                 .filter(|row| {
@@ -717,15 +712,9 @@ impl AuthorizedAssetReferenceStreamState {
                 .map(|row| (form_name.clone(), row))
                 .collect::<Vec<_>>();
             if rows.is_empty() {
-                self.after_entry_id = next_after_entry_id;
-                if !page_complete {
-                    self.form_index += 1;
-                    self.after_entry_id = None;
-                }
+                self.form_index += 1;
             } else {
                 self.current_rows = Some(rows);
-                self.next_after_entry_id = next_after_entry_id;
-                self.current_page_complete = page_complete;
             }
         }
     }
@@ -776,9 +765,6 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             form_index: 0,
             current_rows: None,
             current_offset: 0,
-            after_entry_id: None,
-            next_after_entry_id: None,
-            current_page_complete: false,
         };
         let schema = self.schema.clone();
         let stream = futures::stream::try_unfold(state, |mut state| async move {

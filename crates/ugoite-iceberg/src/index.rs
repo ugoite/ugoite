@@ -37,7 +37,7 @@ pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
 pub const SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS: usize = SQL_SESSION_MAX_ROWS;
 pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
-pub(crate) const AUTHORIZED_ASSET_REFERENCE_PAGE_SIZE: usize = 2_048;
+pub(crate) const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize = usize::MAX / 2;
 
 /// Immutable execution inputs for one authorized SQL-session page.
 ///
@@ -544,7 +544,7 @@ pub(crate) async fn authorized_asset_reference_query_context(
         Some(relation_scopes),
         None,
         BTreeSet::new(),
-        AUTHORIZED_ASSET_REFERENCE_PAGE_SIZE,
+        AUTHORIZED_ASSET_REFERENCE_MAX_ROWS,
         true,
     )
     .await

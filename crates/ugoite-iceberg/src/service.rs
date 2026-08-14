@@ -328,7 +328,9 @@ impl UgoiteService {
 
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
-        form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await
+        form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(())
     }
 
     pub async fn create_entry(
@@ -1588,7 +1590,9 @@ impl UgoiteService {
             asset_id,
             &scopes,
         )
-        .await
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(())
     }
 
     pub async fn get_user_preferences(
