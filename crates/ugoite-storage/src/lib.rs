@@ -672,7 +672,6 @@ impl DerivedRelationHeadStore {
                 .recursive(true)
                 .await?;
             let mut garbage_marker = None;
-            let mut publishing_marker = None;
             let mut build_objects = Vec::new();
             for entry in entries {
                 if entry.metadata().mode() != EntryMode::FILE {
@@ -685,11 +684,11 @@ impl DerivedRelationHeadStore {
                     // on the next GC pass.
                     garbage_marker = Some(entry.path().to_string());
                 } else if entry.path() == self.publishing_marker_path(&build_id) {
-                    // Keep the garbage claim until all build data is gone.
-                    // The claim itself is removed immediately before the
-                    // garbage marker, so a crash still leaves a durable
-                    // cleanup record.
-                    publishing_marker = Some(entry.path().to_string());
+                    // A garbage claim is also the terminal tombstone.  It
+                    // must remain after cleanup: a publisher that was paused
+                    // before its claim attempt can otherwise create a fresh
+                    // claim after garbage.json is removed and publish a Head
+                    // for this already-deleted build.
                 } else {
                     build_objects.push(entry.path().to_string());
                 }
@@ -725,15 +724,12 @@ impl DerivedRelationHeadStore {
                 {
                     continue;
                 }
-                if let Some(path) = publishing_marker {
-                    if !self.renew_garbage_claim(&build_id).await? {
-                        continue;
-                    }
-                    self.operator.delete(&path).await?;
-                }
                 // The garbage marker is the final durable cleanup record. If
                 // a publisher won the Head CAS after the previous check, the
-                // marker must remain so the build is rediscovered safely.
+                // marker must remain so the build is rediscovered safely. The
+                // garbage claim is intentionally retained as a terminal
+                // tombstone, fencing delayed publishers even after this
+                // marker is removed.
                 if self
                     .read_exact()
                     .await?
@@ -2186,6 +2182,37 @@ mod tests {
         let deleted = store.garbage_collect(None, Duration::ZERO).await?;
         assert_eq!(deleted, vec!["partial"]);
         assert!(!operator.exists(&partial).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn garbage_collection_retains_terminal_claim_after_marker_cleanup() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA00C);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let data = format!("{}/data/old.parquet", store.builds_path("old"));
+        operator.write(&data, b"old".to_vec()).await?;
+        store.mark_garbage("old").await?;
+
+        assert_eq!(
+            store.garbage_collect(None, Duration::ZERO).await?,
+            vec!["old"]
+        );
+        assert!(!operator.exists(&data).await?);
+        assert!(!operator.exists(&store.garbage_marker_path("old")).await?);
+        // The terminal garbage claim fences a publisher that was paused
+        // before the GC claim was created, even after garbage.json is gone.
+        assert!(
+            operator
+                .exists(&store.publishing_marker_path("old"))
+                .await?
+        );
+        assert!(store
+            .begin_publishing("old")
+            .await
+            .expect_err("a reclaimed build must stay fenced")
+            .to_string()
+            .contains("claim is held"));
         Ok(())
     }
 
