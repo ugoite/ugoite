@@ -1677,23 +1677,26 @@ fn extract_chunks(
     dispatch: &Dispatch,
     bytes: &[u8],
 ) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
-    let chunks = match dispatch {
-        Dispatch::PlainText(_) => Ok(split_text_chunks(
+    let mut chunks = Vec::new();
+    let mut total_bytes = 0;
+    match dispatch {
+        Dispatch::PlainText(_) => append_text_chunks(
+            &mut chunks,
+            &mut total_bytes,
             String::from_utf8_lossy(bytes).as_ref(),
             json!({"block": 0}),
-        )),
-        Dispatch::Pdf(_) => extract_pdf_chunks(bytes),
-        Dispatch::Docx(_) => extract_ooxml_chunks(bytes, "word/document.xml", "paragraph"),
-        Dispatch::Xlsx(_) => extract_ooxml_workbook_chunks(bytes),
-        Dispatch::Pptx(_) => extract_ooxml_slides(bytes),
-        Dispatch::Unsupported(_) => Ok(Vec::new()),
-    }?;
-    let total_bytes = chunks
-        .iter()
-        .try_fold(0usize, |total, chunk| total.checked_add(chunk.text.len()))
-        .ok_or("parser_limit")?;
-    if total_bytes > MAX_EXTRACTED_TEXT_BYTES {
-        return Err("parser_limit");
+        )?,
+        Dispatch::Pdf(_) => extract_pdf_chunks(bytes, &mut chunks, &mut total_bytes)?,
+        Dispatch::Docx(_) => extract_ooxml_chunks(
+            bytes,
+            "word/document.xml",
+            "paragraph",
+            &mut chunks,
+            &mut total_bytes,
+        )?,
+        Dispatch::Xlsx(_) => extract_ooxml_workbook_chunks(bytes, &mut chunks, &mut total_bytes)?,
+        Dispatch::Pptx(_) => extract_ooxml_slides(bytes, &mut chunks, &mut total_bytes)?,
+        Dispatch::Unsupported(_) => {}
     }
     Ok(chunks)
 }
@@ -1729,7 +1732,28 @@ async fn extract_chunks_async(
     }
 }
 
-fn split_text_chunks(text: &str, locator: Value) -> Vec<ExtractedChunk> {
+fn append_extracted_chunk(
+    output: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+    chunk: ExtractedChunk,
+) -> std::result::Result<(), &'static str> {
+    let next_total = total_bytes
+        .checked_add(chunk.text.len())
+        .ok_or("parser_limit")?;
+    if next_total > MAX_EXTRACTED_TEXT_BYTES {
+        return Err("parser_limit");
+    }
+    *total_bytes = next_total;
+    output.push(chunk);
+    Ok(())
+}
+
+fn append_text_chunks(
+    output: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+    text: &str,
+    locator: Value,
+) -> std::result::Result<(), &'static str> {
     let normalized = normalize_text(text);
     let mut blocks = normalized
         .split("\n\n")
@@ -1738,7 +1762,6 @@ fn split_text_chunks(text: &str, locator: Value) -> Vec<ExtractedChunk> {
     if blocks.is_empty() && !normalized.is_empty() {
         blocks.push(&normalized);
     }
-    let mut chunks = Vec::new();
     for block in blocks {
         let mut current = String::new();
         let mut current_chars = 0usize;
@@ -1746,21 +1769,29 @@ fn split_text_chunks(text: &str, locator: Value) -> Vec<ExtractedChunk> {
             current.push(character);
             current_chars += 1;
             if current_chars >= MAX_TEXT_CHUNK_CHARS {
-                chunks.push(ExtractedChunk {
-                    locator: locator.clone(),
-                    text: std::mem::take(&mut current),
-                });
+                append_extracted_chunk(
+                    output,
+                    total_bytes,
+                    ExtractedChunk {
+                        locator: locator.clone(),
+                        text: std::mem::take(&mut current),
+                    },
+                )?;
                 current_chars = 0;
             }
         }
         if !current.is_empty() {
-            chunks.push(ExtractedChunk {
-                locator: locator.clone(),
-                text: current,
-            });
+            append_extracted_chunk(
+                output,
+                total_bytes,
+                ExtractedChunk {
+                    locator: locator.clone(),
+                    text: current,
+                },
+            )?;
         }
     }
-    chunks
+    Ok(())
 }
 
 fn normalize_text(text: &str) -> String {
@@ -1820,7 +1851,11 @@ fn extract_pdf_text(bytes: &[u8]) -> String {
     text
 }
 
-fn extract_pdf_chunks(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+fn extract_pdf_chunks(
+    bytes: &[u8],
+    chunks: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+) -> std::result::Result<(), &'static str> {
     // pdf-extract handles compressed content streams, text encodings, and
     // page boundaries.  Keep the call behind the explicit input/page limits
     // and convert parser failures to a coarse diagnostic; source bytes never
@@ -1842,30 +1877,34 @@ fn extract_pdf_chunks(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>, 
     if pages.len() > MAX_PDF_PAGES {
         return Err("parser_limit");
     }
-    let mut chunks = Vec::new();
     for (index, page) in pages.into_iter().enumerate() {
-        chunks.extend(split_text_chunks(&page, json!({"page": index + 1})));
+        append_text_chunks(chunks, total_bytes, &page, json!({"page": index + 1}))?;
     }
-    Ok(chunks)
+    Ok(())
 }
 
 fn extract_ooxml_chunks(
     bytes: &[u8],
     target: &str,
     kind: &str,
-) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    chunks: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+) -> std::result::Result<(), &'static str> {
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
     let mut file = archive.by_name(target).map_err(|_| "malformed_container")?;
     let xml = read_zip_entry(&mut file)?;
     let text = xml_text(&xml)?;
-    Ok(split_text_chunks(&text, json!({kind: 1})))
+    append_text_chunks(chunks, total_bytes, &text, json!({kind: 1}))
 }
 
-fn extract_ooxml_slides(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+fn extract_ooxml_slides(
+    bytes: &[u8],
+    chunks: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+) -> std::result::Result<(), &'static str> {
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
-    let mut chunks = Vec::new();
     let mut slide_index = 0usize;
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|_| "malformed_container")?;
@@ -1873,31 +1912,36 @@ fn extract_ooxml_slides(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>
         if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
             slide_index += 1;
             let xml = read_zip_entry(&mut file)?;
-            chunks.extend(split_text_chunks(
+            append_text_chunks(
+                chunks,
+                total_bytes,
                 &xml_text(&xml)?,
                 json!({"slide": slide_index}),
-            ));
+            )?;
         }
     }
     if chunks.is_empty() {
         return Err("malformed_container");
     }
-    Ok(chunks)
+    Ok(())
 }
 
 fn extract_ooxml_workbook_chunks(
     bytes: &[u8],
-) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    chunks: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+) -> std::result::Result<(), &'static str> {
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
-    let mut chunks = Vec::new();
     let mut sheet_index = 0usize;
     if let Ok(mut shared_strings) = archive.by_name("xl/sharedStrings.xml") {
         let xml = read_zip_entry(&mut shared_strings)?;
-        chunks.extend(split_text_chunks(
+        append_text_chunks(
+            chunks,
+            total_bytes,
             &xml_text(&xml)?,
             json!({"sheet": "shared_strings"}),
-        ));
+        )?;
     }
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|_| "malformed_container")?;
@@ -1905,16 +1949,18 @@ fn extract_ooxml_workbook_chunks(
         if name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml") {
             sheet_index += 1;
             let xml = read_zip_entry(&mut file)?;
-            chunks.extend(split_text_chunks(
+            append_text_chunks(
+                chunks,
+                total_bytes,
                 &xml_text(&xml)?,
                 json!({"sheet": sheet_index}),
-            ));
+            )?;
         }
     }
     if chunks.is_empty() {
         return Err("malformed_container");
     }
-    Ok(chunks)
+    Ok(())
 }
 
 fn read_zip_entry<R: Read>(
@@ -2083,9 +2129,11 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
     let manifest: AssetTextManifest =
         serde_json::from_slice(&op.read(&manifest_location).await?.to_vec())
             .context("decode AssetText build manifest")?;
+    let current_source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
     let stale = head.head.producer_fingerprint != asset_text_producer_fingerprint()
         || head.head.definition_fingerprint != asset_text_definition_fingerprint()
-        || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH;
+        || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH
+        || head.head.source_coordinate != current_source_coordinate;
     Ok(json!({
         "state": "ready",
         "current_producer_fingerprint": asset_text_producer_fingerprint(),
@@ -2184,7 +2232,8 @@ mod tests {
         pdf.extend_from_slice(
             format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
         );
-        let chunks = extract_pdf_chunks(&pdf).expect("valid PDF fixture");
+        let chunks = extract_chunks(&Dispatch::Pdf(parser_identity("pdf")), &pdf)
+            .expect("valid PDF fixture");
         assert!(chunks.iter().any(|chunk| chunk.text.contains("Investment")));
         assert_eq!(chunks[0].locator, json!({"page": 1}));
     }
@@ -2193,7 +2242,7 @@ mod tests {
     fn parser_limits_reject_hostile_pdf_and_xml_work() {
         let hostile_pdf = b"/Type /Page ".repeat(MAX_PDF_PAGES + 1);
         assert!(matches!(
-            extract_pdf_chunks(&hostile_pdf),
+            extract_chunks(&Dispatch::Pdf(parser_identity("pdf")), &hostile_pdf),
             Err("parser_limit")
         ));
 
@@ -2215,6 +2264,21 @@ mod tests {
             extract_chunks(&Dispatch::PlainText(parser_identity("plain_text")), &bytes),
             Err("parser_limit")
         ));
+    }
+
+    #[test]
+    fn extracted_text_limit_is_enforced_while_accumulating_chunks() {
+        let first = "x".repeat(MAX_EXTRACTED_TEXT_BYTES / 2);
+        let second = "x".repeat(MAX_EXTRACTED_TEXT_BYTES / 2 + 1);
+        let mut chunks = Vec::new();
+        let mut total_bytes = 0;
+        append_text_chunks(&mut chunks, &mut total_bytes, &first, json!({"part": 1}))
+            .expect("first parser part fits");
+        assert!(
+            append_text_chunks(&mut chunks, &mut total_bytes, &second, json!({"part": 2}),)
+                .is_err()
+        );
+        assert!(total_bytes <= MAX_EXTRACTED_TEXT_BYTES);
     }
 
     #[tokio::test]
