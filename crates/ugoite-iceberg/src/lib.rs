@@ -219,6 +219,12 @@ pub struct IcebergWorkspace {
 static SPACE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Arc<Semaphore>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Derived rebuilds have their own maintenance budget. They may be expensive,
+/// but they must not consume the permit reserved for interactive authorized
+/// reads.
+static SPACE_MAINTENANCE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Arc<Semaphore>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SchemaCommitCapability {
     MetadataOnly,
@@ -444,6 +450,17 @@ impl IcebergWorkspace {
     pub(crate) fn shared_query_permits(&self, max_concurrency: usize) -> Arc<Semaphore> {
         let key = format!("{}:{}", self.warehouse, self.space_id);
         let mut permits = SPACE_QUERY_PERMITS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        permits
+            .entry(key)
+            .or_insert_with(|| Arc::new(Semaphore::new(max_concurrency)))
+            .clone()
+    }
+
+    pub(crate) fn maintenance_query_permits(&self, max_concurrency: usize) -> Arc<Semaphore> {
+        let key = format!("{}:{}", self.warehouse, self.space_id);
+        let mut permits = SPACE_MAINTENANCE_QUERY_PERMITS
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         permits
@@ -1888,9 +1905,29 @@ impl IcebergWorkspace {
         view: RevisionView,
         max_rows: Option<usize>,
     ) -> Result<Vec<RecordBatch>> {
+        self.read_latest_revision_batches_with_permits(
+            table,
+            entry_scope,
+            snapshot_id,
+            view,
+            max_rows,
+            self.shared_query_permits(1),
+        )
+        .await
+    }
+
+    async fn read_latest_revision_batches_with_permits(
+        &self,
+        table: &iceberg::table::Table,
+        entry_scope: &EntryScope,
+        snapshot_id: Option<i64>,
+        view: RevisionView,
+        max_rows: Option<usize>,
+        permits: Arc<Semaphore>,
+    ) -> Result<Vec<RecordBatch>> {
         let (provider, query_snapshot_id) = self.revision_provider(table, snapshot_id).await?;
         let context = self
-            .authorized_revision_query_context(
+            .authorized_revision_query_context_with_permits(
                 provider,
                 table.metadata().uuid().to_string(),
                 query_snapshot_id,
@@ -1902,6 +1939,7 @@ impl IcebergWorkspace {
                     max_concurrency: 1,
                     allowed_functions: BTreeSet::new(),
                 },
+                permits,
             )
             .await?;
         let ids = context
@@ -1969,12 +2007,13 @@ impl IcebergWorkspace {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
         let batches = self
-            .read_latest_revision_batches(
+            .read_latest_revision_batches_with_permits(
                 &table,
                 &EntryScope::AllCurrent,
                 None,
                 RevisionView::LatestIncludingTombstones,
                 None,
+                self.maintenance_query_permits(1),
             )
             .await?;
         let schema = table.metadata().current_schema().clone();

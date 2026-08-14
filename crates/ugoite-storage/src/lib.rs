@@ -115,6 +115,7 @@ pub struct ExactLegacyDerivedRelationHead {
 }
 
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
+const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
 
 #[derive(Debug)]
 pub struct LegacyDerivedRelationHead;
@@ -476,6 +477,34 @@ impl DerivedRelationHeadStore {
             }
             Err(error) => Err(error.into()),
         }
+    }
+
+    /// Keep a shared publisher's claim fresh until its final Head CAS returns.
+    /// The claim is durable coordination state, so a slow object-store write
+    /// must not look like a crashed publisher to GC.
+    async fn renew_publishing_claim(&self, build_id: &str) -> Result<bool> {
+        let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
+            return Ok(false);
+        };
+        if Self::claim_role(&bytes).as_deref() != Some("publishing") {
+            return Ok(false);
+        }
+        self.replace_build_claim(build_id, etag.as_deref(), "publishing")
+            .await
+    }
+
+    fn start_publishing_claim_heartbeat(&self, build_id: &str) -> tokio::task::JoinHandle<()> {
+        let store = self.clone();
+        let build_id = build_id.to_string();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(DERIVED_BUILD_CLAIM_RENEWAL).await;
+                match store.renew_publishing_claim(&build_id).await {
+                    Ok(true) => {}
+                    Ok(false) | Err(_) => return,
+                }
+            }
+        })
     }
 
     /// Refresh the garbage claim before each destructive object operation.
@@ -1044,10 +1073,13 @@ impl DerivedRelationHeadStore {
             return self.publish_with_single_process_lock(expected, head).await;
         }
         self.begin_publishing(&head.build_id).await?;
-        match expected {
+        let heartbeat = self.start_publishing_claim_heartbeat(&head.build_id);
+        let result = match expected {
             None => self.create(head).await,
             Some(expected) => self.replace(expected.etag.as_deref(), head).await,
-        }
+        };
+        heartbeat.abort();
+        result
     }
 
     /// Replaces a disposable legacy Head after a complete build has been
@@ -1069,17 +1101,23 @@ impl DerivedRelationHeadStore {
             .etag
             .as_deref()
             .context("shared legacy DerivedRelation replacement requires an ETag")?;
-        self.operator
+        let bytes = canonical_head_bytes(head)?;
+        let heartbeat = self.start_publishing_claim_heartbeat(&head.build_id);
+        let result = self
+            .operator
             .write_options(
                 &self.head_path(),
-                canonical_head_bytes(head)?,
+                bytes,
                 WriteOptions {
                     if_match: Some(etag.to_string()),
                     ..Default::default()
                 },
             )
-            .await?;
-        Ok(())
+            .await
+            .map(|_| ())
+            .map_err(Into::into);
+        heartbeat.abort();
+        result
     }
 
     /// Deletes the removed v1 materialization prefix after its Head has been

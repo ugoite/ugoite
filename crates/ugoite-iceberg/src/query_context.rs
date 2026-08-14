@@ -399,6 +399,27 @@ impl IcebergWorkspace {
         entry_scope: &EntryScope,
         limits: ugoite_core::query::QueryLimits,
     ) -> Result<AuthorizedQueryContext> {
+        let permits = self.shared_query_permits(limits.max_concurrency);
+        self.authorized_revision_query_context_with_permits(
+            provider,
+            table_uuid,
+            snapshot_id,
+            entry_scope,
+            limits,
+            permits,
+        )
+        .await
+    }
+
+    pub(crate) async fn authorized_revision_query_context_with_permits(
+        &self,
+        provider: Arc<dyn TableProvider>,
+        table_uuid: String,
+        snapshot_id: Option<i64>,
+        entry_scope: &EntryScope,
+        limits: ugoite_core::query::QueryLimits,
+        permits: Arc<Semaphore>,
+    ) -> Result<AuthorizedQueryContext> {
         let context = bounded_session_context(&limits)?;
         context.register_table("revisions", provider.clone())?;
         let source = context.table("revisions").await?;
@@ -419,7 +440,7 @@ impl IcebergWorkspace {
         Ok(AuthorizedQueryContext {
             context,
             limits: limits.clone(),
-            permits: self.shared_query_permits(limits.max_concurrency),
+            permits,
             authorized_relations: BTreeSet::from(["revisions".to_string()]),
             authorized_scans: BTreeSet::from([AuthorizedScan {
                 table_uuid,
