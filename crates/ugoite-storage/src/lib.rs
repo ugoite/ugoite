@@ -528,6 +528,7 @@ impl DerivedRelationHeadStore {
             has_garbage_marker: bool,
             has_staging_marker: bool,
             has_publishing_marker: bool,
+            stale_publishing_old_enough: bool,
             newest_object_modified: Option<SystemTime>,
             orphan_old_enough: bool,
         }
@@ -578,12 +579,26 @@ impl DerivedRelationHeadStore {
                 );
             }
         }
-        for candidate in candidates.values_mut() {
+        for (build_id, candidate) in &mut candidates {
+            // A crash after publication claim creation can leave only
+            // publishing.json behind. A live claim protects the build, while
+            // a stale publishing claim is recoverable cleanup intent. A
+            // terminal garbage claim remains a tombstone and is never
+            // reclaimed.
+            if candidate.has_publishing_marker {
+                if let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? {
+                    candidate.stale_publishing_old_enough = Self::claim_role(&bytes).as_deref()
+                        == Some("publishing")
+                        && Self::claim_is_stale(last_modified);
+                }
+            }
             // A marker-less prefix can be left behind by a crash immediately
             // after Head CAS and before the superseded build is marked garbage.
             // Only consider it after every object has been quiet for the full
-            // grace period, and never while a staging or publishing claim is
-            // present. Head remains the authority for the final deletion check.
+            // grace period, and never while a staging or live publishing claim
+            // is present. A stale publishing claim is handled separately as
+            // recoverable cleanup intent. Head remains the authority for the
+            // final deletion check.
             candidate.orphan_old_enough = !candidate.has_garbage_marker
                 && !candidate.has_staging_marker
                 && !candidate.has_publishing_marker
@@ -608,7 +623,9 @@ impl DerivedRelationHeadStore {
             let cleanup_old_enough = if candidate.has_garbage_marker {
                 candidate.garbage_marker_old_enough
             } else {
-                candidate.stale_staging_old_enough || candidate.orphan_old_enough
+                candidate.stale_staging_old_enough
+                    || candidate.orphan_old_enough
+                    || candidate.stale_publishing_old_enough
             };
             if !cleanup_old_enough {
                 continue;
@@ -624,10 +641,14 @@ impl DerivedRelationHeadStore {
             {
                 continue;
             }
-            if candidate.orphan_old_enough {
-                // Make the fallback candidate durable before taking the
-                // publishing claim. If this process crashes at either point,
-                // garbage.json remains available for the next GC pass.
+            let needs_fresh_garbage_marker = !candidate.has_garbage_marker
+                && (candidate.stale_staging_old_enough
+                    || candidate.orphan_old_enough
+                    || candidate.stale_publishing_old_enough);
+            if needs_fresh_garbage_marker {
+                // The first pass only records cleanup intent. This makes the
+                // marker timestamp the grace-period boundary even when an
+                // old staging/publishing object is being reclaimed.
                 self.mark_garbage(&build_id).await?;
                 if self
                     .read_exact()
@@ -636,34 +657,14 @@ impl DerivedRelationHeadStore {
                     .is_some_and(|head| head.head.build_id == build_id)
                 {
                     let _ = self.clear_garbage(&build_id).await;
-                    continue;
                 }
+                continue;
             }
             // Publication and GC claim the same object with conditional
             // create/replace. A fresh claim belongs to the other operation;
             // a stale claim can be atomically taken over for recovery.
             if !self.claim_build_for_garbage(&build_id).await? {
                 continue;
-            }
-            if (candidate.stale_staging_old_enough || candidate.orphan_old_enough)
-                && !candidate.garbage_marker_old_enough
-            {
-                // Make cleanup intent durable before deleting an abandoned
-                // staging prefix. Publishers reject this marker, so a stale
-                // builder cannot turn a reclaimed prefix into the current
-                // Head after this point.
-                if self.mark_garbage(&build_id).await.is_err() {
-                    continue;
-                }
-                if self
-                    .read_exact()
-                    .await?
-                    .as_ref()
-                    .is_some_and(|head| head.head.build_id == build_id)
-                {
-                    let _ = self.clear_garbage(&build_id).await;
-                    continue;
-                }
             }
             let build_prefix = self.builds_path(&build_id);
             let entries = self
@@ -2225,6 +2226,16 @@ mod tests {
         store.mark_staging("crashed").await?;
         operator.write(&partial, b"crashed".to_vec()).await?;
 
+        assert!(store
+            .garbage_collect(None, Duration::ZERO)
+            .await?
+            .is_empty());
+        assert!(operator.exists(&partial).await?);
+        assert!(
+            operator
+                .exists(&store.garbage_marker_path("crashed"))
+                .await?
+        );
         let deleted = store.garbage_collect(None, Duration::ZERO).await?;
         assert_eq!(deleted, vec!["crashed"]);
         assert!(!operator.exists(&partial).await?);
