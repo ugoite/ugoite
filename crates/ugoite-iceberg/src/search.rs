@@ -222,6 +222,21 @@ async fn asset_text_search_authorized_inner(
         Ok(fields) => fields,
         Err(_) => return Ok(None),
     };
+    // Do not make the provider walk current rows for Forms that cannot emit an
+    // AssetReference. This keeps the derived join work proportional to the
+    // authorized AssetReference-bearing Forms, rather than to every large Form
+    // in the Space.
+    let asset_form_names = form_names
+        .into_iter()
+        .filter(|form_name| {
+            asset_reference_fields
+                .get(form_name)
+                .is_some_and(|fields| !fields.is_empty())
+        })
+        .collect::<Vec<_>>();
+    if asset_form_names.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
     if context
         .register_table(
             "__ugoite_authorized_asset_refs",
@@ -229,7 +244,7 @@ async fn asset_text_search_authorized_inner(
                 op.clone(),
                 ws_path.to_string(),
                 relation_scopes.clone(),
-                form_names,
+                asset_form_names,
                 asset_reference_fields,
                 after,
             )),
