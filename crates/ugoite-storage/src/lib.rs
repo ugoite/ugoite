@@ -525,6 +525,21 @@ impl DerivedRelationHeadStore {
         {
             return Err(anyhow!("DerivedRelation build is marked garbage"));
         }
+        // garbage.json is removed last, but the publishing marker is retained
+        // as the terminal tombstone after cleanup.  Check both lifecycle
+        // records so a delayed publisher cannot resurrect a build after GC
+        // has already claimed and deleted it.
+        if let Some((bytes, _, _)) = self.read_build_claim(build_id).await? {
+            match Self::claim_role(&bytes).as_deref() {
+                Some("publishing") => {}
+                Some("garbage") => {
+                    return Err(anyhow!(
+                        "DerivedRelation build has a terminal garbage claim"
+                    ));
+                }
+                _ => return Err(anyhow!("DerivedRelation build claim is held")),
+            }
+        }
         Ok(())
     }
 
@@ -2269,6 +2284,12 @@ mod tests {
                 .exists(&store.publishing_marker_path("old"))
                 .await?
         );
+        assert!(store
+            .ensure_build_publishable("old")
+            .await
+            .expect_err("a terminal garbage claim must fence publication")
+            .to_string()
+            .contains("terminal garbage claim"));
         assert!(store
             .begin_publishing("old")
             .await
