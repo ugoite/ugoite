@@ -722,6 +722,11 @@ async fn rebuild_asset_text_with_mode(
                 if legacy_expected.is_some() {
                     let _ = head_store.remove_legacy_materializations().await;
                 }
+                // A previous uncertain publication may have left a garbage
+                // marker on this build. Once the exact Head reread proves the
+                // build is current, that marker must not retain its old age
+                // and make the next swap eligible for premature GC.
+                let _ = head_store.clear_garbage(&head.build_id).await;
                 // Keep staging protection until the successful Head outcome
                 // is observed. A slow GC must not delete this build between
                 // validation and publication.
@@ -761,6 +766,10 @@ async fn rebuild_asset_text_with_mode(
         // staging marker would make it invisible to lifecycle GC forever.
         ensure_cleanup_marker(&head_store, &head.build_id).await
     } else {
+        // The build may have been conservatively marked garbage after an
+        // uncertain CAS response. Current Head confirmation makes that marker
+        // invalid, regardless of its original timestamp.
+        let _ = head_store.clear_garbage(&head.build_id).await;
         true
     };
     // A completed build no longer needs its active-build heartbeat. If this

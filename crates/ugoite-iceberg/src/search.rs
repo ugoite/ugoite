@@ -145,6 +145,25 @@ async fn asset_text_search_authorized(
     if limit == 0 {
         return Ok(Some(Vec::new()));
     }
+    match tokio::time::timeout(
+        ASSET_TEXT_SEARCH_TIMEOUT,
+        asset_text_search_authorized_inner(op, ws_path, query, relation_scopes, limit, after),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Ok(None),
+    }
+}
+
+async fn asset_text_search_authorized_inner(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    limit: usize,
+    after: Option<(&str, &str, &str)>,
+) -> Result<Option<Vec<KeywordSearchResult>>> {
     // The authorized-reference provider deliberately cannot push the AssetText
     // predicate down into the authoritative Form tables: doing so would make
     // authorization depend on derived data. Bound the remaining join with the
@@ -169,9 +188,6 @@ async fn asset_text_search_authorized(
     .await
     {
         Ok(registered) => registered,
-        // AssetText is optional derived data. A missing, stale, corrupt, or
-        // temporarily unavailable build must not make the authoritative typed
-        // Entry search fail.
         Err(_) => return Ok(None),
     };
     if !registered {

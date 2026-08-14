@@ -129,6 +129,11 @@ enum GarbageHeadFence {
     },
 }
 
+#[derive(Debug, Clone)]
+struct GarbageClaim {
+    etag: Option<String>,
+}
+
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
 
@@ -514,6 +519,14 @@ impl DerivedRelationHeadStore {
                         return Err(anyhow!("DerivedRelation build claim is held"));
                     }
                 }
+                Some("released") => {
+                    if !self
+                        .replace_build_claim(build_id, etag.as_deref(), "publishing")
+                        .await?
+                    {
+                        return Err(anyhow!("DerivedRelation build claim is held"));
+                    }
+                }
                 _ => return Err(anyhow!("DerivedRelation build claim is held")),
             }
         }
@@ -525,7 +538,17 @@ impl DerivedRelationHeadStore {
     /// garbage marker or deletes any build object. The if-match replacement
     /// is the shared-backend exclusion primitive: either publication owns the
     /// marker, or GC owns it, never both.
-    async fn claim_build_for_garbage(&self, build_id: &str) -> Result<bool> {
+    async fn current_garbage_claim(&self, build_id: &str) -> Result<Option<GarbageClaim>> {
+        let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
+            return Ok(None);
+        };
+        if Self::claim_role(&bytes).as_deref() != Some("garbage") {
+            return Ok(None);
+        }
+        Ok(Some(GarbageClaim { etag }))
+    }
+
+    async fn claim_build_for_garbage(&self, build_id: &str) -> Result<Option<GarbageClaim>> {
         let path = self.publishing_marker_path(build_id);
         match self
             .operator
@@ -539,17 +562,26 @@ impl DerivedRelationHeadStore {
             )
             .await
         {
-            Ok(_) => Ok(true),
+            Ok(_) => self.current_garbage_claim(build_id).await,
             Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
                 let Some((bytes, etag, last_modified)) = self.read_build_claim(build_id).await?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 if !matches!(
                     Self::claim_role(&bytes).as_deref(),
-                    Some("staging") | Some("publishing") | Some("garbage")
+                    Some("staging") | Some("publishing") | Some("garbage") | Some("released")
                 ) {
-                    return Ok(false);
+                    return Ok(None);
+                }
+                if Self::claim_role(&bytes).as_deref() == Some("released") {
+                    if !self
+                        .replace_build_claim(build_id, etag.as_deref(), "garbage")
+                        .await?
+                    {
+                        return Ok(None);
+                    }
+                    return self.current_garbage_claim(build_id).await;
                 }
                 if self.write_mode == CatalogWriteMode::SingleProcess
                     && Self::claim_role(&bytes).as_deref() == Some("garbage")
@@ -558,13 +590,18 @@ impl DerivedRelationHeadStore {
                     // exclusion primitive. A prior maintenance pass may
                     // have left its own terminal claim while deliberately
                     // waiting for the garbage marker grace boundary.
-                    return Ok(true);
+                    return Ok(Some(GarbageClaim { etag }));
                 }
                 if !Self::claim_is_stale(&bytes, last_modified) {
-                    return Ok(false);
+                    return Ok(None);
                 }
-                self.replace_build_claim(build_id, etag.as_deref(), "garbage")
-                    .await
+                if !self
+                    .replace_build_claim(build_id, etag.as_deref(), "garbage")
+                    .await?
+                {
+                    return Ok(None);
+                }
+                self.current_garbage_claim(build_id).await
             }
             Err(error) => Err(error.into()),
         }
@@ -812,16 +849,25 @@ impl DerivedRelationHeadStore {
         }
     }
 
-    async fn release_garbage_claim(&self, build_id: &str) -> Result<()> {
-        match self
-            .operator
-            .delete(&self.publishing_marker_path(build_id))
-            .await
-        {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
+    /// Release a GC claim only if the claim still belongs to this collector.
+    /// OpenDAL has no conditional delete, so the shared path uses an ETag-bound
+    /// transition to an explicitly unclaimed role. A later GC or publisher can
+    /// take that role over with its own conditional replacement, while a paused
+    /// old collector cannot remove the newer owner's claim.
+    async fn release_garbage_claim(&self, build_id: &str, claim: &GarbageClaim) -> Result<bool> {
+        let Some((bytes, current_etag, _)) = self.read_build_claim(build_id).await? else {
+            return Ok(false);
+        };
+        if Self::claim_role(&bytes).as_deref() != Some("garbage") {
+            return Ok(false);
         }
+        if self.write_mode == CatalogWriteMode::Shared
+            && current_etag.as_deref() != claim.etag.as_deref()
+        {
+            return Ok(false);
+        }
+        self.replace_build_claim(build_id, current_etag.as_deref(), "released")
+            .await
     }
 
     async fn ensure_build_publishable(&self, build_id: &str) -> Result<()> {
@@ -844,6 +890,7 @@ impl DerivedRelationHeadStore {
                         "DerivedRelation build has a terminal garbage claim"
                     ));
                 }
+                Some("released") => {}
                 _ => return Err(anyhow!("DerivedRelation build claim is held")),
             }
         }
@@ -956,8 +1003,9 @@ impl DerivedRelationHeadStore {
                 self.read_build_claim(&build_id)
                     .await?
                     .is_some_and(|(bytes, _, last_modified)| {
-                        Self::claim_role(&bytes).as_deref() == Some("publishing")
-                            && Self::claim_is_stale(&bytes, last_modified)
+                        Self::claim_role(&bytes).as_deref() == Some("released")
+                            || (Self::claim_role(&bytes).as_deref() == Some("publishing")
+                                && Self::claim_is_stale(&bytes, last_modified))
                     })
             } else {
                 false
@@ -1074,11 +1122,12 @@ impl DerivedRelationHeadStore {
             // reclaimed.
             if candidate.has_publishing_marker {
                 if let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? {
-                    candidate.stale_publishing_old_enough =
-                        matches!(
+                    candidate.stale_publishing_old_enough = Self::claim_role(&bytes).as_deref()
+                        == Some("released")
+                        || (matches!(
                             Self::claim_role(&bytes).as_deref(),
                             Some("staging") | Some("publishing")
-                        ) && Self::claim_is_stale(&bytes, last_modified);
+                        ) && Self::claim_is_stale(&bytes, last_modified));
                 }
             }
             // A marker-less prefix can be left behind by a crash immediately
@@ -1128,6 +1177,16 @@ impl DerivedRelationHeadStore {
                 .as_ref()
                 .is_some_and(|head| head.head.build_id == build_id)
             {
+                // A build can become current again after an uncertain
+                // publication response left a conservative garbage marker.
+                // Clear that marker while it is still current so its old
+                // timestamp cannot shorten the next reader grace period.
+                if candidate.has_garbage_marker {
+                    self.clear_garbage(&build_id).await?;
+                }
+                if let Some(claim) = self.current_garbage_claim(&build_id).await? {
+                    let _ = self.release_garbage_claim(&build_id, &claim).await;
+                }
                 continue;
             }
             let needs_fresh_garbage_marker = !candidate.has_garbage_marker
@@ -1149,16 +1208,16 @@ impl DerivedRelationHeadStore {
             // Publication and GC claim the same object with conditional
             // create/replace. A fresh claim belongs to the other operation;
             // a stale claim can be atomically taken over for recovery.
-            if !self.claim_build_for_garbage(&build_id).await? {
+            let Some(garbage_claim) = self.claim_build_for_garbage(&build_id).await? else {
                 continue;
-            }
+            };
             if needs_fresh_garbage_marker
                 && candidate.has_staging_marker
                 && !self
                     .marker_old_enough(&self.staging_marker_path(&build_id), minimum_gc_age)
                     .await?
             {
-                let _ = self.release_garbage_claim(&build_id).await;
+                let _ = self.release_garbage_claim(&build_id, &garbage_claim).await;
                 continue;
             }
             if needs_fresh_garbage_marker {
@@ -1172,7 +1231,7 @@ impl DerivedRelationHeadStore {
                     .as_ref()
                     .is_some_and(|head| head.head.build_id == build_id)
                 {
-                    let _ = self.release_garbage_claim(&build_id).await;
+                    let _ = self.release_garbage_claim(&build_id, &garbage_claim).await;
                     let _ = self.clear_garbage(&build_id).await;
                     continue;
                 }
@@ -1191,7 +1250,7 @@ impl DerivedRelationHeadStore {
             // returns false and the final Head is protected as current.
             let head_fence = match self.fence_head_before_garbage(&build_id).await? {
                 GarbageHeadFence::CandidateIsCurrent | GarbageHeadFence::Contended => {
-                    let _ = self.release_garbage_claim(&build_id).await;
+                    let _ = self.release_garbage_claim(&build_id, &garbage_claim).await;
                     continue;
                 }
                 fenced => fenced,
