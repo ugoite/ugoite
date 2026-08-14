@@ -684,6 +684,7 @@ async fn rebuild_asset_text_with_mode(
             schema_id: final_table.metadata().current_schema_id(),
             input_digest,
             source_coordinate,
+            head_fence: String::new(),
             checksum: String::new(),
         })
     }
@@ -867,29 +868,39 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                         } else {
                             Some(base.single_process())
                         };
-                        let gc_result = if let Some(head_store) = head_store {
+                        let retry_gc = if let Some(head_store) = head_store {
                             match head_store.read_exact().await {
                                 Ok(current_build) => {
                                     let current_build_id =
                                         current_build.map(|head| head.head.build_id);
-                                    head_store
+                                    match head_store
                                         .garbage_collect(
                                             current_build_id.as_deref(),
                                             MINIMUM_GC_AGE,
                                         )
                                         .await
-                                        .map(|_| ())
+                                    {
+                                        Ok(_) => head_store
+                                            .has_pending_garbage(
+                                                current_build_id.as_deref(),
+                                                MINIMUM_GC_AGE,
+                                            )
+                                            .await
+                                            .unwrap_or(true),
+                                        Err(_) => true,
+                                    }
                                 }
-                                Err(error) => Err(error),
+                                Err(_) => true,
                             }
                         } else {
-                            Err(anyhow::anyhow!("unable to configure AssetText GC backend"))
+                            true
                         };
-                        if gc_result.is_err() {
+                        if retry_gc {
                             // GC is maintenance, not request authority. Keep
-                            // the scheduler alive and retry transient storage
-                            // failures instead of losing the only process-local
-                            // wake-up for durable garbage markers.
+                            // the scheduler alive when cleanup was deferred or
+                            // a durable candidate remains, and retry transient
+                            // storage failures instead of losing the only
+                            // process-local wake-up for durable garbage.
                             schedule_asset_text_gc_after_delay(
                                 &operator,
                                 &workspace_path,

@@ -25,6 +25,7 @@ schemas:
       - schema_id
       - input_digest
       - source_coordinate
+      - head_fence
       - checksum
       properties:
         format_version: {type: integer, const: 1}
@@ -44,6 +45,7 @@ schemas:
         schema_id: {type: integer}
         input_digest: {type: string}
         source_coordinate: {type: object}
+        head_fence: {type: string}
         checksum: {type: string}
   space_meta:
     description: Raw Space metadata written at creation.

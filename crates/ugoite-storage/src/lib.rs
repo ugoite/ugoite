@@ -92,6 +92,11 @@ pub struct DerivedRelationHead {
     pub schema_id: i32,
     pub input_digest: String,
     pub source_coordinate: serde_json::Value,
+    /// Opaque CAS fence used by shared-backend GC.  GC rotates this value on
+    /// the current Head before reclaiming a non-current build, so a publisher
+    /// holding the previous Head ETag cannot swap that build back into view.
+    #[serde(default)]
+    pub head_fence: String,
     pub checksum: String,
 }
 
@@ -521,6 +526,68 @@ impl DerivedRelationHeadStore {
             .await
     }
 
+    /// Fence a shared Head before destructive cleanup claims a build.  The
+    /// claim marker and Head are separate objects, so checking the marker
+    /// immediately before the final Head CAS would still leave a TOCTOU race:
+    /// GC could claim the build after that check.  Rotating this field with an
+    /// ETag-bound Head CAS closes the race.  A publisher using the old exact
+    /// Head loses the CAS; a publisher that starts afterwards sees the garbage
+    /// claim and cannot claim the build.
+    async fn fence_head_before_garbage(&self, build_id: &str) -> Result<bool> {
+        if self.write_mode != CatalogWriteMode::Shared {
+            // The relation-local single-process mutex already excludes a
+            // rebuild from this GC path.
+            return Ok(true);
+        }
+        for _ in 0..3 {
+            let Some(current) = self.read_exact().await? else {
+                // There is no Head to fence.  The terminal garbage claim now
+                // prevents a publisher from creating this build; the caller
+                // still performs a final Head check before deletion.
+                return Ok(true);
+            };
+            if current.head.build_id == build_id {
+                return Ok(false);
+            }
+            let mut fenced = current.head;
+            fenced.head_fence = Uuid::new_v4().to_string();
+            let bytes = canonical_head_bytes(&fenced)?;
+            let Some(etag) = current.etag else {
+                return Err(anyhow!(
+                    "shared DerivedRelation Head fence requires an ETag"
+                ));
+            };
+            match self
+                .operator
+                .write_options(
+                    &self.head_path(),
+                    bytes,
+                    WriteOptions {
+                        if_match: Some(etag),
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Ok(_) => return Ok(true),
+                Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
+                    if self
+                        .read_exact()
+                        .await?
+                        .as_ref()
+                        .is_some_and(|head| head.head.build_id == build_id)
+                    {
+                        return Ok(false);
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(anyhow!(
+            "DerivedRelation Head changed while GC was fencing publication"
+        ))
+    }
+
     /// Mark a build at the moment it stops being current.  GC uses this
     /// marker's timestamp rather than the build's creation timestamp so an
     /// old, long-lived current build still gets a full reader grace period
@@ -612,6 +679,104 @@ impl DerivedRelationHeadStore {
         }
         self.garbage_collect_with_single_process_lock(current_build_id, minimum_gc_age)
             .await
+    }
+
+    /// Reports whether a non-current build still needs a future maintenance
+    /// pass.  A terminal `publishing.json` tombstone by itself is intentional
+    /// fencing state, not a cleanup candidate; counting it would keep every
+    /// quiet Space's process-local scheduler alive forever.
+    pub async fn has_pending_garbage(
+        &self,
+        current_build_id: Option<&str>,
+        minimum_gc_age: Duration,
+    ) -> Result<bool> {
+        let prefix = format!(
+            "{}/_ugoite/derived/relations/{}/builds/",
+            self.space_root, self.relation_id
+        );
+        let entries = self.operator.list_with(&prefix).recursive(true).await?;
+        #[derive(Default)]
+        struct Candidate {
+            has_garbage_marker: bool,
+            has_staging_marker: bool,
+            has_publishing_marker: bool,
+            stale_staging_old_enough: bool,
+            newest_object_modified: Option<SystemTime>,
+        }
+        let mut candidates = std::collections::BTreeMap::<String, Candidate>::new();
+        for entry in entries {
+            if entry.metadata().mode() != EntryMode::FILE {
+                continue;
+            }
+            let Some(build_id) = entry
+                .path()
+                .strip_prefix(&prefix)
+                .and_then(|path| path.split('/').next())
+                .filter(|build_id| !build_id.is_empty())
+            else {
+                continue;
+            };
+            if Some(build_id) == current_build_id {
+                continue;
+            }
+            let is_garbage_marker = entry.path() == self.garbage_marker_path(build_id);
+            let is_staging_marker = entry.path() == self.staging_marker_path(build_id);
+            let is_publishing_marker = entry.path() == self.publishing_marker_path(build_id);
+            let modified = entry.metadata().last_modified().map(Into::into);
+            let marker_time = if is_staging_marker {
+                self.marker_time_or_metadata(entry.path(), modified).await
+            } else {
+                modified
+            };
+            let old_enough = minimum_gc_age.is_zero()
+                || marker_time
+                    .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+                    .is_some_and(|age| age >= minimum_gc_age);
+            let candidate = candidates.entry(build_id.to_string()).or_default();
+            candidate.has_garbage_marker |= is_garbage_marker;
+            candidate.has_staging_marker |= is_staging_marker;
+            candidate.has_publishing_marker |= is_publishing_marker;
+            if is_staging_marker {
+                candidate.stale_staging_old_enough |= old_enough;
+            }
+            if !is_garbage_marker && !is_staging_marker && !is_publishing_marker {
+                if let Some(modified) = modified {
+                    candidate.newest_object_modified = Some(
+                        candidate
+                            .newest_object_modified
+                            .map_or(modified, |current| current.max(modified)),
+                    );
+                }
+            }
+        }
+        for (build_id, candidate) in candidates {
+            if candidate.has_garbage_marker {
+                return Ok(true);
+            }
+            let stale_publishing = if candidate.has_publishing_marker {
+                self.read_build_claim(&build_id)
+                    .await?
+                    .is_some_and(|(bytes, _, last_modified)| {
+                        Self::claim_role(&bytes).as_deref() == Some("publishing")
+                            && Self::claim_is_stale(&bytes, last_modified)
+                    })
+            } else {
+                false
+            };
+            let markerless_orphan = !candidate.has_staging_marker
+                && !candidate.has_publishing_marker
+                && (candidate.newest_object_modified.is_none() && minimum_gc_age.is_zero()
+                    || candidate.newest_object_modified.is_some_and(|modified| {
+                        minimum_gc_age.is_zero()
+                            || SystemTime::now()
+                                .duration_since(modified)
+                                .is_ok_and(|age| age >= minimum_gc_age)
+                    }));
+            if candidate.stale_staging_old_enough || stale_publishing || markerless_orphan {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Runs GC while the caller already owns the relation-local single-process
@@ -781,6 +946,13 @@ impl DerivedRelationHeadStore {
             // create/replace. A fresh claim belongs to the other operation;
             // a stale claim can be atomically taken over for recovery.
             if !self.claim_build_for_garbage(&build_id).await? {
+                continue;
+            }
+            // Claiming the build fences a delayed publisher, while fencing
+            // the current Head makes the claim participate in the same CAS
+            // sequence as publication.  If a publisher won first, this
+            // returns false and the final Head is protected as current.
+            if !self.fence_head_before_garbage(&build_id).await? {
                 continue;
             }
             let build_prefix = self.builds_path(&build_id);
@@ -2258,6 +2430,7 @@ mod tests {
             schema_id: 0,
             input_digest: "input-a".into(),
             source_coordinate: serde_json::json!({"catalog_head_sha256":null}),
+            head_fence: String::new(),
             checksum: String::new(),
         };
         store.create(&first).await?;
@@ -2460,6 +2633,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pending_gc_distinguishes_deferred_cleanup_from_terminal_fence() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA00F);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let partial = format!("{}/data/deferred.parquet", store.builds_path("deferred"));
+        store.mark_staging("deferred").await?;
+        operator.write(&partial, b"deferred".to_vec()).await?;
+
+        assert!(store
+            .garbage_collect(None, Duration::ZERO)
+            .await?
+            .is_empty());
+        assert!(store.has_pending_garbage(None, Duration::ZERO).await?);
+
+        assert_eq!(
+            store.garbage_collect(None, Duration::ZERO).await?,
+            vec!["deferred"]
+        );
+        assert!(!store.has_pending_garbage(None, Duration::ZERO).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn fresh_garbage_marker_preserves_staging_grace_period() -> Result<()> {
         let operator = Operator::new(Memory::default())?.finish();
         let relation_id = uuid::Uuid::from_u128(0xA00B);
@@ -2570,6 +2766,7 @@ mod tests {
             schema_id: 0,
             input_digest: "input".into(),
             source_coordinate: serde_json::json!({}),
+            head_fence: String::new(),
             checksum: String::new(),
         };
         let results = join_all((0..8).map(|_| {
@@ -2641,6 +2838,7 @@ mod tests {
             schema_id: 0,
             input_digest: "input".into(),
             source_coordinate: serde_json::json!({}),
+            head_fence: String::new(),
             checksum: String::new(),
         };
         store.publish(None, &first).await?;

@@ -32,7 +32,8 @@ spaces/{space_id}/_ugoite/derived/relations/{relation_id}/
 Each relation has an independent mutable `head.json`. It contains the
 definition and producer fingerprints, compatibility epoch, build identity,
 Iceberg table identifier/UUID/metadata location/snapshot, source and
-generation coordinates, and a checksum. It does not contain Entry revision,
+generation coordinates, an opaque shared-GC CAS fence, and a checksum. It does
+not contain Entry revision,
 author, ACL, publication-chain, or checkpoint-retention semantics.
 
 Readers establish visibility from this Head only. Object listing is reserved
