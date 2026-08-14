@@ -232,6 +232,21 @@ impl DerivedRelationHeadStore {
         }
     }
 
+    /// Refresh the staging marker while an immutable build is still running.
+    /// The persisted timestamp is part of the lifecycle contract: backends
+    /// without object modification metadata still need a durable age boundary
+    /// after a process crash.
+    pub async fn renew_staging(&self, build_id: &str) -> Result<()> {
+        self.operator
+            .write(
+                &self.staging_marker_path(build_id),
+                Self::build_marker_bytes(),
+            )
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     fn publishing_marker_path(&self, build_id: &str) -> String {
         format!("{}/publishing.json", self.builds_path(build_id))
     }
@@ -2341,6 +2356,22 @@ mod tests {
             vec!["old"]
         );
         assert!(!operator.exists(&data).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn staging_heartbeat_keeps_a_persisted_gc_timestamp() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA00E);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        store.mark_staging("running").await?;
+        store.renew_staging("running").await?;
+
+        let marker = operator
+            .read(&store.staging_marker_path("running"))
+            .await?
+            .to_vec();
+        assert!(DerivedRelationHeadStore::marker_time(&marker).is_some());
         Ok(())
     }
 

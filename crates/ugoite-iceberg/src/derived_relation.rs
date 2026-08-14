@@ -578,14 +578,12 @@ async fn rebuild_asset_text_with_mode(
     let build_id = Uuid::now_v7().to_string();
     let build_path = head_store.builds_path(&build_id);
     head_store.mark_staging(&build_id).await?;
-    let heartbeat_operator = op.clone();
-    let heartbeat_path = format!("{build_path}/staging.json");
+    let heartbeat_store = head_store.clone();
+    let heartbeat_build_id = build_id.clone();
     let staging_heartbeat = tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
-            let _ = heartbeat_operator
-                .write(&heartbeat_path, br"{}".to_vec())
-                .await;
+            let _ = heartbeat_store.renew_staging(&heartbeat_build_id).await;
         }
     });
     // Every object written below belongs to this immutable build. If staging
