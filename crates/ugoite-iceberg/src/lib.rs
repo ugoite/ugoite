@@ -2030,39 +2030,22 @@ impl IcebergWorkspace {
             )
             .await?;
         let schema = table.metadata().current_schema().clone();
-        let mut after_entry_id = None;
-        loop {
-            let batches = context
-                .execute_latest_revision_plan_page(
-                    &EntryScope::AllCurrent,
-                    RevisionView::LatestIncludingTombstones,
-                    after_entry_id.as_deref(),
-                    DERIVED_REVISION_PAGE_SIZE,
-                )
-                .await?;
-            let page_rows = batches.iter().map(RecordBatch::num_rows).sum::<usize>();
-            if page_rows == 0 {
-                break;
-            }
-            for batch in &batches {
-                for revision in revisions_from_batch(batch, &form, &schema)? {
+        let mut stream = context
+            .execute_latest_revision_stream(
+                &EntryScope::AllCurrent,
+                RevisionView::LatestIncludingTombstones,
+            )
+            .await?;
+        tokio::time::timeout(Duration::from_secs(30), async {
+            while let Some(batch) = stream.try_next().await? {
+                for revision in revisions_from_batch(&batch, &form, &schema)? {
                     visit(revision)?;
                 }
-                if batch.num_rows() > 0 {
-                    let entry_ids = batch
-                        .column_by_name("entry_id")
-                        .context("latest revision page is missing entry_id")?;
-                    after_entry_id = Some(
-                        uuid_value_at(entry_ids.as_ref(), batch.num_rows() - 1)?
-                            .as_bytes()
-                            .to_vec(),
-                    );
-                }
             }
-            if page_rows < DERIVED_REVISION_PAGE_SIZE {
-                break;
-            }
-        }
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .map_err(|_| anyhow!("derived current Entry stream timed out"))??;
         Ok(())
     }
 

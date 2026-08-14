@@ -32,8 +32,6 @@ const ASSET_TEXT_SEARCH_PAGE_SIZE: usize = 2_048;
 // This is an internal maintenance/search bound rather than the public Entry
 // response ceiling. The bounded DataFusion memory pool and timeout remain the
 // actual protection for unusually large current Forms.
-const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize =
-    crate::index::AUTHORIZED_ASSET_REFERENCE_MAX_ROWS;
 const ASSET_TEXT_SEARCH_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const ASSET_TEXT_SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -646,6 +644,8 @@ struct AuthorizedAssetReferenceStreamState {
     authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
     form_index: usize,
+    after_entry_id: Option<String>,
+    current_page_complete: bool,
     current_rows: Option<Vec<(String, AuthorizedAssetReferenceRow)>>,
     current_offset: usize,
 }
@@ -672,7 +672,11 @@ impl AuthorizedAssetReferenceStreamState {
                 }
                 self.current_rows = None;
                 self.current_offset = 0;
-                self.form_index += 1;
+                if self.current_page_complete {
+                    self.form_index += 1;
+                    self.after_entry_id = None;
+                    self.current_page_complete = false;
+                }
                 continue;
             }
             let form_index = self.form_index;
@@ -691,11 +695,18 @@ impl AuthorizedAssetReferenceStreamState {
                 &self.authorized_forms,
                 &form_name,
                 &asset_field_names,
-                None,
-                AUTHORIZED_ASSET_REFERENCE_MAX_ROWS,
+                self.after_entry_id.as_deref(),
+                ASSET_TEXT_SEARCH_PAGE_SIZE,
             )
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
+            if rows.is_empty() {
+                self.form_index += 1;
+                self.after_entry_id = None;
+                continue;
+            }
+            self.current_page_complete = rows.len() < ASSET_TEXT_SEARCH_PAGE_SIZE;
+            self.after_entry_id = rows.last().map(|row| row.entry_id.clone());
             let rows = rows
                 .into_iter()
                 .filter(|row| {
@@ -712,7 +723,11 @@ impl AuthorizedAssetReferenceStreamState {
                 .map(|row| (form_name.clone(), row))
                 .collect::<Vec<_>>();
             if rows.is_empty() {
-                self.form_index += 1;
+                if self.current_page_complete {
+                    self.form_index += 1;
+                    self.after_entry_id = None;
+                    self.current_page_complete = false;
+                }
             } else {
                 self.current_rows = Some(rows);
             }
@@ -763,6 +778,8 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             authorized_forms: self.authorized_forms.clone(),
             initial_after: self.initial_after.clone(),
             form_index: 0,
+            after_entry_id: None,
+            current_page_complete: false,
             current_rows: None,
             current_offset: 0,
         };

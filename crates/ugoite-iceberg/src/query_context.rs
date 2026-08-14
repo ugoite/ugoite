@@ -13,13 +13,13 @@ use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::{SessionStateBuilder, SessionStateDefaults};
 use datafusion::logical_expr::expr_fn::ident;
 use datafusion::logical_expr::{Expr, LogicalPlan, SortExpr};
-use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_plan::{ExecutionPlan, SendableRecordBatchStream};
 use datafusion::prelude::{col, lit, DataFrame, SessionConfig};
 use iceberg_datafusion::IcebergStaticTableProvider;
 use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
-use tokio::sync::{Mutex as AsyncMutex, Semaphore};
+use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore};
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 use ugoite_domain::form::sql_column_name;
 
@@ -106,10 +106,6 @@ pub struct AuthorizedQueryContext {
     authorized_scans: BTreeSet<AuthorizedScan>,
     duplicate_head_checks: Vec<(Arc<dyn TableProvider>, DataFrame)>,
     duplicate_head_checks_validated: Arc<AsyncMutex<BTreeSet<usize>>>,
-    // Cache the authorized latest-state logical plan, not its result.  Each
-    // maintenance page adds its cursor and row limit before execution so a
-    // large Form never becomes one unbounded Arrow allocation.
-    latest_revision_cache: Arc<AsyncMutex<Option<LogicalPlan>>>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -388,7 +384,6 @@ impl IcebergWorkspace {
             authorized_scans,
             duplicate_head_checks,
             duplicate_head_checks_validated: Arc::new(AsyncMutex::new(BTreeSet::new())),
-            latest_revision_cache: Arc::new(AsyncMutex::new(None)),
         })
     }
 }
@@ -455,8 +450,23 @@ impl IcebergWorkspace {
             }]),
             duplicate_head_checks: vec![(provider, duplicate_head_check)],
             duplicate_head_checks_validated: Arc::new(AsyncMutex::new(BTreeSet::new())),
-            latest_revision_cache: Arc::new(AsyncMutex::new(None)),
         })
+    }
+}
+
+/// A validated authorized latest-state stream. The permit is held for the
+/// stream lifetime so maintenance cannot open another expensive revision
+/// execution against the same Space while this one is still consuming data.
+pub(crate) struct AuthorizedRecordBatchStream {
+    stream: SendableRecordBatchStream,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl AuthorizedRecordBatchStream {
+    pub(crate) async fn try_next(&mut self) -> Result<Option<arrow_array::RecordBatch>> {
+        Ok(futures::TryStreamExt::try_next(&mut self.stream)
+            .await
+            .map_err(classify_datafusion_error)?)
     }
 }
 
@@ -505,64 +515,77 @@ impl AuthorizedQueryContext {
         self.execute_frame(frame, limit).await
     }
 
-    /// Executes one ordered page of the latest revision view. Maintenance
-    /// readers use a keyset cursor so a large Form never becomes one giant
-    /// revision-id `IN (...)` plan or one unbounded Arrow allocation.
-    pub(crate) async fn execute_latest_revision_plan_page(
+    /// Opens one ordered stream of the latest revision view. Maintenance
+    /// readers consume the stream incrementally so a large Form does not
+    /// re-run the latest-version aggregation for every keyset page.
+    pub(crate) async fn execute_latest_revision_stream(
         &self,
         entry_scope: &EntryScope,
         view: crate::RevisionView,
-        after_entry_id: Option<&[u8]>,
-        limit: usize,
-    ) -> Result<Vec<arrow_array::RecordBatch>> {
-        if limit == 0 || limit > self.limits.max_rows {
-            return Err(AuthorizedQueryError::resource_limit(anyhow!(
-                "latest revision page exceeds its configured row limit"
-            ))
-            .into());
-        }
-        let mut cache = self.latest_revision_cache.lock().await;
-        if cache.is_none() {
+    ) -> Result<AuthorizedRecordBatchStream> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(self.limits.timeout, async {
             let source = self
                 .context
                 .table("revisions")
                 .await
                 .map_err(AuthorizedQueryError::execution_failed)?;
-            let heads = latest_revision_dataframe(source, entry_scope, view)
-                .map_err(AuthorizedQueryError::invalid_query)?
-                .logical_plan()
-                .clone();
-            *cache = Some(heads);
-        }
-        let after = after_entry_id
-            .map(uuid::Uuid::from_slice)
-            .transpose()
+            let heads = latest_revision_dataframe(
+                source,
+                entry_scope,
+                crate::RevisionView::LatestIncludingTombstones,
+            )
             .map_err(AuthorizedQueryError::invalid_query)?;
-        let plan = cache
-            .as_ref()
-            .expect("latest revision plan cache is set")
-            .clone();
-        drop(cache);
-        let mut frame = self
-            .context
-            .execute_logical_plan(plan)
-            .await
-            .map_err(AuthorizedQueryError::execution_failed)?;
-        if let Some(after) = after {
-            frame = frame
-                .filter(col("entry_id").gt(lit(after.as_bytes().to_vec())))
+            let selected = match view {
+                crate::RevisionView::Current => heads
+                    .filter(col("operation").not_eq(lit("delete")))
+                    .map_err(AuthorizedQueryError::invalid_query)?,
+                crate::RevisionView::LatestIncludingTombstones => heads,
+                crate::RevisionView::All => {
+                    return Err(AuthorizedQueryError::invalid_query(anyhow!(
+                        "bounded latest revision stream does not support full history"
+                    ))
+                    .into())
+                }
+            };
+            let frame = selected
+                .sort(vec![SortExpr {
+                    expr: col("entry_id"),
+                    asc: true,
+                    nulls_first: true,
+                }])
                 .map_err(AuthorizedQueryError::invalid_query)?;
-        }
-        frame = frame
-            .sort(vec![SortExpr {
-                expr: col("entry_id"),
-                asc: true,
-                nulls_first: true,
-            }])
-            .map_err(AuthorizedQueryError::invalid_query)?
-            .limit(0, Some(limit))
-            .map_err(AuthorizedQueryError::invalid_query)?;
-        self.execute_frame(frame, limit).await
+            let plan = self
+                .context
+                .state()
+                .optimize(&frame.logical_plan().clone())
+                .map_err(AuthorizedQueryError::invalid_query)?;
+            validate_logical_plan(&plan, &self.authorized_relations)
+                .map_err(AuthorizedQueryError::unauthorized)?;
+            let validation_plan = plan.clone();
+            let frame = self
+                .context
+                .execute_logical_plan(plan)
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let physical = frame
+                .create_physical_plan()
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            validate_physical_plan(&physical, &self.authorized_scans)
+                .map_err(AuthorizedQueryError::unauthorized)?;
+            self.validate_revision_invariants(&validation_plan).await?;
+            let stream =
+                datafusion::physical_plan::execute_stream(physical, Arc::new(frame.task_ctx()))
+                    .map_err(classify_datafusion_error)?;
+            Ok(AuthorizedRecordBatchStream { stream, _permit })
+        })
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
     /// Executes a trusted relation plan assembled by a typed read surface.
