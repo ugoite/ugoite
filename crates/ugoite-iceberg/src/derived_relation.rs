@@ -68,6 +68,28 @@ const READER_CHUNK_BYTES: usize = 256 * 1024;
 const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
 const GC_RETRY_DELAY: Duration = Duration::from_secs(60);
 
+struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
+
+impl AbortOnDrop {
+    fn new(handle: tokio::task::JoinHandle<()>) -> Self {
+        Self(Some(handle))
+    }
+
+    fn abort(mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
 struct AssetTextGcScheduler {
     notify: Notify,
     deadline: StdMutex<Option<Instant>>,
@@ -600,12 +622,12 @@ async fn rebuild_asset_text_with_mode(
     }
     let heartbeat_store = head_store.clone();
     let heartbeat_build_id = build_id.clone();
-    let staging_heartbeat = tokio::spawn(async move {
+    let staging_heartbeat = AbortOnDrop::new(tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
             let _ = heartbeat_store.renew_staging(&heartbeat_build_id).await;
         }
-    });
+    }));
     // Every object written below belongs to this immutable build. If staging
     // fails before publication, leave an explicit garbage marker and staging
     // marker so relation GC can reclaim the partial prefix as well.
@@ -827,7 +849,7 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
             .lock()
             .expect("AssetText GC deadline poisoned");
         let next = Instant::now() + delay;
-        if deadline.is_none_or(|current| next > current) {
+        if deadline.is_none_or(|current| next < current) {
             *deadline = Some(next);
         }
         drop(deadline);
@@ -1987,6 +2009,10 @@ pub async fn register_asset_text_table(
     let Some(head) = head_store.read_exact().await? else {
         return Ok(false);
     };
+    let current_source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
+    if head.head.source_coordinate != current_source_coordinate {
+        return Ok(false);
+    }
     if head.head.producer_fingerprint != asset_text_producer_fingerprint()
         || head.head.definition_fingerprint != asset_text_definition_fingerprint()
         || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH

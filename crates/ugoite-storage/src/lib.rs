@@ -137,6 +137,28 @@ struct GarbageClaim {
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
 
+struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
+
+impl AbortOnDrop {
+    fn new(handle: tokio::task::JoinHandle<()>) -> Self {
+        Self(Some(handle))
+    }
+
+    fn abort(mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct LegacyDerivedRelationHead;
 
@@ -632,10 +654,10 @@ impl DerivedRelationHeadStore {
         self.renew_claim_role(build_id, "publishing").await
     }
 
-    fn start_publishing_claim_heartbeat(&self, build_id: &str) -> tokio::task::JoinHandle<()> {
+    fn start_publishing_claim_heartbeat(&self, build_id: &str) -> AbortOnDrop {
         let store = self.clone();
         let build_id = build_id.to_string();
-        tokio::spawn(async move {
+        AbortOnDrop::new(tokio::spawn(async move {
             loop {
                 tokio::time::sleep(DERIVED_BUILD_CLAIM_RENEWAL).await;
                 match store.renew_publishing_claim(&build_id).await {
@@ -643,7 +665,7 @@ impl DerivedRelationHeadStore {
                     Ok(false) | Err(_) => return,
                 }
             }
-        })
+        }))
     }
 
     /// Refresh the garbage claim before each destructive object operation.
