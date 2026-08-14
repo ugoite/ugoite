@@ -1258,6 +1258,35 @@ fn merge_source_reference(
         .or_insert(candidate);
 }
 
+fn source_reference_metadata_rank(reference: &SourceReference) -> u8 {
+    let name = reference.name.to_ascii_lowercase();
+    let media_type = reference.media_type.to_ascii_lowercase();
+    if matches!(
+        media_type.as_str(),
+        "application/pdf"
+            | "text/plain"
+            | "text/markdown"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ) {
+        // A declared MIME type is a stronger parser hint than a filename.
+        // Duplicate AssetReferences may carry different Entry-owned names;
+        // do not let a lexical filename tie-break override a consistent MIME
+        // type and route a plain-text object through the PDF parser.
+        3
+    } else if [".pdf", ".txt", ".md", ".docx", ".xlsx", ".pptx"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+    {
+        2
+    } else if !reference.name.is_empty() || !reference.media_type.is_empty() {
+        1
+    } else {
+        0
+    }
+}
+
 fn source_reference_is_preferred(candidate: &SourceReference, existing: &SourceReference) -> bool {
     let candidate_rank = source_reference_metadata_rank(candidate);
     let existing_rank = source_reference_metadata_rank(existing);
@@ -1273,27 +1302,6 @@ fn source_reference_tie_break_key(reference: &SourceReference) -> (String, Strin
         reference.name.clone(),
         reference.media_type.clone(),
     )
-}
-
-fn source_reference_metadata_rank(reference: &SourceReference) -> u8 {
-    let name = reference.name.to_ascii_lowercase();
-    let media_type = reference.media_type.to_ascii_lowercase();
-    if media_type == "application/pdf"
-        || media_type == "text/plain"
-        || media_type == "text/markdown"
-        || media_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        || media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        || media_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        || [".pdf", ".txt", ".md", ".docx", ".xlsx", ".pptx"]
-            .iter()
-            .any(|extension| name.ends_with(extension))
-    {
-        2
-    } else if !reference.name.is_empty() || !reference.media_type.is_empty() {
-        1
-    } else {
-        0
-    }
 }
 
 fn typed_asset_references_for_field(
@@ -1546,31 +1554,14 @@ async fn read_asset_exact(op: &Operator, path: &str) -> Result<Vec<u8>> {
 fn detect_dispatch(name: &str, media_type: &str, bytes: &[u8]) -> Dispatch {
     let lower_name = name.to_ascii_lowercase();
     let lower_media = media_type.to_ascii_lowercase();
-    if lower_media == "application/pdf"
-        || lower_name.ends_with(".pdf")
-        || bytes.starts_with(b"%PDF-")
-    {
+    // Object bytes are authoritative when they carry a strong container
+    // signature. Entry-owned names can differ for the same Asset, so inspect
+    // the immutable object before using a per-reference filename hint.
+    if bytes.starts_with(b"%PDF-") {
         return Dispatch::Pdf(parser_identity("pdf_text_layer"));
     }
-    if lower_name.ends_with(".docx")
-        || lower_media == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    {
-        return Dispatch::Docx(parser_identity("docx_xml"));
-    }
-    if lower_name.ends_with(".xlsx")
-        || lower_media == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    {
-        return Dispatch::Xlsx(parser_identity("xlsx_xml"));
-    }
-    if lower_name.ends_with(".pptx")
-        || lower_media
-            == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    {
-        return Dispatch::Pptx(parser_identity("pptx_xml"));
-    }
-    // MIME and filename are only hints. Valid OOXML containers are also
-    // recognized by their internal part names, while malformed recognized
-    // containers remain on the format-specific parser path above.
+    // MIME and filename are only hints. Valid OOXML containers are recognized
+    // by their internal part names before either hint can misroute them.
     if bytes.starts_with(b"PK") {
         if let Ok(mut archive) = ZipArchive::new(Cursor::new(bytes)) {
             if archive.len() <= MAX_ZIP_ENTRIES {
@@ -1598,18 +1589,46 @@ fn detect_dispatch(name: &str, media_type: &str, bytes: &[u8]) -> Dispatch {
             }
         }
     }
-    if lower_media == "text/plain"
-        || lower_media == "text/markdown"
-        || lower_name.ends_with(".txt")
-        || lower_name.ends_with(".md")
-    {
-        return Dispatch::PlainText(parser_identity(
-            if lower_media == "text/markdown" || lower_name.ends_with(".md") {
-                "markdown"
-            } else {
-                "plain_text"
-            },
-        ));
+    // A consistent MIME type outranks a conflicting Entry-owned filename.
+    // This is important for one Asset referenced by Entries with different
+    // display names.
+    if lower_media == "application/pdf" {
+        return Dispatch::Pdf(parser_identity("pdf_text_layer"));
+    }
+    if lower_media == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+        return Dispatch::Docx(parser_identity("docx_xml"));
+    }
+    if lower_media == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" {
+        return Dispatch::Xlsx(parser_identity("xlsx_xml"));
+    }
+    if lower_media == "application/vnd.openxmlformats-officedocument.presentationml.presentation" {
+        return Dispatch::Pptx(parser_identity("pptx_xml"));
+    }
+    if lower_media == "text/plain" || lower_media == "text/markdown" {
+        return Dispatch::PlainText(parser_identity(if lower_media == "text/markdown" {
+            "markdown"
+        } else {
+            "plain_text"
+        }));
+    }
+    if lower_name.ends_with(".pdf") {
+        return Dispatch::Pdf(parser_identity("pdf_text_layer"));
+    }
+    if lower_name.ends_with(".docx") {
+        return Dispatch::Docx(parser_identity("docx_xml"));
+    }
+    if lower_name.ends_with(".xlsx") {
+        return Dispatch::Xlsx(parser_identity("xlsx_xml"));
+    }
+    if lower_name.ends_with(".pptx") {
+        return Dispatch::Pptx(parser_identity("pptx_xml"));
+    }
+    if lower_name.ends_with(".txt") || lower_name.ends_with(".md") {
+        return Dispatch::PlainText(parser_identity(if lower_name.ends_with(".md") {
+            "markdown"
+        } else {
+            "plain_text"
+        }));
     }
     Dispatch::Unsupported(parser_identity("unsupported"))
 }
@@ -2271,5 +2290,41 @@ mod tests {
         }
         assert_eq!(references.len(), 1);
         assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn duplicate_asset_reference_uses_mime_before_conflicting_filename() {
+        let mut references = BTreeMap::new();
+        let mut checksums = BTreeMap::new();
+        let mut conflicts = HashSet::new();
+        merge_source_reference(
+            &mut references,
+            &mut checksums,
+            &mut conflicts,
+            SourceReference {
+                asset_id: "asset-1".into(),
+                name: "z.txt".into(),
+                media_type: "text/plain".into(),
+                source_sha256: "sha".into(),
+                source_size_bytes: 10,
+                integrity_error: None,
+            },
+        );
+        merge_source_reference(
+            &mut references,
+            &mut checksums,
+            &mut conflicts,
+            SourceReference {
+                asset_id: "asset-1".into(),
+                name: "a.pdf".into(),
+                media_type: "text/plain".into(),
+                source_sha256: "sha".into(),
+                source_size_bytes: 10,
+                integrity_error: None,
+            },
+        );
+        let reference = references.get("asset-1").expect("merged Asset reference");
+        let dispatch = detect_dispatch(&reference.name, &reference.media_type, b"plain text");
+        assert!(matches!(dispatch, Dispatch::PlainText(_)));
     }
 }
