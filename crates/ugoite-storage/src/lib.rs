@@ -713,10 +713,51 @@ impl DerivedRelationHeadStore {
                 Some((value, _, etag)) => {
                     if let Some((state, fenced_build_id)) = Self::head_fence(&value) {
                         if state == "head_fence_released" {
-                            // The empty Head was already released by another
-                            // GC.  Do not touch this candidate without a fresh
-                            // authority check.
-                            return Ok(GarbageHeadFence::Contended);
+                            // Reuse the released empty-head fence for the next
+                            // candidate. A relation can have several garbage
+                            // builds; leaving this sentinel in place would
+                            // make every later candidate look contended and
+                            // strand its prefix forever.
+                            let Some(etag) = etag else {
+                                return Err(anyhow!(
+                                    "shared empty DerivedRelation Head fence requires an ETag"
+                                ));
+                            };
+                            match self
+                                .operator
+                                .write_options(
+                                    &self.head_path(),
+                                    self.head_fence_bytes("garbage_fence", build_id),
+                                    WriteOptions {
+                                        if_match: Some(etag),
+                                        ..Default::default()
+                                    },
+                                )
+                                .await
+                            {
+                                Ok(_) => {
+                                    let etag = self
+                                        .operator
+                                        .stat(&self.head_path())
+                                        .await?
+                                        .etag()
+                                        .filter(|etag| !etag.is_empty())
+                                        .map(str::to_owned)
+                                        .ok_or_else(|| {
+                                            anyhow!(
+                                                "shared empty DerivedRelation Head fence requires an ETag"
+                                            )
+                                        })?;
+                                    return Ok(GarbageHeadFence::Fenced {
+                                        empty_head: true,
+                                        etag: Some(etag),
+                                    });
+                                }
+                                Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
+                                    continue
+                                }
+                                Err(error) => return Err(error.into()),
+                            }
                         }
                         if fenced_build_id == build_id {
                             return Ok(GarbageHeadFence::Fenced {
@@ -928,9 +969,9 @@ impl DerivedRelationHeadStore {
     }
 
     /// Reports whether a non-current build still needs a future maintenance
-    /// pass.  A terminal `publishing.json` tombstone by itself is intentional
-    /// fencing state, not a cleanup candidate; counting it would keep every
-    /// quiet Space's process-local scheduler alive forever.
+    /// pass. A terminal `publishing.json` tombstone after marker-last cleanup
+    /// is intentional fencing state, but a stale garbage claim without its
+    /// marker is recoverable cleanup intent and must wake maintenance.
     pub async fn has_pending_garbage(
         &self,
         current_build_id: Option<&str>,
@@ -999,17 +1040,20 @@ impl DerivedRelationHeadStore {
             if candidate.has_garbage_marker {
                 return Ok(true);
             }
-            let stale_publishing = if candidate.has_publishing_marker {
-                self.read_build_claim(&build_id)
-                    .await?
-                    .is_some_and(|(bytes, _, last_modified)| {
-                        Self::claim_role(&bytes).as_deref() == Some("released")
-                            || (Self::claim_role(&bytes).as_deref() == Some("publishing")
-                                && Self::claim_is_stale(&bytes, last_modified))
-                    })
-            } else {
-                false
-            };
+            let stale_publishing =
+                if candidate.has_publishing_marker {
+                    self.read_build_claim(&build_id).await?.is_some_and(
+                        |(bytes, _, last_modified)| match Self::claim_role(&bytes).as_deref() {
+                            Some("released") => true,
+                            Some("publishing") | Some("garbage") => {
+                                Self::claim_is_stale(&bytes, last_modified)
+                            }
+                            _ => false,
+                        },
+                    )
+                } else {
+                    false
+                };
             let markerless_orphan = !candidate.has_staging_marker
                 && !candidate.has_publishing_marker
                 && (candidate.newest_object_modified.is_none() && minimum_gc_age.is_zero()
@@ -1118,16 +1162,18 @@ impl DerivedRelationHeadStore {
             // A crash after publication claim creation can leave only
             // publishing.json behind. A live claim protects the build, while
             // a stale publishing claim is recoverable cleanup intent. A
-            // terminal garbage claim remains a tombstone and is never
-            // reclaimed.
+            // A terminal garbage claim with its marker remains a tombstone;
+            // an unmarked stale garbage claim is recoverable cleanup intent.
             if candidate.has_publishing_marker {
                 if let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? {
-                    candidate.stale_publishing_old_enough = Self::claim_role(&bytes).as_deref()
-                        == Some("released")
-                        || (matches!(
-                            Self::claim_role(&bytes).as_deref(),
-                            Some("staging") | Some("publishing")
-                        ) && Self::claim_is_stale(&bytes, last_modified));
+                    candidate.stale_publishing_old_enough =
+                        match Self::claim_role(&bytes).as_deref() {
+                            Some("released") => true,
+                            Some("staging") | Some("publishing") | Some("garbage") => {
+                                Self::claim_is_stale(&bytes, last_modified)
+                            }
+                            _ => false,
+                        };
                 }
             }
             // A marker-less prefix can be left behind by a crash immediately
