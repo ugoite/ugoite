@@ -620,17 +620,14 @@ impl AuthorizedAssetReferenceExec {
 }
 
 struct AuthorizedAssetReferenceStreamState {
-    relation_scopes: BTreeMap<String, EntryScope>,
     form_names: Vec<String>,
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
     form_index: usize,
-    current_form_index: Option<usize>,
     current_rows: Option<Vec<(String, AuthorizedAssetReferenceRow)>>,
     current_offset: usize,
-    current_after: Option<(String, String, String)>,
 }
 
 impl AuthorizedAssetReferenceStreamState {
@@ -653,33 +650,15 @@ impl AuthorizedAssetReferenceStreamState {
                     }
                     return Ok(Some(batch));
                 }
-                if let Some((form_name, row)) = rows.last() {
-                    self.current_after =
-                        Some((row.title.clone(), row.entry_id.clone(), form_name.clone()));
-                }
                 self.current_rows = None;
                 self.current_offset = 0;
+                self.form_index += 1;
                 continue;
             }
             let form_index = self.form_index;
             let Some(form_name) = self.form_names.get(form_index).cloned() else {
                 return Ok(None);
             };
-            // Each Form is an independent ordered branch. The keyset cursor
-            // must be reset when the provider advances to a new branch; a
-            // cursor from the previous Form could otherwise skip valid rows
-            // whose title/ID sorts before that previous branch's last row.
-            if self.current_form_index != Some(form_index) {
-                self.current_after = self.initial_after.clone();
-                self.current_form_index = Some(form_index);
-            }
-            // Load one bounded keyset page. This keeps authorization work and
-            // Rust allocations bounded even for very large Forms, without
-            // the quadratic rescans of OFFSET pagination.
-            let after = self
-                .current_after
-                .as_ref()
-                .map(|(title, entry_id, form)| (title.as_str(), entry_id.as_str(), form.as_str()));
             let asset_field_names = self
                 .asset_reference_fields
                 .get(&form_name)
@@ -687,26 +666,33 @@ impl AuthorizedAssetReferenceStreamState {
                 .flatten()
                 .map(|field| field.name.clone())
                 .collect::<BTreeSet<_>>();
-            let rows = crate::index::query_asset_reference_rows_authorized_after_in_context(
+            let rows = crate::index::query_asset_reference_rows_authorized_in_context(
                 &self.authorized_context,
                 &self.authorized_forms,
-                &self.relation_scopes,
                 &form_name,
-                after,
-                ASSET_TEXT_SEARCH_PAGE_SIZE,
                 &asset_field_names,
             )
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
+            let rows = rows
+                .into_iter()
+                .filter(|row| {
+                    self.initial_after
+                        .as_ref()
+                        .is_none_or(|(title, entry_id, form)| {
+                            (
+                                row.title.as_str(),
+                                row.entry_id.as_str(),
+                                form_name.as_str(),
+                            ) > (title.as_str(), entry_id.as_str(), form.as_str())
+                        })
+                })
+                .map(|row| (form_name.clone(), row))
+                .collect::<Vec<_>>();
             if rows.is_empty() {
                 self.form_index += 1;
-                self.current_form_index = None;
             } else {
-                self.current_rows = Some(
-                    rows.into_iter()
-                        .map(|row| (form_name.clone(), row))
-                        .collect(),
-                );
+                self.current_rows = Some(rows);
             }
         }
     }
@@ -749,17 +735,14 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             ));
         }
         let state = AuthorizedAssetReferenceStreamState {
-            relation_scopes: self.relation_scopes.clone(),
             form_names: self.form_names.clone(),
             asset_reference_fields: self.asset_reference_fields.clone(),
             authorized_context: self.authorized_context.clone(),
             authorized_forms: self.authorized_forms.clone(),
             initial_after: self.initial_after.clone(),
             form_index: 0,
-            current_form_index: None,
             current_rows: None,
             current_offset: 0,
-            current_after: self.initial_after.clone(),
         };
         let schema = self.schema.clone();
         let stream = futures::stream::try_unfold(state, |mut state| async move {

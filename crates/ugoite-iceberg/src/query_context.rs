@@ -19,7 +19,7 @@ use iceberg_datafusion::IcebergStaticTableProvider;
 use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 use ugoite_domain::form::sql_column_name;
 
@@ -105,6 +105,7 @@ pub struct AuthorizedQueryContext {
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
     duplicate_head_checks: Vec<(Arc<dyn TableProvider>, DataFrame)>,
+    latest_revision_cache: Arc<AsyncMutex<Option<Vec<arrow_array::RecordBatch>>>>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -382,6 +383,7 @@ impl IcebergWorkspace {
             authorized_relations: relations,
             authorized_scans,
             duplicate_head_checks,
+            latest_revision_cache: Arc::new(AsyncMutex::new(None)),
         })
     }
 }
@@ -447,6 +449,7 @@ impl IcebergWorkspace {
                 snapshot_id,
             }]),
             duplicate_head_checks: vec![(provider, duplicate_head_check)],
+            latest_revision_cache: Arc::new(AsyncMutex::new(None)),
         })
     }
 }
@@ -512,28 +515,57 @@ impl AuthorizedQueryContext {
             ))
             .into());
         }
-        let source = self
-            .context
-            .table("revisions")
-            .await
-            .map_err(AuthorizedQueryError::execution_failed)?;
-        let mut heads = latest_revision_dataframe(source, entry_scope, view)
-            .map_err(AuthorizedQueryError::invalid_query)?;
-        if let Some(after_entry_id) = after_entry_id {
-            heads = heads
-                .filter(col("entry_id").gt(lit(after_entry_id.to_vec())))
+        let mut cache = self.latest_revision_cache.lock().await;
+        if cache.is_none() {
+            let source = self
+                .context
+                .table("revisions")
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let heads = latest_revision_dataframe(source, entry_scope, view)
+                .map_err(AuthorizedQueryError::invalid_query)?
+                .sort(vec![SortExpr {
+                    expr: col("entry_id"),
+                    asc: true,
+                    nulls_first: true,
+                }])
                 .map_err(AuthorizedQueryError::invalid_query)?;
+            *cache = Some(self.execute_frame_without_row_limit(heads).await?);
         }
-        let frame = heads
-            .sort(vec![SortExpr {
-                expr: col("entry_id"),
-                asc: true,
-                nulls_first: true,
-            }])
-            .map_err(AuthorizedQueryError::invalid_query)?
-            .limit(0, Some(limit))
+        let after = after_entry_id
+            .map(uuid::Uuid::from_slice)
+            .transpose()
             .map_err(AuthorizedQueryError::invalid_query)?;
-        self.execute_frame(frame, limit).await
+        let mut page = Vec::new();
+        let mut page_rows = 0usize;
+        'batches: for batch in cache.as_ref().expect("latest revision cache is set") {
+            let entry_ids = batch.column_by_name("entry_id").ok_or_else(|| {
+                AuthorizedQueryError::execution_failed(anyhow!(
+                    "latest revision page is missing entry_id"
+                ))
+            })?;
+            let mut first = None;
+            for row in 0..batch.num_rows() {
+                let entry_id = crate::uuid_value_at(entry_ids.as_ref(), row)
+                    .map_err(AuthorizedQueryError::execution_failed)?;
+                if after.is_some_and(|after| entry_id <= after) {
+                    continue;
+                }
+                first.get_or_insert(row);
+                page_rows += 1;
+                if page_rows == limit {
+                    page.push(batch.slice(
+                        first.expect("page row has a start"),
+                        row + 1 - first.unwrap(),
+                    ));
+                    break 'batches;
+                }
+            }
+            if let Some(first) = first {
+                page.push(batch.slice(first, batch.num_rows() - first));
+            }
+        }
+        Ok(page)
     }
 
     /// Executes a trusted relation plan assembled by a typed read surface.
@@ -763,6 +795,37 @@ impl AuthorizedQueryContext {
                 ))
                 .into());
             }
+            self.validate_revision_invariants(&validation_plan).await?;
+            Ok(batches)
+        })
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
+    }
+
+    async fn execute_frame_without_row_limit(
+        &self,
+        frame: DataFrame,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(self.limits.timeout, async {
+            let plan = self
+                .context
+                .state()
+                .optimize(&frame.logical_plan().clone())
+                .map_err(AuthorizedQueryError::invalid_query)?;
+            validate_logical_plan(&plan, &self.authorized_relations)
+                .map_err(AuthorizedQueryError::unauthorized)?;
+            let validation_plan = plan.clone();
+            let frame = self
+                .context
+                .execute_logical_plan(plan)
+                .await
+                .map_err(AuthorizedQueryError::execution_failed)?;
+            let batches = self.collect_frame(frame).await?;
             self.validate_revision_invariants(&validation_plan).await?;
             Ok(batches)
         })

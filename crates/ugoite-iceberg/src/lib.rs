@@ -3568,7 +3568,7 @@ pub(crate) fn parse_zoned_timestamp_nanos(value: &str) -> Result<Option<i64>> {
     ))
 }
 
-fn uuid_value_at(array: &dyn Array, row: usize) -> Result<Uuid> {
+pub(crate) fn uuid_value_at(array: &dyn Array, row: usize) -> Result<Uuid> {
     if array.is_null(row) {
         return Err(anyhow!("UUID column contains a null value"));
     }

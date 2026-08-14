@@ -729,7 +729,7 @@ async fn rebuild_asset_text_with_mode(
                     let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
                 }
                 if legacy_expected.is_some() {
-                    let _ = head_store.remove_legacy_materializations().await;
+                    let _ = head_store.mark_legacy_materializations_garbage().await;
                 }
                 // A previous uncertain publication may have left a garbage
                 // marker on this build. Once the exact Head reread proves the
@@ -755,11 +755,10 @@ async fn rebuild_asset_text_with_mode(
         let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
     }
     if legacy_expected.is_some() {
-        // The new Head is now authoritative. The old v1 prefix is disposable
-        // and must not remain a second, undiscoverable materialization tree.
-        // Maintenance retries this cleanup after a crash or transient delete
-        // failure.
-        let _ = head_store.remove_legacy_materializations().await;
+        // The new Head is now authoritative. Retain the detached v1 prefix
+        // until its reader grace period expires; the marker is durable so a
+        // crash after the CAS cannot strand the old bytes.
+        let _ = head_store.mark_legacy_materializations_garbage().await;
     }
     schedule_asset_text_gc(op, ws_path);
     let current = match head_store.read_exact().await {
@@ -992,8 +991,12 @@ pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<
         Ok(head) => {
             // A current-build Head is authoritative. Any v1 materialization
             // prefix is now detached garbage, including one left by a crash
-            // immediately after a shared legacy-to-current swap.
-            head_store.remove_legacy_materializations().await?;
+            // immediately after a shared legacy-to-current swap. Discovery and
+            // deletion both honor the reader grace period.
+            head_store.mark_legacy_materializations_garbage().await?;
+            head_store
+                .garbage_collect_legacy_materializations(MINIMUM_GC_AGE)
+                .await?;
             head.map(|head| head.head.build_id)
         }
         Err(error)
@@ -1001,8 +1004,9 @@ pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<
                 .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
                 .is_some() =>
         {
-            // Never delete the v1 prefix while its legacy Head still points at
-            // it. A later rebuild will replace that Head by exact CAS first.
+            // Never mark or delete the v1 prefix while its legacy Head still
+            // points at it. A later rebuild will replace that Head by exact
+            // CAS first.
             None
         }
         Err(error) => return Err(error),
@@ -1479,7 +1483,8 @@ async fn build_asset_text_rows(
         }
         let dispatch = detect_dispatch(&reference.name, &reference.media_type, &bytes);
         let parser = dispatch.parser().clone();
-        let chunks = match extract_chunks_async(dispatch.clone(), bytes.clone()).await {
+        let unsupported = matches!(dispatch, Dispatch::Unsupported(_));
+        let chunks = match extract_chunks_async(dispatch, bytes).await {
             Ok(chunks) => chunks,
             Err(code) => {
                 rows.push(base(
@@ -1494,7 +1499,7 @@ async fn build_asset_text_rows(
                 continue;
             }
         };
-        if matches!(dispatch, Dispatch::Unsupported(_)) {
+        if unsupported {
             rows.push(base(
                 parser.id.into(),
                 parser.version.into(),

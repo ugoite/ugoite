@@ -245,6 +245,13 @@ impl DerivedRelationHeadStore {
         )
     }
 
+    fn legacy_garbage_marker_path(&self) -> String {
+        format!(
+            "{}/_ugoite/derived/relations/{}/legacy-garbage.json",
+            self.space_root, self.relation_id
+        )
+    }
+
     fn garbage_marker_path(&self, build_id: &str) -> String {
         format!("{}/garbage.json", self.builds_path(build_id))
     }
@@ -1460,6 +1467,65 @@ impl DerivedRelationHeadStore {
         Ok(deleted)
     }
 
+    /// Records the removed v1 materialization prefix as a grace-period GC
+    /// candidate. The marker is created after the current Head swap, so an
+    /// in-flight reader that pinned the legacy Head can finish before the
+    /// prefix is reclaimed.
+    pub async fn mark_legacy_materializations_garbage(&self) -> Result<()> {
+        let entries = self
+            .operator
+            .list_with(&self.legacy_materializations_prefix())
+            .recursive(true)
+            .await?;
+        if !entries
+            .iter()
+            .any(|entry| entry.metadata().mode() == EntryMode::FILE)
+        {
+            return Ok(());
+        }
+        self.operator
+            .write_options(
+                &self.legacy_garbage_marker_path(),
+                Self::build_marker_bytes(),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    /// Deletes a detached v1 prefix only after its durable marker has aged
+    /// past the same reader grace period as normal garbage builds. The marker
+    /// is deleted last so a crash during recursive deletion leaves a retryable
+    /// cleanup record.
+    pub async fn garbage_collect_legacy_materializations(
+        &self,
+        minimum_gc_age: Duration,
+    ) -> Result<bool> {
+        let marker = self.legacy_garbage_marker_path();
+        if !self.operator.exists(&marker).await? {
+            return Ok(false);
+        }
+        if !self.marker_old_enough(&marker, minimum_gc_age).await? {
+            return Ok(true);
+        }
+        let entries = self
+            .operator
+            .list_with(&self.legacy_materializations_prefix())
+            .recursive(true)
+            .await?;
+        for entry in entries {
+            if entry.metadata().mode() == EntryMode::FILE {
+                self.operator.delete(entry.path()).await?;
+            }
+        }
+        self.operator.delete(&marker).await?;
+        Ok(false)
+    }
+
     pub async fn read_exact(&self) -> Result<Option<ExactDerivedRelationHead>> {
         let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
             return Ok(None);
@@ -1760,23 +1826,6 @@ impl DerivedRelationHeadStore {
             .map_err(Into::into);
         heartbeat.abort();
         result
-    }
-
-    /// Deletes the removed v1 materialization prefix after its Head has been
-    /// replaced. It is deliberately idempotent and is also called by derived
-    /// maintenance so a crash after the CAS cannot strand old derived bytes.
-    pub async fn remove_legacy_materializations(&self) -> Result<()> {
-        let entries = self
-            .operator
-            .list_with(&self.legacy_materializations_prefix())
-            .recursive(true)
-            .await?;
-        for entry in entries {
-            if entry.metadata().mode() == EntryMode::FILE {
-                self.operator.delete(entry.path()).await?;
-            }
-        }
-        Ok(())
     }
 
     /// Publish while the caller already owns [`Self::single_process_lock`].
@@ -3173,6 +3222,44 @@ mod tests {
             vec!["old"]
         );
         assert!(!operator.exists(&data).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_materializations_use_a_grace_period_and_marker_last_cleanup() -> Result<()> {
+        let operator = Operator::new(Memory::default())?.finish();
+        let relation_id = uuid::Uuid::from_u128(0xA00F);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let legacy_data = format!("{}/metadata.json", store.legacy_materializations_prefix());
+        operator.write(&legacy_data, b"legacy".to_vec()).await?;
+
+        store.mark_legacy_materializations_garbage().await?;
+        assert!(
+            store
+                .garbage_collect_legacy_materializations(Duration::from_secs(3600))
+                .await?
+        );
+        assert!(operator.exists(&legacy_data).await?);
+        assert!(operator.exists(&store.legacy_garbage_marker_path()).await?);
+
+        operator
+            .write(
+                &store.legacy_garbage_marker_path(),
+                serde_json::to_vec(&serde_json::json!({
+                    "marked_at": SystemTime::now()
+                        .duration_since(UNIX_EPOCH)?
+                        .as_secs()
+                        .saturating_sub(3600)
+                }))?,
+            )
+            .await?;
+        assert!(
+            !store
+                .garbage_collect_legacy_materializations(Duration::from_secs(1800))
+                .await?
+        );
+        assert!(!operator.exists(&legacy_data).await?);
+        assert!(!operator.exists(&store.legacy_garbage_marker_path()).await?);
         Ok(())
     }
 

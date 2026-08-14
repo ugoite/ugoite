@@ -542,7 +542,7 @@ pub(crate) async fn authorized_asset_reference_query_context(
         Some(relation_scopes),
         None,
         BTreeSet::new(),
-        crate::MAX_NORMAL_READ_ROWS,
+        usize::MAX / 4,
         true,
     )
     .await
@@ -550,32 +550,17 @@ pub(crate) async fn authorized_asset_reference_query_context(
     Ok((context, forms))
 }
 
-pub(crate) async fn query_asset_reference_rows_authorized_after_in_context(
+/// Reads the authorized current AssetReference projection once for a Form.
+/// AssetText's DataFusion provider pages this in memory after the trusted
+/// current-state view has been evaluated, rather than rebuilding the latest
+/// revision plan for every 2,048-row page.
+pub(crate) async fn query_asset_reference_rows_authorized_in_context(
     context: &crate::query_context::AuthorizedQueryContext,
     forms: &HashMap<String, Value>,
-    relation_scopes: &BTreeMap<String, EntryScope>,
     form_name: &str,
-    after: Option<(&str, &str, &str)>,
-    limit: usize,
     asset_field_names: &BTreeSet<String>,
 ) -> Result<Vec<AuthorizedAssetReferenceRow>> {
-    if limit == 0 || asset_field_names.is_empty() {
-        return Ok(Vec::new());
-    }
-    let candidates = query_entry_candidates_in_context(
-        &context,
-        &forms,
-        relation_scopes,
-        Some(form_name),
-        None,
-        &EntryCandidatePage {
-            limit: Some(limit),
-            offset: 0,
-            after,
-        },
-    )
-    .await?;
-    if candidates.is_empty() {
+    if asset_field_names.is_empty() {
         return Ok(Vec::new());
     }
     let form = forms
@@ -585,32 +570,20 @@ pub(crate) async fn query_asset_reference_rows_authorized_after_in_context(
         .get("sql_relation")
         .and_then(Value::as_str)
         .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
-    let ids = candidates
-        .iter()
-        .map(|candidate| lit(candidate.entry_id.as_str()))
-        .collect::<Vec<_>>();
     let batches = context
         .execute_relation_plan(
             relation,
             &[],
-            vec![col("_ugoite_id").in_list(ids, false)],
+            Vec::new(),
             asset_reference_projection(form, asset_field_names)?,
             Vec::new(),
-            true,
             false,
-            candidates.len(),
+            false,
+            usize::MAX / 4,
         )
         .await
         .map_err(map_sql_error)?;
-    let projected = asset_reference_rows_from_batches(form, &batches, asset_field_names)?;
-    let mut by_id = projected
-        .into_iter()
-        .map(|row| (row.entry_id.clone(), row))
-        .collect::<HashMap<_, _>>();
-    Ok(candidates
-        .into_iter()
-        .filter_map(|candidate| by_id.remove(&candidate.entry_id))
-        .collect())
+    asset_reference_rows_from_batches(form, &batches, asset_field_names)
 }
 
 #[allow(clippy::too_many_arguments)]
