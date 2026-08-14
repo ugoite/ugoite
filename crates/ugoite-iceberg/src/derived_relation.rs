@@ -889,7 +889,21 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                                 Ok(current_build) => {
                                     let current_build_id =
                                         current_build.map(|head| head.head.build_id);
-                                    match head_store
+                                    let legacy_pending = async {
+                                        head_store
+                                            .mark_legacy_materializations_garbage()
+                                            .await?;
+                                        Ok::<bool, anyhow::Error>(
+                                            head_store
+                                                .garbage_collect_legacy_materializations(
+                                                    MINIMUM_GC_AGE,
+                                                )
+                                                .await?,
+                                        )
+                                    }
+                                    .await
+                                    .unwrap_or(true);
+                                    let build_pending = match head_store
                                         .garbage_collect(
                                             current_build_id.as_deref(),
                                             MINIMUM_GC_AGE,
@@ -904,7 +918,8 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                                             .await
                                             .unwrap_or(true),
                                         Err(_) => true,
-                                    }
+                                    };
+                                    legacy_pending || build_pending
                                 }
                                 Err(_) => true,
                             }

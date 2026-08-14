@@ -1483,7 +1483,8 @@ impl DerivedRelationHeadStore {
         {
             return Ok(());
         }
-        self.operator
+        match self
+            .operator
             .write_options(
                 &self.legacy_garbage_marker_path(),
                 Self::build_marker_bytes(),
@@ -1493,8 +1494,11 @@ impl DerivedRelationHeadStore {
                 },
             )
             .await
-            .map(|_| ())
-            .map_err(Into::into)
+        {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Deletes a detached v1 prefix only after its durable marker has aged
