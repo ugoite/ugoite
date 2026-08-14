@@ -245,6 +245,7 @@ pub enum RevisionView {
 /// explicit, separate operation and may materialize its complete revision
 /// stream.
 pub const MAX_NORMAL_READ_ROWS: usize = 10_000;
+const DERIVED_REVISION_PAGE_SIZE: usize = 2_048;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WriteConfig {
@@ -1997,31 +1998,72 @@ impl IcebergWorkspace {
             .await
     }
 
-    /// Derived rebuilds must see every current Entry. This intentionally
-    /// bypasses the API response ceiling; authorization and deletion semantics
-    /// remain the same because the canonical latest-state plan is unchanged.
-    pub(crate) async fn read_current_revision_view_for_derived(
+    /// Visits every current Entry in bounded keyset pages. Derived rebuilds
+    /// intentionally bypass the API response ceiling, but never bypass the
+    /// authorized latest-state plan or materialize a whole Form through one
+    /// giant revision-id list.
+    pub(crate) async fn visit_current_revision_view_for_derived<F>(
         &self,
         form_id: FormId,
-    ) -> Result<Vec<EntryRevision>> {
+        mut visit: F,
+    ) -> Result<()>
+    where
+        F: FnMut(EntryRevision) -> Result<()>,
+    {
         let form = self.load_form(form_id).await?;
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
-        let batches = self
-            .read_latest_revision_batches_with_permits(
-                &table,
+        let (provider, query_snapshot_id) = self.revision_provider(&table, None).await?;
+        let context = self
+            .authorized_revision_query_context_with_permits(
+                provider,
+                table.metadata().uuid().to_string(),
+                query_snapshot_id,
                 &EntryScope::AllCurrent,
-                None,
-                RevisionView::LatestIncludingTombstones,
-                None,
+                QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: DERIVED_REVISION_PAGE_SIZE,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
                 self.maintenance_query_permits(1),
             )
             .await?;
         let schema = table.metadata().current_schema().clone();
-        let mut revisions = Vec::new();
-        for batch in &batches {
-            revisions.extend(revisions_from_batch(batch, &form, &schema)?);
+        let mut after_entry_id = None;
+        loop {
+            let batches = context
+                .execute_latest_revision_plan_page(
+                    &EntryScope::AllCurrent,
+                    RevisionView::LatestIncludingTombstones,
+                    after_entry_id.as_deref(),
+                    DERIVED_REVISION_PAGE_SIZE,
+                )
+                .await?;
+            let page_rows = batches.iter().map(RecordBatch::num_rows).sum::<usize>();
+            if page_rows == 0 {
+                break;
+            }
+            for batch in &batches {
+                for revision in revisions_from_batch(batch, &form, &schema)? {
+                    visit(revision)?;
+                }
+                if batch.num_rows() > 0 {
+                    let entry_ids = batch
+                        .column_by_name("entry_id")
+                        .context("latest revision page is missing entry_id")?;
+                    after_entry_id = Some(
+                        uuid_value_at(entry_ids.as_ref(), batch.num_rows() - 1)?
+                            .as_bytes()
+                            .to_vec(),
+                    );
+                }
+            }
+            if page_rows < DERIVED_REVISION_PAGE_SIZE {
+                break;
+            }
         }
-        Ok(revisions)
+        Ok(())
     }
 
     pub async fn query(&self, sql: &str) -> Result<Vec<RecordBatch>> {

@@ -1169,45 +1169,45 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
         // table directly and is not subject to the normal 10k search window.
         // Delete tombstones are deliberately excluded after max-version
         // selection, so deleted Entries cannot seed a derived source set.
-        let revisions = workspace
-            .read_current_revision_view_for_derived(definition.id)
-            .await?;
-        for revision in revisions {
-            if matches!(
-                revision.operation,
-                ugoite_domain::entry::EntryOperation::Delete
-            ) {
-                continue;
-            }
-            for field in &definition.fields {
-                if !matches!(
-                    field.field_type,
-                    FieldType::AssetReference | FieldType::List
+        workspace
+            .visit_current_revision_view_for_derived(definition.id, |revision| {
+                if matches!(
+                    revision.operation,
+                    ugoite_domain::entry::EntryOperation::Delete
                 ) {
-                    continue;
+                    return Ok(());
                 }
-                let Some(value) = revision.values.get(&field.id) else {
-                    continue;
-                };
-                let asset_references = typed_asset_references_for_field(field, value)?;
-                for reference in asset_references {
-                    let candidate = SourceReference {
-                        asset_id: reference.asset_id,
-                        name: reference.name,
-                        media_type: reference.media_type,
-                        source_sha256: reference.sha256,
-                        source_size_bytes: reference.size_bytes,
-                        integrity_error: None,
+                for field in &definition.fields {
+                    if !matches!(
+                        field.field_type,
+                        FieldType::AssetReference | FieldType::List
+                    ) {
+                        continue;
+                    }
+                    let Some(value) = revision.values.get(&field.id) else {
+                        continue;
                     };
-                    merge_source_reference(
-                        &mut references,
-                        &mut asset_checksums,
-                        &mut conflicting_assets,
-                        candidate,
-                    );
+                    let asset_references = typed_asset_references_for_field(field, value)?;
+                    for reference in asset_references {
+                        let candidate = SourceReference {
+                            asset_id: reference.asset_id,
+                            name: reference.name,
+                            media_type: reference.media_type,
+                            source_sha256: reference.sha256,
+                            source_size_bytes: reference.size_bytes,
+                            integrity_error: None,
+                        };
+                        merge_source_reference(
+                            &mut references,
+                            &mut asset_checksums,
+                            &mut conflicting_assets,
+                            candidate,
+                        );
+                    }
                 }
-            }
-        }
+                Ok(())
+            })
+            .await?;
     }
     Ok(references
         .into_values()

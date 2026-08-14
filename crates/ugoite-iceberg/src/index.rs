@@ -522,18 +522,17 @@ pub(crate) struct AuthorizedAssetReferenceRow {
     pub fields: Value,
 }
 
-pub(crate) async fn query_asset_reference_rows_authorized_after(
+/// Creates the reusable authorized context used by the AssetText provider's
+/// keyset pages. The Form views and their Iceberg providers are opened once per
+/// search, rather than once per page.
+pub(crate) async fn authorized_asset_reference_query_context(
     op: &Operator,
     ws_path: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
-    form_name: &str,
-    after: Option<(&str, &str, &str)>,
-    limit: usize,
-    asset_field_names: &BTreeSet<String>,
-) -> Result<Vec<AuthorizedAssetReferenceRow>> {
-    if limit == 0 || asset_field_names.is_empty() {
-        return Ok(Vec::new());
-    }
+) -> Result<(
+    crate::query_context::AuthorizedQueryContext,
+    HashMap<String, Value>,
+)> {
     let forms = load_forms(op, ws_path).await?;
     let context = datafusion_sql_context_with_limits(
         op,
@@ -548,6 +547,21 @@ pub(crate) async fn query_asset_reference_rows_authorized_after(
     )
     .await
     .map_err(map_sql_error)?;
+    Ok((context, forms))
+}
+
+pub(crate) async fn query_asset_reference_rows_authorized_after_in_context(
+    context: &crate::query_context::AuthorizedQueryContext,
+    forms: &HashMap<String, Value>,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    form_name: &str,
+    after: Option<(&str, &str, &str)>,
+    limit: usize,
+    asset_field_names: &BTreeSet<String>,
+) -> Result<Vec<AuthorizedAssetReferenceRow>> {
+    if limit == 0 || asset_field_names.is_empty() {
+        return Ok(Vec::new());
+    }
     let candidates = query_entry_candidates_in_context(
         &context,
         &forms,
@@ -2723,7 +2737,7 @@ pub fn aggregate_stats(entries: &Map<String, Value>) -> Value {
     )
 }
 
-async fn load_forms(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
+pub(crate) async fn load_forms(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
     let mut forms = HashMap::new();
     for form_name in crate::form::list_form_names(op, ws_path).await? {
         if let Ok(value) = crate::form::get_form(op, ws_path, &form_name).await {

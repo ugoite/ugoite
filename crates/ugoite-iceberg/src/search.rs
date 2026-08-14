@@ -16,7 +16,8 @@ use datafusion::physical_plan::{
 };
 use opendal::Operator;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 use ugoite_core::query::EntryScope;
@@ -238,6 +239,15 @@ async fn asset_text_search_authorized_inner(
     if asset_form_names.is_empty() {
         return Ok(Some(Vec::new()));
     }
+    let (authorized_context, authorized_forms) =
+        match crate::index::authorized_asset_reference_query_context(op, ws_path, relation_scopes)
+            .await
+        {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
+        };
+    let authorized_context = Arc::new(authorized_context);
+    let authorized_forms = Arc::new(authorized_forms);
     if context
         .register_table(
             "__ugoite_authorized_asset_refs",
@@ -247,6 +257,8 @@ async fn asset_text_search_authorized_inner(
                 relation_scopes.clone(),
                 asset_form_names,
                 asset_reference_fields,
+                authorized_context,
+                authorized_forms,
                 after,
             )),
         )
@@ -450,15 +462,31 @@ fn append_asset_reference(value: &Value, output: &mut Vec<String>) {
     output.push(reference.asset_id);
 }
 
-#[derive(Debug)]
 struct AuthorizedAssetReferenceProvider {
     operator: Operator,
     workspace_path: String,
     relation_scopes: BTreeMap<String, EntryScope>,
     form_names: Vec<String>,
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
+    authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
     schema: Arc<Schema>,
+}
+
+impl fmt::Debug for AuthorizedAssetReferenceProvider {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AuthorizedAssetReferenceProvider")
+            .field("operator", &self.operator)
+            .field("workspace_path", &self.workspace_path)
+            .field("relation_scopes", &self.relation_scopes)
+            .field("form_names", &self.form_names)
+            .field("asset_reference_fields", &self.asset_reference_fields)
+            .field("initial_after", &self.initial_after)
+            .field("schema", &self.schema)
+            .finish()
+    }
 }
 
 impl AuthorizedAssetReferenceProvider {
@@ -468,6 +496,8 @@ impl AuthorizedAssetReferenceProvider {
         relation_scopes: BTreeMap<String, EntryScope>,
         form_names: Vec<String>,
         asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+        authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
+        authorized_forms: Arc<HashMap<String, Value>>,
         after: Option<(&str, &str, &str)>,
     ) -> Self {
         Self {
@@ -476,6 +506,8 @@ impl AuthorizedAssetReferenceProvider {
             relation_scopes,
             form_names,
             asset_reference_fields,
+            authorized_context,
+            authorized_forms,
             initial_after: after.map(|(title, entry_id, form)| {
                 (title.to_string(), entry_id.to_string(), form.to_string())
             }),
@@ -507,6 +539,8 @@ impl TableProvider for AuthorizedAssetReferenceProvider {
             self.relation_scopes.clone(),
             self.form_names.clone(),
             self.asset_reference_fields.clone(),
+            self.authorized_context.clone(),
+            self.authorized_forms.clone(),
             self.initial_after.clone(),
             self.schema.clone(),
         )))
@@ -523,16 +557,33 @@ impl TableProvider for AuthorizedAssetReferenceProvider {
     }
 }
 
-#[derive(Debug)]
 struct AuthorizedAssetReferenceExec {
     operator: Operator,
     workspace_path: String,
     relation_scopes: BTreeMap<String, EntryScope>,
     form_names: Vec<String>,
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
+    authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
     schema: Arc<Schema>,
     properties: Arc<PlanProperties>,
+}
+
+impl fmt::Debug for AuthorizedAssetReferenceExec {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AuthorizedAssetReferenceExec")
+            .field("operator", &self.operator)
+            .field("workspace_path", &self.workspace_path)
+            .field("relation_scopes", &self.relation_scopes)
+            .field("form_names", &self.form_names)
+            .field("asset_reference_fields", &self.asset_reference_fields)
+            .field("initial_after", &self.initial_after)
+            .field("schema", &self.schema)
+            .field("properties", &self.properties)
+            .finish()
+    }
 }
 
 impl AuthorizedAssetReferenceExec {
@@ -542,6 +593,8 @@ impl AuthorizedAssetReferenceExec {
         relation_scopes: BTreeMap<String, EntryScope>,
         form_names: Vec<String>,
         asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+        authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
+        authorized_forms: Arc<HashMap<String, Value>>,
         initial_after: Option<(String, String, String)>,
         schema: Arc<Schema>,
     ) -> Self {
@@ -557,6 +610,8 @@ impl AuthorizedAssetReferenceExec {
             relation_scopes,
             form_names,
             asset_reference_fields,
+            authorized_context,
+            authorized_forms,
             initial_after,
             schema,
             properties,
@@ -564,13 +619,12 @@ impl AuthorizedAssetReferenceExec {
     }
 }
 
-#[derive(Debug)]
 struct AuthorizedAssetReferenceStreamState {
-    operator: Operator,
-    workspace_path: String,
     relation_scopes: BTreeMap<String, EntryScope>,
     form_names: Vec<String>,
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
+    authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
+    authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
     form_index: usize,
     current_form_index: Option<usize>,
@@ -633,9 +687,9 @@ impl AuthorizedAssetReferenceStreamState {
                 .flatten()
                 .map(|field| field.name.clone())
                 .collect::<BTreeSet<_>>();
-            let rows = crate::index::query_asset_reference_rows_authorized_after(
-                &self.operator,
-                &self.workspace_path,
+            let rows = crate::index::query_asset_reference_rows_authorized_after_in_context(
+                &self.authorized_context,
+                &self.authorized_forms,
                 &self.relation_scopes,
                 &form_name,
                 after,
@@ -695,11 +749,11 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             ));
         }
         let state = AuthorizedAssetReferenceStreamState {
-            operator: self.operator.clone(),
-            workspace_path: self.workspace_path.clone(),
             relation_scopes: self.relation_scopes.clone(),
             form_names: self.form_names.clone(),
             asset_reference_fields: self.asset_reference_fields.clone(),
+            authorized_context: self.authorized_context.clone(),
+            authorized_forms: self.authorized_forms.clone(),
             initial_after: self.initial_after.clone(),
             form_index: 0,
             current_form_index: None,

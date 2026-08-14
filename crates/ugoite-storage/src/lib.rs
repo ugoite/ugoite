@@ -1609,6 +1609,24 @@ impl DerivedRelationHeadStore {
                     if Self::head_fence(&value)
                         .is_some_and(|(state, _)| state == "head_fence_released") =>
                 {
+                    let Some((_, fenced_build_id)) = Self::head_fence(&value) else {
+                        unreachable!("released Head fence was checked above")
+                    };
+                    if fenced_build_id != head.build_id {
+                        return Err(anyhow!(
+                            "released empty DerivedRelation Head fence belongs to another build"
+                        ));
+                    }
+                    let Some((claim, _, _)) = self.read_build_claim(&head.build_id).await? else {
+                        return Err(anyhow!(
+                            "released empty DerivedRelation Head fence has no build claim"
+                        ));
+                    };
+                    if Self::claim_role(&claim).as_deref() != Some("publishing") {
+                        return Err(anyhow!(
+                            "released empty DerivedRelation Head fence is no longer publishable"
+                        ));
+                    }
                     self.operator
                         .write_options(
                             &self.head_path(),

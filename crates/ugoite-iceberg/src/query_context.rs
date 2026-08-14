@@ -496,6 +496,46 @@ impl AuthorizedQueryContext {
         self.execute_frame(frame, limit).await
     }
 
+    /// Executes one ordered page of the latest revision view. Maintenance
+    /// readers use a keyset cursor so a large Form never becomes one giant
+    /// revision-id `IN (...)` plan or one unbounded Arrow allocation.
+    pub(crate) async fn execute_latest_revision_plan_page(
+        &self,
+        entry_scope: &EntryScope,
+        view: crate::RevisionView,
+        after_entry_id: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        if limit == 0 || limit > self.limits.max_rows {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "latest revision page exceeds its configured row limit"
+            ))
+            .into());
+        }
+        let source = self
+            .context
+            .table("revisions")
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let mut heads = latest_revision_dataframe(source, entry_scope, view)
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        if let Some(after_entry_id) = after_entry_id {
+            heads = heads
+                .filter(col("entry_id").gt(lit(after_entry_id.to_vec())))
+                .map_err(AuthorizedQueryError::invalid_query)?;
+        }
+        let frame = heads
+            .sort(vec![SortExpr {
+                expr: col("entry_id"),
+                asc: true,
+                nulls_first: true,
+            }])
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .limit(0, Some(limit))
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        self.execute_frame(frame, limit).await
+    }
+
     /// Executes a trusted relation plan assembled by a typed read surface.
     /// The caller can request unnesting for a typed list, but cannot provide a
     /// provider, relation, catalog, or arbitrary SQL object. The same permit,
