@@ -853,6 +853,40 @@ impl DerivedRelationHeadStore {
         }
     }
 
+    /// Recover the only empty-head state that can remain after a successful
+    /// marker-last cleanup: the process may have crashed after the terminal
+    /// garbage claim was written but before the fence was released.  The
+    /// claim role is the durable proof that the build prefix was already
+    /// cleaned, so this recovery does not depend on a fresh listing or on the
+    /// claim still being eligible for GC.
+    async fn recover_completed_empty_head_fence(&self) -> Result<()> {
+        if self.write_mode != CatalogWriteMode::Shared {
+            return Ok(());
+        }
+        let Some((value, _, etag)) = self.read_raw_exact().await? else {
+            return Ok(());
+        };
+        let Some((state, build_id)) = Self::head_fence(&value) else {
+            return Ok(());
+        };
+        if state != "garbage_fence" {
+            return Ok(());
+        }
+        let Some((bytes, _, _)) = self.read_build_claim(build_id).await? else {
+            return Ok(());
+        };
+        if Self::claim_role(&bytes).as_deref() != Some("complete") {
+            return Ok(());
+        }
+        let Some(etag) = etag else {
+            return Err(anyhow!(
+                "shared empty DerivedRelation Head fence requires an ETag"
+            ));
+        };
+        let _ = self.release_empty_head_fence(build_id, &etag).await?;
+        Ok(())
+    }
+
     /// Mark a build at the moment it stops being current.  GC uses this
     /// marker's timestamp rather than the build's creation timestamp so an
     /// old, long-lived current build still gets a full reader grace period
@@ -1098,6 +1132,7 @@ impl DerivedRelationHeadStore {
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
     ) -> Result<Vec<String>> {
+        self.recover_completed_empty_head_fence().await?;
         let prefix = format!(
             "{}/_ugoite/derived/relations/{}/builds/",
             self.space_root, self.relation_id
@@ -1400,7 +1435,7 @@ impl DerivedRelationHeadStore {
                 // a delayed publisher remains fenced. The explicit complete
                 // role also makes the terminal tombstone invisible to pending
                 // maintenance checks; a crash before this transition leaves
-                // role=garbage and is safely retried.
+                // role=garbage and is recoverable on the next pass.
                 if !self.complete_garbage_claim(&build_id).await? {
                     continue;
                 }
@@ -1412,7 +1447,9 @@ impl DerivedRelationHeadStore {
                     // Do not remove the temporary first-Head fence. Convert
                     // it conditionally into an empty-head release marker so
                     // a new publisher can replace it only after every build
-                    // object and garbage marker has been deleted.
+                    // object, garbage marker, and terminal claim are durable.
+                    // A crash before this step is recovered by the next GC
+                    // pass from the complete claim.
                     if !self.release_empty_head_fence(&build_id, etag).await? {
                         continue;
                     }

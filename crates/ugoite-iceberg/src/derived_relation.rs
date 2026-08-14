@@ -1261,19 +1261,19 @@ fn merge_source_reference(
 fn source_reference_metadata_rank(reference: &SourceReference) -> u8 {
     let name = reference.name.to_ascii_lowercase();
     let media_type = reference.media_type.to_ascii_lowercase();
-    if matches!(
+    if matches!(media_type.as_str(), "text/plain" | "text/markdown") {
+        // Text MIME is the safest fallback for an opaque object. Structured
+        // formats still win when their bytes have a PDF/OOXML signature in
+        // detect_dispatch, while this avoids routing plain bytes through a
+        // conflicting PDF or Office hint.
+        4
+    } else if matches!(
         media_type.as_str(),
         "application/pdf"
-            | "text/plain"
-            | "text/markdown"
             | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     ) {
-        // A declared MIME type is a stronger parser hint than a filename.
-        // Duplicate AssetReferences may carry different Entry-owned names;
-        // do not let a lexical filename tie-break override a consistent MIME
-        // type and route a plain-text object through the PDF parser.
         3
     } else if [".pdf", ".txt", ".md", ".docx", ".xlsx", ".pptx"]
         .iter()
@@ -2326,5 +2326,44 @@ mod tests {
         let reference = references.get("asset-1").expect("merged Asset reference");
         let dispatch = detect_dispatch(&reference.name, &reference.media_type, b"plain text");
         assert!(matches!(dispatch, Dispatch::PlainText(_)));
+    }
+
+    #[test]
+    fn duplicate_asset_reference_prefers_text_mime_over_structured_mime() {
+        let mut references = BTreeMap::new();
+        let mut checksums = BTreeMap::new();
+        let mut conflicts = HashSet::new();
+        merge_source_reference(
+            &mut references,
+            &mut checksums,
+            &mut conflicts,
+            SourceReference {
+                asset_id: "asset-1".into(),
+                name: "a.pdf".into(),
+                media_type: "application/pdf".into(),
+                source_sha256: "sha".into(),
+                source_size_bytes: 10,
+                integrity_error: None,
+            },
+        );
+        merge_source_reference(
+            &mut references,
+            &mut checksums,
+            &mut conflicts,
+            SourceReference {
+                asset_id: "asset-1".into(),
+                name: "z.txt".into(),
+                media_type: "text/plain".into(),
+                source_sha256: "sha".into(),
+                source_size_bytes: 10,
+                integrity_error: None,
+            },
+        );
+        let reference = references.get("asset-1").expect("merged Asset reference");
+        assert_eq!(reference.media_type, "text/plain");
+        assert!(matches!(
+            detect_dispatch(&reference.name, &reference.media_type, b"plain text"),
+            Dispatch::PlainText(_)
+        ));
     }
 }
