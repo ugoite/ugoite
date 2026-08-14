@@ -799,10 +799,11 @@ fn schedule_asset_text_gc(op: &Operator, ws_path: &str) {
 fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Duration) {
     let relation_id = asset_text_definition().relation_id.as_uuid();
     let key = format!(
-        "{}:{}:{}:{}:{}",
+        "{}:{}:{}:operator={:p}:{}:{}",
         op.info().scheme(),
         op.info().name(),
         op.info().root(),
+        Arc::as_ptr(op.inner()),
         ws_path,
         relation_id,
     );

@@ -105,6 +105,7 @@ pub struct AuthorizedQueryContext {
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
     duplicate_head_checks: Vec<(Arc<dyn TableProvider>, DataFrame)>,
+    duplicate_head_checks_validated: Arc<AsyncMutex<BTreeSet<usize>>>,
     // Cache the authorized latest-state logical plan, not its result.  Each
     // maintenance page adds its cursor and row limit before execution so a
     // large Form never becomes one unbounded Arrow allocation.
@@ -386,6 +387,7 @@ impl IcebergWorkspace {
             authorized_relations: relations,
             authorized_scans,
             duplicate_head_checks,
+            duplicate_head_checks_validated: Arc::new(AsyncMutex::new(BTreeSet::new())),
             latest_revision_cache: Arc::new(AsyncMutex::new(None)),
         })
     }
@@ -452,6 +454,7 @@ impl IcebergWorkspace {
                 snapshot_id,
             }]),
             duplicate_head_checks: vec![(provider, duplicate_head_check)],
+            duplicate_head_checks_validated: Arc::new(AsyncMutex::new(BTreeSet::new())),
             latest_revision_cache: Arc::new(AsyncMutex::new(None)),
         })
     }
@@ -1195,9 +1198,13 @@ impl AuthorizedQueryContext {
     async fn validate_revision_invariants(&self, plan: &LogicalPlan) -> Result<()> {
         let mut scanned_providers = BTreeSet::new();
         collect_scanned_provider_addresses(plan, &mut scanned_providers);
+        let mut validated = self.duplicate_head_checks_validated.lock().await;
         for (provider, check) in &self.duplicate_head_checks {
             let provider_address = Arc::as_ptr(provider) as *const () as usize;
             if !scanned_providers.contains(&provider_address) {
+                continue;
+            }
+            if validated.contains(&provider_address) {
                 continue;
             }
             if self
@@ -1208,6 +1215,7 @@ impl AuthorizedQueryContext {
             {
                 return Err(AuthorizedQueryError::RevisionInvariantViolation.into());
             }
+            validated.insert(provider_address);
         }
         Ok(())
     }
