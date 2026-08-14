@@ -710,14 +710,20 @@ async fn rebuild_asset_text_with_mode(
         schedule_asset_text_gc(op, ws_path);
         return Err(publication_error);
     }
-    let current = head_store
-        .read_exact()
-        .await?
-        .context("published derived Head disappeared")?
-        .head;
     if let Some(expected) = expected.as_ref() {
+        // The CAS already made the new build visible. Record the superseded
+        // build before the confirmation read so a transient read failure does
+        // not strand it without a durable cleanup candidate.
         let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
     }
+    schedule_asset_text_gc(op, ws_path);
+    let current = match head_store.read_exact().await {
+        Ok(Some(current)) => current.head,
+        Ok(None) => {
+            return Err(anyhow::anyhow!("published derived Head disappeared"));
+        }
+        Err(error) => return Err(error),
+    };
     let candidate_cleanup_marked = if current.build_id != head.build_id {
         // A shared writer may have won immediately after this writer's CAS.
         // The successful candidate is then garbage too; leaving only its

@@ -541,6 +541,7 @@ struct AuthorizedAssetReferenceStreamState {
     asset_reference_fields: BTreeMap<String, Vec<AssetReferenceField>>,
     initial_after: Option<(String, String, String)>,
     form_index: usize,
+    current_form_index: Option<usize>,
     current_rows: Option<Vec<(String, entry::EntryRow)>>,
     current_offset: usize,
     current_after: Option<(String, String, String)>,
@@ -574,9 +575,18 @@ impl AuthorizedAssetReferenceStreamState {
                 self.current_offset = 0;
                 continue;
             }
-            let Some(form_name) = self.form_names.get(self.form_index).cloned() else {
+            let form_index = self.form_index;
+            let Some(form_name) = self.form_names.get(form_index).cloned() else {
                 return Ok(None);
             };
+            // Each Form is an independent ordered branch. The keyset cursor
+            // must be reset when the provider advances to a new branch; a
+            // cursor from the previous Form could otherwise skip valid rows
+            // whose title/ID sorts before that previous branch's last row.
+            if self.current_form_index != Some(form_index) {
+                self.current_after = self.initial_after.clone();
+                self.current_form_index = Some(form_index);
+            }
             // Load one bounded keyset page. This keeps authorization work and
             // Rust allocations bounded even for very large Forms, without
             // the quadratic rescans of OFFSET pagination.
@@ -595,12 +605,8 @@ impl AuthorizedAssetReferenceStreamState {
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
             if rows.is_empty() {
-                // Each Form is an independent sorted branch. Retain the
-                // caller's initial keyset cursor when advancing to the next
-                // branch; otherwise a large later Form is rescanned from its
-                // beginning and the join can time out before finding a match.
-                self.current_after = self.initial_after.clone();
                 self.form_index += 1;
+                self.current_form_index = None;
             } else {
                 self.current_rows = Some(rows);
             }
@@ -652,6 +658,7 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             asset_reference_fields: self.asset_reference_fields.clone(),
             initial_after: self.initial_after.clone(),
             form_index: 0,
+            current_form_index: None,
             current_rows: None,
             current_offset: 0,
             current_after: self.initial_after.clone(),
