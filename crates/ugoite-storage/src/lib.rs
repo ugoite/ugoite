@@ -143,6 +143,7 @@ const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
 const DERIVED_TERMINAL_CLAIM_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_DERIVED_GC_LIST_ENTRIES: usize = 100_000;
+const MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS: usize = 1_024;
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -1349,24 +1350,51 @@ impl DerivedRelationHeadStore {
     }
 
     async fn reap_expired_terminal_tombstones(&self) -> Result<()> {
+        self.reap_expired_terminal_tombstones_at(SystemTime::now())
+            .await
+    }
+
+    async fn reap_expired_terminal_tombstones_at(&self, now: SystemTime) -> Result<()> {
+        self.reap_expired_terminal_tombstones_at_with_retention(
+            now,
+            DERIVED_TERMINAL_CLAIM_RETENTION,
+        )
+        .await
+    }
+
+    async fn reap_expired_terminal_tombstones_at_with_retention(
+        &self,
+        now: SystemTime,
+        retention: Duration,
+    ) -> Result<()> {
         let mut lister = self
             .operator
             .lister_with(&self.terminal_tombstones_prefix())
             .recursive(true)
             .await?;
+        let mut examined = 0usize;
+        let mut deleted = 0usize;
         while let Some(entry) = lister.try_next().await? {
+            examined = examined.saturating_add(1);
+            if examined > MAX_DERIVED_GC_LIST_ENTRIES {
+                break;
+            }
             if entry.metadata().mode() != EntryMode::FILE
-                || !Self::old_enough(
+                || !Self::old_enough_at(
                     entry.metadata().last_modified().map(Into::into),
-                    DERIVED_TERMINAL_CLAIM_RETENTION,
+                    retention,
+                    now,
                 )
             {
                 continue;
             }
             match self.operator.delete(entry.path()).await {
-                Ok(()) => {}
+                Ok(()) => deleted = deleted.saturating_add(1),
                 Err(error) if error.kind() == ErrorKind::NotFound => {}
                 Err(error) => return Err(error.into()),
+            }
+            if deleted >= MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS {
+                break;
             }
         }
         Ok(())
@@ -3407,10 +3435,11 @@ mod tests {
     use super::{
         canonical_head_bytes, operator_from_uri, operator_from_uri_with_endpoint,
         DerivedRelationHead, DerivedRelationHeadStore, OpendalStorage, SpaceCatalogStore,
-        StorageBackend,
+        StorageBackend, MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS,
     };
     use anyhow::Result;
     use futures::future::join_all;
+    use futures::TryStreamExt;
     use opendal::services::Memory;
     use opendal::Operator;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -4092,6 +4121,37 @@ mod tests {
             retention,
             claimed_at + retention,
         ));
+    }
+
+    #[tokio::test]
+    async fn terminal_tombstone_reaping_is_bounded_per_pass() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let relation_id = uuid::Uuid::from_u128(0xA015);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        for _ in 0..=MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS {
+            let build_id = Uuid::now_v7().to_string();
+            operator
+                .write(
+                    &store.terminal_tombstone_path(&build_id),
+                    serde_json::to_vec(&serde_json::json!({
+                        "build_id": build_id,
+                        "state": "complete",
+                    }))?,
+                )
+                .await?;
+        }
+
+        store
+            .reap_expired_terminal_tombstones_at_with_retention(SystemTime::now(), Duration::ZERO)
+            .await?;
+
+        let lister = operator
+            .lister_with(&store.terminal_tombstones_prefix())
+            .recursive(true)
+            .await?;
+        let remaining = lister.try_collect::<Vec<_>>().await?.len();
+        assert_eq!(remaining, 1);
+        Ok(())
     }
 
     #[tokio::test]

@@ -35,7 +35,9 @@ pub async fn execute_multipart(
         bail!("operation {operation} does not require multipart transport");
     }
     let (_, request) = authenticated_request(base_url, &prepared).await?;
-    let part = reqwest::multipart::Part::bytes(bytes).file_name(filename.to_string());
+    let part = reqwest::multipart::Part::bytes(bytes)
+        .file_name(filename.to_string())
+        .mime_str("application/octet-stream")?;
     let form = reqwest::multipart::Form::new().part("file", part);
     send_and_decode(operation, request.multipart(form)).await
 }

@@ -11,6 +11,11 @@ use std::fmt;
 /// contract in the domain crate makes authoritative writes and derived/query
 /// readers reject the same legacy or adversarial payloads.
 pub const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
+/// Bound Entry-owned parser hints before they can become derived-build
+/// metadata. These limits apply equally to authoritative writes and to
+/// persisted values read during a rebuild.
+pub const MAX_ASSET_REFERENCE_NAME_BYTES: usize = 4 * 1024;
+pub const MAX_ASSET_REFERENCE_MEDIA_TYPE_BYTES: usize = 256;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -48,6 +53,8 @@ pub enum AssetReferenceError {
     InvalidAssetId,
     EmptyName,
     EmptyMediaType,
+    NameTooLong,
+    MediaTypeTooLong,
     InvalidChecksum,
 }
 
@@ -57,6 +64,8 @@ impl fmt::Display for AssetReferenceError {
             Self::InvalidAssetId => "asset_id is invalid",
             Self::EmptyName => "name must not be empty",
             Self::EmptyMediaType => "media_type must not be empty",
+            Self::NameTooLong => "name exceeds the maximum length",
+            Self::MediaTypeTooLong => "media_type exceeds the maximum length",
             Self::InvalidChecksum => "sha256 must be 64 lowercase hexadecimal characters",
         };
         formatter.write_str(message)
@@ -76,8 +85,14 @@ impl AssetReference {
         if self.name.trim().is_empty() {
             return Err(AssetReferenceError::EmptyName);
         }
+        if self.name.len() > MAX_ASSET_REFERENCE_NAME_BYTES {
+            return Err(AssetReferenceError::NameTooLong);
+        }
         if self.media_type.trim().is_empty() {
             return Err(AssetReferenceError::EmptyMediaType);
+        }
+        if self.media_type.len() > MAX_ASSET_REFERENCE_MEDIA_TYPE_BYTES {
+            return Err(AssetReferenceError::MediaTypeTooLong);
         }
         if self.sha256.len() != 64
             || !self

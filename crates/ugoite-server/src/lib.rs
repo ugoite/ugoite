@@ -273,7 +273,7 @@ mod remote_asset_upload_tests {
     }
 
     #[tokio::test]
-    async fn asset_upload_app_layer_rejects_payloads_over_twenty_mib() {
+    async fn asset_upload_app_layer_rejects_payloads_over_asset_limit() {
         let state =
             AppState::new_for_tests("memory://server-asset-upload-limit").expect("test state");
         let principal_id = Uuid::now_v7();
@@ -287,7 +287,10 @@ mod remote_asset_upload_tests {
             "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"large.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
         )
         .into_bytes();
-        body.extend(std::iter::repeat_n(b'x', 20 * 1024 * 1024));
+        body.extend(std::iter::repeat_n(
+            b'x',
+            ugoite_iceberg::asset::MAX_ASSET_BYTES + 1,
+        ));
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
         let router = Router::new()
@@ -837,7 +840,9 @@ async fn mark_signable_api_response(request: Request, next: Next) -> Response {
 
 fn app_layers(router: Router<AppState>, state: AppState) -> Router {
     let mut router = router
-        .layer(DefaultBodyLimit::max(20 * 1024 * 1024))
+        .layer(DefaultBodyLimit::max(
+            ugoite_iceberg::asset::MAX_ASSET_BYTES,
+        ))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuidV7))
         .layer(TraceLayer::new_for_http())

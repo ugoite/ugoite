@@ -132,6 +132,79 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// A staged build remains discoverable if the rebuild future is cancelled
+/// after `staging.json` is installed. The async best-effort marker write is
+/// only a fast path; the staging marker remains the durable fallback for a
+/// process that exits before this task can run.
+struct StagedBuildCleanup {
+    store: Option<DerivedRelationHeadStore>,
+    build_id: String,
+}
+
+struct AssetTextAdmissionCleanup {
+    operator: Option<Operator>,
+    ws_path: String,
+    owner: String,
+}
+
+impl AssetTextAdmissionCleanup {
+    fn new(operator: Operator, ws_path: String, owner: String) -> Self {
+        Self {
+            operator: Some(operator),
+            ws_path,
+            owner,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.operator = None;
+    }
+}
+
+impl Drop for AssetTextAdmissionCleanup {
+    fn drop(&mut self) {
+        let Some(operator) = self.operator.take() else {
+            return;
+        };
+        let ws_path = self.ws_path.clone();
+        let owner = self.owner.clone();
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        handle.spawn(async move {
+            let _ = release_asset_text_refresh_admission_lock(&operator, &ws_path, &owner).await;
+        });
+    }
+}
+
+impl StagedBuildCleanup {
+    fn new(store: DerivedRelationHeadStore, build_id: String) -> Self {
+        Self {
+            store: Some(store),
+            build_id,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.store = None;
+    }
+}
+
+impl Drop for StagedBuildCleanup {
+    fn drop(&mut self) {
+        let Some(store) = self.store.take() else {
+            return;
+        };
+        let build_id = self.build_id.clone();
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        handle.spawn(async move {
+            let _ = ensure_cleanup_marker(&store, &build_id).await;
+        });
+    }
+}
+
 struct AssetTextGcScheduler {
     notify: Notify,
     deadline: StdMutex<Option<Instant>>,
@@ -1007,14 +1080,14 @@ where
         .verify_shared_writes()
         .await?;
     let owner = acquire_asset_text_refresh_admission_lock(op, ws_path).await?;
+    let mut admission_cleanup =
+        AssetTextAdmissionCleanup::new(op.clone(), ws_path.to_owned(), owner.clone());
     let lease_lost = Arc::new(AtomicBool::new(false));
-    let lease_lost_notify = Arc::new(Notify::new());
     let heartbeat = {
         let op = op.clone();
         let ws_path = ws_path.to_owned();
         let owner = owner.clone();
         let lease_lost = lease_lost.clone();
-        let lease_lost_notify = lease_lost_notify.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(ASSET_TEXT_REFRESH_ADMISSION_HEARTBEAT).await;
@@ -1022,21 +1095,17 @@ where
                     Ok(true) => {}
                     Ok(false) | Err(_) => {
                         lease_lost.store(true, Ordering::Release);
-                        lease_lost_notify.notify_waiters();
                         break;
                     }
                 }
             }
         })
     };
-    let operation = operation();
-    tokio::pin!(operation);
-    let result = tokio::select! {
-        result = &mut operation => result,
-        _ = lease_lost_notify.notified() => Err(anyhow!(
-            "AssetText refresh marker admission lease was lost during operation"
-        )),
-    };
+    // Do not cancel an in-flight marker mutation when the heartbeat reports a
+    // loss. The operation may already have committed at the storage boundary;
+    // letting it settle gives the caller a reconciliable result instead of an
+    // ambiguous cancellation. The latched post-check fails closed.
+    let result = operation().await;
     heartbeat.abort();
     let _ = heartbeat.await;
     let result = if lease_lost.load(Ordering::Acquire) {
@@ -1047,6 +1116,9 @@ where
         result
     };
     let release = release_asset_text_refresh_admission_lock(op, ws_path, &owner).await;
+    if release.is_ok() {
+        admission_cleanup.disarm();
+    }
     match (result, release) {
         (Ok(value), Ok(())) => Ok(value),
         (Err(error), Ok(())) => Err(error),
@@ -1057,7 +1129,6 @@ where
     }
 }
 
-#[cfg(test)]
 fn refresh_request_is_at_or_before(path: &str, cutoff: &str) -> bool {
     // The fixed-name marker predates immutable UUID-v7 markers. It is always
     // part of the snapshot because there is no creation coordinate to compare.
@@ -1069,7 +1140,6 @@ fn refresh_request_is_at_or_before(path: &str, cutoff: &str) -> bool {
 /// ordered by creation time; the cutoff makes markers created while a build is
 /// running ineligible for acknowledgement even when the directory is larger
 /// than the in-memory batch bound.
-#[cfg(test)]
 async fn asset_text_refresh_request_batch_before(
     op: &Operator,
     ws_path: &str,
@@ -1107,39 +1177,6 @@ async fn asset_text_refresh_request_batch_before(
     Ok(paths)
 }
 
-/// Returns one bounded batch from the current marker set. The shared
-/// admission lock is the snapshot boundary for production callers: all
-/// marker writers take that lock, so no new marker can enter while the
-/// bounded batches are drained.
-async fn asset_text_refresh_request_batch(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
-    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
-    if op.exists(&legacy_path).await? {
-        paths.push(legacy_path);
-    }
-    let mut lister = op
-        .lister_with(&asset_text_refresh_request_prefix(ws_path))
-        .recursive(false)
-        .await?;
-    let mut examined = 0usize;
-    while let Some(entry) = lister.try_next().await? {
-        examined = examined.saturating_add(1);
-        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
-            bail!(
-                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
-                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
-            );
-        }
-        if refresh_request_token(entry.path()).is_some() {
-            paths.push(entry.path().to_string());
-            if paths.len() == MAX_ASSET_TEXT_REFRESH_REQUESTS {
-                break;
-            }
-        }
-    }
-    Ok(paths)
-}
-
 /// A bounded drain is repeated until no marker from the build's snapshot
 /// remains. Markers created after the cutoff stay durable for the next worker
 /// or startup rearm, including when the initial directory exceeded capacity.
@@ -1165,9 +1202,12 @@ async fn clear_asset_text_refresh_requests_with_admission_lock(
     with_asset_text_refresh_admission_lock(op, ws_path, || async {
         // Lock acquisition is the explicit snapshot boundary. All production
         // marker writers use the same admission lock, so draining bounded
-        // batches cannot delete a request created after this build began.
+        // batches cannot delete a request created after this drain acquired
+        // the lease. The cutoff also protects against a stale owner that
+        // continues after its heartbeat is lost and another owner takes over.
+        let cutoff = Uuid::now_v7().to_string();
         loop {
-            let paths = asset_text_refresh_request_batch(op, ws_path).await?;
+            let paths = asset_text_refresh_request_batch_before(op, ws_path, &cutoff).await?;
             if paths.is_empty() {
                 return Ok(());
             }
@@ -1392,6 +1432,7 @@ async fn rebuild_asset_text_with_mode(
         schedule_asset_text_gc(op, ws_path);
         return Err(error);
     }
+    let mut staged_cleanup = StagedBuildCleanup::new(head_store.clone(), build_id.clone());
     let heartbeat_store = head_store.clone();
     let heartbeat_build_id = build_id.clone();
     let staging_heartbeat_lost = Arc::new(AtomicBool::new(false));
@@ -1512,7 +1553,15 @@ async fn rebuild_asset_text_with_mode(
             return Err(error);
         }
     };
-    let source_coordinate_before_publish = authoritative_source_coordinate(op, ws_path).await?;
+    let source_coordinate_before_publish = match authoritative_source_coordinate(op, ws_path).await
+    {
+        Ok(coordinate) => coordinate,
+        Err(error) => {
+            let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+            schedule_asset_text_gc(op, ws_path);
+            return Err(error);
+        }
+    };
     if source_coordinate_before_publish != head.source_coordinate {
         let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
         schedule_asset_text_gc(op, ws_path);
@@ -1581,9 +1630,15 @@ async fn rebuild_asset_text_with_mode(
     let current = match head_store.read_exact().await {
         Ok(Some(current)) => current.head,
         Ok(None) => {
+            let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+            schedule_asset_text_gc(op, ws_path);
             return Err(anyhow::anyhow!("published derived Head disappeared"));
         }
-        Err(error) => return Err(error),
+        Err(error) => {
+            let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+            schedule_asset_text_gc(op, ws_path);
+            return Err(error);
+        }
     };
     let candidate_cleanup_marked = if current.build_id != head.build_id {
         // A shared writer may have won immediately after this writer's CAS.
@@ -1603,7 +1658,16 @@ async fn rebuild_asset_text_with_mode(
     if candidate_cleanup_marked {
         let _ = head_store.clear_staging(&head.build_id).await;
     }
-    let source_coordinate_after_publish = authoritative_source_coordinate(op, ws_path).await?;
+    let source_coordinate_after_publish = match authoritative_source_coordinate(op, ws_path).await {
+        Ok(coordinate) => coordinate,
+        Err(error) => {
+            if current.build_id == head.build_id {
+                let _ = ensure_cleanup_marker(&head_store, &current.build_id).await;
+            }
+            schedule_asset_text_gc(op, ws_path);
+            return Err(error);
+        }
+    };
     if source_coordinate_after_publish != current.source_coordinate {
         if current.build_id == head.build_id {
             let _ = ensure_cleanup_marker(&head_store, &current.build_id).await;
@@ -1612,6 +1676,9 @@ async fn rebuild_asset_text_with_mode(
         return Err(anyhow!(
             "authoritative source changed after AssetText publication; retry"
         ));
+    }
+    if current.build_id == head.build_id {
+        staged_cleanup.disarm();
     }
     let _ = head_store
         .garbage_collect_with_single_process_lock(Some(&current.build_id), MINIMUM_GC_AGE)

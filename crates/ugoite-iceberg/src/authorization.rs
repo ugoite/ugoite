@@ -24,7 +24,7 @@ use std::{
     },
     time::{Duration, SystemTime},
 };
-use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
+use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio::task::JoinHandle;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::identity::{
@@ -225,7 +225,6 @@ struct DurableAuthorizationLease {
     owner: String,
     etag: Arc<Mutex<String>>,
     lost: Arc<AtomicBool>,
-    lost_notify: Arc<Notify>,
     released: Arc<AtomicBool>,
     heartbeat: Option<JoinHandle<()>>,
 }
@@ -279,7 +278,6 @@ impl DurableAuthorizationLease {
     fn start(operator: Operator, path: String, owner: String, etag: String) -> Self {
         let etag = Arc::new(Mutex::new(etag));
         let lost = Arc::new(AtomicBool::new(false));
-        let lost_notify = Arc::new(Notify::new());
         let released = Arc::new(AtomicBool::new(false));
         let heartbeat = {
             let operator = operator.clone();
@@ -287,7 +285,6 @@ impl DurableAuthorizationLease {
             let owner = owner.clone();
             let etag = etag.clone();
             let lost = lost.clone();
-            let lost_notify = lost_notify.clone();
             tokio::spawn(async move {
                 loop {
                     tokio::time::sleep(AUTHORIZATION_MUTATION_LOCK_HEARTBEAT).await;
@@ -304,20 +301,17 @@ impl DurableAuthorizationLease {
                         .await;
                     if result.is_err() {
                         lost.store(true, Ordering::Release);
-                        lost_notify.notify_waiters();
                         break;
                     }
                     let metadata = match operator.stat(&path).await {
                         Ok(metadata) => metadata,
                         Err(_) => {
                             lost.store(true, Ordering::Release);
-                            lost_notify.notify_waiters();
                             break;
                         }
                     };
                     let Some(next_etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
                         lost.store(true, Ordering::Release);
-                        lost_notify.notify_waiters();
                         break;
                     };
                     *etag.lock().await = next_etag.to_string();
@@ -330,7 +324,6 @@ impl DurableAuthorizationLease {
             owner,
             etag,
             lost,
-            lost_notify,
             released,
             heartbeat: Some(heartbeat),
         }
@@ -422,9 +415,11 @@ impl AuthorizationLease {
         }
     }
 
-    /// Run a protected callback while a shared lease remains alive. A lost
-    /// heartbeat cancels the callback instead of allowing a stale permission
-    /// decision to continue after another writer has acquired the lease.
+    /// Run a protected callback while a shared lease remains alive. The
+    /// callback is deliberately allowed to finish if the heartbeat is lost:
+    /// dropping an in-flight storage future would make a committed-or-unknown
+    /// mutation impossible to reconcile. The latched pre/post checks instead
+    /// fail closed and force callers to treat the outcome as retryable.
     pub async fn run_while_held<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ()>
     where
         F: FnOnce() -> Fut,
@@ -434,10 +429,9 @@ impl AuthorizationLease {
             return Ok(operation().await);
         };
         durable.ensure_held().map_err(|_| ())?;
-        tokio::select! {
-            value = operation() => Ok(value),
-            _ = durable.lost_notify.notified() => Err(()),
-        }
+        let value = operation().await;
+        durable.ensure_held().map_err(|_| ())?;
+        Ok(value)
     }
 }
 
