@@ -40,6 +40,10 @@ pub async fn ensure_form_tables(
     form_definition: &Value,
 ) -> Result<()> {
     let form = crate::form::to_domain_form(form_definition)?;
+    // SQL helpers may call this function from read paths that lazily create
+    // the system Form. That creation is still authoritative and must not
+    // bypass the request's authorization write fence.
+    crate::authorization::ensure_authorization_write_fence().await?;
     let workspace = native_workspace(operator, workspace_path).await?;
     if !workspace.has_form(form.id).await? {
         let command =

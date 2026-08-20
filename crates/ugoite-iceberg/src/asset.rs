@@ -116,6 +116,11 @@ pub async fn save_asset_with_media_type(
     reference
         .validate()
         .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    // An uploaded object is still an authoritative mutation: an Entry may
+    // reference it immediately after this call. Keep the check at the
+    // object-write boundary so callers cannot accidentally bypass the
+    // authorization lease by using the lower-level asset helper.
+    crate::authorization::ensure_authorization_write_fence().await?;
     op.write(&asset_path(ws_path, &reference.asset_id), content.to_vec())
         .await?;
     Ok(reference)

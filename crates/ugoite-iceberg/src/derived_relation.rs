@@ -104,6 +104,10 @@ const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
 const MAX_ASSET_TEXT_REFRESH_REQUESTS: usize = 16_384;
 const MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES: usize = 64 * 1024;
 const ASSET_TEXT_REFRESH_ADMISSION_LOCK: &str = "admission.lock";
+// v1 used one fixed marker beside the relation. Keep it as a migration input
+// until an admitted clear has removed it; upgraded Spaces must not lose a
+// durable refresh request merely because current writers use tokenized paths.
+const LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
 const ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL: Duration = Duration::from_secs(5 * 60);
 const ASSET_TEXT_REFRESH_ADMISSION_HEARTBEAT: Duration = Duration::from_secs(30);
 
@@ -756,6 +760,14 @@ fn asset_text_refresh_request_path(ws_path: &str, token: &str) -> String {
     format!("{}{token}.json", asset_text_refresh_request_prefix(ws_path))
 }
 
+fn legacy_asset_text_refresh_request_path(ws_path: &str) -> String {
+    format!(
+        "{ws_path}/_ugoite/derived/relations/{}/{}",
+        DerivedRelationId::ASSET_TEXT,
+        LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE,
+    )
+}
+
 fn refresh_request_token(path: &str) -> Option<&str> {
     let token = path.rsplit('/').next()?.strip_suffix(".json")?;
     let uuid = Uuid::parse_str(token).ok()?;
@@ -1172,6 +1184,10 @@ async fn snapshot_asset_text_refresh_request_paths(
     ws_path: &str,
 ) -> Result<Vec<String>> {
     let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
+    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
+    if op.exists(&legacy_path).await? {
+        paths.push(legacy_path);
+    }
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -1233,7 +1249,10 @@ async fn clear_asset_text_refresh_requests_with_admission_lock(
 }
 
 async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Result<usize> {
-    let mut count = 0usize;
+    let mut count = usize::from(
+        op.exists(&legacy_asset_text_refresh_request_path(ws_path))
+            .await?,
+    );
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -1290,6 +1309,12 @@ pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) ->
 }
 
 pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
+    if op
+        .exists(&legacy_asset_text_refresh_request_path(ws_path))
+        .await?
+    {
+        return Ok(true);
+    }
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -3464,6 +3489,20 @@ mod tests {
         mark_asset_text_refresh_requested(&operator, workspace).await?;
         assert!(asset_text_refresh_requested(&operator, workspace).await?);
         clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_refresh_request_marker_is_migrated_by_clear() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let workspace = "spaces/legacy-refresh-marker";
+        let legacy_path = legacy_asset_text_refresh_request_path(workspace);
+
+        operator.write(&legacy_path, b"{}".to_vec()).await?;
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
+        clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(!operator.exists(&legacy_path).await?);
         assert!(!asset_text_refresh_requested(&operator, workspace).await?);
         Ok(())
     }

@@ -4418,10 +4418,25 @@ async fn bind_invited_account(
                 ));
             }
 
-            // Commit the Space half first. If the process exits before the
-            // Node CAS below, the durable membership is visible to the retry,
-            // which can finish the pending Node acceptance. This leaves no
-            // completed Node binding without a recoverable Space membership.
+            // Commit the Node half first. If the process exits before the
+            // Space CAS below, retry sees the durable Node binding and can
+            // finish the Space membership. A terminal Node rejection cannot
+            // therefore strand an active Space member with no Node binding.
+            if existing_binding.is_none() {
+                ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                    .await
+                    .map_err(recovery_aware_auth_error)?;
+                state
+                    .identity
+                    .finalize_invitation_binding(
+                        invitation.invitation_id,
+                        account.account_id,
+                        principal_id,
+                        binding_method,
+                    )
+                    .await
+                    .map_err(recovery_aware_auth_error)?;
+            }
             if !active_space_member {
                 let inviter = state
                     .identity
@@ -4445,22 +4460,7 @@ async fn bind_invited_account(
                     .await
                     .map_err(recovery_aware_auth_error)?;
             }
-            if existing_binding.is_none() {
-                ugoite_iceberg::authorization::ensure_authorization_write_fence()
-                    .await
-                    .map_err(recovery_aware_auth_error)?;
-                state
-                    .identity
-                    .finalize_invitation_binding(
-                        invitation.invitation_id,
-                        account.account_id,
-                        principal_id,
-                        binding_method,
-                    )
-                    .await
-                    .map_err(recovery_aware_auth_error)?;
-            }
-                    Ok(())
+            Ok(())
                 },
             )
         })
