@@ -2560,6 +2560,19 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn refresh_request_marker_survives_until_a_successful_clear() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let workspace = "spaces/refresh-marker";
+
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        mark_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
+        clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        Ok(())
+    }
+
     #[test]
     fn asset_text_schema_and_definition_share_stable_fields() {
         let definition = asset_text_definition();

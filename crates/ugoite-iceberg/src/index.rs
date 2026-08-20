@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
@@ -40,6 +41,50 @@ pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize = usize::MAX / 2;
 const MAX_QUERY_FORMS: usize = 100_000;
 const MAX_QUERY_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
+pub(crate) const ASSET_TEXT_SEARCH_MAX_QUERY_BYTES: usize =
+    crate::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES;
+pub(crate) const ASSET_TEXT_SEARCH_MAX_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
+
+/// Shared accounting for one authorized AssetText search. It covers the
+/// current Entry projection, the derived join batches, and the final result
+/// conversion rather than relying only on DataFusion's row/memory limits.
+#[derive(Clone, Debug)]
+pub(crate) struct AssetTextSearchBudget {
+    used_bytes: Arc<AtomicUsize>,
+}
+
+impl AssetTextSearchBudget {
+    pub(crate) fn new() -> Self {
+        Self {
+            used_bytes: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    pub(crate) fn reserve(&self, bytes: usize) -> Result<()> {
+        let mut current = self.used_bytes.load(Ordering::Relaxed);
+        loop {
+            let next = current
+                .checked_add(bytes)
+                .ok_or_else(|| anyhow!("AssetText search result exceeds byte limit"))?;
+            if next > ASSET_TEXT_SEARCH_MAX_BYTES {
+                return Err(anyhow!(
+                    "AssetText search result exceeds the {} byte limit",
+                    ASSET_TEXT_SEARCH_MAX_BYTES
+                ));
+            }
+            match self.used_bytes.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(()),
+                Err(observed) => current = observed,
+            }
+        }
+    }
+}
 
 /// Immutable execution inputs for one authorized SQL-session page.
 ///
@@ -583,6 +628,7 @@ pub(crate) async fn query_asset_reference_rows_authorized_in_context(
     asset_field_names: &BTreeSet<String>,
     after_entry_id: Option<&str>,
     limit: usize,
+    budget: &AssetTextSearchBudget,
 ) -> Result<Vec<AuthorizedAssetReferenceRow>> {
     if asset_field_names.is_empty() {
         return Ok(Vec::new());
@@ -615,7 +661,7 @@ pub(crate) async fn query_asset_reference_rows_authorized_in_context(
         )
         .await
         .map_err(map_sql_error)?;
-    asset_reference_rows_from_batches(form, &batches, asset_field_names)
+    asset_reference_rows_from_batches(form, &batches, asset_field_names, budget)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -871,6 +917,7 @@ fn asset_reference_rows_from_batches(
     form: &Value,
     batches: &[arrow_array::RecordBatch],
     asset_field_names: &BTreeSet<String>,
+    budget: &AssetTextSearchBudget,
 ) -> Result<Vec<AuthorizedAssetReferenceRow>> {
     let fields = form
         .get("fields")
@@ -909,9 +956,19 @@ fn asset_reference_rows_from_batches(
                     Ok((name.clone(), serde_json::to_value(value)?))
                 })
                 .collect::<Result<Map<_, _>>>()?;
+            let entry_id = required_string_column(batch, row, "_ugoite_id", "external ID")?;
+            let title = required_string_column(batch, row, "_ugoite_title", "title")?;
+            let projected_value = Value::Object(projected_fields.clone());
+            validate_asset_reference_value(&projected_value, MAX_ASSET_REFERENCES_PER_ENTRY)?;
+            budget.reserve(
+                entry_id.len()
+                    + title.len()
+                    + projected_value.to_string().len()
+                    + std::mem::size_of::<AuthorizedAssetReferenceRow>(),
+            )?;
             rows.push(AuthorizedAssetReferenceRow {
-                entry_id: required_string_column(batch, row, "_ugoite_id", "external ID")?,
-                title: required_string_column(batch, row, "_ugoite_title", "title")?,
+                entry_id,
+                title,
                 created_at: required_timestamp_seconds_column(
                     batch,
                     row,
@@ -930,6 +987,37 @@ fn asset_reference_rows_from_batches(
         }
     }
     Ok(rows)
+}
+
+fn validate_asset_reference_value(value: &Value, max_references: usize) -> Result<()> {
+    fn visit(value: &Value, count: &mut usize, max_references: usize) -> Result<()> {
+        match value {
+            Value::Array(values) => {
+                for value in values {
+                    visit(value, count, max_references)?;
+                }
+            }
+            Value::Object(object) => {
+                if object.get("asset_id").and_then(Value::as_str).is_some() {
+                    *count = count.saturating_add(1);
+                    if *count > max_references {
+                        return Err(anyhow!(
+                            "authorized Entry contains more than {max_references} AssetReferences"
+                        ));
+                    }
+                } else {
+                    for value in object.values() {
+                        visit(value, count, max_references)?;
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    let mut count = 0;
+    visit(value, &mut count, max_references)
 }
 
 fn entry_rows_from_batches(

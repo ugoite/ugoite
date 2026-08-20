@@ -2,7 +2,10 @@ use crate::config::{load_config, print_json, resolve_space_reference, validated_
 use crate::http;
 use anyhow::{bail, Result};
 use clap::{Args, Subcommand};
+use std::time::Duration;
 use ugoite_iceberg::service::UgoiteService;
+
+const INDEX_RUN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Args)]
 pub struct IndexCmd {
@@ -61,8 +64,13 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
                 }
             }
             let service = UgoiteService::new(&root)?;
-            service.reindex(&space_id).await?;
-            service.garbage_collect_asset_text_builds(&space_id).await?;
+            tokio::time::timeout(INDEX_RUN_TIMEOUT, async {
+                service.reindex(&space_id).await?;
+                service.garbage_collect_asset_text_builds(&space_id).await?;
+                Ok::<(), anyhow::Error>(())
+            })
+            .await
+            .map_err(|_| anyhow::anyhow!("index run timed out after 10 minutes"))??;
             print_json(&serde_json::json!({"reindexed": true}));
         }
         IndexSubCmd::Stats { space_path } => {

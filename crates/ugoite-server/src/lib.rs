@@ -498,6 +498,13 @@ impl AppState {
             tokio::spawn(async move {
                 let _ = gc_service.rearm_asset_text_gc(&gc_space_id).await;
             });
+            let refresh_service = self.service.clone();
+            let refresh_space_id = space_id.clone();
+            tokio::spawn(async move {
+                let _ = refresh_service
+                    .rearm_asset_text_refresh(&refresh_space_id)
+                    .await;
+            });
             reconcile_recovery_fences(self, &space_id).await?;
             reconcile_recovery_audit_outbox(self, &space_id).await?;
             reconcile_human_approval_audit_outbox(self, &space_id).await?;

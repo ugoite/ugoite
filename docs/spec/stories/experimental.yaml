@@ -21,7 +21,7 @@ stories:
     requirements: []
     milestone: User Management
     status: planned
-      implementation_notes: Passkey, invited OIDC, Space membership/roles, resource ACLs, Agent Principals, hash-chained authorization history, owner-approved forced reset, and owner backup-code rotation are future/reference designs. They are not supported v0.1 product capabilities; the REST endpoint inventory remains an implementation reference.
+    implementation_notes: Passkey, invited OIDC, Space membership/roles, resource ACLs, Agent Principals, hash-chained authorization history, owner-approved forced reset, and owner backup-code rotation are future/reference designs. They are not supported v0.1 product capabilities; the REST endpoint inventory remains an implementation reference.
     planned_apis:
       - rest: POST /spaces/{space_id}/auth/webauthn/register/options
       - rest: POST /spaces/{space_id}/auth/webauthn/register/verify

@@ -103,20 +103,22 @@ impl UgoiteService {
     /// The worker is process-local and coalesces notifications. It never
     /// participates in the Entry commit latency or becomes an authority for
     /// the current Form state; an explicit `index run` remains the repair path.
-    fn schedule_asset_text_refresh(&self, space_id: &str) {
+    async fn schedule_asset_text_refresh(&self, space_id: &str) -> Result<()> {
         // Keep a tiny durable rearm record outside the build prefixes. The
-        // worker remains process-local and never delays the mutation, but a
-        // failed worker does not erase the only evidence that a refresh is
-        // still required; stats and the next explicit index run can recover it.
-        let request_operator = self.operator.clone();
-        let request_workspace = self.workspace_path(space_id);
-        tokio::spawn(async move {
-            let _ = crate::derived_relation::mark_asset_text_refresh_requested(
-                &request_operator,
-                &request_workspace,
-            )
-            .await;
-        });
+        // worker remains process-local and never delays the mutation, but the
+        // intent write itself is awaited so a backend failure is observable
+        // after the authoritative commit instead of being lost in a detached
+        // task.
+        crate::derived_relation::mark_asset_text_refresh_requested(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await?;
+        self.enqueue_asset_text_refresh(space_id);
+        Ok(())
+    }
+
+    fn enqueue_asset_text_refresh(&self, space_id: &str) {
         let key = self.asset_text_refresh_worker_key(space_id);
         let workers = ASSET_TEXT_REFRESH_WORKERS.get_or_init(|| StdMutex::new(BTreeMap::new()));
         let worker = {
@@ -392,7 +394,7 @@ impl UgoiteService {
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
         form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await?;
-        self.schedule_asset_text_refresh(space_id);
+        self.schedule_asset_text_refresh(space_id).await?;
         Ok(())
     }
 
@@ -416,7 +418,7 @@ impl UgoiteService {
             &integrity,
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id);
+        self.schedule_asset_text_refresh(space_id).await?;
         let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         Ok(result)
     }
@@ -464,7 +466,7 @@ impl UgoiteService {
             Some(&scopes),
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id);
+        self.schedule_asset_text_refresh(space_id).await?;
         let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         Ok(result)
     }
@@ -555,7 +557,7 @@ impl UgoiteService {
             scopes.as_ref(),
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id);
+        self.schedule_asset_text_refresh(space_id).await?;
         Ok(result)
     }
 
@@ -576,7 +578,7 @@ impl UgoiteService {
             actor,
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id);
+        self.schedule_asset_text_refresh(space_id).await?;
         Ok(())
     }
 
@@ -704,7 +706,7 @@ impl UgoiteService {
             scopes.as_ref(),
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id);
+        self.schedule_asset_text_refresh(space_id).await?;
         Ok(result)
     }
 
@@ -741,7 +743,7 @@ impl UgoiteService {
         )
         .await
         .map_err(map_checkpoint_error)?;
-        self.schedule_asset_text_refresh(space_id);
+        self.schedule_asset_text_refresh(space_id).await?;
         Ok(result)
     }
 
@@ -1512,6 +1514,23 @@ impl UgoiteService {
             .await
     }
 
+    /// Rehydrates a process-local AssetText refresh worker from the durable
+    /// intent marker left by an earlier authoritative mutation. Startup uses
+    /// this path instead of rewriting the marker, so a pending request can be
+    /// retried even when the worker that created it was lost with its process.
+    pub async fn rearm_asset_text_refresh(&self, space_id: &str) -> Result<()> {
+        validate_storage_id(validate_space_id(space_id))?;
+        if crate::derived_relation::asset_text_refresh_requested(
+            &self.operator,
+            &self.workspace_path(space_id),
+        )
+        .await?
+        {
+            self.enqueue_asset_text_refresh(space_id);
+        }
+        Ok(())
+    }
+
     pub async fn space_stats(&self, space_id: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         index::get_space_stats(&self.operator, &self.workspace_path(space_id)).await
@@ -1654,7 +1673,7 @@ impl UgoiteService {
             &scopes,
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id);
+        self.schedule_asset_text_refresh(space_id).await?;
         Ok(())
     }
 

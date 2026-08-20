@@ -28,7 +28,6 @@ use crate::index::AuthorizedAssetReferenceRow;
 pub use ugoite_domain::search::KeywordSearchResult;
 
 const ASSET_TEXT_SEARCH_PAGE_SIZE: usize = 2_048;
-const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
 // This is an internal maintenance/search bound rather than the public Entry
 // response ceiling. The bounded DataFusion memory pool and timeout remain the
 // actual protection for unusually large current Forms.
@@ -73,6 +72,16 @@ pub async fn search_entries_with_scopes_after(
     limit: usize,
     after: Option<(&str, &str, &str)>,
 ) -> Result<Vec<KeywordSearchResult>> {
+    if query.len() > crate::index::ASSET_TEXT_SEARCH_MAX_QUERY_BYTES {
+        anyhow::bail!("AssetText search query exceeds the configured byte limit");
+    }
+    if limit > crate::MAX_NORMAL_READ_ROWS {
+        anyhow::bail!(
+            "AssetText search result limit exceeds {} rows",
+            crate::MAX_NORMAL_READ_ROWS
+        );
+    }
+    let result_budget = crate::index::AssetTextSearchBudget::new();
     let candidates = crate::index::query_entry_candidates_authorized_after(
         op,
         ws_path,
@@ -92,6 +101,7 @@ pub async fn search_entries_with_scopes_after(
             created_at: candidate.created_at,
             updated_at: candidate.updated_at,
         };
+        result_budget.reserve(result.id.len() + result.title.len() + result.form.len())?;
         results.insert((result.form.clone(), result.id.clone()), result);
     }
 
@@ -100,8 +110,16 @@ pub async fn search_entries_with_scopes_after(
     // normal 10k response window is still eligible and no matching-asset
     // HashSet or fixed-size payload scan is used.
     if !query.trim().is_empty() {
-        if let Some(asset_results) =
-            asset_text_search_authorized(op, ws_path, query, relation_scopes, limit, after).await?
+        if let Some(asset_results) = asset_text_search_authorized(
+            op,
+            ws_path,
+            query,
+            relation_scopes,
+            limit,
+            after,
+            result_budget.clone(),
+        )
+        .await?
         {
             for result in asset_results {
                 if is_after_cursor(&result, after) {
@@ -146,13 +164,22 @@ async fn asset_text_search_authorized(
     relation_scopes: &BTreeMap<String, EntryScope>,
     limit: usize,
     after: Option<(&str, &str, &str)>,
+    budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
     if limit == 0 {
         return Ok(Some(Vec::new()));
     }
     match tokio::time::timeout(
         ASSET_TEXT_SEARCH_TIMEOUT,
-        asset_text_search_authorized_inner(op, ws_path, query, relation_scopes, limit, after),
+        asset_text_search_authorized_inner(
+            op,
+            ws_path,
+            query,
+            relation_scopes,
+            limit,
+            after,
+            budget,
+        ),
     )
     .await
     {
@@ -168,6 +195,7 @@ async fn asset_text_search_authorized_inner(
     relation_scopes: &BTreeMap<String, EntryScope>,
     limit: usize,
     after: Option<(&str, &str, &str)>,
+    budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
     // The authorized-reference provider deliberately cannot push the AssetText
     // predicate down into the authoritative Form tables: doing so would make
@@ -275,6 +303,7 @@ async fn asset_text_search_authorized_inner(
                 authorized_context.clone(),
                 authorized_forms.clone(),
                 after,
+                budget.clone(),
             )),
         )
         .is_err()
@@ -309,12 +338,13 @@ async fn asset_text_search_authorized_inner(
                 query,
                 limit,
                 after,
+                budget.clone(),
             )
             .await;
         }
     };
     let mut results = BTreeMap::new();
-    merge_asset_search_batches(&mut results, matches, after)?;
+    merge_asset_search_batches(&mut results, matches, after, &budget)?;
     let mut results = results.into_values().collect::<Vec<_>>();
     results.sort_by(|left, right| {
         left.title
@@ -330,6 +360,7 @@ fn merge_asset_search_batches(
     results: &mut BTreeMap<(String, String), KeywordSearchResult>,
     batches: Vec<RecordBatch>,
     after: Option<(&str, &str, &str)>,
+    budget: &crate::index::AssetTextSearchBudget,
 ) -> Result<()> {
     for batch in batches {
         let form = batch
@@ -370,6 +401,7 @@ fn merge_asset_search_batches(
                 created_at: created.value(index),
                 updated_at: updated.value(index),
             };
+            budget.reserve(result.id.len() + result.title.len() + result.form.len())?;
             if is_after_cursor(&result, after) {
                 results.insert((result.form.clone(), result.id.clone()), result);
             }
@@ -389,6 +421,7 @@ async fn fallback_asset_text_search(
     query: &str,
     limit: usize,
     after: Option<(&str, &str, &str)>,
+    budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
     let Some(matching_assets) =
         crate::derived_relation::asset_text_search_matches(op, ws_path, query).await?
@@ -416,6 +449,7 @@ async fn fallback_asset_text_search(
                 &field_names,
                 after_entry_id.as_deref(),
                 ASSET_TEXT_SEARCH_PAGE_SIZE,
+                &budget,
             )
             .await?;
             if rows.is_empty() {
@@ -452,6 +486,7 @@ async fn fallback_asset_text_search(
                 };
                 let key = (result.form.clone(), result.id.clone());
                 if seen.insert(key) {
+                    budget.reserve(result.id.len() + result.title.len() + result.form.len())?;
                     results.push(result);
                     results.sort_by(|left, right| {
                         left.title
@@ -506,6 +541,7 @@ fn value_contains_matching_asset(value: &Value, matching_assets: &HashSet<String
 fn authorized_asset_reference_batch(
     authorized_rows: &[(String, AuthorizedAssetReferenceRow)],
     asset_reference_fields: &BTreeMap<String, Vec<AssetReferenceField>>,
+    budget: &crate::index::AssetTextSearchBudget,
 ) -> Result<RecordBatch> {
     let schema = authorized_asset_reference_schema();
     let mut forms = StringBuilder::new();
@@ -539,6 +575,13 @@ fn authorized_asset_reference_batch(
         ids.sort();
         ids.dedup();
         for asset_id in ids {
+            budget.reserve(
+                form_name.len()
+                    + row.entry_id.len()
+                    + row.title.len()
+                    + asset_id.len()
+                    + std::mem::size_of::<AuthorizedAssetReferenceRow>(),
+            )?;
             forms.append_value(form_name);
             entry_ids.append_value(&row.entry_id);
             titles.append_value(&row.title);
@@ -624,9 +667,10 @@ fn append_asset_reference(value: &Value, output: &mut Vec<String>) -> Result<()>
     let Ok(reference) = serde_json::from_value::<AssetReference>(value.clone()) else {
         return Ok(());
     };
-    if output.len() >= MAX_ASSET_REFERENCES_PER_ENTRY {
+    if output.len() >= crate::index::MAX_ASSET_REFERENCES_PER_ENTRY {
         anyhow::bail!(
-            "authorized Entry contains more than {MAX_ASSET_REFERENCES_PER_ENTRY} AssetReferences"
+            "authorized Entry contains more than {} AssetReferences",
+            crate::index::MAX_ASSET_REFERENCES_PER_ENTRY
         );
     }
     output.push(reference.asset_id);
@@ -642,6 +686,7 @@ struct AuthorizedAssetReferenceProvider {
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
+    budget: crate::index::AssetTextSearchBudget,
     schema: Arc<Schema>,
 }
 
@@ -671,6 +716,7 @@ impl AuthorizedAssetReferenceProvider {
         authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
         authorized_forms: Arc<HashMap<String, Value>>,
         after: Option<(&str, &str, &str)>,
+        budget: crate::index::AssetTextSearchBudget,
     ) -> Self {
         Self {
             operator,
@@ -683,6 +729,7 @@ impl AuthorizedAssetReferenceProvider {
             initial_after: after.map(|(title, entry_id, form)| {
                 (title.to_string(), entry_id.to_string(), form.to_string())
             }),
+            budget,
             schema: authorized_asset_reference_schema(),
         }
     }
@@ -714,6 +761,7 @@ impl TableProvider for AuthorizedAssetReferenceProvider {
             self.authorized_context.clone(),
             self.authorized_forms.clone(),
             self.initial_after.clone(),
+            self.budget.clone(),
             self.schema.clone(),
         )))
     }
@@ -738,6 +786,7 @@ struct AuthorizedAssetReferenceExec {
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
+    budget: crate::index::AssetTextSearchBudget,
     schema: Arc<Schema>,
     properties: Arc<PlanProperties>,
 }
@@ -769,6 +818,7 @@ impl AuthorizedAssetReferenceExec {
         authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
         authorized_forms: Arc<HashMap<String, Value>>,
         initial_after: Option<(String, String, String)>,
+        budget: crate::index::AssetTextSearchBudget,
         schema: Arc<Schema>,
     ) -> Self {
         let properties = Arc::new(PlanProperties::new(
@@ -786,6 +836,7 @@ impl AuthorizedAssetReferenceExec {
             authorized_context,
             authorized_forms,
             initial_after,
+            budget,
             schema,
             properties,
         }
@@ -798,6 +849,7 @@ struct AuthorizedAssetReferenceStreamState {
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
+    budget: crate::index::AssetTextSearchBudget,
     form_index: usize,
     after_entry_id: Option<String>,
     current_page_complete: bool,
@@ -815,6 +867,7 @@ impl AuthorizedAssetReferenceStreamState {
                     let batch = authorized_asset_reference_batch(
                         &rows[start..end],
                         &self.asset_reference_fields,
+                        &self.budget,
                     )
                     .map_err(|error| {
                         datafusion::error::DataFusionError::Execution(error.to_string())
@@ -852,6 +905,7 @@ impl AuthorizedAssetReferenceStreamState {
                 &asset_field_names,
                 self.after_entry_id.as_deref(),
                 ASSET_TEXT_SEARCH_PAGE_SIZE,
+                &self.budget,
             )
             .await
             .map_err(|error| datafusion::error::DataFusionError::Execution(error.to_string()))?;
@@ -932,6 +986,7 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             authorized_context: self.authorized_context.clone(),
             authorized_forms: self.authorized_forms.clone(),
             initial_after: self.initial_after.clone(),
+            budget: self.budget.clone(),
             form_index: 0,
             after_entry_id: None,
             current_page_complete: false,
@@ -956,5 +1011,38 @@ impl DisplayAs for AuthorizedAssetReferenceExec {
         formatter: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         formatter.write_str("AuthorizedAssetReferenceScan")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn direct_asset_search_rejects_an_oversized_query_before_storage_access() {
+        let operator =
+            opendal::Operator::new(opendal::services::Memory::default()).expect("memory operator");
+        let error = search_entries_with_scopes(
+            &operator,
+            "spaces/missing",
+            &"x".repeat(crate::index::ASSET_TEXT_SEARCH_MAX_QUERY_BYTES + 1),
+            &BTreeMap::new(),
+            10,
+        )
+        .await
+        .expect_err("oversized direct query must be rejected");
+        assert!(error.to_string().contains("query exceeds"));
+    }
+
+    #[test]
+    fn asset_search_budget_rejects_bytes_beyond_the_shared_limit() {
+        let budget = crate::index::AssetTextSearchBudget::new();
+        budget
+            .reserve(crate::index::ASSET_TEXT_SEARCH_MAX_BYTES)
+            .expect("limit-sized result is accepted");
+        let error = budget
+            .reserve(1)
+            .expect_err("result bytes beyond the limit must fail");
+        assert!(error.to_string().contains("byte limit"));
     }
 }
