@@ -67,6 +67,8 @@ static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
 > = OnceLock::new();
 
 const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
+const MAX_BACKGROUND_REFRESH_WORKERS: usize = 1024;
+const MAX_SHARED_REFRESH_CONFLICT_RETRIES: usize = 8;
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
@@ -106,6 +108,12 @@ impl UgoiteService {
             let mut workers = workers
                 .lock()
                 .expect("AssetText refresh worker map poisoned");
+            if !workers.contains_key(&key) && workers.len() >= MAX_BACKGROUND_REFRESH_WORKERS {
+                // Refresh is an optimization and must not create an unbounded
+                // process-global registry. The next explicit index run can
+                // repair freshness when the registry is busy.
+                return;
+            }
             let worker = workers
                 .entry(key)
                 .or_insert_with(|| {
@@ -133,6 +141,7 @@ impl UgoiteService {
             let worker_key = self.asset_text_refresh_worker_key(space_id);
             let worker = worker.clone();
             tokio::spawn(async move {
+                let mut shared_conflict_retries = 0usize;
                 loop {
                     worker.notify.notified().await;
                     // Let the authoritative request and a short burst of
@@ -156,9 +165,20 @@ impl UgoiteService {
                                 .as_ref()
                                 .is_err_and(crate::derived_relation::is_shared_publish_conflict)
                         {
-                            worker.pending.store(true, Ordering::Release);
-                            worker.notify.notify_one();
-                            tokio::task::yield_now().await;
+                            shared_conflict_retries = shared_conflict_retries.saturating_add(1);
+                            if shared_conflict_retries <= MAX_SHARED_REFRESH_CONFLICT_RETRIES {
+                                worker.pending.store(true, Ordering::Release);
+                                worker.notify.notify_one();
+                                tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
+                            } else {
+                                // A continuously changing shared Head must
+                                // not pin this worker and its Operator forever.
+                                // The next authoritative mutation or an
+                                // explicit index run can reopen the refresh.
+                                worker.pending.store(false, Ordering::Release);
+                            }
+                        } else {
+                            shared_conflict_retries = 0;
                         }
                     }
                     let should_exit = if !worker.pending.load(Ordering::Acquire) {

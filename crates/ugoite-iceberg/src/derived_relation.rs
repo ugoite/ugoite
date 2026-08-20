@@ -10,6 +10,7 @@ use arrow_array::builder::{Int64Builder, StringBuilder};
 use arrow_array::{Array, RecordBatch, StringArray, TimestampMicrosecondArray};
 use chrono::Utc;
 use datafusion::prelude::SessionContext;
+use flate2::read::{DeflateDecoder, ZlibDecoder};
 use futures::TryStreamExt;
 use iceberg::io::FileIO;
 use iceberg::spec::TableMetadataBuilder;
@@ -28,6 +29,7 @@ use iceberg::{
     NamespaceIdent, Runtime, TableCreation, TableIdent,
 };
 use iceberg_datafusion::IcebergStaticTableProvider;
+use lopdf::{Document, Object};
 use opendal::options::WriteOptions;
 use opendal::{ErrorKind, Operator};
 use quick_xml::events::Event;
@@ -54,8 +56,8 @@ use uuid::Uuid;
 use zip::ZipArchive;
 
 pub const ASSET_TEXT_PRODUCER_ID: &str = "ugoite.asset_text";
-pub const ASSET_TEXT_PARSER_VERSION: &str = "2";
-pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 2;
+pub const ASSET_TEXT_PARSER_VERSION: &str = "3";
+pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 3;
 const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ZIP_ENTRIES: usize = 10_000;
 const MAX_ZIP_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
@@ -66,9 +68,17 @@ const MAX_EXTRACTED_TEXT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TEXT_CHUNK_CHARS: usize = 16 * 1024;
 const MAX_TOTAL_ASSET_TEXT_ROWS: usize = 1_000_000;
 const MAX_TOTAL_ASSET_TEXT_BYTES: usize = 512 * 1024 * 1024;
+const ASSET_TEXT_APPEND_BATCH_ROWS: usize = 8_192;
+const MAX_SOURCE_ASSETS: usize = 1_000_000;
+const MAX_SOURCE_FORMS: usize = 100_000;
+const MAX_SOURCE_METADATA_BYTES: usize = 256 * 1024 * 1024;
+const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
+const MAX_ASSET_TEXT_MATCHES: usize = 1_000_000;
 const READER_CHUNK_BYTES: usize = 256 * 1024;
 const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
 const GC_RETRY_DELAY: Duration = Duration::from_secs(60);
+const MAX_BACKGROUND_GC_SCHEDULERS: usize = 1024;
+const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -152,7 +162,7 @@ struct AssetTextStatusCounts {
 #[derive(Default)]
 struct BoundedAssetTextRows {
     rows: Vec<AssetTextRow>,
-    text_bytes: usize,
+    total_bytes: usize,
     error: Option<anyhow::Error>,
 }
 
@@ -165,22 +175,39 @@ impl BoundedAssetTextRows {
         if self.error.is_some() {
             return;
         }
-        let row_text_bytes = row.text.as_ref().map_or(0, String::len);
-        let Some(next_text_bytes) = self.text_bytes.checked_add(row_text_bytes) else {
+        let Some(row_bytes) = [
+            row.asset_id.len(),
+            row.source_sha256.len(),
+            row.parser_id.len(),
+            row.parser_version.len(),
+            row.producer_fingerprint.len(),
+            row.status.len(),
+            row.source_locator.as_ref().map_or(0, String::len),
+            row.text.as_ref().map_or(0, String::len),
+            row.parsed_at.len(),
+            row.error_code.as_ref().map_or(0, String::len),
+            std::mem::size_of::<AssetTextRow>(),
+        ]
+        .into_iter()
+        .try_fold(0usize, usize::checked_add) else {
+            self.error = Some(anyhow::anyhow!("AssetText rebuild output size overflow"));
+            return;
+        };
+        let Some(next_total_bytes) = self.total_bytes.checked_add(row_bytes) else {
             self.error = Some(anyhow::anyhow!(
                 "AssetText rebuild output exceeds its total byte limit"
             ));
             return;
         };
         if self.rows.len() >= MAX_TOTAL_ASSET_TEXT_ROWS
-            || next_text_bytes > MAX_TOTAL_ASSET_TEXT_BYTES
+            || next_total_bytes > MAX_TOTAL_ASSET_TEXT_BYTES
         {
             self.error = Some(anyhow::anyhow!(
                 "AssetText rebuild output exceeds its aggregate limit"
             ));
             return;
         }
-        self.text_bytes = next_text_bytes;
+        self.total_bytes = next_total_bytes;
         self.rows.push(row);
     }
 
@@ -276,7 +303,7 @@ pub fn asset_text_producer_fingerprint() -> String {
     // This is deliberately a semantic contract, not a crate version.  Any
     // parser, normalization, dispatch, or chunking change must update it.
     sha256_digest(
-        b"ugoite.asset_text/protocol=2;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=text-layer;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+10000-zip-entries+128MiB-zip+10000-pdf-pages+1000000-pdf-text-operators+16MiB-text+256-xml-depth+1000000-total-rows+512MiB-total-text;blocking=bounded-4;schema=2",
+        b"ugoite.asset_text/protocol=3;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=literal+bounded-flate;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+10000-zip-entries+128MiB-zip+10000-pdf-pages+1000000-pdf-text-operators+16MiB-text+256-xml-depth+1000000-total-rows+512MiB-total-text+16MiB-pdf-decoded-stream;blocking=bounded-4;schema=2",
     )
 }
 
@@ -650,9 +677,9 @@ async fn rebuild_asset_text_with_mode(
     if source_coordinate != source_coordinate_after_scan {
         bail!("authoritative source changed during AssetText rebuild; retry");
     }
-    let input_digest = sha256_digest(&canonical_json(&source_rows)?);
+    let input_digest = source_references_digest(&source_rows)?;
     let rows = build_asset_text_rows(op, ws_path, &source_rows, &producer_fingerprint).await?;
-    let row_digest = sha256_digest(&canonical_json(&rows)?);
+    let row_digest = asset_text_rows_digest(&rows)?;
     let build_id = Uuid::now_v7().to_string();
     let build_path = head_store.builds_path(&build_id);
     if let Err(error) = head_store.mark_staging(&build_id).await {
@@ -703,8 +730,8 @@ async fn rebuild_asset_text_with_mode(
                     .build(),
             )
             .await?;
-        if !rows.is_empty() {
-            append_rows(&table, &catalog, &rows).await?;
+        for batch in rows.chunks(ASSET_TEXT_APPEND_BATCH_ROWS) {
+            append_rows(&table, &catalog, batch).await?;
         }
         let final_table = catalog
             .load_table(&TableIdent::new(namespace.clone(), table_name.clone()))
@@ -879,6 +906,12 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
         let mut schedulers = schedulers
             .lock()
             .expect("AssetText GC scheduler map poisoned");
+        if !schedulers.contains_key(&key) && schedulers.len() >= MAX_BACKGROUND_GC_SCHEDULERS {
+            // Derived refresh is best effort.  A full process-local registry
+            // must not turn an authoritative mutation into unbounded memory
+            // growth; explicit `index run` remains the repair path.
+            return;
+        }
         let scheduler = schedulers
             .entry(key.clone())
             .or_insert_with(|| {
@@ -911,6 +944,7 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
         let scheduler_key = key;
         let scheduler = scheduler.clone();
         tokio::spawn(async move {
+            let mut consecutive_failures = 0usize;
             loop {
                 let deadline = scheduler
                     .deadline
@@ -952,6 +986,7 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                         } else {
                             Some(base.single_process())
                         };
+                        let mut storage_failed = false;
                         let retry_gc = if let Some(head_store) = head_store {
                             match head_store.read_exact().await {
                                 Ok(current_build) => {
@@ -987,11 +1022,27 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                                     };
                                     legacy_pending || build_pending
                                 }
-                                Err(_) => true,
+                                Err(_) => {
+                                    storage_failed = true;
+                                    true
+                                }
                             }
                         } else {
+                            storage_failed = true;
                             true
                         };
+                        if storage_failed {
+                            consecutive_failures = consecutive_failures.saturating_add(1);
+                        } else {
+                            consecutive_failures = 0;
+                        }
+                        if consecutive_failures >= MAX_CONSECUTIVE_GC_FAILURES {
+                            // Durable markers are rediscovered on the next
+                            // process startup or explicit maintenance run;
+                            // never retain an Operator forever on a broken
+                            // backend.
+                            return;
+                        }
                         if retry_gc {
                             // GC is maintenance, not request authority. Keep
                             // the scheduler alive when cleanup was deferred or
@@ -1210,6 +1261,27 @@ async fn append_rows(
     Ok(())
 }
 
+fn asset_text_rows_digest(rows: &[AssetTextRow]) -> Result<String> {
+    // Digest rows one at a time.  The aggregate output is already bounded,
+    // but canonicalizing the whole Vec would create a second peak-sized JSON
+    // allocation before Arrow writing starts.
+    let mut digest = Sha256::new();
+    for row in rows {
+        digest.update(canonical_json(row)?);
+        digest.update([0]);
+    }
+    Ok(format!("sha256:{}", hex::encode(digest.finalize())))
+}
+
+fn source_references_digest(references: &[SourceReference]) -> Result<String> {
+    let mut digest = Sha256::new();
+    for reference in references {
+        digest.update(canonical_json(reference)?);
+        digest.update([0]);
+    }
+    Ok(format!("sha256:{}", hex::encode(digest.finalize())))
+}
+
 async fn space_id_from_metadata(op: &Operator, ws_path: &str) -> Result<String> {
     let path = format!("{ws_path}/meta.json");
     let value: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
@@ -1237,6 +1309,9 @@ async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result
 async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<SourceReference>> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
     let form_names = crate::entry::list_form_names(op, ws_path).await?;
+    if form_names.len() > MAX_SOURCE_FORMS {
+        bail!("AssetText source exceeds its Form limit");
+    }
     let mut definitions = BTreeMap::<String, FormDefinition>::new();
     for name in &form_names {
         let definition = crate::iceberg_store::load_domain_form(op, ws_path, name).await?;
@@ -1245,6 +1320,7 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
     let mut references = BTreeMap::<String, SourceReference>::new();
     let mut asset_checksums = BTreeMap::<String, (String, u64)>::new();
     let mut conflicting_assets = HashSet::new();
+    let mut source_metadata_bytes = 0usize;
     for form_name in form_names {
         let definition = definitions
             .get(&form_name)
@@ -1281,6 +1357,29 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
                             source_size_bytes: reference.size_bytes,
                             integrity_error: None,
                         };
+                        if !references.contains_key(&candidate.asset_id)
+                            && references.len() >= MAX_SOURCE_ASSETS
+                        {
+                            bail!("AssetText source exceeds its unique-asset limit");
+                        }
+                        if !references.contains_key(&candidate.asset_id) {
+                            let candidate_bytes = [
+                                candidate.asset_id.len(),
+                                candidate.name.len(),
+                                candidate.media_type.len(),
+                                candidate.source_sha256.len(),
+                                std::mem::size_of::<SourceReference>(),
+                            ]
+                            .into_iter()
+                            .try_fold(0usize, usize::checked_add)
+                            .context("AssetText source metadata size overflow")?;
+                            source_metadata_bytes = source_metadata_bytes
+                                .checked_add(candidate_bytes)
+                                .context("AssetText source metadata size overflow")?;
+                            if source_metadata_bytes > MAX_SOURCE_METADATA_BYTES {
+                                bail!("AssetText source metadata exceeds its byte limit");
+                            }
+                        }
                         merge_source_reference(
                             &mut references,
                             &mut asset_checksums,
@@ -1392,21 +1491,34 @@ fn typed_asset_references_for_field(
     field: &ugoite_domain::form::FormField,
     value: &ugoite_domain::entry::FieldValue,
 ) -> Result<Vec<AssetReference>> {
-    let encoded = serde_json::to_value(value)?;
-    match (&field.field_type, field.list_item.as_ref(), encoded) {
-        (_, _, Value::Null) => Ok(Vec::new()),
-        (FieldType::AssetReference, _, value) => {
-            Ok(vec![serde_json::from_value::<AssetReference>(value)?])
+    match (&field.field_type, field.list_item.as_ref(), value) {
+        (_, _, ugoite_domain::entry::FieldValue::Null) => Ok(Vec::new()),
+        (
+            FieldType::AssetReference,
+            _,
+            ugoite_domain::entry::FieldValue::AssetReference(reference),
+        ) => Ok(vec![reference.clone()]),
+        (FieldType::AssetReference, _, _) => {
+            bail!("Entry AssetReference field has an invalid value")
         }
-        (FieldType::List, Some(item), Value::Array(values))
+        (FieldType::List, Some(item), ugoite_domain::entry::FieldValue::List(values))
             if item.field_type == FieldType::AssetReference =>
         {
+            if values.len() > MAX_ASSET_REFERENCES_PER_ENTRY {
+                bail!("Entry AssetReference list exceeds {MAX_ASSET_REFERENCES_PER_ENTRY} items");
+            }
             values
-                .into_iter()
-                .filter(|value| !value.is_null())
-                .map(serde_json::from_value::<AssetReference>)
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(Into::into)
+                .iter()
+                .filter_map(|value| match value {
+                    ugoite_domain::entry::FieldValue::Null => None,
+                    ugoite_domain::entry::FieldValue::AssetReference(reference) => {
+                        Some(Ok(reference.clone()))
+                    }
+                    _ => Some(Err(anyhow::anyhow!(
+                        "Entry AssetReference list has an invalid value"
+                    ))),
+                })
+                .collect()
         }
         _ => Ok(Vec::new()),
     }
@@ -1864,6 +1976,13 @@ fn normalize_text(text: &str) -> String {
 
 #[cfg(test)]
 fn extract_pdf_text(bytes: &[u8]) -> String {
+    extract_pdf_text_bounded(bytes, MAX_EXTRACTED_TEXT_BYTES).unwrap_or_default()
+}
+
+fn extract_pdf_text_bounded(
+    bytes: &[u8],
+    max_bytes: usize,
+) -> std::result::Result<String, &'static str> {
     let mut text = String::new();
     let mut index = 0;
     while index < bytes.len() {
@@ -1897,16 +2016,88 @@ fn extract_pdf_text(bytes: &[u8]) -> String {
                 }
                 byte => value.push(byte),
             }
+            if value.len() > max_bytes {
+                return Err("parser_limit");
+            }
             index += 1;
         }
         if let Ok(value) = String::from_utf8(value) {
+            if text.len().saturating_add(value.len()) > max_bytes {
+                return Err("parser_limit");
+            }
             if !text.is_empty() {
                 text.push(' ');
             }
             text.push_str(&value);
         }
     }
-    text
+    Ok(text)
+}
+
+fn bounded_flate_decode(
+    input: &[u8],
+    max_bytes: usize,
+) -> std::result::Result<Vec<u8>, &'static str> {
+    fn read_bounded<R: Read>(
+        reader: R,
+        max_bytes: usize,
+    ) -> std::result::Result<Vec<u8>, &'static str> {
+        let mut output = Vec::new();
+        reader
+            .take(max_bytes.saturating_add(1) as u64)
+            .read_to_end(&mut output)
+            .map_err(|_| "malformed_pdf")?;
+        if output.len() > max_bytes {
+            return Err("parser_limit");
+        }
+        Ok(output)
+    }
+
+    match read_bounded(ZlibDecoder::new(input), max_bytes) {
+        Ok(output) => Ok(output),
+        Err("parser_limit") => Err("parser_limit"),
+        Err(_) => read_bounded(DeflateDecoder::new(input), max_bytes),
+    }
+}
+
+fn extract_pdf_stream_text_bounded(
+    bytes: &[u8],
+    max_bytes: usize,
+) -> std::result::Result<String, &'static str> {
+    let document = Document::load_mem(bytes).map_err(|_| "malformed_pdf")?;
+    let mut decoded_bytes = 0usize;
+    let mut text = String::new();
+    for object in document.objects.values() {
+        let Object::Stream(stream) = object else {
+            continue;
+        };
+        let Ok(filters) = stream.filters() else {
+            continue;
+        };
+        if filters.is_empty() {
+            continue;
+        }
+        let mut decoded = stream.content.clone();
+        for filter in filters {
+            if filter != b"FlateDecode" {
+                return Err("malformed_pdf");
+            }
+            let remaining = max_bytes.saturating_sub(decoded_bytes);
+            decoded = bounded_flate_decode(&decoded, remaining)?;
+            decoded_bytes = decoded_bytes
+                .checked_add(decoded.len())
+                .ok_or("parser_limit")?;
+        }
+        let remaining = max_bytes.saturating_sub(text.len());
+        let stream_text = extract_pdf_text_bounded(&decoded, remaining)?;
+        if !stream_text.is_empty() {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(&stream_text);
+        }
+    }
+    Ok(text)
 }
 
 fn extract_pdf_chunks(
@@ -1914,10 +2105,11 @@ fn extract_pdf_chunks(
     chunks: &mut Vec<ExtractedChunk>,
     total_bytes: &mut usize,
 ) -> std::result::Result<(), &'static str> {
-    // pdf-extract handles compressed content streams, text encodings, and
-    // page boundaries.  Keep the call behind the explicit input/page limits
-    // and convert parser failures to a coarse diagnostic; source bytes never
-    // become a durable error payload.
+    // Use a bounded literal text-layer scanner plus bounded Flate decoding.
+    // General PDF extraction APIs commonly materialize a complete decoded
+    // stream before the caller can enforce its output quota; that is not safe
+    // for an untrusted Asset. Unsupported filters are a coarse parser failure
+    // and never publish a partial build.
     let page_markers = bytes
         .windows(b"/Type /Page".len() + 1)
         .filter(|window| window.starts_with(b"/Type /Page") && window[b"/Type /Page".len()] != b's')
@@ -1927,17 +2119,32 @@ fn extract_pdf_chunks(
     if page_markers > MAX_PDF_PAGES || text_operators > MAX_PDF_TEXT_OPERATORS {
         return Err("parser_limit");
     }
-    let pages = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        pdf_extract::extract_text_from_mem_by_pages(bytes)
-    }))
-    .map_err(|_| "malformed_pdf")?
-    .map_err(|_| "malformed_pdf")?;
-    if pages.len() > MAX_PDF_PAGES {
-        return Err("parser_limit");
+    let mut text = extract_pdf_text_bounded(bytes, MAX_EXTRACTED_TEXT_BYTES).map_err(|error| {
+        if error == "parser_limit" {
+            error
+        } else {
+            "malformed_pdf"
+        }
+    })?;
+    if bytes
+        .windows(b"stream".len())
+        .any(|window| window == b"stream")
+    {
+        let stream_text = extract_pdf_stream_text_bounded(
+            bytes,
+            MAX_EXTRACTED_TEXT_BYTES.saturating_sub(text.len()),
+        )?;
+        if !stream_text.is_empty() {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(&stream_text);
+        }
     }
-    for (index, page) in pages.into_iter().enumerate() {
-        append_text_chunks(chunks, total_bytes, &page, json!({"page": index + 1}))?;
+    if text.is_empty() {
+        return Ok(());
     }
+    append_text_chunks(chunks, total_bytes, &text, json!({"page": 1}))?;
     Ok(())
 }
 
@@ -2166,7 +2373,11 @@ pub async fn asset_text_search_matches(
             .context("AssetText asset_id has invalid type")?;
         for index in 0..values.len() {
             if !values.is_null(index) {
-                matches.insert(values.value(index).to_string());
+                let asset_id = values.value(index);
+                if !matches.contains(asset_id) && matches.len() >= MAX_ASSET_TEXT_MATCHES {
+                    bail!("AssetText search exceeds its matching-asset limit");
+                }
+                matches.insert(asset_id.to_string());
             }
         }
     }
@@ -2294,6 +2505,39 @@ mod tests {
             .expect("valid PDF fixture");
         assert!(chunks.iter().any(|chunk| chunk.text.contains("Investment")));
         assert_eq!(chunks[0].locator, json!({"page": 1}));
+    }
+
+    #[test]
+    fn pdf_decoded_stream_limit_is_enforced_before_expansion() {
+        use std::io::Write;
+
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder
+            .write_all(&vec![b'x'; MAX_EXTRACTED_TEXT_BYTES + 1])
+            .expect("compress hostile stream");
+        let compressed = encoder.finish().expect("finish hostile stream");
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "1 0 obj\n<< /Length {} /Filter /FlateDecode >>\nstream\n",
+                compressed.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&compressed);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 2\n0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+
+        assert!(matches!(
+            extract_chunks(&Dispatch::Pdf(parser_identity("pdf")), &pdf),
+            Err("parser_limit")
+        ));
     }
 
     #[test]

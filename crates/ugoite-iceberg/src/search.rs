@@ -16,7 +16,7 @@ use datafusion::physical_plan::{
 };
 use opendal::Operator;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -259,6 +259,8 @@ async fn asset_text_search_authorized_inner(
     if asset_form_names.is_empty() {
         return Ok(Some(Vec::new()));
     }
+    let fallback_form_names = asset_form_names.clone();
+    let fallback_asset_reference_fields = asset_reference_fields.clone();
     let authorized_context = Arc::new(authorized_context);
     let authorized_forms = Arc::new(authorized_forms);
     if context
@@ -270,8 +272,8 @@ async fn asset_text_search_authorized_inner(
                 relation_scopes.clone(),
                 asset_form_names,
                 asset_reference_fields,
-                authorized_context,
-                authorized_forms,
+                authorized_context.clone(),
+                authorized_forms.clone(),
                 after,
             )),
         )
@@ -291,8 +293,25 @@ async fn asset_text_search_authorized_inner(
         // search path. The DataFusion memory pool bounds sort/join state while
         // this timeout bounds total work even when the current Entry set is
         // much larger than the requested result page.
-        Ok(Err(_)) => return Ok(None),
-        Err(_) => return Ok(None),
+        Ok(Err(_)) | Err(_) => {
+            // A single Entry may contain more AssetReferences than the
+            // DataFusion join page intentionally accepts.  Do not degrade to
+            // typed-field search (which would silently omit a valid hit).
+            // Continue through the same authorized current-state context with
+            // a bounded keyset scan and retain only the requested top page.
+            return fallback_asset_text_search(
+                op,
+                ws_path,
+                &authorized_context,
+                &authorized_forms,
+                &fallback_form_names,
+                &fallback_asset_reference_fields,
+                query,
+                limit,
+                after,
+            )
+            .await;
+        }
     };
     let mut results = BTreeMap::new();
     merge_asset_search_batches(&mut results, matches, after)?;
@@ -357,6 +376,131 @@ fn merge_asset_search_batches(
         }
     }
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn fallback_asset_text_search(
+    op: &Operator,
+    ws_path: &str,
+    authorized_context: &Arc<crate::query_context::AuthorizedQueryContext>,
+    authorized_forms: &Arc<HashMap<String, Value>>,
+    form_names: &[String],
+    asset_reference_fields: &BTreeMap<String, Vec<AssetReferenceField>>,
+    query: &str,
+    limit: usize,
+    after: Option<(&str, &str, &str)>,
+) -> Result<Option<Vec<KeywordSearchResult>>> {
+    let Some(matching_assets) =
+        crate::derived_relation::asset_text_search_matches(op, ws_path, query).await?
+    else {
+        return Ok(None);
+    };
+    let mut results = Vec::new();
+    let mut seen = HashSet::new();
+    for form_name in form_names {
+        let field_names = asset_reference_fields
+            .get(form_name)
+            .into_iter()
+            .flatten()
+            .map(|field| field.name.clone())
+            .collect::<BTreeSet<_>>();
+        if field_names.is_empty() {
+            continue;
+        }
+        let mut after_entry_id = None;
+        loop {
+            let rows = crate::index::query_asset_reference_rows_authorized_in_context(
+                authorized_context,
+                authorized_forms,
+                form_name,
+                &field_names,
+                after_entry_id.as_deref(),
+                ASSET_TEXT_SEARCH_PAGE_SIZE,
+            )
+            .await?;
+            if rows.is_empty() {
+                break;
+            }
+            let page_complete = rows.len() < ASSET_TEXT_SEARCH_PAGE_SIZE;
+            after_entry_id = rows.last().map(|row| row.entry_id.clone());
+            for row in rows {
+                if row.deleted
+                    || !is_after_cursor(
+                        &KeywordSearchResult {
+                            id: row.entry_id.clone(),
+                            title: row.title.clone(),
+                            form: form_name.clone(),
+                            created_at: row.created_at,
+                            updated_at: row.updated_at,
+                        },
+                        after,
+                    )
+                    || !row_references_matching_asset(
+                        &row.fields,
+                        asset_reference_fields.get(form_name).into_iter().flatten(),
+                        &matching_assets,
+                    )
+                {
+                    continue;
+                }
+                let result = KeywordSearchResult {
+                    id: row.entry_id,
+                    title: row.title,
+                    form: form_name.clone(),
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                };
+                let key = (result.form.clone(), result.id.clone());
+                if seen.insert(key) {
+                    results.push(result);
+                    results.sort_by(|left, right| {
+                        left.title
+                            .cmp(&right.title)
+                            .then_with(|| left.id.cmp(&right.id))
+                            .then_with(|| left.form.cmp(&right.form))
+                    });
+                    results.truncate(limit);
+                }
+            }
+            if page_complete {
+                break;
+            }
+        }
+    }
+    Ok(Some(results))
+}
+
+fn row_references_matching_asset<'a>(
+    fields: &Value,
+    asset_fields: impl IntoIterator<Item = &'a AssetReferenceField>,
+    matching_assets: &HashSet<String>,
+) -> bool {
+    let Some(fields) = fields.as_object() else {
+        return false;
+    };
+    asset_fields.into_iter().any(|field| {
+        fields
+            .get(&field.name)
+            .is_some_and(|value| value_contains_matching_asset(value, matching_assets))
+    })
+}
+
+fn value_contains_matching_asset(value: &Value, matching_assets: &HashSet<String>) -> bool {
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .any(|value| value_contains_matching_asset(value, matching_assets)),
+        Value::Object(object) => {
+            object
+                .get("asset_id")
+                .and_then(Value::as_str)
+                .is_some_and(|asset_id| matching_assets.contains(asset_id))
+                || object
+                    .values()
+                    .any(|value| value_contains_matching_asset(value, matching_assets))
+        }
+        _ => false,
+    }
 }
 
 fn authorized_asset_reference_batch(

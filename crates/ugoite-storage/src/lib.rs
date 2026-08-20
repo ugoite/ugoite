@@ -142,6 +142,7 @@ struct GarbageClaim {
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
 const DERIVED_BUILD_TERMINAL_CLAIM_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const MAX_DERIVED_GC_LIST_ENTRIES: usize = 100_000;
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -292,6 +293,23 @@ impl DerivedRelationHeadStore {
     /// failed marker write aborts staging before it can leave an unidentifiable
     /// prefix behind.
     pub async fn mark_staging(&self, build_id: &str) -> Result<()> {
+        if self
+            .operator
+            .exists(&self.garbage_marker_path(build_id))
+            .await?
+        {
+            return Err(anyhow!("DerivedRelation build is already garbage"));
+        }
+        if let Some((bytes, _, _)) = self.read_build_claim(build_id).await? {
+            if matches!(
+                Self::claim_role(&bytes).as_deref(),
+                Some("garbage") | Some("complete")
+            ) {
+                return Err(anyhow!(
+                    "DerivedRelation build has a terminal garbage claim"
+                ));
+            }
+        }
         if self.write_mode == CatalogWriteMode::Shared {
             self.operator
                 .write_options(
@@ -412,7 +430,14 @@ impl DerivedRelationHeadStore {
     }
 
     fn build_id_time(build_id: &str) -> Option<SystemTime> {
-        let bytes = Uuid::parse_str(build_id).ok()?.into_bytes();
+        let uuid = Uuid::parse_str(build_id).ok()?;
+        // Only UUIDv7 has a durable timestamp in the first six bytes.  Treat
+        // every other identifier as unknown rather than interpreting random
+        // UUIDv4 bits as an age and deleting a fresh orphan.
+        if uuid.get_version_num() != 7 || (uuid.as_bytes()[8] & 0xc0) != 0x80 {
+            return None;
+        }
+        let bytes = uuid.into_bytes();
         // UUIDv7 stores its creation time as a 48-bit big-endian Unix
         // millisecond timestamp. Builds use UUIDv7 IDs, so this remains a
         // durable age fallback on backends that expose no object timestamps.
@@ -423,9 +448,17 @@ impl DerivedRelationHeadStore {
     }
 
     fn old_enough(timestamp: Option<SystemTime>, minimum_gc_age: Duration) -> bool {
+        Self::old_enough_at(timestamp, minimum_gc_age, SystemTime::now())
+    }
+
+    fn old_enough_at(
+        timestamp: Option<SystemTime>,
+        minimum_gc_age: Duration,
+        now: SystemTime,
+    ) -> bool {
         minimum_gc_age.is_zero()
             || timestamp
-                .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+                .and_then(|timestamp| now.duration_since(timestamp).ok())
                 .is_some_and(|age| age >= minimum_gc_age)
     }
 
@@ -541,6 +574,16 @@ impl DerivedRelationHeadStore {
     }
 
     async fn begin_publishing(&self, build_id: &str) -> Result<()> {
+        // A producer may be paused after GC has removed its prefix and later
+        // resume with the same build ID.  Do not recreate publishing.json for
+        // a build whose durable staging lease has already disappeared.
+        if !self
+            .operator
+            .exists(&self.staging_marker_path(build_id))
+            .await?
+        {
+            return Err(anyhow!("DerivedRelation build is no longer staged"));
+        }
         let path = self.publishing_marker_path(build_id);
         let result = self
             .operator
@@ -1017,9 +1060,7 @@ impl DerivedRelationHeadStore {
         if let Some((bytes, _, _)) = self.read_build_claim(build_id).await? {
             if Self::claim_role(&bytes).as_deref() == Some("complete") {
                 let has_objects = self
-                    .operator
-                    .list_with(&self.builds_path(build_id))
-                    .recursive(true)
+                    .list_derived_entries(&self.builds_path(build_id))
                     .await?
                     .into_iter()
                     .any(|entry| {
@@ -1169,6 +1210,17 @@ impl DerivedRelationHeadStore {
                 _ => return Err(anyhow!("DerivedRelation build claim is held")),
             }
         }
+        // The staging marker is the producer's durable lease.  Once GC has
+        // removed the build prefix (and therefore this marker), a paused
+        // producer may not recreate the publishing claim and resurrect the
+        // deleted build after the terminal claim retention window.
+        if !self
+            .operator
+            .exists(&self.staging_marker_path(build_id))
+            .await?
+        {
+            return Err(anyhow!("DerivedRelation build is no longer staged"));
+        }
         Ok(())
     }
 
@@ -1181,6 +1233,25 @@ impl DerivedRelationHeadStore {
 
     pub fn operator(&self) -> &Operator {
         &self.operator
+    }
+
+    async fn list_derived_entries(&self, prefix: &str) -> Result<Vec<opendal::Entry>> {
+        // Consume the backend lister incrementally. `list_with(...).await`
+        // materializes an unbounded Vec before the caller can enforce a
+        // safety limit, which makes a corrupted or adversarial prefix a
+        // memory-exhaustion vector.
+        let mut lister = self.operator.lister_with(prefix).recursive(true).await?;
+        let mut entries = Vec::new();
+        while let Some(entry) = lister.try_next().await? {
+            if entries.len() >= MAX_DERIVED_GC_LIST_ENTRIES {
+                return Err(anyhow!(
+                    "DerivedRelation GC listing exceeds the {}-object safety bound",
+                    MAX_DERIVED_GC_LIST_ENTRIES
+                ));
+            }
+            entries.push(entry);
+        }
+        Ok(entries)
     }
 
     /// Remove non-current build prefixes after the caller-selected grace
@@ -1215,7 +1286,9 @@ impl DerivedRelationHeadStore {
             "{}/_ugoite/derived/relations/{}/builds/",
             self.space_root, self.relation_id
         );
-        let entries = self.operator.list_with(&prefix).recursive(true).await?;
+        let entries = self.list_derived_entries(&prefix).await?;
+        let observed_current_build_id = self.current_build_id().await?;
+        let current_build_id = observed_current_build_id.as_deref().or(current_build_id);
         #[derive(Default)]
         struct Candidate {
             has_garbage_marker: bool,
@@ -1285,8 +1358,13 @@ impl DerivedRelationHeadStore {
                     // marker-last cleanup. With no late objects, the terminal
                     // claim is the durable proof that no build data remains;
                     // a late object keeps this candidate pending instead.
-                    self.clear_garbage(&build_id).await?;
-                    continue;
+                    // Keep maintenance alive until the terminal retention
+                    // deadline, even when no new mutation occurs.  The
+                    // scheduler will wake again and reap the claim when due.
+                    if candidate.has_garbage_marker {
+                        self.clear_garbage(&build_id).await?;
+                    }
+                    return Ok(true);
                 }
                 return Ok(true);
             }
@@ -1296,8 +1374,8 @@ impl DerivedRelationHeadStore {
                         |(bytes, _, last_modified)| match Self::claim_role(&bytes).as_deref() {
                             Some("released") => true,
                             Some("complete") => {
-                                candidate.has_build_object
-                                    && Self::old_enough(
+                                !candidate.has_build_object
+                                    || Self::old_enough(
                                         Self::json_time(&bytes, "claimed_at").or(last_modified),
                                         minimum_gc_age,
                                     )
@@ -1326,6 +1404,13 @@ impl DerivedRelationHeadStore {
                 return Ok(true);
             }
         }
+        // The supplied current ID is only a scheduling hint.  A shared
+        // publisher may have swapped Head while this listing was in flight;
+        // keep maintenance alive so the next pass observes the new detached
+        // build instead of treating a stale scan as idle.
+        if self.current_build_id().await? != observed_current_build_id {
+            return Ok(true);
+        }
         Ok(false)
     }
 
@@ -1342,7 +1427,7 @@ impl DerivedRelationHeadStore {
             "{}/_ugoite/derived/relations/{}/builds/",
             self.space_root, self.relation_id
         );
-        let entries = self.operator.list_with(&prefix).recursive(true).await?;
+        let entries = self.list_derived_entries(&prefix).await?;
         #[derive(Default)]
         struct Candidate {
             garbage_marker_old_enough: bool,
@@ -1602,11 +1687,7 @@ impl DerivedRelationHeadStore {
                 fenced => fenced,
             };
             let build_prefix = self.builds_path(&build_id);
-            let entries = self
-                .operator
-                .list_with(&build_prefix)
-                .recursive(true)
-                .await?;
+            let entries = self.list_derived_entries(&build_prefix).await?;
             let created_garbage_marker = needs_fresh_garbage_marker
                 && (candidate.orphan_old_enough || candidate.complete_claim_old_enough)
                 && minimum_gc_age.is_zero();
@@ -1705,9 +1786,7 @@ impl DerivedRelationHeadStore {
     /// prefix is reclaimed.
     pub async fn mark_legacy_materializations_garbage(&self) -> Result<()> {
         let entries = self
-            .operator
-            .list_with(&self.legacy_materializations_prefix())
-            .recursive(true)
+            .list_derived_entries(&self.legacy_materializations_prefix())
             .await?;
         if !entries
             .iter()
@@ -1749,9 +1828,7 @@ impl DerivedRelationHeadStore {
             return Ok(true);
         }
         let entries = self
-            .operator
-            .list_with(&self.legacy_materializations_prefix())
-            .recursive(true)
+            .list_derived_entries(&self.legacy_materializations_prefix())
             .await?;
         for entry in entries {
             if entry.metadata().mode() == EntryMode::FILE {
@@ -3219,6 +3296,7 @@ mod tests {
             head_fence: String::new(),
             checksum: String::new(),
         };
+        store.mark_staging(&first.build_id).await?;
         store.create(&first).await?;
         let exact_first = store.read_exact().await?.expect("derived Head");
         assert!(!exact_first.head.checksum.is_empty());
@@ -3226,6 +3304,7 @@ mod tests {
         let mut second = first.clone();
         second.generation = 2;
         second.build_id = "build-b".into();
+        store.mark_staging(&second.build_id).await?;
         store.replace(None, &second).await?;
         let mut invalid: serde_json::Value =
             serde_json::from_slice(&canonical_head_bytes(&second)?)?;
@@ -3359,6 +3438,7 @@ mod tests {
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let data = format!("{}/data/old.parquet", store.builds_path("old"));
         operator.write(&data, b"old".to_vec()).await?;
+        store.mark_staging("old").await?;
         store.mark_garbage("old").await?;
 
         assert_eq!(
@@ -3385,12 +3465,14 @@ mod tests {
             .await
             .expect_err("a reclaimed build must stay fenced")
             .to_string()
-            .contains("claim is held"));
+            .contains("no longer staged"));
         // A delayed loser may report the same build after cleanup. It must
         // not recreate garbage.json or wake GC forever.
         store.mark_garbage("old").await?;
         assert!(!operator.exists(&store.garbage_marker_path("old")).await?);
-        assert!(!store.has_pending_garbage(None, Duration::ZERO).await?);
+        // The terminal claim remains pending until its retention deadline so
+        // a scheduler can wake without a new mutation and reap the fence.
+        assert!(store.has_pending_garbage(None, Duration::ZERO).await?);
         Ok(())
     }
 
@@ -3475,7 +3557,9 @@ mod tests {
             store.garbage_collect(None, Duration::ZERO).await?,
             vec!["deferred"]
         );
-        assert!(!store.has_pending_garbage(None, Duration::ZERO).await?);
+        // Cleanup is complete, but the terminal publication fence is still
+        // intentionally pending until its bounded retention window expires.
+        assert!(store.has_pending_garbage(None, Duration::ZERO).await?);
         Ok(())
     }
 
@@ -3635,6 +3719,27 @@ mod tests {
             DerivedRelationHeadStore::build_id_time(&fresh_build_id),
             Duration::from_secs(60 * 60),
         ));
+        assert!(DerivedRelationHeadStore::build_id_time(&Uuid::new_v4().to_string()).is_none());
+        bytes[8] = 0;
+        assert!(
+            DerivedRelationHeadStore::build_id_time(&Uuid::from_bytes(bytes).to_string()).is_none()
+        );
+    }
+
+    #[test]
+    fn terminal_claim_retention_has_a_bounded_clock_window() {
+        let claimed_at = UNIX_EPOCH + Duration::from_secs(100);
+        let retention = Duration::from_secs(7 * 24 * 60 * 60);
+        assert!(!DerivedRelationHeadStore::old_enough_at(
+            Some(claimed_at),
+            retention,
+            claimed_at + retention - Duration::from_secs(1),
+        ));
+        assert!(DerivedRelationHeadStore::old_enough_at(
+            Some(claimed_at),
+            retention,
+            claimed_at + retention,
+        ));
     }
 
     #[tokio::test]
@@ -3691,6 +3796,7 @@ mod tests {
             head_fence: String::new(),
             checksum: String::new(),
         };
+        store.mark_staging(&head.build_id).await?;
         let results = join_all((0..8).map(|_| {
             let store = store.clone();
             let head = head.clone();
@@ -3763,14 +3869,17 @@ mod tests {
             head_fence: String::new(),
             checksum: String::new(),
         };
+        store.mark_staging(&first.build_id).await?;
         store.publish(None, &first).await?;
         let expected = store.read_exact().await?.expect("initial Head");
         first.generation = 2;
         first.build_id = "build-2".into();
+        store.mark_staging(&first.build_id).await?;
         store.publish(Some(&expected), &first).await?;
         let mut loser = first.clone();
         loser.generation = 3;
         loser.build_id = "build-3".into();
+        store.mark_staging(&loser.build_id).await?;
         let error = store
             .publish(Some(&expected), &loser)
             .await

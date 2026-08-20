@@ -45,8 +45,10 @@ remain planned work. :::
   path.
 - The server exposes REST, the small authenticated MCP semantic facade, and
   static browser hosting.
-- Passkey login, invited OIDC, CLI device pairing, Agent Principals, and
-  portable Space ACLs are shipped.
+- Server-backed authentication, CLI device pairing, Agent Principals, and
+  portable Space ACLs are available through the current server/API boundary;
+  browser-local persistence and broader account-management capabilities remain
+  outside this release contract.
 
 ## Source-of-truth rules
 

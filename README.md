@@ -98,7 +98,7 @@ ugoite auth login --actions read,create,update
 ugoite space list
 ```
 
-Approve the displayed device code from a Passkey-authenticated browser.
+Approve the displayed device code from the server-authenticated browser flow.
 
 ## API and documentation
 
