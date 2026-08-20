@@ -10,8 +10,8 @@ support, and product claims stay aligned with the implementation.
 ## Included
 
 - local CLI core mode over operator-owned Spaces;
-- Rust REST server with authentication, Space membership/roles, entries, forms,
-  assets, preferences, search, saved SQL, and SQL query sessions;
+- Rust REST server with entries, forms, assets, preferences, search, saved SQL,
+  and SQL query sessions;
 - server-backed browser application;
 - single non-root container image and Helm chart;
 - MCP v1 search/save/delete facade with lazy Entry, history, schema, and Form
@@ -29,6 +29,8 @@ support, and product claims stay aligned with the implementation.
   portable Space state;
 - browser-local persistence, offline-first editing, and sync are not
   implemented;
+- Passkey/TOTP/OIDC login, managed service accounts, audit CRUD, and remote CLI
+  asset upload are not supported v0.1 capabilities;
 - the `Release Publish` workflow now publishes versioned release artifacts and
   verifies the published Compose and CLI quick starts; an operator-supported
   release still requires a successful published version.

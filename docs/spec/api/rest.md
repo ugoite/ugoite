@@ -6,6 +6,12 @@ title: REST API
 checked-in OpenAPI snapshot and generated frontend path registry are verified in
 CI.
 
+> Release boundary: this page documents the server endpoint inventory and
+> implementation reference. Passkey/TOTP/OIDC login, managed service-account
+> operations, audit CRUD, and remote CLI asset upload are not supported v0.1
+> product capabilities. Treat those endpoint descriptions as future/reference
+> material until the release boundary explicitly promotes them.
+
 ## Authentication surfaces
 
 - `GET /auth/config`: Node lifecycle, issuer, and WebAuthn RP information.

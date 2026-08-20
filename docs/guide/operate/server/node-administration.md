@@ -4,6 +4,9 @@ sidebar:
   order: 3
 ---
 
+> Future/reference workflow: OIDC and account administration are not supported
+> v0.1 product capabilities.
+
 Node administration is a Node Identity role and is separate from every Space. A
 Node administrator configures OIDC, manages account status, creates Spaces,
 establishes Node-local bindings during setup, and operates the server. Space owners

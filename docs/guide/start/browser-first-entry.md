@@ -4,6 +4,9 @@ sidebar:
   order: 4
 ---
 
+> Future/reference workflow: the browser is server-backed, but Passkey/TOTP/OIDC
+> account flows are not supported v0.1 product capabilities.
+
 The shipped browser is server-backed.
 
 1. Start Ugoite with `mise run dev` or Docker Compose.

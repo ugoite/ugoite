@@ -1,4 +1,5 @@
 version: 0.3
+status: future
 updated: "2026-06-29"
 node_identity:
   human_authentication: [passkey, invited_oidc]

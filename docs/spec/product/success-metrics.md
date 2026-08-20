@@ -2,6 +2,9 @@
 title: "Success metrics"
 ---
 
+Authentication metrics below are planned indicators only. Passkey/TOTP/OIDC
+login is not a supported v0.1 product capability.
+
 Metrics must distinguish the current server-backed product from the
 browser-local North Star and must not treat planned features as shipped.
 

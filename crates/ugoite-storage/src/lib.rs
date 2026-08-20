@@ -293,6 +293,20 @@ impl DerivedRelationHeadStore {
     /// failed marker write aborts staging before it can leave an unidentifiable
     /// prefix behind.
     pub async fn mark_staging(&self, build_id: &str) -> Result<()> {
+        // Production build IDs are UUIDv7 values created at build start.  Once
+        // the terminal-claim retention window has elapsed, the timestamp in
+        // the ID is the durable fence that prevents a paused producer from
+        // reusing an ID whose claim has already been reaped.  IDs without a
+        // timestamp remain supported for low-level fixtures and legacy
+        // callers; the derived builder itself always uses UUIDv7.
+        if Self::old_enough(
+            Self::build_id_time(build_id),
+            DERIVED_BUILD_TERMINAL_CLAIM_RETENTION,
+        ) {
+            return Err(anyhow!(
+                "DerivedRelation build ID is older than the terminal fencing window"
+            ));
+        }
         if self
             .operator
             .exists(&self.garbage_marker_path(build_id))
@@ -1288,7 +1302,11 @@ impl DerivedRelationHeadStore {
         );
         let entries = self.list_derived_entries(&prefix).await?;
         let observed_current_build_id = self.current_build_id().await?;
-        let current_build_id = observed_current_build_id.as_deref().or(current_build_id);
+        // The argument is only a scheduling hint.  Never use it as authority:
+        // after Head removal, falling back to a stale hint could hide an
+        // orphan forever.
+        let _ = current_build_id;
+        let current_build_id = observed_current_build_id.as_deref();
         #[derive(Default)]
         struct Candidate {
             has_garbage_marker: bool,
@@ -1423,6 +1441,11 @@ impl DerivedRelationHeadStore {
         minimum_gc_age: Duration,
     ) -> Result<Vec<String>> {
         self.recover_completed_empty_head_fence().await?;
+        let observed_current_build_id = self.current_build_id().await?;
+        // The caller's build ID is a scheduling hint only.  The exact Head
+        // reread above is the sole authority used to skip a build.
+        let _ = current_build_id;
+        let current_build_id = observed_current_build_id.as_deref();
         let prefix = format!(
             "{}/_ugoite/derived/relations/{}/builds/",
             self.space_root, self.relation_id
@@ -3693,6 +3716,32 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn gc_does_not_trust_a_stale_head_hint_after_head_removal() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let relation_id = uuid::Uuid::from_u128(0xA012);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let orphan = format!(
+            "{}/metadata/orphan.json",
+            store.builds_path("stale-head-hint")
+        );
+        operator.write(&orphan, b"orphan".to_vec()).await?;
+
+        assert!(
+            store
+                .has_pending_garbage(Some("stale-head-hint"), Duration::ZERO)
+                .await?
+        );
+        assert_eq!(
+            store
+                .garbage_collect(Some("stale-head-hint"), Duration::ZERO)
+                .await?,
+            vec!["stale-head-hint"]
+        );
+        assert!(!operator.exists(&orphan).await?);
+        Ok(())
+    }
+
     #[test]
     fn uuid_v7_build_timestamp_is_a_durable_gc_age_fallback() {
         let old_millis = SystemTime::now()
@@ -3740,6 +3789,45 @@ mod tests {
             retention,
             claimed_at + retention,
         ));
+    }
+
+    #[tokio::test]
+    async fn reaped_uuid_v7_build_id_cannot_be_staged_again() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let relation_id = uuid::Uuid::from_u128(0xA013);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let old_millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .as_millis()
+            .saturating_sub(super::DERIVED_BUILD_TERMINAL_CLAIM_RETENTION.as_millis())
+            as u64;
+        let mut bytes = [0_u8; 16];
+        bytes[..6].copy_from_slice(&old_millis.to_be_bytes()[2..]);
+        bytes[6] = 0x70;
+        bytes[8] = 0x80;
+        let reaped_build_id = Uuid::from_bytes(bytes).to_string();
+
+        let error = store
+            .mark_staging(&reaped_build_id)
+            .await
+            .expect_err("a terminally reaped UUIDv7 ID must stay fenced");
+        assert!(error
+            .to_string()
+            .contains("older than the terminal fencing window"));
+        assert!(
+            !operator
+                .exists(&store.staging_marker_path(&reaped_build_id))
+                .await?
+        );
+
+        let fresh_build_id = Uuid::now_v7().to_string();
+        store.mark_staging(&fresh_build_id).await?;
+        assert!(
+            operator
+                .exists(&store.staging_marker_path(&fresh_build_id))
+                .await?
+        );
+        Ok(())
     }
 
     #[tokio::test]
@@ -3812,7 +3900,8 @@ mod tests {
     async fn derived_build_gc_never_removes_current_build() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA003);
-        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id)
+            .single_process();
         operator
             .write(
                 &format!("{}/manifest.json", store.builds_path("current")),
@@ -3825,6 +3914,29 @@ mod tests {
                 b"stale".to_vec(),
             )
             .await?;
+        let current_head = DerivedRelationHead {
+            format_version: 1,
+            space_id: "demo".into(),
+            relation_id: relation_id.to_string(),
+            generation: 1,
+            definition_version: 1,
+            definition_fingerprint: "definition".into(),
+            producer_id: "producer".into(),
+            producer_fingerprint: "producer-fingerprint".into(),
+            compatibility_epoch: 1,
+            build_id: "current".into(),
+            table_identifier: serde_json::json!({"table":"derived"}),
+            table_uuid: "table-uuid".into(),
+            metadata_location: "memory:///metadata.json".into(),
+            snapshot_id: None,
+            schema_id: 0,
+            input_digest: "input".into(),
+            source_coordinate: serde_json::json!({}),
+            head_fence: String::new(),
+            checksum: String::new(),
+        };
+        store.mark_staging("current").await?;
+        store.create(&current_head).await?;
         store.mark_garbage("stale").await?;
         let deleted = store
             .garbage_collect(Some("current"), Duration::ZERO)

@@ -5,7 +5,7 @@
 //! build products below a build prefix; a failed build therefore
 //! cannot replace the currently visible result or the authoritative Catalog.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use arrow_array::builder::{Int64Builder, StringBuilder};
 use arrow_array::{Array, RecordBatch, StringArray, TimestampMicrosecondArray};
 use chrono::Utc;
@@ -37,7 +37,7 @@ use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{Cursor, Read, Seek};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -50,7 +50,7 @@ use ugoite_domain::derived_relation::{
     DerivedValueType, RelationField, TypedSchema,
 };
 use ugoite_domain::entry::AssetReference;
-use ugoite_domain::form::{FieldType, FormDefinition};
+use ugoite_domain::form::FieldType;
 use ugoite_storage::{DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore};
 use uuid::Uuid;
 use zip::ZipArchive;
@@ -71,12 +71,14 @@ const MAX_TOTAL_ASSET_TEXT_BYTES: usize = 512 * 1024 * 1024;
 const ASSET_TEXT_APPEND_BATCH_ROWS: usize = 8_192;
 const MAX_SOURCE_ASSETS: usize = 1_000_000;
 const MAX_SOURCE_FORMS: usize = 100_000;
+const MAX_SOURCE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
 const MAX_SOURCE_METADATA_BYTES: usize = 256 * 1024 * 1024;
 const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
 const MAX_ASSET_TEXT_MATCHES: usize = 1_000_000;
 const READER_CHUNK_BYTES: usize = 256 * 1024;
 const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
 const GC_RETRY_DELAY: Duration = Duration::from_secs(60);
+const GC_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_BACKGROUND_GC_SCHEDULERS: usize = 1024;
 const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
 
@@ -978,58 +980,40 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                             &workspace_path,
                             relation_id,
                         );
-                        let head_store = if matches!(
-                            operator.info().scheme(),
-                            "s3" | "gcs" | "oss" | "azdls"
-                        ) {
-                            base.shared().await.ok()
-                        } else {
-                            Some(base.single_process())
-                        };
-                        let mut storage_failed = false;
-                        let retry_gc = if let Some(head_store) = head_store {
-                            match head_store.read_exact().await {
-                                Ok(current_build) => {
-                                    let current_build_id =
-                                        current_build.map(|head| head.head.build_id);
-                                    let legacy_pending = async {
-                                        head_store
-                                            .mark_legacy_materializations_garbage()
-                                            .await?;
-                                        head_store
-                                            .garbage_collect_legacy_materializations(
-                                                MINIMUM_GC_AGE,
-                                            )
-                                            .await
-                                    }
-                                    .await
-                                    .unwrap_or(true);
-                                    let build_pending = match head_store
-                                        .garbage_collect(
-                                            current_build_id.as_deref(),
-                                            MINIMUM_GC_AGE,
-                                        )
-                                        .await
-                                    {
-                                        Ok(_) => head_store
-                                            .has_pending_garbage(
-                                                current_build_id.as_deref(),
-                                                MINIMUM_GC_AGE,
-                                            )
-                                            .await
-                                            .unwrap_or(true),
-                                        Err(_) => true,
-                                    };
-                                    legacy_pending || build_pending
-                                }
-                                Err(_) => {
-                                    storage_failed = true;
-                                    true
-                                }
-                            }
-                        } else {
-                            storage_failed = true;
-                            true
+                        let maintenance = tokio::time::timeout(GC_OPERATION_TIMEOUT, async {
+                            let head_store = if matches!(
+                                operator.info().scheme(),
+                                "s3" | "gcs" | "oss" | "azdls"
+                            ) {
+                                base.shared().await?
+                            } else {
+                                base.single_process()
+                            };
+                            let current_build = head_store.read_exact().await?;
+                            let current_build_id =
+                                current_build.map(|head| head.head.build_id);
+                            head_store.mark_legacy_materializations_garbage().await?;
+                            head_store
+                                .garbage_collect_legacy_materializations(MINIMUM_GC_AGE)
+                                .await?;
+                            head_store
+                                .garbage_collect(
+                                    current_build_id.as_deref(),
+                                    MINIMUM_GC_AGE,
+                                )
+                                .await?;
+                            let pending = head_store
+                                .has_pending_garbage(
+                                    current_build_id.as_deref(),
+                                    MINIMUM_GC_AGE,
+                                )
+                                .await?;
+                            Ok::<bool, anyhow::Error>(pending)
+                        })
+                        .await;
+                        let (retry_gc, storage_failed) = match maintenance {
+                            Ok(Ok(pending)) => (pending, false),
+                            Ok(Err(_)) | Err(_) => (true, true),
                         };
                         if storage_failed {
                             consecutive_failures = consecutive_failures.saturating_add(1);
@@ -1041,6 +1025,16 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
                             // process startup or explicit maintenance run;
                             // never retain an Operator forever on a broken
                             // backend.
+                            let mut schedulers = ASSET_TEXT_GC_SCHEDULERS
+                                .get_or_init(|| StdMutex::new(BTreeMap::new()))
+                                .lock()
+                                .expect("AssetText GC scheduler map poisoned");
+                            if schedulers
+                                .get(&scheduler_key)
+                                .is_some_and(|current| Arc::ptr_eq(current, &scheduler))
+                            {
+                                schedulers.remove(&scheduler_key);
+                            }
                             return;
                         }
                         if retry_gc {
@@ -1308,15 +1302,13 @@ async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result
 
 async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<SourceReference>> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
-    let form_names = crate::entry::list_form_names(op, ws_path).await?;
-    if form_names.len() > MAX_SOURCE_FORMS {
-        bail!("AssetText source exceeds its Form limit");
-    }
-    let mut definitions = BTreeMap::<String, FormDefinition>::new();
-    for name in &form_names {
-        let definition = crate::iceberg_store::load_domain_form(op, ws_path, name).await?;
-        definitions.insert(name.clone(), definition);
-    }
+    let definitions = workspace
+        .list_forms_bounded(MAX_SOURCE_FORMS, MAX_SOURCE_FORM_DEFINITION_BYTES)
+        .await?
+        .into_iter()
+        .map(|definition| (definition.name.clone(), definition))
+        .collect::<BTreeMap<_, _>>();
+    let form_names = definitions.keys().cloned().collect::<Vec<_>>();
     let mut references = BTreeMap::<String, SourceReference>::new();
     let mut asset_checksums = BTreeMap::<String, (String, u64)>::new();
     let mut conflicting_assets = HashSet::new();
@@ -2351,7 +2343,14 @@ pub async fn asset_text_search_matches(
     ws_path: &str,
     query: &str,
 ) -> Result<Option<HashSet<String>>> {
-    let context = SessionContext::new();
+    let context =
+        crate::query_context::bounded_session_context(&ugoite_core::query::QueryLimits {
+            max_memory_bytes: 64 * 1024 * 1024,
+            max_rows: MAX_ASSET_TEXT_MATCHES.saturating_add(1),
+            timeout: Duration::from_secs(30),
+            max_concurrency: 1,
+            allowed_functions: BTreeSet::from(["lower".to_string()]),
+        })?;
     if !register_asset_text_table(&context, op, ws_path, "__ugoite_internal_asset_text").await? {
         return Ok(None);
     }
@@ -2360,27 +2359,45 @@ pub async fn asset_text_search_matches(
         .replace('%', "\\%")
         .replace('_', "\\_")
         .replace('\'', "''");
-    let sql = format!("SELECT asset_id FROM __ugoite_internal_asset_text WHERE status = 'ready' AND text IS NOT NULL AND lower(text) LIKE lower('%{escaped}%') ESCAPE '\\'");
-    let batches = context.sql(&sql).await?.collect().await?;
+    let sql = format!(
+        "SELECT asset_id FROM __ugoite_internal_asset_text WHERE status = 'ready' AND text IS NOT NULL AND lower(text) LIKE lower('%{escaped}%') ESCAPE '\\' LIMIT {}",
+        MAX_ASSET_TEXT_MATCHES.saturating_add(1)
+    );
+    let mut stream = context.sql(&sql).await?.execute_stream().await?;
     let mut matches = HashSet::new();
-    for batch in batches {
-        let values = batch
-            .column_by_name("asset_id")
-            .context("AssetText provider omitted asset_id")?;
-        let values = values
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .context("AssetText asset_id has invalid type")?;
-        for index in 0..values.len() {
-            if !values.is_null(index) {
-                let asset_id = values.value(index);
-                if !matches.contains(asset_id) && matches.len() >= MAX_ASSET_TEXT_MATCHES {
-                    bail!("AssetText search exceeds its matching-asset limit");
+    let mut scanned_rows = 0usize;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while let Some(batch) = stream.try_next().await? {
+            scanned_rows = scanned_rows
+                .checked_add(batch.num_rows())
+                .context("AssetText search row count overflow")?;
+            if scanned_rows > MAX_ASSET_TEXT_MATCHES {
+                bail!("AssetText search exceeds its matching-row limit");
+            }
+            if batch.get_array_memory_size() > 64 * 1024 * 1024 {
+                bail!("AssetText search batch exceeds its memory limit");
+            }
+            let values = batch
+                .column_by_name("asset_id")
+                .context("AssetText provider omitted asset_id")?;
+            let values = values
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .context("AssetText asset_id has invalid type")?;
+            for index in 0..values.len() {
+                if !values.is_null(index) {
+                    let asset_id = values.value(index);
+                    if !matches.contains(asset_id) && matches.len() >= MAX_ASSET_TEXT_MATCHES {
+                        bail!("AssetText search exceeds its matching-asset limit");
+                    }
+                    matches.insert(asset_id.to_string());
                 }
-                matches.insert(asset_id.to_string());
             }
         }
-    }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .map_err(|_| anyhow!("AssetText search timed out"))??;
     Ok(Some(matches))
 }
 

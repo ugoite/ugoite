@@ -965,10 +965,36 @@ impl IcebergWorkspace {
     }
 
     pub async fn list_forms(&self) -> Result<Vec<FormDefinition>> {
+        self.list_forms_bounded(usize::MAX, usize::MAX).await
+    }
+
+    /// Loads Form definitions with explicit count and serialized-size bounds.
+    /// Catalog implementations may return table identifiers as a Vec, so the
+    /// count is checked before any table metadata is retained. Definitions are
+    /// then loaded one at a time and the cumulative persisted representation is
+    /// bounded before the returned collection can grow without limit.
+    pub async fn list_forms_bounded(
+        &self,
+        max_forms: usize,
+        max_serialized_bytes: usize,
+    ) -> Result<Vec<FormDefinition>> {
+        let identifiers = self.catalog.list_tables(&self.namespace).await?;
+        if identifiers.len() > max_forms {
+            return Err(anyhow!("Form catalog exceeds its configured count limit"));
+        }
         let mut forms = Vec::new();
-        for ident in self.catalog.list_tables(&self.namespace).await? {
+        let mut serialized_bytes = 0usize;
+        for ident in identifiers {
             let table = self.catalog.load_table(&ident).await?;
             if let Some(raw) = table.metadata().properties().get(FORM_DEFINITION_PROPERTY) {
+                serialized_bytes = serialized_bytes
+                    .checked_add(raw.len())
+                    .context("Form definition size overflow")?;
+                if serialized_bytes > max_serialized_bytes {
+                    return Err(anyhow!(
+                        "Form definitions exceed their configured serialized-size limit"
+                    ));
+                }
                 let form: FormDefinition = serde_json::from_str(raw)?;
                 forms.push(form_from_table(&table, form.id)?);
             }

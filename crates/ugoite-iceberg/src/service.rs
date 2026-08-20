@@ -67,6 +67,7 @@ static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
 > = OnceLock::new();
 
 const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
+const ASSET_TEXT_REFRESH_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_BACKGROUND_REFRESH_WORKERS: usize = 1024;
 const MAX_SHARED_REFRESH_CONFLICT_RETRIES: usize = 8;
 
@@ -152,11 +153,20 @@ impl UgoiteService {
                     tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
                     while worker.pending.swap(false, Ordering::AcqRel) {
                         let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
-                        let result = if shared {
-                            crate::derived_relation::rebuild_asset_text_shared(&op, &ws_path).await
-                        } else {
-                            crate::derived_relation::rebuild_asset_text(&op, &ws_path).await
-                        };
+                        let result =
+                            tokio::time::timeout(ASSET_TEXT_REFRESH_OPERATION_TIMEOUT, async {
+                                if shared {
+                                    crate::derived_relation::rebuild_asset_text_shared(
+                                        &op, &ws_path,
+                                    )
+                                    .await
+                                } else {
+                                    crate::derived_relation::rebuild_asset_text(&op, &ws_path).await
+                                }
+                            })
+                            .await
+                            .map_err(|_| anyhow!("AssetText refresh operation timed out"))
+                            .and_then(|result| result);
                         // A shared CAS loser has already built a valid
                         // immutable candidate. Retry from the newest Head so
                         // a quiet Space does not remain stale indefinitely.

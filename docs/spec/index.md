@@ -19,9 +19,10 @@ authoritative; indexes and query sessions are derived.
   hosting.
 - The browser is server-backed.
 - Browser-local persistence and optional sync are planned.
-- Passkey login, optional invited OIDC, opaque sessions, CLI device
-  authorization, Agent Principals, Space ACLs, and authorization audit chains
-  are operational.
+- Authentication/account-management designs, Passkey/TOTP/OIDC flows, managed
+  service accounts, audit CRUD, and remote CLI asset upload remain future or
+  limited capability. They are not v0.1 product promises even where an
+  implementation or generated API reference exists.
 
 ## Read the specification map
 

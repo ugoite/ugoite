@@ -4,6 +4,9 @@ sidebar:
   order: 4
 ---
 
+> Release note: Node account, Passkey, and session details on this page are
+> future/reference architecture, not supported v0.1 product promises.
+
 ```bash
 export UGOITE_NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"
 docker compose up -d

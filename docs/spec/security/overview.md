@@ -2,9 +2,14 @@
 title: Security architecture
 ---
 
+Dependency audit exceptions and their removal criteria are recorded in
+[dependency audit exceptions](dependency-audit.md). In particular, the locked
+graph still contains the unresolved upstream `rsa 0.9.10` advisory; it is not
+treated as silently clean.
+
 Authentication and authorization follow
 [the operator guide](../../guide/operate/auth/auth-overview.md). The normative
-invariants are:
+invariants are future/reference design and are not v0.1 product promises:
 
 - Passkey/WebAuthn is the standard human authenticator; OIDC
   authorization-code + PKCE is an optional linked method keyed by issuer and

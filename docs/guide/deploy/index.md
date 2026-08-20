@@ -6,6 +6,9 @@ sidebar:
   order: 1
 ---
 
+> Release note: browser authentication and account-management flows are future
+> reference material; the supported v0.1 path is the local-first CLI/core flow.
+
 Choose the deployment shape before changing individual environment variables.
 All supported shapes run the same Rust server. They keep Space storage
 operator-owned, while Node control state and the node secret remain separate

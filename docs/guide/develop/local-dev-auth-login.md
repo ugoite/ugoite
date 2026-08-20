@@ -4,6 +4,10 @@ sidebar:
   order: 2
 ---
 
+> Future/reference workflow: Passkey/TOTP authentication is not part of the
+> supported v0.1 product boundary. This page describes planned server setup for
+> development only.
+
 Run `mise run dev`, then read the one-use setup URL printed by `ugoite-server`.
 The default local RP is `localhost` with origin `http://localhost:8000`. If a
 proxy or alternate port is used, set both values before first registration:

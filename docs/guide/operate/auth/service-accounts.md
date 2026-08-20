@@ -4,6 +4,10 @@ sidebar:
   order: 3
 ---
 
+> Future capability: Agent Principals and service-account-style automation are
+> documented for architecture planning and are not a supported v0.1 product
+> surface.
+
 Automation uses Agent Principals with registered P-256 public keys. Shared
 secrets and long-lived API keys are not supported.
 

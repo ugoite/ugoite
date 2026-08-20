@@ -1,6 +1,6 @@
 id: user-management
 version: '0.1'
-status: completed
+status: planned
 title: User Management
 goal: Provide authenticated multi-user Space access while preserving operator-owned storage.
 requirement_ids:
@@ -15,33 +15,33 @@ requirement_ids:
 - REQ-SEC-013
 phases:
 - id: design
-  status: completed
+  status: planned
   tasks:
   - description: Define identities, Space roles, memberships, and credential validation.
     done: true
   - description: Define passkey/TOTP, managed service accounts, and audit history as future capability.
     done: true
 - id: implementation
-  status: completed
+  status: planned
   tasks:
   - description: Implement Passkey authentication and opaque server-side sessions.
-    done: true
+    done: false
   - description: Implement portable Space principals, roles, invitations, and resource policies.
-    done: true
+    done: false
   - description: Implement OAuth device authorization and sender-constrained CLI credentials.
-    done: true
+    done: false
   - description: Implement sponsored agent principals and public-key credentials.
-    done: true
+    done: false
   - description: Implement node and Space security audit persistence.
-    done: true
+    done: false
   - description: Implement Owner-approved recovery, forced reset, and idempotent backup-code rotation.
-    done: true
+    done: false
 - id: testing
-  status: completed
+  status: planned
   tasks:
   - description: Cover authentication, recovery, membership transitions, and privilege checks.
-    done: true
+    done: false
   - description: Cover OAuth constraints, agent lifecycle, ACL leak prevention, and audit completeness.
-    done: true
+    done: false
   - description: Trace owner recovery generation invalidation, one-time delivery, and audit status.
-    done: true
+    done: false

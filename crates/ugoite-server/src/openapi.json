@@ -2,7 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Ugoite Rust Server API",
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "description": "The generated endpoint inventory is authoritative for the server implementation. The v0.1 release does not advertise Passkey/TOTP/OIDC login, managed service-account operations, audit CRUD, or remote CLI asset upload as supported product capabilities; those surfaces remain reference/future scope until promoted by the release boundary."
   },
   "x-ugoite-response-signing": {
     "description": "Eligible materialized /api responses carry the reusable HMAC headers below. The signature is lowercase hexadecimal HMAC-SHA256 over the exact delivered body bytes.",

@@ -5,6 +5,9 @@ sidebar:
   order: 2
 ---
 
+> Future/reference architecture: the authentication, agent, and audit flows on
+> this page are not supported v0.1 product capabilities.
+
 Ugoite has one production authentication architecture. There is no selectable
 development authentication mode, default credential, fixed password, or shared
 API key.
