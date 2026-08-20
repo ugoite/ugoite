@@ -29,7 +29,6 @@ use iceberg::{
     NamespaceIdent, Runtime, TableCreation, TableIdent,
 };
 use iceberg_datafusion::IcebergStaticTableProvider;
-use lopdf::{Document, Object};
 use opendal::options::{ReadOptions, WriteOptions};
 use opendal::{ErrorKind, Operator};
 use quick_xml::events::Event;
@@ -1384,10 +1383,19 @@ async fn rebuild_asset_text_with_mode(
     }
     let heartbeat_store = head_store.clone();
     let heartbeat_build_id = build_id.clone();
+    let staging_heartbeat_lost = Arc::new(AtomicBool::new(false));
+    let heartbeat_lost = staging_heartbeat_lost.clone();
     let staging_heartbeat = AbortOnDrop::new(tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
-            let _ = heartbeat_store.renew_staging(&heartbeat_build_id).await;
+            if heartbeat_store
+                .renew_staging(&heartbeat_build_id)
+                .await
+                .is_err()
+            {
+                heartbeat_lost.store(true, Ordering::Release);
+                return;
+            }
         }
     }));
     // Every object written below belongs to this immutable build. If staging
@@ -1478,6 +1486,13 @@ async fn rebuild_asset_text_with_mode(
     }
     .await;
     staging_heartbeat.abort();
+    if staging_heartbeat_lost.load(Ordering::Acquire) {
+        let _ = ensure_cleanup_marker(&head_store, &build_id).await;
+        schedule_asset_text_gc(op, ws_path);
+        return Err(anyhow!(
+            "DerivedRelation staging heartbeat was lost before publication"
+        ));
+    }
     let head = match build_result {
         Ok(head) => head,
         Err(error) => {
@@ -2491,7 +2506,7 @@ fn detect_dispatch(name: &str, media_type: &str, bytes: &[u8]) -> Dispatch {
     }
     // MIME and filename are only hints. Valid OOXML containers are recognized
     // by their internal part names before either hint can misroute them.
-    if bytes.starts_with(b"PK") {
+    if bytes.starts_with(b"PK") && validate_zip_entry_count(bytes).is_ok() {
         if let Ok(mut archive) = ZipArchive::new(Cursor::new(bytes)) {
             if archive.len() <= MAX_ZIP_ENTRIES {
                 let mut has_document = false;
@@ -2795,30 +2810,55 @@ fn extract_pdf_stream_text_bounded(
     if !pdf_object_count_within_limit(bytes, MAX_PDF_OBJECTS) {
         return Err("parser_limit");
     }
-    let document = Document::load_mem(bytes).map_err(|_| "malformed_pdf")?;
     let mut decoded_bytes = 0usize;
     let mut text = String::new();
-    for object in document.objects.values() {
-        let Object::Stream(stream) = object else {
-            continue;
+    let mut stream_count = 0usize;
+    let mut offset = 0usize;
+    while let Some(relative) = bytes[offset..]
+        .windows(b"stream".len())
+        .position(|window| window == b"stream")
+    {
+        let stream_start = offset + relative;
+        stream_count = stream_count.checked_add(1).ok_or("parser_limit")?;
+        if stream_count > MAX_PDF_OBJECTS {
+            return Err("parser_limit");
+        }
+        let mut data_start = stream_start + b"stream".len();
+        if bytes.get(data_start..data_start + 2) == Some(b"\r\n") {
+            data_start += 2;
+        } else if bytes.get(data_start..data_start + 1) == Some(b"\n") {
+            data_start += 1;
+        }
+        let Some(relative_end) = bytes[data_start..]
+            .windows(b"endstream".len())
+            .position(|window| window == b"endstream")
+        else {
+            return Err("malformed_pdf");
         };
-        let Ok(filters) = stream.filters() else {
-            continue;
-        };
-        if filters.is_empty() {
+        let stream_end = data_start + relative_end;
+        let dictionary_start = bytes[..stream_start]
+            .windows(2)
+            .rposition(|window| window == b"<<")
+            .unwrap_or(stream_start);
+        let dictionary = &bytes[dictionary_start..stream_start];
+        let has_filter = dictionary
+            .windows(b"/Filter".len())
+            .any(|window| window == b"/Filter");
+        let has_flate = dictionary
+            .windows(b"/FlateDecode".len())
+            .any(|window| window == b"/FlateDecode");
+        if has_filter && !has_flate {
+            return Err("malformed_pdf");
+        }
+        if !has_flate {
+            offset = stream_end + b"endstream".len();
             continue;
         }
-        let mut decoded = stream.content.clone();
-        for filter in filters {
-            if filter != b"FlateDecode" {
-                return Err("malformed_pdf");
-            }
-            let remaining = max_bytes.saturating_sub(decoded_bytes);
-            decoded = bounded_flate_decode(&decoded, remaining)?;
-            decoded_bytes = decoded_bytes
-                .checked_add(decoded.len())
-                .ok_or("parser_limit")?;
-        }
+        let remaining = max_bytes.saturating_sub(decoded_bytes);
+        let decoded = bounded_flate_decode(&bytes[data_start..stream_end], remaining)?;
+        decoded_bytes = decoded_bytes
+            .checked_add(decoded.len())
+            .ok_or("parser_limit")?;
         let stream_operators = decoded.windows(2).filter(|window| *window == b"Tj").count()
             + decoded.windows(2).filter(|window| *window == b"TJ").count();
         *text_operators = text_operators
@@ -2835,6 +2875,7 @@ fn extract_pdf_stream_text_bounded(
             }
             text.push_str(&stream_text);
         }
+        offset = stream_end + b"endstream".len();
     }
     Ok(text)
 }
@@ -2928,6 +2969,53 @@ fn extract_pdf_chunks(
     Ok(())
 }
 
+/// Reject an excessive ZIP central-directory count before `ZipArchive::new`.
+/// The archive constructor parses and allocates the directory, so checking
+/// `archive.len()` after construction is too late for untrusted Asset bytes.
+fn validate_zip_entry_count(bytes: &[u8]) -> std::result::Result<(), &'static str> {
+    let Some(eocd) = bytes.windows(4).rposition(|window| window == b"PK\x05\x06") else {
+        return Err("malformed_container");
+    };
+    if bytes.len().saturating_sub(eocd) < 22 {
+        return Err("malformed_container");
+    }
+    let count = u16::from_le_bytes([bytes[eocd + 10], bytes[eocd + 11]]);
+    if count != u16::MAX {
+        return if usize::from(count) <= MAX_ZIP_ENTRIES {
+            Ok(())
+        } else {
+            Err("parser_limit")
+        };
+    }
+    let Some(locator) = eocd.checked_sub(20) else {
+        return Err("malformed_container");
+    };
+    if bytes.get(locator..locator + 4) != Some(b"PK\x06\x07") {
+        return Err("malformed_container");
+    }
+    let zip64_offset = u64::from_le_bytes(
+        bytes[locator + 8..locator + 16]
+            .try_into()
+            .map_err(|_| "malformed_container")?,
+    );
+    let zip64_offset = usize::try_from(zip64_offset).map_err(|_| "parser_limit")?;
+    if bytes.get(zip64_offset..zip64_offset + 40).is_none()
+        || bytes.get(zip64_offset..zip64_offset + 4) != Some(b"PK\x06\x06")
+    {
+        return Err("malformed_container");
+    }
+    let total_entries = u64::from_le_bytes(
+        bytes[zip64_offset + 32..zip64_offset + 40]
+            .try_into()
+            .map_err(|_| "malformed_container")?,
+    );
+    if total_entries > MAX_ZIP_ENTRIES as u64 {
+        Err("parser_limit")
+    } else {
+        Ok(())
+    }
+}
+
 fn extract_ooxml_chunks(
     bytes: &[u8],
     target: &str,
@@ -2935,6 +3023,7 @@ fn extract_ooxml_chunks(
     chunks: &mut Vec<ExtractedChunk>,
     total_bytes: &mut usize,
 ) -> std::result::Result<(), &'static str> {
+    validate_zip_entry_count(bytes)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
     let mut file = archive.by_name(target).map_err(|_| "malformed_container")?;
@@ -2948,6 +3037,7 @@ fn extract_ooxml_slides(
     chunks: &mut Vec<ExtractedChunk>,
     total_bytes: &mut usize,
 ) -> std::result::Result<(), &'static str> {
+    validate_zip_entry_count(bytes)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
     let mut slide_index = 0usize;
@@ -2976,6 +3066,7 @@ fn extract_ooxml_workbook_chunks(
     chunks: &mut Vec<ExtractedChunk>,
     total_bytes: &mut usize,
 ) -> std::result::Result<(), &'static str> {
+    validate_zip_entry_count(bytes)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
     let mut sheet_index = 0usize;
@@ -3513,10 +3604,22 @@ mod tests {
     }
 
     #[test]
-    fn pdf_object_limit_is_checked_before_lopdf_load() {
+    fn pdf_object_limit_is_checked_before_stream_decode() {
         let bytes = b"1 0 obj\nendobj\n2 0 obj\nendobj\n";
         assert!(pdf_object_count_within_limit(bytes, 2));
         assert!(!pdf_object_count_within_limit(bytes, 1));
+    }
+
+    #[test]
+    fn zip_entry_limit_is_checked_before_archive_materialization() {
+        let mut bytes = vec![0; 22];
+        bytes[..4].copy_from_slice(b"PK\x05\x06");
+        bytes[10..12].copy_from_slice(&u16::try_from(MAX_ZIP_ENTRIES + 1).unwrap().to_le_bytes());
+        assert_eq!(validate_zip_entry_count(&bytes), Err("parser_limit"));
+        assert!(matches!(
+            extract_chunks(&Dispatch::Docx(parser_identity("docx")), &bytes),
+            Err("parser_limit")
+        ));
     }
 
     #[test]

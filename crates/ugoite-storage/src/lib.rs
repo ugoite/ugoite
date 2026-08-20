@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
@@ -380,10 +380,17 @@ impl DerivedRelationHeadStore {
     /// without object modification metadata still need a durable age boundary
     /// after a process crash.
     pub async fn renew_staging(&self, build_id: &str) -> Result<()> {
+        if !self
+            .operator
+            .exists(&self.staging_marker_path(build_id))
+            .await?
+        {
+            return Err(anyhow!("DerivedRelation staging lease disappeared"));
+        }
         if self.write_mode == CatalogWriteMode::Shared
             && !self.renew_claim_role(build_id, "staging").await?
         {
-            return Ok(());
+            return Err(anyhow!("DerivedRelation staging claim was lost"));
         }
         self.operator
             .write(
@@ -821,18 +828,47 @@ impl DerivedRelationHeadStore {
         self.renew_claim_role(build_id, "publishing").await
     }
 
-    fn start_publishing_claim_heartbeat(&self, build_id: &str) -> AbortOnDrop {
+    fn start_publishing_claim_heartbeat(&self, build_id: &str) -> (AbortOnDrop, Arc<AtomicBool>) {
         let store = self.clone();
         let build_id = build_id.to_string();
-        AbortOnDrop::new(tokio::spawn(async move {
+        let lost = Arc::new(AtomicBool::new(false));
+        let heartbeat_lost = lost.clone();
+        let heartbeat = AbortOnDrop::new(tokio::spawn(async move {
             loop {
                 tokio::time::sleep(DERIVED_BUILD_CLAIM_RENEWAL).await;
                 match store.renew_publishing_claim(&build_id).await {
                     Ok(true) => {}
-                    Ok(false) | Err(_) => return,
+                    Ok(false) | Err(_) => {
+                        heartbeat_lost.store(true, Ordering::Release);
+                        return;
+                    }
                 }
             }
-        }))
+        }));
+        (heartbeat, lost)
+    }
+
+    async fn release_publishing_claim(&self, build_id: &str) -> Result<()> {
+        let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
+            return Err(anyhow!("DerivedRelation publishing claim disappeared"));
+        };
+        if Self::claim_role(&bytes).as_deref() != Some("publishing") {
+            return Err(anyhow!("DerivedRelation publishing claim was lost"));
+        }
+        let owner =
+            Self::claim_owner(&bytes).context("DerivedRelation publishing claim has no owner")?;
+        if owner != build_id {
+            return Err(anyhow!("DerivedRelation publishing claim owner changed"));
+        }
+        let released = self
+            .replace_build_claim(build_id, etag.as_deref(), "released", &owner)
+            .await?;
+        if !released {
+            return Err(anyhow!(
+                "DerivedRelation publishing claim changed before release"
+            ));
+        }
+        Ok(())
     }
 
     /// Refresh the garbage claim before each destructive object operation.
@@ -2239,13 +2275,19 @@ impl DerivedRelationHeadStore {
             return self.publish_with_single_process_lock(expected, head).await;
         }
         self.begin_publishing(&head.build_id).await?;
-        let heartbeat = self.start_publishing_claim_heartbeat(&head.build_id);
+        let (heartbeat, heartbeat_lost) = self.start_publishing_claim_heartbeat(&head.build_id);
         let result = match expected {
             None => self.create(head).await,
             Some(expected) => self.replace(expected.etag.as_deref(), head).await,
         };
         heartbeat.abort();
-        result
+        result?;
+        if heartbeat_lost.load(Ordering::Acquire) {
+            return Err(anyhow!(
+                "DerivedRelation publishing claim heartbeat was lost"
+            ));
+        }
+        self.release_publishing_claim(&head.build_id).await
     }
 
     /// Replaces a disposable legacy Head after a complete build has been
@@ -2268,7 +2310,7 @@ impl DerivedRelationHeadStore {
             .as_deref()
             .context("shared legacy DerivedRelation replacement requires an ETag")?;
         let bytes = canonical_head_bytes(head)?;
-        let heartbeat = self.start_publishing_claim_heartbeat(&head.build_id);
+        let (heartbeat, heartbeat_lost) = self.start_publishing_claim_heartbeat(&head.build_id);
         let result = self
             .operator
             .write_options(
@@ -2281,9 +2323,15 @@ impl DerivedRelationHeadStore {
             )
             .await
             .map(|_| ())
-            .map_err(Into::into);
+            .map_err(anyhow::Error::from);
         heartbeat.abort();
-        result
+        result?;
+        if heartbeat_lost.load(Ordering::Acquire) {
+            return Err(anyhow!(
+                "DerivedRelation publishing claim heartbeat was lost"
+            ));
+        }
+        self.release_publishing_claim(&head.build_id).await
     }
 
     /// Replaces a disposable legacy Head while the caller already owns the
@@ -2312,7 +2360,8 @@ impl DerivedRelationHeadStore {
             .write(&self.head_path(), canonical_head_bytes(head)?)
             .await
             .map(|_| ())
-            .map_err(Into::into)
+            .map_err(anyhow::Error::from)?;
+        self.release_publishing_claim(&head.build_id).await
     }
 
     /// Publish while the caller already owns [`Self::single_process_lock`].
@@ -2325,10 +2374,19 @@ impl DerivedRelationHeadStore {
     ) -> Result<()> {
         self.begin_publishing(&head.build_id).await?;
         if self.write_mode != CatalogWriteMode::SingleProcess {
-            return match expected {
+            let (heartbeat, heartbeat_lost) = self.start_publishing_claim_heartbeat(&head.build_id);
+            let result = match expected {
                 None => self.create(head).await,
                 Some(expected) => self.replace(expected.etag.as_deref(), head).await,
             };
+            heartbeat.abort();
+            result?;
+            if heartbeat_lost.load(Ordering::Acquire) {
+                return Err(anyhow!(
+                    "DerivedRelation publishing claim heartbeat was lost"
+                ));
+            }
+            return self.release_publishing_claim(&head.build_id).await;
         }
         let bytes = canonical_head_bytes(head)?;
         match expected {
@@ -2351,7 +2409,7 @@ impl DerivedRelationHeadStore {
                 self.operator.write(&self.head_path(), bytes).await?;
             }
         }
-        Ok(())
+        self.release_publishing_claim(&head.build_id).await
     }
 }
 
@@ -3830,6 +3888,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn staging_heartbeat_fails_after_its_marker_is_reclaimed() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let relation_id = uuid::Uuid::from_u128(0xA01E);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let build_id = test_build_id();
+        store.mark_staging(&build_id).await?;
+        store.clear_staging(&build_id).await?;
+        let error = store
+            .renew_staging(&build_id)
+            .await
+            .expect_err("a reclaimed staging marker must stop the builder");
+        assert!(error.to_string().contains("staging lease disappeared"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn markerless_old_orphan_build_is_collectable() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00A);
@@ -4109,7 +4183,7 @@ mod tests {
     async fn derived_publish_rejects_a_stale_single_process_writer() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA004);
-        let store = DerivedRelationHeadStore::new(operator, "spaces/demo", relation_id);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let mut first = DerivedRelationHead {
             format_version: 1,
             space_id: "demo".into(),
@@ -4133,6 +4207,13 @@ mod tests {
         };
         store.mark_staging(&first.build_id).await?;
         store.publish(None, &first).await?;
+        let claim: serde_json::Value = serde_json::from_slice(
+            &operator
+                .read(&store.publishing_marker_path(&first.build_id))
+                .await?
+                .to_vec(),
+        )?;
+        assert_eq!(claim["role"], "released");
         let expected = store.read_exact().await?.expect("initial Head");
         first.generation = 2;
         first.build_id = test_build_id();

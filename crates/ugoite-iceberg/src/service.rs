@@ -72,7 +72,6 @@ const MAX_BACKGROUND_REFRESH_WORKERS: usize = 1024;
 const MAX_BACKGROUND_REFRESH_RETRIES: usize = 8;
 const MAX_AUTHORIZED_SCOPE_FORMS: usize = 100_000;
 const MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
-const MAX_AUTHORIZED_SCOPE_DENIED_ENTRY_IDS: usize = crate::MAX_NORMAL_READ_ROWS;
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
@@ -1091,11 +1090,6 @@ impl UgoiteService {
                 }
             }
             if !readable_by_every_principal {
-                if denied_entry_ids.len() >= MAX_AUTHORIZED_SCOPE_DENIED_ENTRY_IDS {
-                    return Err(anyhow!(
-                        "Entry authorization scope exceeds the configured denied-ID limit"
-                    ));
-                }
                 denied_entry_ids.insert(
                     Uuid::parse_str(entry_id)
                         .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
@@ -1155,11 +1149,6 @@ impl UgoiteService {
                     .unwrap_or(false)
             });
             if !readable_by_every_principal {
-                if denied_entry_ids.len() == crate::MAX_NORMAL_READ_ROWS {
-                    return Err(anyhow!(
-                        "Saved SQL authorization scope exceeds the configured maximum"
-                    ));
-                }
                 denied_entry_ids.insert(
                     Uuid::parse_str(sql_id)
                         .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, sql_id.as_bytes()))
@@ -2103,4 +2092,68 @@ pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
         "space patch does not allow membership-managed settings keys: {}. Use the dedicated member commands instead.",
         reserved_keys.join(", ")
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ugoite_domain::identity::{
+        Membership, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
+    };
+
+    #[test]
+    fn saved_sql_scope_accepts_more_than_normal_read_rows_of_denials() -> Result<()> {
+        let principal_id = Uuid::now_v7();
+        let mut state = AuthorizationState {
+            schema_version: 1,
+            space_uid: Uuid::now_v7(),
+            principals: [(
+                principal_id,
+                SpacePrincipal {
+                    principal_id,
+                    kind: PrincipalKind::Human,
+                    display_name: "Owner".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            memberships: [(
+                principal_id,
+                Membership {
+                    principal_id,
+                    role: SpaceRole::Viewer,
+                    created_at: "2026-01-01T00:00:00Z".to_string(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            policies: BTreeMap::new(),
+            policy_history: BTreeMap::new(),
+            agents: BTreeMap::new(),
+            agent_grants: BTreeMap::new(),
+            principal_lifecycle_epochs: [(principal_id, 1)].into_iter().collect(),
+            recovery_fences: BTreeMap::new(),
+            human_approvals: BTreeMap::new(),
+            human_approval_audit_outbox: BTreeMap::new(),
+            revision: 1,
+        };
+        for index in 0..=crate::MAX_NORMAL_READ_ROWS {
+            state.policies.insert(
+                format!("saved_sql:{index}"),
+                ugoite_domain::identity::AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: false,
+                    grants: Vec::new(),
+                },
+            );
+        }
+        let scope = UgoiteService::saved_sql_entry_scope_for_state(&state, &[principal_id])?;
+        match scope {
+            EntryScope::AllExcept(ids) => assert_eq!(ids.len(), crate::MAX_NORMAL_READ_ROWS + 1),
+            other => panic!("expected a provider-side exclusion scope, got {other:?}"),
+        }
+        Ok(())
+    }
 }

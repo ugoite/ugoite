@@ -23,13 +23,14 @@ use std::{
     },
     time::{Duration, SystemTime},
 };
-use tokio::sync::{Mutex, OwnedMutexGuard};
+use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 use tokio::task::JoinHandle;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::identity::{
     evaluate_policy, role_actions, AccessPolicy, Action, AgentMode, AgentPrincipal, Membership,
     PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
+use ugoite_storage::SpaceCatalogStore;
 use uuid::Uuid;
 
 const AUTHORIZATION_FILE: &str = "security/principals.json";
@@ -223,6 +224,7 @@ struct DurableAuthorizationLease {
     owner: String,
     etag: Arc<Mutex<String>>,
     lost: Arc<AtomicBool>,
+    lost_notify: Arc<Notify>,
     heartbeat: Option<JoinHandle<()>>,
 }
 
@@ -275,12 +277,14 @@ impl DurableAuthorizationLease {
     fn start(operator: Operator, path: String, owner: String, etag: String) -> Self {
         let etag = Arc::new(Mutex::new(etag));
         let lost = Arc::new(AtomicBool::new(false));
+        let lost_notify = Arc::new(Notify::new());
         let heartbeat = {
             let operator = operator.clone();
             let path = path.clone();
             let owner = owner.clone();
             let etag = etag.clone();
             let lost = lost.clone();
+            let lost_notify = lost_notify.clone();
             tokio::spawn(async move {
                 loop {
                     tokio::time::sleep(AUTHORIZATION_MUTATION_LOCK_HEARTBEAT).await;
@@ -297,17 +301,20 @@ impl DurableAuthorizationLease {
                         .await;
                     if result.is_err() {
                         lost.store(true, Ordering::Release);
+                        lost_notify.notify_waiters();
                         break;
                     }
                     let metadata = match operator.stat(&path).await {
                         Ok(metadata) => metadata,
                         Err(_) => {
                             lost.store(true, Ordering::Release);
+                            lost_notify.notify_waiters();
                             break;
                         }
                     };
                     let Some(next_etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
                         lost.store(true, Ordering::Release);
+                        lost_notify.notify_waiters();
                         break;
                     };
                     *etag.lock().await = next_etag.to_string();
@@ -320,6 +327,7 @@ impl DurableAuthorizationLease {
             owner,
             etag,
             lost,
+            lost_notify,
             heartbeat: Some(heartbeat),
         }
     }
@@ -354,6 +362,13 @@ impl DurableAuthorizationLease {
             Err(error) => Err(error.into()),
         }
     }
+
+    fn ensure_held(&self) -> Result<()> {
+        if self.lost.load(Ordering::Acquire) {
+            bail!("Space authorization mutation lease was lost")
+        }
+        Ok(())
+    }
 }
 
 impl Drop for DurableAuthorizationLease {
@@ -370,6 +385,24 @@ impl AuthorizationLease {
             durable.release().await
         } else {
             Ok(())
+        }
+    }
+
+    /// Run a protected callback while a shared lease remains alive. A lost
+    /// heartbeat cancels the callback instead of allowing a stale permission
+    /// decision to continue after another writer has acquired the lease.
+    pub async fn run_while_held<T, F, Fut>(&self, operation: F) -> std::result::Result<T, ()>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = T>,
+    {
+        let Some(durable) = self.durable.as_ref() else {
+            return Ok(operation().await);
+        };
+        durable.ensure_held().map_err(|_| ())?;
+        tokio::select! {
+            value = operation() => Ok(value),
+            _ = durable.lost_notify.notified() => Err(()),
         }
     }
 }
@@ -537,6 +570,13 @@ impl Authorizer {
                 "shared Space authorization mutations require conditional object storage capabilities"
             );
         }
+        // Capability flags are only an admission hint. Verify the same
+        // conditional object-store behavior used by Catalog publication so a
+        // backend that advertises but does not implement CAS cannot admit a
+        // lease that would silently fail to fence another writer.
+        SpaceCatalogStore::new(self.operator.clone(), format!("spaces/{space_id}"))?
+            .verify_shared_writes()
+            .await?;
         let path = authorization_mutation_lock_path(space_id);
         let owner = Uuid::now_v7().to_string();
         for _ in 0..3 {
@@ -633,6 +673,9 @@ impl Authorizer {
                     let Some(next_etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
                         bail!("Space authorization mutation lock has no ETag")
                     };
+                    if metadata.last_modified().is_none() {
+                        bail!("Space authorization mutation lock has no server timestamp")
+                    }
                     return Ok(Some(DurableAuthorizationLease::start(
                         self.operator.clone(),
                         path,
@@ -906,8 +949,60 @@ impl Authorizer {
         F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
         Fut: Future<Output = T>,
     {
+        let guard = self.lock.clone().lock_owned().await;
+        let durable = self.acquire_durable_mutation_lease(space_id).await?;
+        let lease = AuthorizationLease {
+            _guard: guard,
+            durable,
+        };
+        let result = self
+            .consume_human_approval_with_audit_and_locked(
+                space_id,
+                token,
+                operation,
+                action,
+                resource,
+                intent_hash,
+                actor_principal_id,
+                actor_credential_id,
+                audit_events,
+                &lease.durable,
+                &lease,
+                mutation,
+            )
+            .await;
+        let release = lease.release().await;
+        match (result, release) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(_), Err(error)) => Err(error),
+            (Err(error), Err(release_error)) => Err(error.context(format!(
+                "release Space authorization mutation lease: {release_error:#}"
+            ))),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn consume_human_approval_with_audit_and_locked<T, F, Fut>(
+        &self,
+        space_id: &str,
+        token: &str,
+        operation: &str,
+        action: Action,
+        resource: &ResourceRef,
+        intent_hash: &str,
+        actor_principal_id: Uuid,
+        actor_credential_id: Uuid,
+        audit_events: F,
+        durable: &Option<DurableAuthorizationLease>,
+        lease: &AuthorizationLease,
+        mutation: impl FnOnce() -> Fut,
+    ) -> Result<(HumanApproval, T)>
+    where
+        F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
+        Fut: Future<Output = T>,
+    {
         let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
-        let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
         let Some(approval) = state
             .human_approvals
@@ -923,7 +1018,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, None)
+            self.write_human_approval_state(space_id, &state, None, durable)
                 .await?;
             return Err(AppError::forbidden("HUMAN_APPROVAL_INVALID").into());
         };
@@ -936,7 +1031,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id))
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
                 .await?;
             return Err(
                 AppError::conflict(ErrorCode::InvalidInput, "HUMAN_APPROVAL_REPLAYED").into(),
@@ -954,7 +1049,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id))
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
                 .await?;
             return Err(
                 AppError::expired(ErrorCode::InvalidInput, "HUMAN_APPROVAL_EXPIRED").into(),
@@ -1017,7 +1112,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id))
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
                 .await?;
             return Err(AppError::forbidden("HUMAN_APPROVAL_INVALID").into());
         }
@@ -1035,9 +1130,13 @@ impl Authorizer {
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-        self.write_human_approval_state(space_id, &state, Some(approval.approval_id))
+        self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
             .await?;
-        Ok((approval, mutation().await))
+        let mutation = lease
+            .run_while_held(mutation)
+            .await
+            .map_err(|_| anyhow!("Space authorization mutation lease was lost"))?;
+        Ok((approval, mutation))
     }
 
     async fn write_human_approval_state(
@@ -1045,8 +1144,16 @@ impl Authorizer {
         space_id: &str,
         state: &AuthorizationState,
         approval_id: Option<Uuid>,
+        durable: &Option<DurableAuthorizationLease>,
     ) -> Result<()> {
-        match self.write_state(space_id, state).await {
+        if let Some(durable) = durable {
+            durable.ensure_held()?
+        }
+        let write_result = match durable {
+            Some(_) => self.write_state_inner(space_id, state).await,
+            None => self.write_state(space_id, state).await,
+        };
+        match write_result {
             Ok(()) => Ok(()),
             Err(error) => {
                 // A remote CAS response can be lost after this exact state is

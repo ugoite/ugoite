@@ -5796,7 +5796,102 @@ where
         let _ = lease.release().await;
         return Err(error);
     }
-    let result = operation(principal_id, principals).await;
+    let result = match lease
+        .run_while_held(|| operation(principal_id, principals))
+        .await
+    {
+        Ok(result) => result,
+        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
+            "Space authorization mutation lease was lost"
+        ))),
+    };
+    if let Err(error) = lease.release().await {
+        return Err(ApiError::from_core(error));
+    }
+    result
+}
+
+/// Form upsert has a state-dependent action: creating a new Form requires
+/// `create`, while replacing an existing Form requires `update`. Resolve that
+/// distinction only after acquiring the same lease as the authorization
+/// check, otherwise a concurrent Form creation can turn a checked update into
+/// an unchecked create (or vice versa).
+async fn with_authorized_form_upsert<T, F, Fut>(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+    form_name: &str,
+    operation: F,
+) -> ApiResult<T>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = ApiResult<T>>,
+{
+    let principal_id = principal_for_space(state, space_id, identity).await?;
+    let principals = authorization_principal_ids(identity, principal_id);
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let (authorization_state, lease) = authorizer
+        .acquire_state_lease(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let forms = match state.service.list_forms(space_id).await {
+        Ok(forms) => forms,
+        Err(error) => {
+            let _ = lease.release().await;
+            return Err(ApiError::from_core(error));
+        }
+    };
+    let existing = forms
+        .into_iter()
+        .any(|form| form.get("name").and_then(Value::as_str) == Some(form_name));
+    let action = if existing {
+        Action::Update
+    } else {
+        Action::Create
+    };
+    let token_allowed = identity
+        .token_actions
+        .as_ref()
+        .is_none_or(|actions| actions.contains(action_name(&action)));
+    let authorization_result = if !token_allowed {
+        Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "access token does not grant the required action",
+        ))
+    } else {
+        let resource = existing.then(|| ResourceRef {
+            kind: ResourceKind::Form,
+            id: form_name.to_string(),
+            parent: None,
+        });
+        (|| -> ApiResult<()> {
+            for subject in &principals {
+                let actions = ugoite_iceberg::authorization::effective_actions_for_state(
+                    &authorization_state,
+                    *subject,
+                    resource.as_ref(),
+                )
+                .map_err(ApiError::from_core)?;
+                if !actions.contains(&action) {
+                    return Err(ApiError::new(
+                        StatusCode::FORBIDDEN,
+                        "principal is not authorized for the mutation",
+                    ));
+                }
+            }
+            Ok(())
+        })()
+    };
+    if let Err(error) = authorization_result {
+        let _ = lease.release().await;
+        return Err(error);
+    }
+    let result = match lease.run_while_held(operation).await {
+        Ok(result) => result,
+        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
+            "Space authorization mutation lease was lost"
+        ))),
+    };
     if let Err(error) = lease.release().await {
         return Err(ApiError::from_core(error));
     }
@@ -7575,7 +7670,7 @@ async fn create_entry(
         &state,
         &space_id,
         &identity,
-        Action::Update,
+        Action::Create,
         None,
         |principal_id, principals| async move {
             service
@@ -7818,18 +7913,34 @@ async fn delete_entry(
         };
         mutation
     } else {
-        with_active_request_credential(&state, &identity, || async {
-            state
-                .service
-                .delete_entry(
-                    &space_id,
-                    &entry_id,
-                    query.hard_delete.unwrap_or(false),
-                    &mutation_actor,
-                )
+        with_authorized_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Delete,
+            Some(ResourceRef {
+                kind: ResourceKind::Entry,
+                id: entry_id.clone(),
+                parent: None,
+            }),
+            |_principal_id, _principals| async {
+                with_active_request_credential(&state, &identity, || async {
+                    state
+                        .service
+                        .delete_entry(
+                            &space_id,
+                            &entry_id,
+                            query.hard_delete.unwrap_or(false),
+                            &mutation_actor,
+                        )
+                        .await
+                })
                 .await
-        })
-        .await
+                .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok(Json(json!({"id": entry_id, "status": "deleted"})));
     };
     match mutation {
         Ok(()) => {
@@ -8005,44 +8116,51 @@ async fn restore_entry(
     Path((space_id, entry_id)): Path<(String, String)>,
     Json(payload): Json<RestoreEntry>,
 ) -> ApiResult<Json<Value>> {
-    let principal_id = require_resource_action(
+    validate_id(&entry_id, "entry_id")?;
+    validate_id(&payload.revision_id, "revision_id")?;
+    let revision_id = payload.revision_id.clone();
+    let checkpoint = payload.checkpoint.clone();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let entry_id_for_write = entry_id.clone();
+    let value = with_authorized_mutation(
         &state,
         &space_id,
         &identity,
         Action::Update,
-        ResourceKind::Entry,
-        &entry_id,
+        Some(ResourceRef {
+            kind: ResourceKind::Entry,
+            id: entry_id.clone(),
+            parent: None,
+        }),
+        |principal_id, principals| async move {
+            if let Some(checkpoint) = checkpoint.as_deref() {
+                service
+                    .restore_entry_from_checkpoint_authorized_for_principals(
+                        &space_id_for_write,
+                        &entry_id_for_write,
+                        &revision_id,
+                        checkpoint,
+                        &principal_id.to_string(),
+                        &principals,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            } else {
+                service
+                    .restore_entry_authorized_for_principals(
+                        &space_id_for_write,
+                        &entry_id_for_write,
+                        &revision_id,
+                        &principal_id.to_string(),
+                        &principals,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            }
+        },
     )
     .await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    validate_id(&entry_id, "entry_id")?;
-    validate_id(&payload.revision_id, "revision_id")?;
-    let value = if let Some(checkpoint) = payload.checkpoint.as_deref() {
-        state
-            .service
-            .restore_entry_from_checkpoint_authorized_for_principals(
-                &space_id,
-                &entry_id,
-                &payload.revision_id,
-                checkpoint,
-                &principal_id.to_string(),
-                &principals,
-            )
-            .await
-            .map_err(ApiError::from_core)?
-    } else {
-        state
-            .service
-            .restore_entry_authorized_for_principals(
-                &space_id,
-                &entry_id,
-                &payload.revision_id,
-                &principal_id.to_string(),
-                &principals,
-            )
-            .await
-            .map_err(ApiError::from_core)?
-    };
     Ok(Json(value))
 }
 
@@ -8129,54 +8247,16 @@ async fn upsert_form(
             .into(),
         )
     })?;
-    let existing_form = state
-        .service
-        .list_forms(&space_id)
-        .await
-        .map_err(ApiError::from_core)?
-        .into_iter()
-        .any(|form| form.get("name").and_then(Value::as_str) == Some(form_name));
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
-    if existing_form {
-        let action = Action::Update;
-        let resource = ResourceRef {
-            kind: ResourceKind::Form,
-            id: form_name.to_string(),
-            parent: None,
-        };
-        let payload_for_write = payload.clone();
-        with_authorized_mutation(
-            &state,
-            &space_id,
-            &identity,
-            action,
-            Some(resource),
-            |_principal_id, _principals| async move {
-                service
-                    .upsert_form(&space_id_for_write, &payload_for_write)
-                    .await
-                    .map_err(ApiError::from_core)
-            },
-        )
-        .await?;
-    } else {
-        let payload_for_write = payload.clone();
-        with_authorized_mutation(
-            &state,
-            &space_id,
-            &identity,
-            Action::Create,
-            None,
-            |_principal_id, _principals| async move {
-                service
-                    .upsert_form(&space_id_for_write, &payload_for_write)
-                    .await
-                    .map_err(ApiError::from_core)
-            },
-        )
-        .await?;
-    }
+    let payload_for_write = payload.clone();
+    with_authorized_form_upsert(&state, &space_id, &identity, form_name, || async move {
+        service
+            .upsert_form(&space_id_for_write, &payload_for_write)
+            .await
+            .map_err(ApiError::from_core)
+    })
+    .await?;
     Ok((StatusCode::CREATED, Json(payload)))
 }
 
@@ -8324,31 +8404,37 @@ async fn update_sql(
     Path((space_id, sql_id)): Path<(String, String)>,
     Json(payload): Json<saved_sql::SqlUpdatePayload>,
 ) -> ApiResult<Json<Value>> {
-    let principal_id = require_resource_action(
+    validate_id(&sql_id, "sql_id")?;
+    let parent_revision_id = payload.parent_revision_id.clone();
+    let payload = payload.into_sql_payload();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let sql_id_for_write = sql_id.clone();
+    let value = with_authorized_mutation(
         &state,
         &space_id,
         &identity,
         Action::Update,
-        ResourceKind::SavedSql,
-        &sql_id,
+        Some(ResourceRef {
+            kind: ResourceKind::SavedSql,
+            id: sql_id.clone(),
+            parent: None,
+        }),
+        |principal_id, _principals| async move {
+            service
+                .update_saved_sql(
+                    &space_id_for_write,
+                    &sql_id_for_write,
+                    &payload,
+                    &parent_revision_id,
+                    &principal_id.to_string(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
     )
     .await?;
-    validate_id(&sql_id, "sql_id")?;
-    let parent_revision_id = payload.parent_revision_id.clone();
-    let payload = payload.into_sql_payload();
-    Ok(Json(
-        state
-            .service
-            .update_saved_sql(
-                &space_id,
-                &sql_id,
-                &payload,
-                &parent_revision_id,
-                &principal_id.to_string(),
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    ))
+    Ok(Json(value))
 }
 
 async fn delete_sql(
@@ -8407,13 +8493,29 @@ async fn delete_sql(
         };
         mutation
     } else {
-        with_active_request_credential(&state, &identity, || async {
-            state
-                .service
-                .delete_saved_sql(&space_id, &sql_id, &mutation_actor)
+        with_authorized_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Delete,
+            Some(ResourceRef {
+                kind: ResourceKind::SavedSql,
+                id: sql_id.clone(),
+                parent: None,
+            }),
+            |_principal_id, _principals| async {
+                with_active_request_credential(&state, &identity, || async {
+                    state
+                        .service
+                        .delete_saved_sql(&space_id, &sql_id, &mutation_actor)
+                        .await
+                })
                 .await
-        })
-        .await
+                .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok(StatusCode::NO_CONTENT);
     };
     match mutation {
         Ok(()) => {
@@ -8496,7 +8598,7 @@ async fn upload_asset(
         &state,
         &space_id,
         &identity,
-        Action::Update,
+        Action::Create,
         None,
         |_principal_id, _principals| async move {
             service
@@ -8651,13 +8753,29 @@ async fn delete_asset(
         };
         mutation
     } else {
-        with_active_request_credential(&state, &identity, || async {
-            state
-                .service
-                .delete_asset_with_principals(&space_id, &asset_id, &principals)
+        with_authorized_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Delete,
+            Some(ResourceRef {
+                kind: ResourceKind::Asset,
+                id: asset_id.clone(),
+                parent: None,
+            }),
+            |_principal_id, _principals| async {
+                with_active_request_credential(&state, &identity, || async {
+                    state
+                        .service
+                        .delete_asset_with_principals(&space_id, &asset_id, &principals)
+                        .await
+                })
                 .await
-        })
-        .await
+                .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok(Json(json!({"id": asset_id, "status": "deleted"})));
     };
     match mutation {
         Ok(()) => {

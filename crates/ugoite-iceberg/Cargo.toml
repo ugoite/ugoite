@@ -19,7 +19,6 @@ futures = "0.3"
 iceberg = { git = "https://github.com/apache/iceberg-rust.git", rev = "1ecd497", version = "0.10.0" }
 iceberg-datafusion = { git = "https://github.com/apache/iceberg-rust.git", rev = "1ecd497", version = "0.10.0" }
 iceberg-storage-opendal = { git = "https://github.com/apache/iceberg-rust.git", rev = "1ecd497", version = "0.10.0" }
-lopdf = "0.42"
 opendal = { version = "0.58", default-features = false, features = ["executors-tokio", "services-fs", "services-memory", "services-s3", "services-gcs", "services-azdls", "services-oss"] }
 parquet = { version = "58.4", default-features = false, features = ["arrow", "async"] }
 quick-xml = "0.41.0"
