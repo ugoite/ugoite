@@ -3,7 +3,7 @@
   "image": "mcr.microsoft.com/devcontainers/base:2.1.7-ubuntu24.04",
   "features": {
     "ghcr.io/devcontainers-extra/features/mise:1.0.0": {},
-    "ghcr.io/devcontainers/features/github-cli:1.1.0": {}
+    "ghcr.io/devcontainers/features/github-cli:1.1.1": {}
   },
   "customizations": {
     "vscode": {
