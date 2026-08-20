@@ -63,7 +63,7 @@ pub const ASSET_TEXT_PARSER_VERSION: &str = "3";
 // makes an existing build unsafe to reuse. AssetReference path validation is
 // part of the contract, so epoch 3 builds must be rebuilt before registration.
 pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 4;
-const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_ASSET_BYTES: u64 = crate::asset::MAX_ASSET_BYTES as u64;
 const MAX_ZIP_ENTRIES: usize = 10_000;
 const MAX_ZIP_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_PDF_PAGES: usize = 10_000;
@@ -93,6 +93,7 @@ const MAX_BACKGROUND_GC_SCHEDULERS: usize = 1024;
 const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
 const ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
 const MAX_ASSET_TEXT_REFRESH_REQUESTS: usize = 16_384;
+const MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES: usize = 64 * 1024;
 const ASSET_TEXT_REFRESH_ADMISSION_LOCK: &str = "admission.lock";
 const ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL: Duration = Duration::from_secs(5 * 60);
 const ASSET_TEXT_REFRESH_ADMISSION_HEARTBEAT: Duration = Duration::from_secs(30);
@@ -754,7 +755,22 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
             )
             .await
         {
-            Ok(_) => return Ok(owner),
+            Ok(_) => {
+                let metadata = match op.stat(&path).await {
+                    Ok(metadata) => metadata,
+                    Err(error) => {
+                        let _ = op.delete(&path).await;
+                        return Err(error.into());
+                    }
+                };
+                if metadata.etag().filter(|etag| !etag.is_empty()).is_none()
+                    || metadata.last_modified().is_none()
+                {
+                    let _ = op.delete(&path).await;
+                    bail!("AssetText refresh marker admission lock lacks server metadata");
+                }
+                return Ok(owner);
+            }
             Err(error)
                 if matches!(
                     error.kind(),
@@ -771,6 +787,9 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
         let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
             bail!("AssetText refresh marker admission lock has no ETag")
         };
+        if metadata.last_modified().is_none() {
+            bail!("AssetText refresh marker admission lock has no server timestamp")
+        }
         let bytes = match op
             .read_options(
                 &path,
@@ -803,7 +822,18 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
             )
             .await
         {
-            Ok(_) => return Ok(owner),
+            Ok(_) => {
+                let metadata = match op.stat(&path).await {
+                    Ok(metadata) => metadata,
+                    Err(error) => return Err(error.into()),
+                };
+                if metadata.etag().filter(|etag| !etag.is_empty()).is_none()
+                    || metadata.last_modified().is_none()
+                {
+                    bail!("AssetText refresh marker admission lock lacks server metadata");
+                }
+                return Ok(owner);
+            }
             Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
             Err(error) => return Err(error.into()),
         }
@@ -959,6 +989,13 @@ where
         drop(guard);
         return result;
     }
+    // Capability flags are only an advertised shape. Reuse the storage
+    // boundary's behavioral probe before admitting a shared refresh drain, so
+    // a backend that merely reports conditional-write support cannot create
+    // two owners of the same marker snapshot.
+    SpaceCatalogStore::new(op.clone(), ws_path.to_string())?
+        .verify_shared_writes()
+        .await?;
     let owner = acquire_asset_text_refresh_admission_lock(op, ws_path).await?;
     let lease_lost = Arc::new(AtomicBool::new(false));
     let lease_lost_notify = Arc::new(Notify::new());
@@ -1037,7 +1074,15 @@ async fn asset_text_refresh_request_batch_before(
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
         .await?;
+    let mut examined = 0usize;
     while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
         let path = entry.path();
         if path.ends_with(".json")
             && refresh_request_is_at_or_before(path, cutoff)
@@ -1066,7 +1111,15 @@ async fn asset_text_refresh_request_batch(op: &Operator, ws_path: &str) -> Resul
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
         .await?;
+    let mut examined = 0usize;
     while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
         if refresh_request_token(entry.path()).is_some() {
             paths.push(entry.path().to_string());
             if paths.len() == MAX_ASSET_TEXT_REFRESH_REQUESTS {
@@ -1123,7 +1176,15 @@ async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Resul
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
         .await?;
+    let mut examined = 0usize;
     while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
         if refresh_request_token(entry.path()).is_some() {
             count = count.saturating_add(1);
             if count >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
@@ -1177,7 +1238,15 @@ pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Resul
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
         .await?;
+    let mut examined = 0usize;
     while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
         if refresh_request_token(entry.path()).is_some() {
             return Ok(true);
         }

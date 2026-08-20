@@ -6,21 +6,25 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, SecondsFormat, Utc};
 use fs2::FileExt;
 use futures::TryStreamExt;
+use opendal::options::{ReadOptions, WriteOptions};
 use opendal::Operator;
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-#[cfg(test)]
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
     future::Future,
     path::Path,
-    sync::{Arc, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, OnceLock,
+    },
+    time::{Duration, SystemTime},
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
+use tokio::task::JoinHandle;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_domain::identity::{
     evaluate_policy, role_actions, AccessPolicy, Action, AgentMode, AgentPrincipal, Membership,
@@ -35,6 +39,9 @@ const MAX_AUTHORIZATION_STATE_BYTES: usize = 64 * 1024 * 1024;
 const AUTHORIZATION_STATE_READER_CHUNK_BYTES: usize = 256 * 1024;
 const MAX_AUTHORIZATION_MAP_ENTRIES: usize = 100_000;
 const MAX_AUTHORIZATION_POLICY_HISTORY_REVISIONS: usize = 1_000_000;
+const AUTHORIZATION_MUTATION_LOCK_TTL: Duration = Duration::from_secs(5 * 60);
+const AUTHORIZATION_MUTATION_LOCK_HEARTBEAT: Duration = Duration::from_secs(30);
+const AUTHORIZATION_MUTATION_LOCK_FILE: &str = "security/mutation-lock.json";
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -198,9 +205,173 @@ pub struct Authorizer {
     ambiguous_write_with_post_commit_writer_once: Arc<AtomicBool>,
 }
 
+/// Authorization lease held across one protected mutation. The process lock
+/// covers local callers; shared operators additionally carry the durable
+/// object-store lease in this value.
+pub struct AuthorizationLease {
+    _guard: OwnedMutexGuard<()>,
+    durable: Option<DurableAuthorizationLease>,
+}
+
+/// Cross-process lease for a shared Space authorization/content mutation.
+/// The lease is deliberately an object-store CAS record rather than a local
+/// mutex: a remote ACL writer must not commit between a protected mutation's
+/// authorization check and its authoritative write.
+struct DurableAuthorizationLease {
+    operator: Operator,
+    path: String,
+    owner: String,
+    etag: Arc<Mutex<String>>,
+    lost: Arc<AtomicBool>,
+    heartbeat: Option<JoinHandle<()>>,
+}
+
 fn authorization_write_lock() -> Arc<Mutex<()>> {
     static LOCK: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
     LOCK.get_or_init(|| Arc::new(Mutex::new(()))).clone()
+}
+
+fn authorization_mutation_lock_path(space_id: &str) -> String {
+    format!("spaces/{space_id}/{AUTHORIZATION_MUTATION_LOCK_FILE}")
+}
+
+fn authorization_mutation_lock_bytes(owner: &str, released: bool) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "owner": owner,
+        "released": released,
+        "heartbeat_at": Utc::now().timestamp(),
+    }))
+    .expect("authorization mutation lock is serializable")
+}
+
+fn authorization_mutation_lock_reclaimable(
+    bytes: &[u8],
+    last_modified: Option<SystemTime>,
+) -> bool {
+    if serde_json::from_slice::<Value>(bytes)
+        .ok()
+        .and_then(|value| value.get("released").and_then(Value::as_bool))
+        == Some(true)
+    {
+        return true;
+    }
+    // The JSON timestamp is diagnostic only. Shared writers may have
+    // different clocks, so a live lease can be reclaimed only from the
+    // backend's own modification timestamp.
+    last_modified
+        .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+        .is_some_and(|age| age >= AUTHORIZATION_MUTATION_LOCK_TTL)
+}
+
+fn shared_authorization_lock_contract(operator: &Operator) -> bool {
+    let capabilities = operator.info().capability();
+    capabilities.stat
+        && capabilities.read_with_if_match
+        && capabilities.write_with_if_not_exists
+        && capabilities.write_with_if_match
+}
+
+impl DurableAuthorizationLease {
+    fn start(operator: Operator, path: String, owner: String, etag: String) -> Self {
+        let etag = Arc::new(Mutex::new(etag));
+        let lost = Arc::new(AtomicBool::new(false));
+        let heartbeat = {
+            let operator = operator.clone();
+            let path = path.clone();
+            let owner = owner.clone();
+            let etag = etag.clone();
+            let lost = lost.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(AUTHORIZATION_MUTATION_LOCK_HEARTBEAT).await;
+                    let current_etag = etag.lock().await.clone();
+                    let result = operator
+                        .write_options(
+                            &path,
+                            authorization_mutation_lock_bytes(&owner, false),
+                            WriteOptions {
+                                if_match: Some(current_etag),
+                                ..Default::default()
+                            },
+                        )
+                        .await;
+                    if result.is_err() {
+                        lost.store(true, Ordering::Release);
+                        break;
+                    }
+                    let metadata = match operator.stat(&path).await {
+                        Ok(metadata) => metadata,
+                        Err(_) => {
+                            lost.store(true, Ordering::Release);
+                            break;
+                        }
+                    };
+                    let Some(next_etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+                        lost.store(true, Ordering::Release);
+                        break;
+                    };
+                    *etag.lock().await = next_etag.to_string();
+                }
+            })
+        };
+        Self {
+            operator,
+            path,
+            owner,
+            etag,
+            lost,
+            heartbeat: Some(heartbeat),
+        }
+    }
+
+    async fn release(mut self) -> Result<()> {
+        if let Some(heartbeat) = self.heartbeat.take() {
+            heartbeat.abort();
+            let _ = heartbeat.await;
+        }
+        if self.lost.load(Ordering::Acquire) {
+            return Err(anyhow!(
+                "Space authorization mutation lease was lost before release"
+            ));
+        }
+        let etag = self.etag.lock().await.clone();
+        match self
+            .operator
+            .write_options(
+                &self.path,
+                authorization_mutation_lock_bytes(&self.owner, true),
+                WriteOptions {
+                    if_match: Some(etag),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == opendal::ErrorKind::ConditionNotMatch => Err(anyhow!(
+                "Space authorization mutation lease changed before release"
+            )),
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+impl Drop for DurableAuthorizationLease {
+    fn drop(&mut self) {
+        if let Some(heartbeat) = self.heartbeat.take() {
+            heartbeat.abort();
+        }
+    }
+}
+
+impl AuthorizationLease {
+    pub async fn release(mut self) -> Result<()> {
+        if let Some(durable) = self.durable.take() {
+            durable.release().await
+        } else {
+            Ok(())
+        }
+    }
 }
 
 pub struct CreateAgentRequest {
@@ -352,6 +523,166 @@ impl Authorizer {
             serde_json::from_slice(&bytes).context("decode Space authorization state")?;
         validate_authorization_state_limits(&state)?;
         Ok(state)
+    }
+
+    async fn acquire_durable_mutation_lease(
+        &self,
+        space_id: &str,
+    ) -> Result<Option<DurableAuthorizationLease>> {
+        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            return Ok(None);
+        }
+        if !shared_authorization_lock_contract(&self.operator) {
+            bail!(
+                "shared Space authorization mutations require conditional object storage capabilities"
+            );
+        }
+        let path = authorization_mutation_lock_path(space_id);
+        let owner = Uuid::now_v7().to_string();
+        for _ in 0..3 {
+            match self
+                .operator
+                .write_options(
+                    &path,
+                    authorization_mutation_lock_bytes(&owner, false),
+                    WriteOptions {
+                        if_not_exists: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Ok(_) => {
+                    let metadata = match self.operator.stat(&path).await {
+                        Ok(metadata) => metadata,
+                        Err(error) => {
+                            let _ = self.operator.delete(&path).await;
+                            return Err(error.into());
+                        }
+                    };
+                    let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+                        let _ = self.operator.delete(&path).await;
+                        bail!("Space authorization mutation lock has no ETag")
+                    };
+                    if metadata.last_modified().is_none() {
+                        let _ = self.operator.delete(&path).await;
+                        bail!("Space authorization mutation lock has no server timestamp")
+                    }
+                    return Ok(Some(DurableAuthorizationLease::start(
+                        self.operator.clone(),
+                        path,
+                        owner,
+                        etag.to_string(),
+                    )));
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        opendal::ErrorKind::ConditionNotMatch | opendal::ErrorKind::AlreadyExists
+                    ) => {}
+                Err(error) => return Err(error.into()),
+            }
+
+            let metadata = match self.operator.stat(&path).await {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == opendal::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            };
+            let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+                bail!("Space authorization mutation lock has no ETag")
+            };
+            if metadata.last_modified().is_none() {
+                bail!("Space authorization mutation lock has no server timestamp")
+            }
+            let bytes = match self
+                .operator
+                .read_options(
+                    &path,
+                    ReadOptions {
+                        if_match: Some(etag.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Ok(bytes) => bytes.to_vec(),
+                Err(error) if error.kind() == opendal::ErrorKind::ConditionNotMatch => continue,
+                Err(error) if error.kind() == opendal::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            };
+            if !authorization_mutation_lock_reclaimable(
+                &bytes,
+                metadata.last_modified().map(Into::into),
+            ) {
+                bail!("Space authorization mutation is busy")
+            }
+            match self
+                .operator
+                .write_options(
+                    &path,
+                    authorization_mutation_lock_bytes(&owner, false),
+                    WriteOptions {
+                        if_match: Some(etag.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Ok(_) => {
+                    let metadata = self.operator.stat(&path).await?;
+                    let Some(next_etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+                        bail!("Space authorization mutation lock has no ETag")
+                    };
+                    return Ok(Some(DurableAuthorizationLease::start(
+                        self.operator.clone(),
+                        path,
+                        owner,
+                        next_etag.to_string(),
+                    )));
+                }
+                Err(error) if error.kind() == opendal::ErrorKind::ConditionNotMatch => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        bail!("Space authorization mutation lock changed while acquiring its lease")
+    }
+
+    /// Runs an authorization-dependent read while holding the same process
+    /// lock used by every authorization mutation. Shared backends still get a
+    /// revision check at the caller boundary, while local mutations cannot
+    /// commit between the snapshot and the protected read.
+    pub async fn with_state_lock<T, F, Fut>(&self, space_id: &str, operation: F) -> Result<T>
+    where
+        F: FnOnce(AuthorizationState) -> Fut,
+        Fut: Future<Output = Result<T>>,
+    {
+        let _guard: OwnedMutexGuard<()> = self.lock.clone().lock_owned().await;
+        let state = self.state(space_id).await?;
+        operation(state).await
+    }
+
+    pub async fn acquire_state_lease(
+        &self,
+        space_id: &str,
+    ) -> Result<(AuthorizationState, AuthorizationLease)> {
+        let guard = self.lock.clone().lock_owned().await;
+        let durable = self.acquire_durable_mutation_lease(space_id).await?;
+        let state = match self.state(space_id).await {
+            Ok(state) => state,
+            Err(error) => {
+                if let Some(durable) = durable {
+                    let _ = durable.release().await;
+                }
+                return Err(error);
+            }
+        };
+        Ok((
+            state,
+            AuthorizationLease {
+                _guard: guard,
+                durable,
+            },
+        ))
     }
 
     pub async fn effective_actions(
@@ -1572,6 +1903,24 @@ impl Authorizer {
     }
 
     async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
+        let durable = self.acquire_durable_mutation_lease(space_id).await?;
+        let result = self.write_state_inner(space_id, state).await;
+        let release = if let Some(durable) = durable {
+            durable.release().await
+        } else {
+            Ok(())
+        };
+        match (result, release) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Err(error), Err(release_error)) => Err(error.context(format!(
+                "release Space authorization mutation lease: {release_error:#}"
+            ))),
+        }
+    }
+
+    async fn write_state_inner(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
         let path = state_path(space_id);
         validate_authorization_state_limits(state)?;
         let serialized = serde_json::to_vec_pretty(state)?;
@@ -1798,7 +2147,7 @@ fn validate_authorization_state_limits(state: &AuthorizationState) -> Result<()>
 /// Evaluates authorization against one already-read state snapshot. Query
 /// session creation uses this to derive its scope and fingerprint from the
 /// same state without an Entry-by-Entry OpenDAL reread.
-pub(crate) fn effective_actions_for_state(
+pub fn effective_actions_for_state(
     state: &AuthorizationState,
     principal_id: Uuid,
     resource: Option<&ResourceRef>,

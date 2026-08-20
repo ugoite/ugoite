@@ -1034,6 +1034,16 @@ impl UgoiteService {
         let state = Authorizer::new(self.operator.clone())
             .state(space_id)
             .await?;
+        self.authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+            .await
+    }
+
+    async fn authorized_form_entry_scopes_for_state(
+        &self,
+        space_id: &str,
+        state: &AuthorizationState,
+        principal_ids: &[Uuid],
+    ) -> Result<BTreeMap<String, EntryScope>> {
         for principal_id in principal_ids {
             if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
                 return Ok(BTreeMap::new());
@@ -1281,18 +1291,40 @@ impl UgoiteService {
         limit: usize,
         after: Option<(&str, &str, &str)>,
     ) -> Result<Vec<search::KeywordSearchResult>> {
-        let scopes = self
-            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-            .await?;
-        search::search_entries_with_scopes_after(
-            &self.operator,
-            &self.workspace_path(space_id),
-            query,
-            &scopes,
-            limit,
-            after,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        for _ in 0..3 {
+            let (revision, stable, result) = authorizer
+                .with_state_lock(space_id, |state| async {
+                    let revision = state.revision;
+                    let scopes = self
+                        .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                        .await?;
+                    let asset_authorization = search::AssetAuthorization::new(state, principal_ids);
+                    let result = search::search_entries_with_scopes_after_authorized(
+                        &self.operator,
+                        &self.workspace_path(space_id),
+                        query,
+                        &scopes,
+                        limit,
+                        after,
+                        Some(asset_authorization),
+                    )
+                    .await;
+                    let current_revision = Authorizer::new(self.operator.clone())
+                        .state(space_id)
+                        .await?
+                        .revision;
+                    Ok((revision, current_revision == revision, result))
+                })
+                .await?;
+            if stable {
+                return result;
+            }
+            let _ = revision;
+        }
+        Err(anyhow!(
+            "authorization changed while executing the protected search"
+        ))
     }
 
     pub async fn query_entries_authorized_for_principals(
@@ -1450,14 +1482,10 @@ impl UgoiteService {
         principal_id: Uuid,
         query: &str,
     ) -> Result<Vec<search::KeywordSearchResult>> {
-        let scopes = self
-            .authorized_form_entry_scopes(space_id, principal_id)
-            .await?;
-        search::search_entries_with_scopes(
-            &self.operator,
-            &self.workspace_path(space_id),
+        self.search_entries_authorized_for_principals(
+            space_id,
+            &[principal_id],
             query,
-            &scopes,
             crate::MAX_NORMAL_READ_ROWS,
         )
         .await

@@ -141,7 +141,6 @@ struct GarbageClaim {
 
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
-const DERIVED_BUILD_TERMINAL_CLAIM_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_DERIVED_GC_LIST_ENTRIES: usize = 100_000;
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
@@ -285,6 +284,13 @@ impl DerivedRelationHeadStore {
         format!("{}/garbage.json", self.builds_path(build_id))
     }
 
+    fn terminal_tombstone_path(&self, build_id: &str) -> String {
+        format!(
+            "{}/_ugoite/derived/relations/{}/tombstones/{build_id}.json",
+            self.space_root, self.relation_id
+        )
+    }
+
     fn staging_marker_path(&self, build_id: &str) -> String {
         format!("{}/staging.json", self.builds_path(build_id))
     }
@@ -302,13 +308,15 @@ impl DerivedRelationHeadStore {
         if uuid.get_version_num() != 7 || (uuid.as_bytes()[8] & 0xc0) != 0x80 {
             return Err(anyhow!("DerivedRelation build ID must be UUIDv7"));
         }
-        if Self::old_enough(
-            Self::build_id_time(build_id),
-            DERIVED_BUILD_TERMINAL_CLAIM_RETENTION,
-        ) {
-            return Err(anyhow!(
-                "DerivedRelation build ID is older than the terminal fencing window"
-            ));
+        // Build IDs are never admitted based on their producer clock. The
+        // durable tombstone is the non-reuse fence, including for shared
+        // backends whose object timestamps are unavailable.
+        if self
+            .operator
+            .exists(&self.terminal_tombstone_path(build_id))
+            .await?
+        {
+            return Err(anyhow!("DerivedRelation build ID has a terminal tombstone"));
         }
         if self
             .operator
@@ -320,7 +328,7 @@ impl DerivedRelationHeadStore {
         if let Some((bytes, _, _)) = self.read_build_claim(build_id).await? {
             if matches!(
                 Self::claim_role(&bytes).as_deref(),
-                Some("garbage") | Some("complete")
+                Some("garbage") | Some("complete") | Some("reaping")
             ) {
                 return Err(anyhow!(
                     "DerivedRelation build has a terminal garbage claim"
@@ -458,8 +466,8 @@ impl DerivedRelationHeadStore {
         }
         let bytes = uuid.into_bytes();
         // UUIDv7 stores its creation time as a 48-bit big-endian Unix
-        // millisecond timestamp. Builds use UUIDv7 IDs, so this remains a
-        // durable age fallback on backends that expose no object timestamps.
+        // millisecond timestamp. This helper is retained for single-process
+        // orphan recovery only; shared GC never trusts a producer timestamp.
         let millis = u64::from_be_bytes([
             0, 0, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
         ]);
@@ -507,11 +515,15 @@ impl DerivedRelationHeadStore {
         path: &str,
         metadata_time: Option<SystemTime>,
     ) -> Option<SystemTime> {
-        // As with claims, backend metadata is the trustworthy age source.
-        // The marker payload remains useful as a fallback for backends that
-        // do not expose modification timestamps.
+        // Shared GC must fail closed when the backend does not provide a
+        // server-side modification time. Producer-written marker timestamps
+        // are unsafe under clock skew. Single-process/local backends may use
+        // the marker payload as a bounded recovery fallback.
         if metadata_time.is_some() {
             return metadata_time;
+        }
+        if self.write_mode == CatalogWriteMode::Shared {
+            return None;
         }
         self.operator
             .read(path)
@@ -1202,19 +1214,47 @@ impl DerivedRelationHeadStore {
     }
 
     async fn reap_terminal_claim(&self, build_id: &str) -> Result<bool> {
-        let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? else {
+        let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
             return Ok(false);
         };
-        if Self::claim_role(&bytes).as_deref() != Some("complete")
-            || !Self::old_enough(last_modified, DERIVED_BUILD_TERMINAL_CLAIM_RETENTION)
+        let role = Self::claim_role(&bytes);
+        if !matches!(role.as_deref(), Some("complete") | Some("reaping")) {
+            return Ok(false);
+        }
+        let owner =
+            Self::claim_owner(&bytes).context("terminal DerivedRelation claim has no owner")?;
+        if role.as_deref() == Some("complete")
+            && !self
+                .replace_build_claim(build_id, etag.as_deref(), "reaping", &owner)
+                .await?
         {
             return Ok(false);
         }
-        // The caller has already listed the prefix and confirmed it contains
-        // no build objects. Complete claims are therefore only a bounded
-        // post-GC publication fence. Reaping them prevents one durable object
-        // per rebuild from accumulating forever; any producer that races this
-        // maintenance pass is rediscovered by the markerless UUIDv7 fallback.
+        // The tombstone is deliberately outside the disposable build prefix.
+        // It is the durable non-reuse fence that lets the claim itself be
+        // removed without allowing a paused producer to resurrect the build.
+        match self
+            .operator
+            .write_options(
+                &self.terminal_tombstone_path(build_id),
+                serde_json::to_vec(&serde_json::json!({
+                    "build_id": build_id,
+                    "state": "complete",
+                }))?,
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => {}
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {}
+            Err(error) => return Err(error.into()),
+        }
+        // The role transition is the ownership hand-off. No publisher or GC
+        // may replace a `reaping` claim, so this idempotent delete cannot erase
+        // a newer owner's claim.
         match self
             .operator
             .delete(&self.publishing_marker_path(build_id))
@@ -1233,6 +1273,13 @@ impl DerivedRelationHeadStore {
             .await?
         {
             return Err(anyhow!("DerivedRelation build is marked garbage"));
+        }
+        if self
+            .operator
+            .exists(&self.terminal_tombstone_path(build_id))
+            .await?
+        {
+            return Err(anyhow!("DerivedRelation build has a terminal tombstone"));
         }
         // garbage.json is removed last, but the publishing marker is retained
         // as the terminal tombstone after cleanup.  Check both lifecycle
@@ -1412,7 +1459,10 @@ impl DerivedRelationHeadStore {
                     self.read_build_claim(&build_id)
                         .await?
                         .is_some_and(|(bytes, _, _)| {
-                            Self::claim_role(&bytes).as_deref() == Some("complete")
+                            matches!(
+                                Self::claim_role(&bytes).as_deref(),
+                                Some("complete") | Some("reaping")
+                            )
                         });
                 if complete && !candidate.has_build_object {
                     // A delayed publisher may have recreated the marker after
@@ -1438,6 +1488,7 @@ impl DerivedRelationHeadStore {
                                 !candidate.has_build_object
                                     || Self::old_enough(last_modified, minimum_gc_age)
                             }
+                            Some("reaping") => true,
                             Some("publishing") => Self::claim_is_stale(&bytes, last_modified),
                             // A garbage claim without garbage.json means the
                             // final marker deletion already happened but the
@@ -1454,11 +1505,12 @@ impl DerivedRelationHeadStore {
             let markerless_orphan = !candidate.has_staging_marker
                 && !candidate.has_garbage_fence
                 && !candidate.has_publishing_marker
-                && (candidate.newest_object_modified.is_none()
-                    && Self::old_enough(Self::build_id_time(&build_id), minimum_gc_age)
-                    || candidate
-                        .newest_object_modified
-                        .is_some_and(|modified| Self::old_enough(Some(modified), minimum_gc_age)));
+                && (candidate
+                    .newest_object_modified
+                    .is_some_and(|modified| Self::old_enough(Some(modified), minimum_gc_age))
+                    || (self.write_mode == CatalogWriteMode::SingleProcess
+                        && candidate.newest_object_modified.is_none()
+                        && Self::old_enough(Self::build_id_time(&build_id), minimum_gc_age)));
             if candidate.stale_staging_old_enough || stale_publishing || markerless_orphan {
                 return Ok(true);
             }
@@ -1592,6 +1644,7 @@ impl DerivedRelationHeadStore {
                             Some("staging") | Some("publishing") | Some("garbage") => {
                                 Self::claim_is_stale(&bytes, last_modified)
                             }
+                            Some("reaping") => true,
                             _ => false,
                         };
                 }
@@ -1607,11 +1660,12 @@ impl DerivedRelationHeadStore {
                 && !candidate.has_garbage_fence
                 && !candidate.has_staging_marker
                 && !candidate.has_publishing_marker
-                && (candidate.newest_object_modified.is_none()
-                    && Self::old_enough(Self::build_id_time(build_id), minimum_gc_age)
-                    || candidate
-                        .newest_object_modified
-                        .is_some_and(|modified| Self::old_enough(Some(modified), minimum_gc_age)));
+                && (candidate
+                    .newest_object_modified
+                    .is_some_and(|modified| Self::old_enough(Some(modified), minimum_gc_age))
+                    || (self.write_mode == CatalogWriteMode::SingleProcess
+                        && candidate.newest_object_modified.is_none()
+                        && Self::old_enough(Self::build_id_time(build_id), minimum_gc_age)));
         }
         let mut deleted = Vec::new();
         for (build_id, candidate) in candidates {
@@ -1620,7 +1674,10 @@ impl DerivedRelationHeadStore {
                     .read_build_claim(&build_id)
                     .await?
                     .is_some_and(|(bytes, _, _)| {
-                        Self::claim_role(&bytes).as_deref() == Some("complete")
+                        matches!(
+                            Self::claim_role(&bytes).as_deref(),
+                            Some("complete") | Some("reaping")
+                        )
                     })
             {
                 if candidate.has_garbage_marker {
@@ -1675,7 +1732,10 @@ impl DerivedRelationHeadStore {
                     .read_build_claim(&build_id)
                     .await?
                     .is_some_and(|(bytes, _, _)| {
-                        Self::claim_role(&bytes).as_deref() == Some("complete")
+                        matches!(
+                            Self::claim_role(&bytes).as_deref(),
+                            Some("complete") | Some("reaping")
+                        )
                     })
             {
                 self.clear_garbage(&build_id).await?;
@@ -3870,28 +3930,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reaped_uuid_v7_build_id_cannot_be_staged_again() -> Result<()> {
+    async fn terminal_tombstone_build_id_cannot_be_staged_again() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA013);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
-        let old_millis = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_millis()
-            .saturating_sub(super::DERIVED_BUILD_TERMINAL_CLAIM_RETENTION.as_millis())
-            as u64;
-        let mut bytes = [0_u8; 16];
-        bytes[..6].copy_from_slice(&old_millis.to_be_bytes()[2..]);
-        bytes[6] = 0x70;
-        bytes[8] = 0x80;
-        let reaped_build_id = Uuid::from_bytes(bytes).to_string();
+        let reaped_build_id = Uuid::now_v7().to_string();
+        operator
+            .write(
+                &store.terminal_tombstone_path(&reaped_build_id),
+                br#"{"build_id":"terminal","state":"complete"}"#.to_vec(),
+            )
+            .await?;
 
         let error = store
             .mark_staging(&reaped_build_id)
             .await
             .expect_err("a terminally reaped UUIDv7 ID must stay fenced");
-        assert!(error
-            .to_string()
-            .contains("older than the terminal fencing window"));
+        assert!(error.to_string().contains("terminal tombstone"));
         assert!(
             !operator
                 .exists(&store.staging_marker_path(&reaped_build_id))

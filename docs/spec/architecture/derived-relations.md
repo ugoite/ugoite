@@ -78,9 +78,16 @@ The rebuild source is the current authoritative Entry view, not an `assets/`
 object listing. Deleted or orphaned references therefore cannot seed a new
 build. AssetText rows do not carry ACLs: Quick Search first obtains
 authorized current Entries, joins their AssetReferences to the internal
-AssetText provider, and returns the Entry as the primary result. If the derived
+AssetText provider, applies the containing Entry and Asset policies to each
+reference edge, and returns the Entry as the primary result. If the derived
 relation is missing, stale, corrupt, or unavailable, native Entry search still
 works and AssetText search is degraded.
+
+Only the build named by the relation-local Head is visible. Detached build
+prefixes are garbage after the reader grace period; `garbage.json` is removed
+last, and a small terminal tombstone prevents build-ID reuse after the
+disposable claim is reaped. Shared garbage-age decisions require backend
+timestamps rather than producer clocks.
 
 The internal DataFusion provider is not registered in Saved SQL, SQL Sessions,
 the public relation namespace, or SpaceCheckpoint-pinned query plans. Iceberg

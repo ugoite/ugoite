@@ -5744,6 +5744,65 @@ async fn require_resource_action(
     Ok(principal_id)
 }
 
+/// Runs a content mutation under the same authorization lock used by ACL
+/// mutations. Local callers use the process lock; shared operators also hold
+/// a heartbeat-backed object-store lease, so the permission check and the
+/// authoritative write share one cross-process linearization window.
+async fn with_authorized_mutation<T, F, Fut>(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+    action: Action,
+    resource: Option<ResourceRef>,
+    operation: F,
+) -> ApiResult<T>
+where
+    F: FnOnce(Uuid, Vec<Uuid>) -> Fut,
+    Fut: Future<Output = ApiResult<T>>,
+{
+    if let Some(actions) = &identity.token_actions {
+        if !actions.contains(action_name(&action)) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "access token does not grant the required action",
+            ));
+        }
+    }
+    let principal_id = principal_for_space(state, space_id, identity).await?;
+    let principals = authorization_principal_ids(identity, principal_id);
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let (authorization_state, lease) = authorizer
+        .acquire_state_lease(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let authorization_result = (|| -> ApiResult<()> {
+        for subject in &principals {
+            let actions = ugoite_iceberg::authorization::effective_actions_for_state(
+                &authorization_state,
+                *subject,
+                resource.as_ref(),
+            )
+            .map_err(ApiError::from_core)?;
+            if !actions.contains(&action) {
+                return Err(ApiError::new(
+                    StatusCode::FORBIDDEN,
+                    "principal is not authorized for the mutation",
+                ));
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = authorization_result {
+        let _ = lease.release().await;
+        return Err(error);
+    }
+    let result = operation(principal_id, principals).await;
+    if let Err(error) = lease.release().await {
+        return Err(ApiError::from_core(error));
+    }
+    result
+}
+
 fn action_name(action: &Action) -> &'static str {
     match action {
         Action::Read => "read",
@@ -7506,22 +7565,32 @@ async fn create_entry(
     Path(space_id): Path<String>,
     Json(payload): Json<EntryCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
     let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     validate_id(&entry_id, "entry_id")?;
-    let created = state
-        .service
-        .create_entry_authorized_for_principals(
-            &space_id,
-            &entry_id,
-            &payload.markdown,
-            &principal_id.to_string(),
-            &principals,
-        )
-        .await
-        .map_err(ApiError::from_core)?;
+    let entry_id_for_write = entry_id.clone();
+    let markdown = payload.markdown.clone();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let created = with_authorized_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        |principal_id, principals| async move {
+            service
+                .create_entry_authorized_for_principals(
+                    &space_id_for_write,
+                    &entry_id_for_write,
+                    &markdown,
+                    &principal_id.to_string(),
+                    &principals,
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({"id": entry_id, "revision_id": created["revision_id"]})),
@@ -7651,29 +7720,37 @@ async fn update_entry(
     Path((space_id, entry_id)): Path<(String, String)>,
     Json(payload): Json<EntryUpdate>,
 ) -> ApiResult<Json<Value>> {
-    let principal_id = require_resource_action(
+    validate_id(&entry_id, "entry_id")?;
+    let entry_id_for_write = entry_id.clone();
+    let markdown = payload.markdown.clone();
+    let parent_revision_id = payload.parent_revision_id.clone();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let value = with_authorized_mutation(
         &state,
         &space_id,
         &identity,
         Action::Update,
-        ResourceKind::Entry,
-        &entry_id,
+        Some(ResourceRef {
+            kind: ResourceKind::Entry,
+            id: entry_id.clone(),
+            parent: None,
+        }),
+        |principal_id, principals| async move {
+            service
+                .update_entry_authorized_for_principals(
+                    &space_id_for_write,
+                    &entry_id_for_write,
+                    &markdown,
+                    parent_revision_id.as_deref(),
+                    &principal_id.to_string(),
+                    &principals,
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
     )
     .await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    validate_id(&entry_id, "entry_id")?;
-    let value = state
-        .service
-        .update_entry_authorized_for_principals(
-            &space_id,
-            &entry_id,
-            &payload.markdown,
-            payload.parent_revision_id.as_deref(),
-            &principal_id.to_string(),
-            &principals,
-        )
-        .await
-        .map_err(ApiError::from_core)?;
     Ok(Json(
         json!({"id": entry_id, "revision_id": value["revision_id"]}),
     ))
@@ -8059,24 +8136,47 @@ async fn upsert_form(
         .map_err(ApiError::from_core)?
         .into_iter()
         .any(|form| form.get("name").and_then(Value::as_str) == Some(form_name));
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
     if existing_form {
-        require_resource_action(
+        let action = Action::Update;
+        let resource = ResourceRef {
+            kind: ResourceKind::Form,
+            id: form_name.to_string(),
+            parent: None,
+        };
+        let payload_for_write = payload.clone();
+        with_authorized_mutation(
             &state,
             &space_id,
             &identity,
-            Action::Update,
-            ResourceKind::Form,
-            form_name,
+            action,
+            Some(resource),
+            |_principal_id, _principals| async move {
+                service
+                    .upsert_form(&space_id_for_write, &payload_for_write)
+                    .await
+                    .map_err(ApiError::from_core)
+            },
         )
         .await?;
     } else {
-        require_space_action(&state, &space_id, &identity, Action::Create).await?;
+        let payload_for_write = payload.clone();
+        with_authorized_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Create,
+            None,
+            |_principal_id, _principals| async move {
+                service
+                    .upsert_form(&space_id_for_write, &payload_for_write)
+                    .await
+                    .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
     }
-    state
-        .service
-        .upsert_form(&space_id, &payload)
-        .await
-        .map_err(ApiError::from_core)?;
     Ok((StatusCode::CREATED, Json(payload)))
 }
 
@@ -8165,14 +8265,30 @@ async fn create_sql(
     Path(space_id): Path<String>,
     Json(payload): Json<saved_sql::SqlPayload>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_space_action(&state, &space_id, &identity, Action::Create).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let id = Uuid::new_v4().to_string();
-    let value = state
-        .service
-        .create_saved_sql(&space_id, &id, &payload, &principal_id.to_string())
-        .await
-        .map_err(ApiError::from_core)?;
+    let id_for_write = id.clone();
+    let payload_for_write = payload.clone();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let value = with_authorized_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Create,
+        None,
+        |principal_id, _principals| async move {
+            service
+                .create_saved_sql(
+                    &space_id_for_write,
+                    &id_for_write,
+                    &payload_for_write,
+                    &principal_id.to_string(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({"id": id, "revision_id": value["revision_id"]})),
@@ -8343,7 +8459,6 @@ async fn upload_asset(
     Path(space_id): Path<String>,
     mut multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let field = multipart
         .next_field()
         .await
@@ -8375,11 +8490,22 @@ async fn upload_asset(
             "only the `file` multipart field is allowed",
         ));
     }
-    let value = state
-        .service
-        .save_asset_with_media_type(&space_id, &name, &bytes, &media_type)
-        .await
-        .map_err(ApiError::from_core)?;
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let value = with_authorized_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Update,
+        None,
+        |_principal_id, _principals| async move {
+            service
+                .save_asset_with_media_type(&space_id_for_write, &name, &bytes, &media_type)
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(serde_json::to_value(value).map_err(|error| ApiError::from_core(error.into()))?),

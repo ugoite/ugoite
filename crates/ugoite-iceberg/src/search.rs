@@ -23,7 +23,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use ugoite_core::query::EntryScope;
 use ugoite_domain::entry::AssetReference;
+use uuid::Uuid;
 
+use crate::authorization::{
+    effective_actions_for_state, AuthorizationState, ResourceKind, ResourceRef,
+};
 use crate::entry;
 use crate::index::AuthorizedAssetReferenceRow;
 pub use ugoite_domain::search::KeywordSearchResult;
@@ -34,6 +38,45 @@ const ASSET_TEXT_SEARCH_PAGE_SIZE: usize = 2_048;
 // actual protection for unusually large current Forms.
 const ASSET_TEXT_SEARCH_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const ASSET_TEXT_SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[derive(Clone)]
+pub(crate) struct AssetAuthorization {
+    state: Arc<AuthorizationState>,
+    principal_ids: Arc<Vec<Uuid>>,
+}
+
+impl AssetAuthorization {
+    pub(crate) fn new(state: AuthorizationState, principal_ids: &[Uuid]) -> Self {
+        Self {
+            state: Arc::new(state),
+            principal_ids: Arc::new(principal_ids.to_vec()),
+        }
+    }
+
+    fn allows(&self, entry_id: &str, asset_id: &str) -> Result<bool> {
+        let parent = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: entry_id.to_string(),
+            parent: None,
+        };
+        let asset = ResourceRef {
+            kind: ResourceKind::Asset,
+            id: asset_id.to_string(),
+            parent: Some(Box::new(parent)),
+        };
+        self.principal_ids
+            .iter()
+            .try_fold(true, |allowed, principal_id| {
+                if !allowed {
+                    return Ok(false);
+                }
+                Ok(
+                    effective_actions_for_state(&self.state, *principal_id, Some(&asset))?
+                        .contains(&ugoite_domain::identity::Action::Read),
+                )
+            })
+    }
+}
 
 /// Keyword search over one bounded, authorized current-state DataFusion
 /// payload plan.
@@ -72,6 +115,27 @@ pub async fn search_entries_with_scopes_after(
     relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
     limit: usize,
     after: Option<(&str, &str, &str)>,
+) -> Result<Vec<KeywordSearchResult>> {
+    search_entries_with_scopes_after_authorized(
+        op,
+        ws_path,
+        query,
+        relation_scopes,
+        limit,
+        after,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn search_entries_with_scopes_after_authorized(
+    op: &Operator,
+    ws_path: &str,
+    query: &str,
+    relation_scopes: &std::collections::BTreeMap<String, EntryScope>,
+    limit: usize,
+    after: Option<(&str, &str, &str)>,
+    asset_authorization: Option<AssetAuthorization>,
 ) -> Result<Vec<KeywordSearchResult>> {
     if query.len() > crate::index::ASSET_TEXT_SEARCH_MAX_QUERY_BYTES {
         anyhow::bail!("AssetText search query exceeds the configured byte limit");
@@ -118,6 +182,7 @@ pub async fn search_entries_with_scopes_after(
             relation_scopes,
             limit,
             after,
+            asset_authorization,
             result_budget.clone(),
         )
         .await?
@@ -165,6 +230,7 @@ async fn asset_text_search_authorized(
     relation_scopes: &BTreeMap<String, EntryScope>,
     limit: usize,
     after: Option<(&str, &str, &str)>,
+    asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
     if limit == 0 {
@@ -180,6 +246,7 @@ async fn asset_text_search_authorized(
             relation_scopes,
             limit,
             after,
+            asset_authorization,
             budget.clone(),
         ),
     )
@@ -209,6 +276,7 @@ async fn asset_text_search_authorized_inner(
     relation_scopes: &BTreeMap<String, EntryScope>,
     limit: usize,
     after: Option<(&str, &str, &str)>,
+    asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
     // The authorized-reference provider deliberately cannot push the AssetText
@@ -317,6 +385,7 @@ async fn asset_text_search_authorized_inner(
                 authorized_context.clone(),
                 authorized_forms.clone(),
                 after,
+                asset_authorization.clone(),
                 budget.clone(),
             )),
         )
@@ -364,6 +433,7 @@ async fn asset_text_search_authorized_inner(
                 query,
                 limit,
                 after,
+                asset_authorization,
                 budget.clone(),
             )
             .await;
@@ -449,6 +519,7 @@ async fn fallback_asset_text_search(
     query: &str,
     limit: usize,
     after: Option<(&str, &str, &str)>,
+    asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
     let Some(matching_assets) =
@@ -501,6 +572,8 @@ async fn fallback_asset_text_search(
                         &row.fields,
                         asset_reference_fields.get(form_name).into_iter().flatten(),
                         &matching_assets,
+                        &row.entry_id,
+                        asset_authorization.as_ref(),
                     )
                 {
                     continue;
@@ -537,30 +610,47 @@ fn row_references_matching_asset<'a>(
     fields: &Value,
     asset_fields: impl IntoIterator<Item = &'a AssetReferenceField>,
     matching_assets: &HashSet<String>,
+    entry_id: &str,
+    asset_authorization: Option<&AssetAuthorization>,
 ) -> bool {
     let Some(fields) = fields.as_object() else {
         return false;
     };
     asset_fields.into_iter().any(|field| {
-        fields
-            .get(&field.name)
-            .is_some_and(|value| value_contains_matching_asset(value, matching_assets))
+        fields.get(&field.name).is_some_and(|value| {
+            value_contains_matching_asset(value, matching_assets, entry_id, asset_authorization)
+        })
     })
 }
 
-fn value_contains_matching_asset(value: &Value, matching_assets: &HashSet<String>) -> bool {
+fn value_contains_matching_asset(
+    value: &Value,
+    matching_assets: &HashSet<String>,
+    entry_id: &str,
+    asset_authorization: Option<&AssetAuthorization>,
+) -> bool {
     match value {
-        Value::Array(values) => values
-            .iter()
-            .any(|value| value_contains_matching_asset(value, matching_assets)),
+        Value::Array(values) => values.iter().any(|value| {
+            value_contains_matching_asset(value, matching_assets, entry_id, asset_authorization)
+        }),
         Value::Object(object) => {
             object
                 .get("asset_id")
                 .and_then(Value::as_str)
-                .is_some_and(|asset_id| matching_assets.contains(asset_id))
-                || object
-                    .values()
-                    .any(|value| value_contains_matching_asset(value, matching_assets))
+                .is_some_and(|asset_id| {
+                    matching_assets.contains(asset_id)
+                        && asset_authorization.is_none_or(|authorization| {
+                            authorization.allows(entry_id, asset_id).unwrap_or(false)
+                        })
+                })
+                || object.values().any(|value| {
+                    value_contains_matching_asset(
+                        value,
+                        matching_assets,
+                        entry_id,
+                        asset_authorization,
+                    )
+                })
         }
         _ => false,
     }
@@ -569,6 +659,7 @@ fn value_contains_matching_asset(value: &Value, matching_assets: &HashSet<String
 fn authorized_asset_reference_batch(
     authorized_rows: &[(String, AuthorizedAssetReferenceRow)],
     asset_reference_fields: &BTreeMap<String, Vec<AssetReferenceField>>,
+    asset_authorization: Option<&AssetAuthorization>,
     budget: &crate::index::AssetTextSearchBudget,
 ) -> Result<RecordBatch> {
     let schema = authorized_asset_reference_schema();
@@ -592,11 +683,16 @@ fn authorized_asset_reference_batch(
                 if field.list {
                     if let Value::Array(values) = value {
                         for value in values {
-                            append_asset_reference(value, &mut ids)?;
+                            append_asset_reference(
+                                value,
+                                &mut ids,
+                                &row.entry_id,
+                                asset_authorization,
+                            )?;
                         }
                     }
                 } else {
-                    append_asset_reference(value, &mut ids)?;
+                    append_asset_reference(value, &mut ids, &row.entry_id, asset_authorization)?;
                 }
             }
         }
@@ -691,13 +787,25 @@ fn load_asset_reference_fields(
     Ok(fields)
 }
 
-fn append_asset_reference(value: &Value, output: &mut Vec<String>) -> Result<()> {
+fn append_asset_reference(
+    value: &Value,
+    output: &mut Vec<String>,
+    entry_id: &str,
+    asset_authorization: Option<&AssetAuthorization>,
+) -> Result<()> {
     let Ok(reference) = serde_json::from_value::<AssetReference>(value.clone()) else {
         return Ok(());
     };
     reference
         .validate()
         .map_err(|error| anyhow::anyhow!("invalid persisted AssetReference: {error}"))?;
+    if asset_authorization.is_some_and(|authorization| {
+        !authorization
+            .allows(entry_id, &reference.asset_id)
+            .unwrap_or(false)
+    }) {
+        return Ok(());
+    }
     if output.len() >= crate::index::MAX_ASSET_REFERENCES_PER_ENTRY {
         anyhow::bail!(
             "authorized Entry contains more than {} AssetReferences",
@@ -717,6 +825,7 @@ struct AuthorizedAssetReferenceProvider {
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
+    asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
     schema: Arc<Schema>,
 }
@@ -747,6 +856,7 @@ impl AuthorizedAssetReferenceProvider {
         authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
         authorized_forms: Arc<HashMap<String, Value>>,
         after: Option<(&str, &str, &str)>,
+        asset_authorization: Option<AssetAuthorization>,
         budget: crate::index::AssetTextSearchBudget,
     ) -> Self {
         Self {
@@ -760,6 +870,7 @@ impl AuthorizedAssetReferenceProvider {
             initial_after: after.map(|(title, entry_id, form)| {
                 (title.to_string(), entry_id.to_string(), form.to_string())
             }),
+            asset_authorization,
             budget,
             schema: authorized_asset_reference_schema(),
         }
@@ -792,6 +903,7 @@ impl TableProvider for AuthorizedAssetReferenceProvider {
             self.authorized_context.clone(),
             self.authorized_forms.clone(),
             self.initial_after.clone(),
+            self.asset_authorization.clone(),
             self.budget.clone(),
             self.schema.clone(),
         )))
@@ -817,6 +929,7 @@ struct AuthorizedAssetReferenceExec {
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
+    asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
     schema: Arc<Schema>,
     properties: Arc<PlanProperties>,
@@ -849,6 +962,7 @@ impl AuthorizedAssetReferenceExec {
         authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
         authorized_forms: Arc<HashMap<String, Value>>,
         initial_after: Option<(String, String, String)>,
+        asset_authorization: Option<AssetAuthorization>,
         budget: crate::index::AssetTextSearchBudget,
         schema: Arc<Schema>,
     ) -> Self {
@@ -867,6 +981,7 @@ impl AuthorizedAssetReferenceExec {
             authorized_context,
             authorized_forms,
             initial_after,
+            asset_authorization,
             budget,
             schema,
             properties,
@@ -880,6 +995,7 @@ struct AuthorizedAssetReferenceStreamState {
     authorized_context: Arc<crate::query_context::AuthorizedQueryContext>,
     authorized_forms: Arc<HashMap<String, Value>>,
     initial_after: Option<(String, String, String)>,
+    asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
     form_index: usize,
     after_entry_id: Option<String>,
@@ -898,6 +1014,7 @@ impl AuthorizedAssetReferenceStreamState {
                     let batch = authorized_asset_reference_batch(
                         &rows[start..end],
                         &self.asset_reference_fields,
+                        self.asset_authorization.as_ref(),
                         &self.budget,
                     )
                     .map_err(|error| {
@@ -1017,6 +1134,7 @@ impl ExecutionPlan for AuthorizedAssetReferenceExec {
             authorized_context: self.authorized_context.clone(),
             authorized_forms: self.authorized_forms.clone(),
             initial_after: self.initial_after.clone(),
+            asset_authorization: self.asset_authorization.clone(),
             budget: self.budget.clone(),
             form_index: 0,
             after_entry_id: None,

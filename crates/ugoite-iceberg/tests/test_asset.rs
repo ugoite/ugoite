@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ugoite_core::error::{AppError, ErrorCode, ErrorKind};
 use ugoite_core::query::EntryScope;
 use ugoite_domain::identity::{
-    AccessPolicy, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
+    AccessPolicy, Action, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
 };
 use ugoite_iceberg::asset;
 use ugoite_iceberg::authorization::{Authorizer, ResourceKind, ResourceRef};
@@ -34,6 +34,27 @@ async fn upload_returns_a_typed_reference_without_creating_an_entry() -> anyhow:
     assert!(ugoite_iceberg::entry::list_entries(&op, ws_path)
         .await?
         .is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn asset_size_limit_applies_to_core_write_and_read() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "asset-size-limit", "/tmp").await?;
+    let ws_path = "spaces/asset-size-limit";
+    let oversized = vec![0_u8; asset::MAX_ASSET_BYTES + 1];
+    let error = asset::save_asset(&op, ws_path, "large.bin", &oversized)
+        .await
+        .expect_err("core upload must enforce the shared Asset size limit");
+    assert!(error.to_string().contains("size limit"));
+
+    let asset_id = Uuid::now_v7().to_string();
+    op.write(&format!("{ws_path}/assets/{asset_id}"), oversized)
+        .await?;
+    let error = asset::read_asset(&op, ws_path, &asset_id)
+        .await
+        .expect_err("raw oversized objects must not be materialized into memory");
+    assert!(error.to_string().contains("size limit"));
     Ok(())
 }
 
@@ -507,6 +528,105 @@ async fn authorization_state_hides_scalar_and_list_asset_references() -> anyhow:
         .await?
         .bytes,
         b"private"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn asset_text_search_applies_asset_policy_with_entry_parent() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let service = UgoiteService::from_operator(op.clone(), "memory://asset-search-acl");
+    let owner = Uuid::from_u128(201);
+    let viewer = Uuid::from_u128(202);
+    let space_id = service
+        .create_space_for_principal("asset-search-acl", owner, "Owner")
+        .await?
+        .to_string();
+    service
+        .upsert_form(
+            &space_id,
+            &serde_json::json!({
+                "name": "Media",
+                "fields": {"Attachment": {"type": "asset_reference"}}
+            }),
+        )
+        .await?;
+    let reference = service
+        .save_asset(&space_id, "private.txt", b"asset-secret")
+        .await?;
+    let reference_json = serde_json::to_string(&reference)?;
+    service
+        .create_entry(
+            &space_id,
+            "visible",
+            &format!("---\nform: Media\nAttachment: {reference_json}\n---\nVisible"),
+            "owner",
+        )
+        .await?;
+    let authorizer = Authorizer::new(service.operator().clone());
+    authorizer
+        .add_human_member(
+            &space_id,
+            owner,
+            SpacePrincipal {
+                principal_id: viewer,
+                kind: PrincipalKind::Human,
+                display_name: "Viewer".to_string(),
+                state: PrincipalState::Active,
+                created_at: Utc::now().to_rfc3339(),
+            },
+            SpaceRole::Viewer,
+        )
+        .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Asset,
+                id: reference.asset_id.clone(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: Vec::new(),
+            },
+        )
+        .await?;
+    service.reindex(&space_id).await?;
+    assert!(service
+        .search_entries_authorized_for_principals(&space_id, &[viewer], "asset-secret", 10)
+        .await?
+        .is_empty());
+
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Asset,
+                id: reference.asset_id,
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: vec![ugoite_domain::identity::Grant {
+                    principal_id: viewer,
+                    actions: [Action::Read].into_iter().collect(),
+                }],
+            },
+        )
+        .await?;
+    assert_eq!(
+        service
+            .search_entries_authorized_for_principals(&space_id, &[viewer], "asset-secret", 10)
+            .await?
+            .iter()
+            .map(|result| result.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["visible"]
     );
     Ok(())
 }

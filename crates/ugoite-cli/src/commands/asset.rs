@@ -2,6 +2,7 @@ use crate::config::{load_config, print_json, resolve_space_reference, validated_
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use std::io::Read;
 use ugoite_iceberg::service::UgoiteService;
 
 #[derive(Args)]
@@ -56,7 +57,24 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     "asset upload is not available in backend/api mode in this release; upload through the API client or REST surface"
                 );
             }
-            let data = std::fs::read(&file_path)?;
+            let file_size = std::fs::metadata(&file_path)?.len();
+            if file_size > ugoite_iceberg::asset::MAX_ASSET_BYTES as u64 {
+                anyhow::bail!(
+                    "asset exceeds the {}-byte size limit",
+                    ugoite_iceberg::asset::MAX_ASSET_BYTES
+                );
+            }
+            let mut file = std::fs::File::open(&file_path)?;
+            let mut data = Vec::with_capacity(file_size as usize);
+            file.by_ref()
+                .take(ugoite_iceberg::asset::MAX_ASSET_BYTES as u64 + 1)
+                .read_to_end(&mut data)?;
+            if data.len() > ugoite_iceberg::asset::MAX_ASSET_BYTES {
+                anyhow::bail!(
+                    "asset exceeds the {}-byte size limit",
+                    ugoite_iceberg::asset::MAX_ASSET_BYTES
+                );
+            }
             let name = filename.unwrap_or_else(|| {
                 std::path::Path::new(&file_path)
                     .file_name()
