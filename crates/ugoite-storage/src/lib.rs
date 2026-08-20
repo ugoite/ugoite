@@ -1508,7 +1508,16 @@ impl DerivedRelationHeadStore {
             .lister_with(&self.terminal_tombstones_prefix())
             .recursive(true)
             .await?;
+        let mut examined_tombstones = 0usize;
         while let Some(entry) = tombstones.try_next().await? {
+            examined_tombstones = examined_tombstones.saturating_add(1);
+            if examined_tombstones > MAX_DERIVED_GC_LIST_ENTRIES {
+                // A bounded maintenance pass must stay scheduled when the
+                // tombstone prefix itself is too large to examine completely.
+                // The next pass can continue discovery without allowing one
+                // malformed prefix to monopolize a worker forever.
+                return Ok(true);
+            }
             if entry.metadata().mode() == EntryMode::FILE {
                 // Keep maintenance scheduled while the bounded tombstone
                 // retention window is active or until a later pass removes

@@ -97,6 +97,7 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
                 "form.evolve",
                 &changes,
             )?;
+            crate::authorization::ensure_authorization_write_fence().await?;
             workspace
                 .commit(command)?
                 .evolve_form(&FormChangeSet {
@@ -112,6 +113,7 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
     // Validate the authoring payload before entering the storage mutation path.
     // This keeps malformed user input typed while leaving storage failures internal.
     to_domain_form(&normalized).map_err(|error| invalid_form_input(error.to_string()))?;
+    crate::authorization::ensure_authorization_write_fence().await?;
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
     Ok(())
 }

@@ -314,6 +314,33 @@ mod remote_asset_upload_tests {
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
+    #[tokio::test]
+    async fn asset_upload_accepts_exact_asset_limit_with_multipart_framing() {
+        let state = AppState::new_for_tests("memory://server-asset-upload-exact-limit")
+            .expect("test state");
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("remote-space", principal_id, "Asset upload test")
+            .await
+            .expect("create test Space");
+        let boundary = "asset-upload-exact-boundary";
+        let mut body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"exact.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+        )
+        .into_bytes();
+        body.extend(std::iter::repeat_n(
+            b'x',
+            ugoite_iceberg::asset::MAX_ASSET_BYTES,
+        ));
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        assert_eq!(
+            upload_status(state, space_uid, principal_id, boundary, body).await,
+            StatusCode::CREATED
+        );
+    }
+
     async fn upload_status(
         state: AppState,
         space_uid: Uuid,
@@ -841,7 +868,8 @@ async fn mark_signable_api_response(request: Request, next: Next) -> Response {
 fn app_layers(router: Router<AppState>, state: AppState) -> Router {
     let mut router = router
         .layer(DefaultBodyLimit::max(
-            ugoite_iceberg::asset::MAX_ASSET_BYTES,
+            ugoite_iceberg::asset::MAX_ASSET_BYTES
+                + ugoite_iceberg::asset::MAX_ASSET_MULTIPART_OVERHEAD_BYTES,
         ))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuidV7))
@@ -4340,11 +4368,15 @@ async fn bind_invited_account(
         .acquire_state_lease(&space_id)
         .await
         .map_err(recovery_aware_auth_error)?;
+    let fence = lease.write_fence();
     let result = match lease
-        .run_while_held(|| async {
-            if has_active_recovery_fence(&authorization) {
-                return Err(recovery_fence_unavailable());
-            }
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                async {
+                    if has_active_recovery_fence(&authorization) {
+                        return Err(recovery_fence_unavailable());
+                    }
             let active_space_member = authorization
                 .principals
                 .get(&principal_id)
@@ -4386,7 +4418,37 @@ async fn bind_invited_account(
                 ));
             }
 
+            // Commit the Space half first. If the process exits before the
+            // Node CAS below, the durable membership is visible to the retry,
+            // which can finish the pending Node acceptance. This leaves no
+            // completed Node binding without a recoverable Space membership.
+            if !active_space_member {
+                let inviter = state
+                    .identity
+                    .principal_for_account(space_uid, invitation.created_by)
+                    .await
+                    .map_err(auth_error)?;
+                authorizer
+                    .add_human_member_with_lease(
+                        &space_id,
+                        inviter,
+                        SpacePrincipal {
+                            principal_id,
+                            kind: PrincipalKind::Human,
+                            state: PrincipalState::Active,
+                            display_name: account.display_name.clone(),
+                            created_at: chrono::Utc::now().to_rfc3339(),
+                        },
+                        parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
+                        &lease,
+                    )
+                    .await
+                    .map_err(recovery_aware_auth_error)?;
+            }
             if existing_binding.is_none() {
+                ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                    .await
+                    .map_err(recovery_aware_auth_error)?;
                 state
                     .identity
                     .finalize_invitation_binding(
@@ -4398,31 +4460,9 @@ async fn bind_invited_account(
                     .await
                     .map_err(recovery_aware_auth_error)?;
             }
-            if active_space_member {
-                return Ok(());
-            }
-            let inviter = state
-                .identity
-                .principal_for_account(space_uid, invitation.created_by)
-                .await
-                .map_err(auth_error)?;
-            authorizer
-                .add_human_member_with_lease(
-                    &space_id,
-                    inviter,
-                    SpacePrincipal {
-                        principal_id,
-                        kind: PrincipalKind::Human,
-                        display_name: account.display_name.clone(),
-                        state: PrincipalState::Active,
-                        created_at: chrono::Utc::now().to_rfc3339(),
-                    },
-                    parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
-                    &lease,
-                )
-                .await
-                .map_err(recovery_aware_auth_error)?;
-            Ok(())
+                    Ok(())
+                },
+            )
         })
         .await
     {
@@ -4670,6 +4710,9 @@ async fn oauth_authorize_approve(
                     "requested scope exceeds the principal's permission",
                 ));
             }
+            ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                .await
+                .map_err(ApiError::from_core)?;
             identity_service
                 .issue_authorization_code(
                     &client_id,
@@ -4880,6 +4923,9 @@ async fn oauth_device_approve(
                     ));
                 }
             }
+            ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                .await
+                .map_err(ApiError::from_core)?;
             identity_service
                 .approve_device_authorization(
                     &user_code,
@@ -5247,6 +5293,9 @@ async fn create_agent(
                     .create_agent_with_lease(&space_id_for_mutation, sponsor, agent_request, lease)
                     .await
                     .map_err(ApiError::from_core)?;
+                ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                    .await
+                    .map_err(ApiError::from_core)?;
                 let credential = identity_service
                     .register_agent_credential(agent.agent_id, public_key_jwk, expires_at)
                     .await
@@ -5316,6 +5365,9 @@ async fn revoke_agent(
             Box::pin(async move {
                 Authorizer::new(operator)
                     .revoke_agent_with_lease(&space_id_for_mutation, actor, agent_id, lease)
+                    .await
+                    .map_err(ApiError::from_core)?;
+                ugoite_iceberg::authorization::ensure_authorization_write_fence()
                     .await
                     .map_err(ApiError::from_core)?;
                 identity_service
@@ -5564,18 +5616,24 @@ async fn issue_agent_token(
         )?;
         let claims_for_node = claims.clone();
         let access_token = match lease
-            .run_while_held(|| async {
-                let access_token = state
-                    .identity
-                    .issue_access_credential(claims_for_node)
-                    .await
-                    .map_err(auth_error)?;
-                state
-                    .identity
-                    .mark_agent_credential_used(credential_id)
-                    .await
-                    .map_err(auth_error)?;
-                Ok::<_, ApiError>(access_token)
+            .run_while_held(|| {
+                let fence = lease.write_fence();
+                ugoite_iceberg::authorization::with_authorization_write_fence(fence, async {
+                    ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                        .await
+                        .map_err(ApiError::from_core)?;
+                    let access_token = state
+                        .identity
+                        .issue_access_credential(claims_for_node)
+                        .await
+                        .map_err(auth_error)?;
+                    state
+                        .identity
+                        .mark_agent_credential_used(credential_id)
+                        .await
+                        .map_err(auth_error)?;
+                    Ok::<_, ApiError>(access_token)
+                })
             })
             .await
         {
@@ -5906,8 +5964,14 @@ where
         let _ = lease.release().await;
         return Err(error);
     }
+    let fence = lease.write_fence();
     let result = match lease
-        .run_while_held(|| operation(principal_id, principals))
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                operation(principal_id, principals),
+            )
+        })
         .await
     {
         Ok(result) => result,
@@ -5976,8 +6040,14 @@ where
         let _ = lease.release().await;
         return Err(error);
     }
+    let fence = lease.write_fence();
     let result = match lease
-        .run_while_held(|| operation(&lease, principal_id, principals))
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                operation(&lease, principal_id, principals),
+            )
+        })
         .await
     {
         Ok(result) => result,
@@ -6007,7 +6077,16 @@ where
         .await
         .map_err(ApiError::from_core)?
         .1;
-    let result = match lease.run_while_held(|| operation(&lease)).await {
+    let fence = lease.write_fence();
+    let result = match lease
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                operation(&lease),
+            )
+        })
+        .await
+    {
         Ok(result) => result,
         Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
             "Space authorization mutation lease was lost"
@@ -6094,7 +6173,16 @@ where
         let _ = lease.release().await;
         return Err(error);
     }
-    let result = match lease.run_while_held(|| operation(&lease)).await {
+    let fence = lease.write_fence();
+    let result = match lease
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                operation(&lease),
+            )
+        })
+        .await
+    {
         Ok(result) => result,
         Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
             "Space authorization mutation lease was lost"
@@ -8923,10 +9011,28 @@ async fn upload_asset(
         .content_type()
         .unwrap_or("application/octet-stream")
         .to_string();
+    if name.len() > ugoite_domain::entry::MAX_ASSET_REFERENCE_NAME_BYTES {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "asset filename exceeds the maximum length",
+        ));
+    }
+    if media_type.len() > ugoite_domain::entry::MAX_ASSET_REFERENCE_MEDIA_TYPE_BYTES {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "asset media type exceeds the maximum length",
+        ));
+    }
     let bytes = field
         .bytes()
         .await
         .map_err(|error| ApiError::new(error.status(), error.body_text()))?;
+    if bytes.len() > ugoite_iceberg::asset::MAX_ASSET_BYTES {
+        return Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "asset exceeds the maximum size",
+        ));
+    }
     if multipart
         .next_field()
         .await

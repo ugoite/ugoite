@@ -68,6 +68,9 @@ fn invalid_revision_input(
         RevisionError::TooManyAssetReferences => {
             "Entry contains too many AssetReferences".to_string()
         }
+        RevisionError::AssetReferenceMetadataTooLarge => {
+            "Entry AssetReference metadata exceeds the size limit".to_string()
+        }
         RevisionError::RequiredField(field_id) => {
             format!(
                 "Field '{}': required value is missing",
@@ -559,6 +562,7 @@ async fn append_revision_rows_to_workspace_authorized(
         "entry.append",
         &revisions,
     )?;
+    crate::authorization::ensure_authorization_write_fence().await?;
     workspace
         .commit(command)?
         .append_revisions_authorized(domain_form.id, revisions, relation_scopes)

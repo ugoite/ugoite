@@ -11,11 +11,19 @@ use std::fmt;
 /// contract in the domain crate makes authoritative writes and derived/query
 /// readers reject the same legacy or adversarial payloads.
 pub const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
+/// The authoritative Asset object and every Entry-owned reference use the
+/// same byte boundary. Keeping this limit in the domain crate prevents a
+/// crafted reference from bypassing the storage/parser limit.
+pub const MAX_ASSET_REFERENCE_SIZE_BYTES: u64 = 64 * 1024 * 1024;
 /// Bound Entry-owned parser hints before they can become derived-build
 /// metadata. These limits apply equally to authoritative writes and to
 /// persisted values read during a rebuild.
 pub const MAX_ASSET_REFERENCE_NAME_BYTES: usize = 4 * 1024;
 pub const MAX_ASSET_REFERENCE_MEDIA_TYPE_BYTES: usize = 256;
+/// Bound the total metadata carried by one current Entry. This keeps the
+/// authoritative JSON/Arrow conversion bounded even when the reference-count
+/// limit is approached.
+pub const MAX_ASSET_REFERENCE_METADATA_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -53,6 +61,7 @@ pub enum AssetReferenceError {
     InvalidAssetId,
     EmptyName,
     EmptyMediaType,
+    SizeTooLarge,
     NameTooLong,
     MediaTypeTooLong,
     InvalidChecksum,
@@ -64,6 +73,7 @@ impl fmt::Display for AssetReferenceError {
             Self::InvalidAssetId => "asset_id is invalid",
             Self::EmptyName => "name must not be empty",
             Self::EmptyMediaType => "media_type must not be empty",
+            Self::SizeTooLarge => "size_bytes exceeds the maximum asset size",
             Self::NameTooLong => "name exceeds the maximum length",
             Self::MediaTypeTooLong => "media_type exceeds the maximum length",
             Self::InvalidChecksum => "sha256 must be 64 lowercase hexadecimal characters",
@@ -94,6 +104,9 @@ impl AssetReference {
         if self.media_type.len() > MAX_ASSET_REFERENCE_MEDIA_TYPE_BYTES {
             return Err(AssetReferenceError::MediaTypeTooLong);
         }
+        if self.size_bytes > MAX_ASSET_REFERENCE_SIZE_BYTES {
+            return Err(AssetReferenceError::SizeTooLarge);
+        }
         if self.sha256.len() != 64
             || !self
                 .sha256
@@ -103,6 +116,15 @@ impl AssetReference {
             return Err(AssetReferenceError::InvalidChecksum);
         }
         Ok(())
+    }
+
+    pub fn metadata_size_bytes(&self) -> usize {
+        self.asset_id
+            .len()
+            .saturating_add(self.name.len())
+            .saturating_add(self.media_type.len())
+            .saturating_add(self.sha256.len())
+            .saturating_add(std::mem::size_of::<u64>())
     }
 }
 
@@ -281,6 +303,7 @@ impl EntryRevision {
         }
         if self.operation != EntryOperation::Delete {
             let mut asset_reference_count = 0usize;
+            let mut asset_reference_metadata_bytes = 0usize;
             for field in form
                 .fields
                 .iter()
@@ -310,6 +333,11 @@ impl EntryRevision {
                             .validate()
                             .map_err(|_| RevisionError::InvalidAssetReference(*field_id))?;
                         asset_reference_count = asset_reference_count.saturating_add(1);
+                        asset_reference_metadata_bytes = asset_reference_metadata_bytes
+                            .saturating_add(reference.metadata_size_bytes());
+                        if asset_reference_metadata_bytes > MAX_ASSET_REFERENCE_METADATA_BYTES {
+                            return Err(RevisionError::AssetReferenceMetadataTooLarge);
+                        }
                         if asset_reference_count > MAX_ASSET_REFERENCES_PER_ENTRY {
                             return Err(RevisionError::TooManyAssetReferences);
                         }
@@ -332,6 +360,13 @@ impl EntryRevision {
                                 reference
                                     .validate()
                                     .map_err(|_| RevisionError::InvalidAssetReference(*field_id))?;
+                                asset_reference_metadata_bytes = asset_reference_metadata_bytes
+                                    .saturating_add(reference.metadata_size_bytes());
+                                if asset_reference_metadata_bytes
+                                    > MAX_ASSET_REFERENCE_METADATA_BYTES
+                                {
+                                    return Err(RevisionError::AssetReferenceMetadataTooLarge);
+                                }
                                 if !asset_ids.insert(reference.asset_id.as_str()) {
                                     return Err(RevisionError::DuplicateAssetReference(*field_id));
                                 }
@@ -469,6 +504,7 @@ pub enum RevisionError {
     InvalidAssetReference(FieldId),
     DuplicateAssetReference(FieldId),
     TooManyAssetReferences,
+    AssetReferenceMetadataTooLarge,
 }
 impl fmt::Display for RevisionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

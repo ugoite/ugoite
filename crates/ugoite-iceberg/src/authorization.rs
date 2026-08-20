@@ -229,6 +229,23 @@ struct DurableAuthorizationLease {
     heartbeat: Option<JoinHandle<()>>,
 }
 
+#[derive(Clone)]
+pub struct AuthorizationWriteFence {
+    durable: Option<Arc<DurableAuthorizationWriteFence>>,
+}
+
+struct DurableAuthorizationWriteFence {
+    operator: Operator,
+    path: String,
+    owner: String,
+    etag: Arc<Mutex<String>>,
+    lost: Arc<AtomicBool>,
+}
+
+tokio::task_local! {
+    static AUTHORIZATION_WRITE_FENCE: AuthorizationWriteFence;
+}
+
 fn authorization_write_lock() -> Arc<Mutex<()>> {
     static LOCK: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
     LOCK.get_or_init(|| Arc::new(Mutex::new(()))).clone()
@@ -377,36 +394,30 @@ impl Drop for DurableAuthorizationLease {
         if let Some(heartbeat) = self.heartbeat.take() {
             heartbeat.abort();
         }
-        if self.released.load(Ordering::Acquire) || self.lost.load(Ordering::Acquire) {
-            return;
-        }
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
-        let operator = self.operator.clone();
-        let path = self.path.clone();
-        let owner = self.owner.clone();
-        let etag = self.etag.clone();
-        // A cancelled request cannot await release from Drop. Best-effort
-        // conditional release is still preferable to retaining the shared
-        // mutation lock until its TTL; ownership is checked by if-match.
-        handle.spawn(async move {
-            let current_etag = etag.lock().await.clone();
-            let _ = operator
-                .write_options(
-                    &path,
-                    authorization_mutation_lock_bytes(&owner, true),
-                    WriteOptions {
-                        if_match: Some(current_etag),
-                        ..Default::default()
-                    },
-                )
-                .await;
-        });
+        // Never release a shared mutation lease from Drop. Drop is also the
+        // cancellation path, and an asynchronous best-effort release could
+        // race a committed-or-unknown mutation and let a new writer enter
+        // before the old write has settled. Explicit release is the only
+        // successful hand-off; cancellation and lease loss retain the owner
+        // fence until the backend TTL expires.
     }
 }
 
 impl AuthorizationLease {
+    pub fn write_fence(&self) -> AuthorizationWriteFence {
+        AuthorizationWriteFence {
+            durable: self.durable.as_ref().map(|lease| {
+                Arc::new(DurableAuthorizationWriteFence {
+                    operator: lease.operator.clone(),
+                    path: lease.path.clone(),
+                    owner: lease.owner.clone(),
+                    etag: lease.etag.clone(),
+                    lost: lease.lost.clone(),
+                })
+            }),
+        }
+    }
+
     pub async fn release(mut self) -> Result<()> {
         if let Some(durable) = self.durable.take() {
             durable.release().await
@@ -433,6 +444,57 @@ impl AuthorizationLease {
         durable.ensure_held().map_err(|_| ())?;
         Ok(value)
     }
+}
+
+pub async fn with_authorization_write_fence<T, F>(fence: AuthorizationWriteFence, operation: F) -> T
+where
+    F: Future<Output = T>,
+{
+    AUTHORIZATION_WRITE_FENCE.scope(fence, operation).await
+}
+
+/// Check the lease at the last write boundary of authoritative storage
+/// operations. Local callers without a server authorization scope are
+/// intentionally unaffected; shared server mutations must still own the
+/// conditional lock immediately before committing.
+pub async fn ensure_authorization_write_fence() -> Result<()> {
+    let Some(fence) = AUTHORIZATION_WRITE_FENCE.try_with(Clone::clone).ok() else {
+        return Ok(());
+    };
+    if let Some(durable) = fence.durable {
+        if durable.lost.load(Ordering::Acquire) {
+            bail!("Space authorization mutation lease was lost before write");
+        }
+        for _ in 0..2 {
+            let etag = durable.etag.lock().await.clone();
+            let bytes = match durable
+                .operator
+                .read_options(
+                    &durable.path,
+                    ReadOptions {
+                        if_match: Some(etag),
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == opendal::ErrorKind::ConditionNotMatch => continue,
+                Err(error) => return Err(error.into()),
+            };
+            let value: Value = serde_json::from_slice(&bytes.to_vec())
+                .context("decode Space authorization mutation fence")?;
+            if value.get("owner").and_then(Value::as_str) != Some(durable.owner.as_str())
+                || value.get("released").and_then(Value::as_bool) == Some(true)
+            {
+                durable.lost.store(true, Ordering::Release);
+                bail!("Space authorization mutation lease changed before write");
+            }
+            return Ok(());
+        }
+        bail!("Space authorization mutation lease changed before write");
+    }
+    Ok(())
 }
 
 async fn finish_authorization_lease<T>(lease: AuthorizationLease, result: Result<T>) -> Result<T> {

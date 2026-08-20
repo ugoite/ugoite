@@ -17,7 +17,11 @@ use ugoite_domain::id::validate_asset_id;
 /// Maximum size of one operator-owned Asset object. The same boundary is used
 /// by core upload, REST upload, direct reads, and the derived parser so a
 /// locally-created object cannot bypass later resource limits.
-pub const MAX_ASSET_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_ASSET_BYTES: usize = ugoite_domain::entry::MAX_ASSET_REFERENCE_SIZE_BYTES as usize;
+/// Multipart framing and headers are not part of the Asset object limit. The
+/// server body limit includes them, while upload_asset enforces the exact
+/// per-file MAX_ASSET_BYTES boundary after parsing.
+pub const MAX_ASSET_MULTIPART_OVERHEAD_BYTES: usize = 128 * 1024;
 const ASSET_READ_CHUNK_BYTES: usize = 256 * 1024;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -108,11 +112,13 @@ pub async fn save_asset_with_media_type(
     }
     let asset_id = Uuid::now_v7().to_string();
     let safe_name = normalize_asset_filename(filename, &asset_id);
-    op.write(&asset_path(ws_path, &asset_id), content.to_vec())
+    let reference = reference_with_media_type(asset_id, safe_name, media_type, content);
+    reference
+        .validate()
+        .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    op.write(&asset_path(ws_path, &reference.asset_id), content.to_vec())
         .await?;
-    Ok(reference_with_media_type(
-        asset_id, safe_name, media_type, content,
-    ))
+    Ok(reference)
 }
 
 pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<AssetContent> {
@@ -327,6 +333,7 @@ pub async fn delete_asset(
         "asset.delete",
         &serde_json::json!({"asset_id": asset_id}),
     )?;
+    crate::authorization::ensure_authorization_write_fence().await?;
     let deletion = workspace
         .commit(publication)?
         .delete_asset(asset_id, relation_scopes)

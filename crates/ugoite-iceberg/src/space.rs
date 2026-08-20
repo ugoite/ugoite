@@ -399,6 +399,7 @@ pub async fn patch_space(
     space_id: &str,
     patch: &serde_json::Value,
 ) -> Result<serde_json::Value> {
+    crate::authorization::ensure_authorization_write_fence().await?;
     let storage = OpendalStorage::from_operator(op);
     patch_space_with_storage(&storage, space_id, patch).await
 }

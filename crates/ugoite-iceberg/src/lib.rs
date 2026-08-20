@@ -151,6 +151,9 @@ fn validate_revision_payload(form: &FormDefinition, revision: &EntryRevision) ->
                 "The same asset is referenced more than once in this list"
             }
             RevisionError::TooManyAssetReferences => "Entry contains too many AssetReferences",
+            RevisionError::AssetReferenceMetadataTooLarge => {
+                "Entry AssetReference metadata exceeds the size limit"
+            }
             _ => "Entry revision payload is not valid for this Form",
         };
         invalid_revision_input(format!(
@@ -607,6 +610,7 @@ impl IcebergWorkspace {
     /// Persists a named immutable checkpoint through the Space's OpenDAL
     /// boundary. Reusing a name fails rather than silently replacing history.
     pub async fn save_checkpoint(&self, name: &str, checkpoint: &SpaceCheckpoint) -> Result<()> {
+        crate::authorization::ensure_authorization_write_fence().await?;
         validate_checkpoint_name(name)?;
         self.validate_checkpoint(checkpoint)?;
         self.space_catalog

@@ -101,7 +101,6 @@ const ASSET_TEXT_REBUILD_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 6
 const MAX_SOURCE_CHANGE_RETRIES: usize = 3;
 const MAX_BACKGROUND_GC_SCHEDULERS: usize = 1024;
 const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
-const ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
 const MAX_ASSET_TEXT_REFRESH_REQUESTS: usize = 16_384;
 const MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES: usize = 64 * 1024;
 const ASSET_TEXT_REFRESH_ADMISSION_LOCK: &str = "admission.lock";
@@ -757,14 +756,6 @@ fn asset_text_refresh_request_path(ws_path: &str, token: &str) -> String {
     format!("{}{token}.json", asset_text_refresh_request_prefix(ws_path))
 }
 
-fn legacy_asset_text_refresh_request_path(ws_path: &str) -> String {
-    format!(
-        "{ws_path}/_ugoite/derived/relations/{}/{}",
-        DerivedRelationId::ASSET_TEXT,
-        ASSET_TEXT_REFRESH_REQUEST_FILE
-    )
-}
-
 fn refresh_request_token(path: &str) -> Option<&str> {
     let token = path.rsplit('/').next()?.strip_suffix(".json")?;
     let uuid = Uuid::parse_str(token).ok()?;
@@ -1129,27 +1120,22 @@ where
     }
 }
 
+#[cfg(test)]
 fn refresh_request_is_at_or_before(path: &str, cutoff: &str) -> bool {
-    // The fixed-name marker predates immutable UUID-v7 markers. It is always
-    // part of the snapshot because there is no creation coordinate to compare.
-    path.ends_with(&format!("/{ASSET_TEXT_REFRESH_REQUEST_FILE}"))
-        || refresh_request_token(path).is_some_and(|token| token <= cutoff)
+    refresh_request_token(path).is_some_and(|token| token <= cutoff)
 }
 
 /// Lists one bounded batch from the marker snapshot. UUID-v7 marker names are
 /// ordered by creation time; the cutoff makes markers created while a build is
 /// running ineligible for acknowledgement even when the directory is larger
 /// than the in-memory batch bound.
+#[cfg(test)]
 async fn asset_text_refresh_request_batch_before(
     op: &Operator,
     ws_path: &str,
     cutoff: &str,
 ) -> Result<Vec<String>> {
     let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
-    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
-    if op.exists(&legacy_path).await? {
-        paths.push(legacy_path);
-    }
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -1172,6 +1158,41 @@ async fn asset_text_refresh_request_batch_before(
         }
         if paths.len() == MAX_ASSET_TEXT_REFRESH_REQUESTS {
             break;
+        }
+    }
+    Ok(paths)
+}
+
+/// Capture the exact immutable marker paths admitted by one worker. The
+/// admission lock serializes all current writers, so a later writer cannot
+/// create one of these paths before the old owner deletes it. This deliberately
+/// avoids using UUID-v7 lexical order as a cross-process timestamp fence.
+async fn snapshot_asset_text_refresh_request_paths(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<Vec<String>> {
+    let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    let mut examined = 0usize;
+    while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
+        if refresh_request_token(entry.path()).is_some() {
+            paths.push(entry.path().to_string());
+            if paths.len() > MAX_ASSET_TEXT_REFRESH_REQUESTS {
+                bail!(
+                    "AssetText refresh request markers exceed {}",
+                    MAX_ASSET_TEXT_REFRESH_REQUESTS
+                );
+            }
         }
     }
     Ok(paths)
@@ -1200,28 +1221,19 @@ async fn clear_asset_text_refresh_requests_with_admission_lock(
     ws_path: &str,
 ) -> Result<()> {
     with_asset_text_refresh_admission_lock(op, ws_path, || async {
-        // Lock acquisition is the explicit snapshot boundary. All production
-        // marker writers use the same admission lock, so draining bounded
-        // batches cannot delete a request created after this drain acquired
-        // the lease. The cutoff also protects against a stale owner that
-        // continues after its heartbeat is lost and another owner takes over.
-        let cutoff = Uuid::now_v7().to_string();
-        loop {
-            let paths = asset_text_refresh_request_batch_before(op, ws_path, &cutoff).await?;
-            if paths.is_empty() {
-                return Ok(());
-            }
-            clear_asset_text_refresh_request_paths(op, &paths).await?;
-        }
+        // Capture exact paths at the admission boundary. UUID-v7 lexical
+        // ordering is not a cross-process fence: independently generated
+        // markers in one millisecond can sort either way. Current writers
+        // also no longer use the old fixed-name marker, whose path could not
+        // be safely conditionally deleted after a lease takeover.
+        let paths = snapshot_asset_text_refresh_request_paths(op, ws_path).await?;
+        clear_asset_text_refresh_request_paths(op, &paths).await
     })
     .await
 }
 
 async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Result<usize> {
-    let mut count = usize::from(
-        op.exists(&legacy_asset_text_refresh_request_path(ws_path))
-            .await?,
-    );
+    let mut count = 0usize;
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -1278,12 +1290,6 @@ pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) ->
 }
 
 pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
-    if op
-        .exists(&legacy_asset_text_refresh_request_path(ws_path))
-        .await?
-    {
-        return Ok(true);
-    }
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -2723,11 +2729,15 @@ async fn process_asset_async(
     let semaphore = PARSER_SEMAPHORE
         .get_or_init(|| Arc::new(Semaphore::new(4)))
         .clone();
-    let _permit = semaphore
+    let permit = semaphore
         .acquire_owned()
         .await
         .map_err(|_| "parser_failed")?;
     tokio::task::spawn_blocking(move || {
+        // Keep the permit inside the blocking job. Cancelling the async wait
+        // must not make another job eligible while this CPU/memory-heavy
+        // parser is still running on Tokio's blocking pool.
+        let _permit = permit;
         let actual_sha = hex::encode(Sha256::digest(&bytes));
         let dispatch = detect_dispatch(&name, &media_type, &bytes);
         let parser = dispatch.parser().clone();

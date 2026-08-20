@@ -399,7 +399,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let result = service
                 .restore_entry(&space_id, &entry_id, &revision_id, &author)
                 .await?;
