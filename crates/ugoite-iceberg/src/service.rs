@@ -69,8 +69,6 @@ static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
 const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 const ASSET_TEXT_REFRESH_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_BACKGROUND_REFRESH_WORKERS: usize = 1024;
-const MAX_SHARED_REFRESH_CONFLICT_RETRIES: usize = 8;
-const MAX_REFRESH_FAILURE_RETRIES: usize = 8;
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
@@ -100,22 +98,12 @@ impl UgoiteService {
 
     /// Schedules a best-effort derived refresh after an authoritative write.
     ///
-    /// The worker is process-local and coalesces notifications. It never
-    /// participates in the Entry commit latency or becomes an authority for
-    /// the current Form state; an explicit `index run` remains the repair path.
-    async fn schedule_asset_text_refresh(&self, space_id: &str) -> Result<()> {
-        // Keep a tiny durable rearm record outside the build prefixes. The
-        // worker remains process-local and never delays the mutation, but the
-        // intent write itself is awaited so a backend failure is observable
-        // after the authoritative commit instead of being lost in a detached
-        // task.
-        crate::derived_relation::mark_asset_text_refresh_requested(
-            &self.operator,
-            &self.workspace_path(space_id),
-        )
-        .await?;
+    /// The authoritative Catalog Head is the durable commit-coupled refresh
+    /// intent: a committed mutation changes its source coordinate, and a
+    /// stale/missing Derived Head is rearmed at startup. This keeps marker
+    /// storage and the process-local worker entirely out of mutation latency.
+    fn schedule_asset_text_refresh(&self, space_id: &str) {
         self.enqueue_asset_text_refresh(space_id);
-        Ok(())
     }
 
     fn enqueue_asset_text_refresh(&self, space_id: &str) {
@@ -158,7 +146,6 @@ impl UgoiteService {
             let worker_key = self.asset_text_refresh_worker_key(space_id);
             let worker = worker.clone();
             tokio::spawn(async move {
-                let mut shared_conflict_retries = 0usize;
                 let mut refresh_failures = 0usize;
                 loop {
                     worker.notify.notified().await;
@@ -184,43 +171,19 @@ impl UgoiteService {
                             .await
                             .map_err(|_| anyhow!("AssetText refresh operation timed out"))
                             .and_then(|result| result);
-                        // A shared CAS loser has already built a valid
-                        // immutable candidate. Retry from the newest Head so
-                        // a quiet Space does not remain stale indefinitely.
-                        if shared
-                            && result
-                                .as_ref()
-                                .is_err_and(crate::derived_relation::is_shared_publish_conflict)
-                        {
-                            shared_conflict_retries = shared_conflict_retries.saturating_add(1);
-                            if shared_conflict_retries <= MAX_SHARED_REFRESH_CONFLICT_RETRIES {
-                                worker.pending.store(true, Ordering::Release);
-                                worker.notify.notify_one();
-                                tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
-                            } else {
-                                // A continuously changing shared Head must
-                                // not pin this worker and its Operator forever.
-                                // The next authoritative mutation or an
-                                // explicit index run can reopen the refresh.
-                                worker.pending.store(false, Ordering::Release);
-                            }
-                        } else if result.is_err() {
+                        if result.is_err() {
                             refresh_failures = refresh_failures.saturating_add(1);
-                            if refresh_failures <= MAX_REFRESH_FAILURE_RETRIES {
-                                worker.pending.store(true, Ordering::Release);
-                                worker.notify.notify_one();
-                                tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
-                            } else {
-                                // The durable refresh-request marker remains
-                                // for stats/explicit index repair. Do not pin
-                                // an Operator or a worker forever on a broken
-                                // backend.
-                                worker.pending.store(false, Ordering::Release);
-                            }
+                            // The authoritative source coordinate remains a
+                            // durable refresh intent. Keep retrying with a
+                            // bounded backoff so a backend outage that lasts
+                            // longer than one retry window cannot strand a
+                            // committed mutation until another write/restart.
+                            worker.pending.store(true, Ordering::Release);
+                            worker.notify.notify_one();
+                            let delay = Duration::from_secs(1u64 << refresh_failures.min(6));
+                            tokio::time::sleep(delay).await;
                         } else {
-                            match crate::derived_relation::asset_text_refresh_requested(
-                                &op, &ws_path,
-                            )
+                            match crate::derived_relation::asset_text_refresh_needed(&op, &ws_path)
                             .await
                             {
                                 Ok(true) => {
@@ -230,19 +193,18 @@ impl UgoiteService {
                                     // worker alive and process that request.
                                     worker.pending.store(true, Ordering::Release);
                                     worker.notify.notify_one();
-                                    shared_conflict_retries = 0;
                                     refresh_failures = 0;
                                 }
                                 Ok(false) => {
-                                    shared_conflict_retries = 0;
                                     refresh_failures = 0;
                                 }
                                 Err(_) => {
                                     refresh_failures = refresh_failures.saturating_add(1);
-                                    if refresh_failures <= MAX_REFRESH_FAILURE_RETRIES {
-                                        worker.pending.store(true, Ordering::Release);
-                                        worker.notify.notify_one();
-                                    }
+                                    worker.pending.store(true, Ordering::Release);
+                                    worker.notify.notify_one();
+                                    let delay =
+                                        Duration::from_secs(1u64 << refresh_failures.min(6));
+                                    tokio::time::sleep(delay).await;
                                 }
                             }
                         }
@@ -415,7 +377,7 @@ impl UgoiteService {
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
         form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await?;
-        self.schedule_asset_text_refresh(space_id).await?;
+        self.schedule_asset_text_refresh(space_id);
         Ok(())
     }
 
@@ -439,7 +401,7 @@ impl UgoiteService {
             &integrity,
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id).await?;
+        self.schedule_asset_text_refresh(space_id);
         let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         Ok(result)
     }
@@ -487,7 +449,7 @@ impl UgoiteService {
             Some(&scopes),
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id).await?;
+        self.schedule_asset_text_refresh(space_id);
         let result = entry::get_entry(&self.operator, &workspace, entry_id).await?;
         Ok(result)
     }
@@ -578,7 +540,7 @@ impl UgoiteService {
             scopes.as_ref(),
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id).await?;
+        self.schedule_asset_text_refresh(space_id);
         Ok(result)
     }
 
@@ -599,7 +561,7 @@ impl UgoiteService {
             actor,
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id).await?;
+        self.schedule_asset_text_refresh(space_id);
         Ok(())
     }
 
@@ -727,7 +689,7 @@ impl UgoiteService {
             scopes.as_ref(),
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id).await?;
+        self.schedule_asset_text_refresh(space_id);
         Ok(result)
     }
 
@@ -764,7 +726,7 @@ impl UgoiteService {
         )
         .await
         .map_err(map_checkpoint_error)?;
-        self.schedule_asset_text_refresh(space_id).await?;
+        self.schedule_asset_text_refresh(space_id);
         Ok(result)
     }
 
@@ -1536,12 +1498,12 @@ impl UgoiteService {
     }
 
     /// Rehydrates a process-local AssetText refresh worker from the durable
-    /// intent marker left by an earlier authoritative mutation. Startup uses
-    /// this path instead of rewriting the marker, so a pending request can be
-    /// retried even when the worker that created it was lost with its process.
+    /// authoritative source coordinate. This also catches a process crash
+    /// after an authoritative commit but before any optional refresh marker
+    /// could be written.
     pub async fn rearm_asset_text_refresh(&self, space_id: &str) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
-        if crate::derived_relation::asset_text_refresh_requested(
+        if crate::derived_relation::asset_text_refresh_needed(
             &self.operator,
             &self.workspace_path(space_id),
         )
@@ -1694,7 +1656,7 @@ impl UgoiteService {
             &scopes,
         )
         .await?;
-        self.schedule_asset_text_refresh(space_id).await?;
+        self.schedule_asset_text_refresh(space_id);
         Ok(())
     }
 

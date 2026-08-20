@@ -51,6 +51,7 @@ use ugoite_domain::derived_relation::{
 };
 use ugoite_domain::entry::AssetReference;
 use ugoite_domain::form::FieldType;
+use ugoite_domain::id::validate_asset_id;
 use ugoite_storage::{DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore};
 use uuid::Uuid;
 use zip::ZipArchive;
@@ -697,6 +698,12 @@ async fn asset_text_refresh_request_paths(op: &Operator, ws_path: &str) -> Resul
     Ok(paths)
 }
 
+fn is_refresh_request_capacity_error(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("refresh request markers exceed"))
+}
+
 async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String]) -> Result<()> {
     for path in paths {
         match op.delete(path).await {
@@ -730,6 +737,52 @@ pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Resul
         .is_empty())
 }
 
+/// Returns whether the durable authoritative source requires an AssetText
+/// refresh. The Catalog Head coordinate is the commit-coupled fallback intent:
+/// even if a process crashes before it can write a refresh marker, a stale
+/// Derived Head remains observable and can be rearmed on the next startup.
+pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<bool> {
+    let source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
+    let head_store =
+        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
+            .single_process();
+    let head = match head_store.read_exact().await {
+        Ok(Some(head)) => head.head,
+        Ok(None) => {
+            // An empty Space has no source coordinate and does not need an
+            // initial empty build. Once an authoritative mutation creates a
+            // Catalog Head, the missing Derived Head is stale by definition.
+            return Ok(source_coordinate
+                .get("catalog_head_sha256")
+                .is_some_and(|value| !value.is_null()));
+        }
+        Err(error)
+            if error
+                .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
+                .is_some() =>
+        {
+            return Ok(true);
+        }
+        Err(error) => return Err(error),
+    };
+    let stale = head.source_coordinate != source_coordinate
+        || head.producer_fingerprint != asset_text_producer_fingerprint()
+        || head.definition_fingerprint != asset_text_definition_fingerprint()
+        || head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH;
+    if stale {
+        return Ok(true);
+    }
+    // A marker-list capacity error is not allowed to hide the source
+    // coordinate reconciliation. Markers are only an optimization now; once
+    // the authoritative source and current Head agree, an overfull legacy
+    // marker directory must not strand future refreshes.
+    match asset_text_refresh_requested(op, ws_path).await {
+        Ok(requested) => Ok(requested),
+        Err(error) if is_refresh_request_capacity_error(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 /// Returns true when a shared Relation Head replacement lost its conditional
 /// write race. The immutable build is garbage, but the refresh worker should
 /// retry from the newest Head instead of allowing a quiet Space to remain
@@ -747,7 +800,17 @@ async fn rebuild_asset_text_with_mode(
     ws_path: &str,
     shared: bool,
 ) -> Result<DerivedRelationHead> {
-    let refresh_request_paths = asset_text_refresh_request_paths(op, ws_path).await?;
+    let refresh_request_paths = match asset_text_refresh_request_paths(op, ws_path).await {
+        Ok(paths) => paths,
+        Err(error) if is_refresh_request_capacity_error(&error) => {
+            // The authoritative source coordinate is the durable fallback
+            // intent. Do not block a valid rebuild on an overfull legacy
+            // marker directory; the marker files are advisory and can be
+            // cleaned by a later maintenance pass.
+            Vec::new()
+        }
+        Err(error) => return Err(error),
+    };
     let definition = asset_text_definition();
     let producer_fingerprint = asset_text_producer_fingerprint();
     let relation_uuid = definition.relation_id.as_uuid();
@@ -1647,7 +1710,12 @@ fn typed_asset_references_for_field(
             FieldType::AssetReference,
             _,
             ugoite_domain::entry::FieldValue::AssetReference(reference),
-        ) => Ok(vec![reference.clone()]),
+        ) => {
+            reference
+                .validate()
+                .map_err(|error| anyhow!("invalid persisted AssetReference: {error}"))?;
+            Ok(vec![reference.clone()])
+        }
         (FieldType::AssetReference, _, _) => {
             bail!("Entry AssetReference field has an invalid value")
         }
@@ -1661,9 +1729,12 @@ fn typed_asset_references_for_field(
                 .iter()
                 .filter_map(|value| match value {
                     ugoite_domain::entry::FieldValue::Null => None,
-                    ugoite_domain::entry::FieldValue::AssetReference(reference) => {
-                        Some(Ok(reference.clone()))
-                    }
+                    ugoite_domain::entry::FieldValue::AssetReference(reference) => Some(
+                        reference
+                            .validate()
+                            .map_err(|error| anyhow!("invalid persisted AssetReference: {error}"))
+                            .map(|()| reference.clone()),
+                    ),
                     _ => Some(Err(anyhow::anyhow!(
                         "Entry AssetReference list has an invalid value"
                     ))),
@@ -1718,6 +1789,8 @@ async fn build_asset_text_rows(
     let parsed_at = Utc::now().to_rfc3339();
     let mut rows = BoundedAssetTextRows::default();
     for reference in references {
+        validate_asset_id(&reference.asset_id)
+            .map_err(|error| anyhow!("invalid AssetReference asset_id: {error}"))?;
         if rows.failed() {
             return rows.finish();
         }
@@ -2653,6 +2726,40 @@ mod tests {
 
         clear_asset_text_refresh_requested(&operator, workspace).await?;
         assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_legacy_asset_reference_cannot_escape_space_storage() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let outside_path = "spaces/other/assets/sentinel";
+        operator
+            .write(outside_path, b"must not be read".to_vec())
+            .await?;
+        let reference = SourceReference {
+            asset_id: "../other/assets/sentinel".to_string(),
+            name: "sentinel.txt".to_string(),
+            media_type: "text/plain".to_string(),
+            source_sha256: "a".repeat(64),
+            source_size_bytes: 16,
+            integrity_error: None,
+        };
+
+        let error = build_asset_text_rows(&operator, "spaces/demo", &[reference], "test-producer")
+            .await
+            .expect_err("invalid legacy asset IDs must fail closed before object reads");
+        assert!(error
+            .to_string()
+            .contains("invalid AssetReference asset_id"));
+        assert!(operator.exists(outside_path).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn empty_space_has_no_durable_refresh_need_without_a_catalog_head() -> anyhow::Result<()>
+    {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        assert!(!asset_text_refresh_needed(&operator, "spaces/empty").await?);
         Ok(())
     }
 

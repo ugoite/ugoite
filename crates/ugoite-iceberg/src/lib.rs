@@ -3847,14 +3847,18 @@ fn required_struct_i64_at(array: &StructArray, name: &str, row: usize) -> Result
 }
 
 fn asset_reference_at(array: &StructArray, row: usize) -> Result<FieldValue> {
-    Ok(FieldValue::AssetReference(AssetReference {
+    let reference = AssetReference {
         asset_id: required_struct_string_at(array, "asset_id", row)?,
         name: required_struct_string_at(array, "name", row)?,
         media_type: required_struct_string_at(array, "media_type", row)?,
         size_bytes: u64::try_from(required_struct_i64_at(array, "size_bytes", row)?)
             .context("asset reference size_bytes must be non-negative")?,
         sha256: required_struct_string_at(array, "sha256", row)?,
-    }))
+    };
+    reference
+        .validate()
+        .map_err(|error| anyhow!("invalid persisted AssetReference: {error}"))?;
+    Ok(FieldValue::AssetReference(reference))
 }
 
 fn integrity_at(array: &StructArray, row: usize) -> Result<EntryIntegrity> {
@@ -4369,7 +4373,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         )
@@ -4385,7 +4391,7 @@ mod asset_reference_decode_tests {
                 name: "file.txt".into(),
                 media_type: "text/plain".into(),
                 size_bytes: 4,
-                sha256: "sha256:hash".into(),
+                sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             }))
         );
 
@@ -4403,7 +4409,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         );
@@ -4416,7 +4424,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![None])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         );
@@ -4429,7 +4439,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![Some(-1)])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         );
@@ -4449,7 +4461,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         );

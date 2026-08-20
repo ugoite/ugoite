@@ -691,6 +691,9 @@ fn append_asset_reference(value: &Value, output: &mut Vec<String>) -> Result<()>
     let Ok(reference) = serde_json::from_value::<AssetReference>(value.clone()) else {
         return Ok(());
     };
+    reference
+        .validate()
+        .map_err(|error| anyhow::anyhow!("invalid persisted AssetReference: {error}"))?;
     if output.len() >= crate::index::MAX_ASSET_REFERENCES_PER_ENTRY {
         anyhow::bail!(
             "authorized Entry contains more than {} AssetReferences",
