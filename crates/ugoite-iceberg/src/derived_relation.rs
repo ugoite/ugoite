@@ -67,6 +67,7 @@ const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ZIP_ENTRIES: usize = 10_000;
 const MAX_ZIP_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_PDF_PAGES: usize = 10_000;
+const MAX_PDF_OBJECTS: usize = 100_000;
 const MAX_PDF_TEXT_OPERATORS: usize = 1_000_000;
 const MAX_XML_DEPTH: usize = 256;
 const MAX_EXTRACTED_TEXT_BYTES: usize = 16 * 1024 * 1024;
@@ -321,7 +322,7 @@ pub fn asset_text_producer_fingerprint() -> String {
     // This is deliberately a semantic contract, not a crate version.  Any
     // parser, normalization, dispatch, or chunking change must update it.
     sha256_digest(
-        b"ugoite.asset_text/protocol=3;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=literal+bounded-flate;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+10000-zip-entries+128MiB-zip+10000-pdf-pages+1000000-pdf-text-operators+16MiB-text+256-xml-depth+1000000-total-rows+512MiB-total-text+16MiB-pdf-decoded-stream;blocking=bounded-4;schema=2",
+        b"ugoite.asset_text/protocol=3;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=literal+bounded-flate;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+10000-zip-entries+128MiB-zip+10000-pdf-pages+100000-pdf-objects+1000000-pdf-text-operators+16MiB-text+256-xml-depth+1000000-total-rows+512MiB-total-text+16MiB-pdf-decoded-stream;blocking=bounded-4;schema=2",
     )
 }
 
@@ -721,25 +722,21 @@ fn refresh_request_admission_lock_reclaimable(
     {
         return true;
     }
-    let heartbeat_at = value
-        .as_ref()
-        .and_then(|value| {
-            value
-                .get("heartbeat_at")
-                .or_else(|| value.get("acquired_at"))
-        })
-        .and_then(Value::as_i64)
-        .and_then(|seconds| u64::try_from(seconds).ok())
-        .map(|seconds| std::time::UNIX_EPOCH + Duration::from_secs(seconds));
-    heartbeat_at
-        .or(last_modified)
+    // JSON timestamps are diagnostic only. Lease expiry must use the
+    // backend's modification timestamp so clock skew between shared writers
+    // cannot reclaim a live admission lock.
+    last_modified
         .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
         .is_some_and(|age| age >= ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL)
 }
 
 async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str) -> Result<String> {
     let capabilities = op.info().capability();
-    if !capabilities.write_with_if_not_exists || !capabilities.write_with_if_match {
+    let has_shared_contract = capabilities.stat
+        && capabilities.read_with_if_match
+        && capabilities.write_with_if_not_exists
+        && capabilities.write_with_if_match;
+    if !has_shared_contract {
         bail!("AssetText refresh marker admission requires conditional object writes");
     }
     let path = refresh_request_admission_lock_path(ws_path);
@@ -943,7 +940,11 @@ where
     Fut: Future<Output = Result<T>>,
 {
     let capabilities = op.info().capability();
-    if !capabilities.write_with_if_not_exists || !capabilities.write_with_if_match {
+    let has_shared_contract = capabilities.stat
+        && capabilities.read_with_if_match
+        && capabilities.write_with_if_not_exists
+        && capabilities.write_with_if_match;
+    if !has_shared_contract {
         // The in-memory backend intentionally has no conditional-object
         // contract. It is a single-process test/local backend, so retain the
         // same admission invariant with one process-local mutex. Shared
@@ -1524,7 +1525,13 @@ async fn rebuild_asset_text_with_mode(
     // Remove only the requests observed before this build. The drain is
     // bounded per listing/deletion batch, so marker overflow cannot strand
     // old requests or require an unbounded in-memory snapshot.
-    clear_asset_text_refresh_requests_with_admission_lock(op, ws_path).await?;
+    if let Err(error) = clear_asset_text_refresh_requests_with_admission_lock(op, ws_path).await {
+        // Head publication is already complete. Keep durable request markers
+        // for the next maintenance pass instead of reporting a failed build
+        // and triggering full-rebuild retry churn.
+        eprintln!("AssetText refresh marker cleanup deferred for {ws_path}: {error:#}");
+        schedule_asset_text_gc(op, ws_path);
+    }
     Ok(current)
 }
 
@@ -2716,6 +2723,9 @@ fn extract_pdf_stream_text_bounded(
     max_bytes: usize,
     text_operators: &mut usize,
 ) -> std::result::Result<String, &'static str> {
+    if !pdf_object_count_within_limit(bytes, MAX_PDF_OBJECTS) {
+        return Err("parser_limit");
+    }
     let document = Document::load_mem(bytes).map_err(|_| "malformed_pdf")?;
     let mut decoded_bytes = 0usize;
     let mut text = String::new();
@@ -2758,6 +2768,46 @@ fn extract_pdf_stream_text_bounded(
         }
     }
     Ok(text)
+}
+
+fn pdf_object_count_within_limit(bytes: &[u8], maximum: usize) -> bool {
+    let mut count = 0usize;
+    let mut offset = 0usize;
+    while let Some(relative) = bytes[offset..]
+        .windows(b" obj".len())
+        .position(|window| window == b" obj")
+    {
+        let object_token = offset + relative;
+        let mut cursor = object_token;
+        while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+            cursor -= 1;
+        }
+        let generation_end = cursor;
+        while cursor > 0 && bytes[cursor - 1].is_ascii_digit() {
+            cursor -= 1;
+        }
+        if cursor == generation_end {
+            offset = object_token + b" obj".len();
+            continue;
+        }
+        while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+            cursor -= 1;
+        }
+        let object_number_end = cursor;
+        while cursor > 0 && bytes[cursor - 1].is_ascii_digit() {
+            cursor -= 1;
+        }
+        if cursor == object_number_end || (cursor > 0 && !bytes[cursor - 1].is_ascii_whitespace()) {
+            offset = object_token + b" obj".len();
+            continue;
+        }
+        count += 1;
+        if count > maximum {
+            return false;
+        }
+        offset = object_token + b" obj".len();
+    }
+    true
 }
 
 fn extract_pdf_chunks(
@@ -3391,6 +3441,13 @@ mod tests {
             deeply_nested.push_str(&format!("</n{index}>"));
         }
         assert_eq!(xml_text(deeply_nested.as_bytes()), Err("parser_limit"));
+    }
+
+    #[test]
+    fn pdf_object_limit_is_checked_before_lopdf_load() {
+        let bytes = b"1 0 obj\nendobj\n2 0 obj\nendobj\n";
+        assert!(pdf_object_count_within_limit(bytes, 2));
+        assert!(!pdf_object_count_within_limit(bytes, 1));
     }
 
     #[test]

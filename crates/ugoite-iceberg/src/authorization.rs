@@ -5,6 +5,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, SecondsFormat, Utc};
 use fs2::FileExt;
+use futures::TryStreamExt;
 use opendal::Operator;
 use rand::TryRng;
 use serde::{Deserialize, Serialize};
@@ -31,6 +32,7 @@ const AUTHORIZATION_FILE: &str = "security/principals.json";
 const LEGACY_AUTHORIZATION_FILE: &str = "authorization.json";
 const LEGACY_MIGRATION_STATE_FILE: &str = "security/migration-state.json";
 const MAX_AUTHORIZATION_STATE_BYTES: usize = 64 * 1024 * 1024;
+const AUTHORIZATION_STATE_READER_CHUNK_BYTES: usize = 256 * 1024;
 const MAX_AUTHORIZATION_MAP_ENTRIES: usize = 100_000;
 const MAX_AUTHORIZATION_POLICY_HISTORY_REVISIONS: usize = 1_000_000;
 
@@ -343,18 +345,9 @@ impl Authorizer {
     }
 
     pub async fn state(&self, space_id: &str) -> Result<AuthorizationState> {
-        let bytes = self
-            .operator
-            .read(&state_path(space_id))
+        let bytes = read_authorization_state_bytes(&self.operator, &state_path(space_id), None)
             .await
             .context("read Space authorization state")?;
-        let bytes = bytes.to_vec();
-        if bytes.len() > MAX_AUTHORIZATION_STATE_BYTES {
-            bail!(
-                "Space authorization state exceeds the {} byte limit",
-                MAX_AUTHORIZATION_STATE_BYTES
-            );
-        }
         let state: AuthorizationState =
             serde_json::from_slice(&bytes).context("decode Space authorization state")?;
         validate_authorization_state_limits(&state)?;
@@ -1580,7 +1573,14 @@ impl Authorizer {
 
     async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
         let path = state_path(space_id);
+        validate_authorization_state_limits(state)?;
         let serialized = serde_json::to_vec_pretty(state)?;
+        if serialized.len() > MAX_AUTHORIZATION_STATE_BYTES {
+            bail!(
+                "Space authorization state exceeds the {} byte limit",
+                MAX_AUTHORIZATION_STATE_BYTES
+            );
+        }
         let capabilities = self.operator.info().capability();
         let _local_lock = self.local_authorization_lock(space_id)?;
 
@@ -1619,14 +1619,12 @@ impl Authorizer {
                     anyhow!("Space authorization object has no conditional-write version")
                 })?
                 .to_string();
-            let current = self
-                .operator
-                .read_with(&path)
-                .if_match(&version)
+            let current = read_authorization_state_bytes(&self.operator, &path, Some(&version))
                 .await
                 .context("read versioned Space authorization state")?;
-            let current: AuthorizationState = serde_json::from_slice(&current.to_vec())
+            let current: AuthorizationState = serde_json::from_slice(&current)
                 .context("decode versioned Space authorization state")?;
+            validate_authorization_state_limits(&current)?;
             if current.revision != expected_revision {
                 bail!("Space authorization revision conflict");
             }
@@ -1889,6 +1887,42 @@ fn owner_count(state: &AuthorizationState) -> usize {
 
 fn state_path(space_id: &str) -> String {
     format!("spaces/{space_id}/{AUTHORIZATION_FILE}")
+}
+
+async fn read_authorization_state_bytes(
+    operator: &Operator,
+    path: &str,
+    exact_version: Option<&str>,
+) -> Result<Vec<u8>> {
+    let metadata = operator.stat(path).await?;
+    if metadata.content_length() > MAX_AUTHORIZATION_STATE_BYTES as u64 {
+        bail!(
+            "Space authorization state exceeds the {} byte limit",
+            MAX_AUTHORIZATION_STATE_BYTES
+        );
+    }
+    let mut reader = operator.reader_with(path);
+    if let Some(version) = exact_version.or_else(|| metadata.etag().filter(|etag| !etag.is_empty()))
+    {
+        reader = reader.if_match(version);
+    }
+    let reader = reader.chunk(AUTHORIZATION_STATE_READER_CHUNK_BYTES).await?;
+    let mut stream = reader.into_stream(0..).await?;
+    let mut bytes = Vec::with_capacity(
+        usize::try_from(metadata.content_length())
+            .unwrap_or(MAX_AUTHORIZATION_STATE_BYTES)
+            .min(MAX_AUTHORIZATION_STATE_BYTES),
+    );
+    while let Some(buffer) = stream.try_next().await? {
+        bytes.extend(buffer.into_iter().flatten());
+        if bytes.len() > MAX_AUTHORIZATION_STATE_BYTES {
+            bail!(
+                "Space authorization state exceeds the {} byte limit",
+                MAX_AUTHORIZATION_STATE_BYTES
+            );
+        }
+    }
+    Ok(bytes)
 }
 
 fn now_iso() -> String {

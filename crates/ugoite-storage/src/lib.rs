@@ -439,9 +439,11 @@ impl DerivedRelationHeadStore {
         )))
     }
 
-    fn claim_is_stale(bytes: &[u8], last_modified: Option<SystemTime>) -> bool {
-        Self::json_time(bytes, "claimed_at")
-            .or(last_modified)
+    fn claim_is_stale(_bytes: &[u8], last_modified: Option<SystemTime>) -> bool {
+        // Claim timestamps are written by an arbitrary producer clock. Only
+        // backend metadata is suitable for a shared lease deadline; when it
+        // is unavailable, fail closed and let an operator/repair pass decide.
+        last_modified
             .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
             .is_some_and(|age| age >= DERIVED_BUILD_CLAIM_TTL)
     }
@@ -505,12 +507,17 @@ impl DerivedRelationHeadStore {
         path: &str,
         metadata_time: Option<SystemTime>,
     ) -> Option<SystemTime> {
+        // As with claims, backend metadata is the trustworthy age source.
+        // The marker payload remains useful as a fallback for backends that
+        // do not expose modification timestamps.
+        if metadata_time.is_some() {
+            return metadata_time;
+        }
         self.operator
             .read(path)
             .await
             .ok()
             .and_then(|bytes| Self::marker_time(&bytes.to_vec()))
-            .or(metadata_time)
     }
 
     async fn marker_old_enough(&self, path: &str, minimum_gc_age: Duration) -> Result<bool> {
@@ -692,6 +699,20 @@ impl DerivedRelationHeadStore {
         Ok(Some(GarbageClaim { etag, owner }))
     }
 
+    async fn garbage_claim_for_owner(
+        &self,
+        build_id: &str,
+        owner: &str,
+    ) -> Result<Option<GarbageClaim>> {
+        let Some(claim) = self.current_garbage_claim(build_id).await? else {
+            return Ok(None);
+        };
+        if claim.owner != owner {
+            return Ok(None);
+        }
+        Ok(Some(claim))
+    }
+
     async fn claim_build_for_garbage(&self, build_id: &str) -> Result<Option<GarbageClaim>> {
         let path = self.publishing_marker_path(build_id);
         let owner = Uuid::now_v7().to_string();
@@ -707,7 +728,7 @@ impl DerivedRelationHeadStore {
             )
             .await
         {
-            Ok(_) => self.current_garbage_claim(build_id).await,
+            Ok(_) => self.garbage_claim_for_owner(build_id, &owner).await,
             Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
                 let Some((bytes, etag, last_modified)) = self.read_build_claim(build_id).await?
                 else {
@@ -730,7 +751,7 @@ impl DerivedRelationHeadStore {
                     {
                         return Ok(None);
                     }
-                    return self.current_garbage_claim(build_id).await;
+                    return self.garbage_claim_for_owner(build_id, &owner).await;
                 }
                 if self.write_mode == CatalogWriteMode::SingleProcess
                     && Self::claim_role(&bytes).as_deref() == Some("garbage")
@@ -754,7 +775,7 @@ impl DerivedRelationHeadStore {
                 {
                     return Ok(None);
                 }
-                self.current_garbage_claim(build_id).await
+                self.garbage_claim_for_owner(build_id, &owner).await
             }
             Err(error) => Err(error.into()),
         }
@@ -822,10 +843,15 @@ impl DerivedRelationHeadStore {
             .replace_build_claim(build_id, etag.as_deref(), "garbage", &claim.owner)
             .await?;
         if renewed {
-            claim.etag = self
-                .read_build_claim(build_id)
-                .await?
-                .and_then(|(_, etag, _)| etag);
+            let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
+                return Ok(false);
+            };
+            if Self::claim_role(&bytes).as_deref() != Some("garbage")
+                || Self::claim_owner(&bytes).as_deref() != Some(claim.owner.as_str())
+            {
+                return Ok(false);
+            }
+            claim.etag = etag;
         }
         Ok(renewed)
     }
@@ -1180,10 +1206,7 @@ impl DerivedRelationHeadStore {
             return Ok(false);
         };
         if Self::claim_role(&bytes).as_deref() != Some("complete")
-            || !Self::old_enough(
-                Self::json_time(&bytes, "claimed_at").or(last_modified),
-                DERIVED_BUILD_TERMINAL_CLAIM_RETENTION,
-            )
+            || !Self::old_enough(last_modified, DERIVED_BUILD_TERMINAL_CLAIM_RETENTION)
         {
             return Ok(false);
         }
@@ -1413,10 +1436,7 @@ impl DerivedRelationHeadStore {
                             Some("released") => true,
                             Some("complete") => {
                                 !candidate.has_build_object
-                                    || Self::old_enough(
-                                        Self::json_time(&bytes, "claimed_at").or(last_modified),
-                                        minimum_gc_age,
-                                    )
+                                    || Self::old_enough(last_modified, minimum_gc_age)
                             }
                             Some("publishing") => Self::claim_is_stale(&bytes, last_modified),
                             // A garbage claim without garbage.json means the
@@ -1566,10 +1586,7 @@ impl DerivedRelationHeadStore {
                             Some("released") => true,
                             Some("complete") => {
                                 candidate.complete_claim_old_enough = candidate.has_build_object
-                                    && Self::old_enough(
-                                        Self::json_time(&bytes, "claimed_at").or(last_modified),
-                                        minimum_gc_age,
-                                    );
+                                    && Self::old_enough(last_modified, minimum_gc_age);
                                 candidate.complete_claim_old_enough
                             }
                             Some("staging") | Some("publishing") | Some("garbage") => {
@@ -1779,6 +1796,16 @@ impl DerivedRelationHeadStore {
                 self.operator.delete(&path).await?;
             }
             if fully_deleted {
+                // The final marker delete can occur after a long listing and
+                // a zero-object cleanup pass. Renew and verify ownership at
+                // the destructive boundary so an expired/replaced GC claim
+                // cannot remove another writer's cleanup record.
+                if !self
+                    .renew_garbage_claim(&build_id, &mut garbage_claim)
+                    .await?
+                {
+                    continue;
+                }
                 // Keep garbage.json until the build prefix is otherwise empty.
                 // If this process crashes before this final delete, the marker
                 // remains available for the next candidate-discovery pass.

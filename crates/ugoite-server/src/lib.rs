@@ -8092,6 +8092,7 @@ async fn search_entries(
     Path(space_id): Path<String>,
     Query(query): Query<SearchQuery>,
 ) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     if query.q.len() > ugoite_iceberg::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES {
         return Err(ApiError::from_core(
             AppError::invalid_input(
@@ -8101,7 +8102,6 @@ async fn search_entries(
             .into(),
         ));
     }
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
     Ok(Json(
