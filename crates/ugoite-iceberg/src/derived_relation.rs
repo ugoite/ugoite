@@ -75,12 +75,17 @@ const MAX_SOURCE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
 const MAX_SOURCE_METADATA_BYTES: usize = 256 * 1024 * 1024;
 const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
 const MAX_ASSET_TEXT_MATCHES: usize = 1_000_000;
+pub const MAX_ASSET_TEXT_QUERY_BYTES: usize = 8 * 1024;
+const MAX_ASSET_TEXT_MATCH_BYTES: usize = 64 * 1024 * 1024;
 const READER_CHUNK_BYTES: usize = 256 * 1024;
 const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
 const GC_RETRY_DELAY: Duration = Duration::from_secs(60);
 const GC_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const ASSET_TEXT_REBUILD_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const MAX_SOURCE_CHANGE_RETRIES: usize = 3;
 const MAX_BACKGROUND_GC_SCHEDULERS: usize = 1024;
 const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
+const ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -595,7 +600,7 @@ impl Catalog for DerivedRelationCatalog {
 }
 
 pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedRelationHead> {
-    rebuild_asset_text_with_mode(op, ws_path, false).await
+    rebuild_asset_text_with_timeout(op, ws_path, false).await
 }
 
 /// Shared backends use the exact-read/if-match path and deliberately do not
@@ -605,7 +610,74 @@ pub async fn rebuild_asset_text_shared(
     op: &Operator,
     ws_path: &str,
 ) -> Result<DerivedRelationHead> {
-    rebuild_asset_text_with_mode(op, ws_path, true).await
+    rebuild_asset_text_with_timeout(op, ws_path, true).await
+}
+
+async fn rebuild_asset_text_with_timeout(
+    op: &Operator,
+    ws_path: &str,
+    shared: bool,
+) -> Result<DerivedRelationHead> {
+    match tokio::time::timeout(ASSET_TEXT_REBUILD_OPERATION_TIMEOUT, async {
+        let mut last_source_change = None;
+        for _ in 0..=MAX_SOURCE_CHANGE_RETRIES {
+            match rebuild_asset_text_with_mode(op, ws_path, shared).await {
+                Ok(head) => return Ok(head),
+                Err(error) if is_asset_text_source_changed(&error) => {
+                    last_source_change = Some(error);
+                    tokio::task::yield_now().await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_source_change.expect("source-change retry must have an error"))
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            // A timeout may drop an in-flight build after staging. Its
+            // durable staging marker remains recoverable by relation GC.
+            schedule_asset_text_gc(op, ws_path);
+            Err(anyhow!("AssetText rebuild operation timed out"))
+        }
+    }
+}
+
+pub fn is_asset_text_source_changed(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("authoritative source changed"))
+}
+
+fn asset_text_refresh_request_path(ws_path: &str) -> String {
+    format!(
+        "{ws_path}/_ugoite/derived/relations/{}/{}",
+        DerivedRelationId::ASSET_TEXT,
+        ASSET_TEXT_REFRESH_REQUEST_FILE
+    )
+}
+
+pub async fn mark_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<()> {
+    op.write(
+        &asset_text_refresh_request_path(ws_path),
+        serde_json::to_vec(&json!({"requested_at": Utc::now()}))?,
+    )
+    .await
+    .map(|_| ())
+    .map_err(Into::into)
+}
+
+pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<()> {
+    match op.delete(&asset_text_refresh_request_path(ws_path)).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
+    Ok(op.exists(&asset_text_refresh_request_path(ws_path)).await?)
 }
 
 /// Returns true when a shared Relation Head replacement lost its conditional
@@ -681,6 +753,10 @@ async fn rebuild_asset_text_with_mode(
     }
     let input_digest = source_references_digest(&source_rows)?;
     let rows = build_asset_text_rows(op, ws_path, &source_rows, &producer_fingerprint).await?;
+    let source_coordinate_after_rows = authoritative_source_coordinate(op, ws_path).await?;
+    if source_coordinate != source_coordinate_after_rows {
+        bail!("authoritative source changed while parsing AssetText; retry");
+    }
     let row_digest = asset_text_rows_digest(&rows)?;
     let build_id = Uuid::now_v7().to_string();
     let build_path = head_store.builds_path(&build_id);
@@ -798,6 +874,14 @@ async fn rebuild_asset_text_with_mode(
             return Err(error);
         }
     };
+    let source_coordinate_before_publish = authoritative_source_coordinate(op, ws_path).await?;
+    if source_coordinate_before_publish != head.source_coordinate {
+        let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+        schedule_asset_text_gc(op, ws_path);
+        return Err(anyhow!(
+            "authoritative source changed before AssetText publication; retry"
+        ));
+    }
     let publish_result = if let Some(legacy_expected) = legacy_expected.as_ref() {
         if shared {
             head_store.publish_over_legacy(legacy_expected, &head).await
@@ -881,10 +965,21 @@ async fn rebuild_asset_text_with_mode(
     if candidate_cleanup_marked {
         let _ = head_store.clear_staging(&head.build_id).await;
     }
+    let source_coordinate_after_publish = authoritative_source_coordinate(op, ws_path).await?;
+    if source_coordinate_after_publish != current.source_coordinate {
+        if current.build_id == head.build_id {
+            let _ = ensure_cleanup_marker(&head_store, &current.build_id).await;
+        }
+        schedule_asset_text_gc(op, ws_path);
+        return Err(anyhow!(
+            "authoritative source changed after AssetText publication; retry"
+        ));
+    }
     let _ = head_store
         .garbage_collect_with_single_process_lock(Some(&current.build_id), MINIMUM_GC_AGE)
         .await;
     schedule_asset_text_gc(op, ws_path);
+    let _ = clear_asset_text_refresh_requested(op, ws_path).await;
     Ok(current)
 }
 
@@ -2055,6 +2150,7 @@ fn bounded_flate_decode(
 fn extract_pdf_stream_text_bounded(
     bytes: &[u8],
     max_bytes: usize,
+    text_operators: &mut usize,
 ) -> std::result::Result<String, &'static str> {
     let document = Document::load_mem(bytes).map_err(|_| "malformed_pdf")?;
     let mut decoded_bytes = 0usize;
@@ -2079,6 +2175,14 @@ fn extract_pdf_stream_text_bounded(
             decoded_bytes = decoded_bytes
                 .checked_add(decoded.len())
                 .ok_or("parser_limit")?;
+        }
+        let stream_operators = decoded.windows(2).filter(|window| *window == b"Tj").count()
+            + decoded.windows(2).filter(|window| *window == b"TJ").count();
+        *text_operators = text_operators
+            .checked_add(stream_operators)
+            .ok_or("parser_limit")?;
+        if *text_operators > MAX_PDF_TEXT_OPERATORS {
+            return Err("parser_limit");
         }
         let remaining = max_bytes.saturating_sub(text.len());
         let stream_text = extract_pdf_text_bounded(&decoded, remaining)?;
@@ -2106,7 +2210,7 @@ fn extract_pdf_chunks(
         .windows(b"/Type /Page".len() + 1)
         .filter(|window| window.starts_with(b"/Type /Page") && window[b"/Type /Page".len()] != b's')
         .count();
-    let text_operators = bytes.windows(2).filter(|window| *window == b"Tj").count()
+    let mut text_operators = bytes.windows(2).filter(|window| *window == b"Tj").count()
         + bytes.windows(2).filter(|window| *window == b"TJ").count();
     if page_markers > MAX_PDF_PAGES || text_operators > MAX_PDF_TEXT_OPERATORS {
         return Err("parser_limit");
@@ -2125,6 +2229,7 @@ fn extract_pdf_chunks(
         let stream_text = extract_pdf_stream_text_bounded(
             bytes,
             MAX_EXTRACTED_TEXT_BYTES.saturating_sub(text.len()),
+            &mut text_operators,
         )?;
         if !stream_text.is_empty() {
             if !text.is_empty() {
@@ -2343,6 +2448,9 @@ pub async fn asset_text_search_matches(
     ws_path: &str,
     query: &str,
 ) -> Result<Option<HashSet<String>>> {
+    if query.len() > MAX_ASSET_TEXT_QUERY_BYTES {
+        bail!("AssetText search query exceeds its byte limit");
+    }
     let context =
         crate::query_context::bounded_session_context(&ugoite_core::query::QueryLimits {
             max_memory_bytes: 64 * 1024 * 1024,
@@ -2365,6 +2473,7 @@ pub async fn asset_text_search_matches(
     );
     let mut stream = context.sql(&sql).await?.execute_stream().await?;
     let mut matches = HashSet::new();
+    let mut matched_bytes = 0usize;
     let mut scanned_rows = 0usize;
     tokio::time::timeout(Duration::from_secs(30), async {
         while let Some(batch) = stream.try_next().await? {
@@ -2389,6 +2498,15 @@ pub async fn asset_text_search_matches(
                     let asset_id = values.value(index);
                     if !matches.contains(asset_id) && matches.len() >= MAX_ASSET_TEXT_MATCHES {
                         bail!("AssetText search exceeds its matching-asset limit");
+                    }
+                    if matches.contains(asset_id) {
+                        continue;
+                    }
+                    matched_bytes = matched_bytes
+                        .checked_add(asset_id.len())
+                        .context("AssetText search matched-ID byte count overflow")?;
+                    if matched_bytes > MAX_ASSET_TEXT_MATCH_BYTES {
+                        bail!("AssetText search exceeds its matched-ID byte limit");
                     }
                     matches.insert(asset_id.to_string());
                 }
@@ -2420,12 +2538,14 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
         || head.head.definition_fingerprint != asset_text_definition_fingerprint()
         || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH
         || head.head.source_coordinate != current_source_coordinate;
+    let refresh_requested = asset_text_refresh_requested(op, ws_path).await?;
     Ok(json!({
         "state": "ready",
         "current_producer_fingerprint": asset_text_producer_fingerprint(),
         "materialized_producer_fingerprint": head.head.producer_fingerprint,
         "compatibility_epoch": head.head.compatibility_epoch,
         "stale": stale,
+        "refresh_requested": refresh_requested,
         "build_id": head.head.build_id,
         "generation": head.head.generation,
         "assets_referenced": manifest.assets_referenced,
@@ -2558,6 +2678,38 @@ mod tests {
     }
 
     #[test]
+    fn pdf_decoded_stream_operator_limit_is_enforced_after_decompression() {
+        use std::io::Write;
+
+        let content = b"() Tj ".repeat(MAX_PDF_TEXT_OPERATORS + 1);
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(&content).expect("compress operators");
+        let compressed = encoder.finish().expect("finish operators");
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "1 0 obj\n<< /Length {} /Filter /FlateDecode >>\nstream\n",
+                compressed.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&compressed);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 2\n0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+
+        assert!(matches!(
+            extract_chunks(&Dispatch::Pdf(parser_identity("pdf")), &pdf),
+            Err("parser_limit")
+        ));
+    }
+
+    #[test]
     fn parser_limits_reject_hostile_pdf_and_xml_work() {
         let hostile_pdf = b"/Type /Page ".repeat(MAX_PDF_PAGES + 1);
         assert!(matches!(
@@ -2619,6 +2771,20 @@ mod tests {
             None
         };
         assert_eq!(before, after);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn asset_text_search_rejects_an_oversized_query_before_planning() -> anyhow::Result<()> {
+        let op = opendal::Operator::new(opendal::services::Memory::default())?;
+        let error = asset_text_search_matches(
+            &op,
+            "spaces/missing",
+            &"x".repeat(MAX_ASSET_TEXT_QUERY_BYTES + 1),
+        )
+        .await
+        .expect_err("oversized query must fail before DataFusion planning");
+        assert!(error.to_string().contains("query exceeds"));
         Ok(())
     }
 

@@ -777,7 +777,7 @@ fn preserve_stable_identities(normalized: &mut Value, existing: &Value) -> Resul
     Ok(())
 }
 
-fn enrich_form_definition(form_def: &Value) -> Result<Value> {
+pub(crate) fn enrich_form_definition(form_def: &Value) -> Result<Value> {
     let form_id = FormId::from(Uuid::parse_str(
         form_def
             .get("id")

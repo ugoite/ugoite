@@ -70,6 +70,7 @@ const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 const ASSET_TEXT_REFRESH_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_BACKGROUND_REFRESH_WORKERS: usize = 1024;
 const MAX_SHARED_REFRESH_CONFLICT_RETRIES: usize = 8;
+const MAX_REFRESH_FAILURE_RETRIES: usize = 8;
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
@@ -103,6 +104,19 @@ impl UgoiteService {
     /// participates in the Entry commit latency or becomes an authority for
     /// the current Form state; an explicit `index run` remains the repair path.
     fn schedule_asset_text_refresh(&self, space_id: &str) {
+        // Keep a tiny durable rearm record outside the build prefixes. The
+        // worker remains process-local and never delays the mutation, but a
+        // failed worker does not erase the only evidence that a refresh is
+        // still required; stats and the next explicit index run can recover it.
+        let request_operator = self.operator.clone();
+        let request_workspace = self.workspace_path(space_id);
+        tokio::spawn(async move {
+            let _ = crate::derived_relation::mark_asset_text_refresh_requested(
+                &request_operator,
+                &request_workspace,
+            )
+            .await;
+        });
         let key = self.asset_text_refresh_worker_key(space_id);
         let workers = ASSET_TEXT_REFRESH_WORKERS.get_or_init(|| StdMutex::new(BTreeMap::new()));
         let worker = {
@@ -143,6 +157,7 @@ impl UgoiteService {
             let worker = worker.clone();
             tokio::spawn(async move {
                 let mut shared_conflict_retries = 0usize;
+                let mut refresh_failures = 0usize;
                 loop {
                     worker.notify.notified().await;
                     // Let the authoritative request and a short burst of
@@ -152,6 +167,10 @@ impl UgoiteService {
                     // post-mutation read contend with the rebuild.
                     tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
                     while worker.pending.swap(false, Ordering::AcqRel) {
+                        let _ = crate::derived_relation::mark_asset_text_refresh_requested(
+                            &op, &ws_path,
+                        )
+                        .await;
                         let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
                         let result =
                             tokio::time::timeout(ASSET_TEXT_REFRESH_OPERATION_TIMEOUT, async {
@@ -187,8 +206,22 @@ impl UgoiteService {
                                 // explicit index run can reopen the refresh.
                                 worker.pending.store(false, Ordering::Release);
                             }
+                        } else if result.is_err() {
+                            refresh_failures = refresh_failures.saturating_add(1);
+                            if refresh_failures <= MAX_REFRESH_FAILURE_RETRIES {
+                                worker.pending.store(true, Ordering::Release);
+                                worker.notify.notify_one();
+                                tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
+                            } else {
+                                // The durable refresh-request marker remains
+                                // for stats/explicit index repair. Do not pin
+                                // an Operator or a worker forever on a broken
+                                // backend.
+                                worker.pending.store(false, Ordering::Release);
+                            }
                         } else {
                             shared_conflict_retries = 0;
+                            refresh_failures = 0;
                         }
                     }
                     let should_exit = if !worker.pending.load(Ordering::Acquire) {

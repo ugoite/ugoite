@@ -3367,6 +3367,40 @@ pub(crate) fn error_chain_contains_not_found(error: &(dyn std::error::Error + 's
     false
 }
 
+impl SpaceCatalog {
+    /// Returns at most `max_tables` identifiers without first allocating an
+    /// unbounded identifier vector. Rebuild and authorization paths use this
+    /// as their catalog-size guard before loading table metadata.
+    pub(crate) async fn list_tables_bounded(
+        &self,
+        namespace: &NamespaceIdent,
+        max_tables: usize,
+    ) -> Result<Vec<TableIdent>> {
+        if namespace != &self.namespace {
+            return Ok(Vec::new());
+        }
+        let head = if let Some(attempt) = &self.bound_attempt {
+            attempt.expected_head.clone()
+        } else {
+            self.exact_head().await?.map(|(head, _)| head)
+        };
+        let Some(head) = head else {
+            return Ok(Vec::new());
+        };
+        let mut identifiers = Vec::new();
+        for reference in head.tables.values() {
+            if identifiers.len() >= max_tables {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "catalog table count exceeds its configured limit",
+                ));
+            }
+            identifiers.push(reference.identifier.to_table_ident());
+        }
+        Ok(identifiers)
+    }
+}
+
 #[async_trait]
 impl Catalog for SpaceCatalog {
     async fn list_namespaces(
@@ -3420,22 +3454,7 @@ impl Catalog for SpaceCatalog {
     }
 
     async fn list_tables(&self, namespace: &NamespaceIdent) -> Result<Vec<TableIdent>> {
-        if namespace != &self.namespace {
-            return Ok(Vec::new());
-        }
-        let head = if let Some(attempt) = &self.bound_attempt {
-            attempt.expected_head.clone()
-        } else {
-            self.exact_head().await?.map(|(head, _)| head)
-        };
-        let Some(head) = head else {
-            return Ok(Vec::new());
-        };
-        Ok(head
-            .tables
-            .values()
-            .map(|reference| reference.identifier.to_table_ident())
-            .collect())
+        self.list_tables_bounded(namespace, usize::MAX).await
     }
 
     async fn create_table(

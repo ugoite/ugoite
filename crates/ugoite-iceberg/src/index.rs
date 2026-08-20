@@ -18,7 +18,7 @@ use serde_yaml;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use ugoite_domain::form::{sql_column_name, sql_relation_name};
+use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
 use ugoite_domain::id::FormId;
 pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
@@ -38,6 +38,8 @@ pub const SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS: usize = SQL_SESSION_MAX_ROWS;
 pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize = usize::MAX / 2;
+const MAX_QUERY_FORMS: usize = 100_000;
+const MAX_QUERY_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
 
 /// Immutable execution inputs for one authorized SQL-session page.
 ///
@@ -539,10 +541,17 @@ pub(crate) async fn authorized_asset_reference_query_context(
     // authorized DataFusion context opens its own latest Form snapshot; if an
     // authoritative Form commit races that construction, reject this join so
     // the caller can use the authoritative fallback instead of mixing schemas.
-    let forms_before = load_forms(op, ws_path).await?;
-    let context = datafusion_sql_context_with_limits(
-        op,
-        ws_path,
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let form_definitions = load_form_definitions(op, ws_path).await?;
+    let forms_before = form_definitions
+        .iter()
+        .map(|form| {
+            let value = crate::form::from_domain_form(form);
+            crate::form::enrich_form_definition(&value).map(|value| (form.name.clone(), value))
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
+    let context = datafusion_sql_context_with_form_snapshot(
+        workspace,
         EntryScope::AllCurrent,
         None,
         Some(relation_scopes),
@@ -550,6 +559,7 @@ pub(crate) async fn authorized_asset_reference_query_context(
         BTreeSet::new(),
         AUTHORIZED_ASSET_REFERENCE_MAX_ROWS,
         true,
+        form_definitions,
     )
     .await
     .map_err(map_sql_error)?;
@@ -559,7 +569,7 @@ pub(crate) async fn authorized_asset_reference_query_context(
             "Form definitions changed while opening authorized AssetReference context"
         ));
     }
-    Ok((context, forms_after))
+    Ok((context, forms_before))
 }
 
 /// Reads the authorized current AssetReference projection once for a Form.
@@ -2021,7 +2031,35 @@ async fn datafusion_sql_context_with_limits(
     include_payload: bool,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
-    let forms = workspace.list_forms().await?;
+    let forms = workspace
+        .list_forms_bounded(MAX_QUERY_FORMS, MAX_QUERY_FORM_DEFINITION_BYTES)
+        .await?;
+    datafusion_sql_context_with_form_snapshot(
+        workspace,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        allowed_functions,
+        max_rows,
+        include_payload,
+        forms,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn datafusion_sql_context_with_form_snapshot(
+    workspace: crate::IcebergWorkspace,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    allowed_functions: BTreeSet<String>,
+    max_rows: usize,
+    include_payload: bool,
+    forms: Vec<FormDefinition>,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
     let mut policy_forms = BTreeMap::new();
     for form in forms {
         let relation = sql_relation_name(form.id);
@@ -2732,14 +2770,23 @@ pub fn aggregate_stats(entries: &Map<String, Value>) -> Value {
     )
 }
 
+async fn load_form_definitions(op: &Operator, ws_path: &str) -> Result<Vec<FormDefinition>> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    workspace
+        .list_forms_bounded(MAX_QUERY_FORMS, MAX_QUERY_FORM_DEFINITION_BYTES)
+        .await
+}
+
 pub(crate) async fn load_forms(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
-    let mut forms = HashMap::new();
-    for form_name in crate::form::list_form_names(op, ws_path).await? {
-        if let Ok(value) = crate::form::get_form(op, ws_path, &form_name).await {
-            forms.insert(form_name, value);
-        }
-    }
-    Ok(forms)
+    load_form_definitions(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form| {
+            let name = form.name.clone();
+            let value = crate::form::from_domain_form(&form);
+            crate::form::enrich_form_definition(&value).map(|value| (name, value))
+        })
+        .collect::<Result<HashMap<_, _>>>()
 }
 
 async fn collect_filtered_entries_with_form_scopes(

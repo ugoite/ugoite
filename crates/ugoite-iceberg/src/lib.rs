@@ -978,10 +978,17 @@ impl IcebergWorkspace {
         max_forms: usize,
         max_serialized_bytes: usize,
     ) -> Result<Vec<FormDefinition>> {
-        let identifiers = self.catalog.list_tables(&self.namespace).await?;
-        if identifiers.len() > max_forms {
-            return Err(anyhow!("Form catalog exceeds its configured count limit"));
-        }
+        let identifiers = if let Some(catalog) = &self.space_catalog {
+            catalog
+                .list_tables_bounded(&self.namespace, max_forms)
+                .await?
+        } else {
+            let identifiers = self.catalog.list_tables(&self.namespace).await?;
+            if identifiers.len() > max_forms {
+                return Err(anyhow!("Form catalog exceeds its configured count limit"));
+            }
+            identifiers
+        };
         let mut forms = Vec::new();
         let mut serialized_bytes = 0usize;
         for ident in identifiers {
