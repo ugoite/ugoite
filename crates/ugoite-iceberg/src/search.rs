@@ -193,7 +193,9 @@ async fn asset_text_search_authorized(
         }
         Err(_) => {
             budget.restore(budget_checkpoint);
-            Ok(None)
+            Err(anyhow::anyhow!(
+                "authorized AssetText search timed out before completing"
+            ))
         }
     }
 }

@@ -69,6 +69,10 @@ static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
 const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 const ASSET_TEXT_REFRESH_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_BACKGROUND_REFRESH_WORKERS: usize = 1024;
+const MAX_BACKGROUND_REFRESH_RETRIES: usize = 8;
+const MAX_AUTHORIZED_SCOPE_FORMS: usize = 100_000;
+const MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
+const MAX_AUTHORIZED_SCOPE_DENIED_ENTRY_IDS: usize = crate::MAX_NORMAL_READ_ROWS;
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
@@ -173,18 +177,26 @@ impl UgoiteService {
                             .and_then(|result| result);
                         if result.is_err() {
                             refresh_failures = refresh_failures.saturating_add(1);
-                            // The authoritative source coordinate remains a
-                            // durable refresh intent. Keep retrying with a
-                            // bounded backoff so a backend outage that lasts
-                            // longer than one retry window cannot strand a
-                            // committed mutation until another write/restart.
-                            worker.pending.store(true, Ordering::Release);
-                            worker.notify.notify_one();
-                            let delay = Duration::from_secs(1u64 << refresh_failures.min(6));
-                            tokio::time::sleep(delay).await;
+                            if refresh_failures <= MAX_BACKGROUND_REFRESH_RETRIES {
+                                // The authoritative source coordinate remains
+                                // a durable refresh intent. Retry transient
+                                // failures, but let the worker terminate after
+                                // a bounded attempt count so a permanent
+                                // backend failure cannot consume a registry
+                                // slot forever.
+                                worker.pending.store(true, Ordering::Release);
+                                worker.notify.notify_one();
+                                let delay = Duration::from_secs(1u64 << refresh_failures.min(6));
+                                tokio::time::sleep(delay).await;
+                            } else {
+                                eprintln!(
+                                    "AssetText refresh abandoned after {} failures for {}",
+                                    refresh_failures, ws_path
+                                );
+                            }
                         } else {
                             match crate::derived_relation::asset_text_refresh_needed(&op, &ws_path)
-                            .await
+                                .await
                             {
                                 Ok(true) => {
                                     // A marker created while the build was
@@ -198,13 +210,20 @@ impl UgoiteService {
                                 Ok(false) => {
                                     refresh_failures = 0;
                                 }
-                                Err(_) => {
+                                Err(error) => {
                                     refresh_failures = refresh_failures.saturating_add(1);
-                                    worker.pending.store(true, Ordering::Release);
-                                    worker.notify.notify_one();
-                                    let delay =
-                                        Duration::from_secs(1u64 << refresh_failures.min(6));
-                                    tokio::time::sleep(delay).await;
+                                    if refresh_failures <= MAX_BACKGROUND_REFRESH_RETRIES {
+                                        worker.pending.store(true, Ordering::Release);
+                                        worker.notify.notify_one();
+                                        let delay =
+                                            Duration::from_secs(1u64 << refresh_failures.min(6));
+                                        tokio::time::sleep(delay).await;
+                                    } else {
+                                        eprintln!(
+                                            "AssetText refresh freshness check abandoned after {} failures for {}: {error:#}",
+                                            refresh_failures, ws_path
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -1023,7 +1042,10 @@ impl UgoiteService {
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let readable_forms = workspace
-            .list_forms()
+            .list_forms_bounded(
+                MAX_AUTHORIZED_SCOPE_FORMS,
+                MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES,
+            )
             .await?
             .into_iter()
             .filter(|form| {
@@ -1059,6 +1081,11 @@ impl UgoiteService {
                 }
             }
             if !readable_by_every_principal {
+                if denied_entry_ids.len() >= MAX_AUTHORIZED_SCOPE_DENIED_ENTRY_IDS {
+                    return Err(anyhow!(
+                        "Entry authorization scope exceeds the configured denied-ID limit"
+                    ));
+                }
                 denied_entry_ids.insert(
                     Uuid::parse_str(entry_id)
                         .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))

@@ -87,6 +87,7 @@ const OAUTH_RESOURCE_DOCUMENTATION_URL: &str =
 const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob: data:; frame-src 'self' blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'";
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_STARTUP_REFRESH_REARM_RETRIES: usize = 8;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
 const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
 
@@ -502,22 +503,27 @@ impl AppState {
             let refresh_service = self.service.clone();
             let refresh_space_id = space_id.clone();
             tokio::spawn(async move {
-                let mut attempt = 0usize;
-                loop {
+                for attempt in 0..=MAX_STARTUP_REFRESH_REARM_RETRIES {
                     match refresh_service
                         .rearm_asset_text_refresh(&refresh_space_id)
                         .await
                     {
                         Ok(()) => return,
                         Err(error) => {
-                            attempt = attempt.saturating_add(1);
                             eprintln!(
-                                "AssetText startup refresh rearm failed for Space {} (attempt {}): {error:#}; retrying",
+                                "AssetText startup refresh rearm failed for Space {} (attempt {}): {error:#}{}",
                                 refresh_space_id,
-                                attempt,
+                                attempt + 1,
+                                if attempt < MAX_STARTUP_REFRESH_REARM_RETRIES {
+                                    "; retrying"
+                                } else {
+                                    "; durable stale state remains for explicit repair"
+                                },
                             );
-                            let delay = Duration::from_secs(1u64 << attempt.min(6));
-                            tokio::time::sleep(delay).await;
+                            if attempt < MAX_STARTUP_REFRESH_REARM_RETRIES {
+                                let delay = Duration::from_secs(1u64 << (attempt + 1).min(6));
+                                tokio::time::sleep(delay).await;
+                            }
                         }
                     }
                 }

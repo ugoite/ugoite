@@ -30,6 +30,9 @@ use uuid::Uuid;
 const AUTHORIZATION_FILE: &str = "security/principals.json";
 const LEGACY_AUTHORIZATION_FILE: &str = "authorization.json";
 const LEGACY_MIGRATION_STATE_FILE: &str = "security/migration-state.json";
+const MAX_AUTHORIZATION_STATE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_AUTHORIZATION_MAP_ENTRIES: usize = 100_000;
+const MAX_AUTHORIZATION_POLICY_HISTORY_REVISIONS: usize = 1_000_000;
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -345,7 +348,17 @@ impl Authorizer {
             .read(&state_path(space_id))
             .await
             .context("read Space authorization state")?;
-        serde_json::from_slice(&bytes.to_vec()).context("decode Space authorization state")
+        let bytes = bytes.to_vec();
+        if bytes.len() > MAX_AUTHORIZATION_STATE_BYTES {
+            bail!(
+                "Space authorization state exceeds the {} byte limit",
+                MAX_AUTHORIZATION_STATE_BYTES
+            );
+        }
+        let state: AuthorizationState =
+            serde_json::from_slice(&bytes).context("decode Space authorization state")?;
+        validate_authorization_state_limits(&state)?;
+        Ok(state)
     }
 
     pub async fn effective_actions(
@@ -1741,6 +1754,47 @@ fn next_human_approval_audit_sequence(state: &AuthorizationState) -> u64 {
         .max()
         .unwrap_or(0)
         .saturating_add(1)
+}
+
+fn validate_authorization_state_limits(state: &AuthorizationState) -> Result<()> {
+    let collections = [
+        ("principals", state.principals.len()),
+        ("memberships", state.memberships.len()),
+        ("policies", state.policies.len()),
+        ("policy history", state.policy_history.len()),
+        ("agents", state.agents.len()),
+        ("agent grants", state.agent_grants.len()),
+        (
+            "principal lifecycle epochs",
+            state.principal_lifecycle_epochs.len(),
+        ),
+        ("recovery fences", state.recovery_fences.len()),
+        ("human approvals", state.human_approvals.len()),
+        (
+            "human approval audit outbox",
+            state.human_approval_audit_outbox.len(),
+        ),
+    ];
+    for (name, count) in collections {
+        if count > MAX_AUTHORIZATION_MAP_ENTRIES {
+            bail!(
+                "Space authorization {name} exceeds the {MAX_AUTHORIZATION_MAP_ENTRIES} entry limit"
+            );
+        }
+    }
+    let history_revisions = state
+        .policy_history
+        .values()
+        .try_fold(0usize, |total, revisions| {
+            total.checked_add(revisions.len())
+        })
+        .context("Space authorization policy history size overflow")?;
+    if history_revisions > MAX_AUTHORIZATION_POLICY_HISTORY_REVISIONS {
+        bail!(
+            "Space authorization policy history exceeds the {MAX_AUTHORIZATION_POLICY_HISTORY_REVISIONS} revision limit"
+        );
+    }
+    Ok(())
 }
 
 /// Evaluates authorization against one already-read state snapshot. Query

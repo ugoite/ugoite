@@ -58,7 +58,10 @@ use zip::ZipArchive;
 
 pub const ASSET_TEXT_PRODUCER_ID: &str = "ugoite.asset_text";
 pub const ASSET_TEXT_PARSER_VERSION: &str = "3";
-pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 3;
+// Bump this whenever the persisted AssetText contract changes in a way that
+// makes an existing build unsafe to reuse. AssetReference path validation is
+// part of the contract, so epoch 3 builds must be rebuilt before registration.
+pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 4;
 const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ZIP_ENTRIES: usize = 10_000;
 const MAX_ZIP_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
@@ -671,11 +674,27 @@ fn legacy_asset_text_refresh_request_path(ws_path: &str) -> String {
     )
 }
 
-/// Captures immutable request paths. A marker created after this snapshot has
-/// a different path and therefore cannot be deleted while acknowledging this
-/// build, even on backends without conditional-delete support.
-async fn asset_text_refresh_request_paths(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
-    let mut paths = Vec::new();
+fn refresh_request_token(path: &str) -> Option<&str> {
+    path.rsplit('/').next()?.strip_suffix(".json")
+}
+
+fn refresh_request_is_at_or_before(path: &str, cutoff: &str) -> bool {
+    // The fixed-name marker predates immutable UUID-v7 markers. It is always
+    // part of the snapshot because there is no creation coordinate to compare.
+    path.ends_with(&format!("/{ASSET_TEXT_REFRESH_REQUEST_FILE}"))
+        || refresh_request_token(path).is_some_and(|token| token <= cutoff)
+}
+
+/// Lists one bounded batch from the marker snapshot. UUID-v7 marker names are
+/// ordered by creation time; the cutoff makes markers created while a build is
+/// running ineligible for acknowledgement even when the directory is larger
+/// than the in-memory batch bound.
+async fn asset_text_refresh_request_batch_before(
+    op: &Operator,
+    ws_path: &str,
+    cutoff: &str,
+) -> Result<Vec<String>> {
+    let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
     let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
     if op.exists(&legacy_path).await? {
         paths.push(legacy_path);
@@ -685,23 +704,55 @@ async fn asset_text_refresh_request_paths(op: &Operator, ws_path: &str) -> Resul
         .recursive(false)
         .await?;
     while let Some(entry) = lister.try_next().await? {
-        if !entry.path().ends_with(".json") {
-            continue;
+        let path = entry.path();
+        if path.ends_with(".json")
+            && refresh_request_is_at_or_before(path, cutoff)
+            && paths.len() < MAX_ASSET_TEXT_REFRESH_REQUESTS
+        {
+            paths.push(path.to_string());
         }
-        if paths.len() >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
-            return Err(anyhow!(
-                "AssetText refresh request markers exceed {MAX_ASSET_TEXT_REFRESH_REQUESTS}"
-            ));
+        if paths.len() == MAX_ASSET_TEXT_REFRESH_REQUESTS {
+            break;
         }
-        paths.push(entry.path().to_string());
     }
     Ok(paths)
 }
 
-fn is_refresh_request_capacity_error(error: &anyhow::Error) -> bool {
-    error
-        .chain()
-        .any(|cause| cause.to_string().contains("refresh request markers exceed"))
+/// A bounded drain is repeated until no marker from the build's snapshot
+/// remains. Markers created after the cutoff stay durable for the next worker
+/// or startup rearm, including when the initial directory exceeded capacity.
+async fn clear_asset_text_refresh_requests_through(
+    op: &Operator,
+    ws_path: &str,
+    cutoff: &str,
+) -> Result<()> {
+    loop {
+        let paths = asset_text_refresh_request_batch_before(op, ws_path, cutoff).await?;
+        if paths.is_empty() {
+            return Ok(());
+        }
+        clear_asset_text_refresh_request_paths(op, &paths).await?;
+    }
+}
+
+async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Result<usize> {
+    let mut count = usize::from(
+        op.exists(&legacy_asset_text_refresh_request_path(ws_path))
+            .await?,
+    );
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    while let Some(entry) = lister.try_next().await? {
+        if entry.path().ends_with(".json") {
+            count = count.saturating_add(1);
+            if count >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
+                return Ok(count);
+            }
+        }
+    }
+    Ok(count)
 }
 
 async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String]) -> Result<()> {
@@ -716,6 +767,9 @@ async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String])
 }
 
 pub async fn mark_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<String> {
+    if asset_text_refresh_request_count(op, ws_path).await? >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
+        bail!("AssetText refresh request markers exceed {MAX_ASSET_TEXT_REFRESH_REQUESTS}");
+    }
     let token = Uuid::now_v7().to_string();
     op.write(
         &asset_text_refresh_request_path(ws_path, &token),
@@ -727,14 +781,27 @@ pub async fn mark_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> 
 }
 
 pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<()> {
-    let paths = asset_text_refresh_request_paths(op, ws_path).await?;
-    clear_asset_text_refresh_request_paths(op, &paths).await
+    let cutoff = Uuid::now_v7().to_string();
+    clear_asset_text_refresh_requests_through(op, ws_path, &cutoff).await
 }
 
 pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
-    Ok(!asset_text_refresh_request_paths(op, ws_path)
+    if op
+        .exists(&legacy_asset_text_refresh_request_path(ws_path))
         .await?
-        .is_empty())
+    {
+        return Ok(true);
+    }
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    while let Some(entry) = lister.try_next().await? {
+        if entry.path().ends_with(".json") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Returns whether the durable authoritative source requires an AssetText
@@ -772,15 +839,7 @@ pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<b
     if stale {
         return Ok(true);
     }
-    // A marker-list capacity error is not allowed to hide the source
-    // coordinate reconciliation. Markers are only an optimization now; once
-    // the authoritative source and current Head agree, an overfull legacy
-    // marker directory must not strand future refreshes.
-    match asset_text_refresh_requested(op, ws_path).await {
-        Ok(requested) => Ok(requested),
-        Err(error) if is_refresh_request_capacity_error(&error) => Ok(false),
-        Err(error) => Err(error),
-    }
+    asset_text_refresh_requested(op, ws_path).await
 }
 
 /// Returns true when a shared Relation Head replacement lost its conditional
@@ -800,17 +859,10 @@ async fn rebuild_asset_text_with_mode(
     ws_path: &str,
     shared: bool,
 ) -> Result<DerivedRelationHead> {
-    let refresh_request_paths = match asset_text_refresh_request_paths(op, ws_path).await {
-        Ok(paths) => paths,
-        Err(error) if is_refresh_request_capacity_error(&error) => {
-            // The authoritative source coordinate is the durable fallback
-            // intent. Do not block a valid rebuild on an overfull legacy
-            // marker directory; the marker files are advisory and can be
-            // cleaned by a later maintenance pass.
-            Vec::new()
-        }
-        Err(error) => return Err(error),
-    };
+    // UUID-v7 marker names provide a stable creation boundary. The bounded
+    // final drain below can remove an arbitrarily large legacy directory while
+    // preserving requests created after this build began.
+    let refresh_request_cutoff = Uuid::now_v7().to_string();
     let definition = asset_text_definition();
     let producer_fingerprint = asset_text_producer_fingerprint();
     let relation_uuid = definition.relation_id.as_uuid();
@@ -1093,10 +1145,10 @@ async fn rebuild_asset_text_with_mode(
         .garbage_collect_with_single_process_lock(Some(&current.build_id), MINIMUM_GC_AGE)
         .await;
     schedule_asset_text_gc(op, ws_path);
-    // A newer mutation owns a different immutable marker path. Only remove
-    // the requests observed before this build; failures remain retryable and
-    // newer requests remain visible to the worker/startup rearm.
-    clear_asset_text_refresh_request_paths(op, &refresh_request_paths).await?;
+    // Remove only the requests observed before this build. The drain is
+    // bounded per listing/deletion batch, so marker overflow cannot strand
+    // old requests or require an unbounded in-memory snapshot.
+    clear_asset_text_refresh_requests_through(op, ws_path, &refresh_request_cutoff).await?;
     Ok(current)
 }
 
@@ -2724,6 +2776,40 @@ mod tests {
         clear_asset_text_refresh_request_paths(&operator, &[first_path]).await?;
         assert!(asset_text_refresh_requested(&operator, workspace).await?);
 
+        clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn refresh_marker_overflow_drains_in_batches_and_preserves_newer_requests(
+    ) -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let workspace = "spaces/refresh-marker-overflow";
+
+        for _ in 0..MAX_ASSET_TEXT_REFRESH_REQUESTS {
+            let token = Uuid::now_v7().to_string();
+            operator
+                .write(
+                    &asset_text_refresh_request_path(workspace, &token),
+                    b"{}".to_vec(),
+                )
+                .await?;
+        }
+        assert!(mark_asset_text_refresh_requested(&operator, workspace)
+            .await
+            .is_err());
+
+        let cutoff = Uuid::now_v7().to_string();
+        let newer = Uuid::now_v7().to_string();
+        operator
+            .write(
+                &asset_text_refresh_request_path(workspace, &newer),
+                b"{}".to_vec(),
+            )
+            .await?;
+        clear_asset_text_refresh_requests_through(&operator, workspace, &cutoff).await?;
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
         clear_asset_text_refresh_requested(&operator, workspace).await?;
         assert!(!asset_text_refresh_requested(&operator, workspace).await?);
         Ok(())
