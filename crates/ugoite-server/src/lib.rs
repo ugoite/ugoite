@@ -33,8 +33,10 @@ use std::{
     env,
     future::Future,
     net::IpAddr,
+    sync::Arc,
     time::Duration,
 };
+use tokio::sync::Semaphore;
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestId, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
@@ -88,6 +90,7 @@ const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_STARTUP_REFRESH_REARM_RETRIES: usize = 8;
+const MAX_STARTUP_DERIVED_MAINTENANCE_CONCURRENCY: usize = 8;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
 const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
 
@@ -490,29 +493,33 @@ impl AppState {
                 bootstrap.expires_at, bootstrap.setup_url
             );
         }
+        let maintenance_permits =
+            Arc::new(Semaphore::new(MAX_STARTUP_DERIVED_MAINTENANCE_CONCURRENCY));
         for space_id in self.service.list_space_ids().await? {
-            // Rehydrate relation-local GC on every server start. A previous
-            // process may have left durable garbage markers after the grace
-            // timer was lost; derived cleanup must not depend on a new write
-            // or delay authoritative startup recovery.
-            let gc_service = self.service.clone();
-            let gc_space_id = space_id.clone();
+            // Rehydrate relation-local maintenance on every server start. A
+            // previous process may have left durable garbage markers after the
+            // grace timer was lost; bound the number of concurrent full
+            // listings/rebuilds so a large node cannot stampede its backend.
+            let maintenance_service = self.service.clone();
+            let maintenance_space_id = space_id.clone();
+            let maintenance_permits = maintenance_permits.clone();
             tokio::spawn(async move {
-                let _ = gc_service.rearm_asset_text_gc(&gc_space_id).await;
-            });
-            let refresh_service = self.service.clone();
-            let refresh_space_id = space_id.clone();
-            tokio::spawn(async move {
+                let Ok(_permit) = maintenance_permits.acquire_owned().await else {
+                    return;
+                };
+                let _ = maintenance_service
+                    .rearm_asset_text_gc(&maintenance_space_id)
+                    .await;
                 for attempt in 0..=MAX_STARTUP_REFRESH_REARM_RETRIES {
-                    match refresh_service
-                        .rearm_asset_text_refresh(&refresh_space_id)
+                    match maintenance_service
+                        .rearm_asset_text_refresh(&maintenance_space_id)
                         .await
                     {
                         Ok(()) => return,
                         Err(error) => {
                             eprintln!(
                                 "AssetText startup refresh rearm failed for Space {} (attempt {}): {error:#}{}",
-                                refresh_space_id,
+                                maintenance_space_id,
                                 attempt + 1,
                                 if attempt < MAX_STARTUP_REFRESH_REARM_RETRIES {
                                     "; retrying"

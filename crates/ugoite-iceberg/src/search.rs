@@ -193,9 +193,11 @@ async fn asset_text_search_authorized(
         }
         Err(_) => {
             budget.restore(budget_checkpoint);
-            Err(anyhow::anyhow!(
-                "authorized AssetText search timed out before completing"
-            ))
+            // The caller already has the authorized native Entry candidates.
+            // AssetText is an optimization, so a slow derived join must leave
+            // those valid results available instead of turning search into an
+            // outage or returning an incomplete derived result set.
+            Ok(None)
         }
     }
 }

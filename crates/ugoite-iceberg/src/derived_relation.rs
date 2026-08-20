@@ -38,11 +38,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::future::Future;
 use std::io::{Cursor, Read, Seek};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{Mutex, Notify, Semaphore};
 use ugoite_domain::derived_relation::DerivedRelationId;
 use ugoite_domain::derived_relation::{
@@ -91,6 +92,10 @@ const MAX_BACKGROUND_GC_SCHEDULERS: usize = 1024;
 const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
 const ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
 const MAX_ASSET_TEXT_REFRESH_REQUESTS: usize = 16_384;
+const ASSET_TEXT_REFRESH_ADMISSION_LOCK: &str = "admission.lock";
+const ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL: Duration = Duration::from_secs(5 * 60);
+
+static ASSET_TEXT_REFRESH_LOCAL_ADMISSION: OnceLock<Mutex<()>> = OnceLock::new();
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -675,7 +680,189 @@ fn legacy_asset_text_refresh_request_path(ws_path: &str) -> String {
 }
 
 fn refresh_request_token(path: &str) -> Option<&str> {
-    path.rsplit('/').next()?.strip_suffix(".json")
+    let token = path.rsplit('/').next()?.strip_suffix(".json")?;
+    let uuid = Uuid::parse_str(token).ok()?;
+    (uuid.get_version_num() == 7 && (uuid.as_bytes()[8] & 0xc0) == 0x80).then_some(token)
+}
+
+fn refresh_request_admission_lock_path(ws_path: &str) -> String {
+    format!(
+        "{}{ASSET_TEXT_REFRESH_ADMISSION_LOCK}",
+        asset_text_refresh_request_prefix(ws_path),
+    )
+}
+
+fn refresh_request_admission_lock_bytes(owner: &str, released: bool) -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "owner": owner,
+        "acquired_at": Utc::now().timestamp(),
+        "released": released,
+    }))
+    .expect("AssetText refresh admission lock is serializable")
+}
+
+fn refresh_request_admission_lock_reclaimable(
+    bytes: &[u8],
+    last_modified: Option<SystemTime>,
+) -> bool {
+    let value = serde_json::from_slice::<Value>(bytes).ok();
+    if value
+        .as_ref()
+        .and_then(|value| value.get("released"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return true;
+    }
+    let acquired_at = value
+        .as_ref()
+        .and_then(|value| value.get("acquired_at"))
+        .and_then(Value::as_i64)
+        .and_then(|seconds| u64::try_from(seconds).ok())
+        .map(|seconds| std::time::UNIX_EPOCH + Duration::from_secs(seconds));
+    acquired_at
+        .or(last_modified)
+        .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+        .is_some_and(|age| age >= ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL)
+}
+
+async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str) -> Result<String> {
+    let capabilities = op.info().capability();
+    if !capabilities.write_with_if_not_exists || !capabilities.write_with_if_match {
+        bail!("AssetText refresh marker admission requires conditional object writes");
+    }
+    let path = refresh_request_admission_lock_path(ws_path);
+    let owner = Uuid::now_v7().to_string();
+    for _ in 0..3 {
+        match op
+            .write_options(
+                &path,
+                refresh_request_admission_lock_bytes(&owner, false),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => return Ok(owner),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::ConditionNotMatch | ErrorKind::AlreadyExists
+                ) => {}
+            Err(error) => return Err(error.into()),
+        }
+
+        let metadata = match op.stat(&path).await {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let bytes = op.read(&path).await?.to_vec();
+        if !refresh_request_admission_lock_reclaimable(
+            &bytes,
+            metadata.last_modified().map(Into::into),
+        ) {
+            bail!("AssetText refresh marker admission is busy")
+        }
+        let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+            bail!("AssetText refresh marker admission lock has no ETag")
+        };
+        match op
+            .write_options(
+                &path,
+                refresh_request_admission_lock_bytes(&owner, false),
+                WriteOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => return Ok(owner),
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    bail!("AssetText refresh marker admission changed while acquiring its lock")
+}
+
+async fn release_asset_text_refresh_admission_lock(
+    op: &Operator,
+    ws_path: &str,
+    owner: &str,
+) -> Result<()> {
+    let path = refresh_request_admission_lock_path(ws_path);
+    let metadata = match op.stat(&path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let bytes = op.read(&path).await?.to_vec();
+    let current_owner = serde_json::from_slice::<Value>(&bytes)?
+        .get("owner")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    if current_owner.as_deref() != Some(owner) {
+        return Ok(());
+    }
+    let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+        bail!("AssetText refresh marker admission lock has no ETag")
+    };
+    match op
+        .write_options(
+            &path,
+            refresh_request_admission_lock_bytes(owner, true),
+            WriteOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn with_asset_text_refresh_admission_lock<T, F, Fut>(
+    op: &Operator,
+    ws_path: &str,
+    operation: F,
+) -> Result<T>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let capabilities = op.info().capability();
+    if !capabilities.write_with_if_not_exists || !capabilities.write_with_if_match {
+        // The in-memory backend intentionally has no conditional-object
+        // contract. It is a single-process test/local backend, so retain the
+        // same admission invariant with one process-local mutex. Shared
+        // remote writers are rejected rather than pretending a read-then-write
+        // check is atomic.
+        if op.info().scheme() != "memory" {
+            bail!("AssetText refresh marker admission requires conditional object writes");
+        }
+        let lock = ASSET_TEXT_REFRESH_LOCAL_ADMISSION.get_or_init(Mutex::default);
+        let guard = lock.lock().await;
+        let result = operation().await;
+        drop(guard);
+        return result;
+    }
+    let owner = acquire_asset_text_refresh_admission_lock(op, ws_path).await?;
+    let result = operation().await;
+    let release = release_asset_text_refresh_admission_lock(op, ws_path, &owner).await;
+    match (result, release) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(release_error)) => Err(error.context(format!(
+            "release AssetText refresh marker admission lock: {release_error:#}"
+        ))),
+    }
 }
 
 fn refresh_request_is_at_or_before(path: &str, cutoff: &str) -> bool {
@@ -735,6 +922,20 @@ async fn clear_asset_text_refresh_requests_through(
     }
 }
 
+async fn clear_asset_text_refresh_requests_with_admission_lock(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<()> {
+    with_asset_text_refresh_admission_lock(op, ws_path, || async {
+        // The cutoff is created only after the shared admission lock is held.
+        // Marker writers cannot cross this boundary, so UUID ordering is not
+        // used as a cross-process clock.
+        let cutoff = Uuid::now_v7().to_string();
+        clear_asset_text_refresh_requests_through(op, ws_path, &cutoff).await
+    })
+    .await
+}
+
 async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Result<usize> {
     let mut count = usize::from(
         op.exists(&legacy_asset_text_refresh_request_path(ws_path))
@@ -745,7 +946,7 @@ async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Resul
         .recursive(false)
         .await?;
     while let Some(entry) = lister.try_next().await? {
-        if entry.path().ends_with(".json") {
+        if refresh_request_token(entry.path()).is_some() {
             count = count.saturating_add(1);
             if count >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
                 return Ok(count);
@@ -767,22 +968,24 @@ async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String])
 }
 
 pub async fn mark_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<String> {
-    if asset_text_refresh_request_count(op, ws_path).await? >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
-        bail!("AssetText refresh request markers exceed {MAX_ASSET_TEXT_REFRESH_REQUESTS}");
-    }
-    let token = Uuid::now_v7().to_string();
-    op.write(
-        &asset_text_refresh_request_path(ws_path, &token),
-        serde_json::to_vec(&json!({"token": token, "requested_at": Utc::now()}))?,
-    )
+    with_asset_text_refresh_admission_lock(op, ws_path, || async {
+        if asset_text_refresh_request_count(op, ws_path).await? >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
+            bail!("AssetText refresh request markers exceed {MAX_ASSET_TEXT_REFRESH_REQUESTS}");
+        }
+        let token = Uuid::now_v7().to_string();
+        op.write(
+            &asset_text_refresh_request_path(ws_path, &token),
+            serde_json::to_vec(&json!({"token": token, "requested_at": Utc::now()}))?,
+        )
+        .await
+        .map(|_| token)
+        .map_err(Into::into)
+    })
     .await
-    .map(|_| token)
-    .map_err(Into::into)
 }
 
 pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<()> {
-    let cutoff = Uuid::now_v7().to_string();
-    clear_asset_text_refresh_requests_through(op, ws_path, &cutoff).await
+    clear_asset_text_refresh_requests_with_admission_lock(op, ws_path).await
 }
 
 pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
@@ -797,7 +1000,7 @@ pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Resul
         .recursive(false)
         .await?;
     while let Some(entry) = lister.try_next().await? {
-        if entry.path().ends_with(".json") {
+        if refresh_request_token(entry.path()).is_some() {
             return Ok(true);
         }
     }
@@ -859,10 +1062,6 @@ async fn rebuild_asset_text_with_mode(
     ws_path: &str,
     shared: bool,
 ) -> Result<DerivedRelationHead> {
-    // UUID-v7 marker names provide a stable creation boundary. The bounded
-    // final drain below can remove an arbitrarily large legacy directory while
-    // preserving requests created after this build began.
-    let refresh_request_cutoff = Uuid::now_v7().to_string();
     let definition = asset_text_definition();
     let producer_fingerprint = asset_text_producer_fingerprint();
     let relation_uuid = definition.relation_id.as_uuid();
@@ -1148,7 +1347,7 @@ async fn rebuild_asset_text_with_mode(
     // Remove only the requests observed before this build. The drain is
     // bounded per listing/deletion batch, so marker overflow cannot strand
     // old requests or require an unbounded in-memory snapshot.
-    clear_asset_text_refresh_requests_through(op, ws_path, &refresh_request_cutoff).await?;
+    clear_asset_text_refresh_requests_with_admission_lock(op, ws_path).await?;
     Ok(current)
 }
 
