@@ -4331,96 +4331,111 @@ async fn bind_invited_account(
         ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
     })?;
     let authorizer = Authorizer::new(state.service.operator().clone());
-    let authorization = authorizer
-        .state(&space_id)
+    let (authorization, lease) = authorizer
+        .acquire_state_lease(&space_id)
         .await
         .map_err(recovery_aware_auth_error)?;
-    if has_active_recovery_fence(&authorization) {
-        return Err(recovery_fence_unavailable());
-    }
-    let active_space_member =
-        authorization
-            .principals
-            .get(&principal_id)
-            .is_some_and(|principal| {
-                matches!(principal.kind, PrincipalKind::Human)
-                    && matches!(principal.state, PrincipalState::Active)
-                    && authorization.memberships.contains_key(&principal_id)
-            });
-    let principal_has_conflicting_space_state = authorization
-        .principals
-        .get(&principal_id)
-        .is_some_and(|principal| {
-            !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
-        });
-    let existing_binding = state
-        .identity
-        .binding_for_account(space_uid, account.account_id)
+    let result = match lease
+        .run_while_held(|| async {
+            if has_active_recovery_fence(&authorization) {
+                return Err(recovery_fence_unavailable());
+            }
+            let active_space_member = authorization
+                .principals
+                .get(&principal_id)
+                .is_some_and(|principal| {
+                    matches!(principal.kind, PrincipalKind::Human)
+                        && matches!(principal.state, PrincipalState::Active)
+                        && authorization.memberships.contains_key(&principal_id)
+                });
+            let principal_has_conflicting_space_state = authorization
+                .principals
+                .get(&principal_id)
+                .is_some_and(|principal| {
+                    !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
+                });
+            let existing_binding = state
+                .identity
+                .binding_for_account(space_uid, account.account_id)
+                .await
+                .map_err(auth_error)?;
+            if existing_binding.is_some_and(|existing| existing != principal_id) {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({
+                        "code": "ACCOUNT_ALREADY_BOUND",
+                        "message": "account is already bound to this Space",
+                    }),
+                ));
+            }
+            if principal_has_conflicting_space_state
+                && (existing_binding.is_none()
+                    || authorization.principals.contains_key(&principal_id))
+            {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({
+                        "code": "SPACE_MEMBERSHIP_CONFLICT",
+                        "message": "Space authorization state conflicts with the invitation principal",
+                    }),
+                ));
+            }
+
+            if existing_binding.is_none() {
+                state
+                    .identity
+                    .finalize_invitation_binding(
+                        invitation.invitation_id,
+                        account.account_id,
+                        principal_id,
+                        binding_method,
+                    )
+                    .await
+                    .map_err(recovery_aware_auth_error)?;
+            }
+            if active_space_member {
+                return Ok(());
+            }
+            let inviter = state
+                .identity
+                .principal_for_account(space_uid, invitation.created_by)
+                .await
+                .map_err(auth_error)?;
+            authorizer
+                .add_human_member_with_lease(
+                    &space_id,
+                    inviter,
+                    SpacePrincipal {
+                        principal_id,
+                        kind: PrincipalKind::Human,
+                        display_name: account.display_name.clone(),
+                        state: PrincipalState::Active,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    },
+                    parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
+                    &lease,
+                )
+                .await
+                .map_err(recovery_aware_auth_error)?;
+            Ok(())
+        })
         .await
-        .map_err(auth_error)?;
-    if existing_binding.is_some_and(|existing| existing != principal_id) {
-        return Err(ApiError::new(
-            StatusCode::CONFLICT,
-            json!({
-                "code": "ACCOUNT_ALREADY_BOUND",
-                "message": "account is already bound to this Space",
-            }),
-        ));
-    }
-    if principal_has_conflicting_space_state
-        && (existing_binding.is_none() || authorization.principals.contains_key(&principal_id))
     {
-        return Err(ApiError::new(
-            StatusCode::CONFLICT,
-            json!({
-                "code": "SPACE_MEMBERSHIP_CONFLICT",
-                "message": "Space authorization state conflicts with the invitation principal",
-            }),
-        ));
+        Ok(result) => result,
+        Err(()) => Err(recovery_fence_unavailable()),
+    };
+    let release = lease.release().await;
+    match (result, release) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(error)) => Err(ApiError::from_core(error)),
+        (Err(error), Err(release_error)) => {
+            eprintln!(
+                "release Space authorization mutation lease after invitation failure: {release_error:#}"
+            );
+            Err(error)
+        }
     }
-
-    if existing_binding.is_none() {
-        // Commit the generation check, Node binding, and invitation completion
-        // in one Node CAS before creating an active Space membership. If
-        // recovery wins the race, no active membership is left behind.
-        state
-            .identity
-            .finalize_invitation_binding(
-                invitation.invitation_id,
-                account.account_id,
-                principal_id,
-                binding_method,
-            )
-            .await
-            .map_err(recovery_aware_auth_error)?;
-    }
-    if active_space_member {
-        return Ok(());
-    }
-
-    if !active_space_member {
-        let inviter = state
-            .identity
-            .principal_for_account(space_uid, invitation.created_by)
-            .await
-            .map_err(auth_error)?;
-        authorizer
-            .add_human_member(
-                &space_id,
-                inviter,
-                SpacePrincipal {
-                    principal_id,
-                    kind: PrincipalKind::Human,
-                    display_name: account.display_name.clone(),
-                    state: PrincipalState::Active,
-                    created_at: chrono::Utc::now().to_rfc3339(),
-                },
-                parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
-            )
-            .await
-            .map_err(recovery_aware_auth_error)?;
-    }
-    Ok(())
 }
 
 fn parse_space_role(role: &str) -> ApiResult<SpaceRole> {

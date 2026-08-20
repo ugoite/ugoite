@@ -63,7 +63,7 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
                     bail!("unsupported index component: {component}; expected asset-text");
                 }
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             tokio::time::timeout(INDEX_RUN_TIMEOUT, async {
                 service.reindex(&space_id).await?;
                 service.garbage_collect_asset_text_builds(&space_id).await?;
@@ -80,7 +80,7 @@ pub async fn run(cmd: IndexCmd) -> Result<()> {
                     "index stats is not available in backend/api mode in this release; use core mode for local index stats"
                 );
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let stats = service.space_stats(&space_id).await?;
             print_json(&stats);
         }
@@ -118,7 +118,7 @@ pub async fn query_cmd(space_path: &str, sql: &str) -> Result<()> {
         print_json(&rows);
         return Ok(());
     }
-    let service = UgoiteService::new(&root)?;
+    let service = UgoiteService::new_without_background_refresh(&root)?;
     let results = service.execute_sql_query(&space_id, sql).await?;
     print_json(&results);
     Ok(())

@@ -46,7 +46,7 @@ pub async fn run(cmd: SearchCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let results = service.search_entries(&space_id, &query).await?;
             print_json(&results);
         }

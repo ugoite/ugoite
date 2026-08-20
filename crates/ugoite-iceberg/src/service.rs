@@ -49,6 +49,7 @@ pub enum SpacePermission {
 pub struct UgoiteService {
     operator: Operator,
     root_uri: String,
+    background_refresh: bool,
 }
 
 struct CurrentSqlSessionExecutionAuthorization {
@@ -77,13 +78,32 @@ impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
         let root_uri = root_uri.into();
         let operator = operator_from_uri(&root_uri)?;
-        Ok(Self { operator, root_uri })
+        Ok(Self {
+            operator,
+            root_uri,
+            background_refresh: true,
+        })
+    }
+
+    /// Creates the local CLI service variant. A one-shot CLI process must
+    /// return after the authoritative commit; its detached refresh task would
+    /// otherwise be dropped at process exit. `ugoite index run` is the
+    /// explicit derived-repair command for this mode.
+    pub fn new_without_background_refresh(root_uri: impl Into<String>) -> Result<Self> {
+        let root_uri = root_uri.into();
+        let operator = operator_from_uri(&root_uri)?;
+        Ok(Self {
+            operator,
+            root_uri,
+            background_refresh: false,
+        })
     }
 
     pub fn from_operator(operator: Operator, root_uri: impl Into<String>) -> Self {
         Self {
             operator,
             root_uri: root_uri.into(),
+            background_refresh: true,
         }
     }
 
@@ -106,6 +126,9 @@ impl UgoiteService {
     /// stale/missing Derived Head is rearmed at startup. This keeps marker
     /// storage and the process-local worker entirely out of mutation latency.
     fn schedule_asset_text_refresh(&self, space_id: &str) {
+        if !self.background_refresh {
+            return;
+        }
         self.enqueue_asset_text_refresh(space_id);
     }
 

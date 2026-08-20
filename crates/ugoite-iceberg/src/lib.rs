@@ -2079,16 +2079,28 @@ impl IcebergWorkspace {
             )
             .await?;
         let schema = table.metadata().current_schema().clone();
-        let mut stream = context
-            .execute_latest_revision_stream(
-                &EntryScope::AllCurrent,
-                RevisionView::LatestIncludingTombstones,
-            )
-            .await?;
+        let mut after_entry_id = None;
         tokio::time::timeout(Duration::from_secs(30), async {
-            while let Some(batch) = stream.try_next().await? {
-                for revision in revisions_from_batch(&batch, &form, &schema)? {
-                    visit(revision)?;
+            loop {
+                let batches = context
+                    .execute_latest_revision_page(
+                        &EntryScope::AllCurrent,
+                        RevisionView::LatestIncludingTombstones,
+                        after_entry_id.as_deref(),
+                        DERIVED_REVISION_PAGE_SIZE,
+                    )
+                    .await?;
+                let mut page_rows = 0usize;
+                for batch in batches {
+                    let revisions = revisions_from_batch(&batch, &form, &schema)?;
+                    page_rows = page_rows.saturating_add(revisions.len());
+                    for revision in revisions {
+                        after_entry_id = Some(revision.entry_id.as_uuid().as_bytes().to_vec());
+                        visit(revision)?;
+                    }
+                }
+                if page_rows < DERIVED_REVISION_PAGE_SIZE {
+                    break;
                 }
             }
             Ok::<_, anyhow::Error>(())

@@ -78,6 +78,17 @@ const MAX_SOURCE_ASSETS: usize = 1_000_000;
 const MAX_SOURCE_FORMS: usize = 100_000;
 const MAX_SOURCE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
 const MAX_SOURCE_METADATA_BYTES: usize = 256 * 1024 * 1024;
+
+#[derive(Debug)]
+struct AssetParserInputLimit;
+
+impl std::fmt::Display for AssetParserInputLimit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("asset parser input exceeds configured limit")
+    }
+}
+
+impl std::error::Error for AssetParserInputLimit {}
 const MAX_ASSET_REFERENCES_PER_ENTRY: usize = ugoite_domain::entry::MAX_ASSET_REFERENCES_PER_ENTRY;
 const MAX_ASSET_TEXT_MATCHES: usize = 1_000_000;
 pub const MAX_ASSET_TEXT_QUERY_BYTES: usize = 8 * 1024;
@@ -2368,6 +2379,18 @@ async fn build_asset_text_rows(
                 ));
                 continue;
             }
+            Err(error) if error.downcast_ref::<AssetParserInputLimit>().is_some() => {
+                rows.push(base(
+                    "reader".into(),
+                    ASSET_TEXT_PARSER_VERSION.into(),
+                    "failed",
+                    0,
+                    None,
+                    None,
+                    Some(DerivedErrorCode::AssetParserLimit.as_str()),
+                ));
+                continue;
+            }
             Err(_) => {
                 rows.push(base(
                     "reader".into(),
@@ -2478,6 +2501,14 @@ async fn build_asset_text_rows(
 }
 
 async fn read_asset_exact(op: &Operator, path: &str) -> Result<Vec<u8>> {
+    read_asset_exact_with_limit(op, path, MAX_ASSET_BYTES as usize).await
+}
+
+async fn read_asset_exact_with_limit(
+    op: &Operator,
+    path: &str,
+    max_bytes: usize,
+) -> Result<Vec<u8>> {
     let metadata = op.stat(path).await?;
     let mut reader = op.reader_with(path);
     if let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) {
@@ -2488,8 +2519,8 @@ async fn read_asset_exact(op: &Operator, path: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     while let Some(buffer) = stream.try_next().await? {
         bytes.extend(buffer.into_iter().flatten());
-        if bytes.len() > MAX_ASSET_BYTES as usize {
-            bail!("asset parser input exceeds configured limit");
+        if bytes.len() > max_bytes {
+            return Err(anyhow::Error::new(AssetParserInputLimit));
         }
     }
     Ok(bytes)
@@ -3333,6 +3364,19 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn oversized_asset_read_is_classified_as_parser_limit() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        operator
+            .write("spaces/parser-limit/assets/a", b"12345".to_vec())
+            .await?;
+        let error = read_asset_exact_with_limit(&operator, "spaces/parser-limit/assets/a", 4)
+            .await
+            .expect_err("reader must stop at its configured limit");
+        assert!(error.downcast_ref::<AssetParserInputLimit>().is_some());
+        Ok(())
+    }
 
     #[tokio::test]
     async fn refresh_request_marker_survives_until_a_successful_clear() -> anyhow::Result<()> {

@@ -182,7 +182,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let entries = service.list_entries(&space_id).await?;
             if fmt != Format::Json {
                 let rows: Vec<serde_json::Value> = entries
@@ -215,7 +215,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let entry = service.get_entry(&space_id, &entry_id).await?;
             print_json(&entry);
         }
@@ -243,7 +243,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 return Ok(());
             }
             let author = author.unwrap_or_else(|| "cli".to_string());
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let meta = service
                 .create_entry(&space_id, &entry_id, &content, &author)
                 .await?;
@@ -277,7 +277,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let result = service
                 .update_entry(
                     &space_id,
@@ -323,7 +323,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             if human_approval.is_some() {
                 bail!("--human-approval is only supported in backend/api mode");
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             service
                 .delete_entry(&space_id, &entry_id, hard_delete, &author)
                 .await?;
@@ -345,7 +345,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let history = service.entry_history(&space_id, &entry_id).await?;
             print_json(&history);
         }
@@ -370,7 +370,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let rev = service
                 .entry_revision(&space_id, &entry_id, &revision_id)
                 .await?;

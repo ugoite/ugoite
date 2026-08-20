@@ -73,7 +73,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let sqls = service.list_saved_sql_operator_unscoped(&space_id).await?;
             print_json(&sqls);
         }
@@ -90,7 +90,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let sql = service.get_saved_sql(&space_id, &sql_id).await?;
             print_json(&sql);
         }
@@ -124,7 +124,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 sql,
                 variables: vars,
             };
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let result = service
                 .create_saved_sql(&space_id, &sql_id, &payload, "cli")
                 .await?;
@@ -168,7 +168,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
                 sql,
                 variables: vars,
             };
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let result = service
                 .update_saved_sql(&space_id, &sql_id, &payload, &parent_revision_id, "cli")
                 .await?;
@@ -197,7 +197,7 @@ pub async fn run(cmd: SqlCmd) -> Result<()> {
             if human_approval.is_some() {
                 anyhow::bail!("--human-approval is only supported in backend/api mode");
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             service.delete_saved_sql(&space_id, &sql_id, "cli").await?;
             print_json(&serde_json::json!({"deleted": true}));
         }

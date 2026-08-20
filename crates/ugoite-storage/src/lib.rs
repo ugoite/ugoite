@@ -141,6 +141,7 @@ struct GarbageClaim {
 
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
+const DERIVED_TERMINAL_CLAIM_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_DERIVED_GC_LIST_ENTRIES: usize = 100_000;
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
@@ -287,6 +288,13 @@ impl DerivedRelationHeadStore {
     fn terminal_tombstone_path(&self, build_id: &str) -> String {
         format!(
             "{}/_ugoite/derived/relations/{}/tombstones/{build_id}.json",
+            self.space_root, self.relation_id
+        )
+    }
+
+    fn terminal_tombstones_prefix(&self) -> String {
+        format!(
+            "{}/_ugoite/derived/relations/{}/tombstones/",
             self.space_root, self.relation_id
         )
     }
@@ -697,7 +705,15 @@ impl DerivedRelationHeadStore {
                 _ => return Err(anyhow!("DerivedRelation build claim is held")),
             }
         }
-        self.ensure_build_publishable(build_id).await?;
+        if let Err(error) = self.ensure_build_publishable(build_id).await {
+            let cleanup = self.release_publishing_claim(build_id).await;
+            return Err(match cleanup {
+                Ok(()) => error,
+                Err(cleanup_error) => error.context(format!(
+                    "release DerivedRelation publishing claim after preflight failure: {cleanup_error:#}"
+                )),
+            });
+        }
         Ok(())
     }
 
@@ -1277,7 +1293,7 @@ impl DerivedRelationHeadStore {
     }
 
     async fn reap_terminal_claim(&self, build_id: &str) -> Result<bool> {
-        let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
+        let Some((bytes, etag, last_modified)) = self.read_build_claim(build_id).await? else {
             return Ok(false);
         };
         let role = Self::claim_role(&bytes);
@@ -1286,6 +1302,9 @@ impl DerivedRelationHeadStore {
         }
         let owner =
             Self::claim_owner(&bytes).context("terminal DerivedRelation claim has no owner")?;
+        if !Self::old_enough(last_modified, DERIVED_TERMINAL_CLAIM_RETENTION) {
+            return Ok(false);
+        }
         if role.as_deref() == Some("complete")
             && !self
                 .replace_build_claim(build_id, etag.as_deref(), "reaping", &owner)
@@ -1327,6 +1346,30 @@ impl DerivedRelationHeadStore {
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(true),
             Err(error) => Err(error.into()),
         }
+    }
+
+    async fn reap_expired_terminal_tombstones(&self) -> Result<()> {
+        let mut lister = self
+            .operator
+            .lister_with(&self.terminal_tombstones_prefix())
+            .recursive(true)
+            .await?;
+        while let Some(entry) = lister.try_next().await? {
+            if entry.metadata().mode() != EntryMode::FILE
+                || !Self::old_enough(
+                    entry.metadata().last_modified().map(Into::into),
+                    DERIVED_TERMINAL_CLAIM_RETENTION,
+                )
+            {
+                continue;
+            }
+            match self.operator.delete(entry.path()).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
     }
 
     async fn ensure_build_publishable(&self, build_id: &str) -> Result<()> {
@@ -1432,6 +1475,19 @@ impl DerivedRelationHeadStore {
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
     ) -> Result<bool> {
+        let mut tombstones = self
+            .operator
+            .lister_with(&self.terminal_tombstones_prefix())
+            .recursive(true)
+            .await?;
+        while let Some(entry) = tombstones.try_next().await? {
+            if entry.metadata().mode() == EntryMode::FILE {
+                // Keep maintenance scheduled while the bounded tombstone
+                // retention window is active or until a later pass removes
+                // the expired record.
+                return Ok(true);
+            }
+        }
         let prefix = format!(
             "{}/_ugoite/derived/relations/{}/builds/",
             self.space_root, self.relation_id
@@ -1596,6 +1652,7 @@ impl DerivedRelationHeadStore {
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
     ) -> Result<Vec<String>> {
+        self.reap_expired_terminal_tombstones().await?;
         self.recover_completed_empty_head_fence().await?;
         let observed_current_build_id = self.current_build_id().await?;
         // The caller's build ID is a scheduling hint only.  The exact Head
