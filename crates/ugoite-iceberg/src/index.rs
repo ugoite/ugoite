@@ -535,7 +535,11 @@ pub(crate) async fn authorized_asset_reference_query_context(
     crate::query_context::AuthorizedQueryContext,
     HashMap<String, Value>,
 )> {
-    let forms = load_forms(op, ws_path).await?;
+    // Read the Form definitions on both sides of context construction. The
+    // authorized DataFusion context opens its own latest Form snapshot; if an
+    // authoritative Form commit races that construction, reject this join so
+    // the caller can use the authoritative fallback instead of mixing schemas.
+    let forms_before = load_forms(op, ws_path).await?;
     let context = datafusion_sql_context_with_limits(
         op,
         ws_path,
@@ -549,7 +553,13 @@ pub(crate) async fn authorized_asset_reference_query_context(
     )
     .await
     .map_err(map_sql_error)?;
-    Ok((context, forms))
+    let forms_after = load_forms(op, ws_path).await?;
+    if forms_before != forms_after {
+        return Err(anyhow!(
+            "Form definitions changed while opening authorized AssetReference context"
+        ));
+    }
+    Ok((context, forms_after))
 }
 
 /// Reads the authorized current AssetReference projection once for a Form.

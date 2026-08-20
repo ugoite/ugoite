@@ -924,6 +924,15 @@ impl DerivedRelationHeadStore {
     /// old, long-lived current build still gets a full reader grace period
     /// after the Head swap.
     pub async fn mark_garbage(&self, build_id: &str) -> Result<()> {
+        // GC retains the publishing claim as a terminal tombstone after it
+        // has deleted the build. A delayed publisher may resume after that
+        // transition and report the same build as garbage; do not recreate a
+        // marker for a prefix whose cleanup is already complete.
+        if let Some((bytes, _, _)) = self.read_build_claim(build_id).await? {
+            if Self::claim_role(&bytes).as_deref() == Some("complete") {
+                return Ok(());
+            }
+        }
         match self
             .operator
             .write_options(
@@ -1119,6 +1128,19 @@ impl DerivedRelationHeadStore {
         }
         for (build_id, candidate) in candidates {
             if candidate.has_garbage_marker {
+                if self
+                    .read_build_claim(&build_id)
+                    .await?
+                    .is_some_and(|(bytes, _, _)| {
+                        Self::claim_role(&bytes).as_deref() == Some("complete")
+                    })
+                {
+                    // A delayed publisher may have recreated the marker after
+                    // marker-last cleanup. The terminal claim is the durable
+                    // proof that no build data remains.
+                    self.clear_garbage(&build_id).await?;
+                    continue;
+                }
                 return Ok(true);
             }
             let stale_publishing =
@@ -1316,6 +1338,21 @@ impl DerivedRelationHeadStore {
                 if let Some(claim) = self.current_garbage_claim(&build_id).await? {
                     let _ = self.release_garbage_claim(&build_id, &claim).await;
                 }
+                continue;
+            }
+            // A delayed publisher can race marker-last cleanup and recreate
+            // garbage.json after the terminal claim was written. The complete
+            // claim proves the prefix was already deleted, so remove only the
+            // stale marker and do not try to claim the completed build again.
+            if candidate.has_garbage_marker
+                && self
+                    .read_build_claim(&build_id)
+                    .await?
+                    .is_some_and(|(bytes, _, _)| {
+                        Self::claim_role(&bytes).as_deref() == Some("complete")
+                    })
+            {
+                self.clear_garbage(&build_id).await?;
                 continue;
             }
             let needs_fresh_garbage_marker = !candidate.has_garbage_marker
@@ -3164,6 +3201,11 @@ mod tests {
             .expect_err("a reclaimed build must stay fenced")
             .to_string()
             .contains("claim is held"));
+        // A delayed loser may report the same build after cleanup. It must
+        // not recreate garbage.json or wake GC forever.
+        store.mark_garbage("old").await?;
+        assert!(!operator.exists(&store.garbage_marker_path("old")).await?);
+        assert!(!store.has_pending_garbage(None, Duration::ZERO).await?);
         Ok(())
     }
 

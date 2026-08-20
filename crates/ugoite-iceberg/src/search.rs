@@ -22,7 +22,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use ugoite_core::query::EntryScope;
 use ugoite_domain::entry::AssetReference;
-use ugoite_domain::form::FieldType;
 
 use crate::entry;
 use crate::index::AuthorizedAssetReferenceRow;
@@ -219,14 +218,6 @@ async fn asset_text_search_authorized_inner(
     // The provider streams bounded authorization pages into one DataFusion
     // scan. This keeps the authorization source bounded per batch while the
     // AssetText provider is planned and scanned only once for the whole join.
-    let form_names = match crate::entry::list_form_names(op, ws_path).await {
-        Ok(form_names) => form_names,
-        Err(_) => return Ok(None),
-    };
-    let asset_reference_fields = match load_asset_reference_fields(op, ws_path, &form_names).await {
-        Ok(fields) => fields,
-        Err(_) => return Ok(None),
-    };
     let (authorized_context, authorized_forms) =
         match crate::index::authorized_asset_reference_query_context(op, ws_path, relation_scopes)
             .await
@@ -234,12 +225,19 @@ async fn asset_text_search_authorized_inner(
             Ok(value) => value,
             Err(_) => return Ok(None),
         };
+    // Use the same stable Form snapshot returned with the authorized context
+    // for both schema selection and AssetReference extraction. The helper
+    // rejects a definition change observed across context construction, so a
+    // scalar/list edit cannot silently drop references from this join.
+    let asset_reference_fields = load_asset_reference_fields(&authorized_forms)?;
     // Do not make the provider walk current rows for Forms that cannot emit an
     // AssetReference or are absent from the authorization context. This keeps
     // the derived join both authorization-safe and proportional to the
     // authorized AssetReference-bearing Forms, rather than every Form in the
     // Space.
-    let asset_form_names = form_names
+    let asset_form_names = authorized_forms
+        .keys()
+        .cloned()
         .into_iter()
         .filter(|form_name| {
             let Some(fields) = asset_reference_fields.get(form_name) else {
@@ -436,37 +434,44 @@ struct AssetReferenceField {
     list: bool,
 }
 
-async fn load_asset_reference_fields(
-    op: &Operator,
-    ws_path: &str,
-    form_names: &[String],
+fn load_asset_reference_fields(
+    forms: &HashMap<String, Value>,
 ) -> Result<BTreeMap<String, Vec<AssetReferenceField>>> {
     let mut fields = BTreeMap::new();
-    for form_name in form_names {
-        let definition = crate::iceberg_store::load_domain_form(op, ws_path, form_name).await?;
+    for (form_name, definition) in forms {
         let asset_fields = definition
-            .fields
-            .iter()
-            .filter_map(|field| match &field.field_type {
-                FieldType::AssetReference => Some(AssetReferenceField {
-                    name: field.name.clone(),
-                    list: false,
-                }),
-                FieldType::List
-                    if field
-                        .list_item
-                        .as_ref()
-                        .is_some_and(|item| item.field_type == FieldType::AssetReference) =>
-                {
-                    Some(AssetReferenceField {
-                        name: field.name.clone(),
-                        list: true,
+            .get("fields")
+            .and_then(Value::as_object)
+            .map(|form_fields| {
+                form_fields
+                    .iter()
+                    .filter_map(|(field_name, field)| {
+                        let field_type = field.get("type").and_then(Value::as_str)?;
+                        if field_type == "asset_reference" {
+                            return Some(AssetReferenceField {
+                                name: field_name.clone(),
+                                list: false,
+                            });
+                        }
+                        if field_type == "list"
+                            && field
+                                .get("items")
+                                .and_then(Value::as_object)
+                                .and_then(|items| items.get("type"))
+                                .and_then(Value::as_str)
+                                == Some("asset_reference")
+                        {
+                            return Some(AssetReferenceField {
+                                name: field_name.clone(),
+                                list: true,
+                            });
+                        }
+                        None
                     })
-                }
-                _ => None,
+                    .collect::<Vec<_>>()
             })
-            .collect::<Vec<_>>();
-        fields.insert(definition.name.to_string(), asset_fields);
+            .unwrap_or_default();
+        fields.insert(form_name.clone(), asset_fields);
     }
     Ok(fields)
 }
