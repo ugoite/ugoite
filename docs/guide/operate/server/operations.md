@@ -75,4 +75,11 @@ destination through normal setup.
 4. verify `/health`, login, Space listing, and a representative
    read/write/restore path.
 
+AssetText refresh admission markers are an internal storage protocol. During a
+rolling upgrade, stop old server workers before allowing the new process to
+drain refresh markers; old workers may still emit the legacy fixed-name marker
+without participating in the new admission lock. After the old workers are
+drained, run `ugoite index run` once per affected Space if `index stats` reports
+stale derived state.
+
 The repository does not require a separate worker, queue, or database service.

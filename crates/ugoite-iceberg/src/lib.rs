@@ -1439,6 +1439,15 @@ impl IcebergWorkspace {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn garbage_collect_deleted_asset_blobs(&self) -> Result<usize> {
+        self.space_catalog
+            .as_ref()
+            .context("Asset lifecycle requires the OpenDAL-backed SpaceCatalog")?
+            .garbage_collect_deleted_asset_blobs()
+            .await
+            .map_err(Into::into)
+    }
+
     async fn mark_asset_deleted(&self, asset_id: &str) -> Result<()> {
         self.space_catalog
             .as_ref()

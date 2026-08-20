@@ -144,6 +144,7 @@ const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
 const DERIVED_TERMINAL_CLAIM_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_DERIVED_GC_LIST_ENTRIES: usize = 100_000;
 const MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS: usize = 1_024;
+const MAX_ASSET_LIFECYCLE_SCAN_ENTRIES: usize = 100_000;
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -3045,6 +3046,48 @@ impl SpaceCatalogStore {
 
     pub async fn delete_asset_lifecycle_marker(&self, asset_id: &str) -> Result<()> {
         let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
+        match self.operator.delete(&path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Lists the durable Asset lifecycle records used by the physical-blob
+    /// sweeper.  The Catalog Head remains the authority for deletion state;
+    /// this bounded listing only discovers committed tombstones whose object
+    /// cleanup may have been interrupted after the authoritative commit.
+    pub async fn list_asset_lifecycle_markers(&self) -> Result<Vec<(String, Vec<u8>)>> {
+        let prefix = self.catalog_path("asset-lifecycle/");
+        let mut lister = self.operator.lister_with(&prefix).recursive(false).await?;
+        let mut examined = 0usize;
+        let mut markers = Vec::new();
+        while let Some(entry) = lister.try_next().await? {
+            examined = examined.saturating_add(1);
+            if examined > MAX_ASSET_LIFECYCLE_SCAN_ENTRIES {
+                return Err(anyhow!(
+                    "Asset lifecycle marker prefix exceeds the {MAX_ASSET_LIFECYCLE_SCAN_ENTRIES}-entry safety bound"
+                ));
+            }
+            if entry.metadata().mode() != EntryMode::FILE {
+                continue;
+            }
+            let Some(asset_id) = entry.path().rsplit('/').next().filter(|id| !id.is_empty()) else {
+                continue;
+            };
+            markers.push((
+                asset_id.to_string(),
+                self.operator.read(entry.path()).await?.to_vec(),
+            ));
+        }
+        Ok(markers)
+    }
+
+    /// Deletes only the exact Asset object key.  Callers must first establish
+    /// that its durable lifecycle marker is committed; this operation is a
+    /// repair step and never decides whether an Asset is logically deleted.
+    pub async fn delete_asset_blob(&self, asset_id: &str) -> Result<()> {
+        let path = self.space_path(&format!("assets/{asset_id}"));
         match self.operator.delete(&path).await {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),

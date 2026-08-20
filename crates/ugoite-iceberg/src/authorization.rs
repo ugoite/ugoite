@@ -585,6 +585,18 @@ impl Authorizer {
         if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
             return Ok(None);
         }
+        self.ensure_authoritative_mutation_contract()?;
+        unreachable!("shared authorization mutation leases are fail-closed in v1")
+    }
+
+    /// Shared authorization/content mutations are intentionally unavailable
+    /// until the storage backend can fence all participating objects as one
+    /// atomic operation.  This check is also used by multi-object bootstrap
+    /// paths before they create their first authoritative object.
+    pub fn ensure_authoritative_mutation_contract(&self) -> Result<()> {
+        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            return Ok(());
+        }
         if !shared_authorization_lock_contract(&self.operator) {
             bail!(
                 "shared Space authorization mutations require conditional object storage capabilities"

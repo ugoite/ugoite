@@ -16,7 +16,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
-use ugoite_domain::id::{FormId, SpaceId};
+use ugoite_domain::id::{validate_asset_id, FormId, SpaceId};
 use ugoite_storage::{CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore};
 use uuid::Uuid;
 
@@ -30,6 +30,7 @@ use crate::FORM_ID_PROPERTY;
 const SPACE_FORMAT_VERSION: u32 = 1;
 const MAX_HEAD_BYTES: usize = 1 << 20;
 const SMALL_FILE_THRESHOLD_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_DELETED_ASSET_BLOBS_PER_PASS: usize = 1_024;
 
 /// Holds the official OpenDAL Iceberg storage instance for test-only memory
 /// spaces. It adds no I/O behavior; it merely keeps Iceberg metadata and
@@ -2553,6 +2554,38 @@ impl SpaceCatalog {
                 }
             }
         }
+    }
+
+    /// Reclaims Asset bytes whose authoritative deletion publication already
+    /// committed but whose physical delete was interrupted.  The lifecycle
+    /// marker is retained as the durable tombstone, so a later pass can retry
+    /// indefinitely without consulting or mutating Catalog history.
+    pub(crate) async fn garbage_collect_deleted_asset_blobs(&self) -> Result<usize> {
+        let markers = self
+            .store
+            .list_asset_lifecycle_markers()
+            .await
+            .map_err(storage_error)?;
+        let mut deleted = 0usize;
+        for (asset_id, bytes) in markers {
+            if deleted >= MAX_DELETED_ASSET_BLOBS_PER_PASS {
+                break;
+            }
+            if validate_asset_id(&asset_id).is_err() {
+                continue;
+            }
+            let marker: AssetLifecycleMarker =
+                serde_json::from_slice(&bytes).map_err(json_error)?;
+            if marker.state != AssetLifecycleState::Committed {
+                continue;
+            }
+            self.store
+                .delete_asset_blob(&asset_id)
+                .await
+                .map_err(storage_error)?;
+            deleted = deleted.saturating_add(1);
+        }
+        Ok(deleted)
     }
 
     async fn recover_existing_asset_publication(

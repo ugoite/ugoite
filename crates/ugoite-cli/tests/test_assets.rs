@@ -255,6 +255,7 @@ fn test_asset_remote_upload_sends_file_part_and_returns_metadata() {
         let upload_output = Command::new(ugoite_bin())
             .args(upload_args)
             .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .env("UGOITE_ENABLE_REMOTE_ASSET_UPLOAD", "1")
             .output()
             .expect("run remote asset upload");
 
@@ -299,4 +300,40 @@ fn test_asset_remote_upload_sends_file_part_and_returns_metadata() {
         assert_eq!(asset["size_bytes"], 20);
         assert_eq!(asset["sha256"], "remote-sha256");
     }
+}
+
+#[test]
+fn test_asset_remote_upload_requires_explicit_transport_capability() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let asset_file = dir.path().join("test-asset.txt");
+    std::fs::write(&asset_file, b"remote asset content").unwrap();
+    std::fs::write(
+        &config_path,
+        serde_json::json!({
+            "mode": "backend",
+            "backend_url": "http://localhost:8000",
+            "api_url": "http://localhost:3000/api"
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "asset",
+            "upload",
+            "remote-space",
+            asset_file.to_str().unwrap(),
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .env_remove("UGOITE_ENABLE_REMOTE_ASSET_UPLOAD")
+        .output()
+        .expect("run gated remote asset upload");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("UGOITE_ENABLE_REMOTE_ASSET_UPLOAD=1"),
+        "{stderr}"
+    );
 }

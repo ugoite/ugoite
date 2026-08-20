@@ -1248,6 +1248,20 @@ async fn clear_asset_text_refresh_requests_with_admission_lock(
     .await
 }
 
+async fn clear_asset_text_refresh_request_paths_with_admission_lock(
+    op: &Operator,
+    ws_path: &str,
+    paths: &[String],
+) -> Result<()> {
+    with_asset_text_refresh_admission_lock(op, ws_path, || async {
+        // The caller captured these immutable token paths at rebuild
+        // admission.  Requests created after that point must remain durable
+        // for the next refresh, even if this build finishes much later.
+        clear_asset_text_refresh_request_paths(op, paths).await
+    })
+    .await
+}
+
 async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Result<usize> {
     let mut count = usize::from(
         op.exists(&legacy_asset_text_refresh_request_path(ws_path))
@@ -1409,6 +1423,14 @@ async fn rebuild_asset_text_with_mode(
     } else {
         Some(head_store.single_process_lock().lock_owned().await)
     };
+    // Capture the exact refresh requests admitted to this build before the
+    // authoritative scan starts.  Clearing the live marker directory after
+    // publication would acknowledge mutations that were not included in this
+    // build, especially when the worker is delayed by a large parse.
+    let refresh_request_paths = with_asset_text_refresh_admission_lock(op, ws_path, || async {
+        snapshot_asset_text_refresh_request_paths(op, ws_path).await
+    })
+    .await?;
     let mut legacy_expected = None;
     if let Err(error) = head_store.read_exact().await {
         if error
@@ -1718,7 +1740,13 @@ async fn rebuild_asset_text_with_mode(
     // Remove only the requests observed before this build. The drain is
     // bounded per listing/deletion batch, so marker overflow cannot strand
     // old requests or require an unbounded in-memory snapshot.
-    if let Err(error) = clear_asset_text_refresh_requests_with_admission_lock(op, ws_path).await {
+    if let Err(error) = clear_asset_text_refresh_request_paths_with_admission_lock(
+        op,
+        ws_path,
+        &refresh_request_paths,
+    )
+    .await
+    {
         // Head publication is already complete. Keep durable request markers
         // for the next maintenance pass instead of reporting a failed build
         // and triggering full-rebuild retry churn.

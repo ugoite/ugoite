@@ -5,6 +5,18 @@ use clap::{Args, Subcommand};
 use std::io::Read;
 use ugoite_iceberg::service::UgoiteService;
 
+const REMOTE_ASSET_UPLOAD_CAPABILITY_ENV: &str = "UGOITE_ENABLE_REMOTE_ASSET_UPLOAD";
+
+fn remote_asset_upload_capability_enabled() -> bool {
+    matches!(
+        std::env::var(REMOTE_ASSET_UPLOAD_CAPABILITY_ENV)
+            .ok()
+            .as_deref()
+            .map(str::trim),
+        Some("1" | "true" | "yes")
+    )
+}
+
 #[derive(Args)]
 pub struct AssetCmd {
     #[command(subcommand)]
@@ -15,7 +27,7 @@ pub struct AssetCmd {
 pub enum AssetSubCmd {
     /// Upload an asset
     #[command(
-        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\nRemote CLI upload is reserved for an explicitly enabled transport capability in this release."
+        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\nRemote CLI upload is reserved for an explicitly enabled transport capability in this release. Set UGOITE_ENABLE_REMOTE_ASSET_UPLOAD=1 only when the configured endpoint has been explicitly enabled for this capability."
     )]
     Upload {
         #[arg(
@@ -78,6 +90,11 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .to_string()
             });
             if let Some(base) = validated_base_url(&config)? {
+                if !remote_asset_upload_capability_enabled() {
+                    anyhow::bail!(
+                        "remote CLI asset upload is unavailable unless the explicit transport capability is enabled with {REMOTE_ASSET_UPLOAD_CAPABILITY_ENV}=1"
+                    );
+                }
                 let result = http::execute_multipart(
                     &base,
                     "asset.upload",

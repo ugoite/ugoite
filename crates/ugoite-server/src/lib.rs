@@ -539,6 +539,9 @@ impl AppState {
                     return;
                 };
                 let _ = maintenance_service
+                    .garbage_collect_deleted_asset_blobs(&maintenance_space_id)
+                    .await;
+                let _ = maintenance_service
                     .rearm_asset_text_gc(&maintenance_space_id)
                     .await;
                 for attempt in 0..=MAX_STARTUP_REFRESH_REARM_RETRIES {

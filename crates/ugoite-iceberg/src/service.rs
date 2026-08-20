@@ -312,6 +312,12 @@ impl UgoiteService {
         principal_id: Uuid,
         display_name: &str,
     ) -> Result<Uuid> {
+        // Space bootstrap spans the Space scaffold, the authorization owner,
+        // and the Node binding performed by the server.  There is no atomic
+        // multi-object fence for shared backends, so fail before the first
+        // write instead of leaving a partially bootstrapped Space that cannot
+        // be retried under the same slug.
+        Authorizer::new(self.operator.clone()).ensure_authoritative_mutation_contract()?;
         validate_storage_id(validate_space_id(slug))?;
         if self.space_id_by_slug(slug).await?.is_some() {
             return Err(AppError::conflict(
@@ -1554,6 +1560,17 @@ impl UgoiteService {
             &self.workspace_path(space_id),
         )
         .await
+    }
+
+    /// Retries physical cleanup for Assets whose authoritative tombstone is
+    /// already committed.  A failed delete must remain recoverable without
+    /// replaying Catalog history, so server startup and explicit index
+    /// maintenance call this bounded sweeper.
+    pub async fn garbage_collect_deleted_asset_blobs(&self, space_id: &str) -> Result<usize> {
+        validate_storage_id(validate_space_id(space_id))?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        workspace.garbage_collect_deleted_asset_blobs().await
     }
 
     /// Rehydrates derived GC after a server restart. Derived cleanup is
