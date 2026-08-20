@@ -5,6 +5,13 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;
 
+/// Hard safety bound for one current Entry's AssetReference payload.
+///
+/// This is an aggregate bound across scalar and list fields.  Keeping the
+/// contract in the domain crate makes authoritative writes and derived/query
+/// readers reject the same legacy or adversarial payloads.
+pub const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryOperation {
@@ -258,6 +265,7 @@ impl EntryRevision {
             return Err(RevisionError::ExtraAttributesNotAllowed);
         }
         if self.operation != EntryOperation::Delete {
+            let mut asset_reference_count = 0usize;
             for field in form
                 .fields
                 .iter()
@@ -286,6 +294,10 @@ impl EntryRevision {
                         reference
                             .validate()
                             .map_err(|_| RevisionError::InvalidAssetReference(*field_id))?;
+                        asset_reference_count = asset_reference_count.saturating_add(1);
+                        if asset_reference_count > MAX_ASSET_REFERENCES_PER_ENTRY {
+                            return Err(RevisionError::TooManyAssetReferences);
+                        }
                     }
                 }
                 if field.field_type == FieldType::List
@@ -295,6 +307,10 @@ impl EntryRevision {
                         .is_some_and(|item| item.field_type == FieldType::AssetReference)
                 {
                     if let FieldValue::List(values) = value {
+                        asset_reference_count = asset_reference_count.saturating_add(values.len());
+                        if asset_reference_count > MAX_ASSET_REFERENCES_PER_ENTRY {
+                            return Err(RevisionError::TooManyAssetReferences);
+                        }
                         let mut asset_ids = std::collections::BTreeSet::new();
                         for value in values {
                             if let FieldValue::AssetReference(reference) = value {
@@ -437,6 +453,7 @@ pub enum RevisionError {
     WrongType(FieldId),
     InvalidAssetReference(FieldId),
     DuplicateAssetReference(FieldId),
+    TooManyAssetReferences,
 }
 impl fmt::Display for RevisionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

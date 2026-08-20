@@ -44,7 +44,8 @@ const MAX_QUERY_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
 pub(crate) const ASSET_TEXT_SEARCH_MAX_QUERY_BYTES: usize =
     crate::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES;
 pub(crate) const ASSET_TEXT_SEARCH_MAX_BYTES: usize = 64 * 1024 * 1024;
-pub(crate) const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
+pub(crate) const MAX_ASSET_REFERENCES_PER_ENTRY: usize =
+    ugoite_domain::entry::MAX_ASSET_REFERENCES_PER_ENTRY;
 
 /// Shared accounting for one authorized AssetText search. It covers the
 /// current Entry projection, the derived join batches, and the final result
@@ -83,6 +84,17 @@ impl AssetTextSearchBudget {
                 Err(observed) => current = observed,
             }
         }
+    }
+
+    pub(crate) fn checkpoint(&self) -> usize {
+        self.used_bytes.load(Ordering::Acquire)
+    }
+
+    /// Rolls back reservations made by a failed DataFusion join attempt.
+    /// Search execution is single-consumer, so the checkpoint is only used by
+    /// the join-to-authoritative-fallback transition.
+    pub(crate) fn restore(&self, checkpoint: usize) {
+        self.used_bytes.store(checkpoint, Ordering::Release);
     }
 }
 
@@ -462,7 +474,11 @@ async fn query_entry_candidates_in_context(
         after_clause,
         pagination,
     );
-    let values = record_batches_to_values(&context.execute(&sql).await.map_err(map_sql_error)?)?;
+    let batches = context
+        .execute_with_byte_limit(&sql, ASSET_TEXT_SEARCH_MAX_BYTES)
+        .await
+        .map_err(map_sql_error)?;
+    let values = record_batches_to_values_bounded(&batches, ASSET_TEXT_SEARCH_MAX_BYTES)?;
     let mut candidates = values
         .into_iter()
         .map(|value| {
@@ -645,7 +661,7 @@ pub(crate) async fn query_asset_reference_rows_authorized_in_context(
         predicates.push(col("_ugoite_id").gt(lit(after_entry_id.to_string())));
     }
     let batches = context
-        .execute_relation_plan(
+        .execute_relation_plan_bounded(
             relation,
             &[],
             predicates,
@@ -658,6 +674,7 @@ pub(crate) async fn query_asset_reference_rows_authorized_in_context(
             false,
             false,
             limit,
+            ASSET_TEXT_SEARCH_MAX_BYTES / 8,
         )
         .await
         .map_err(map_sql_error)?;
@@ -956,19 +973,20 @@ fn asset_reference_rows_from_batches(
                     Ok((name.clone(), serde_json::to_value(value)?))
                 })
                 .collect::<Result<Map<_, _>>>()?;
-            let entry_id = required_string_column(batch, row, "_ugoite_id", "external ID")?;
-            let title = required_string_column(batch, row, "_ugoite_title", "title")?;
-            let projected_value = Value::Object(projected_fields.clone());
+            let entry_id_value =
+                required_string_value_column(batch, row, "_ugoite_id", "external ID")?;
+            let title_value = required_string_value_column(batch, row, "_ugoite_title", "title")?;
+            let projected_value = Value::Object(projected_fields);
             validate_asset_reference_value(&projected_value, MAX_ASSET_REFERENCES_PER_ENTRY)?;
             budget.reserve(
-                entry_id.len()
-                    + title.len()
-                    + projected_value.to_string().len()
+                entry_id_value.len()
+                    + title_value.len()
+                    + estimated_json_bytes(&projected_value)
                     + std::mem::size_of::<AuthorizedAssetReferenceRow>(),
             )?;
             rows.push(AuthorizedAssetReferenceRow {
-                entry_id,
-                title,
+                entry_id: entry_id_value.to_owned(),
+                title: title_value.to_owned(),
                 created_at: required_timestamp_seconds_column(
                     batch,
                     row,
@@ -982,7 +1000,7 @@ fn asset_reference_rows_from_batches(
                     "updated_at",
                 )?,
                 deleted: required_bool_column(batch, row, "_ugoite_deleted", "deleted")?,
-                fields: Value::Object(projected_fields),
+                fields: projected_value,
             });
         }
     }
@@ -1018,6 +1036,32 @@ fn validate_asset_reference_value(value: &Value, max_references: usize) -> Resul
 
     let mut count = 0;
     visit(value, &mut count, max_references)
+}
+
+fn estimated_json_bytes(value: &Value) -> usize {
+    match value {
+        Value::Null => 4,
+        Value::Bool(value) => {
+            if *value {
+                4
+            } else {
+                5
+            }
+        }
+        Value::Number(value) => value.to_string().len(),
+        Value::String(value) => value.len().saturating_mul(6).saturating_add(2),
+        Value::Array(values) => values
+            .iter()
+            .map(estimated_json_bytes)
+            .fold(2usize, |total, size| {
+                total.saturating_add(size).saturating_add(1)
+            }),
+        Value::Object(values) => values.iter().fold(2usize, |total, (key, value)| {
+            total
+                .saturating_add(key.len().saturating_mul(6).saturating_add(3))
+                .saturating_add(estimated_json_bytes(value))
+        }),
+    }
 }
 
 fn entry_rows_from_batches(
@@ -1126,6 +1170,15 @@ fn required_string_column(
     name: &str,
     label: &str,
 ) -> Result<String> {
+    Ok(required_string_value_column(batch, row, name, label)?.to_owned())
+}
+
+fn required_string_value_column<'a>(
+    batch: &'a arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+    label: &str,
+) -> Result<&'a str> {
     let column = payload_column(batch, name)?;
     let values = column
         .as_any()
@@ -1134,7 +1187,7 @@ fn required_string_column(
     if values.is_null(row) {
         return Err(anyhow!("Entry payload is missing {label}"));
     }
-    Ok(values.value(row).to_owned())
+    Ok(values.value(row))
 }
 
 fn optional_string_column(
@@ -2224,6 +2277,50 @@ fn record_batches_to_values(batches: &[arrow_array::RecordBatch]) -> Result<Vec<
     serde_json::from_slice(&writer.into_inner()).context("decode DataFusion result rows")
 }
 
+/// Converts only bounded Arrow batches to JSON. The per-batch preflight keeps
+/// ArrayWriter from receiving an arbitrarily large user-controlled string, and
+/// the encoded bytes are checked before they are appended to the accumulated
+/// result. General SQL surfaces retain the existing conversion because their
+/// own row/session limits are the governing contract; AssetText search calls
+/// this helper with its dedicated byte ceiling.
+fn record_batches_to_values_bounded(
+    batches: &[arrow_array::RecordBatch],
+    max_bytes: usize,
+) -> Result<Vec<Value>> {
+    let mut values = Vec::new();
+    let mut encoded_bytes = 0usize;
+    for batch in batches {
+        // JSON escaping can expand a UTF-8 string. Keep enough headroom that
+        // the bounded writer output cannot exceed the configured ceiling just
+        // because of escaping overhead.
+        let encoded_preflight = batch
+            .get_array_memory_size()
+            .checked_mul(8)
+            .ok_or_else(|| anyhow!("DataFusion result exceeds its byte limit"))?;
+        if encoded_preflight > max_bytes {
+            return Err(anyhow!("DataFusion result exceeds its byte limit"));
+        }
+        let mut writer = ArrayWriter::new(Vec::new());
+        writer
+            .write_batches(&[batch])
+            .context("encode bounded DataFusion result rows as JSON")?;
+        writer
+            .finish()
+            .context("finish bounded DataFusion JSON encoding")?;
+        let encoded = writer.into_inner();
+        encoded_bytes = encoded_bytes
+            .checked_add(encoded.len())
+            .ok_or_else(|| anyhow!("DataFusion result exceeds its byte limit"))?;
+        if encoded_bytes > max_bytes {
+            return Err(anyhow!("DataFusion result exceeds its byte limit"));
+        }
+        let mut batch_values: Vec<Value> =
+            serde_json::from_slice(&encoded).context("decode bounded DataFusion result rows")?;
+        values.append(&mut batch_values);
+    }
+    Ok(values)
+}
+
 fn map_sql_error(error: anyhow::Error) -> anyhow::Error {
     use crate::query_context::AuthorizedQueryError;
 
@@ -3219,11 +3316,14 @@ mod tests {
         asset_reference_projection, datafusion_parameters, filter_literal,
         sql_session_page_relation,
     };
+    use arrow_array::{ArrayRef, RecordBatch, StringArray};
+    use arrow_schema::{DataType, Field, Schema};
     use chrono::DateTime;
     use datafusion::logical_expr::Expr;
     use datafusion::scalar::ScalarValue;
     use serde_json::{json, Map, Value};
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
 
     #[test]
     fn sql_session_relation_parser_uses_identifier_value_without_quotes() {
@@ -3361,5 +3461,22 @@ mod tests {
         assert!(!rendered
             .iter()
             .any(|expression| expression.contains("field_2")));
+    }
+
+    #[test]
+    fn bounded_candidate_materialization_rejects_large_arrow_batches_before_json() {
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "value",
+                DataType::Utf8,
+                false,
+            )])),
+            vec![Arc::new(StringArray::from(vec!["x".repeat(9 * 1024 * 1024)])) as ArrayRef],
+        )
+        .expect("large candidate batch");
+        let error =
+            super::record_batches_to_values_bounded(&[batch], super::ASSET_TEXT_SEARCH_MAX_BYTES)
+                .expect_err("large candidate JSON conversion must be rejected");
+        assert!(error.to_string().contains("byte limit"));
     }
 }

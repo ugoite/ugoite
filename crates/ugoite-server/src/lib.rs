@@ -33,6 +33,7 @@ use std::{
     env,
     future::Future,
     net::IpAddr,
+    time::Duration,
 };
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
@@ -86,6 +87,7 @@ const OAUTH_RESOURCE_DOCUMENTATION_URL: &str =
 const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob: data:; frame-src 'self' blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'";
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const STARTUP_REFRESH_REARM_RETRIES: usize = 8;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
 const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
 
@@ -501,9 +503,31 @@ impl AppState {
             let refresh_service = self.service.clone();
             let refresh_space_id = space_id.clone();
             tokio::spawn(async move {
-                let _ = refresh_service
-                    .rearm_asset_text_refresh(&refresh_space_id)
-                    .await;
+                for attempt in 0..=STARTUP_REFRESH_REARM_RETRIES {
+                    match refresh_service
+                        .rearm_asset_text_refresh(&refresh_space_id)
+                        .await
+                    {
+                        Ok(()) => break,
+                        Err(error) if attempt < STARTUP_REFRESH_REARM_RETRIES => {
+                            eprintln!(
+                                "AssetText startup refresh rearm failed for Space {} (attempt {}/{}): {error:#}; retrying",
+                                refresh_space_id,
+                                attempt + 1,
+                                STARTUP_REFRESH_REARM_RETRIES + 1,
+                            );
+                            let delay = Duration::from_secs(1u64 << attempt.min(6));
+                            tokio::time::sleep(delay).await;
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "AssetText startup refresh rearm abandoned for Space {} after {} attempts: {error:#}",
+                                refresh_space_id,
+                                STARTUP_REFRESH_REARM_RETRIES + 1,
+                            );
+                        }
+                    }
+                }
             });
             reconcile_recovery_fences(self, &space_id).await?;
             reconcile_recovery_audit_outbox(self, &space_id).await?;

@@ -14,6 +14,7 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
     SendableRecordBatchStream,
 };
+use futures::TryStreamExt;
 use opendal::Operator;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -169,6 +170,7 @@ async fn asset_text_search_authorized(
     if limit == 0 {
         return Ok(Some(Vec::new()));
     }
+    let budget_checkpoint = budget.checkpoint();
     match tokio::time::timeout(
         ASSET_TEXT_SEARCH_TIMEOUT,
         asset_text_search_authorized_inner(
@@ -178,13 +180,21 @@ async fn asset_text_search_authorized(
             relation_scopes,
             limit,
             after,
-            budget,
+            budget.clone(),
         ),
     )
     .await
     {
-        Ok(result) => result,
-        Err(_) => Ok(None),
+        Ok(result) => {
+            if result.is_err() {
+                budget.restore(budget_checkpoint);
+            }
+            result
+        }
+        Err(_) => {
+            budget.restore(budget_checkpoint);
+            Ok(None)
+        }
     }
 }
 
@@ -310,24 +320,36 @@ async fn asset_text_search_authorized_inner(
     {
         return Ok(None);
     }
+    let budget_checkpoint = budget.checkpoint();
     let matches = match tokio::time::timeout(ASSET_TEXT_SEARCH_TIMEOUT, async {
         let frame = context.sql(&sql).await?;
-        frame.collect().await
+        let mut stream = frame.execute_stream().await?;
+        let mut results = BTreeMap::new();
+        while let Some(batch) = stream.try_next().await? {
+            // Do not retain an arbitrarily large DataFusion output batch while
+            // converting its strings into owned search results. The shared
+            // budget accounts for retained result strings below.
+            if batch.get_array_memory_size() > crate::index::ASSET_TEXT_SEARCH_MAX_BYTES {
+                return Err(anyhow::anyhow!(
+                    "AssetText search batch exceeds the byte limit"
+                ));
+            }
+            merge_asset_search_batches(&mut results, vec![batch], after, &budget)?;
+        }
+        Ok::<_, anyhow::Error>(results)
     })
     .await
     {
         Ok(Ok(matches)) => matches,
         // Derived provider/planning failures, memory exhaustion, and an
         // overlong authorized scan all degrade to the authoritative typed
-        // search path. The DataFusion memory pool bounds sort/join state while
-        // this timeout bounds total work even when the current Entry set is
-        // much larger than the requested result page.
+        // current-state scan. A failed join attempt must not consume the
+        // fallback's result budget.
         Ok(Err(_)) | Err(_) => {
+            budget.restore(budget_checkpoint);
             // A single Entry may contain more AssetReferences than the
-            // DataFusion join page intentionally accepts.  Do not degrade to
+            // DataFusion join page intentionally accepts. Do not degrade to
             // typed-field search (which would silently omit a valid hit).
-            // Continue through the same authorized current-state context with
-            // a bounded keyset scan and retain only the requested top page.
             return fallback_asset_text_search(
                 op,
                 ws_path,
@@ -343,8 +365,7 @@ async fn asset_text_search_authorized_inner(
             .await;
         }
     };
-    let mut results = BTreeMap::new();
-    merge_asset_search_batches(&mut results, matches, after, &budget)?;
+    let results = matches;
     let mut results = results.into_values().collect::<Vec<_>>();
     results.sort_by(|left, right| {
         left.title
@@ -394,14 +415,17 @@ fn merge_asset_search_batches(
             .downcast_ref::<Float64Array>()
             .context("asset search updated_at has invalid type")?;
         for index in 0..batch.num_rows() {
+            let id = entry_id.value(index);
+            let title = title.value(index);
+            let form = form.value(index);
+            budget.reserve(id.len() + title.len() + form.len())?;
             let result = KeywordSearchResult {
-                id: entry_id.value(index).to_string(),
-                title: title.value(index).to_string(),
-                form: form.value(index).to_string(),
+                id: id.to_string(),
+                title: title.to_string(),
+                form: form.to_string(),
                 created_at: created.value(index),
                 updated_at: updated.value(index),
             };
-            budget.reserve(result.id.len() + result.title.len() + result.form.len())?;
             if is_after_cursor(&result, after) {
                 results.insert((result.form.clone(), result.id.clone()), result);
             }

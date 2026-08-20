@@ -73,7 +73,7 @@ const MAX_SOURCE_ASSETS: usize = 1_000_000;
 const MAX_SOURCE_FORMS: usize = 100_000;
 const MAX_SOURCE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
 const MAX_SOURCE_METADATA_BYTES: usize = 256 * 1024 * 1024;
-const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
+const MAX_ASSET_REFERENCES_PER_ENTRY: usize = ugoite_domain::entry::MAX_ASSET_REFERENCES_PER_ENTRY;
 const MAX_ASSET_TEXT_MATCHES: usize = 1_000_000;
 pub const MAX_ASSET_TEXT_QUERY_BYTES: usize = 8 * 1024;
 const MAX_ASSET_TEXT_MATCH_BYTES: usize = 64 * 1024 * 1024;
@@ -86,6 +86,7 @@ const MAX_SOURCE_CHANGE_RETRIES: usize = 3;
 const MAX_BACKGROUND_GC_SCHEDULERS: usize = 1024;
 const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
 const ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
+const MAX_ASSET_TEXT_REFRESH_REQUESTS: usize = 16_384;
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -650,7 +651,18 @@ pub fn is_asset_text_source_changed(error: &anyhow::Error) -> bool {
         .any(|cause| cause.to_string().contains("authoritative source changed"))
 }
 
-fn asset_text_refresh_request_path(ws_path: &str) -> String {
+fn asset_text_refresh_request_prefix(ws_path: &str) -> String {
+    format!(
+        "{ws_path}/_ugoite/derived/relations/{}/refresh-requests/",
+        DerivedRelationId::ASSET_TEXT,
+    )
+}
+
+fn asset_text_refresh_request_path(ws_path: &str, token: &str) -> String {
+    format!("{}{token}.json", asset_text_refresh_request_prefix(ws_path))
+}
+
+fn legacy_asset_text_refresh_request_path(ws_path: &str) -> String {
     format!(
         "{ws_path}/_ugoite/derived/relations/{}/{}",
         DerivedRelationId::ASSET_TEXT,
@@ -658,26 +670,64 @@ fn asset_text_refresh_request_path(ws_path: &str) -> String {
     )
 }
 
-pub async fn mark_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<()> {
+/// Captures immutable request paths. A marker created after this snapshot has
+/// a different path and therefore cannot be deleted while acknowledging this
+/// build, even on backends without conditional-delete support.
+async fn asset_text_refresh_request_paths(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    let mut paths = Vec::new();
+    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
+    if op.exists(&legacy_path).await? {
+        paths.push(legacy_path);
+    }
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    while let Some(entry) = lister.try_next().await? {
+        if !entry.path().ends_with(".json") {
+            continue;
+        }
+        if paths.len() >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
+            return Err(anyhow!(
+                "AssetText refresh request markers exceed {MAX_ASSET_TEXT_REFRESH_REQUESTS}"
+            ));
+        }
+        paths.push(entry.path().to_string());
+    }
+    Ok(paths)
+}
+
+async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String]) -> Result<()> {
+    for path in paths {
+        match op.delete(path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+pub async fn mark_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<String> {
+    let token = Uuid::now_v7().to_string();
     op.write(
-        &asset_text_refresh_request_path(ws_path),
-        serde_json::to_vec(&json!({"requested_at": Utc::now()}))?,
+        &asset_text_refresh_request_path(ws_path, &token),
+        serde_json::to_vec(&json!({"token": token, "requested_at": Utc::now()}))?,
     )
     .await
-    .map(|_| ())
+    .map(|_| token)
     .map_err(Into::into)
 }
 
 pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<()> {
-    match op.delete(&asset_text_refresh_request_path(ws_path)).await {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
-    }
+    let paths = asset_text_refresh_request_paths(op, ws_path).await?;
+    clear_asset_text_refresh_request_paths(op, &paths).await
 }
 
 pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
-    Ok(op.exists(&asset_text_refresh_request_path(ws_path)).await?)
+    Ok(!asset_text_refresh_request_paths(op, ws_path)
+        .await?
+        .is_empty())
 }
 
 /// Returns true when a shared Relation Head replacement lost its conditional
@@ -697,6 +747,7 @@ async fn rebuild_asset_text_with_mode(
     ws_path: &str,
     shared: bool,
 ) -> Result<DerivedRelationHead> {
+    let refresh_request_paths = asset_text_refresh_request_paths(op, ws_path).await?;
     let definition = asset_text_definition();
     let producer_fingerprint = asset_text_producer_fingerprint();
     let relation_uuid = definition.relation_id.as_uuid();
@@ -979,7 +1030,10 @@ async fn rebuild_asset_text_with_mode(
         .garbage_collect_with_single_process_lock(Some(&current.build_id), MINIMUM_GC_AGE)
         .await;
     schedule_asset_text_gc(op, ws_path);
-    let _ = clear_asset_text_refresh_requested(op, ws_path).await;
+    // A newer mutation owns a different immutable marker path. Only remove
+    // the requests observed before this build; failures remain retryable and
+    // newer requests remain visible to the worker/startup rearm.
+    clear_asset_text_refresh_request_paths(op, &refresh_request_paths).await?;
     Ok(current)
 }
 
@@ -1424,6 +1478,7 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
                 ) {
                     return Ok(());
                 }
+                let mut asset_reference_count = 0usize;
                 for field in &definition.fields {
                     if !matches!(
                         field.field_type,
@@ -1435,6 +1490,14 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
                         continue;
                     };
                     let asset_references = typed_asset_references_for_field(field, value)?;
+                    asset_reference_count = asset_reference_count
+                        .checked_add(asset_references.len())
+                        .ok_or_else(|| anyhow!("Entry AssetReference count overflowed"))?;
+                    if asset_reference_count > MAX_ASSET_REFERENCES_PER_ENTRY {
+                        bail!(
+                            "Entry AssetReference payload exceeds {MAX_ASSET_REFERENCES_PER_ENTRY} references"
+                        );
+                    }
                     for reference in asset_references {
                         let candidate = SourceReference {
                             asset_id: reference.asset_id,
@@ -2568,6 +2631,26 @@ mod tests {
         assert!(!asset_text_refresh_requested(&operator, workspace).await?);
         mark_asset_text_refresh_requested(&operator, workspace).await?;
         assert!(asset_text_refresh_requested(&operator, workspace).await?);
+        clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalization_cannot_clear_a_newer_refresh_request() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let workspace = "spaces/refresh-marker-race";
+
+        let first = mark_asset_text_refresh_requested(&operator, workspace).await?;
+        let first_path = asset_text_refresh_request_path(workspace, &first);
+        let _second = mark_asset_text_refresh_requested(&operator, workspace).await?;
+
+        // A build that started with only the first marker may acknowledge only
+        // that immutable token. The newer request must remain for the worker
+        // or startup rearm to observe.
+        clear_asset_text_refresh_request_paths(&operator, &[first_path]).await?;
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
+
         clear_asset_text_refresh_requested(&operator, workspace).await?;
         assert!(!asset_text_refresh_requested(&operator, workspace).await?);
         Ok(())

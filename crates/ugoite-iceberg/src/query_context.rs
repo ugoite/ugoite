@@ -606,6 +606,64 @@ impl AuthorizedQueryContext {
         preserve_unnest_columns: bool,
         limit: usize,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_relation_plan_with_byte_limit(
+            relation,
+            unnest_columns,
+            predicates,
+            projection,
+            sort,
+            distinct,
+            preserve_unnest_columns,
+            limit,
+            None,
+        )
+        .await
+    }
+
+    /// Executes a trusted relation plan while rejecting oversized Arrow
+    /// materialization batches before callers convert them to owned JSON.
+    /// AssetText authorization uses this narrower path because a row-count
+    /// limit alone does not bound a large title or AssetReference payload.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn execute_relation_plan_bounded(
+        &self,
+        relation: &str,
+        unnest_columns: &[(String, String)],
+        predicates: Vec<Expr>,
+        projection: Vec<Expr>,
+        sort: Vec<SortExpr>,
+        distinct: bool,
+        preserve_unnest_columns: bool,
+        limit: usize,
+        max_bytes: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_relation_plan_with_byte_limit(
+            relation,
+            unnest_columns,
+            predicates,
+            projection,
+            sort,
+            distinct,
+            preserve_unnest_columns,
+            limit,
+            Some(max_bytes),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_relation_plan_with_byte_limit(
+        &self,
+        relation: &str,
+        unnest_columns: &[(String, String)],
+        predicates: Vec<Expr>,
+        projection: Vec<Expr>,
+        sort: Vec<SortExpr>,
+        distinct: bool,
+        preserve_unnest_columns: bool,
+        limit: usize,
+        max_bytes: Option<usize>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
         if limit == 0 || limit > self.limits.max_rows.saturating_add(1) {
             return Err(AuthorizedQueryError::resource_limit(anyhow!(
                 "authorized relation plan exceeds its configured row limit"
@@ -668,7 +726,8 @@ impl AuthorizedQueryContext {
         let frame = frame
             .limit(0, Some(limit))
             .map_err(AuthorizedQueryError::invalid_query)?;
-        self.execute_frame(frame, limit).await
+        self.execute_frame_with_byte_limit(frame, limit, max_bytes)
+            .await
     }
 
     /// Runs a DataFusion aggregate over one authorized relation. Statistics
@@ -788,6 +847,15 @@ impl AuthorizedQueryContext {
         frame: DataFrame,
         limit: usize,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_frame_with_byte_limit(frame, limit, None).await
+    }
+
+    async fn execute_frame_with_byte_limit(
+        &self,
+        frame: DataFrame,
+        limit: usize,
+        max_bytes: Option<usize>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
         let _permit = self
             .permits
             .clone()
@@ -807,7 +875,10 @@ impl AuthorizedQueryContext {
                 .execute_logical_plan(plan)
                 .await
                 .map_err(AuthorizedQueryError::execution_failed)?;
-            let batches = self.collect_frame(frame).await?;
+            let batches = match max_bytes {
+                Some(max_bytes) => self.collect_frame_bounded(frame, max_bytes).await?,
+                None => self.collect_frame(frame).await?,
+            };
             let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
             if rows > self.limits.max_rows || rows > limit {
                 return Err(AuthorizedQueryError::resource_limit(anyhow!(
@@ -895,6 +966,27 @@ impl AuthorizedQueryContext {
     /// above the trusted Entry filter embedded in every registered view.
     pub async fn execute(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
         self.execute_with_parameters(sql, HashMap::new()).await
+    }
+
+    /// Executes a read-only statement with a pre-JSON Arrow materialization
+    /// bound. This is used by the search candidate path, where a row limit
+    /// does not constrain the size of user-controlled string columns.
+    pub(crate) async fn execute_with_byte_limit(
+        &self,
+        sql: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_with_permit_and_byte_limit(sql, HashMap::new(), Some(max_bytes)),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
     /// Binds DataFusion-native `$name` placeholders after parsing and before
@@ -1001,6 +1093,16 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_with_permit_and_byte_limit(sql, parameters, None)
+            .await
+    }
+
+    async fn execute_with_permit_and_byte_limit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        max_bytes: Option<usize>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
         let plan = self.prepared_plan(sql, parameters).await?;
         let validation_plan = plan.clone();
         let frame = self
@@ -1017,7 +1119,10 @@ impl AuthorizedQueryContext {
         let frame = frame
             .limit(0, Some(max_rows_with_sentinel))
             .map_err(AuthorizedQueryError::resource_limit)?;
-        let batches = self.collect_frame(frame).await?;
+        let batches = match max_bytes {
+            Some(max_bytes) => self.collect_frame_bounded(frame, max_bytes).await?,
+            None => self.collect_frame(frame).await?,
+        };
         let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
         if rows > self.limits.max_rows {
             return Err(AuthorizedQueryError::resource_limit(anyhow!(
@@ -1215,6 +1320,44 @@ impl AuthorizedQueryContext {
         let batches = datafusion::physical_plan::collect(physical, task_context)
             .await
             .map_err(classify_datafusion_error)?;
+        Ok(batches)
+    }
+
+    async fn collect_frame_bounded(
+        &self,
+        frame: DataFrame,
+        max_bytes: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let task_context = Arc::new(frame.task_ctx());
+        let physical = frame
+            .create_physical_plan()
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        validate_physical_plan(&physical, &self.authorized_scans)
+            .map_err(AuthorizedQueryError::unauthorized)?;
+        let mut stream = datafusion::physical_plan::execute_stream(physical, task_context)
+            .map_err(classify_datafusion_error)?;
+        let mut batches = Vec::new();
+        let mut bytes = 0usize;
+        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream)
+            .await
+            .map_err(classify_datafusion_error)?
+        {
+            bytes = bytes
+                .checked_add(batch.get_array_memory_size())
+                .ok_or_else(|| {
+                    AuthorizedQueryError::resource_limit(anyhow!(
+                        "authorized query materialization exceeds its byte limit"
+                    ))
+                })?;
+            if bytes > max_bytes {
+                return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                    "authorized query materialization exceeds its byte limit"
+                ))
+                .into());
+            }
+            batches.push(batch);
+        }
         Ok(batches)
     }
 

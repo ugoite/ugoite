@@ -169,10 +169,6 @@ impl UgoiteService {
                     // post-mutation read contend with the rebuild.
                     tokio::time::sleep(ASSET_TEXT_REFRESH_DEBOUNCE).await;
                     while worker.pending.swap(false, Ordering::AcqRel) {
-                        let _ = crate::derived_relation::mark_asset_text_refresh_requested(
-                            &op, &ws_path,
-                        )
-                        .await;
                         let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
                         let result =
                             tokio::time::timeout(ASSET_TEXT_REFRESH_OPERATION_TIMEOUT, async {
@@ -222,8 +218,33 @@ impl UgoiteService {
                                 worker.pending.store(false, Ordering::Release);
                             }
                         } else {
-                            shared_conflict_retries = 0;
-                            refresh_failures = 0;
+                            match crate::derived_relation::asset_text_refresh_requested(
+                                &op, &ws_path,
+                            )
+                            .await
+                            {
+                                Ok(true) => {
+                                    // A marker created while the build was
+                                    // finalizing belongs to a newer
+                                    // authoritative mutation. Keep the same
+                                    // worker alive and process that request.
+                                    worker.pending.store(true, Ordering::Release);
+                                    worker.notify.notify_one();
+                                    shared_conflict_retries = 0;
+                                    refresh_failures = 0;
+                                }
+                                Ok(false) => {
+                                    shared_conflict_retries = 0;
+                                    refresh_failures = 0;
+                                }
+                                Err(_) => {
+                                    refresh_failures = refresh_failures.saturating_add(1);
+                                    if refresh_failures <= MAX_REFRESH_FAILURE_RETRIES {
+                                        worker.pending.store(true, Ordering::Release);
+                                        worker.notify.notify_one();
+                                    }
+                                }
+                            }
                         }
                     }
                     let should_exit = if !worker.pending.load(Ordering::Acquire) {

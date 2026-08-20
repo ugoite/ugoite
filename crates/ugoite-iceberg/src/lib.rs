@@ -150,6 +150,7 @@ fn validate_revision_payload(form: &FormDefinition, revision: &EntryRevision) ->
             RevisionError::DuplicateAssetReference(_) => {
                 "The same asset is referenced more than once in this list"
             }
+            RevisionError::TooManyAssetReferences => "Entry contains too many AssetReferences",
             _ => "Entry revision payload is not valid for this Form",
         };
         invalid_revision_input(format!(

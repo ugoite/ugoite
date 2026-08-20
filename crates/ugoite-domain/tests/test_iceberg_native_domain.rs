@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use ugoite_domain::entry::{
     AssetReference, EntryMetadata, EntryOperation, EntryRevision, EntryRevisionDraft, FieldValue,
-    RevisionError,
+    RevisionError, MAX_ASSET_REFERENCES_PER_ENTRY,
 };
 use ugoite_domain::form::{
     Compatibility, FieldType, FormChange, FormChangeSet, FormDefinition, FormField, FormVersion,
@@ -343,6 +343,28 @@ fn asset_reference_lists_are_required_and_unique() {
     assert_eq!(
         duplicate.validate(&form, None),
         Err(RevisionError::DuplicateAssetReference(field_id(101)))
+    );
+
+    let mut too_many = base_revision();
+    too_many
+        .values
+        .insert(field_id(100), FieldValue::String("title".into()));
+    too_many.values.insert(
+        field_id(101),
+        FieldValue::List(
+            (0..MAX_ASSET_REFERENCES_PER_ENTRY)
+                .map(|index| reference(&format!("asset-{index}")))
+                .collect(),
+        ),
+    );
+    // The limit is aggregate across fields, not once per list. This scalar
+    // reference makes the otherwise valid maximum-sized list invalid.
+    too_many
+        .values
+        .insert(field_id(102), reference("asset-thumbnail"));
+    assert_eq!(
+        too_many.validate(&form, None),
+        Err(RevisionError::TooManyAssetReferences)
     );
 
     let mut malformed = base_revision();

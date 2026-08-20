@@ -65,6 +65,9 @@ fn invalid_revision_input(
         RevisionError::DuplicateAssetReference(field_id) => {
             format!("Field '{}': duplicate AssetReference", field_name(field_id))
         }
+        RevisionError::TooManyAssetReferences => {
+            "Entry contains too many AssetReferences".to_string()
+        }
         RevisionError::RequiredField(field_id) => {
             format!(
                 "Field '{}': required value is missing",
