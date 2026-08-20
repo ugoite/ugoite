@@ -237,9 +237,7 @@ async fn asset_text_search_authorized_inner(
     // Space.
     let asset_form_names = authorized_forms
         .keys()
-        .cloned()
-        .into_iter()
-        .filter(|form_name| {
+        .filter(|&form_name| {
             let Some(fields) = asset_reference_fields.get(form_name) else {
                 return false;
             };
@@ -255,6 +253,7 @@ async fn asset_text_search_authorized_inner(
                     relation_scopes.contains_key(&relation.to_ascii_lowercase())
                 })
         })
+        .cloned()
         .collect::<Vec<_>>();
     if asset_form_names.is_empty() {
         return Ok(Some(Vec::new()));
