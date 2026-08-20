@@ -42,8 +42,7 @@ struct FixedOpenDalStorageFactory {
 
 fn default_memory_storage() -> Arc<OpenDalStorage> {
     let operator = opendal::Operator::new(opendal::services::Memory::default())
-        .expect("memory operator configuration")
-        .finish();
+        .expect("memory operator configuration");
     Arc::new(OpenDalStorage::Memory(operator))
 }
 
@@ -776,18 +775,18 @@ impl SpaceCatalog {
                             let mut max_file_size = None;
                             let mut small_file_count = 0_u64;
                             for manifest_file in manifests.entries() {
-                                let manifest = match manifest_file
-                                    .load_manifest(&self.file_io)
-                                    .await
-                                {
-                                    Ok(manifest) => manifest,
-                                    Err(_) => {
-                                        report.status = HealthStatus::Degraded;
-                                        report.issue =
-                                            Some(health_issue("manifest_unavailable", "manifest"));
-                                        return report;
-                                    }
-                                };
+                                let manifest =
+                                    match table.manifest_reader().read(manifest_file).await {
+                                        Ok(manifest) => manifest,
+                                        Err(_) => {
+                                            report.status = HealthStatus::Degraded;
+                                            report.issue = Some(health_issue(
+                                                "manifest_unavailable",
+                                                "manifest",
+                                            ));
+                                            return report;
+                                        }
+                                    };
                                 for entry in
                                     manifest.entries().iter().filter(|entry| entry.is_alive())
                                 {
@@ -972,7 +971,7 @@ impl SpaceCatalog {
                     }
                 };
                 for manifest_file in manifests.entries() {
-                    let manifest = match manifest_file.load_manifest(&self.file_io).await {
+                    let manifest = match table.manifest_reader().read(manifest_file).await {
                         Ok(manifest) => manifest,
                         Err(_) => {
                             return checkpoint_issue(
@@ -3918,8 +3917,7 @@ mod tests {
     #[tokio::test]
     async fn creates_reopens_and_updates_a_table_through_head_publication() -> AnyResult<()> {
         let temp = tempdir()?;
-        let operator =
-            Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?.finish();
+        let operator = Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?;
         let catalog = SpaceCatalog::new(
             SpaceCatalogStore::new(operator.clone(), "spaces/demo")?.single_process(),
             SpaceId::from(Uuid::from_u128(1)),
@@ -4013,7 +4011,7 @@ mod tests {
 
     #[tokio::test]
     async fn keeps_memory_metadata_in_the_same_space_operator() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let catalog = SpaceCatalog::new(
             SpaceCatalogStore::new(operator.clone(), "spaces/memory")?.single_process(),
             SpaceId::from(Uuid::from_u128(2)),
@@ -4042,7 +4040,7 @@ mod tests {
 
     #[tokio::test]
     async fn ignores_an_interrupted_publication_before_head_cas() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let catalog = SpaceCatalog::new(
             SpaceCatalogStore::new(operator, "spaces/interrupted")?.single_process(),
             SpaceId::from(Uuid::from_u128(4)),
@@ -4092,7 +4090,7 @@ mod tests {
 
     #[tokio::test]
     async fn stale_initialization_does_not_replace_the_winner_head() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let winner = SpaceCatalog::new(
             SpaceCatalogStore::new(operator.clone(), "spaces/conflict")?.single_process(),
             SpaceId::from(Uuid::from_u128(5)),
@@ -4162,8 +4160,7 @@ mod tests {
     #[tokio::test]
     async fn opens_the_head_after_many_publications_without_replaying_history() -> AnyResult<()> {
         let temp = tempdir()?;
-        let operator =
-            Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?.finish();
+        let operator = Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?;
         let store =
             SpaceCatalogStore::new(operator.clone(), "spaces/many-publications")?.single_process();
         let space_id = SpaceId::from(Uuid::from_u128(3));
@@ -4275,7 +4272,7 @@ mod tests {
     #[tokio::test]
     async fn exact_key_receipts_and_terminal_asset_markers_do_not_replay_history() -> AnyResult<()>
     {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let (store, read_counter) =
             SpaceCatalogStore::new(operator, "spaces/online-index")?.with_read_counter();
         let space_id = SpaceId::from(Uuid::from_u128(18_521));
@@ -4381,7 +4378,7 @@ mod tests {
 
     #[tokio::test]
     async fn pending_command_receipt_head_race_cannot_end_as_stale() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/receipt-race")?.single_process();
         let space_id = SpaceId::from(Uuid::from_u128(18_523));
         publish_test_generation(&store, space_id, "receipt-race-base").await?;
@@ -4511,7 +4508,7 @@ mod tests {
 
     #[tokio::test]
     async fn pending_asset_marker_head_race_cannot_end_as_stale() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/asset-marker-race")?.single_process();
         let space_id = SpaceId::from(Uuid::from_u128(18_524));
         publish_test_generation(&store, space_id, "asset-race-base").await?;
@@ -4663,7 +4660,7 @@ mod tests {
 
     #[tokio::test]
     async fn publishing_command_receipt_can_resume_after_restart() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/receipt-restart")?.single_process();
         let space_id = SpaceId::from(Uuid::from_u128(18_525));
         publish_test_generation(&store, space_id, "receipt-restart-base").await?;
@@ -4769,7 +4766,7 @@ mod tests {
     #[tokio::test]
     async fn publishing_asset_marker_can_resume_after_restart_with_partial_receipt() -> AnyResult<()>
     {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/asset-restart")?.single_process();
         let space_id = SpaceId::from(Uuid::from_u128(18_526));
         publish_test_generation(&store, space_id, "asset-restart-base").await?;
@@ -4897,7 +4894,7 @@ mod tests {
 
     #[tokio::test]
     async fn asset_lifecycle_recovery_is_subordinate_to_the_authoritative_head() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/asset-recovery")?.single_process();
         let space_id = SpaceId::from(Uuid::from_u128(18_520));
         let catalog = SpaceCatalog::new(store.clone(), space_id)?;

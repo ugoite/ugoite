@@ -44,6 +44,7 @@ Local CI-parity entrypoints:
 
 - `mise run ci`: formatting, lint, source checks, and non-E2E tests
 - `mise run ci:merge`: `ci`, canonical build/package/verify tasks, and E2E smoke
+  (hosted CI adds separate docsite-navigation and coverage gates)
 - `mise run ci:release`: `ci:merge` plus the full E2E suite
 
 Tasks are defined at the repository root; package-scoped `mise run //...`

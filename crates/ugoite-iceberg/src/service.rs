@@ -192,7 +192,7 @@ impl UgoiteService {
         format!(
             "{}:{space_id}:operator={:p}",
             self.root_uri,
-            Arc::as_ptr(self.operator.inner()),
+            Arc::as_ptr(self.operator.service()),
         )
     }
 

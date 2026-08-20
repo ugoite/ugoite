@@ -20,7 +20,9 @@ Root task composition:
 - `package:*`: staging under `target/artifacts/` only; packaging must fail if required build outputs are absent;
 - `verify:*`: checks packaged outputs without rebuilding them;
 - `ci`: formatting check, lint, architecture/OpenAPI/type checks, and non-E2E tests;
-- `ci:merge`: `ci`, build/package/verify, a focused docsite-navigation E2E lane, and E2E smoke;
+- `ci:merge`: `ci`, build/package/verify, and E2E smoke. Hosted CI adds the
+  focused docsite-navigation lane and coverage gates as separate required
+  workflow steps;
 - `ci:release`: `validate:release`, `ci:merge`, npm packaging/verification, and the full E2E suite.
 
 Hosted CI restores Rust, Deno, Playwright browser, and BuildKit caches on every event. Shared project caches are refreshed only after successful pushes to `main`. Release build jobs use the same Rust/Deno dependency cache policy, with one Ubuntu release path writing the shared Deno key to avoid concurrent partial saves, and a separate release-image BuildKit scope. Successful `main` runs also upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.

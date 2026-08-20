@@ -136,10 +136,12 @@ enum GarbageHeadFence {
 #[derive(Debug, Clone)]
 struct GarbageClaim {
     etag: Option<String>,
+    owner: String,
 }
 
 const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
+const DERIVED_BUILD_TERMINAL_CLAIM_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
 
@@ -294,7 +296,7 @@ impl DerivedRelationHeadStore {
             self.operator
                 .write_options(
                     &self.publishing_marker_path(build_id),
-                    Self::build_claim_bytes(build_id, "staging"),
+                    Self::build_claim_bytes(build_id, "staging", build_id),
                     WriteOptions {
                         if_not_exists: true,
                         ..Default::default()
@@ -354,10 +356,11 @@ impl DerivedRelationHeadStore {
         format!("{}/publishing.json", self.builds_path(build_id))
     }
 
-    fn build_claim_bytes(build_id: &str, role: &str) -> Vec<u8> {
+    fn build_claim_bytes(build_id: &str, role: &str, owner: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({
             "build_id": build_id,
             "role": role,
+            "owner": owner,
             "claimed_at": SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
@@ -406,6 +409,24 @@ impl DerivedRelationHeadStore {
             .or(last_modified)
             .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
             .is_some_and(|age| age >= DERIVED_BUILD_CLAIM_TTL)
+    }
+
+    fn build_id_time(build_id: &str) -> Option<SystemTime> {
+        let bytes = Uuid::parse_str(build_id).ok()?.into_bytes();
+        // UUIDv7 stores its creation time as a 48-bit big-endian Unix
+        // millisecond timestamp. Builds use UUIDv7 IDs, so this remains a
+        // durable age fallback on backends that expose no object timestamps.
+        let millis = u64::from_be_bytes([
+            0, 0, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+        ]);
+        Some(UNIX_EPOCH + Duration::from_millis(millis))
+    }
+
+    fn old_enough(timestamp: Option<SystemTime>, minimum_gc_age: Duration) -> bool {
+        minimum_gc_age.is_zero()
+            || timestamp
+                .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+                .is_some_and(|age| age >= minimum_gc_age)
     }
 
     fn build_marker_bytes() -> Vec<u8> {
@@ -469,11 +490,23 @@ impl DerivedRelationHeadStore {
             })
     }
 
+    fn claim_owner(bytes: &[u8]) -> Option<String> {
+        serde_json::from_slice::<serde_json::Value>(bytes)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("owner")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+    }
+
     async fn replace_build_claim(
         &self,
         build_id: &str,
         expected_etag: Option<&str>,
         role: &str,
+        owner: &str,
     ) -> Result<bool> {
         let path = self.publishing_marker_path(build_id);
         let result = match (self.write_mode, expected_etag) {
@@ -481,7 +514,7 @@ impl DerivedRelationHeadStore {
                 self.operator
                     .write_options(
                         &path,
-                        Self::build_claim_bytes(build_id, role),
+                        Self::build_claim_bytes(build_id, role, owner),
                         WriteOptions {
                             if_match: Some(etag.to_string()),
                             ..Default::default()
@@ -491,7 +524,7 @@ impl DerivedRelationHeadStore {
             }
             (CatalogWriteMode::SingleProcess, _) => {
                 self.operator
-                    .write(&path, Self::build_claim_bytes(build_id, role))
+                    .write(&path, Self::build_claim_bytes(build_id, role, owner))
                     .await
             }
             (CatalogWriteMode::Shared, None) => {
@@ -513,7 +546,7 @@ impl DerivedRelationHeadStore {
             .operator
             .write_options(
                 &path,
-                Self::build_claim_bytes(build_id, "publishing"),
+                Self::build_claim_bytes(build_id, "publishing", build_id),
                 WriteOptions {
                     if_not_exists: true,
                     ..Default::default()
@@ -537,7 +570,12 @@ impl DerivedRelationHeadStore {
                 // can finish staging while its heartbeat is still fresh.
                 Some("staging") => {
                     if !self
-                        .replace_build_claim(build_id, etag.as_deref(), "publishing")
+                        .replace_build_claim(
+                            build_id,
+                            etag.as_deref(),
+                            "publishing",
+                            &Self::claim_owner(&bytes).unwrap_or_else(|| build_id.to_string()),
+                        )
                         .await?
                     {
                         return Err(anyhow!("DerivedRelation build claim is held"));
@@ -546,7 +584,12 @@ impl DerivedRelationHeadStore {
                 Some("publishing") => {
                     if !Self::claim_is_stale(&bytes, last_modified)
                         || !self
-                            .replace_build_claim(build_id, etag.as_deref(), "publishing")
+                            .replace_build_claim(
+                                build_id,
+                                etag.as_deref(),
+                                "publishing",
+                                &Self::claim_owner(&bytes).unwrap_or_else(|| build_id.to_string()),
+                            )
                             .await?
                     {
                         return Err(anyhow!("DerivedRelation build claim is held"));
@@ -554,7 +597,12 @@ impl DerivedRelationHeadStore {
                 }
                 Some("released") => {
                     if !self
-                        .replace_build_claim(build_id, etag.as_deref(), "publishing")
+                        .replace_build_claim(
+                            build_id,
+                            etag.as_deref(),
+                            "publishing",
+                            &Self::claim_owner(&bytes).unwrap_or_else(|| build_id.to_string()),
+                        )
                         .await?
                     {
                         return Err(anyhow!("DerivedRelation build claim is held"));
@@ -578,16 +626,20 @@ impl DerivedRelationHeadStore {
         if Self::claim_role(&bytes).as_deref() != Some("garbage") {
             return Ok(None);
         }
-        Ok(Some(GarbageClaim { etag }))
+        let Some(owner) = Self::claim_owner(&bytes) else {
+            return Ok(None);
+        };
+        Ok(Some(GarbageClaim { etag, owner }))
     }
 
     async fn claim_build_for_garbage(&self, build_id: &str) -> Result<Option<GarbageClaim>> {
         let path = self.publishing_marker_path(build_id);
+        let owner = Uuid::now_v7().to_string();
         match self
             .operator
             .write_options(
                 &path,
-                Self::build_claim_bytes(build_id, "garbage"),
+                Self::build_claim_bytes(build_id, "garbage", &owner),
                 WriteOptions {
                     if_not_exists: true,
                     ..Default::default()
@@ -603,13 +655,17 @@ impl DerivedRelationHeadStore {
                 };
                 if !matches!(
                     Self::claim_role(&bytes).as_deref(),
-                    Some("staging") | Some("publishing") | Some("garbage") | Some("released")
+                    Some("staging")
+                        | Some("publishing")
+                        | Some("garbage")
+                        | Some("released")
+                        | Some("complete")
                 ) {
                     return Ok(None);
                 }
                 if Self::claim_role(&bytes).as_deref() == Some("released") {
                     if !self
-                        .replace_build_claim(build_id, etag.as_deref(), "garbage")
+                        .replace_build_claim(build_id, etag.as_deref(), "garbage", &owner)
                         .await?
                     {
                         return Ok(None);
@@ -623,13 +679,17 @@ impl DerivedRelationHeadStore {
                     // exclusion primitive. A prior maintenance pass may
                     // have left its own terminal claim while deliberately
                     // waiting for the garbage marker grace boundary.
-                    return Ok(Some(GarbageClaim { etag }));
+                    return Ok(Self::claim_build_for_garbage_single_process_claim(
+                        etag, &bytes,
+                    ));
                 }
-                if !Self::claim_is_stale(&bytes, last_modified) {
+                if Self::claim_role(&bytes).as_deref() != Some("complete")
+                    && !Self::claim_is_stale(&bytes, last_modified)
+                {
                     return Ok(None);
                 }
                 if !self
-                    .replace_build_claim(build_id, etag.as_deref(), "garbage")
+                    .replace_build_claim(build_id, etag.as_deref(), "garbage", &owner)
                     .await?
                 {
                     return Ok(None);
@@ -640,6 +700,13 @@ impl DerivedRelationHeadStore {
         }
     }
 
+    fn claim_build_for_garbage_single_process_claim(
+        etag: Option<String>,
+        bytes: &[u8],
+    ) -> Option<GarbageClaim> {
+        Self::claim_owner(bytes).map(|owner| GarbageClaim { etag, owner })
+    }
+
     async fn renew_claim_role(&self, build_id: &str, role: &str) -> Result<bool> {
         let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
             return Ok(false);
@@ -647,7 +714,10 @@ impl DerivedRelationHeadStore {
         if Self::claim_role(&bytes).as_deref() != Some(role) {
             return Ok(false);
         }
-        self.replace_build_claim(build_id, etag.as_deref(), role)
+        let Some(owner) = Self::claim_owner(&bytes) else {
+            return Ok(false);
+        };
+        self.replace_build_claim(build_id, etag.as_deref(), role, &owner)
             .await
     }
 
@@ -675,15 +745,29 @@ impl DerivedRelationHeadStore {
     /// Refresh the garbage claim before each destructive object operation.
     /// This keeps a long-running deletion from becoming an apparently stale
     /// claim and fences publication from a reclaimed build.
-    async fn renew_garbage_claim(&self, build_id: &str) -> Result<bool> {
+    async fn renew_garbage_claim(&self, build_id: &str, claim: &mut GarbageClaim) -> Result<bool> {
         let Some((bytes, etag, _)) = self.read_build_claim(build_id).await? else {
             return Ok(false);
         };
         if Self::claim_role(&bytes).as_deref() != Some("garbage") {
             return Ok(false);
         }
-        self.replace_build_claim(build_id, etag.as_deref(), "garbage")
-            .await
+        if Self::claim_owner(&bytes).as_deref() != Some(claim.owner.as_str()) {
+            return Ok(false);
+        }
+        if self.write_mode == CatalogWriteMode::Shared && etag.as_deref() != claim.etag.as_deref() {
+            return Ok(false);
+        }
+        let renewed = self
+            .replace_build_claim(build_id, etag.as_deref(), "garbage", &claim.owner)
+            .await?;
+        if renewed {
+            claim.etag = self
+                .read_build_claim(build_id)
+                .await?
+                .and_then(|(_, etag, _)| etag);
+        }
+        Ok(renewed)
     }
 
     /// Fence a shared Head before destructive cleanup claims a build.  The
@@ -925,12 +1009,28 @@ impl DerivedRelationHeadStore {
     /// after the Head swap.
     pub async fn mark_garbage(&self, build_id: &str) -> Result<()> {
         // GC retains the publishing claim as a terminal tombstone after it
-        // has deleted the build. A delayed publisher may resume after that
-        // transition and report the same build as garbage; do not recreate a
-        // marker for a prefix whose cleanup is already complete.
+        // has deleted the build. A delayed producer may still finish an
+        // in-flight object write after that transition, so a completed claim
+        // is allowed to regain a marker only when new build objects exist.
+        // This makes late objects discoverable without resurrecting an empty
+        // marker forever after a harmless delayed cleanup callback.
         if let Some((bytes, _, _)) = self.read_build_claim(build_id).await? {
             if Self::claim_role(&bytes).as_deref() == Some("complete") {
-                return Ok(());
+                let has_objects = self
+                    .operator
+                    .list_with(&self.builds_path(build_id))
+                    .recursive(true)
+                    .await?
+                    .into_iter()
+                    .any(|entry| {
+                        entry.metadata().mode() == EntryMode::FILE
+                            && entry.path() != self.garbage_marker_path(build_id)
+                            && entry.path() != self.staging_marker_path(build_id)
+                            && entry.path() != self.publishing_marker_path(build_id)
+                    });
+                if !has_objects {
+                    return Ok(());
+                }
             }
         }
         match self
@@ -977,12 +1077,20 @@ impl DerivedRelationHeadStore {
         if Self::claim_role(&bytes).as_deref() != Some("garbage") {
             return Ok(false);
         }
+        if Self::claim_owner(&bytes).as_deref() != Some(claim.owner.as_str()) {
+            return Ok(false);
+        }
         if self.write_mode == CatalogWriteMode::Shared
             && current_etag.as_deref() != claim.etag.as_deref()
         {
             return Ok(false);
         }
-        self.replace_build_claim(build_id, current_etag.as_deref(), "released")
+        let expected_etag = if self.write_mode == CatalogWriteMode::Shared {
+            claim.etag.as_deref()
+        } else {
+            current_etag.as_deref()
+        };
+        self.replace_build_claim(build_id, expected_etag, "released", &claim.owner)
             .await
     }
 
@@ -990,15 +1098,51 @@ impl DerivedRelationHeadStore {
     /// OpenDAL cannot conditionally delete the claim object, so the explicit
     /// terminal role prevents `has_pending_garbage` from repeatedly waking for
     /// an already-empty build while still fencing delayed publishers.
-    async fn complete_garbage_claim(&self, build_id: &str) -> Result<bool> {
+    async fn complete_garbage_claim(&self, build_id: &str, claim: &GarbageClaim) -> Result<bool> {
         let Some((bytes, current_etag, _)) = self.read_build_claim(build_id).await? else {
             return Ok(false);
         };
         if Self::claim_role(&bytes).as_deref() != Some("garbage") {
             return Ok(false);
         }
-        self.replace_build_claim(build_id, current_etag.as_deref(), "complete")
+        if Self::claim_owner(&bytes).as_deref() != Some(claim.owner.as_str()) {
+            return Ok(false);
+        }
+        let expected_etag = if self.write_mode == CatalogWriteMode::Shared {
+            claim.etag.as_deref()
+        } else {
+            current_etag.as_deref()
+        };
+        self.replace_build_claim(build_id, expected_etag, "complete", &claim.owner)
             .await
+    }
+
+    async fn reap_terminal_claim(&self, build_id: &str) -> Result<bool> {
+        let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? else {
+            return Ok(false);
+        };
+        if Self::claim_role(&bytes).as_deref() != Some("complete")
+            || !Self::old_enough(
+                Self::json_time(&bytes, "claimed_at").or(last_modified),
+                DERIVED_BUILD_TERMINAL_CLAIM_RETENTION,
+            )
+        {
+            return Ok(false);
+        }
+        // The caller has already listed the prefix and confirmed it contains
+        // no build objects. Complete claims are therefore only a bounded
+        // post-GC publication fence. Reaping them prevents one durable object
+        // per rebuild from accumulating forever; any producer that races this
+        // maintenance pass is rediscovered by the markerless UUIDv7 fallback.
+        match self
+            .operator
+            .delete(&self.publishing_marker_path(build_id))
+            .await
+        {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(true),
+            Err(error) => Err(error.into()),
+        }
     }
 
     async fn ensure_build_publishable(&self, build_id: &str) -> Result<()> {
@@ -1077,6 +1221,7 @@ impl DerivedRelationHeadStore {
             has_garbage_marker: bool,
             has_staging_marker: bool,
             has_publishing_marker: bool,
+            has_build_object: bool,
             stale_staging_old_enough: bool,
             newest_object_modified: Option<SystemTime>,
         }
@@ -1117,6 +1262,7 @@ impl DerivedRelationHeadStore {
                 candidate.stale_staging_old_enough |= old_enough;
             }
             if !is_garbage_marker && !is_staging_marker && !is_publishing_marker {
+                candidate.has_build_object = true;
                 if let Some(modified) = modified {
                     candidate.newest_object_modified = Some(
                         candidate
@@ -1128,16 +1274,17 @@ impl DerivedRelationHeadStore {
         }
         for (build_id, candidate) in candidates {
             if candidate.has_garbage_marker {
-                if self
-                    .read_build_claim(&build_id)
-                    .await?
-                    .is_some_and(|(bytes, _, _)| {
-                        Self::claim_role(&bytes).as_deref() == Some("complete")
-                    })
-                {
+                let complete =
+                    self.read_build_claim(&build_id)
+                        .await?
+                        .is_some_and(|(bytes, _, _)| {
+                            Self::claim_role(&bytes).as_deref() == Some("complete")
+                        });
+                if complete && !candidate.has_build_object {
                     // A delayed publisher may have recreated the marker after
-                    // marker-last cleanup. The terminal claim is the durable
-                    // proof that no build data remains.
+                    // marker-last cleanup. With no late objects, the terminal
+                    // claim is the durable proof that no build data remains;
+                    // a late object keeps this candidate pending instead.
                     self.clear_garbage(&build_id).await?;
                     continue;
                 }
@@ -1148,7 +1295,13 @@ impl DerivedRelationHeadStore {
                     self.read_build_claim(&build_id).await?.is_some_and(
                         |(bytes, _, last_modified)| match Self::claim_role(&bytes).as_deref() {
                             Some("released") => true,
-                            Some("complete") => false,
+                            Some("complete") => {
+                                candidate.has_build_object
+                                    && Self::old_enough(
+                                        Self::json_time(&bytes, "claimed_at").or(last_modified),
+                                        minimum_gc_age,
+                                    )
+                            }
                             Some("publishing") => Self::claim_is_stale(&bytes, last_modified),
                             // A garbage claim without garbage.json means the
                             // final marker deletion already happened but the
@@ -1164,13 +1317,11 @@ impl DerivedRelationHeadStore {
                 };
             let markerless_orphan = !candidate.has_staging_marker
                 && !candidate.has_publishing_marker
-                && (candidate.newest_object_modified.is_none() && minimum_gc_age.is_zero()
-                    || candidate.newest_object_modified.is_some_and(|modified| {
-                        minimum_gc_age.is_zero()
-                            || SystemTime::now()
-                                .duration_since(modified)
-                                .is_ok_and(|age| age >= minimum_gc_age)
-                    }));
+                && (candidate.newest_object_modified.is_none()
+                    && Self::old_enough(Self::build_id_time(&build_id), minimum_gc_age)
+                    || candidate
+                        .newest_object_modified
+                        .is_some_and(|modified| Self::old_enough(Some(modified), minimum_gc_age)));
             if candidate.stale_staging_old_enough || stale_publishing || markerless_orphan {
                 return Ok(true);
             }
@@ -1199,7 +1350,9 @@ impl DerivedRelationHeadStore {
             has_garbage_marker: bool,
             has_staging_marker: bool,
             has_publishing_marker: bool,
+            has_build_object: bool,
             stale_publishing_old_enough: bool,
+            complete_claim_old_enough: bool,
             newest_object_modified: Option<SystemTime>,
             orphan_old_enough: bool,
         }
@@ -1245,6 +1398,9 @@ impl DerivedRelationHeadStore {
             if is_publishing_marker {
                 candidate.has_publishing_marker = true;
             }
+            if !is_garbage_marker && !is_staging_marker && !is_publishing_marker {
+                candidate.has_build_object = true;
+            }
             if let Some(modified) = modified {
                 candidate.newest_object_modified = Some(
                     candidate
@@ -1278,7 +1434,14 @@ impl DerivedRelationHeadStore {
                     candidate.stale_publishing_old_enough =
                         match Self::claim_role(&bytes).as_deref() {
                             Some("released") => true,
-                            Some("complete") => false,
+                            Some("complete") => {
+                                candidate.complete_claim_old_enough = candidate.has_build_object
+                                    && Self::old_enough(
+                                        Self::json_time(&bytes, "claimed_at").or(last_modified),
+                                        minimum_gc_age,
+                                    );
+                                candidate.complete_claim_old_enough
+                            }
                             Some("staging") | Some("publishing") | Some("garbage") => {
                                 Self::claim_is_stale(&bytes, last_modified)
                             }
@@ -1296,16 +1459,28 @@ impl DerivedRelationHeadStore {
             candidate.orphan_old_enough = !candidate.has_garbage_marker
                 && !candidate.has_staging_marker
                 && !candidate.has_publishing_marker
-                && (candidate.newest_object_modified.is_none() && minimum_gc_age.is_zero()
-                    || candidate.newest_object_modified.is_some_and(|modified| {
-                        minimum_gc_age.is_zero()
-                            || SystemTime::now()
-                                .duration_since(modified)
-                                .is_ok_and(|age| age >= minimum_gc_age)
-                    }));
+                && (candidate.newest_object_modified.is_none()
+                    && Self::old_enough(Self::build_id_time(build_id), minimum_gc_age)
+                    || candidate
+                        .newest_object_modified
+                        .is_some_and(|modified| Self::old_enough(Some(modified), minimum_gc_age)));
         }
         let mut deleted = Vec::new();
         for (build_id, candidate) in candidates {
+            if !candidate.has_build_object
+                && self
+                    .read_build_claim(&build_id)
+                    .await?
+                    .is_some_and(|(bytes, _, _)| {
+                        Self::claim_role(&bytes).as_deref() == Some("complete")
+                    })
+            {
+                if candidate.has_garbage_marker {
+                    self.clear_garbage(&build_id).await?;
+                }
+                let _ = self.reap_terminal_claim(&build_id).await?;
+                continue;
+            }
             // A garbage marker is written after a build has either lost
             // publication or stopped being current. A stale staging marker is
             // also a durable cleanup candidate: it covers a process crash
@@ -1320,6 +1495,7 @@ impl DerivedRelationHeadStore {
                 candidate.stale_staging_old_enough
                     || candidate.orphan_old_enough
                     || candidate.stale_publishing_old_enough
+                    || candidate.complete_claim_old_enough
             };
             if !cleanup_old_enough {
                 continue;
@@ -1341,10 +1517,11 @@ impl DerivedRelationHeadStore {
                 continue;
             }
             // A delayed publisher can race marker-last cleanup and recreate
-            // garbage.json after the terminal claim was written. The complete
-            // claim proves the prefix was already deleted, so remove only the
-            // stale marker and do not try to claim the completed build again.
+            // garbage.json after the terminal claim was written. An empty
+            // prefix needs only marker cleanup; newly observed objects keep
+            // the completed build eligible for a fresh GC claim.
             if candidate.has_garbage_marker
+                && !candidate.has_build_object
                 && self
                     .read_build_claim(&build_id)
                     .await?
@@ -1358,7 +1535,8 @@ impl DerivedRelationHeadStore {
             let needs_fresh_garbage_marker = !candidate.has_garbage_marker
                 && (candidate.stale_staging_old_enough
                     || candidate.orphan_old_enough
-                    || candidate.stale_publishing_old_enough);
+                    || candidate.stale_publishing_old_enough
+                    || candidate.complete_claim_old_enough);
             // The listing is only a hint. Recheck the staging timestamp after
             // discovery and immediately before claiming the build, so a
             // heartbeat that raced the listing cannot be converted into a
@@ -1374,7 +1552,7 @@ impl DerivedRelationHeadStore {
             // Publication and GC claim the same object with conditional
             // create/replace. A fresh claim belongs to the other operation;
             // a stale claim can be atomically taken over for recovery.
-            let Some(garbage_claim) = self.claim_build_for_garbage(&build_id).await? else {
+            let Some(mut garbage_claim) = self.claim_build_for_garbage(&build_id).await? else {
                 continue;
             };
             if needs_fresh_garbage_marker
@@ -1406,7 +1584,9 @@ impl DerivedRelationHeadStore {
                 // pass. Staging/publishing recovery must always defer after
                 // recording garbage.json: its timestamp is the reader grace
                 // boundary, even when the caller explicitly selected zero.
-                if !(candidate.orphan_old_enough && minimum_gc_age.is_zero()) {
+                if !(minimum_gc_age.is_zero()
+                    && (candidate.orphan_old_enough || candidate.complete_claim_old_enough))
+                {
                     continue;
                 }
             }
@@ -1428,7 +1608,7 @@ impl DerivedRelationHeadStore {
                 .recursive(true)
                 .await?;
             let created_garbage_marker = needs_fresh_garbage_marker
-                && candidate.orphan_old_enough
+                && (candidate.orphan_old_enough || candidate.complete_claim_old_enough)
                 && minimum_gc_age.is_zero();
             let mut garbage_marker = (candidate.has_garbage_marker || created_garbage_marker)
                 .then(|| self.garbage_marker_path(&build_id));
@@ -1454,7 +1634,10 @@ impl DerivedRelationHeadStore {
             }
             let mut fully_deleted = true;
             for path in build_objects {
-                if !self.renew_garbage_claim(&build_id).await? {
+                if !self
+                    .renew_garbage_claim(&build_id, &mut garbage_claim)
+                    .await?
+                {
                     fully_deleted = false;
                     break;
                 }
@@ -1489,7 +1672,10 @@ impl DerivedRelationHeadStore {
                 // role also makes the terminal tombstone invisible to pending
                 // maintenance checks; a crash before this transition leaves
                 // role=garbage and is recoverable on the next pass.
-                if !self.complete_garbage_claim(&build_id).await? {
+                if !self
+                    .complete_garbage_claim(&build_id, &garbage_claim)
+                    .await?
+                {
                     continue;
                 }
                 if let GarbageHeadFence::Fenced {
@@ -2074,7 +2260,7 @@ impl SpaceCatalogStore {
                 .lock()
                 .expect("shared-write verification cache poisoned")
                 .iter()
-                .any(|(key, _)| key == cache_key)
+                .any(|key| key == cache_key)
             {
                 self.write_mode = CatalogWriteMode::Shared;
                 return Ok(self);
@@ -2222,11 +2408,20 @@ impl SpaceCatalogStore {
         }
         cleanup.context("remove shared Catalog verification probe")?;
         if let Some(cache_key) = cache_key {
-            SHARED_WRITE_VERIFICATIONS
+            let mut cache = SHARED_WRITE_VERIFICATIONS
                 .get_or_init(|| Mutex::new(Vec::new()))
                 .lock()
-                .expect("shared-write verification cache poisoned")
-                .push((cache_key, self.operator.clone()));
+                .expect("shared-write verification cache poisoned");
+            // Capability evidence is only an optimization. Bound the key
+            // registry and never retain a strong Operator just to keep it
+            // warm; an evicted backend is safely re-probed on demand.
+            if !cache.iter().any(|key| key == &cache_key) {
+                const MAX_SHARED_WRITE_VERIFICATIONS: usize = 256;
+                if cache.len() >= MAX_SHARED_WRITE_VERIFICATIONS {
+                    cache.remove(0);
+                }
+                cache.push(cache_key);
+            }
         }
         self.write_mode = CatalogWriteMode::Shared;
         Ok(self)
@@ -2506,12 +2701,7 @@ impl SpaceCatalogStore {
     }
 
     pub async fn create_checkpoint(&self, name: &str, bytes: Vec<u8>) -> Result<()> {
-        if !self
-            .operator
-            .info()
-            .full_capability()
-            .write_with_if_not_exists
-        {
+        if !self.operator.info().capability().write_with_if_not_exists {
             return Err(anyhow!(
                 "immutable checkpoint creation requires OpenDAL if_not_exists support"
             ));
@@ -2538,7 +2728,7 @@ impl SpaceCatalogStore {
     }
 
     pub fn supports_shared_writes(&self) -> bool {
-        let capabilities = self.operator.info().full_capability();
+        let capabilities = self.operator.info().capability();
         capabilities.read_with_if_match
             && capabilities.write_with_if_match
             && capabilities.write_with_if_not_exists
@@ -2551,12 +2741,12 @@ impl SpaceCatalogStore {
             self.operator.info().name(),
             self.operator.info().root(),
             self.space_root,
-            Arc::as_ptr(self.operator.inner()),
+            Arc::as_ptr(self.operator.service()),
         )
     }
 
     pub fn backend_capabilities(&self) -> CatalogBackendCapabilities {
-        let capabilities = self.operator.info().full_capability();
+        let capabilities = self.operator.info().capability();
         let shared_write_contract = self.supports_shared_writes();
         CatalogBackendCapabilities {
             // OpenDAL exposes ETags through stat metadata rather than a
@@ -2585,7 +2775,7 @@ impl SpaceCatalogStore {
 
 static CATALOG_SERIALIZERS: OnceLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> =
     OnceLock::new();
-static SHARED_WRITE_VERIFICATIONS: OnceLock<Mutex<Vec<(String, Operator)>>> = OnceLock::new();
+static SHARED_WRITE_VERIFICATIONS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
 fn catalog_serializer(operator: &Operator, space_root: &str) -> Arc<AsyncMutex<()>> {
     let key = format!(
@@ -2654,8 +2844,7 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
         Fs::default()
             .root(root)
             .atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref()),
-    )?
-    .finish();
+    )?;
     Ok(op)
 }
 
@@ -2671,7 +2860,7 @@ pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Res
         if let Some(op) = cache.get(uri) {
             return Ok(op.clone());
         }
-        let op = Operator::new(Memory::default())?.finish();
+        let op = Operator::new(Memory::default())?;
         cache.insert(uri.to_string(), op.clone());
         return Ok(op);
     }
@@ -2694,7 +2883,7 @@ pub fn operator_from_uri_with_endpoint(uri: &str, endpoint: Option<&str>) -> Res
         if let Some(endpoint) = endpoint {
             builder = builder.endpoint(endpoint);
         }
-        return Ok(Operator::new(builder)?.finish());
+        return Ok(Operator::new(builder)?);
     }
 
     Ok(Operator::from_uri(uri)?)
@@ -2778,12 +2967,7 @@ impl StorageBackend for OpendalStorage {
             return Ok(());
         }
 
-        if !self
-            .operator
-            .info()
-            .full_capability()
-            .write_with_if_not_exists
-        {
+        if !self.operator.info().capability().write_with_if_not_exists {
             return Err(anyhow!(
                 "storage backend does not support conditional object creation"
             ));
@@ -2864,6 +3048,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn operator_from_uri_supports_fs_and_memory() -> Result<()> {
@@ -2978,7 +3163,7 @@ mod tests {
 
     #[tokio::test]
     async fn catalog_head_reads_are_exact_in_single_process_mode() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/demo")?;
 
         assert!(store.read_exact_head().await?.is_none());
@@ -2995,7 +3180,7 @@ mod tests {
 
     #[tokio::test]
     async fn shared_catalog_mode_fails_closed_without_an_exact_etag_contract() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let error = SpaceCatalogStore::new(operator, "spaces/demo")?
             .verify_shared_writes()
             .await
@@ -3009,7 +3194,7 @@ mod tests {
 
     #[tokio::test]
     async fn derived_head_uses_checksum_and_single_process_publication() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA001);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id)
             .single_process();
@@ -3073,7 +3258,7 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_derived_head_is_explicitly_invalidated_for_rebuild() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA006);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let legacy_data_path = format!(
@@ -3135,7 +3320,7 @@ mod tests {
 
     #[tokio::test]
     async fn garbage_age_starts_when_build_is_marked_garbage() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA007);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let path = format!("{}/manifest.json", store.builds_path("stale"));
@@ -3154,7 +3339,7 @@ mod tests {
 
     #[tokio::test]
     async fn garbage_marked_partial_staging_build_is_garbage_collectable() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA008);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let partial = format!("{}/data/partial.parquet", store.builds_path("partial"));
@@ -3169,7 +3354,7 @@ mod tests {
 
     #[tokio::test]
     async fn garbage_collection_retains_terminal_claim_after_marker_cleanup() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00C);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let data = format!("{}/data/old.parquet", store.builds_path("old"));
@@ -3210,8 +3395,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn late_producer_objects_after_terminal_gc_are_rediscovered() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let relation_id = uuid::Uuid::from_u128(0xA011);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let build_id = Uuid::now_v7().to_string();
+        let first = format!("{}/data/first.parquet", store.builds_path(&build_id));
+        operator.write(&first, b"first".to_vec()).await?;
+        store.mark_garbage(&build_id).await?;
+        assert_eq!(
+            store.garbage_collect(None, Duration::ZERO).await?,
+            vec![build_id.clone()]
+        );
+
+        // Simulate a producer whose already-started object write completed
+        // after marker-last cleanup and the terminal claim transition.
+        let late = format!("{}/data/late.parquet", store.builds_path(&build_id));
+        operator.write(&late, b"late".to_vec()).await?;
+        store.mark_garbage(&build_id).await?;
+        assert!(
+            operator
+                .exists(&store.garbage_marker_path(&build_id))
+                .await?
+        );
+        assert_eq!(
+            store.garbage_collect(None, Duration::ZERO).await?,
+            vec![build_id]
+        );
+        assert!(!operator.exists(&late).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn stale_staging_build_gets_durable_cleanup_intent_and_is_collectable() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA009);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let partial = format!("{}/data/crashed.parquet", store.builds_path("crashed"));
@@ -3241,7 +3458,7 @@ mod tests {
 
     #[tokio::test]
     async fn pending_gc_distinguishes_deferred_cleanup_from_terminal_fence() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00F);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let partial = format!("{}/data/deferred.parquet", store.builds_path("deferred"));
@@ -3264,7 +3481,7 @@ mod tests {
 
     #[tokio::test]
     async fn fresh_garbage_marker_preserves_staging_grace_period() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00B);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let data = format!("{}/data/crashed.parquet", store.builds_path("crashed"));
@@ -3287,7 +3504,7 @@ mod tests {
 
     #[tokio::test]
     async fn garbage_marker_age_uses_persisted_timestamp_on_memory_backend() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00D);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let data = format!("{}/data/old.parquet", store.builds_path("old"));
@@ -3315,7 +3532,7 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_materializations_use_a_grace_period_and_marker_last_cleanup() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00F);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let legacy_data = format!("{}/metadata.json", store.legacy_materializations_prefix());
@@ -3353,7 +3570,7 @@ mod tests {
 
     #[tokio::test]
     async fn staging_heartbeat_keeps_a_persisted_gc_timestamp() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00E);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         store.mark_staging("running").await?;
@@ -3369,7 +3586,7 @@ mod tests {
 
     #[tokio::test]
     async fn markerless_old_orphan_build_is_collectable() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00A);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let orphan = format!("{}/metadata/orphan.json", store.builds_path("orphan"));
@@ -3392,9 +3609,37 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn uuid_v7_build_timestamp_is_a_durable_gc_age_fallback() {
+        let old_millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_millis()
+            .saturating_sub(Duration::from_secs(2 * 60 * 60).as_millis())
+            as u64;
+        let mut bytes = [0_u8; 16];
+        bytes[..6].copy_from_slice(&old_millis.to_be_bytes()[2..]);
+        bytes[6] = 0x70;
+        bytes[8] = 0x80;
+        let old_build_id = Uuid::from_bytes(bytes).to_string();
+
+        // This is the path used when a backend returns no last_modified for
+        // a markerless orphan. The persisted UUIDv7 timestamp still enforces
+        // a non-zero grace period instead of deleting a fresh build.
+        assert!(DerivedRelationHeadStore::old_enough(
+            DerivedRelationHeadStore::build_id_time(&old_build_id),
+            Duration::from_secs(60 * 60),
+        ));
+        let fresh_build_id = Uuid::now_v7().to_string();
+        assert!(!DerivedRelationHeadStore::old_enough(
+            DerivedRelationHeadStore::build_id_time(&fresh_build_id),
+            Duration::from_secs(60 * 60),
+        ));
+    }
+
     #[tokio::test]
     async fn gc_does_not_block_on_active_legacy_head() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA010);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         operator
@@ -3421,7 +3666,7 @@ mod tests {
 
     #[tokio::test]
     async fn derived_head_single_process_create_has_one_winner() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA002);
         let store =
             DerivedRelationHeadStore::new(operator, "spaces/demo", relation_id).single_process();
@@ -3459,7 +3704,7 @@ mod tests {
 
     #[tokio::test]
     async fn derived_build_gc_never_removes_current_build() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA003);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         operator
@@ -3494,7 +3739,7 @@ mod tests {
 
     #[tokio::test]
     async fn derived_publish_rejects_a_stale_single_process_writer() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA004);
         let store = DerivedRelationHeadStore::new(operator, "spaces/demo", relation_id);
         let mut first = DerivedRelationHead {
@@ -3537,7 +3782,7 @@ mod tests {
 
     #[tokio::test]
     async fn single_process_relation_lock_serializes_full_rebuilds() -> Result<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store =
             DerivedRelationHeadStore::new(operator, "spaces/demo", uuid::Uuid::from_u128(0xA005));
         let active = Arc::new(AtomicUsize::new(0));

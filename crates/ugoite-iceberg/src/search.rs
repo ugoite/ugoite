@@ -28,6 +28,7 @@ use crate::index::AuthorizedAssetReferenceRow;
 pub use ugoite_domain::search::KeywordSearchResult;
 
 const ASSET_TEXT_SEARCH_PAGE_SIZE: usize = 2_048;
+const MAX_ASSET_REFERENCES_PER_ENTRY: usize = 16_384;
 // This is an internal maintenance/search bound rather than the public Entry
 // response ceiling. The bounded DataFusion memory pool and timeout remain the
 // actual protection for unusually large current Forms.
@@ -383,11 +384,11 @@ fn authorized_asset_reference_batch(
                 if field.list {
                     if let Value::Array(values) = value {
                         for value in values {
-                            append_asset_reference(value, &mut ids);
+                            append_asset_reference(value, &mut ids)?;
                         }
                     }
                 } else {
-                    append_asset_reference(value, &mut ids);
+                    append_asset_reference(value, &mut ids)?;
                 }
             }
         }
@@ -475,11 +476,17 @@ fn load_asset_reference_fields(
     Ok(fields)
 }
 
-fn append_asset_reference(value: &Value, output: &mut Vec<String>) {
+fn append_asset_reference(value: &Value, output: &mut Vec<String>) -> Result<()> {
     let Ok(reference) = serde_json::from_value::<AssetReference>(value.clone()) else {
-        return;
+        return Ok(());
     };
+    if output.len() >= MAX_ASSET_REFERENCES_PER_ENTRY {
+        anyhow::bail!(
+            "authorized Entry contains more than {MAX_ASSET_REFERENCES_PER_ENTRY} AssetReferences"
+        );
+    }
     output.push(reference.asset_id);
+    Ok(())
 }
 
 struct AuthorizedAssetReferenceProvider {

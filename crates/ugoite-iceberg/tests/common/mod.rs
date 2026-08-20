@@ -5,6 +5,6 @@ use opendal::Operator;
 #[allow(dead_code)]
 pub fn setup_operator() -> Result<Operator> {
     let builder = Memory::default();
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
     Ok(op)
 }

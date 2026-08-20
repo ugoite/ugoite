@@ -56,7 +56,7 @@ impl OpenDalNodeControlStore {
         if scheme == "memory" {
             bail!("in-memory node control storage is test-only");
         }
-        let capabilities = operator.info().full_capability();
+        let capabilities = operator.info().capability();
         if !capabilities.write_with_if_match || !capabilities.write_with_if_not_exists {
             bail!("configured node control storage lacks atomic conditional-write capabilities");
         }

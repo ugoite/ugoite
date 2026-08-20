@@ -751,7 +751,7 @@ async fn count_files_under(operator: &Operator, prefix: &str) -> anyhow::Result<
 #[tokio::test]
 async fn append_recovery_adopts_existing_publication_without_rewriting_iceberg(
 ) -> anyhow::Result<()> {
-    let operator = Operator::new(Memory::default())?.finish();
+    let operator = Operator::new(Memory::default())?;
     let store = SpaceCatalogStore::new(operator.clone(), "spaces/append-publication-recovery")?
         .single_process();
     let workspace = IcebergWorkspace::open_space(

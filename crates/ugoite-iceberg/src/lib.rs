@@ -68,7 +68,7 @@ use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::Duration;
 #[cfg(debug_assertions)]
 use tokio::sync::Notify;
@@ -216,14 +216,16 @@ pub struct IcebergWorkspace {
 /// Query permits are process-wide per Space coordinate. A request creates a
 /// short-lived authorization context, but it must not thereby create a fresh
 /// production concurrency budget.
-static SPACE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Arc<Semaphore>>>> =
+static SPACE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Weak<Semaphore>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Derived rebuilds have their own maintenance budget. They may be expensive,
 /// but they must not consume the permit reserved for interactive authorized
 /// reads.
-static SPACE_MAINTENANCE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Arc<Semaphore>>>> =
+static SPACE_MAINTENANCE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Weak<Semaphore>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+const MAX_SPACE_PERMIT_KEYS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SchemaCommitCapability {
@@ -453,10 +455,18 @@ impl IcebergWorkspace {
         let mut permits = SPACE_QUERY_PERMITS
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        permits
-            .entry(key)
-            .or_insert_with(|| Arc::new(Semaphore::new(max_concurrency)))
-            .clone()
+        permits.retain(|_, permit| permit.strong_count() > 0);
+        if let Some(permit) = permits.get(&key).and_then(Weak::upgrade) {
+            return permit;
+        }
+        let permit = Arc::new(Semaphore::new(max_concurrency));
+        // Weak entries avoid retaining a semaphore forever, while this cap
+        // also bounds dead coordinate keys when a process sees many Spaces
+        // and does not subsequently revisit them.
+        if permits.len() < MAX_SPACE_PERMIT_KEYS {
+            permits.insert(key, Arc::downgrade(&permit));
+        }
+        permit
     }
 
     pub(crate) fn maintenance_query_permits(&self, max_concurrency: usize) -> Arc<Semaphore> {
@@ -464,10 +474,15 @@ impl IcebergWorkspace {
         let mut permits = SPACE_MAINTENANCE_QUERY_PERMITS
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        permits
-            .entry(key)
-            .or_insert_with(|| Arc::new(Semaphore::new(max_concurrency)))
-            .clone()
+        permits.retain(|_, permit| permit.strong_count() > 0);
+        if let Some(permit) = permits.get(&key).and_then(Weak::upgrade) {
+            return permit;
+        }
+        let permit = Arc::new(Semaphore::new(max_concurrency));
+        if permits.len() < MAX_SPACE_PERMIT_KEYS {
+            permits.insert(key, Arc::downgrade(&permit));
+        }
+        permit
     }
 
     pub async fn open_space(
@@ -1490,7 +1505,7 @@ impl IcebergWorkspace {
         let parquet_writer = ParquetWriterBuilder::from_table_properties(
             &table_properties,
             table.metadata().current_schema().clone(),
-        );
+        )?;
         let location_generator = DefaultLocationGenerator::new(table.metadata())?;
         let file_name_generator = DefaultFileNameGenerator::new(
             Uuid::now_v7().to_string(),

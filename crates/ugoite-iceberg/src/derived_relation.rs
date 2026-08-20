@@ -64,6 +64,8 @@ const MAX_PDF_TEXT_OPERATORS: usize = 1_000_000;
 const MAX_XML_DEPTH: usize = 256;
 const MAX_EXTRACTED_TEXT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TEXT_CHUNK_CHARS: usize = 16 * 1024;
+const MAX_TOTAL_ASSET_TEXT_ROWS: usize = 1_000_000;
+const MAX_TOTAL_ASSET_TEXT_BYTES: usize = 512 * 1024 * 1024;
 const READER_CHUNK_BYTES: usize = 256 * 1024;
 const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
 const GC_RETRY_DELAY: Duration = Duration::from_secs(60);
@@ -145,6 +147,49 @@ struct AssetTextStatusCounts {
     assets_empty: usize,
     assets_failed: usize,
     assets_unsupported: usize,
+}
+
+#[derive(Default)]
+struct BoundedAssetTextRows {
+    rows: Vec<AssetTextRow>,
+    text_bytes: usize,
+    error: Option<anyhow::Error>,
+}
+
+impl BoundedAssetTextRows {
+    fn failed(&self) -> bool {
+        self.error.is_some()
+    }
+
+    fn push(&mut self, row: AssetTextRow) {
+        if self.error.is_some() {
+            return;
+        }
+        let row_text_bytes = row.text.as_ref().map_or(0, String::len);
+        let Some(next_text_bytes) = self.text_bytes.checked_add(row_text_bytes) else {
+            self.error = Some(anyhow::anyhow!(
+                "AssetText rebuild output exceeds its total byte limit"
+            ));
+            return;
+        };
+        if self.rows.len() >= MAX_TOTAL_ASSET_TEXT_ROWS
+            || next_text_bytes > MAX_TOTAL_ASSET_TEXT_BYTES
+        {
+            self.error = Some(anyhow::anyhow!(
+                "AssetText rebuild output exceeds its aggregate limit"
+            ));
+            return;
+        }
+        self.text_bytes = next_text_bytes;
+        self.rows.push(row);
+    }
+
+    fn finish(self) -> Result<Vec<AssetTextRow>> {
+        if let Some(error) = self.error {
+            return Err(error);
+        }
+        Ok(self.rows)
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -231,7 +276,7 @@ pub fn asset_text_producer_fingerprint() -> String {
     // This is deliberately a semantic contract, not a crate version.  Any
     // parser, normalization, dispatch, or chunking change must update it.
     sha256_digest(
-        b"ugoite.asset_text/protocol=2;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=text-layer;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+128MiB-zip+10000-pdf-pages+16MiB-text+256-xml-depth;blocking=bounded-4;schema=2",
+        b"ugoite.asset_text/protocol=2;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=text-layer;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+10000-zip-entries+128MiB-zip+10000-pdf-pages+1000000-pdf-text-operators+16MiB-text+256-xml-depth+1000000-total-rows+512MiB-total-text;blocking=bounded-4;schema=2",
     )
 }
 
@@ -825,7 +870,7 @@ fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Durat
         op.info().scheme(),
         op.info().name(),
         op.info().root(),
-        Arc::as_ptr(op.inner()),
+        Arc::as_ptr(op.service()),
         ws_path,
         relation_id,
     );
@@ -1134,7 +1179,7 @@ async fn append_rows(
     let parquet_writer = ParquetWriterBuilder::from_table_properties(
         &table_properties,
         table.metadata().current_schema().clone(),
-    );
+    )?;
     let location_generator = DefaultLocationGenerator::new(table.metadata())?;
     let file_name_generator = DefaultFileNameGenerator::new(
         Uuid::now_v7().to_string(),
@@ -1409,8 +1454,11 @@ async fn build_asset_text_rows(
     producer_fingerprint: &str,
 ) -> Result<Vec<AssetTextRow>> {
     let parsed_at = Utc::now().to_rfc3339();
-    let mut rows = Vec::new();
+    let mut rows = BoundedAssetTextRows::default();
     for reference in references {
+        if rows.failed() {
+            return rows.finish();
+        }
         let base = |parser_id: String,
                     parser_version: String,
                     status: &str,
@@ -1491,19 +1539,6 @@ async fn build_asset_text_rows(
             ));
             continue;
         }
-        let actual_sha = hex::encode(Sha256::digest(&bytes));
-        if actual_sha != reference.source_sha256 {
-            rows.push(base(
-                "integrity".into(),
-                ASSET_TEXT_PARSER_VERSION.into(),
-                "source_mismatch",
-                0,
-                None,
-                None,
-                Some(DerivedErrorCode::AssetChecksumMismatch.as_str()),
-            ));
-            continue;
-        }
         if bytes.len() as u64 > MAX_ASSET_BYTES {
             rows.push(base(
                 "limits".into(),
@@ -1516,24 +1551,36 @@ async fn build_asset_text_rows(
             ));
             continue;
         }
-        let dispatch = detect_dispatch(&reference.name, &reference.media_type, &bytes);
-        let parser = dispatch.parser().clone();
-        let unsupported = matches!(dispatch, Dispatch::Unsupported(_));
-        let chunks = match extract_chunks_async(dispatch, bytes).await {
-            Ok(chunks) => chunks,
-            Err(code) => {
-                rows.push(base(
-                    parser.id.into(),
-                    parser.version.into(),
-                    "failed",
-                    0,
-                    None,
-                    None,
-                    Some(coarse_parser_error_code(code)),
-                ));
-                continue;
-            }
-        };
+        let (actual_sha, parser, unsupported, chunks) =
+            match process_asset_async(reference.name.clone(), reference.media_type.clone(), bytes)
+                .await
+            {
+                Ok(value) => value,
+                Err(code) => {
+                    rows.push(base(
+                        "parser".into(),
+                        ASSET_TEXT_PARSER_VERSION.into(),
+                        "failed",
+                        0,
+                        None,
+                        None,
+                        Some(coarse_parser_error_code(code)),
+                    ));
+                    continue;
+                }
+            };
+        if actual_sha != reference.source_sha256 {
+            rows.push(base(
+                "integrity".into(),
+                ASSET_TEXT_PARSER_VERSION.into(),
+                "source_mismatch",
+                0,
+                None,
+                None,
+                Some(DerivedErrorCode::AssetChecksumMismatch.as_str()),
+            ));
+            continue;
+        }
         if unsupported {
             rows.push(base(
                 parser.id.into(),
@@ -1556,7 +1603,7 @@ async fn build_asset_text_rows(
             ));
         } else {
             for (index, chunk) in chunks.into_iter().enumerate() {
-                let text = normalize_text(&chunk.text);
+                let text = chunk.text;
                 let status = if text.is_empty() { "empty" } else { "ready" };
                 rows.push(base(
                     parser.id.into(),
@@ -1567,10 +1614,13 @@ async fn build_asset_text_rows(
                     (!text.is_empty()).then_some(text),
                     None,
                 ));
+                if rows.failed() {
+                    return rows.finish();
+                }
             }
         }
     }
-    Ok(rows)
+    rows.finish()
 }
 
 async fn read_asset_exact(op: &Operator, path: &str) -> Result<Vec<u8>> {
@@ -1708,28 +1758,36 @@ fn coarse_parser_error_code(code: &str) -> &'static str {
     }
 }
 
-async fn extract_chunks_async(
-    dispatch: Dispatch,
+async fn process_asset_async(
+    name: String,
+    media_type: String,
     bytes: Vec<u8>,
-) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
-    if matches!(
-        dispatch,
-        Dispatch::Pdf(_) | Dispatch::Docx(_) | Dispatch::Xlsx(_) | Dispatch::Pptx(_)
-    ) {
-        static PARSER_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
-        let semaphore = PARSER_SEMAPHORE
-            .get_or_init(|| Arc::new(Semaphore::new(4)))
-            .clone();
-        let _permit = semaphore
-            .acquire_owned()
-            .await
-            .map_err(|_| "parser_failed")?;
-        tokio::task::spawn_blocking(move || extract_chunks(&dispatch, &bytes))
-            .await
-            .map_err(|_| "parser_failed")?
-    } else {
-        extract_chunks(&dispatch, &bytes)
-    }
+) -> std::result::Result<(String, ParserIdentity, bool, Vec<ExtractedChunk>), &'static str> {
+    // Dispatch, hashing, plain-text normalization, and structured extraction
+    // all run behind the same bounded blocking budget. A large TXT asset must
+    // not bypass the semaphore merely because it does not need an Office/PDF
+    // parser.
+    static PARSER_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    let semaphore = PARSER_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(4)))
+        .clone();
+    let _permit = semaphore
+        .acquire_owned()
+        .await
+        .map_err(|_| "parser_failed")?;
+    tokio::task::spawn_blocking(move || {
+        let actual_sha = hex::encode(Sha256::digest(&bytes));
+        let dispatch = detect_dispatch(&name, &media_type, &bytes);
+        let parser = dispatch.parser().clone();
+        let unsupported = matches!(dispatch, Dispatch::Unsupported(_));
+        let mut chunks = extract_chunks(&dispatch, &bytes)?;
+        for chunk in &mut chunks {
+            chunk.text = normalize_text(&chunk.text);
+        }
+        Ok((actual_sha, parser, unsupported, chunks))
+    })
+    .await
+    .map_err(|_| "parser_failed")?
 }
 
 fn append_extracted_chunk(
@@ -2283,7 +2341,7 @@ mod tests {
 
     #[tokio::test]
     async fn empty_space_rebuild_publishes_only_a_derived_head() -> anyhow::Result<()> {
-        let op = opendal::Operator::new(opendal::services::Memory::default())?.finish();
+        let op = opendal::Operator::new(opendal::services::Memory::default())?;
         crate::space::create_space(&op, "derived-empty", "memory:///").await?;
         let catalog_head_path = "spaces/derived-empty/_ugoite/catalog/head.json";
         let before = if op.exists(catalog_head_path).await? {
@@ -2305,7 +2363,7 @@ mod tests {
 
     #[tokio::test]
     async fn text_asset_materializes_and_is_searchable() -> anyhow::Result<()> {
-        let op = opendal::Operator::new(opendal::services::Memory::default())?.finish();
+        let op = opendal::Operator::new(opendal::services::Memory::default())?;
         crate::space::create_space(&op, "derived-text", "memory:///").await?;
         let ws_path = "spaces/derived-text";
         crate::form::upsert_form(
