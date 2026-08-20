@@ -1524,19 +1524,26 @@ impl UgoiteService {
             .await
     }
 
-    /// Rehydrates a process-local AssetText refresh worker from the durable
-    /// authoritative source coordinate. This also catches a process crash
-    /// after an authoritative commit but before any optional refresh marker
-    /// could be written.
+    /// Rehydrates and executes one bounded AssetText refresh from the durable
+    /// authoritative source coordinate. Startup maintenance owns its permit
+    /// across this call, so the actual rebuild—not only enqueueing detached
+    /// work—is included in the node-wide concurrency bound. Authoritative
+    /// mutation paths continue to use the process-local best-effort worker and
+    /// never await this method.
     pub async fn rearm_asset_text_refresh(&self, space_id: &str) -> Result<()> {
         validate_storage_id(validate_space_id(space_id))?;
-        if crate::derived_relation::asset_text_refresh_needed(
-            &self.operator,
-            &self.workspace_path(space_id),
-        )
-        .await?
-        {
-            self.enqueue_asset_text_refresh(space_id);
+        let ws_path = self.workspace_path(space_id);
+        if crate::derived_relation::asset_text_refresh_needed(&self.operator, &ws_path).await? {
+            let shared = matches!(
+                self.operator.info().scheme(),
+                "s3" | "gcs" | "oss" | "azdls"
+            );
+            if shared {
+                crate::derived_relation::rebuild_asset_text_shared(&self.operator, &ws_path)
+                    .await?;
+            } else {
+                crate::derived_relation::rebuild_asset_text(&self.operator, &ws_path).await?;
+            }
         }
         Ok(())
     }

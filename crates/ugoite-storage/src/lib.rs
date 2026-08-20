@@ -1313,6 +1313,7 @@ impl DerivedRelationHeadStore {
         #[derive(Default)]
         struct Candidate {
             has_garbage_marker: bool,
+            has_garbage_fence: bool,
             has_staging_marker: bool,
             has_publishing_marker: bool,
             has_build_object: bool,
@@ -1366,7 +1367,23 @@ impl DerivedRelationHeadStore {
                 }
             }
         }
+        if let Some((value, _, _)) = self.read_raw_exact().await? {
+            if let Some((state, build_id)) = Self::head_fence(&value) {
+                if state == "garbage_fence" && Some(build_id) != current_build_id {
+                    candidates
+                        .entry(build_id.to_string())
+                        .or_default()
+                        .has_garbage_fence = true;
+                }
+            }
+        }
         for (build_id, candidate) in candidates {
+            if candidate.has_garbage_fence {
+                // A marker-less garbage fence is itself an in-progress
+                // cleanup record. Keep the maintenance scheduler awake until
+                // the GC pass can finish its marker-last recovery.
+                return Ok(true);
+            }
             if candidate.has_garbage_marker {
                 let complete =
                     self.read_build_claim(&build_id)
@@ -1415,6 +1432,7 @@ impl DerivedRelationHeadStore {
                     false
                 };
             let markerless_orphan = !candidate.has_staging_marker
+                && !candidate.has_garbage_fence
                 && !candidate.has_publishing_marker
                 && (candidate.newest_object_modified.is_none()
                     && Self::old_enough(Self::build_id_time(&build_id), minimum_gc_age)
@@ -1459,6 +1477,7 @@ impl DerivedRelationHeadStore {
             garbage_marker_old_enough: bool,
             stale_staging_old_enough: bool,
             has_garbage_marker: bool,
+            has_garbage_fence: bool,
             has_staging_marker: bool,
             has_publishing_marker: bool,
             has_build_object: bool,
@@ -1529,7 +1548,7 @@ impl DerivedRelationHeadStore {
             if let Some((state, build_id)) = Self::head_fence(&value) {
                 if state == "garbage_fence" && Some(build_id) != current_build_id {
                     let candidate = candidates.entry(build_id.to_string()).or_default();
-                    candidate.has_garbage_marker = true;
+                    candidate.has_garbage_fence = true;
                     candidate.garbage_marker_old_enough = true;
                 }
             }
@@ -1568,6 +1587,7 @@ impl DerivedRelationHeadStore {
             // recoverable cleanup intent. Head remains the authority for the
             // final deletion check.
             candidate.orphan_old_enough = !candidate.has_garbage_marker
+                && !candidate.has_garbage_fence
                 && !candidate.has_staging_marker
                 && !candidate.has_publishing_marker
                 && (candidate.newest_object_modified.is_none()
@@ -1600,7 +1620,8 @@ impl DerivedRelationHeadStore {
             // build. Its own age is the grace-period boundary; an older
             // staging marker must not allow a freshly marked build to be
             // reclaimed early.
-            let cleanup_old_enough = if candidate.has_garbage_marker {
+            let cleanup_old_enough = if candidate.has_garbage_marker || candidate.has_garbage_fence
+            {
                 candidate.garbage_marker_old_enough
             } else {
                 candidate.stale_staging_old_enough
@@ -1644,6 +1665,7 @@ impl DerivedRelationHeadStore {
                 continue;
             }
             let needs_fresh_garbage_marker = !candidate.has_garbage_marker
+                && !candidate.has_garbage_fence
                 && (candidate.stale_staging_old_enough
                     || candidate.orphan_old_enough
                     || candidate.stale_publishing_old_enough
@@ -1772,7 +1794,14 @@ impl DerivedRelationHeadStore {
                     continue;
                 }
                 if let Some(path) = garbage_marker {
-                    self.operator.delete(&path).await?;
+                    // Marker-last is crash-safe even if a previous pass
+                    // already removed the marker before crashing: the
+                    // cleanup record is idempotent at this final step.
+                    match self.operator.delete(&path).await {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == ErrorKind::NotFound => {}
+                        Err(error) => return Err(error.into()),
+                    }
                 }
                 // Keep a durable terminal claim after marker-last cleanup so
                 // a delayed publisher remains fenced. The explicit complete

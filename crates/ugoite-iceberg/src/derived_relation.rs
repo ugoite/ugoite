@@ -30,7 +30,7 @@ use iceberg::{
 };
 use iceberg_datafusion::IcebergStaticTableProvider;
 use lopdf::{Document, Object};
-use opendal::options::WriteOptions;
+use opendal::options::{ReadOptions, WriteOptions};
 use opendal::{ErrorKind, Operator};
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -94,6 +94,7 @@ const ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
 const MAX_ASSET_TEXT_REFRESH_REQUESTS: usize = 16_384;
 const ASSET_TEXT_REFRESH_ADMISSION_LOCK: &str = "admission.lock";
 const ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL: Duration = Duration::from_secs(5 * 60);
+const ASSET_TEXT_REFRESH_ADMISSION_HEARTBEAT: Duration = Duration::from_secs(30);
 
 static ASSET_TEXT_REFRESH_LOCAL_ADMISSION: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -692,10 +693,16 @@ fn refresh_request_admission_lock_path(ws_path: &str) -> String {
     )
 }
 
-fn refresh_request_admission_lock_bytes(owner: &str, released: bool) -> Vec<u8> {
+fn refresh_request_admission_lock_bytes(
+    owner: &str,
+    released: bool,
+    acquired_at: i64,
+    heartbeat_at: i64,
+) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "owner": owner,
-        "acquired_at": Utc::now().timestamp(),
+        "acquired_at": acquired_at,
+        "heartbeat_at": heartbeat_at,
         "released": released,
     }))
     .expect("AssetText refresh admission lock is serializable")
@@ -714,13 +721,17 @@ fn refresh_request_admission_lock_reclaimable(
     {
         return true;
     }
-    let acquired_at = value
+    let heartbeat_at = value
         .as_ref()
-        .and_then(|value| value.get("acquired_at"))
+        .and_then(|value| {
+            value
+                .get("heartbeat_at")
+                .or_else(|| value.get("acquired_at"))
+        })
         .and_then(Value::as_i64)
         .and_then(|seconds| u64::try_from(seconds).ok())
         .map(|seconds| std::time::UNIX_EPOCH + Duration::from_secs(seconds));
-    acquired_at
+    heartbeat_at
         .or(last_modified)
         .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
         .is_some_and(|age| age >= ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL)
@@ -734,10 +745,11 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
     let path = refresh_request_admission_lock_path(ws_path);
     let owner = Uuid::now_v7().to_string();
     for _ in 0..3 {
+        let now = Utc::now().timestamp();
         match op
             .write_options(
                 &path,
-                refresh_request_admission_lock_bytes(&owner, false),
+                refresh_request_admission_lock_bytes(&owner, false, now, now),
                 WriteOptions {
                     if_not_exists: true,
                     ..Default::default()
@@ -759,20 +771,34 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
             Err(error) if error.kind() == ErrorKind::NotFound => continue,
             Err(error) => return Err(error.into()),
         };
-        let bytes = op.read(&path).await?.to_vec();
+        let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+            bail!("AssetText refresh marker admission lock has no ETag")
+        };
+        let bytes = match op
+            .read_options(
+                &path,
+                ReadOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(bytes) => bytes.to_vec(),
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
+            Err(error) => return Err(error.into()),
+        };
         if !refresh_request_admission_lock_reclaimable(
             &bytes,
             metadata.last_modified().map(Into::into),
         ) {
             bail!("AssetText refresh marker admission is busy")
         }
-        let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
-            bail!("AssetText refresh marker admission lock has no ETag")
-        };
+        let now = Utc::now().timestamp();
         match op
             .write_options(
                 &path,
-                refresh_request_admission_lock_bytes(&owner, false),
+                refresh_request_admission_lock_bytes(&owner, false, now, now),
                 WriteOptions {
                     if_match: Some(etag.to_string()),
                     ..Default::default()
@@ -799,7 +825,24 @@ async fn release_asset_text_refresh_admission_lock(
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error.into()),
     };
-    let bytes = op.read(&path).await?.to_vec();
+    let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+        bail!("AssetText refresh marker admission lock has no ETag")
+    };
+    let bytes = match op
+        .read_options(
+            &path,
+            ReadOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(bytes) => bytes.to_vec(),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => return Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
     let current_owner = serde_json::from_slice::<Value>(&bytes)?
         .get("owner")
         .and_then(Value::as_str)
@@ -807,13 +850,15 @@ async fn release_asset_text_refresh_admission_lock(
     if current_owner.as_deref() != Some(owner) {
         return Ok(());
     }
-    let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
-        bail!("AssetText refresh marker admission lock has no ETag")
-    };
     match op
         .write_options(
             &path,
-            refresh_request_admission_lock_bytes(owner, true),
+            refresh_request_admission_lock_bytes(
+                owner,
+                true,
+                Utc::now().timestamp(),
+                Utc::now().timestamp(),
+            ),
             WriteOptions {
                 if_match: Some(etag.to_string()),
                 ..Default::default()
@@ -823,6 +868,67 @@ async fn release_asset_text_refresh_admission_lock(
     {
         Ok(_) => Ok(()),
         Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Renews the durable admission lease while a shared refresh-marker drain is
+/// scanning/deleting a large prefix. A false result means that another writer
+/// has already replaced or removed this owner's lease; callers must then fail
+/// closed rather than continue claiming atomic capacity or marker ownership.
+async fn renew_asset_text_refresh_admission_lock(
+    op: &Operator,
+    ws_path: &str,
+    owner: &str,
+) -> Result<bool> {
+    let path = refresh_request_admission_lock_path(ws_path);
+    let metadata = match op.stat(&path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+        bail!("AssetText refresh marker admission lock has no ETag")
+    };
+    let bytes = match op
+        .read_options(
+            &path,
+            ReadOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(bytes) => bytes.to_vec(),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => return Ok(false),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let value = serde_json::from_slice::<Value>(&bytes)?;
+    if value.get("owner").and_then(Value::as_str) != Some(owner)
+        || value.get("released").and_then(Value::as_bool) == Some(true)
+    {
+        return Ok(false);
+    }
+    let acquired_at = value
+        .get("acquired_at")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| Utc::now().timestamp());
+    let now = Utc::now().timestamp();
+    match op
+        .write_options(
+            &path,
+            refresh_request_admission_lock_bytes(owner, false, acquired_at, now),
+            WriteOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(false),
         Err(error) => Err(error.into()),
     }
 }
@@ -853,7 +959,45 @@ where
         return result;
     }
     let owner = acquire_asset_text_refresh_admission_lock(op, ws_path).await?;
-    let result = operation().await;
+    let lease_lost = Arc::new(AtomicBool::new(false));
+    let lease_lost_notify = Arc::new(Notify::new());
+    let heartbeat = {
+        let op = op.clone();
+        let ws_path = ws_path.to_owned();
+        let owner = owner.clone();
+        let lease_lost = lease_lost.clone();
+        let lease_lost_notify = lease_lost_notify.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(ASSET_TEXT_REFRESH_ADMISSION_HEARTBEAT).await;
+                match renew_asset_text_refresh_admission_lock(&op, &ws_path, &owner).await {
+                    Ok(true) => {}
+                    Ok(false) | Err(_) => {
+                        lease_lost.store(true, Ordering::Release);
+                        lease_lost_notify.notify_waiters();
+                        break;
+                    }
+                }
+            }
+        })
+    };
+    let operation = operation();
+    tokio::pin!(operation);
+    let result = tokio::select! {
+        result = &mut operation => result,
+        _ = lease_lost_notify.notified() => Err(anyhow!(
+            "AssetText refresh marker admission lease was lost during operation"
+        )),
+    };
+    heartbeat.abort();
+    let _ = heartbeat.await;
+    let result = if lease_lost.load(Ordering::Acquire) {
+        Err(anyhow!(
+            "AssetText refresh marker admission lease was lost during operation"
+        ))
+    } else {
+        result
+    };
     let release = release_asset_text_refresh_admission_lock(op, ws_path, &owner).await;
     match (result, release) {
         (Ok(value), Ok(())) => Ok(value),
@@ -865,6 +1009,7 @@ where
     }
 }
 
+#[cfg(test)]
 fn refresh_request_is_at_or_before(path: &str, cutoff: &str) -> bool {
     // The fixed-name marker predates immutable UUID-v7 markers. It is always
     // part of the snapshot because there is no creation coordinate to compare.
@@ -876,6 +1021,7 @@ fn refresh_request_is_at_or_before(path: &str, cutoff: &str) -> bool {
 /// ordered by creation time; the cutoff makes markers created while a build is
 /// running ineligible for acknowledgement even when the directory is larger
 /// than the in-memory batch bound.
+#[cfg(test)]
 async fn asset_text_refresh_request_batch_before(
     op: &Operator,
     ws_path: &str,
@@ -905,9 +1051,35 @@ async fn asset_text_refresh_request_batch_before(
     Ok(paths)
 }
 
+/// Returns one bounded batch from the current marker set. The shared
+/// admission lock is the snapshot boundary for production callers: all
+/// marker writers take that lock, so no new marker can enter while the
+/// bounded batches are drained.
+async fn asset_text_refresh_request_batch(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
+    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
+    if op.exists(&legacy_path).await? {
+        paths.push(legacy_path);
+    }
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    while let Some(entry) = lister.try_next().await? {
+        if refresh_request_token(entry.path()).is_some() {
+            paths.push(entry.path().to_string());
+            if paths.len() == MAX_ASSET_TEXT_REFRESH_REQUESTS {
+                break;
+            }
+        }
+    }
+    Ok(paths)
+}
+
 /// A bounded drain is repeated until no marker from the build's snapshot
 /// remains. Markers created after the cutoff stay durable for the next worker
 /// or startup rearm, including when the initial directory exceeded capacity.
+#[cfg(test)]
 async fn clear_asset_text_refresh_requests_through(
     op: &Operator,
     ws_path: &str,
@@ -927,11 +1099,16 @@ async fn clear_asset_text_refresh_requests_with_admission_lock(
     ws_path: &str,
 ) -> Result<()> {
     with_asset_text_refresh_admission_lock(op, ws_path, || async {
-        // The cutoff is created only after the shared admission lock is held.
-        // Marker writers cannot cross this boundary, so UUID ordering is not
-        // used as a cross-process clock.
-        let cutoff = Uuid::now_v7().to_string();
-        clear_asset_text_refresh_requests_through(op, ws_path, &cutoff).await
+        // Lock acquisition is the explicit snapshot boundary. All production
+        // marker writers use the same admission lock, so draining bounded
+        // batches cannot delete a request created after this build began.
+        loop {
+            let paths = asset_text_refresh_request_batch(op, ws_path).await?;
+            if paths.is_empty() {
+                return Ok(());
+            }
+            clear_asset_text_refresh_request_paths(op, &paths).await?;
+        }
     })
     .await
 }
