@@ -252,11 +252,13 @@ async fn asset_text_search_authorized(
     )
     .await
     {
-        Ok(result) => {
-            if result.is_err() {
-                budget.restore(budget_checkpoint);
-            }
-            result
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(_)) => {
+            budget.restore(budget_checkpoint);
+            // Derived data is an optional acceleration layer. A corrupt,
+            // unavailable, or incompatible AssetText build must not discard
+            // authoritative Entry matches from the caller.
+            Ok(None)
         }
         Err(_) => {
             budget.restore(budget_checkpoint);
@@ -522,11 +524,14 @@ async fn fallback_asset_text_search(
     asset_authorization: Option<AssetAuthorization>,
     budget: crate::index::AssetTextSearchBudget,
 ) -> Result<Option<Vec<KeywordSearchResult>>> {
-    let Some(matching_assets) =
-        crate::derived_relation::asset_text_search_matches(op, ws_path, query).await?
-    else {
+    let matching_assets =
+        match crate::derived_relation::asset_text_search_matches(op, ws_path, query).await {
+            Ok(Some(matching_assets)) => matching_assets,
+            Ok(None) | Err(_) => return Ok(None),
+        };
+    if matching_assets.is_empty() {
         return Ok(None);
-    };
+    }
     let mut results = Vec::new();
     let mut seen = HashSet::new();
     for form_name in form_names {
@@ -541,7 +546,7 @@ async fn fallback_asset_text_search(
         }
         let mut after_entry_id = None;
         loop {
-            let rows = crate::index::query_asset_reference_rows_authorized_in_context(
+            let rows = match crate::index::query_asset_reference_rows_authorized_in_context(
                 authorized_context,
                 authorized_forms,
                 form_name,
@@ -550,7 +555,11 @@ async fn fallback_asset_text_search(
                 ASSET_TEXT_SEARCH_PAGE_SIZE,
                 &budget,
             )
-            .await?;
+            .await
+            {
+                Ok(rows) => rows,
+                Err(_) => return Ok(None),
+            };
             if rows.is_empty() {
                 break;
             }

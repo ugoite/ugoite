@@ -17,6 +17,7 @@ use std::{
     fs::{self, OpenOptions},
     future::Future,
     path::Path,
+    pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, OnceLock,
@@ -850,6 +851,113 @@ impl Authorizer {
         Ok((approval, token))
     }
 
+    /// Issue an approval while reusing an authorization lease held by a
+    /// compound request. The permission snapshot and approval commit must be
+    /// in the same lease window as the request's other Node-side effects.
+    pub async fn issue_human_approval_with_audit_with_lease<F>(
+        &self,
+        space_id: &str,
+        request: HumanApprovalIssue,
+        audit_events: F,
+        lease: &AuthorizationLease,
+    ) -> Result<(HumanApproval, String)>
+    where
+        F: FnOnce(&HumanApproval) -> Vec<(Uuid, Value)>,
+    {
+        if request.ttl < chrono::Duration::seconds(1)
+            || request.ttl > chrono::Duration::seconds(300)
+        {
+            return Err(AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "human approval TTL must be between 1 and 300 seconds",
+            )
+            .into());
+        }
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        let mut state = self.state(space_id).await?;
+        let issuer = state
+            .principals
+            .get(&request.issuer_principal_id)
+            .filter(|principal| {
+                matches!(principal.kind, PrincipalKind::Human)
+                    && matches!(principal.state, PrincipalState::Active)
+            })
+            .ok_or_else(|| AppError::forbidden("approval issuer is not an active human"))?;
+        let _ = issuer;
+        if !effective_actions_for_state(
+            &state,
+            request.issuer_principal_id,
+            Some(&request.resource),
+        )?
+        .contains(&request.action)
+        {
+            return Err(AppError::forbidden("approval issuer lacks the required action").into());
+        }
+        if !effective_actions_for_state(
+            &state,
+            request.actor_principal_id,
+            Some(&request.resource),
+        )?
+        .contains(&request.action)
+        {
+            return Err(AppError::forbidden("approval actor lacks the required action").into());
+        }
+        let actor = state
+            .principals
+            .get(&request.actor_principal_id)
+            .filter(|principal| matches!(principal.state, PrincipalState::Active))
+            .ok_or_else(|| AppError::forbidden("approval actor is not active"))?;
+        let _ = actor;
+        let mut raw_token = [0_u8; 32];
+        rand::rng()
+            .try_fill_bytes(&mut raw_token)
+            .map_err(|error| anyhow!("generate human approval token: {error}"))?;
+        let token = URL_SAFE_NO_PAD.encode(raw_token);
+        let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
+        let now = Utc::now();
+        let approval = HumanApproval {
+            approval_id: Uuid::now_v7(),
+            token_hash,
+            operation: request.operation,
+            action: request.action,
+            resource: request.resource,
+            intent_hash: request.intent_hash,
+            actor_principal_id: request.actor_principal_id,
+            actor_credential_id: request.actor_credential_id,
+            issuer_principal_id: request.issuer_principal_id,
+            issuer_account_id: request.issuer_account_id,
+            issuer_credential_id: request.issuer_credential_id,
+            issuer_credential_generation: request.issuer_credential_generation,
+            issuer_node_account_lifecycle_epoch: request.issuer_node_account_lifecycle_epoch,
+            issuer_lifecycle_epoch: state
+                .principal_lifecycle_epochs
+                .get(&request.issuer_principal_id)
+                .copied()
+                .unwrap_or_default(),
+            actor_lifecycle_epoch: state
+                .principal_lifecycle_epochs
+                .get(&request.actor_principal_id)
+                .copied()
+                .unwrap_or_default(),
+            issued_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
+            expires_at: (now + request.ttl).to_rfc3339_opts(SecondsFormat::Millis, true),
+            consumed_at: None,
+        };
+        queue_human_approval_audit_events(&mut state, audit_events(&approval));
+        state
+            .human_approvals
+            .insert(approval.approval_id, approval.clone());
+        state.revision = state
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("authorization revision overflow"))?;
+        self.write_state_with_lease(space_id, &state, lease).await?;
+        Ok((approval, token))
+    }
+
     /// Atomically consume an approval. A consumed token is never restored,
     /// including when the subsequent business mutation has an unknown result.
     #[allow(clippy::too_many_arguments)]
@@ -947,7 +1055,45 @@ impl Authorizer {
     ) -> Result<(HumanApproval, T)>
     where
         F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
-        Fut: Future<Output = T>,
+        Fut: Future<Output = T> + Send + 'static,
+    {
+        self.consume_human_approval_with_audit_and_with_lease(
+            space_id,
+            token,
+            operation,
+            action,
+            resource,
+            intent_hash,
+            actor_principal_id,
+            actor_credential_id,
+            audit_events,
+            |_| Box::pin(mutation()),
+        )
+        .await
+    }
+
+    /// Variant of approval consumption that exposes the already-held
+    /// authorization lease to a nested Space mutation. Nested authorization
+    /// writers must reuse this lease instead of trying to acquire a second
+    /// shared lock.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn consume_human_approval_with_audit_and_with_lease<T, F>(
+        &self,
+        space_id: &str,
+        token: &str,
+        operation: &str,
+        action: Action,
+        resource: &ResourceRef,
+        intent_hash: &str,
+        actor_principal_id: Uuid,
+        actor_credential_id: Uuid,
+        audit_events: F,
+        mutation: impl for<'a> FnOnce(
+            &'a AuthorizationLease,
+        ) -> Pin<Box<dyn Future<Output = T> + Send + 'a>>,
+    ) -> Result<(HumanApproval, T)>
+    where
+        F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
     {
         let guard = self.lock.clone().lock_owned().await;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
@@ -983,7 +1129,7 @@ impl Authorizer {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn consume_human_approval_with_audit_and_locked<T, F, Fut>(
+    async fn consume_human_approval_with_audit_and_locked<T, F>(
         &self,
         space_id: &str,
         token: &str,
@@ -996,11 +1142,12 @@ impl Authorizer {
         audit_events: F,
         durable: &Option<DurableAuthorizationLease>,
         lease: &AuthorizationLease,
-        mutation: impl FnOnce() -> Fut,
+        mutation: impl for<'a> FnOnce(
+            &'a AuthorizationLease,
+        ) -> Pin<Box<dyn Future<Output = T> + Send + 'a>>,
     ) -> Result<(HumanApproval, T)>
     where
         F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
-        Fut: Future<Output = T>,
     {
         let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
         let mut state = self.state(space_id).await?;
@@ -1133,7 +1280,7 @@ impl Authorizer {
         self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
             .await?;
         let mutation = lease
-            .run_while_held(mutation)
+            .run_while_held(|| mutation(lease))
             .await
             .map_err(|_| anyhow!("Space authorization mutation lease was lost"))?;
         Ok((approval, mutation))
@@ -1598,6 +1745,31 @@ impl Authorizer {
             .await
     }
 
+    pub async fn set_policy_with_lease(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        resource: &ResourceRef,
+        policy: AccessPolicy,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, Some(resource))
+            .await?;
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        self.set_policy_locked(
+            space_id,
+            actor,
+            resource,
+            policy,
+            true,
+            lease.durable.as_ref(),
+        )
+        .await
+    }
+
     async fn set_policy_inner(
         &self,
         space_id: &str,
@@ -1609,7 +1781,7 @@ impl Authorizer {
         self.require(space_id, actor, Action::Share, Some(resource))
             .await?;
         let _guard = self.lock.lock().await;
-        self.set_policy_locked(space_id, actor, resource, policy, append_audit)
+        self.set_policy_locked(space_id, actor, resource, policy, append_audit, None)
             .await
     }
 
@@ -1623,8 +1795,33 @@ impl Authorizer {
         resource: &ResourceRef,
         policy: AccessPolicy,
     ) -> Result<()> {
-        self.set_policy_locked(space_id, actor, resource, policy, false)
+        self.set_policy_locked(space_id, actor, resource, policy, false, None)
             .await
+    }
+
+    /// Apply a policy from an approval callback while reusing the callback's
+    /// already-held authorization lease.
+    pub async fn set_policy_after_approval_with_lease(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        resource: &ResourceRef,
+        policy: AccessPolicy,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        self.set_policy_locked(
+            space_id,
+            actor,
+            resource,
+            policy,
+            false,
+            lease.durable.as_ref(),
+        )
+        .await
     }
 
     async fn set_policy_locked(
@@ -1634,6 +1831,7 @@ impl Authorizer {
         resource: &ResourceRef,
         policy: AccessPolicy,
         append_audit: bool,
+        durable: Option<&DurableAuthorizationLease>,
     ) -> Result<()> {
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
@@ -1667,7 +1865,13 @@ impl Authorizer {
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-        self.write_state(space_id, &state).await?;
+        match durable {
+            Some(durable) => {
+                self.write_state_with_durable(space_id, &state, durable)
+                    .await?
+            }
+            None => self.write_state(space_id, &state).await?,
+        }
         if append_audit {
             audit::append_audit_event(
                 &self.operator,
@@ -1725,6 +1929,69 @@ impl Authorizer {
             .or_insert(1);
         state.revision += 1;
         self.write_state(space_id, &state).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "principal.activated",
+                "subject_principal_id": principal_id,
+                "actor_principal_id": actor,
+                "target_type": "space_principal",
+                "target_id": principal_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Add a member while the caller already owns the Space authorization
+    /// lease. This is used by invitation acceptance and other compound Node +
+    /// Space mutations; acquiring another lease inside the callback would
+    /// deadlock on shared backends.
+    pub async fn add_human_member_with_lease(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        principal: SpacePrincipal,
+        role: SpaceRole,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        if !matches!(principal.kind, PrincipalKind::Human) {
+            bail!("human member must use a human principal");
+        }
+        let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
+        if let Some(existing) = state.principals.get(&principal.principal_id) {
+            if existing.kind == principal.kind
+                && state.memberships.contains_key(&principal.principal_id)
+            {
+                return Ok(());
+            }
+            bail!("principal already exists with conflicting state");
+        }
+        let principal_id = principal.principal_id;
+        let created_at = principal.created_at.clone();
+        state.principals.insert(principal_id, principal);
+        state.memberships.insert(
+            principal_id,
+            Membership {
+                principal_id,
+                role,
+                created_at,
+            },
+        );
+        state
+            .principal_lifecycle_epochs
+            .entry(principal_id)
+            .or_insert(1);
+        state.revision += 1;
+        self.write_state_with_lease(space_id, &state, lease).await?;
         audit::append_audit_event(
             &self.operator,
             space_id,
@@ -1835,6 +2102,90 @@ impl Authorizer {
         Ok(agent)
     }
 
+    pub async fn create_agent_with_lease(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        request: CreateAgentRequest,
+        lease: &AuthorizationLease,
+    ) -> Result<AgentPrincipal> {
+        let CreateAgentRequest {
+            display_name,
+            description,
+            mode,
+            owner_principal_ids,
+            granted_actions,
+            expires_at,
+        } = request;
+        self.require(space_id, actor, Action::Share, None).await?;
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        if granted_actions.contains(&Action::Delete) || granted_actions.contains(&Action::Share) {
+            bail!("agents cannot receive delete or share actions");
+        }
+        if expires_at.is_none() {
+            bail!("agent expiry or review deadline is required");
+        }
+        let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
+        if owner_principal_ids.is_empty() || !owner_principal_ids.contains(&actor) {
+            bail!("agent sponsor must be one of at least one human owner");
+        }
+        if owner_principal_ids.iter().any(|id| {
+            !state.principals.get(id).is_some_and(|p| {
+                matches!(p.kind, PrincipalKind::Human) && matches!(p.state, PrincipalState::Active)
+            })
+        }) {
+            bail!("all agent owners must be active human principals in the Space");
+        }
+        let agent_id = Uuid::now_v7();
+        let now = now_iso();
+        let agent = AgentPrincipal {
+            agent_id,
+            display_name: display_name.trim().to_string(),
+            description: description.trim().to_string(),
+            sponsor_principal_id: actor,
+            owner_principal_ids,
+            mode,
+            status: PrincipalState::Active,
+            created_at: now.clone(),
+            expires_at,
+            last_used_at: None,
+        };
+        agent.validate()?;
+        state.principals.insert(
+            agent_id,
+            SpacePrincipal {
+                principal_id: agent_id,
+                kind: PrincipalKind::Agent,
+                display_name: agent.display_name.clone(),
+                state: PrincipalState::Active,
+                created_at: now,
+            },
+        );
+        state.principal_lifecycle_epochs.insert(agent_id, 1);
+        state.agent_grants.insert(agent_id, granted_actions);
+        state.agents.insert(agent_id, agent.clone());
+        state.revision += 1;
+        self.write_state_with_lease(space_id, &state, lease).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "agent.created",
+                "subject_principal_id": agent_id,
+                "actor_principal_id": actor,
+                "target_type": "agent",
+                "target_id": agent_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(agent)
+    }
+
     pub async fn revoke_agent(&self, space_id: &str, actor: Uuid, agent_id: Uuid) -> Result<()> {
         self.require(space_id, actor, Action::Share, None).await?;
         let _guard = self.lock.lock().await;
@@ -1874,6 +2225,54 @@ impl Authorizer {
         Ok(())
     }
 
+    pub async fn revoke_agent_with_lease(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        agent_id: Uuid,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
+        let agent = state
+            .agents
+            .get_mut(&agent_id)
+            .ok_or_else(|| anyhow!("agent not found"))?;
+        if actor != agent.sponsor_principal_id && !agent.owner_principal_ids.contains(&actor) {
+            bail!("agent sponsor or owner is required");
+        }
+        agent.status = PrincipalState::Revoked;
+        if let Some(principal) = state.principals.get_mut(&agent_id) {
+            principal.state = PrincipalState::Revoked;
+        }
+        *state
+            .principal_lifecycle_epochs
+            .entry(agent_id)
+            .or_insert(0) += 1;
+        state.agent_grants.remove(&agent_id);
+        state.revision += 1;
+        self.write_state_with_lease(space_id, &state, lease).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "agent.revoked",
+                "subject_principal_id": agent_id,
+                "actor_principal_id": actor,
+                "target_type": "agent",
+                "target_id": agent_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn mark_agent_used(&self, space_id: &str, agent_id: Uuid) -> Result<()> {
         let _guard = self.lock.lock().await;
         let mut state = self.state(space_id).await?;
@@ -1886,6 +2285,28 @@ impl Authorizer {
         agent.last_used_at = Some(now_iso());
         state.revision += 1;
         self.write_state(space_id, &state).await
+    }
+
+    pub async fn mark_agent_used_with_lease(
+        &self,
+        space_id: &str,
+        agent_id: Uuid,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
+        let agent = state
+            .agents
+            .get_mut(&agent_id)
+            .filter(|agent| matches!(agent.status, PrincipalState::Active))
+            .ok_or_else(|| anyhow!("agent is not active"))?;
+        agent.last_used_at = Some(now_iso());
+        state.revision += 1;
+        self.write_state_with_lease(space_id, &state, lease).await
     }
 
     pub async fn change_role(
@@ -1924,6 +2345,62 @@ impl Authorizer {
             .or_insert(0) += 1;
         state.revision += 1;
         self.write_state(space_id, &state).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "principal.role_changed",
+                "subject_principal_id": principal_id,
+                "actor_principal_id": actor,
+                "target_type": "space_principal",
+                "target_id": principal_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn change_role_with_lease(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        principal_id: Uuid,
+        role: SpaceRole,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
+        let current = state
+            .memberships
+            .get(&principal_id)
+            .ok_or_else(|| anyhow!("member not found"))?;
+        if matches!(current.role, SpaceRole::Owner)
+            && !matches!(role, SpaceRole::Owner)
+            && owner_count(&state) == 1
+        {
+            return Err(AppError::conflict(
+                ErrorCode::LastAdminRequired,
+                "cannot demote the last Space owner",
+            )
+            .into());
+        }
+        state
+            .memberships
+            .get_mut(&principal_id)
+            .expect("checked membership")
+            .role = role;
+        *state
+            .principal_lifecycle_epochs
+            .entry(principal_id)
+            .or_insert(0) += 1;
+        state.revision += 1;
+        self.write_state_with_lease(space_id, &state, lease).await?;
         audit::append_audit_event(
             &self.operator,
             space_id,
@@ -1989,6 +2466,59 @@ impl Authorizer {
         Ok(())
     }
 
+    pub async fn revoke_principal_with_lease(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        principal_id: Uuid,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        self.require(space_id, actor, Action::Share, None).await?;
+        lease
+            .durable
+            .as_ref()
+            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
+        let mut state = self.state(space_id).await?;
+        self.ensure_recovery_mutation_allowed(&mut state)?;
+        if state
+            .memberships
+            .get(&principal_id)
+            .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
+            && owner_count(&state) == 1
+        {
+            return Err(AppError::conflict(
+                ErrorCode::LastAdminRequired,
+                "cannot revoke the last Space owner",
+            )
+            .into());
+        }
+        let principal = state
+            .principals
+            .get_mut(&principal_id)
+            .ok_or_else(|| anyhow!("principal not found"))?;
+        principal.state = PrincipalState::Revoked;
+        *state
+            .principal_lifecycle_epochs
+            .entry(principal_id)
+            .or_insert(0) += 1;
+        state.revision += 1;
+        self.write_state_with_lease(space_id, &state, lease).await?;
+        audit::append_audit_event(
+            &self.operator,
+            space_id,
+            &serde_json::json!({
+                "action": "principal.revoked",
+                "subject_principal_id": principal_id,
+                "actor_principal_id": actor,
+                "target_type": "space_principal",
+                "target_id": principal_id,
+            }),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn filter_authorized_resources(
         &self,
         space_id: &str,
@@ -2024,6 +2554,31 @@ impl Authorizer {
             (Err(error), Err(release_error)) => Err(error.context(format!(
                 "release Space authorization mutation lease: {release_error:#}"
             ))),
+        }
+    }
+
+    async fn write_state_with_durable(
+        &self,
+        space_id: &str,
+        state: &AuthorizationState,
+        durable: &DurableAuthorizationLease,
+    ) -> Result<()> {
+        durable.ensure_held()?;
+        self.write_state_inner(space_id, state).await
+    }
+
+    async fn write_state_with_lease(
+        &self,
+        space_id: &str,
+        state: &AuthorizationState,
+        lease: &AuthorizationLease,
+    ) -> Result<()> {
+        match lease.durable.as_ref() {
+            Some(durable) => {
+                self.write_state_with_durable(space_id, state, durable)
+                    .await
+            }
+            None => self.write_state_inner(space_id, state).await,
         }
     }
 

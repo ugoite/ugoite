@@ -871,6 +871,33 @@ impl DerivedRelationHeadStore {
         Ok(())
     }
 
+    /// Finish every publishing attempt by making one best-effort, owner-
+    /// checked transition out of `publishing`. In particular, do not use `?`
+    /// on the Head write before releasing the claim: a failed CAS or a lost
+    /// heartbeat is still a terminal build outcome, and leaving the claim in
+    /// place would make GC wait for its full TTL.
+    async fn finish_publishing_claim(
+        &self,
+        build_id: &str,
+        publish_result: Result<()>,
+        heartbeat_lost: bool,
+    ) -> Result<()> {
+        let release_result = self.release_publishing_claim(build_id).await;
+        match (publish_result, heartbeat_lost, release_result) {
+            (Err(error), _, Ok(())) => Err(error),
+            (Err(error), _, Err(release_error)) => Err(error.context(format!(
+                "release DerivedRelation publishing claim after publish failure: {release_error:#}"
+            ))),
+            (Ok(()), true, Ok(())) => Err(anyhow!(
+                "DerivedRelation publishing claim heartbeat was lost"
+            )),
+            (Ok(()), true, Err(release_error)) => Err(anyhow!(
+                "DerivedRelation publishing claim heartbeat was lost; release failed: {release_error:#}"
+            )),
+            (Ok(()), false, release_result) => release_result,
+        }
+    }
+
     /// Refresh the garbage claim before each destructive object operation.
     /// This keeps a long-running deletion from becoming an apparently stale
     /// claim and fences publication from a reclaimed build.
@@ -2281,13 +2308,12 @@ impl DerivedRelationHeadStore {
             Some(expected) => self.replace(expected.etag.as_deref(), head).await,
         };
         heartbeat.abort();
-        result?;
-        if heartbeat_lost.load(Ordering::Acquire) {
-            return Err(anyhow!(
-                "DerivedRelation publishing claim heartbeat was lost"
-            ));
-        }
-        self.release_publishing_claim(&head.build_id).await
+        self.finish_publishing_claim(
+            &head.build_id,
+            result,
+            heartbeat_lost.load(Ordering::Acquire),
+        )
+        .await
     }
 
     /// Replaces a disposable legacy Head after a complete build has been
@@ -2304,12 +2330,12 @@ impl DerivedRelationHeadStore {
                 "legacy DerivedRelation replacement requires shared mode"
             ));
         }
-        self.begin_publishing(&head.build_id).await?;
         let etag = expected
             .etag
             .as_deref()
             .context("shared legacy DerivedRelation replacement requires an ETag")?;
         let bytes = canonical_head_bytes(head)?;
+        self.begin_publishing(&head.build_id).await?;
         let (heartbeat, heartbeat_lost) = self.start_publishing_claim_heartbeat(&head.build_id);
         let result = self
             .operator
@@ -2325,13 +2351,12 @@ impl DerivedRelationHeadStore {
             .map(|_| ())
             .map_err(anyhow::Error::from);
         heartbeat.abort();
-        result?;
-        if heartbeat_lost.load(Ordering::Acquire) {
-            return Err(anyhow!(
-                "DerivedRelation publishing claim heartbeat was lost"
-            ));
-        }
-        self.release_publishing_claim(&head.build_id).await
+        self.finish_publishing_claim(
+            &head.build_id,
+            result,
+            heartbeat_lost.load(Ordering::Acquire),
+        )
+        .await
     }
 
     /// Replaces a disposable legacy Head while the caller already owns the
@@ -2348,20 +2373,24 @@ impl DerivedRelationHeadStore {
             ));
         }
         self.begin_publishing(&head.build_id).await?;
-        let Some((_, current_bytes, current_etag)) = self.read_raw_exact().await? else {
-            return Err(anyhow!("legacy DerivedRelation Head disappeared"));
-        };
-        if current_bytes != expected.bytes
-            || (expected.etag.is_some() && current_etag != expected.etag)
-        {
-            return Err(anyhow!("legacy DerivedRelation Head changed"));
+        let result = async {
+            let Some((_, current_bytes, current_etag)) = self.read_raw_exact().await? else {
+                return Err(anyhow!("legacy DerivedRelation Head disappeared"));
+            };
+            if current_bytes != expected.bytes
+                || (expected.etag.is_some() && current_etag != expected.etag)
+            {
+                return Err(anyhow!("legacy DerivedRelation Head changed"));
+            }
+            self.operator
+                .write(&self.head_path(), canonical_head_bytes(head)?)
+                .await
+                .map(|_| ())
+                .map_err(anyhow::Error::from)
         }
-        self.operator
-            .write(&self.head_path(), canonical_head_bytes(head)?)
+        .await;
+        self.finish_publishing_claim(&head.build_id, result, false)
             .await
-            .map(|_| ())
-            .map_err(anyhow::Error::from)?;
-        self.release_publishing_claim(&head.build_id).await
     }
 
     /// Publish while the caller already owns [`Self::single_process_lock`].
@@ -2380,36 +2409,41 @@ impl DerivedRelationHeadStore {
                 Some(expected) => self.replace(expected.etag.as_deref(), head).await,
             };
             heartbeat.abort();
-            result?;
-            if heartbeat_lost.load(Ordering::Acquire) {
-                return Err(anyhow!(
-                    "DerivedRelation publishing claim heartbeat was lost"
-                ));
-            }
-            return self.release_publishing_claim(&head.build_id).await;
+            return self
+                .finish_publishing_claim(
+                    &head.build_id,
+                    result,
+                    heartbeat_lost.load(Ordering::Acquire),
+                )
+                .await;
         }
         let bytes = canonical_head_bytes(head)?;
-        match expected {
-            None => {
-                if self.operator.exists(&self.head_path()).await? {
-                    return Err(anyhow!("DerivedRelation Head already exists"));
+        let result = async {
+            match expected {
+                None => {
+                    if self.operator.exists(&self.head_path()).await? {
+                        return Err(anyhow!("DerivedRelation Head already exists"));
+                    }
+                    self.operator.write(&self.head_path(), bytes).await?;
                 }
-                self.operator.write(&self.head_path(), bytes).await?;
-            }
-            Some(expected) => {
-                let current = self
-                    .read_exact()
-                    .await?
-                    .context("DerivedRelation Head disappeared")?;
-                if (expected.etag.is_some() && current.etag != expected.etag)
-                    || (expected.etag.is_none() && current.bytes != expected.bytes)
-                {
-                    return Err(anyhow!("DerivedRelation Head changed"));
+                Some(expected) => {
+                    let current = self
+                        .read_exact()
+                        .await?
+                        .context("DerivedRelation Head disappeared")?;
+                    if (expected.etag.is_some() && current.etag != expected.etag)
+                        || (expected.etag.is_none() && current.bytes != expected.bytes)
+                    {
+                        return Err(anyhow!("DerivedRelation Head changed"));
+                    }
+                    self.operator.write(&self.head_path(), bytes).await?;
                 }
-                self.operator.write(&self.head_path(), bytes).await?;
             }
+            Ok(())
         }
-        self.release_publishing_claim(&head.build_id).await
+        .await;
+        self.finish_publishing_claim(&head.build_id, result, false)
+            .await
     }
 }
 
@@ -4232,6 +4266,13 @@ mod tests {
             store.read_exact().await?.unwrap().head.build_id,
             first.build_id
         );
+        let loser_claim: serde_json::Value = serde_json::from_slice(
+            &operator
+                .read(&store.publishing_marker_path(&loser.build_id))
+                .await?
+                .to_vec(),
+        )?;
+        assert_eq!(loser_claim["role"], "released");
         Ok(())
     }
 
