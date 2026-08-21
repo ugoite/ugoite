@@ -77,6 +77,17 @@ pub enum CatalogWriteMode {
     SingleProcess,
 }
 
+/// The storage-side admission check for authoritative Catalog writes.
+///
+/// The Iceberg crate performs the product-level admission check as well, but
+/// this boundary must fail closed when a caller reaches the raw Catalog store
+/// directly.  v1 only permits authoritative writes on local backends; shared
+/// object-store mutation requires the higher-level atomic fencing contract.
+#[derive(Debug, Clone)]
+pub struct CatalogMutationPermit {
+    store_key: String,
+}
+
 /// Minimal durable coordinate published by one rebuildable relation. Iceberg
 /// metadata owns the table details; this document only binds the visible
 /// current build. Previous builds are garbage-collection candidates, not
@@ -2915,6 +2926,35 @@ impl SpaceCatalogStore {
         self.write_mode
     }
 
+    pub fn mutation_permit(&self) -> Result<CatalogMutationPermit> {
+        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            return Ok(CatalogMutationPermit {
+                store_key: self.mutation_store_key(),
+            });
+        }
+        Err(anyhow!(
+            "STORAGE_MUTATION_UNAVAILABLE: non-local authoritative Catalog writes are unavailable in v0.1"
+        ))
+    }
+
+    fn mutation_store_key(&self) -> String {
+        format!(
+            "{}:{}:{}:{}",
+            self.operator.info().scheme(),
+            self.operator.info().name(),
+            self.operator.info().root(),
+            self.space_root
+        )
+    }
+
+    fn require_mutation_permit(&self, permit: &CatalogMutationPermit) -> Result<()> {
+        if permit.store_key == self.mutation_store_key() {
+            Ok(())
+        } else {
+            Err(anyhow!("Catalog mutation permit belongs to another store"))
+        }
+    }
+
     /// A process-local serializer, used only in explicit single-process mode.
     /// It is not a cross-process lock and does not participate in shared CAS.
     pub fn single_process_serializer(&self) -> Arc<AsyncMutex<()>> {
@@ -3224,7 +3264,8 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
-    pub async fn create_head(&self, bytes: Vec<u8>) -> Result<()> {
+    pub async fn create_head(&self, permit: &CatalogMutationPermit, bytes: Vec<u8>) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         match self.write_mode {
             CatalogWriteMode::Shared => {
                 self.operator
@@ -3248,7 +3289,13 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
-    pub async fn replace_head(&self, etag: Option<&str>, bytes: Vec<u8>) -> Result<()> {
+    pub async fn replace_head(
+        &self,
+        permit: &CatalogMutationPermit,
+        etag: Option<&str>,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         match self.write_mode {
             CatalogWriteMode::Shared => {
                 self.operator
@@ -3278,9 +3325,11 @@ impl SpaceCatalogStore {
     /// attempts contend at the storage boundary.
     pub async fn create_asset_lifecycle_marker(
         &self,
+        permit: &CatalogMutationPermit,
         asset_id: &str,
         bytes: Vec<u8>,
     ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
         self.operator
             .write_options(
@@ -3305,10 +3354,12 @@ impl SpaceCatalogStore {
 
     pub async fn replace_asset_lifecycle_marker(
         &self,
+        permit: &CatalogMutationPermit,
         asset_id: &str,
         etag: Option<&str>,
         bytes: Vec<u8>,
     ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         self.replace_exact_object(
             &self.catalog_path(&format!("asset-lifecycle/{asset_id}")),
             etag,
@@ -3317,7 +3368,12 @@ impl SpaceCatalogStore {
         .await
     }
 
-    pub async fn delete_asset_lifecycle_marker(&self, asset_id: &str) -> Result<()> {
+    pub async fn delete_asset_lifecycle_marker(
+        &self,
+        permit: &CatalogMutationPermit,
+        asset_id: &str,
+    ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
         match self.operator.delete(&path).await {
             Ok(()) => Ok(()),
@@ -3359,7 +3415,12 @@ impl SpaceCatalogStore {
     /// Deletes only the exact Asset object key.  Callers must first establish
     /// that its durable lifecycle marker is committed; this operation is a
     /// repair step and never decides whether an Asset is logically deleted.
-    pub async fn delete_asset_blob(&self, asset_id: &str) -> Result<()> {
+    pub async fn delete_asset_blob(
+        &self,
+        permit: &CatalogMutationPermit,
+        asset_id: &str,
+    ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         let path = self.space_path(&format!("assets/{asset_id}"));
         match self.operator.delete(&path).await {
             Ok(()) => Ok(()),
@@ -3368,7 +3429,13 @@ impl SpaceCatalogStore {
         }
     }
 
-    pub async fn create_publication(&self, path: &str, bytes: Vec<u8>) -> Result<()> {
+    pub async fn create_publication(
+        &self,
+        permit: &CatalogMutationPermit,
+        path: &str,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         self.operator
             .write_options(
                 path,
@@ -3389,7 +3456,13 @@ impl SpaceCatalogStore {
         Ok(self.operator.read(path).await?.to_vec())
     }
 
-    pub async fn create_command_receipt(&self, command_id: &str, bytes: Vec<u8>) -> Result<()> {
+    pub async fn create_command_receipt(
+        &self,
+        permit: &CatalogMutationPermit,
+        command_id: &str,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         self.operator
             .write_options(
                 &self.command_receipt_path(command_id),
@@ -3413,15 +3486,23 @@ impl SpaceCatalogStore {
 
     pub async fn replace_command_receipt(
         &self,
+        permit: &CatalogMutationPermit,
         command_id: &str,
         etag: Option<&str>,
         bytes: Vec<u8>,
     ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         self.replace_exact_object(&self.command_receipt_path(command_id), etag, bytes)
             .await
     }
 
-    pub async fn create_checkpoint(&self, name: &str, bytes: Vec<u8>) -> Result<()> {
+    pub async fn create_checkpoint(
+        &self,
+        permit: &CatalogMutationPermit,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        self.require_mutation_permit(permit)?;
         if !self.operator.info().capability().write_with_if_not_exists {
             return Err(anyhow!(
                 "immutable checkpoint creation requires OpenDAL if_not_exists support"
@@ -4013,14 +4094,67 @@ mod tests {
         let store = SpaceCatalogStore::new(operator, "spaces/demo")?;
 
         assert!(store.read_exact_head().await?.is_none());
-        store.create_head(b"first".to_vec()).await?;
+        let permit = store.mutation_permit()?;
+        store.create_head(&permit, b"first".to_vec()).await?;
         let first = store.read_exact_head().await?.expect("Catalog Head exists");
         assert_eq!(first.bytes, b"first");
 
-        store.replace_head(None, b"second".to_vec()).await?;
+        store
+            .replace_head(&permit, None, b"second".to_vec())
+            .await?;
         let second = store.read_exact_head().await?.expect("Catalog Head exists");
         assert_eq!(second.bytes, b"second");
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn raw_catalog_writers_require_a_same_store_local_permit() -> Result<()> {
+        let remote = SpaceCatalogStore::new(
+            operator_from_uri("s3://ugoite-test-bucket/catalog-boundary")?,
+            "spaces/remote",
+        )?;
+        let local = SpaceCatalogStore::new(
+            operator_from_uri("memory://catalog-boundary-permit")?,
+            "spaces/local",
+        )?;
+        let permit = local.mutation_permit()?;
+
+        assert!(remote.create_head(&permit, b"head".to_vec()).await.is_err());
+        assert!(remote
+            .replace_head(&permit, Some("etag"), b"head".to_vec())
+            .await
+            .is_err());
+        assert!(remote
+            .create_asset_lifecycle_marker(&permit, "asset", b"marker".to_vec())
+            .await
+            .is_err());
+        assert!(remote
+            .replace_asset_lifecycle_marker(&permit, "asset", None, b"marker".to_vec())
+            .await
+            .is_err());
+        assert!(remote
+            .delete_asset_lifecycle_marker(&permit, "asset")
+            .await
+            .is_err());
+        assert!(remote.delete_asset_blob(&permit, "asset").await.is_err());
+        assert!(remote
+            .create_publication(&permit, "publication.json", b"publication".to_vec())
+            .await
+            .is_err());
+        assert!(remote
+            .create_command_receipt(&permit, "command", b"receipt".to_vec())
+            .await
+            .is_err());
+        assert!(remote
+            .replace_command_receipt(&permit, "command", None, b"receipt".to_vec())
+            .await
+            .is_err());
+        assert!(remote
+            .create_checkpoint(&permit, "checkpoint", b"checkpoint".to_vec())
+            .await
+            .is_err());
+        assert!(remote.mutation_permit().is_err());
         Ok(())
     }
 

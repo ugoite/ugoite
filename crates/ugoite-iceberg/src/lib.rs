@@ -512,6 +512,7 @@ impl IcebergWorkspace {
     ) -> Result<Self> {
         let namespace = namespace_for_space(space_id);
         if !catalog.namespace_exists(&namespace).await? {
+            catalog.ensure_authoritative_mutation_contract()?;
             catalog.create_namespace(&namespace, HashMap::new()).await?;
         }
         Ok(Self {
@@ -569,6 +570,10 @@ impl IcebergWorkspace {
     /// coordinator is intentionally the only public mutation API; read APIs
     /// remain on `IcebergWorkspace`.
     pub fn commit(&self, publication: PublicationContext) -> Result<SpaceCommitCoordinator> {
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCommitCoordinator requires the OpenDAL-backed SpaceCatalog")?
+            .ensure_authoritative_mutation_contract()?;
         if self.space_catalog.is_none() {
             return Err(anyhow!(
                 "SpaceCommitCoordinator requires the OpenDAL-backed SpaceCatalog"
@@ -610,6 +615,10 @@ impl IcebergWorkspace {
     /// Persists a named immutable checkpoint through the Space's OpenDAL
     /// boundary. Reusing a name fails rather than silently replacing history.
     pub async fn save_checkpoint(&self, name: &str, checkpoint: &SpaceCheckpoint) -> Result<()> {
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .ensure_authoritative_mutation_contract()?;
         crate::authorization::ensure_authorization_write_fence().await?;
         validate_checkpoint_name(name)?;
         self.validate_checkpoint(checkpoint)?;
@@ -2189,6 +2198,15 @@ fn checkpoint_query_error(error: anyhow::Error) -> anyhow::Error {
 }
 
 impl SpaceCommitCoordinator {
+    fn ensure_authoritative_mutation_contract(&self) -> Result<()> {
+        self.workspace
+            .space_catalog
+            .as_ref()
+            .context("coordinator is missing its SpaceCatalog")?
+            .ensure_authoritative_mutation_contract()
+            .map_err(Into::into)
+    }
+
     async fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
         let catalog = self
             .workspace
@@ -2231,6 +2249,7 @@ impl SpaceCommitCoordinator {
     }
 
     pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
             if self.publication_receipt().await?.is_some() {
                 return Ok(());
@@ -2245,6 +2264,7 @@ impl SpaceCommitCoordinator {
     }
 
     pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
+        self.ensure_authoritative_mutation_contract()?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
             if self.publication_receipt().await?.is_some() {
                 return self.workspace.load_form(changes.form_id).await;
@@ -2275,6 +2295,7 @@ impl SpaceCommitCoordinator {
         revisions: Vec<EntryRevision>,
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<CommitReceipt> {
+        self.ensure_authoritative_mutation_contract()?;
         if let Some(receipt) = self.publication_receipt().await? {
             return Ok(CommitReceipt {
                 command_id: receipt.command_id,
@@ -2367,6 +2388,7 @@ impl SpaceCommitCoordinator {
         asset_id: &str,
         relation_scopes: &BTreeMap<String, ugoite_core::query::EntryScope>,
     ) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         if self.publication_receipt().await?.is_some() {
             return Ok(());
         }

@@ -22,6 +22,8 @@ impl RealIntegrityProvider {
     }
 
     pub async fn from_space(op: &Operator, space_name: &str) -> Result<Self> {
+        crate::authorization::Authorizer::new(op.clone())
+            .ensure_authoritative_mutation_contract()?;
         let storage = OpendalStorage::from_operator(op);
         Self::from_storage(&storage, space_name).await
     }
@@ -131,6 +133,7 @@ async fn load_hmac_material_with_storage<S: StorageBackend + ?Sized>(
 }
 
 pub async fn load_hmac_material(op: &Operator, space_name: &str) -> Result<(String, Vec<u8>)> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let storage = OpendalStorage::from_operator(op);
     load_hmac_material_with_storage(&storage, space_name).await
 }

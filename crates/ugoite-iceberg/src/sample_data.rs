@@ -2004,6 +2004,7 @@ async fn create_sample_space_with_progress(
     plan: &ResolvedSampleDataPlan,
     progress: &mut ProgressReporter,
 ) -> Result<SampleDataSummary> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     progress.report(0, "Creating space").await?;
     let service = UgoiteService::from_operator(op.clone(), root_uri);
     let space_uid = service.create_operator_space(&options.space_id).await?;
@@ -2066,6 +2067,7 @@ pub async fn create_sample_space(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataSummary> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
     let mut progress = ProgressReporter::None;
     create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await
@@ -2076,6 +2078,7 @@ pub async fn create_sample_space_with_terminal_progress(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataSummary> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
     let mut progress = ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count));
     match create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await {
@@ -2095,6 +2098,7 @@ pub async fn create_sample_space_job(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataJob> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
 
     let job = enqueue_sample_space_job(op, options, &plan).await?;
@@ -2125,6 +2129,7 @@ pub async fn create_sample_space_job_and_wait(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataJob> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
     let job = enqueue_sample_space_job(op, options, &plan).await?;
     run_sample_space_job_with_plan(op, root_uri, options, &plan, &job).await?;
@@ -2183,7 +2188,6 @@ async fn run_sample_space_job_with_plan(
 
 pub async fn get_sample_space_job(op: &Operator, job_id: &str) -> Result<SampleDataJob> {
     validate_job_id(job_id)?;
-    ensure_jobs_dir(op).await?;
     let path = job_path(job_id);
     if !op.exists(&path).await? {
         return Err(anyhow!("Sample data job not found: {}", job_id));

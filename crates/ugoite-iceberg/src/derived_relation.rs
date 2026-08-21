@@ -699,7 +699,8 @@ impl Catalog for DerivedRelationCatalog {
 }
 
 pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedRelationHead> {
-    rebuild_asset_text_with_timeout(op, ws_path, false).await
+    let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+    rebuild_asset_text_with_timeout(op, ws_path, shared).await
 }
 
 /// Shared backends use the exact-read/if-match path and deliberately do not

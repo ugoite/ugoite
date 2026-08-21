@@ -2027,6 +2027,7 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
     integrity: &I,
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?

@@ -3039,9 +3039,11 @@ pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{IcebergWorkspace, PublicationContext, WriteConfig};
     use ugoite_domain::identity::{
         Membership, PrincipalKind, PrincipalState, SpacePrincipal, SpaceRole,
     };
+    use ugoite_storage::SpaceCatalogStore;
 
     #[test]
     fn saved_sql_scope_accepts_more_than_normal_read_rows_of_denials() -> Result<()> {
@@ -3243,6 +3245,88 @@ mod tests {
             )
             .await
             .expect_err("low-level SQL-session writer must fail before any remote write"),
+        );
+        assert_unavailable(
+            crate::preferences::patch_user_preferences(
+                service.operator(),
+                "remote-user",
+                &serde_json::json!({"locale": "ja"}),
+            )
+            .await
+            .expect_err("low-level preferences writer must fail before any remote write"),
+        );
+        let checkpoint = SpaceCheckpoint::new(
+            ugoite_domain::id::SpaceId::from(Uuid::now_v7()),
+            0,
+            String::new(),
+            String::new(),
+            String::new(),
+            0,
+            Vec::new(),
+        );
+        assert_unavailable(
+            crate::entry::restore_entry_from_checkpoint_authorized(
+                service.operator(),
+                "spaces/remote-space",
+                "entry-1",
+                "revision-1",
+                &checkpoint,
+                "author",
+                &crate::integrity::FakeIntegrityProvider,
+                None,
+            )
+            .await
+            .expect_err("checkpoint restore must fail before any remote write"),
+        );
+        assert_unavailable(
+            crate::integrity::load_hmac_material(service.operator(), "remote-space")
+                .await
+                .expect_err("HMAC initialization must fail before any remote write"),
+        );
+        let integrity_result =
+            crate::integrity::RealIntegrityProvider::from_space(service.operator(), "remote-space")
+                .await;
+        assert_unavailable(
+            integrity_result
+                .err()
+                .expect("integrity initialization must fail before any remote write"),
+        );
+        let sample_options = crate::sample_data::SampleDataOptions {
+            space_id: "remote-space".to_string(),
+            scenario: crate::sample_data::DEFAULT_SCENARIO.to_string(),
+            entry_count: 1,
+            seed: Some(1),
+            owner_display_name: None,
+        };
+        assert_unavailable(
+            crate::sample_data::create_sample_space_job(
+                service.operator(),
+                service.root_uri(),
+                &sample_options,
+            )
+            .await
+            .expect_err("sample-job creation must fail before any remote write"),
+        );
+        let workspace = IcebergWorkspace::open_space(
+            SpaceCatalogStore::new(service.operator().clone(), "spaces/remote-space")?,
+            ugoite_domain::id::SpaceId::from(Uuid::now_v7()),
+            WriteConfig::default(),
+        )
+        .await?;
+        assert_unavailable(
+            workspace
+                .commit(PublicationContext::with_command_digest(
+                    "remote-command",
+                    "test.remote",
+                    "remote-digest",
+                ))
+                .expect_err("coordinator creation must fail before any remote write"),
+        );
+        assert_unavailable(
+            workspace
+                .save_checkpoint("remote-checkpoint", &checkpoint)
+                .await
+                .expect_err("checkpoint save must fail before any remote write"),
         );
         Ok(())
     }
