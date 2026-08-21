@@ -2283,10 +2283,14 @@ async fn asset_text_head_store(op: &Operator, ws_path: &str) -> Result<DerivedRe
 
 async fn catalog_store_for_read(op: &Operator, ws_path: &str) -> Result<SpaceCatalogStore> {
     let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
-    // Read paths must not write capability probes. Exact Head reads work with
-    // the returned store; mutation paths are the only callers that opt into
-    // the behavioral shared-write probe.
-    Ok(store)
+    // Read paths must not write capability probes, but remote reads must still
+    // use exact ETag-bound semantics. A remote backend without that contract
+    // fails closed in `read_exact_head` rather than observing a moving Head.
+    Ok(if is_shared_backend(op) {
+        store.shared_read_only()
+    } else {
+        store
+    })
 }
 
 async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result<Value> {

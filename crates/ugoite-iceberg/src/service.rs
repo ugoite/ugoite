@@ -1325,9 +1325,24 @@ impl UgoiteService {
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
-        let scopes = self
-            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-            .await?;
+        let (_authorization_state, _authorization_lease, scopes) = if principal_ids.is_empty() {
+            (None, None, BTreeMap::new())
+        } else {
+            let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            self.require_action_for_principals_in_state(
+                &state,
+                entry_id,
+                ResourceKind::Entry,
+                Action::Create,
+                principal_ids,
+            )?;
+            let scopes = self
+                .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                .await?;
+            (Some(state), Some(_authorization_lease), scopes)
+        };
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = self.workspace_path(space_id);
         entry::create_entry_with_scopes(
@@ -1410,15 +1425,32 @@ impl UgoiteService {
         if let Some(parent_revision_id) = parent_revision_id {
             validate_storage_id(validate_revision_id(parent_revision_id))?;
         }
-        self.require_entry_action_for_principals(space_id, entry_id, Action::Update, principal_ids)
-            .await?;
+        let (state, _authorization_lease) = {
+            let (state, lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            if !principal_ids.is_empty() {
+                self.require_action_for_principals_in_state(
+                    &state,
+                    entry_id,
+                    ResourceKind::Entry,
+                    Action::Update,
+                    principal_ids,
+                )?;
+            }
+            (Some(state), Some(lease))
+        };
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let scopes = if principal_ids.is_empty() {
             None
         } else {
             Some(
-                self.authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-                    .await?,
+                self.authorized_form_entry_scopes_for_state(
+                    space_id,
+                    state.as_ref().expect("authorized state is present"),
+                    principal_ids,
+                )
+                .await?,
             )
         };
         let result = entry::update_entry_authorized(
@@ -1473,11 +1505,14 @@ impl UgoiteService {
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
         let checkpoint = self
             .load_named_checkpoint(space_id, checkpoint_name)
             .await?;
         let scopes = self
-            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
             .await?;
         entry::get_entry_history_at_checkpoint(
             &self.operator,
@@ -1521,11 +1556,14 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
         let checkpoint = self
             .load_named_checkpoint(space_id, checkpoint_name)
             .await?;
         let scopes = self
-            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
             .await?;
         entry::get_entry_revision_at_checkpoint(
             &self.operator,
@@ -1562,15 +1600,32 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
-        self.require_entry_action_for_principals(space_id, entry_id, Action::Update, principal_ids)
-            .await?;
+        let (state, _authorization_lease) = if principal_ids.is_empty() {
+            (None, None)
+        } else {
+            let (state, lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            self.require_action_for_principals_in_state(
+                &state,
+                entry_id,
+                ResourceKind::Entry,
+                Action::Update,
+                principal_ids,
+            )?;
+            (Some(state), Some(lease))
+        };
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let scopes = if principal_ids.is_empty() {
             None
         } else {
             Some(
-                self.authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-                    .await?,
+                self.authorized_form_entry_scopes_for_state(
+                    space_id,
+                    state.as_ref().expect("authorized state is present"),
+                    principal_ids,
+                )
+                .await?,
             )
         };
         let result = entry::restore_entry_authorized(
@@ -1600,14 +1655,31 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
-        self.require_entry_action_for_principals(space_id, entry_id, Action::Update, principal_ids)
-            .await?;
+        let (state, _authorization_lease) = {
+            let (state, lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            if !principal_ids.is_empty() {
+                self.require_action_for_principals_in_state(
+                    &state,
+                    entry_id,
+                    ResourceKind::Entry,
+                    Action::Update,
+                    principal_ids,
+                )?;
+            }
+            (Some(state), Some(lease))
+        };
         let checkpoint = self
             .load_named_checkpoint(space_id, checkpoint_name)
             .await?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let scopes = self
-            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .checkpoint_form_scopes_for_state(
+                space_id,
+                state.as_ref().expect("authorized state is present"),
+                principal_ids,
+            )
             .await?;
         let result = entry::restore_entry_from_checkpoint_authorized(
             &self.operator,
@@ -1634,11 +1706,14 @@ impl UgoiteService {
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
         let checkpoint = self
             .load_named_checkpoint(space_id, checkpoint_name)
             .await?;
         let scopes = self
-            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
             .await?;
         entry::get_entry_at_checkpoint(
             &self.operator,
@@ -1659,10 +1734,13 @@ impl UgoiteService {
         principal_ids: &[Uuid],
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
         let from = self.load_named_checkpoint(space_id, from_name).await?;
         let to = self.load_named_checkpoint(space_id, to_name).await?;
         let scopes = self
-            .checkpoint_form_scopes_for_principals(space_id, principal_ids)
+            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
             .await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
@@ -1703,20 +1781,19 @@ impl UgoiteService {
             .map_err(map_checkpoint_error)
     }
 
-    async fn checkpoint_form_scopes_for_principals(
+    async fn checkpoint_form_scopes_for_state(
         &self,
         space_id: &str,
+        state: &AuthorizationState,
         principal_ids: &[Uuid],
     ) -> Result<Option<BTreeMap<FormId, EntryScope>>> {
         if principal_ids.is_empty() {
             return Ok(None);
         }
         let scopes = self
-            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
+            .authorized_form_entry_scopes_for_state(space_id, state, principal_ids)
             .await?;
-        let saved_sql_scope = self
-            .authorized_saved_sql_entry_scope_for_principals(space_id, principal_ids)
-            .await?;
+        let saved_sql_scope = Self::saved_sql_entry_scope_for_state(state, principal_ids)?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let form_scopes = workspace
@@ -1737,21 +1814,19 @@ impl UgoiteService {
         Ok(Some(form_scopes))
     }
 
-    async fn require_entry_action_for_principals(
+    fn require_action_for_principals_in_state(
         &self,
-        space_id: &str,
+        state: &AuthorizationState,
         entry_id: &str,
+        resource_kind: ResourceKind,
         action: Action,
         principal_ids: &[Uuid],
     ) -> Result<()> {
         if principal_ids.is_empty() {
             return Ok(());
         }
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
         let resource = ResourceRef {
-            kind: ResourceKind::Entry,
+            kind: resource_kind,
             id: entry_id.to_string(),
             parent: None,
         };
@@ -1759,7 +1834,9 @@ impl UgoiteService {
             if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
                 .contains(&action)
             {
-                return Err(AppError::forbidden("Entry is not writable").into());
+                return Err(
+                    AppError::forbidden("resource is not authorized for this action").into(),
+                );
             }
         }
         Ok(())
@@ -2089,6 +2166,19 @@ impl UgoiteService {
         values: Vec<Value>,
     ) -> Result<Vec<Value>> {
         self.validate_complete_space(space_id).await?;
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
+        Self::filter_json_resources_for_state(&state, principal_id, kind, id_field, values)
+    }
+
+    fn filter_json_resources_for_state(
+        state: &AuthorizationState,
+        principal_id: Uuid,
+        kind: ResourceKind,
+        id_field: &str,
+        values: Vec<Value>,
+    ) -> Result<Vec<Value>> {
         let mut resources = Vec::new();
         for value in &values {
             let Some(id) = value.get(id_field).and_then(Value::as_str) else {
@@ -2100,9 +2190,14 @@ impl UgoiteService {
                 parent: None,
             });
         }
-        let allowed = Authorizer::new(self.operator.clone())
-            .filter_authorized_resources(space_id, principal_id, resources, Action::Read)
-            .await?;
+        let mut allowed = BTreeSet::new();
+        for resource in resources {
+            if effective_actions_for_state(state, principal_id, Some(&resource))?
+                .contains(&Action::Read)
+            {
+                allowed.insert(resource.id);
+            }
+        }
         Ok(values
             .into_iter()
             .filter(|value| {
@@ -2122,17 +2217,19 @@ impl UgoiteService {
         id_field: &str,
         values: Vec<Value>,
     ) -> Result<Vec<Value>> {
+        self.validate_complete_space(space_id).await?;
+        let state = Authorizer::new(self.operator.clone())
+            .state(space_id)
+            .await?;
         let mut filtered = values;
         for principal_id in principal_ids {
-            filtered = self
-                .filter_json_resources_authorized(
-                    space_id,
-                    *principal_id,
-                    kind.clone(),
-                    id_field,
-                    filtered,
-                )
-                .await?;
+            filtered = Self::filter_json_resources_for_state(
+                &state,
+                *principal_id,
+                kind.clone(),
+                id_field,
+                filtered,
+            )?;
         }
         Ok(filtered)
     }
@@ -2244,6 +2341,15 @@ impl UgoiteService {
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         require_sql_session_principals(principal_ids)?;
+        let (state, _authorization_lease) = Authorizer::new(self.operator.clone())
+            .acquire_state_lease(space_id)
+            .await?;
+        for principal_id in principal_ids {
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Update)
+            {
+                return Err(AppError::forbidden("SQL session is not writable").into());
+            }
+        }
         let relation = index::sql_session_page_relation(sql).map_err(|error| {
             AppError::invalid_input(
                 ugoite_core::error::ErrorCode::InvalidInput,
@@ -2253,9 +2359,6 @@ impl UgoiteService {
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let checkpoint = workspace.capture_checkpoint().await?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
         let entry_scope = sql_session_entry_scope(&state, principal_ids)?;
         let saved_sql_entry_scope = Self::saved_sql_entry_scope_for_state(&state, principal_ids)?;
         let query_policy = index::sql_session_query_policy_at_checkpoint(
@@ -2586,6 +2689,21 @@ impl UgoiteService {
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_asset_id(asset_id))?;
+        let (state, _authorization_lease) = if principal_ids.is_empty() {
+            (None, None)
+        } else {
+            let (state, lease) = Authorizer::new(self.operator.clone())
+                .acquire_state_lease(space_id)
+                .await?;
+            self.require_action_for_principals_in_state(
+                &state,
+                asset_id,
+                ResourceKind::Asset,
+                Action::Delete,
+                principal_ids,
+            )?;
+            (Some(state), Some(lease))
+        };
         let scopes = if principal_ids.is_empty() {
             let workspace =
                 iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
@@ -2597,8 +2715,12 @@ impl UgoiteService {
                 .map(|form| (form.name.to_ascii_lowercase(), EntryScope::AllCurrent))
                 .collect()
         } else {
-            self.authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-                .await?
+            self.authorized_form_entry_scopes_for_state(
+                space_id,
+                state.as_ref().expect("authorized state is present"),
+                principal_ids,
+            )
+            .await?
         };
         asset::delete_asset(
             &self.operator,

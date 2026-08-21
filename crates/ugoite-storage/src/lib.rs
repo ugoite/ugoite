@@ -166,6 +166,7 @@ const DERIVED_BUILD_CLAIM_TTL: Duration = Duration::from_secs(15 * 60);
 const DERIVED_BUILD_CLAIM_RENEWAL: Duration = Duration::from_secs(30);
 const DERIVED_TERMINAL_CLAIM_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_DERIVED_GC_LIST_ENTRIES: usize = 100_000;
+#[cfg(test)]
 const MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS: usize = 1_024;
 const MAX_ASSET_LIFECYCLE_SCAN_ENTRIES: usize = 100_000;
 
@@ -227,7 +228,20 @@ impl std::fmt::Debug for DerivedRelationHeadStore {
 
 impl DerivedRelationHeadStore {
     pub fn new(operator: Operator, space_root: impl Into<String>, relation_id: Uuid) -> Self {
-        let space_root = space_root.into().trim_matches('/').to_string();
+        let raw_space_root = space_root.into();
+        let trimmed_space_root = raw_space_root.trim_matches('/');
+        // This constructor predates the fallible Catalog constructor and is
+        // retained for the storage adapter API. Invalid roots are quarantined
+        // under a fixed safe prefix; no caller-controlled separator or dot
+        // segment is ever interpolated into a DerivedRelation path.
+        let space_root = if SpaceCatalogStore::validate_space_root(trimmed_space_root).is_ok() {
+            trimmed_space_root.to_string()
+        } else {
+            format!(
+                "_ugoite/quarantine/invalid-space-root-{}",
+                raw_space_root.len()
+            )
+        };
         let serializer =
             catalog_serializer(&operator, &format!("{space_root}/derived/{relation_id}"));
         let write_mode = if matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
@@ -298,12 +312,29 @@ impl DerivedRelationHeadStore {
         .expect("derived Head fence is serializable")
     }
 
-    fn head_fence(value: &serde_json::Value) -> Option<(&str, &str)> {
+    fn is_valid_build_id(build_id: &str) -> bool {
+        Uuid::parse_str(build_id)
+            .is_ok_and(|uuid| uuid.get_version_num() == 7 && (uuid.as_bytes()[8] & 0xc0) == 0x80)
+    }
+
+    fn validate_build_id(build_id: &str) -> Result<()> {
+        if Self::is_valid_build_id(build_id) {
+            Ok(())
+        } else {
+            Err(anyhow!("DerivedRelation build ID must be UUIDv7"))
+        }
+    }
+
+    fn head_fence<'a>(&self, value: &'a serde_json::Value) -> Option<(&'a str, &'a str)> {
         let state = value.get("state").and_then(serde_json::Value::as_str)?;
+        let relation_id = value
+            .get("relation_id")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())?;
         let build_id = value.get("build_id").and_then(serde_json::Value::as_str)?;
         match state {
             "garbage_fence" | "head_fence_released"
-                if Uuid::parse_str(build_id).is_ok_and(|uuid| uuid.get_version_num() == 7) =>
+                if relation_id == self.relation_id && Self::is_valid_build_id(build_id) =>
             {
                 Some((state, build_id))
             }
@@ -311,10 +342,63 @@ impl DerivedRelationHeadStore {
         }
     }
 
+    fn malformed_head_fence(&self, value: &serde_json::Value) -> bool {
+        let state = value.get("state").and_then(serde_json::Value::as_str);
+        let relation_id = value
+            .get("relation_id")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok());
+        let build_id = value.get("build_id").and_then(serde_json::Value::as_str);
+        matches!(state, Some("garbage_fence" | "head_fence_released"))
+            && relation_id == Some(self.relation_id)
+            && !build_id.is_some_and(|value| Self::is_valid_build_id(value))
+    }
+
+    /// Replace a malformed empty-head fence with a valid released sentinel.
+    /// This is deliberately conditional: an unrelated publisher winning the
+    /// race leaves its newer Head untouched, while a crash-created malformed
+    /// fence cannot permanently wedge the relation.
+    async fn recover_malformed_head_fence(&self) -> Result<()> {
+        if self.write_mode != CatalogWriteMode::Shared {
+            return Ok(());
+        }
+        let Some((value, _, Some(etag))) = self.read_raw_exact().await? else {
+            return Ok(());
+        };
+        if !self.malformed_head_fence(&value) {
+            return Ok(());
+        }
+        match self
+            .operator
+            .write_options(
+                &self.head_path(),
+                self.head_fence_bytes("head_fence_released", &Uuid::now_v7().to_string()),
+                WriteOptions {
+                    if_match: Some(etag),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub fn builds_path(&self, build_id: &str) -> String {
+        // Keep this public inspection helper path-safe even when a caller is
+        // handling a malformed listing entry. Lifecycle methods validate the
+        // identifier before performing any mutation; invalid IDs are mapped
+        // to an unreachable quarantine namespace rather than interpolated.
+        let safe_build_id = if Self::is_valid_build_id(build_id) {
+            build_id.to_string()
+        } else {
+            format!("invalid-build-id-{}", build_id.len())
+        };
         format!(
-            "{}/_ugoite/derived/relations/{}/builds/{build_id}",
-            self.space_root, self.relation_id
+            "{}/_ugoite/derived/relations/{}/builds/{safe_build_id}",
+            self.space_root, self.relation_id,
         )
     }
 
@@ -343,6 +427,7 @@ impl DerivedRelationHeadStore {
         )
     }
 
+    #[cfg(test)]
     fn terminal_tombstones_prefix(&self) -> String {
         format!(
             "{}/_ugoite/derived/relations/{}/tombstones/",
@@ -362,11 +447,7 @@ impl DerivedRelationHeadStore {
         // its terminal claim has been reaped would let a paused producer
         // recreate a deleted prefix, so the lifecycle accepts only the UUIDv7
         // IDs generated by the production builder.
-        let uuid = Uuid::parse_str(build_id)
-            .map_err(|_| anyhow!("DerivedRelation build ID must be UUIDv7"))?;
-        if uuid.get_version_num() != 7 || (uuid.as_bytes()[8] & 0xc0) != 0x80 {
-            return Err(anyhow!("DerivedRelation build ID must be UUIDv7"));
-        }
+        Self::validate_build_id(build_id)?;
         // Build IDs are never admitted based on their producer clock. The
         // durable tombstone is the non-reuse fence, including for shared
         // backends whose object timestamps are unavailable.
@@ -423,6 +504,7 @@ impl DerivedRelationHeadStore {
     }
 
     pub async fn clear_staging(&self, build_id: &str) -> Result<()> {
+        Self::validate_build_id(build_id)?;
         match self
             .operator
             .delete(&self.staging_marker_path(build_id))
@@ -439,6 +521,7 @@ impl DerivedRelationHeadStore {
     /// without object modification metadata still need a durable age boundary
     /// after a process crash.
     pub async fn renew_staging(&self, build_id: &str) -> Result<()> {
+        Self::validate_build_id(build_id)?;
         if !self
             .operator
             .exists(&self.staging_marker_path(build_id))
@@ -1056,7 +1139,7 @@ impl DerivedRelationHeadStore {
                     }
                 }
                 Some((value, _, etag)) => {
-                    if let Some((state, fenced_build_id)) = Self::head_fence(&value) {
+                    if let Some((state, fenced_build_id)) = self.head_fence(&value) {
                         if state == "head_fence_released" {
                             // Reuse the released empty-head fence for the next
                             // candidate. A relation can have several garbage
@@ -1167,7 +1250,7 @@ impl DerivedRelationHeadStore {
         let Some((value, _, etag)) = self.read_raw_exact().await? else {
             return Ok(false);
         };
-        let Some((state, fenced_build_id)) = Self::head_fence(&value) else {
+        let Some((state, fenced_build_id)) = self.head_fence(&value) else {
             return Ok(false);
         };
         if fenced_build_id != build_id {
@@ -1210,7 +1293,7 @@ impl DerivedRelationHeadStore {
         let Some((value, _, etag)) = self.read_raw_exact().await? else {
             return Ok(());
         };
-        let Some((state, build_id)) = Self::head_fence(&value) else {
+        let Some((state, build_id)) = self.head_fence(&value) else {
             return Ok(());
         };
         if state != "garbage_fence" {
@@ -1236,6 +1319,7 @@ impl DerivedRelationHeadStore {
     /// old, long-lived current build still gets a full reader grace period
     /// after the Head swap.
     pub async fn mark_garbage(&self, build_id: &str) -> Result<()> {
+        Self::validate_build_id(build_id)?;
         // GC retains the publishing claim as a terminal tombstone after it
         // has deleted the build. A delayed producer may still finish an
         // in-flight object write after that transition, so a completed claim
@@ -1280,6 +1364,7 @@ impl DerivedRelationHeadStore {
     }
 
     pub async fn clear_garbage(&self, build_id: &str) -> Result<()> {
+        Self::validate_build_id(build_id)?;
         match self
             .operator
             .delete(&self.garbage_marker_path(build_id))
@@ -1417,40 +1502,15 @@ impl DerivedRelationHeadStore {
         now: SystemTime,
         retention: Duration,
     ) -> Result<()> {
-        let mut lister = self
-            .operator
-            .lister_with(&self.terminal_tombstones_prefix())
-            .recursive(true)
-            .await?;
-        let mut examined = 0usize;
-        let mut deleted = 0usize;
-        while let Some(entry) = lister.try_next().await? {
-            examined = examined.saturating_add(1);
-            if examined > MAX_DERIVED_GC_LIST_ENTRIES {
-                break;
-            }
-            if entry.metadata().mode() != EntryMode::FILE
-                || !Self::old_enough_at(
-                    entry.metadata().last_modified().map(Into::into),
-                    retention,
-                    now,
-                )
-            {
-                continue;
-            }
-            match self.operator.delete(entry.path()).await {
-                Ok(()) => deleted = deleted.saturating_add(1),
-                Err(error) if error.kind() == ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
-            if deleted >= MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS {
-                break;
-            }
-        }
+        // Terminal build IDs are a permanent non-reuse fence. Retention only
+        // controls maintenance scheduling; it must never delete the durable
+        // record that prevents a paused producer from resurrecting a build.
+        let _ = (now, retention);
         Ok(())
     }
 
     async fn ensure_build_publishable(&self, build_id: &str) -> Result<()> {
+        Self::validate_build_id(build_id)?;
         if self
             .operator
             .exists(&self.garbage_marker_path(build_id))
@@ -1549,28 +1609,10 @@ impl DerivedRelationHeadStore {
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
     ) -> Result<bool> {
-        let mut tombstones = self
-            .operator
-            .lister_with(&self.terminal_tombstones_prefix())
-            .recursive(true)
-            .await?;
-        let mut examined_tombstones = 0usize;
-        while let Some(entry) = tombstones.try_next().await? {
-            examined_tombstones = examined_tombstones.saturating_add(1);
-            if examined_tombstones > MAX_DERIVED_GC_LIST_ENTRIES {
-                // A bounded maintenance pass must stay scheduled when the
-                // tombstone prefix itself is too large to examine completely.
-                // The next pass can continue discovery without allowing one
-                // malformed prefix to monopolize a worker forever.
-                return Ok(true);
-            }
-            if entry.metadata().mode() == EntryMode::FILE {
-                // Keep maintenance scheduled while the bounded tombstone
-                // retention window is active or until a later pass removes
-                // the expired record.
-                return Ok(true);
-            }
-        }
+        self.recover_malformed_head_fence().await?;
+        // Terminal tombstones are permanent non-reuse fences, not pending
+        // cleanup. They must not make every maintenance pass report work
+        // forever after an otherwise successful garbage collection.
         let prefix = format!(
             "{}/_ugoite/derived/relations/{}/builds/",
             self.space_root, self.relation_id
@@ -1608,6 +1650,9 @@ impl DerivedRelationHeadStore {
             if Some(build_id) == current_build_id {
                 continue;
             }
+            if !Self::is_valid_build_id(build_id) {
+                continue;
+            }
             let is_garbage_marker = entry.path() == self.garbage_marker_path(build_id);
             let is_staging_marker = entry.path() == self.staging_marker_path(build_id);
             let is_publishing_marker = entry.path() == self.publishing_marker_path(build_id);
@@ -1640,7 +1685,7 @@ impl DerivedRelationHeadStore {
             }
         }
         if let Some((value, _, _)) = self.read_raw_exact().await? {
-            if let Some((state, build_id)) = Self::head_fence(&value) {
+            if let Some((state, build_id)) = self.head_fence(&value) {
                 if state == "garbage_fence" && Some(build_id) != current_build_id {
                     candidates
                         .entry(build_id.to_string())
@@ -1735,6 +1780,7 @@ impl DerivedRelationHeadStore {
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
     ) -> Result<Vec<String>> {
+        self.recover_malformed_head_fence().await?;
         self.reap_expired_terminal_tombstones().await?;
         self.recover_completed_empty_head_fence().await?;
         let observed_current_build_id = self.current_build_id().await?;
@@ -1776,6 +1822,9 @@ impl DerivedRelationHeadStore {
                 continue;
             };
             if Some(build_id) == current_build_id {
+                continue;
+            }
+            if !Self::is_valid_build_id(build_id) {
                 continue;
             }
             let is_garbage_marker = entry.path() == self.garbage_marker_path(build_id);
@@ -1820,7 +1869,7 @@ impl DerivedRelationHeadStore {
         // not sufficient because the crash may have happened before any
         // marker object was created.
         if let Some((value, _, _)) = self.read_raw_exact().await? {
-            if let Some((state, build_id)) = Self::head_fence(&value) {
+            if let Some((state, build_id)) = self.head_fence(&value) {
                 if state == "garbage_fence" && Some(build_id) != current_build_id {
                     let candidate = candidates.entry(build_id.to_string()).or_default();
                     candidate.has_garbage_fence = true;
@@ -2188,7 +2237,7 @@ impl DerivedRelationHeadStore {
         let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
             return Ok(None);
         };
-        if Self::head_fence(&value).is_some() {
+        if self.head_fence(&value).is_some() {
             return Ok(None);
         }
         let head: DerivedRelationHead = serde_json::from_value(value.clone()).map_err(|error| {
@@ -2208,7 +2257,7 @@ impl DerivedRelationHeadStore {
             return Ok(None);
         };
         if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-            if Self::head_fence(&value).is_some() {
+            if self.head_fence(&value).is_some() {
                 return Ok(None);
             }
         }
@@ -2411,7 +2460,7 @@ impl DerivedRelationHeadStore {
         let Some((value, bytes, etag)) = self.read_raw_exact().await? else {
             return Ok(None);
         };
-        if Self::head_fence(&value).is_some() {
+        if self.head_fence(&value).is_some() {
             return Ok(None);
         }
         if !is_legacy_derived_head(&value) {
@@ -2524,10 +2573,11 @@ impl DerivedRelationHeadStore {
         match self.write_mode {
             CatalogWriteMode::Shared => match self.read_raw_exact().await? {
                 Some((value, _, Some(etag)))
-                    if Self::head_fence(&value)
+                    if self
+                        .head_fence(&value)
                         .is_some_and(|(state, _)| state == "head_fence_released") =>
                 {
-                    let Some((_, _)) = Self::head_fence(&value) else {
+                    let Some((_, _)) = self.head_fence(&value) else {
                         unreachable!("released Head fence was checked above")
                     };
                     // A released empty-head fence can be replaced by a new
@@ -2555,7 +2605,8 @@ impl DerivedRelationHeadStore {
                         .await?;
                 }
                 Some((value, _, None))
-                    if Self::head_fence(&value)
+                    if self
+                        .head_fence(&value)
                         .is_some_and(|(state, _)| state == "head_fence_released") =>
                 {
                     return Err(anyhow!(
@@ -2924,7 +2975,12 @@ impl std::fmt::Debug for SpaceCatalogStore {
 
 impl SpaceCatalogStore {
     pub fn new(operator: Operator, space_root: impl Into<String>) -> Result<Self> {
-        let space_root = space_root.into().trim_matches('/').to_string();
+        let raw_space_root = space_root.into();
+        if raw_space_root.starts_with('/') || raw_space_root.ends_with('/') {
+            return Err(anyhow!("invalid Catalog Space root"));
+        }
+        let space_root = raw_space_root.trim_matches('/').to_string();
+        Self::validate_space_root(&space_root)?;
         let single_process_serializer = catalog_serializer(&operator, &space_root);
         Ok(Self {
             storage: IcebergStorageConfig::from_operator(&operator)?,
@@ -2948,7 +3004,21 @@ impl SpaceCatalogStore {
     }
 
     pub fn single_process(mut self) -> Self {
-        self.write_mode = CatalogWriteMode::SingleProcess;
+        // A remote Catalog cannot be made safe by opting into this local
+        // serializer. Keep shared exact-read/CAS semantics for those
+        // backends; authoritative callers must explicitly pass the verified
+        // shared-write contract instead.
+        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            self.write_mode = CatalogWriteMode::SingleProcess;
+        }
+        self
+    }
+
+    /// Select exact read semantics without running a write probe. Remote
+    /// Catalog readers must never fall back to a stat-then-unconditional-read
+    /// sequence; mutation callers still use `verify_shared_writes`.
+    pub fn shared_read_only(mut self) -> Self {
+        self.write_mode = CatalogWriteMode::Shared;
         self
     }
 
@@ -2997,6 +3067,20 @@ impl SpaceCatalogStore {
         Ok(())
     }
 
+    fn validate_space_root(value: &str) -> Result<()> {
+        if value.is_empty()
+            || value.starts_with('/')
+            || value.ends_with('/')
+            || value.contains('\\')
+        {
+            return Err(anyhow!("invalid Catalog Space root"));
+        }
+        for component in value.split('/') {
+            Self::validate_catalog_component(component, "Space root component")?;
+        }
+        Ok(())
+    }
+
     fn validate_publication_path(&self, path: &str) -> Result<()> {
         let prefix = self.catalog_path("publications/");
         let Some(file_name) = path.strip_prefix(&prefix) else {
@@ -3027,20 +3111,6 @@ impl SpaceCatalogStore {
                 "shared Catalog writes require ETag-bound reads and conditional writes"
             ));
         }
-        let cache_key = (self.operator.info().scheme() != "memory")
-            .then(|| self.shared_write_verification_key());
-        if let Some(cache_key) = &cache_key {
-            if SHARED_WRITE_VERIFICATIONS
-                .get_or_init(|| Mutex::new(Vec::new()))
-                .lock()
-                .expect("shared-write verification cache poisoned")
-                .iter()
-                .any(|key| key == cache_key)
-            {
-                self.write_mode = CatalogWriteMode::Shared;
-                return Ok(self);
-            }
-        }
         let path = self.catalog_path(&format!("probes/{}.json", Uuid::now_v7()));
         let initial = b"{\"format_version\":1,\"stage\":\"created\"}".to_vec();
         let verification: Result<()> = async {
@@ -3069,10 +3139,13 @@ impl SpaceCatalogStore {
             if duplicate_create.kind() != ErrorKind::ConditionNotMatch {
                 return Err(duplicate_create.into());
             }
-            let first_etag = self
-                .operator
-                .stat(&path)
-                .await?
+            let first_metadata = self.operator.stat(&path).await?;
+            if first_metadata.last_modified().is_none() {
+                return Err(anyhow!(
+                    "shared Catalog probe write did not return a server timestamp"
+                ));
+            }
+            let first_etag = first_metadata
                 .etag()
                 .filter(|etag| !etag.is_empty())
                 .map(str::to_owned)
@@ -3104,10 +3177,13 @@ impl SpaceCatalogStore {
                     },
                 )
                 .await?;
-            let second_etag = self
-                .operator
-                .stat(&path)
-                .await?
+            let second_metadata = self.operator.stat(&path).await?;
+            if second_metadata.last_modified().is_none() {
+                return Err(anyhow!(
+                    "shared Catalog probe replacement did not return a server timestamp"
+                ));
+            }
+            let second_etag = second_metadata
                 .etag()
                 .filter(|etag| !etag.is_empty())
                 .map(str::to_owned)
@@ -3182,22 +3258,6 @@ impl SpaceCatalogStore {
             return Err(error);
         }
         cleanup.context("remove shared Catalog verification probe")?;
-        if let Some(cache_key) = cache_key {
-            let mut cache = SHARED_WRITE_VERIFICATIONS
-                .get_or_init(|| Mutex::new(Vec::new()))
-                .lock()
-                .expect("shared-write verification cache poisoned");
-            // Capability evidence is only an optimization. Bound the key
-            // registry and never retain a strong Operator just to keep it
-            // warm; an evicted backend is safely re-probed on demand.
-            if !cache.iter().any(|key| key == &cache_key) {
-                const MAX_SHARED_WRITE_VERIFICATIONS: usize = 256;
-                if cache.len() >= MAX_SHARED_WRITE_VERIFICATIONS {
-                    cache.remove(0);
-                }
-                cache.push(cache_key);
-            }
-        }
         self.write_mode = CatalogWriteMode::Shared;
         Ok(self)
     }
@@ -3398,6 +3458,8 @@ impl SpaceCatalogStore {
         &self,
         asset_id: &str,
     ) -> Result<Option<(Vec<u8>, Option<String>)>> {
+        Self::validate_catalog_component(asset_id, "Asset lifecycle identifier")
+            .map_err(|error| opendal::Error::new(ErrorKind::ConfigInvalid, error.to_string()))?;
         self.read_exact_object(&self.catalog_path(&format!("asset-lifecycle/{asset_id}")))
             .await
     }
@@ -3504,6 +3566,8 @@ impl SpaceCatalogStore {
     }
 
     pub async fn read_publication(&self, path: &str) -> opendal::Result<Vec<u8>> {
+        self.validate_publication_path(path)
+            .map_err(|error| opendal::Error::new(ErrorKind::ConfigInvalid, error.to_string()))?;
         if let Some(counter) = &self.read_counter {
             counter.fetch_add(1, Ordering::Relaxed);
         }
@@ -3535,6 +3599,8 @@ impl SpaceCatalogStore {
         &self,
         command_id: &str,
     ) -> Result<Option<(Vec<u8>, Option<String>)>> {
+        Self::validate_catalog_component(command_id, "command identifier")
+            .map_err(|error| opendal::Error::new(ErrorKind::ConfigInvalid, error.to_string()))?;
         self.read_exact_object(&self.command_receipt_path(command_id))
             .await
     }
@@ -3579,6 +3645,8 @@ impl SpaceCatalogStore {
     }
 
     pub async fn read_checkpoint(&self, name: &str) -> opendal::Result<Vec<u8>> {
+        Self::validate_catalog_component(name, "checkpoint name")
+            .map_err(|error| opendal::Error::new(ErrorKind::ConfigInvalid, error.to_string()))?;
         Ok(self
             .operator
             .read(&self.checkpoint_path(name))
@@ -3591,17 +3659,6 @@ impl SpaceCatalogStore {
         capabilities.read_with_if_match
             && capabilities.write_with_if_match
             && capabilities.write_with_if_not_exists
-    }
-
-    fn shared_write_verification_key(&self) -> String {
-        format!(
-            "{}:{}:{}:{}:accessor={:p}",
-            self.operator.info().scheme(),
-            self.operator.info().name(),
-            self.operator.info().root(),
-            self.space_root,
-            Arc::as_ptr(self.operator.service()),
-        )
     }
 
     pub fn backend_capabilities(&self) -> CatalogBackendCapabilities {
@@ -3634,7 +3691,6 @@ impl SpaceCatalogStore {
 
 static CATALOG_SERIALIZERS: OnceLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> =
     OnceLock::new();
-static SHARED_WRITE_VERIFICATIONS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
 fn catalog_serializer(operator: &Operator, space_root: &str) -> Arc<AsyncMutex<()>> {
     let key = format!(
@@ -4402,16 +4458,17 @@ mod tests {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA007);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
-        let path = format!("{}/manifest.json", store.builds_path("stale"));
+        let build_id = test_build_id();
+        let path = format!("{}/manifest.json", store.builds_path(&build_id));
         operator.write(&path, b"stale".to_vec()).await?;
         assert!(store
             .garbage_collect(None, Duration::from_secs(3600))
             .await?
             .is_empty());
         assert!(operator.exists(&path).await?);
-        store.mark_garbage("stale").await?;
+        store.mark_garbage(&build_id).await?;
         let deleted = store.garbage_collect(None, Duration::ZERO).await?;
-        assert_eq!(deleted, vec!["stale"]);
+        assert_eq!(deleted, vec![build_id]);
         assert!(!operator.exists(&path).await?);
         Ok(())
     }
@@ -4704,7 +4761,11 @@ mod tests {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA00A);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
-        let orphan = format!("{}/metadata/orphan.json", store.builds_path("orphan"));
+        let orphan_build_id = test_build_id();
+        let orphan = format!(
+            "{}/metadata/orphan.json",
+            store.builds_path(&orphan_build_id)
+        );
         operator.write(&orphan, b"orphan".to_vec()).await?;
 
         assert!(store
@@ -4714,11 +4775,11 @@ mod tests {
         assert!(operator.exists(&orphan).await?);
 
         let deleted = store.garbage_collect(None, Duration::ZERO).await?;
-        assert_eq!(deleted, vec!["orphan"]);
+        assert_eq!(deleted, vec![orphan_build_id.clone()]);
         assert!(!operator.exists(&orphan).await?);
         assert!(
             !operator
-                .exists(&store.garbage_marker_path("orphan"))
+                .exists(&store.garbage_marker_path(&orphan_build_id))
                 .await?
         );
         Ok(())
@@ -4729,22 +4790,23 @@ mod tests {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA012);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let orphan_build_id = test_build_id();
         let orphan = format!(
             "{}/metadata/orphan.json",
-            store.builds_path("stale-head-hint")
+            store.builds_path(&orphan_build_id)
         );
         operator.write(&orphan, b"orphan".to_vec()).await?;
 
         assert!(
             store
-                .has_pending_garbage(Some("stale-head-hint"), Duration::ZERO)
+                .has_pending_garbage(Some("malformed-hint"), Duration::ZERO)
                 .await?
         );
         assert_eq!(
             store
-                .garbage_collect(Some("stale-head-hint"), Duration::ZERO)
+                .garbage_collect(Some("malformed-hint"), Duration::ZERO)
                 .await?,
-            vec!["stale-head-hint"]
+            vec![orphan_build_id]
         );
         assert!(!operator.exists(&orphan).await?);
         Ok(())
@@ -4800,7 +4862,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn terminal_tombstone_reaping_is_bounded_per_pass() -> Result<()> {
+    async fn terminal_tombstones_remain_durable_after_retention() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA015);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
@@ -4826,7 +4888,7 @@ mod tests {
             .recursive(true)
             .await?;
         let remaining = lister.try_collect::<Vec<_>>().await?.len();
-        assert_eq!(remaining, 1);
+        assert_eq!(remaining, MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS + 1);
         Ok(())
     }
 
@@ -4882,6 +4944,7 @@ mod tests {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA010);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let orphan_build_id = test_build_id();
         operator
             .write(
                 &store.head_path(),
@@ -4892,12 +4955,15 @@ mod tests {
                 }))?,
             )
             .await?;
-        let orphan = format!("{}/data/orphan.parquet", store.builds_path("orphan"));
+        let orphan = format!(
+            "{}/data/orphan.parquet",
+            store.builds_path(&orphan_build_id)
+        );
         operator.write(&orphan, b"orphan".to_vec()).await?;
 
         assert_eq!(
             store.garbage_collect(None, Duration::ZERO).await?,
-            vec!["orphan"]
+            vec![orphan_build_id]
         );
         assert!(!operator.exists(&orphan).await?);
         assert!(operator.exists(&store.head_path()).await?);
@@ -4957,6 +5023,7 @@ mod tests {
         let space_uid = Uuid::now_v7();
         write_test_space_metadata(&operator, space_uid).await?;
         let current_build_id = test_build_id();
+        let orphan_build_id = test_build_id();
         operator
             .write(
                 &format!("{}/manifest.json", store.builds_path(&current_build_id)),
@@ -4965,7 +5032,7 @@ mod tests {
             .await?;
         operator
             .write(
-                &format!("{}/manifest.json", store.builds_path("stale")),
+                &format!("{}/manifest.json", store.builds_path(&orphan_build_id)),
                 b"stale".to_vec(),
             )
             .await?;
@@ -4994,11 +5061,11 @@ mod tests {
         };
         store.mark_staging(&current_build_id).await?;
         store.create(&current_head).await?;
-        store.mark_garbage("stale").await?;
+        store.mark_garbage(&orphan_build_id).await?;
         let deleted = store
             .garbage_collect(Some("current"), Duration::ZERO)
             .await?;
-        assert_eq!(deleted, vec!["stale"]);
+        assert_eq!(deleted, vec![orphan_build_id.clone()]);
         assert!(
             operator
                 .exists(&format!(
@@ -5009,7 +5076,10 @@ mod tests {
         );
         assert!(
             !operator
-                .exists(&format!("{}/manifest.json", store.builds_path("stale")))
+                .exists(&format!(
+                    "{}/manifest.json",
+                    store.builds_path(&orphan_build_id)
+                ))
                 .await?
         );
         Ok(())
