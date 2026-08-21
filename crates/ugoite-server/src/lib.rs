@@ -7552,40 +7552,13 @@ async fn ensure_local_space_owner_binding(
             .await
             .map_err(ApiError::from_core)?;
         let authorizer = Authorizer::new(state.service.operator().clone());
-        let principal_id = match authorizer.state(&existing_id).await {
-            Ok(authorization) => authorization
-                .memberships
-                .values()
-                .find(|membership| membership.role == SpaceRole::Owner)
-                .map(|membership| membership.principal_id)
-                .ok_or_else(|| {
-                    ApiError::new(
-                        StatusCode::CONFLICT,
-                        "existing Space has no recoverable owner membership",
-                    )
-                })?,
-            Err(read_error) => {
-                // A crash between the filesystem scaffold and authorization
-                // owner publication leaves no owner to discover. Reusing the
-                // existing immutable Space identity lets the next request
-                // finish bootstrap without creating a second slug.
-                let recovered_principal_id = Uuid::now_v7();
-                authorizer
-                    .initialize_owner(
-                        &existing_id,
-                        space_uid,
-                        recovered_principal_id,
-                        display_name,
-                    )
-                    .await
-                    .map_err(|initialize_error| {
-                        ApiError::from_core(anyhow::anyhow!(
-                            "recover Space authorization after reading existing state ({read_error:#}): {initialize_error:#}"
-                        ))
-                    })?;
-                recovered_principal_id
-            }
-        };
+        // This validates the current authorization layout and space UID. It
+        // initializes ownership only when the authorization file is genuinely
+        // absent; malformed, legacy, or mismatched state must fail closed.
+        let principal_id = authorizer
+            .ensure_owner(&existing_id, space_uid, display_name)
+            .await
+            .map_err(ApiError::from_core)?;
         if let Some(bound_principal) = state
             .identity
             .binding_for_account(space_uid, account_id)
@@ -12401,6 +12374,70 @@ mod authentication_regression_tests {
                 .map_err(|error| anyhow::anyhow!("{error:?}"))?;
         assert_eq!(same_uid, space_uid);
         assert!(!created);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_creation_recovery_rejects_legacy_or_mismatched_authorization(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-space-create-recovery-validation")?;
+        state.initialize_node().await?;
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("mismatched-space", principal_id, "Owner")
+            .await?;
+        let operator = state.service.operator().clone();
+        let authorizer = Authorizer::new(operator.clone());
+        let account_id = Uuid::now_v7();
+        let mut authorization = authorizer.state(&space_uid.to_string()).await?;
+        authorization.space_uid = Uuid::now_v7();
+        let authorization_path = format!("spaces/{space_uid}/security/principals.json");
+        operator
+            .write(&authorization_path, serde_json::to_vec(&authorization)?)
+            .await?;
+        let validation_error = authorizer
+            .validate_current_layout(&space_uid.to_string(), space_uid)
+            .await
+            .expect_err("mismatched authorization state must be rejected");
+        assert!(validation_error
+            .to_string()
+            .contains("different space_uid values"));
+
+        let error =
+            ensure_local_space_owner_binding(&state, "mismatched-space", account_id, "Owner")
+                .await
+                .expect_err("mismatched authorization state must fail closed");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(state
+            .identity
+            .binding_for_account(space_uid, account_id)
+            .await?
+            .is_none());
+
+        state
+            .service
+            .create_space_for_principal("legacy-space", Uuid::now_v7(), "Owner")
+            .await?;
+        let legacy_space_uid = state
+            .service
+            .space_id_by_slug("legacy-space")
+            .await?
+            .expect("legacy test Space exists");
+        let legacy_marker_path = format!("spaces/{legacy_space_uid}/authorization.json");
+        operator.write(&legacy_marker_path, b"{}".to_vec()).await?;
+        let validation_error = authorizer
+            .validate_current_layout(&legacy_space_uid, Uuid::now_v7())
+            .await
+            .expect_err("legacy authorization layout must be rejected");
+        assert!(validation_error
+            .to_string()
+            .contains("unsupported Space layout"));
+        let error =
+            ensure_local_space_owner_binding(&state, "legacy-space", Uuid::now_v7(), "Owner")
+                .await
+                .expect_err("legacy authorization layout must fail closed");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
         Ok(())
     }
 }
