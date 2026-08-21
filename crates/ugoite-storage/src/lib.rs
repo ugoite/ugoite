@@ -256,6 +256,17 @@ impl DerivedRelationHeadStore {
         Ok(self)
     }
 
+    /// Select shared exact-read/CAS semantics without probing or writing.
+    ///
+    /// Read-only callers use this when they must reject an untagged remote
+    /// Head read, but must not require write permission merely to inspect a
+    /// DerivedRelation. Mutation callers must use [`Self::shared`] so the
+    /// backend contract is still behaviorally verified before publishing.
+    pub fn shared_read_only(mut self) -> Self {
+        self.write_mode = CatalogWriteMode::Shared;
+        self
+    }
+
     pub fn single_process(mut self) -> Self {
         // A remote relation must never be downgraded to unconditional
         // Head writes. Callers may request the local mode for local backends;
@@ -291,7 +302,11 @@ impl DerivedRelationHeadStore {
         let state = value.get("state").and_then(serde_json::Value::as_str)?;
         let build_id = value.get("build_id").and_then(serde_json::Value::as_str)?;
         match state {
-            "garbage_fence" | "head_fence_released" => Some((state, build_id)),
+            "garbage_fence" | "head_fence_released"
+                if Uuid::parse_str(build_id).is_ok_and(|uuid| uuid.get_version_num() == 7) =>
+            {
+                Some((state, build_id))
+            }
             _ => None,
         }
     }
@@ -3623,8 +3638,9 @@ static SHARED_WRITE_VERIFICATIONS: OnceLock<Mutex<Vec<String>>> = OnceLock::new(
 
 fn catalog_serializer(operator: &Operator, space_root: &str) -> Arc<AsyncMutex<()>> {
     let key = format!(
-        "{}:{}:{}",
+        "{}:{}:{}:{}",
         operator.info().scheme(),
+        operator.info().name(),
         operator.info().root(),
         space_root
     );
@@ -3679,11 +3695,18 @@ fn memory_cache() -> &'static Mutex<HashMap<String, Operator>> {
 }
 
 fn register_memory_operator(operator: &Operator) -> String {
-    let uri = format!("memory://ugoite-catalog-{}", Uuid::now_v7());
+    // `IcebergStorageConfig` is recreated for every store wrapper. Use the
+    // OpenDAL service identity so those wrappers share one stable opaque URI
+    // instead of leaking a new strong cache entry for every read/build.
+    let uri = format!(
+        "memory://ugoite-catalog-{:p}",
+        Arc::as_ptr(operator.service())
+    );
     memory_cache()
         .lock()
         .expect("memory operator cache lock poisoned")
-        .insert(uri.clone(), operator.clone());
+        .entry(uri.clone())
+        .or_insert_with(|| operator.clone());
     uri
 }
 

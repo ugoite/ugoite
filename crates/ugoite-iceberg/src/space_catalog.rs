@@ -349,9 +349,11 @@ impl SpaceCatalog {
 
     pub(crate) fn ensure_authoritative_mutation_contract(&self) -> anyhow::Result<()> {
         self.store.mutation_permit().map(|_| ()).map_err(|_| {
-            anyhow::anyhow!(
-                "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract"
+            ugoite_core::error::AppError::dependency_unavailable(
+                ugoite_core::error::ErrorCode::StorageMutationUnavailable,
+                "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract",
             )
+            .into()
         })
     }
 

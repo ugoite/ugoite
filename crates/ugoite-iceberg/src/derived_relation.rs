@@ -2275,7 +2275,7 @@ async fn asset_text_head_store(op: &Operator, ws_path: &str) -> Result<DerivedRe
     let store =
         DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid());
     if is_shared_backend(op) {
-        store.shared().await
+        Ok(store.shared_read_only())
     } else {
         Ok(store.single_process())
     }
