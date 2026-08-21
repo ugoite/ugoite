@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use opendal::Operator;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::time::Duration;
-use tokio::sync::Notify;
+use tokio::sync::{Mutex as AsyncMutex, Notify};
 use uuid::Uuid;
 
 use crate::integrity::RealIntegrityProvider;
@@ -66,6 +66,7 @@ struct AssetTextRefreshWorker {
 static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
     StdMutex<BTreeMap<String, Arc<AssetTextRefreshWorker>>>,
 > = OnceLock::new();
+static SPACE_CREATION_SERIALIZER: OnceLock<Arc<AsyncMutex<()>>> = OnceLock::new();
 
 const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 const ASSET_TEXT_REFRESH_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -286,6 +287,10 @@ impl UgoiteService {
     }
 
     pub async fn create_space(&self, space_id: &str) -> Result<()> {
+        let creation_lock = SPACE_CREATION_SERIALIZER
+            .get_or_init(|| Arc::new(AsyncMutex::new(())))
+            .clone();
+        let _creation_guard = creation_lock.lock().await;
         validate_storage_id(validate_space_id(space_id))?;
         space::create_space(&self.operator, space_id, &self.root_uri).await
     }
@@ -293,6 +298,10 @@ impl UgoiteService {
     /// Creates an operator-local Space with an immutable UUIDv7 directory and
     /// no application principal. A node must explicitly claim it before remote use.
     pub async fn create_operator_space(&self, slug: &str) -> Result<Uuid> {
+        let creation_lock = SPACE_CREATION_SERIALIZER
+            .get_or_init(|| Arc::new(AsyncMutex::new(())))
+            .clone();
+        let _creation_guard = creation_lock.lock().await;
         validate_storage_id(validate_space_id(slug))?;
         if self.space_id_by_slug(slug).await?.is_some() {
             return Err(AppError::conflict(
@@ -312,6 +321,10 @@ impl UgoiteService {
         principal_id: Uuid,
         display_name: &str,
     ) -> Result<Uuid> {
+        let creation_lock = SPACE_CREATION_SERIALIZER
+            .get_or_init(|| Arc::new(AsyncMutex::new(())))
+            .clone();
+        let _creation_guard = creation_lock.lock().await;
         // Space bootstrap spans the Space scaffold, the authorization owner,
         // and the Node binding performed by the server.  There is no atomic
         // multi-object fence for shared backends, so fail before the first
@@ -337,10 +350,28 @@ impl UgoiteService {
 
     pub async fn space_uid(&self, space_id: &str) -> Result<Uuid> {
         let raw = self.get_space(space_id).await?;
-        raw.get("space_uid")
+        let space_uid = raw
+            .get("space_uid")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
-            .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))
+            .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+        for candidate_id in self.list_space_ids().await? {
+            if candidate_id == space_id {
+                continue;
+            }
+            let candidate = self.get_space(&candidate_id).await?;
+            let candidate_uid = candidate
+                .get("space_uid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
+                .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+            if candidate_uid == space_uid {
+                bail!(
+                    "duplicate immutable space_uid {space_uid} is used by Spaces {space_id} and {candidate_id}"
+                );
+            }
+        }
+        Ok(space_uid)
     }
 
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
@@ -348,13 +379,27 @@ impl UgoiteService {
     }
 
     pub async fn space_id_by_slug(&self, slug: &str) -> Result<Option<String>> {
+        let mut seen_uids = BTreeMap::<Uuid, String>::new();
+        let mut matched = None;
         for space_id in self.list_space_ids().await? {
             let meta = self.get_space(&space_id).await?;
+            let space_uid = meta
+                .get("space_uid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
+                .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+            if let Some(previous_id) = seen_uids.insert(space_uid, space_id.clone()) {
+                bail!(
+                    "duplicate immutable space_uid {space_uid} is used by Spaces {previous_id} and {space_id}"
+                );
+            }
             if meta.get("slug").and_then(Value::as_str) == Some(slug) {
-                return Ok(Some(space_id));
+                if matched.replace(space_id).is_some() {
+                    bail!("Space slug is not unique: {slug}");
+                }
             }
         }
-        Ok(None)
+        Ok(matched)
     }
 
     pub async fn get_space(&self, space_id: &str) -> Result<Value> {
@@ -2194,6 +2239,58 @@ mod tests {
             EntryScope::AllExcept(ids) => assert_eq!(ids.len(), crate::MAX_NORMAL_READ_ROWS + 1),
             other => panic!("expected a provider-side exclusion scope, got {other:?}"),
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn concurrent_principal_space_creation_preserves_slug_uniqueness() -> Result<()> {
+        let service = UgoiteService::new("memory://service-space-create-race")?;
+        let first = service.create_space_for_principal("race-space", Uuid::now_v7(), "First owner");
+        let second =
+            service.create_space_for_principal("race-space", Uuid::now_v7(), "Second owner");
+        let (first_result, second_result) = tokio::join!(first, second);
+        assert!(first_result.is_ok() ^ second_result.is_ok());
+        let mut matching_spaces = 0;
+        for space_id in service.list_space_ids().await? {
+            if service.get_space(&space_id).await?["slug"] == "race-space" {
+                matching_spaces += 1;
+            }
+        }
+        assert_eq!(matching_spaces, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn duplicate_space_uids_are_rejected_during_slug_scan() -> Result<()> {
+        let operator = operator_from_uri("memory://service-duplicate-space-uid")?;
+        space::create_space(&operator, "first-space", "/tmp").await?;
+        space::create_space(&operator, "second-space", "/tmp").await?;
+        let first_meta: Value = serde_json::from_slice(
+            &operator
+                .read("spaces/first-space/meta.json")
+                .await?
+                .to_vec(),
+        )?;
+        let mut second_meta: Value = serde_json::from_slice(
+            &operator
+                .read("spaces/second-space/meta.json")
+                .await?
+                .to_vec(),
+        )?;
+        second_meta["space_uid"] = first_meta["space_uid"].clone();
+        operator
+            .write(
+                "spaces/second-space/meta.json",
+                serde_json::to_vec(&second_meta)?,
+            )
+            .await?;
+        let service =
+            UgoiteService::from_operator(operator, "memory://service-duplicate-space-uid");
+        let error = service
+            .space_id_by_slug("does-not-exist")
+            .await
+            .expect_err("duplicate immutable Space UIDs must fail closed");
+        assert!(error.to_string().contains("duplicate immutable space_uid"));
         Ok(())
     }
 }

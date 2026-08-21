@@ -66,6 +66,7 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
     let op = Operator::new(builder)?;
 
     space::create_space(&op, "private-space", dir.path().to_string_lossy().as_ref()).await?;
+    space::validate_complete_bootstrap(&op, "private-space").await?;
 
     let spaces_root = dir.path().join("spaces");
     let space_dir = spaces_root.join("private-space");
@@ -140,6 +141,35 @@ async fn incomplete_current_space_metadata_is_rejected() -> anyhow::Result<()> {
     assert!(workspace_error
         .to_string()
         .contains("unsupported Space layout"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn space_metadata_identity_must_match_directory_and_uuidv7_contract() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "identity-contract", "/tmp").await?;
+    let meta_path = "spaces/identity-contract/meta.json";
+    let original: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+
+    let mut wrong_directory = original.clone();
+    wrong_directory["space_id"] = Value::String("another-space".to_string());
+    op.write(meta_path, serde_json::to_vec(&wrong_directory)?)
+        .await?;
+    assert!(space::get_space(&op, "identity-contract")
+        .await
+        .expect_err("directory/space_id mismatch must be rejected")
+        .to_string()
+        .contains("does not match its directory"));
+
+    let mut wrong_uuid_version = original;
+    wrong_uuid_version["space_uid"] = Value::String(uuid::Uuid::new_v4().to_string());
+    op.write(meta_path, serde_json::to_vec(&wrong_uuid_version)?)
+        .await?;
+    assert!(space::get_space(&op, "identity-contract")
+        .await
+        .expect_err("non-UUIDv7 Space identity must be rejected")
+        .to_string()
+        .contains("must be a UUIDv7"));
     Ok(())
 }
 

@@ -1390,6 +1390,9 @@ async fn auth_setup_finish(
             .space_uid(space_id)
             .await
             .map_err(ApiError::from_core)?;
+        space::validate_complete_bootstrap(state.service.operator(), space_id)
+            .await
+            .map_err(ApiError::from_core)?;
         authorizer
             .validate_current_layout(space_id, space_uid)
             .await
@@ -7551,6 +7554,9 @@ async fn ensure_local_space_owner_binding(
             .space_uid(&existing_id)
             .await
             .map_err(ApiError::from_core)?;
+        space::validate_complete_bootstrap(state.service.operator(), &existing_id)
+            .await
+            .map_err(ApiError::from_core)?;
         let authorizer = Authorizer::new(state.service.operator().clone());
         // This validates the current authorization layout and space UID. It
         // initializes ownership only when the authorization file is genuinely
@@ -12374,6 +12380,26 @@ mod authentication_regression_tests {
                 .map_err(|error| anyhow::anyhow!("{error:?}"))?;
         assert_eq!(same_uid, space_uid);
         assert!(!created);
+
+        let partial_space_uid = state
+            .service
+            .create_space_for_principal("partial-recovery-space", Uuid::now_v7(), "Owner")
+            .await?;
+        let partial_settings_path = format!("spaces/{partial_space_uid}/settings.json");
+        state
+            .service
+            .operator()
+            .delete(&partial_settings_path)
+            .await?;
+        let error = ensure_local_space_owner_binding(
+            &state,
+            "partial-recovery-space",
+            Uuid::now_v7(),
+            "Owner",
+        )
+        .await
+        .expect_err("incomplete Space bootstrap must not be finalized by recovery");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
         Ok(())
     }
 

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use futures::TryStreamExt;
@@ -104,6 +104,47 @@ fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
     for file in ["meta.json", "settings.json"] {
         set_owner_only_mode(&space_dir.join(file), 0o600)?;
     }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn validate_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let Some(space_dir) = local_space_fs_path(op, space_id) else {
+        return Ok(());
+    };
+    let Some(spaces_root) = space_dir.parent() else {
+        return Ok(());
+    };
+    let expected = [
+        (spaces_root, 0o700),
+        (space_dir.as_path(), 0o700),
+        (&space_dir.join("security"), 0o700),
+        (&space_dir.join("forms"), 0o700),
+        (&space_dir.join("assets"), 0o700),
+        (&space_dir.join("sql_sessions"), 0o700),
+        (&space_dir.join("meta.json"), 0o600),
+        (&space_dir.join("settings.json"), 0o600),
+    ];
+    for (path, expected_mode) in expected {
+        let actual_mode = std::fs::metadata(path)
+            .with_context(|| format!("read local Space permission for {}", path.display()))?
+            .permissions()
+            .mode()
+            & 0o777;
+        if actual_mode != expected_mode {
+            bail!(
+                "incomplete Space bootstrap: {} has mode {actual_mode:o}, expected {expected_mode:o}",
+                path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_local_space_permissions(_op: &Operator, _space_id: &str) -> Result<()> {
     Ok(())
 }
 
@@ -285,11 +326,14 @@ async fn ensure_space_identity<S: StorageBackend + ?Sized>(
 ) -> Result<serde_json::Value> {
     let meta_path = format!("spaces/{name}/meta.json");
     let meta: serde_json::Value = storage.read_json(&meta_path).await?;
-    validate_current_space_metadata(&meta)?;
+    validate_current_space_metadata(name, &meta)?;
     Ok(meta)
 }
 
-pub(crate) fn validate_current_space_metadata(meta: &serde_json::Value) -> Result<uuid::Uuid> {
+pub(crate) fn validate_current_space_metadata(
+    expected_directory_id: &str,
+    meta: &serde_json::Value,
+) -> Result<uuid::Uuid> {
     #[derive(serde::Deserialize)]
     struct CurrentSpaceMetadata {
         schema_version: u64,
@@ -311,6 +355,16 @@ pub(crate) fn validate_current_space_metadata(meta: &serde_json::Value) -> Resul
     if metadata.schema_version != CURRENT_SPACE_SCHEMA_VERSION {
         return Err(anyhow!(
             "unsupported Space layout: metadata schema_version must be 2"
+        ));
+    }
+    if metadata.space_id != expected_directory_id {
+        return Err(anyhow!(
+            "unsupported Space layout: metadata space_id does not match its directory"
+        ));
+    }
+    if metadata.id != metadata.space_id {
+        return Err(anyhow!(
+            "unsupported Space layout: metadata id does not match space_id"
         ));
     }
     for (field, value) in [
@@ -336,7 +390,39 @@ pub(crate) fn validate_current_space_metadata(meta: &serde_json::Value) -> Resul
             "unsupported Space layout: metadata timestamps are invalid"
         ));
     }
+    if metadata.space_uid.get_version() != Some(uuid::Version::SortRand) {
+        return Err(anyhow!(
+            "unsupported Space layout: space_uid must be a UUIDv7"
+        ));
+    }
     Ok(metadata.space_uid)
+}
+
+/// Verifies that a Space has completed the current bootstrap before a
+/// recovery path is allowed to publish Node ownership. Metadata alone is not
+/// a durable creation marker: a crash may leave it before the starter Form
+/// and catalog are committed.
+pub async fn validate_complete_bootstrap(op: &Operator, space_id: &str) -> Result<()> {
+    let storage = OpendalStorage::from_operator(op);
+    ensure_space_identity(&storage, space_id).await?;
+    for directory in ["security", "forms", "assets", "sql_sessions"] {
+        let path = format!("spaces/{space_id}/{directory}/");
+        if !storage.exists(&path).await? {
+            return Err(anyhow!(
+                "incomplete Space bootstrap: missing directory {path}"
+            ));
+        }
+    }
+    let settings_path = format!("spaces/{space_id}/settings.json");
+    if !storage.exists(&settings_path).await? {
+        return Err(anyhow!("incomplete Space bootstrap: missing settings.json"));
+    }
+    let workspace_path = format!("spaces/{space_id}");
+    form::get_form(op, &workspace_path, "Entry")
+        .await
+        .context("incomplete Space bootstrap: starter Entry Form is missing")?;
+    validate_local_space_permissions(op, space_id)?;
+    Ok(())
 }
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {

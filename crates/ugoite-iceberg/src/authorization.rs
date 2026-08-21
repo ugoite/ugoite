@@ -35,6 +35,7 @@ use uuid::Uuid;
 const AUTHORIZATION_FILE: &str = "security/principals.json";
 const LEGACY_AUTHORIZATION_FILE: &str = "authorization.json";
 const LEGACY_MIGRATION_STATE_FILE: &str = "security/migration-state.json";
+const CURRENT_AUTHORIZATION_SCHEMA_VERSION: u32 = 1;
 const MAX_AUTHORIZATION_STATE_BYTES: usize = 64 * 1024 * 1024;
 const AUTHORIZATION_STATE_READER_CHUNK_BYTES: usize = 256 * 1024;
 const MAX_AUTHORIZATION_MAP_ENTRIES: usize = 100_000;
@@ -73,6 +74,7 @@ impl ResourceRef {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthorizationState {
     pub schema_version: u32,
     pub space_uid: Uuid,
@@ -546,12 +548,33 @@ impl Authorizer {
         if state.space_uid != space_uid {
             bail!("Space metadata and authorization state use different space_uid values");
         }
-        state
+        let owner_memberships = state
             .memberships
             .values()
-            .find(|membership| matches!(membership.role, SpaceRole::Owner))
+            .filter(|membership| matches!(membership.role, SpaceRole::Owner))
+            .collect::<Vec<_>>();
+        if owner_memberships.is_empty() {
+            bail!("Space has no owner principal");
+        }
+        for membership in &owner_memberships {
+            let principal = state
+                .principals
+                .get(&membership.principal_id)
+                .ok_or_else(|| anyhow!("Space owner membership references an unknown principal"))?;
+            if !matches!(principal.kind, PrincipalKind::Human) {
+                bail!("Space owner membership must reference a human principal");
+            }
+        }
+        owner_memberships
+            .into_iter()
+            .find(|membership| {
+                state
+                    .principals
+                    .get(&membership.principal_id)
+                    .is_some_and(|principal| matches!(principal.state, PrincipalState::Active))
+            })
             .map(|membership| Some(membership.principal_id))
-            .ok_or_else(|| anyhow!("Space has no owner principal"))
+            .ok_or_else(|| anyhow!("Space has no active owner principal"))
     }
 
     pub async fn ensure_owner(
@@ -575,7 +598,7 @@ impl Authorizer {
             .context("read Space authorization state")?;
         let state: AuthorizationState =
             serde_json::from_slice(&bytes).context("decode Space authorization state")?;
-        validate_authorization_state_limits(&state)?;
+        validate_authorization_state(&state)?;
         Ok(state)
     }
 
@@ -2350,7 +2373,7 @@ impl Authorizer {
 
     async fn write_state_inner(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
         let path = state_path(space_id);
-        validate_authorization_state_limits(state)?;
+        validate_authorization_state(state)?;
         let serialized = serde_json::to_vec_pretty(state)?;
         if serialized.len() > MAX_AUTHORIZATION_STATE_BYTES {
             bail!(
@@ -2401,7 +2424,7 @@ impl Authorizer {
                 .context("read versioned Space authorization state")?;
             let current: AuthorizationState = serde_json::from_slice(&current)
                 .context("decode versioned Space authorization state")?;
-            validate_authorization_state_limits(&current)?;
+            validate_authorization_state(&current)?;
             if current.revision != expected_revision {
                 bail!("Space authorization revision conflict");
             }
@@ -2529,6 +2552,58 @@ fn next_human_approval_audit_sequence(state: &AuthorizationState) -> u64 {
         .max()
         .unwrap_or(0)
         .saturating_add(1)
+}
+
+fn validate_authorization_state(state: &AuthorizationState) -> Result<()> {
+    if state.schema_version != CURRENT_AUTHORIZATION_SCHEMA_VERSION {
+        bail!(
+            "unsupported Space authorization schema_version {}; expected {}",
+            state.schema_version,
+            CURRENT_AUTHORIZATION_SCHEMA_VERSION
+        );
+    }
+    if state.revision == 0 {
+        bail!("Space authorization revision must be positive");
+    }
+    for (principal_id, principal) in &state.principals {
+        if *principal_id != principal.principal_id {
+            bail!("Space principal map key does not match principal_id");
+        }
+        if matches!(principal.kind, PrincipalKind::Agent) != state.agents.contains_key(principal_id)
+        {
+            bail!("Space agent principal and agent record are inconsistent");
+        }
+    }
+    for (principal_id, membership) in &state.memberships {
+        if *principal_id != membership.principal_id {
+            bail!("Space membership map key does not match principal_id");
+        }
+        if !state.principals.contains_key(principal_id) {
+            bail!("Space membership references an unknown principal");
+        }
+    }
+    for (agent_id, agent) in &state.agents {
+        if *agent_id != agent.agent_id
+            || !state
+                .principals
+                .get(agent_id)
+                .is_some_and(|principal| matches!(principal.kind, PrincipalKind::Agent))
+            || !state.agent_grants.contains_key(agent_id)
+        {
+            bail!("Space agent records are inconsistent");
+        }
+    }
+    for principal_id in state.agent_grants.keys() {
+        if !state.agents.contains_key(principal_id) {
+            bail!("Space agent grants reference an unknown agent");
+        }
+    }
+    for (principal_id, epoch) in &state.principal_lifecycle_epochs {
+        if *epoch == 0 || !state.principals.contains_key(principal_id) {
+            bail!("Space principal lifecycle epochs are inconsistent");
+        }
+    }
+    validate_authorization_state_limits(state)
 }
 
 fn validate_authorization_state_limits(state: &AuthorizationState) -> Result<()> {
@@ -3116,6 +3191,48 @@ mod tests {
 
         assert!(error.to_string().contains("unsupported Space layout"));
         assert!(!op.exists("spaces/demo/security/principals.json").await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn current_authorization_recovery_rejects_invalid_schema_and_owner_identity() -> Result<()>
+    {
+        let op = operator_from_uri("memory://invalid-current-authorization")?;
+        op.create_dir("spaces/demo/").await?;
+        let owner = Uuid::now_v7();
+        let space_uid = Uuid::now_v7();
+        let authorizer = Authorizer::new(op.clone());
+        authorizer
+            .initialize_owner("demo", space_uid, owner, "Owner")
+            .await?;
+
+        let path = "spaces/demo/security/principals.json";
+        let mut invalid_schema = authorizer.state("demo").await?;
+        invalid_schema.schema_version = 99;
+        op.write(path, serde_json::to_vec(&invalid_schema)?).await?;
+        let error = authorizer
+            .ensure_owner("demo", space_uid, "Owner")
+            .await
+            .expect_err("unsupported authorization schema must fail closed");
+        assert!(error
+            .to_string()
+            .contains("unsupported Space authorization schema"));
+
+        let mut invalid_owner = invalid_schema;
+        invalid_owner.schema_version = CURRENT_AUTHORIZATION_SCHEMA_VERSION;
+        invalid_owner
+            .memberships
+            .get_mut(&owner)
+            .expect("owner membership")
+            .principal_id = Uuid::now_v7();
+        op.write(path, serde_json::to_vec(&invalid_owner)?).await?;
+        let error = authorizer
+            .ensure_owner("demo", space_uid, "Owner")
+            .await
+            .expect_err("owner membership identity mismatch must fail closed");
+        assert!(error
+            .to_string()
+            .contains("membership map key does not match principal_id"));
         Ok(())
     }
 

@@ -18,7 +18,13 @@ async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<Sp
         ));
     }
     let metadata: Value = serde_json::from_slice(&operator.read(&metadata_path).await?.to_vec())?;
-    let uuid = crate::space::validate_current_space_metadata(&metadata)?;
+    let directory_id = workspace_path
+        .trim_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("unsupported Space layout: invalid workspace path"))?;
+    let uuid = crate::space::validate_current_space_metadata(directory_id, &metadata)?;
     Ok(SpaceId::from(uuid))
 }
 
