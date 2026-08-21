@@ -20,28 +20,6 @@ pub async fn execute(
     execute_prepared(base_url, prepared).await
 }
 
-/// Execute the multipart operation used by the remote asset transport. The
-/// operation schema and URL still come from the shared transport-neutral
-/// protocol; only the binary body is supplied by this native adapter.
-pub async fn execute_multipart(
-    base_url: &str,
-    operation: &str,
-    arguments: Value,
-    filename: &str,
-    bytes: Vec<u8>,
-) -> Result<Value> {
-    let prepared = prepare_request(operation, &arguments, None)?;
-    if prepared.body_kind != RequestBodyKind::Multipart {
-        bail!("operation {operation} does not require multipart transport");
-    }
-    let (_, request) = authenticated_request(base_url, &prepared).await?;
-    let part = reqwest::multipart::Part::bytes(bytes)
-        .file_name(filename.to_string())
-        .mime_str("application/octet-stream")?;
-    let form = reqwest::multipart::Form::new().part("file", part);
-    send_and_decode(operation, request.multipart(form)).await
-}
-
 async fn execute_prepared(base_url: &str, prepared: PreparedRequest) -> Result<Value> {
     let operation = prepared.operation.clone();
     let (_, mut request) = authenticated_request(base_url, &prepared).await?;

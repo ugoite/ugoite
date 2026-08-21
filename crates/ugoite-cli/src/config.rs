@@ -225,22 +225,50 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     let atomic_write_dir = local_atomic_write_dir(root);
     let mut builder = Fs::default().root(root);
     if let Some(atomic_write_dir) = atomic_write_dir {
-        // If the target filesystem cannot create the helper directory, do
-        // not guess a cross-filesystem temp location. OpenDAL's default is
-        // the safe fallback for roots where atomic replacement cannot be
-        // configured (for example a read-only root).
-        if std::fs::create_dir_all(&atomic_write_dir).is_ok() {
-            builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
-        }
+        // Do not silently fall back to OpenDAL's truncating write path. Space
+        // metadata/settings replacement relies on this helper for crash-safe
+        // JSON publication, so an unavailable same-filesystem directory is a
+        // configuration error rather than a weaker storage mode.
+        std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
+            format!(
+                "create same-filesystem atomic write directory {}",
+                atomic_write_dir.display()
+            )
+        })?;
+        builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
     }
     Ok(opendal::Operator::new(builder)?)
 }
 
 fn local_atomic_write_dir(root: &str) -> Option<PathBuf> {
-    // Atomic writes target Space objects below root/spaces. Put OpenDAL's
-    // temporary files under that exact directory so a separately mounted
-    // `spaces` filesystem is handled correctly as well.
+    // Atomic writes target Space objects below root/spaces. If the process is
+    // pointed at the filesystem root before that directory exists, use a
+    // verified same-filesystem temporary directory; once a spaces directory
+    // exists, never cross that boundary.
+    if root == "/" {
+        let spaces = Path::new(root).join("spaces");
+        if spaces.exists() {
+            return Some(spaces.join(".ugoite-atomic-writes"));
+        }
+        let temp = std::env::temp_dir();
+        return same_filesystem(Path::new(root), &temp)
+            .then(|| temp.join(format!(".ugoite-atomic-writes-{}", std::process::id())));
+    }
     Some(Path::new(root).join("spaces").join(".ugoite-atomic-writes"))
+}
+
+#[cfg(unix)]
+fn same_filesystem(first: &Path, second: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    std::fs::metadata(first)
+        .and_then(|first| std::fs::metadata(second).map(|second| first.dev() == second.dev()))
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn same_filesystem(_first: &Path, _second: &Path) -> bool {
+    true
 }
 
 pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {

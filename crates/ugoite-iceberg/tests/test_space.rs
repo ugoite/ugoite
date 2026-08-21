@@ -254,10 +254,12 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
     space::validate_complete_bootstrap(&op, "patch-recovery").await?;
     let recovered: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
     assert_eq!(recovered["name"], "recovered-name");
-    assert!(
-        !op.exists("spaces/patch-recovery/.ugoite-space-patch.json")
+    let journal: Value = serde_json::from_slice(
+        &op.read("spaces/patch-recovery/.ugoite-space-patch.json")
             .await?
-    );
+            .to_vec(),
+    )?;
+    assert_eq!(journal["status"], "complete");
     Ok(())
 }
 
@@ -289,10 +291,32 @@ async fn stale_space_patch_journal_is_discarded_after_a_valid_winner() -> anyhow
     space::validate_complete_bootstrap(&op, "stale-patch").await?;
     let observed: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
     assert_eq!(observed["name"], "external-winner");
-    assert!(
-        !op.exists("spaces/stale-patch/.ugoite-space-patch.json")
+    let journal: Value = serde_json::from_slice(
+        &op.read("spaces/stale-patch/.ugoite-space-patch.json")
             .await?
-    );
+            .to_vec(),
+    )?;
+    assert_eq!(journal["status"], "complete");
+    Ok(())
+}
+
+#[tokio::test]
+async fn completed_space_patch_journal_is_reused_with_version_fencing() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "patch-reuse", "memory:///").await?;
+
+    space::patch_space(&op, "patch-reuse", &serde_json::json!({"name": "first"})).await?;
+    space::patch_space(&op, "patch-reuse", &serde_json::json!({"name": "second"})).await?;
+
+    let metadata: Value =
+        serde_json::from_slice(&op.read("spaces/patch-reuse/meta.json").await?.to_vec())?;
+    assert_eq!(metadata["name"], "second");
+    let journal: Value = serde_json::from_slice(
+        &op.read("spaces/patch-reuse/.ugoite-space-patch.json")
+            .await?
+            .to_vec(),
+    )?;
+    assert_eq!(journal["status"], "complete");
     Ok(())
 }
 
