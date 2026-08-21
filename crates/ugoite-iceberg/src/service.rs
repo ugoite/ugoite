@@ -25,7 +25,7 @@ use ugoite_domain::id::{
     validate_revision_id, validate_space_id, validate_sql_id, validate_sql_session_id, FormId,
 };
 use ugoite_domain::identity::Action;
-use ugoite_storage::operator_from_uri;
+use ugoite_storage::{operator_from_uri, OpendalStorage, StorageBackend};
 
 pub const MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS: &[&str] = &[
     "admin_user_ids",
@@ -67,6 +67,8 @@ static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
     StdMutex<BTreeMap<String, Arc<AssetTextRefreshWorker>>>,
 > = OnceLock::new();
 static SPACE_CREATION_SERIALIZER: OnceLock<Arc<AsyncMutex<()>>> = OnceLock::new();
+
+const SPACE_SLUG_CLAIMS_DIR: &str = "spaces/.ugoite-space-slug-claims/";
 
 const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 const ASSET_TEXT_REFRESH_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -292,6 +294,7 @@ impl UgoiteService {
             .clone();
         let _creation_guard = creation_lock.lock().await;
         validate_storage_id(validate_space_id(space_id))?;
+        self.claim_space_slug(space_id, space_id).await?;
         space::create_space(&self.operator, space_id, &self.root_uri).await
     }
 
@@ -311,8 +314,46 @@ impl UgoiteService {
             .into());
         }
         let space_id = Uuid::now_v7();
+        self.claim_space_slug(slug, &space_id.to_string()).await?;
         space::create_space_with_identity(&self.operator, space_id, slug, &self.root_uri).await?;
         Ok(space_id)
+    }
+
+    /// Reserve a mutable slug with a storage-level conditional create before
+    /// allocating the UUID directory. The process mutex only optimizes local
+    /// callers; the claim is the cross-process/shared-backend uniqueness
+    /// boundary. A claim is intentionally left behind if bootstrap crashes so
+    /// a later caller fails closed instead of reusing an ambiguous slug.
+    async fn claim_space_slug(&self, slug: &str, space_id: &str) -> Result<()> {
+        self.operator.create_dir(SPACE_SLUG_CLAIMS_DIR).await?;
+        let claim_path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json");
+        let claim = serde_json::to_vec(&json!({
+            "slug": slug,
+            "space_id": space_id,
+        }))?;
+        OpendalStorage::from_operator(&self.operator)
+            .write_if_absent(&claim_path, claim)
+            .await
+            .map_err(|error| {
+                if error.chain().any(|cause| {
+                    cause.downcast_ref::<opendal::Error>().is_some_and(|error| {
+                        matches!(
+                            error.kind(),
+                            opendal::ErrorKind::AlreadyExists
+                                | opendal::ErrorKind::ConditionNotMatch
+                        )
+                    }) || cause
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|error| error.kind() == std::io::ErrorKind::AlreadyExists)
+                }) {
+                    return AppError::conflict(
+                        ErrorCode::SpaceAlreadyExists,
+                        format!("Space slug already exists: {slug}"),
+                    )
+                    .into();
+                }
+                error.context("claim Space slug with conditional storage create")
+            })
     }
 
     pub async fn create_space_for_principal(
@@ -341,6 +382,7 @@ impl UgoiteService {
         }
         let space_uid = Uuid::now_v7();
         let space_id = space_uid.to_string();
+        self.claim_space_slug(slug, &space_id).await?;
         space::create_space_with_identity(&self.operator, space_uid, slug, &self.root_uri).await?;
         Authorizer::new(self.operator.clone())
             .initialize_owner(&space_id, space_uid, principal_id, display_name)
@@ -2234,15 +2276,17 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_principal_space_creation_preserves_slug_uniqueness() -> Result<()> {
-        let service = UgoiteService::new("memory://service-space-create-race")?;
-        let first = service.create_space_for_principal("race-space", Uuid::now_v7(), "First owner");
+        let first_service = UgoiteService::new("memory://service-space-create-race")?;
+        let second_service = UgoiteService::new("memory://service-space-create-race")?;
+        let first =
+            first_service.create_space_for_principal("race-space", Uuid::now_v7(), "First owner");
         let second =
-            service.create_space_for_principal("race-space", Uuid::now_v7(), "Second owner");
+            second_service.create_space_for_principal("race-space", Uuid::now_v7(), "Second owner");
         let (first_result, second_result) = tokio::join!(first, second);
         assert!(first_result.is_ok() ^ second_result.is_ok());
         let mut matching_spaces = 0;
-        for space_id in service.list_space_ids().await? {
-            if service.get_space(&space_id).await?["slug"] == "race-space" {
+        for space_id in first_service.list_space_ids().await? {
+            if first_service.get_space(&space_id).await?["slug"] == "race-space" {
                 matching_spaces += 1;
             }
         }

@@ -1989,12 +1989,11 @@ impl Authorizer {
         if owner_principal_ids.is_empty() || !owner_principal_ids.contains(&actor) {
             bail!("agent sponsor must be one of at least one human owner");
         }
-        if owner_principal_ids.iter().any(|id| {
-            !state.principals.get(id).is_some_and(|p| {
-                matches!(p.kind, PrincipalKind::Human) && matches!(p.state, PrincipalState::Active)
-            })
-        }) {
-            bail!("all agent owners must be active human principals in the Space");
+        if owner_principal_ids
+            .iter()
+            .any(|id| !is_active_space_owner(&state, *id))
+        {
+            bail!("all agent owners must be active Space owners");
         }
         let agent_id = Uuid::now_v7();
         let now = now_iso();
@@ -2229,11 +2228,35 @@ impl Authorizer {
             )
             .into());
         }
+        let demoting = !matches!(&role, SpaceRole::Owner);
         state
             .memberships
             .get_mut(&principal_id)
             .expect("checked membership")
             .role = role;
+        let revoked_agents = if demoting {
+            state
+                .agents
+                .iter()
+                .filter(|(_, agent)| agent.owner_principal_ids.contains(&principal_id))
+                .map(|(agent_id, _)| *agent_id)
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        for agent_id in &revoked_agents {
+            if let Some(agent) = state.agents.get_mut(agent_id) {
+                agent.status = PrincipalState::Revoked;
+            }
+            if let Some(principal) = state.principals.get_mut(agent_id) {
+                principal.state = PrincipalState::Revoked;
+            }
+            state.agent_grants.remove(agent_id);
+            *state
+                .principal_lifecycle_epochs
+                .entry(*agent_id)
+                .or_insert(0) += 1;
+        }
         *state
             .principal_lifecycle_epochs
             .entry(principal_id)
@@ -2253,6 +2276,22 @@ impl Authorizer {
             None,
         )
         .await?;
+        for agent_id in revoked_agents {
+            audit::append_audit_event(
+                &self.operator,
+                space_id,
+                &serde_json::json!({
+                    "action": "agent.revoked",
+                    "subject_principal_id": agent_id,
+                    "actor_principal_id": actor,
+                    "target_type": "agent",
+                    "target_id": agent_id,
+                    "reason": "owner_demoted",
+                }),
+                None,
+            )
+            .await?;
+        }
         Ok(())
     }
 
@@ -2283,6 +2322,13 @@ impl Authorizer {
             .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
+        if state
+            .principals
+            .get(&principal_id)
+            .is_some_and(|principal| matches!(principal.kind, PrincipalKind::Agent))
+        {
+            bail!("agent principals must be revoked through revoke_agent");
+        }
         if state
             .memberships
             .get(&principal_id)
@@ -2616,15 +2662,26 @@ fn validate_authorization_state(state: &AuthorizationState) -> Result<()> {
         }
     }
     for (agent_id, agent) in &state.agents {
+        let Some(principal) = state.principals.get(agent_id) else {
+            bail!("Space agent records are inconsistent");
+        };
         if *agent_id != agent.agent_id
-            || !state
-                .principals
-                .get(agent_id)
-                .is_some_and(|principal| matches!(principal.kind, PrincipalKind::Agent))
+            || !matches!(principal.kind, PrincipalKind::Agent)
+            || principal.state != agent.status
             || matches!(agent.status, PrincipalState::Active)
                 != state.agent_grants.contains_key(agent_id)
         {
             bail!("Space agent records are inconsistent");
+        }
+        agent.validate()?;
+        if matches!(agent.status, PrincipalState::Active)
+            && (agent
+                .owner_principal_ids
+                .iter()
+                .any(|owner_id| !is_active_space_owner(state, *owner_id))
+                || !is_active_space_owner(state, agent.sponsor_principal_id))
+        {
+            bail!("active agent owners and sponsor must remain active Space owners");
         }
     }
     for principal_id in state.agent_grants.keys() {
@@ -2703,15 +2760,15 @@ pub fn effective_actions_for_state(
             .get(&principal_id)
             .filter(|agent| matches!(agent.status, PrincipalState::Active))
             .ok_or_else(|| AppError::forbidden("agent is not active"))?;
-        if !state
-            .principals
-            .get(&agent.sponsor_principal_id)
-            .is_some_and(|sponsor| {
-                matches!(sponsor.kind, PrincipalKind::Human)
-                    && matches!(sponsor.state, PrincipalState::Active)
-            })
+        if agent
+            .owner_principal_ids
+            .iter()
+            .any(|owner_id| !is_active_space_owner(state, *owner_id))
+            || !is_active_space_owner(state, agent.sponsor_principal_id)
         {
-            return Err(AppError::forbidden("agent sponsor is not active").into());
+            return Err(
+                AppError::forbidden("agent sponsor or owner is not an active Space owner").into(),
+            );
         }
         let expires_at = agent
             .expires_at
@@ -2770,6 +2827,20 @@ fn owner_count(state: &AuthorizationState) -> usize {
                     .is_some_and(|p| matches!(p.state, PrincipalState::Active))
         })
         .count()
+}
+
+fn is_active_space_owner(state: &AuthorizationState, principal_id: Uuid) -> bool {
+    state
+        .principals
+        .get(&principal_id)
+        .is_some_and(|principal| {
+            matches!(principal.kind, PrincipalKind::Human)
+                && matches!(principal.state, PrincipalState::Active)
+        })
+        && state
+            .memberships
+            .get(&principal_id)
+            .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
 }
 
 fn state_path(space_id: &str) -> String {
@@ -2954,6 +3025,61 @@ mod tests {
             .await?;
         assert!(authorizer
             .effective_actions("demo", agent.agent_id, None)
+            .await
+            .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn agent_is_revoked_when_an_owner_is_demoted() -> Result<()> {
+        let op = operator_from_uri("memory://agent-owner-demotion").map_err(anyhow::Error::from)?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let sponsor = Uuid::now_v7();
+        let second_owner = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), sponsor, "Sponsor")
+            .await?;
+        authorizer
+            .add_human_member(
+                "demo",
+                sponsor,
+                SpacePrincipal {
+                    principal_id: second_owner,
+                    kind: PrincipalKind::Human,
+                    display_name: "Second owner".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: now_iso(),
+                },
+                SpaceRole::Owner,
+            )
+            .await?;
+        let agent = authorizer
+            .create_agent(
+                "demo",
+                sponsor,
+                CreateAgentRequest {
+                    display_name: "Reader".to_string(),
+                    description: String::new(),
+                    mode: AgentMode::Autonomous,
+                    owner_principal_ids: [sponsor].into_iter().collect(),
+                    granted_actions: [Action::Read].into_iter().collect(),
+                    expires_at: Some((Utc::now() + chrono::Duration::hours(1)).to_rfc3339()),
+                },
+            )
+            .await?;
+
+        authorizer
+            .change_role("demo", second_owner, sponsor, SpaceRole::Viewer)
+            .await?;
+        let state = authorizer.state("demo").await?;
+        assert!(matches!(
+            state.agents.get(&agent.agent_id).map(|agent| &agent.status),
+            Some(PrincipalState::Revoked)
+        ));
+        assert!(!state.agent_grants.contains_key(&agent.agent_id));
+        assert!(authorizer
+            .revoke_principal("demo", second_owner, agent.agent_id)
             .await
             .is_err());
         Ok(())

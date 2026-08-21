@@ -2143,14 +2143,18 @@ fn source_references_digest(references: &[SourceReference]) -> Result<String> {
 }
 
 async fn space_id_from_metadata(op: &Operator, ws_path: &str) -> Result<String> {
+    let space_id = ws_path
+        .strip_prefix("spaces/")
+        .filter(|space_id| !space_id.is_empty() && !space_id.contains('/'))
+        .context("derived workspace path is not a Space directory")?;
+    // A derived Head is only meaningful inside a complete authoritative Space.
+    // Validate the same metadata/bootstrap contract used by public Space reads,
+    // then return only the immutable UUIDv7 identity validated against the
+    // directory name. Never fall back to mutable space_id fields here.
+    crate::space::validate_complete_bootstrap(op, space_id).await?;
     let path = format!("{ws_path}/meta.json");
     let value: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
-    value
-        .get("space_uid")
-        .or_else(|| value.get("space_id"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .context("Space metadata has no immutable space ID")
+    Ok(crate::space::validate_current_space_metadata(space_id, &value)?.to_string())
 }
 
 fn is_shared_backend(op: &Operator) -> bool {

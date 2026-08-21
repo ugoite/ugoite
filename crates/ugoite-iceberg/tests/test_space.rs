@@ -184,6 +184,8 @@ async fn incomplete_bootstrap_settings_are_rejected() -> anyhow::Result<()> {
         .await
         .expect_err("settings without default_form must be rejected");
     assert!(error.to_string().contains("requires default_form"));
+    assert!(space::get_space(&op, "invalid-settings").await.is_err());
+    assert!(space::list_spaces(&op).await.is_err());
 
     op.write(settings_path, br#"[]"#.to_vec()).await?;
     let error = space::validate_complete_bootstrap(&op, "invalid-settings")

@@ -2093,10 +2093,6 @@ pub async fn create_sample_space_job(
     options: &SampleDataOptions,
 ) -> Result<SampleDataJob> {
     let plan = resolve_sample_data_plan(options)?;
-    let service = UgoiteService::from_operator(op.clone(), root_uri);
-    if service.space_id_by_slug(&options.space_id).await?.is_some() {
-        return Err(anyhow!("Space already exists: {}", options.space_id));
-    }
 
     ensure_jobs_dir(op).await?;
     let job_id = Uuid::new_v4().to_string();

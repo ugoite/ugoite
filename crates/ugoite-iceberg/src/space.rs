@@ -296,7 +296,13 @@ async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Re
 
 pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
     let storage = OpendalStorage::from_operator(op);
-    list_spaces_with_storage(&storage).await
+    let spaces = list_spaces_with_storage(&storage).await?;
+    // Directory listing is discovery only. Do not expose a metadata-only or
+    // crash-left Space through a public enumeration result.
+    for space_id in &spaces {
+        validate_complete_bootstrap(op, space_id).await?;
+    }
+    Ok(spaces)
 }
 
 async fn get_space_with_storage<S: StorageBackend + ?Sized>(
@@ -315,6 +321,7 @@ async fn get_space_with_storage<S: StorageBackend + ?Sized>(
 }
 
 pub async fn get_space(op: &Operator, name: &str) -> Result<SpaceMeta> {
+    validate_complete_bootstrap(op, name).await?;
     let storage = OpendalStorage::from_operator(op);
     get_space_with_storage(&storage, name).await
 }
@@ -337,6 +344,16 @@ async fn get_space_raw_with_storage<S: StorageBackend + ?Sized>(
         return Err(anyhow!("unsupported Space layout: missing settings.json"));
     }
     let settings: serde_json::Value = storage.read_json(&settings_path).await?;
+    if !settings.is_object()
+        || settings
+            .get("default_form")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+    {
+        return Err(anyhow!(
+            "unsupported Space layout: settings.json requires default_form"
+        ));
+    }
     meta["settings"] = settings;
     Ok(meta)
 }
@@ -458,6 +475,7 @@ pub async fn validate_complete_bootstrap(op: &Operator, space_id: &str) -> Resul
 }
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {
+    validate_complete_bootstrap(op, name).await?;
     let storage = OpendalStorage::from_operator(op);
     get_space_raw_with_storage(&storage, name).await
 }
@@ -480,11 +498,10 @@ async fn patch_space_with_storage<S: StorageBackend + ?Sized>(
     }
 
     let mut meta = ensure_space_identity(storage, space_id).await?;
-    let mut settings = if storage.exists(&settings_path).await? {
-        storage.read_json(&settings_path).await?
-    } else {
-        serde_json::json!({})
-    };
+    if !storage.exists(&settings_path).await? {
+        return Err(anyhow!("unsupported Space layout: missing settings.json"));
+    }
+    let mut settings: serde_json::Value = storage.read_json(&settings_path).await?;
 
     if let Some(name) = patch.get("name") {
         meta["name"] = name.clone();
@@ -504,6 +521,17 @@ async fn patch_space_with_storage<S: StorageBackend + ?Sized>(
         }
     }
 
+    if !settings.is_object()
+        || settings
+            .get("default_form")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+    {
+        return Err(anyhow!(
+            "unsupported Space layout: settings.json requires default_form"
+        ));
+    }
+
     storage.write_json(&meta_path, &meta).await?;
     storage.write_json(&settings_path, &settings).await?;
 
@@ -518,6 +546,7 @@ pub async fn patch_space(
     patch: &serde_json::Value,
 ) -> Result<serde_json::Value> {
     crate::authorization::ensure_authorization_write_fence().await?;
+    validate_complete_bootstrap(op, space_id).await?;
     let storage = OpendalStorage::from_operator(op);
     patch_space_with_storage(&storage, space_id, patch).await
 }
