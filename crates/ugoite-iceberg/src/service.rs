@@ -494,6 +494,24 @@ impl UgoiteService {
         Ok(())
     }
 
+    async fn claimed_space_metadata_slug(&self, space_id: &str) -> Result<Option<String>> {
+        let path = format!("spaces/{space_id}/meta.json");
+        let bytes = match self.operator.read(&path).await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let metadata: Value = serde_json::from_slice(&bytes)
+            .with_context(|| format!("decode Space metadata for claim recovery: {space_id}"))?;
+        space::validate_current_space_metadata(space_id, &metadata)?;
+        metadata
+            .get("slug")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .context("Space metadata has no slug")
+            .map(Some)
+    }
+
     /// Repairs a claim-backed Space before ordinary slug lookup. A claim is a
     /// durable recovery pointer, not a reason to permanently reserve a slug:
     /// complete metadata with a different current slug releases an interrupted
@@ -511,13 +529,23 @@ impl UgoiteService {
             space::validate_complete_bootstrap(&self.operator, &claim.space_id).await?;
             let metadata = space::get_space_raw(&self.operator, &claim.space_id).await?;
             if metadata.get("slug").and_then(Value::as_str) == Some(slug) {
-                if !committed {
-                    self.commit_space_slug_claim(slug, &claim.space_id).await?;
-                }
                 return Ok(Some(claim.space_id));
             }
             self.release_space_slug_claim(slug, &claim.space_id).await?;
             return Ok(None);
+        }
+
+        // A pending claim may be left by either a create or a rename.  If the
+        // authoritative metadata still names the old slug, the rename never
+        // published and the target claim must be released.  Calling the
+        // repair helper with the target slug would otherwise reject the old
+        // metadata forever.  Metadata already naming the target is the
+        // opposite crash window: finish the bootstrap and commit the claim.
+        if let Some(metadata_slug) = self.claimed_space_metadata_slug(&claim.space_id).await? {
+            if metadata_slug != slug {
+                self.release_space_slug_claim(slug, &claim.space_id).await?;
+                return Ok(None);
+            }
         }
 
         if claim.space_id != claim.slug {
@@ -537,6 +565,7 @@ impl UgoiteService {
             return Ok(None);
         }
         space::validate_complete_bootstrap(&self.operator, &claim.space_id).await?;
+        self.commit_space_slug_claim(slug, &claim.space_id).await?;
         Ok(Some(claim.space_id))
     }
 
@@ -2586,6 +2615,12 @@ mod tests {
             .context("claim-backed Space should be recoverable")?;
         assert_eq!(recovered, space_uid.to_string());
         assert_eq!(service.get_space(&recovered).await?["slug"], "recoverable");
+        assert!(
+            service
+                .operator
+                .exists("spaces/.ugoite-space-slug-claims/recoverable.committed")
+                .await?
+        );
         Ok(())
     }
 
@@ -2624,6 +2659,31 @@ mod tests {
             !service
                 .operator
                 .exists("spaces/.ugoite-space-slug-claims/before-rename.json")
+                .await?
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_rename_claim_before_metadata_swap_is_released() -> Result<()> {
+        let service = UgoiteService::new("memory://slug-rename-recovery-window")?;
+        let space_uid = service.create_operator_space("rename-before").await?;
+        service
+            .claim_space_slug("rename-after", &space_uid.to_string())
+            .await?;
+
+        assert_eq!(
+            service.recover_space_id_by_slug("rename-after").await?,
+            None
+        );
+        assert_eq!(
+            service.space_id_by_slug("rename-before").await?,
+            Some(space_uid.to_string())
+        );
+        assert!(
+            !service
+                .operator
+                .exists("spaces/.ugoite-space-slug-claims/rename-after.json")
                 .await?
         );
         Ok(())

@@ -1385,6 +1385,9 @@ pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<b
     if stale {
         return Ok(true);
     }
+    if validate_asset_text_build(op, ws_path, &head).await.is_err() {
+        return Ok(true);
+    }
     asset_text_refresh_requested(op, ws_path).await
 }
 
@@ -1534,14 +1537,45 @@ async fn rebuild_asset_text_with_mode(
                     .build(),
             )
             .await?;
-        for batch in rows.chunks(ASSET_TEXT_APPEND_BATCH_ROWS) {
-            append_rows(&table, &catalog, batch).await?;
+        let status_counts = asset_text_status_counts(&source_rows, &rows);
+        let batches = rows
+            .chunks(ASSET_TEXT_APPEND_BATCH_ROWS)
+            .collect::<Vec<_>>();
+        for (index, batch) in batches.iter().enumerate() {
+            let snapshot_properties = (index + 1 == batches.len()).then(|| {
+                HashMap::from([
+                    (
+                        "ugoite.asset_text.row_digest".to_string(),
+                        row_digest.clone(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_referenced".to_string(),
+                        status_counts.assets_referenced.to_string(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_ready".to_string(),
+                        status_counts.assets_ready.to_string(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_empty".to_string(),
+                        status_counts.assets_empty.to_string(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_failed".to_string(),
+                        status_counts.assets_failed.to_string(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_unsupported".to_string(),
+                        status_counts.assets_unsupported.to_string(),
+                    ),
+                ])
+            });
+            append_rows(&table, &catalog, batch, snapshot_properties).await?;
         }
         let final_table = catalog
             .load_table(&TableIdent::new(namespace.clone(), table_name.clone()))
             .await?;
         let metadata_location = final_table.metadata_location_result()?.to_string();
-        let status_counts = asset_text_status_counts(&source_rows, &rows);
         let manifest = AssetTextManifest {
             format_version: 2,
             relation_id: relation_uuid.to_string(),
@@ -2039,6 +2073,7 @@ async fn append_rows(
     table: &Table,
     catalog: &DerivedRelationCatalog,
     rows: &[AssetTextRow],
+    snapshot_properties: Option<HashMap<String, String>>,
 ) -> Result<()> {
     let arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
         table.metadata().current_schema(),
@@ -2116,7 +2151,11 @@ async fn append_rows(
         bail!("AssetText writer produced no data files");
     }
     let tx = Transaction::new(table);
-    tx.fast_append()
+    let mut append = tx.fast_append();
+    if let Some(snapshot_properties) = snapshot_properties {
+        append = append.set_snapshot_properties(snapshot_properties);
+    }
+    append
         .add_data_files(data_files)
         .apply(tx)?
         .commit(catalog)
@@ -3151,6 +3190,19 @@ fn extract_pdf_chunks(
     if page_markers > MAX_PDF_PAGES || text_operators > MAX_PDF_TEXT_OPERATORS {
         return Err("parser_limit");
     }
+    if !bytes.starts_with(b"%PDF-")
+        || !bytes
+            .windows(b"trailer".len())
+            .any(|window| window == b"trailer")
+        || !bytes
+            .windows(b"startxref".len())
+            .any(|window| window == b"startxref")
+        || !bytes
+            .windows(b"%%EOF".len())
+            .any(|window| window == b"%%EOF")
+    {
+        return Err("malformed_pdf");
+    }
     let mut text = if bytes
         .windows(b"/FlateDecode".len())
         .any(|window| window == b"/FlateDecode")
@@ -3397,13 +3449,144 @@ fn xml_text(bytes: &[u8]) -> std::result::Result<String, &'static str> {
     Ok(output)
 }
 
+async fn asset_text_table_from_head(
+    op: &Operator,
+    ws_path: &str,
+    head: &ugoite_storage::DerivedRelationHead,
+) -> Result<Table> {
+    validate_asset_text_head_binding(op, ws_path, head).await?;
+    let store = catalog_store_for_read(op, ws_path).await?;
+    let file_io = crate::space_catalog::file_io_for_store(&store);
+    let metadata =
+        iceberg::spec::TableMetadata::read_from(&file_io, &head.metadata_location).await?;
+    let table_ident: TableIdent = serde_json::from_value(head.table_identifier.clone())?;
+    let expected_table_ident = TableIdent::new(
+        NamespaceIdent::new("derived".to_string()),
+        format!(
+            "derived_{}",
+            DerivedRelationId::ASSET_TEXT.as_uuid().simple()
+        ),
+    );
+    if table_ident != expected_table_ident {
+        return Err(anyhow!(
+            "AssetText Head table identifier does not match the relation"
+        ));
+    }
+    if metadata.uuid().to_string() != head.table_uuid
+        || metadata.current_schema_id() != head.schema_id
+        || metadata.current_snapshot_id() != head.snapshot_id
+    {
+        return Err(anyhow!(
+            "AssetText Head table identity does not match Iceberg metadata"
+        ));
+    }
+    Table::builder()
+        .identifier(table_ident)
+        .metadata(metadata)
+        .metadata_location(head.metadata_location.clone())
+        .file_io(file_io)
+        .runtime(Runtime::current())
+        .build()
+        .map_err(Into::into)
+}
+
+async fn validate_asset_text_manifest(
+    op: &Operator,
+    ws_path: &str,
+    head: &ugoite_storage::DerivedRelationHead,
+    table: &Table,
+) -> Result<AssetTextManifest> {
+    let head_store = asset_text_head_store(op, ws_path).await?;
+    let manifest_location = format!("{}/manifest.json", head_store.builds_path(&head.build_id));
+    let manifest: AssetTextManifest =
+        serde_json::from_slice(&op.read(&manifest_location).await?.to_vec())
+            .context("decode AssetText build manifest")?;
+    if manifest.format_version != 2
+        || manifest.relation_id != head.relation_id
+        || manifest.build_id != head.build_id
+        || manifest.producer_fingerprint != head.producer_fingerprint
+        || manifest.input_digest != head.input_digest
+        || manifest.source_coordinate != head.source_coordinate
+        || !manifest.row_digest.starts_with("sha256:")
+        || manifest.row_digest.trim_start_matches("sha256:").len() != 64
+        || hex::decode(manifest.row_digest.trim_start_matches("sha256:")).is_err()
+    {
+        return Err(anyhow!("AssetText build manifest does not match its Head"));
+    }
+    let status_total = manifest
+        .assets_ready
+        .checked_add(manifest.assets_empty)
+        .and_then(|value| value.checked_add(manifest.assets_failed))
+        .and_then(|value| value.checked_add(manifest.assets_unsupported))
+        .context("AssetText manifest status count overflow")?;
+    if status_total != manifest.assets_referenced || manifest.row_count > MAX_TOTAL_ASSET_TEXT_ROWS
+    {
+        return Err(anyhow!(
+            "AssetText build manifest status or row count is invalid"
+        ));
+    }
+
+    let Some(snapshot) = table.metadata().current_snapshot() else {
+        if manifest.row_count != 0
+            || manifest.assets_referenced != 0
+            || manifest.row_digest != asset_text_rows_digest(&[])?
+        {
+            return Err(anyhow!(
+                "AssetText manifest describes rows but the Iceberg table is empty"
+            ));
+        }
+        return Ok(manifest);
+    };
+    let properties = &snapshot.summary().additional_properties;
+    let total_records = properties
+        .get("total-records")
+        .context("AssetText snapshot has no total-records summary")?
+        .parse::<usize>()
+        .context("AssetText snapshot total-records is invalid")?;
+    if total_records != manifest.row_count
+        || properties.get("ugoite.asset_text.row_digest") != Some(&manifest.row_digest)
+    {
+        return Err(anyhow!(
+            "AssetText snapshot row count or digest does not match its manifest"
+        ));
+    }
+    for (name, expected) in [
+        ("assets_referenced", manifest.assets_referenced),
+        ("assets_ready", manifest.assets_ready),
+        ("assets_empty", manifest.assets_empty),
+        ("assets_failed", manifest.assets_failed),
+        ("assets_unsupported", manifest.assets_unsupported),
+    ] {
+        let key = format!("ugoite.asset_text.{name}");
+        let actual = properties
+            .get(&key)
+            .with_context(|| format!("AssetText snapshot has no {name} summary"))?
+            .parse::<usize>()
+            .with_context(|| format!("AssetText snapshot {name} summary is invalid"))?;
+        if actual != expected {
+            return Err(anyhow!(
+                "AssetText snapshot {name} summary does not match its manifest"
+            ));
+        }
+    }
+    Ok(manifest)
+}
+
+async fn validate_asset_text_build(
+    op: &Operator,
+    ws_path: &str,
+    head: &ugoite_storage::DerivedRelationHead,
+) -> Result<AssetTextManifest> {
+    let table = asset_text_table_from_head(op, ws_path, head).await?;
+    validate_asset_text_manifest(op, ws_path, head, &table).await
+}
+
 pub async fn register_asset_text_table(
     context: &SessionContext,
     op: &Operator,
     ws_path: &str,
     table_name: &str,
 ) -> Result<bool> {
-    let store = catalog_store_for_read(op, ws_path).await?;
     let head_store = asset_text_head_store(op, ws_path).await?;
     let Some(head) = head_store.read_exact().await? else {
         return Ok(false);
@@ -3419,37 +3602,8 @@ pub async fn register_asset_text_table(
     {
         return Ok(false);
     }
-    let file_io = crate::space_catalog::file_io_for_store(&store);
-    let metadata =
-        iceberg::spec::TableMetadata::read_from(&file_io, &head.head.metadata_location).await?;
-    let table_ident: TableIdent = serde_json::from_value(head.head.table_identifier.clone())?;
-    let expected_table_ident = TableIdent::new(
-        NamespaceIdent::new("derived".to_string()),
-        format!(
-            "derived_{}",
-            DerivedRelationId::ASSET_TEXT.as_uuid().simple()
-        ),
-    );
-    if table_ident != expected_table_ident {
-        return Err(anyhow!(
-            "AssetText Head table identifier does not match the relation"
-        ));
-    }
-    if metadata.uuid().to_string() != head.head.table_uuid
-        || metadata.current_schema_id() != head.head.schema_id
-        || metadata.current_snapshot_id() != head.head.snapshot_id
-    {
-        return Err(anyhow!(
-            "AssetText Head table identity does not match Iceberg metadata"
-        ));
-    }
-    let table = Table::builder()
-        .identifier(table_ident)
-        .metadata(metadata)
-        .metadata_location(head.head.metadata_location.clone())
-        .file_io(file_io)
-        .runtime(Runtime::current())
-        .build()?;
+    let table = asset_text_table_from_head(op, ws_path, &head.head).await?;
+    validate_asset_text_manifest(op, ws_path, &head.head, &table).await?;
     let provider = IcebergStaticTableProvider::try_new_from_table(table).await?;
     context.register_table(table_name, Arc::new(provider))?;
     Ok(true)
@@ -3537,20 +3691,8 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
         return Ok(json!({"state":"missing","stale":true}));
     };
     validate_asset_text_head_binding(op, ws_path, &head.head).await?;
-    let manifest_location = format!(
-        "{}/manifest.json",
-        head_store.builds_path(&head.head.build_id)
-    );
-    let manifest: AssetTextManifest =
-        serde_json::from_slice(&op.read(&manifest_location).await?.to_vec())
-            .context("decode AssetText build manifest")?;
-    if manifest.relation_id != head.head.relation_id
-        || manifest.build_id != head.head.build_id
-        || manifest.input_digest != head.head.input_digest
-        || manifest.source_coordinate != head.head.source_coordinate
-    {
-        return Err(anyhow!("AssetText build manifest does not match its Head"));
-    }
+    let table = asset_text_table_from_head(op, ws_path, &head.head).await?;
+    let manifest = validate_asset_text_manifest(op, ws_path, &head.head, &table).await?;
     let current_source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
     let stale = head.head.producer_fingerprint != asset_text_producer_fingerprint()
         || head.head.definition_fingerprint != asset_text_definition_fingerprint()
@@ -3754,6 +3896,17 @@ mod tests {
             extract_pdf_text("BT (設備投資) Tj ET".as_bytes()),
             "設備投資"
         );
+    }
+
+    #[test]
+    fn truncated_pdf_signature_is_a_parser_failure_not_empty_text() {
+        assert!(matches!(
+            extract_chunks(
+                &Dispatch::Pdf(parser_identity("pdf")),
+                b"%PDF-1.7\nBT (truncated) Tj"
+            ),
+            Err("malformed_pdf")
+        ));
     }
 
     #[test]

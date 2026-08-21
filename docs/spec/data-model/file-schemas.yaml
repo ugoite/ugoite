@@ -29,7 +29,10 @@ schemas:
       - checksum
       properties:
         format_version: {type: integer, const: 1}
-        space_id: {type: string}
+        space_id:
+          type: string
+          format: uuid
+          description: Immutable UUIDv7 Space identity, matching the authoritative Space metadata and UUID-addressed directory when applicable.
         relation_id: {type: string, format: uuid}
         generation: {type: integer}
         definition_version: {type: integer}
@@ -43,7 +46,9 @@ schemas:
           description: Immutable UUIDv7 build identity. Producers and readers must reject non-UUIDv7 values.
         table_identifier: {type: object}
         table_uuid: {type: string, format: uuid}
-        metadata_location: {type: string}
+        metadata_location:
+          type: string
+          description: Iceberg metadata location under this Head's builds/{build_id}/ prefix.
         snapshot_id: {type: [integer, 'null']}
         schema_id: {type: integer}
         input_digest: {type: string}

@@ -2154,11 +2154,28 @@ impl DerivedRelationHeadStore {
             }
         })?;
         validate_derived_head_checksum(&head)?;
-        self.validate_derived_head_identity(&head)?;
+        self.validate_derived_head_identity(&head).await?;
         Ok(Some(ExactDerivedRelationHead { head, bytes, etag }))
     }
 
-    fn validate_derived_head_identity(&self, head: &DerivedRelationHead) -> Result<()> {
+    async fn validate_derived_head_identity(&self, head: &DerivedRelationHead) -> Result<()> {
+        if head.format_version != 1 {
+            return Err(anyhow!(
+                "DerivedRelation Head format_version is unsupported"
+            ));
+        }
+        if head.generation == 0
+            || head.definition_version == 0
+            || head.compatibility_epoch == 0
+            || head.definition_fingerprint.trim().is_empty()
+            || head.producer_id.trim().is_empty()
+            || head.producer_fingerprint.trim().is_empty()
+            || head.input_digest.trim().is_empty()
+        {
+            return Err(anyhow!(
+                "DerivedRelation Head contains an incomplete identity coordinate"
+            ));
+        }
         let relation_id = Uuid::parse_str(&head.relation_id)
             .context("DerivedRelation Head relation_id is not a UUID")?;
         if relation_id != self.relation_id {
@@ -2178,17 +2195,56 @@ impl DerivedRelationHeadStore {
         }
         Uuid::parse_str(&head.table_uuid)
             .context("DerivedRelation Head table_uuid is not a UUID")?;
-        if !head.table_identifier.is_object() {
+        if !head
+            .table_identifier
+            .as_object()
+            .is_some_and(|object| !object.is_empty())
+        {
             return Err(anyhow!(
-                "DerivedRelation Head table_identifier must be an object"
+                "DerivedRelation Head table_identifier must be a non-empty object"
             ));
         }
+        let build_path_component = format!("/builds/{}/", head.build_id);
+        let relative_build_path = format!("builds/{}/", head.build_id);
         if head.metadata_location.trim().is_empty()
-            || !head.metadata_location.contains(&head.build_id)
+            || (!head.metadata_location.contains(&build_path_component)
+                && !head.metadata_location.starts_with(&relative_build_path))
         {
             return Err(anyhow!(
                 "DerivedRelation Head metadata_location is not bound to its build"
             ));
+        }
+
+        // UUID-addressed Spaces are structurally bound even for the generic
+        // storage adapter. Legacy slug-addressed Spaces are bound by the
+        // authoritative metadata check in the AssetText reader.
+        if let Some(directory_id) = self.space_root.strip_prefix("spaces/") {
+            if let Ok(directory_uid) = Uuid::parse_str(directory_id) {
+                if directory_uid.get_version_num() == 7 && directory_uid != space_uid {
+                    return Err(anyhow!(
+                        "DerivedRelation Head space_id does not match its Space directory"
+                    ));
+                }
+            }
+        }
+        let metadata_path = format!("{}/meta.json", self.space_root);
+        match self.operator.read(&metadata_path).await {
+            Ok(bytes) => {
+                let metadata: serde_json::Value = serde_json::from_slice(&bytes.to_vec())
+                    .context("decode authoritative Space metadata for DerivedRelation Head")?;
+                let authoritative_uid = metadata
+                    .get("space_uid")
+                    .and_then(serde_json::Value::as_str)
+                    .context("authoritative Space metadata has no space_uid")?
+                    .parse::<Uuid>()?;
+                if authoritative_uid.get_version_num() != 7 || authoritative_uid != space_uid {
+                    return Err(anyhow!(
+                        "DerivedRelation Head space_id does not match authoritative Space metadata"
+                    ));
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
         Ok(())
     }
@@ -2319,6 +2375,7 @@ impl DerivedRelationHeadStore {
     }
 
     pub async fn create(&self, head: &DerivedRelationHead) -> Result<()> {
+        self.validate_derived_head_identity(head).await?;
         self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
         match self.write_mode {
@@ -2391,6 +2448,7 @@ impl DerivedRelationHeadStore {
         expected_etag: Option<&str>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.validate_derived_head_identity(head).await?;
         self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
         match self.write_mode {
@@ -2465,6 +2523,7 @@ impl DerivedRelationHeadStore {
             .etag
             .as_deref()
             .context("shared legacy DerivedRelation replacement requires an ETag")?;
+        self.validate_derived_head_identity(head).await?;
         let bytes = canonical_head_bytes(head)?;
         self.begin_publishing(&head.build_id).await?;
         let (heartbeat, heartbeat_lost) = self.start_publishing_claim_heartbeat(&head.build_id);
@@ -2503,6 +2562,7 @@ impl DerivedRelationHeadStore {
                 "single-process legacy DerivedRelation replacement requires local mode"
             ));
         }
+        self.validate_derived_head_identity(head).await?;
         self.begin_publishing(&head.build_id).await?;
         let result = async {
             let Some((_, current_bytes, current_etag)) = self.read_raw_exact().await? else {
@@ -2532,6 +2592,7 @@ impl DerivedRelationHeadStore {
         expected: Option<&ExactDerivedRelationHead>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.validate_derived_head_identity(head).await?;
         self.begin_publishing(&head.build_id).await?;
         if self.write_mode != CatalogWriteMode::SingleProcess {
             let (heartbeat, heartbeat_lost) = self.start_publishing_claim_heartbeat(&head.build_id);
@@ -3326,18 +3387,27 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
     let atomic_write_dir = if root == "/" {
         let spaces = Path::new(root).join("spaces");
         if spaces.is_dir() {
-            spaces.join(".ugoite-atomic-writes")
+            Some(spaces.join(".ugoite-atomic-writes"))
         } else {
-            std::env::temp_dir().join(format!(".ugoite-atomic-writes-{}", std::process::id()))
+            // No authoritative root-backed Space exists yet. Do not fall back
+            // to `/tmp`; a later operator opened after `/spaces` exists will
+            // use an atomic directory on that same filesystem.
+            None
         }
     } else {
-        Path::new(root).join(".ugoite-atomic-writes")
+        Some(Path::new(root).join(".ugoite-atomic-writes"))
     };
-    let op = Operator::new(
-        Fs::default()
-            .root(root)
-            .atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref()),
-    )?;
+    let mut builder = Fs::default().root(root);
+    if let Some(atomic_write_dir) = atomic_write_dir {
+        std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
+            format!(
+                "create same-filesystem atomic write directory {}",
+                atomic_write_dir.display()
+            )
+        })?;
+        builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
+    }
+    let op = Operator::new(builder)?;
     Ok(op)
 }
 
@@ -4375,6 +4445,7 @@ mod tests {
         let relation_id = uuid::Uuid::from_u128(0xA003);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id)
             .single_process();
+        let space_uid = Uuid::now_v7();
         let current_build_id = test_build_id();
         operator
             .write(
@@ -4390,7 +4461,7 @@ mod tests {
             .await?;
         let current_head = DerivedRelationHead {
             format_version: 1,
-            space_id: "demo".into(),
+            space_id: space_uid.to_string(),
             relation_id: relation_id.to_string(),
             generation: 1,
             definition_version: 1,
@@ -4400,8 +4471,8 @@ mod tests {
             compatibility_epoch: 1,
             build_id: current_build_id.clone(),
             table_identifier: serde_json::json!({"table":"derived"}),
-            table_uuid: "table-uuid".into(),
-            metadata_location: "memory:///metadata.json".into(),
+            table_uuid: Uuid::now_v7().to_string(),
+            metadata_location: format!("memory:///builds/{current_build_id}/metadata.json"),
             snapshot_id: None,
             schema_id: 0,
             input_digest: "input".into(),
@@ -4437,9 +4508,11 @@ mod tests {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA004);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let space_uid = Uuid::now_v7();
+        let first_build_id = test_build_id();
         let mut first = DerivedRelationHead {
             format_version: 1,
-            space_id: "demo".into(),
+            space_id: space_uid.to_string(),
             relation_id: relation_id.to_string(),
             generation: 1,
             definition_version: 1,
@@ -4447,10 +4520,10 @@ mod tests {
             producer_id: "producer".into(),
             producer_fingerprint: "producer".into(),
             compatibility_epoch: 1,
-            build_id: test_build_id(),
+            build_id: first_build_id.clone(),
             table_identifier: serde_json::json!({"table":"derived"}),
-            table_uuid: "table".into(),
-            metadata_location: "memory:///metadata".into(),
+            table_uuid: Uuid::now_v7().to_string(),
+            metadata_location: format!("memory:///builds/{first_build_id}/metadata.json"),
             snapshot_id: None,
             schema_id: 0,
             input_digest: "input".into(),
@@ -4470,11 +4543,13 @@ mod tests {
         let expected = store.read_exact().await?.expect("initial Head");
         first.generation = 2;
         first.build_id = test_build_id();
+        first.metadata_location = format!("memory:///builds/{}/metadata.json", first.build_id);
         store.mark_staging(&first.build_id).await?;
         store.publish(Some(&expected), &first).await?;
         let mut loser = first.clone();
         loser.generation = 3;
         loser.build_id = test_build_id();
+        loser.metadata_location = format!("memory:///builds/{}/metadata.json", loser.build_id);
         store.mark_staging(&loser.build_id).await?;
         let error = store
             .publish(Some(&expected), &loser)

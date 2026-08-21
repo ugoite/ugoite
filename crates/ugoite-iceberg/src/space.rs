@@ -676,6 +676,29 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
         serde_json::from_slice(&op.read(&meta_path).await?.to_vec())?;
     let current_settings: serde_json::Value =
         serde_json::from_slice(&op.read(&settings_path).await?.to_vec())?;
+    let metadata_is_expected =
+        current_meta == journal.old_metadata || current_meta == journal.new_metadata;
+    let settings_is_expected =
+        current_settings == journal.old_settings || current_settings == journal.new_settings;
+    if !metadata_is_expected || !settings_is_expected {
+        // A different writer won the race after this journal was written. Do
+        // not let a stale, incomplete transaction brick every future Space
+        // read. The current values are still authoritative only after their
+        // own schemas have been checked; otherwise fail closed as corruption.
+        validate_current_space_metadata(space_id, &current_meta)?;
+        if !current_settings.is_object()
+            || current_settings
+                .get("default_form")
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(str::is_empty)
+        {
+            return Err(anyhow!(
+                "current Space settings are invalid while recovering a stale patch journal"
+            ));
+        }
+        op.delete(&journal_path).await?;
+        return Ok(());
+    }
     if current_meta != journal.new_metadata {
         if current_meta != journal.old_metadata {
             return Err(anyhow!(
@@ -727,6 +750,10 @@ pub async fn validate_complete_bootstrap(op: &Operator, space_id: &str) -> Resul
     let patch_serializer = space_patch_serializer(op, space_id);
     let _patch_guard = patch_serializer.lock().await;
     let _local_patch_lock = acquire_local_space_patch_lock(op, space_id).await?;
+    validate_complete_bootstrap_locked(op, space_id).await
+}
+
+async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Result<()> {
     recover_pending_space_patch(op, space_id).await?;
     let storage = OpendalStorage::from_operator(op);
     ensure_space_identity(&storage, space_id).await?;
@@ -762,7 +789,11 @@ pub async fn validate_complete_bootstrap(op: &Operator, space_id: &str) -> Resul
 }
 
 pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Value> {
-    validate_complete_bootstrap(op, name).await?;
+    validate_space_path_segment(name)?;
+    let patch_serializer = space_patch_serializer(op, name);
+    let _patch_guard = patch_serializer.lock().await;
+    let _local_patch_lock = acquire_local_space_patch_lock(op, name).await?;
+    validate_complete_bootstrap_locked(op, name).await?;
     let storage = OpendalStorage::from_operator(op);
     get_space_raw_with_storage(&storage, name).await
 }
@@ -773,9 +804,11 @@ async fn patch_space_with_operator(
     patch: &serde_json::Value,
     expected_slug: Option<&str>,
 ) -> Result<serde_json::Value> {
+    validate_space_path_segment(space_id)?;
     let patch_serializer = space_patch_serializer(op, space_id);
     let _patch_guard = patch_serializer.lock().await;
-    validate_space_path_segment(space_id)?;
+    let _local_patch_lock = acquire_local_space_patch_lock(op, space_id).await?;
+    recover_pending_space_patch(op, space_id).await?;
     let meta_path = format!("spaces/{space_id}/meta.json");
     let settings_path = format!("spaces/{space_id}/settings.json");
 

@@ -227,16 +227,27 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     let atomic_write_dir = if root == "/" {
         let spaces = Path::new(root).join("spaces");
         if spaces.is_dir() {
-            spaces.join(".ugoite-atomic-writes")
+            Some(spaces.join(".ugoite-atomic-writes"))
         } else {
-            std::env::temp_dir().join(format!(".ugoite-atomic-writes-{}", std::process::id()))
+            // There is no authoritative `/spaces` mount to anchor yet. Keep
+            // this probe usable without creating global root files. A real
+            // root-backed Space is opened after `/spaces` exists and then gets
+            // an atomic directory on that same filesystem.
+            None
         }
     } else {
-        Path::new(root).join(".ugoite-atomic-writes")
+        Some(Path::new(root).join(".ugoite-atomic-writes"))
     };
-    let builder = Fs::default()
-        .root(root)
-        .atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
+    let mut builder = Fs::default().root(root);
+    if let Some(atomic_write_dir) = atomic_write_dir {
+        std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
+            format!(
+                "create same-filesystem atomic write directory {}",
+                atomic_write_dir.display()
+            )
+        })?;
+        builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
+    }
     Ok(opendal::Operator::new(builder)?)
 }
 

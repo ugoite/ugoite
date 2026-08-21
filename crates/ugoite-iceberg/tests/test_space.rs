@@ -248,6 +248,41 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
 }
 
 #[tokio::test]
+async fn stale_space_patch_journal_is_discarded_after_a_valid_winner() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "stale-patch", "memory:///").await?;
+    let meta_path = "spaces/stale-patch/meta.json";
+    let settings_path = "spaces/stale-patch/settings.json";
+    let old_meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    let old_settings: Value = serde_json::from_slice(&op.read(settings_path).await?.to_vec())?;
+    let mut new_meta = old_meta.clone();
+    new_meta["name"] = Value::String("journal-winner".to_string());
+    op.write(
+        "spaces/stale-patch/.ugoite-space-patch.json",
+        serde_json::to_vec(&serde_json::json!({
+            "old_metadata": old_meta,
+            "new_metadata": new_meta,
+            "old_settings": old_settings.clone(),
+            "new_settings": old_settings,
+        }))?,
+    )
+    .await?;
+    let mut external_meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    external_meta["name"] = Value::String("external-winner".to_string());
+    op.write(meta_path, serde_json::to_vec(&external_meta)?)
+        .await?;
+
+    space::validate_complete_bootstrap(&op, "stale-patch").await?;
+    let observed: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    assert_eq!(observed["name"], "external-winner");
+    assert!(
+        !op.exists("spaces/stale-patch/.ugoite-space-patch.json")
+            .await?
+    );
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-STO-004
 async fn test_space_req_sto_004_list_spaces_from_directory() -> anyhow::Result<()> {
     let op = setup_operator()?;
