@@ -1066,7 +1066,7 @@ where
         // same admission invariant with one process-local mutex. Shared
         // remote writers are rejected rather than pretending a read-then-write
         // check is atomic.
-        if op.info().scheme() != "memory" {
+        if !matches!(op.info().scheme(), "memory" | "fs" | "file") {
             bail!("AssetText refresh marker admission requires conditional object writes");
         }
         let lock = ASSET_TEXT_REFRESH_LOCAL_ADMISSION.get_or_init(Mutex::default);

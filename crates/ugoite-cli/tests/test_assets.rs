@@ -336,4 +336,22 @@ fn test_asset_remote_upload_requires_explicit_transport_capability() {
         stderr.contains("UGOITE_ENABLE_REMOTE_ASSET_UPLOAD=1"),
         "{stderr}"
     );
+
+    for alias in ["true", "yes"] {
+        let output = Command::new(ugoite_bin())
+            .args([
+                "asset",
+                "upload",
+                "remote-space",
+                asset_file.to_str().unwrap(),
+            ])
+            .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+            .env("UGOITE_ENABLE_REMOTE_ASSET_UPLOAD", alias)
+            .output()
+            .expect("run aliased remote asset capability");
+        assert!(
+            !output.status.success(),
+            "alias {alias} unexpectedly enabled"
+        );
+    }
 }

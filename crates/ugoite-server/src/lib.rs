@@ -1378,6 +1378,12 @@ async fn auth_setup_finish(
         .await
         .map_err(ApiError::from_core)?;
     let authorizer = Authorizer::new(state.service.operator().clone());
+    // Setup spans Node identity and every existing Space. Shared object
+    // storage cannot commit those objects as one transaction, so reject the
+    // whole bootstrap before consuming the one-time setup secret.
+    authorizer
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     for space_id in &existing_spaces {
         let space_uid = state
             .service
@@ -1398,7 +1404,7 @@ async fn auth_setup_finish(
         )
         .await
         .map_err(recovery_aware_auth_error)?;
-    let mut claimed_space_uids = Vec::new();
+    let mut claims = Vec::new();
     if existing_spaces.is_empty() {
         let principal_id = Uuid::now_v7();
         let space_uid = state
@@ -1406,19 +1412,9 @@ async fn auth_setup_finish(
             .create_space_for_principal("default", principal_id, &result.account.display_name)
             .await
             .map_err(ApiError::from_core)?;
-        state
-            .identity
-            .add_binding(ugoite_domain::identity::PrincipalBinding {
-                space_uid,
-                principal_id,
-                node_account_id: result.account.account_id,
-                binding_method: BindingMethod::Setup,
-            })
-            .await
-            .map_err(auth_error)?;
-        claimed_space_uids.push(space_uid);
+        claims.push((space_uid, principal_id));
     } else {
-        for space_id in existing_spaces {
+        for space_id in &existing_spaces {
             let space_uid = state
                 .service
                 .space_uid(&space_id)
@@ -1428,19 +1424,30 @@ async fn auth_setup_finish(
                 .ensure_owner(&space_id, space_uid, &result.account.display_name)
                 .await
                 .map_err(ApiError::from_core)?;
-            state
-                .identity
-                .add_binding(ugoite_domain::identity::PrincipalBinding {
-                    space_uid,
-                    principal_id,
-                    node_account_id: result.account.account_id,
-                    binding_method: BindingMethod::Setup,
-                })
-                .await
-                .map_err(auth_error)?;
-            claimed_space_uids.push(space_uid);
+            claims.push((space_uid, principal_id));
         }
     }
+    state
+        .identity
+        .add_bindings(
+            claims
+                .iter()
+                .map(
+                    |(space_uid, principal_id)| ugoite_domain::identity::PrincipalBinding {
+                        space_uid: *space_uid,
+                        principal_id: *principal_id,
+                        node_account_id: result.account.account_id,
+                        binding_method: BindingMethod::Setup,
+                    },
+                )
+                .collect(),
+        )
+        .await
+        .map_err(auth_error)?;
+    let claimed_space_uids = claims
+        .iter()
+        .map(|(space_uid, _)| *space_uid)
+        .collect::<Vec<_>>();
     let space_uid = claimed_space_uids.first().copied();
     state
         .identity
@@ -5293,16 +5300,34 @@ async fn create_agent(
         move |lease, sponsor, _principals| {
             Box::pin(async move {
                 let agent = Authorizer::new(operator)
-                    .create_agent_with_lease(&space_id_for_mutation, sponsor, agent_request, lease)
+                    .create_or_recover_agent_with_lease(
+                        &space_id_for_mutation,
+                        sponsor,
+                        agent_request.clone(),
+                        lease,
+                    )
                     .await
                     .map_err(ApiError::from_core)?;
                 ugoite_iceberg::authorization::ensure_authorization_write_fence()
                     .await
                     .map_err(ApiError::from_core)?;
-                let credential = identity_service
-                    .register_agent_credential(agent.agent_id, public_key_jwk, expires_at)
+                let credential = match identity_service
+                    .agent_credential_for_agent(agent.agent_id)
                     .await
-                    .map_err(auth_error)?;
+                    .map_err(auth_error)?
+                {
+                    Some(existing) if existing.public_key_jwk == public_key_jwk => existing,
+                    Some(_) => {
+                        return Err(ApiError::new(
+                            StatusCode::CONFLICT,
+                            "recovered agent already has a different active credential",
+                        ));
+                    }
+                    None => identity_service
+                        .register_agent_credential(agent.agent_id, public_key_jwk, expires_at)
+                        .await
+                        .map_err(auth_error)?,
+                };
                 identity_service
                     .append_node_audit(NodeAuditInput {
                         subject_account_id: Some(account_id),
@@ -7482,19 +7507,19 @@ async fn create_space(
             "node admin role is required to create a Space",
         ));
     }
-    let principal_id = Uuid::now_v7();
-    let space_uid = state
-        .service
-        .create_space_for_principal(&payload.name, principal_id, &identity.display_name)
-        .await
-        .map_err(ApiError::from_core)?;
-    state
-        .identity
-        .bind_local_owner(space_uid, principal_id, identity.account_id)
-        .await
-        .map_err(auth_error)?;
+    let (space_uid, created) = ensure_local_space_owner_binding(
+        &state,
+        &payload.name,
+        identity.account_id,
+        &identity.display_name,
+    )
+    .await?;
     Ok((
-        StatusCode::CREATED,
+        if created {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
         Json(json!({
             "id": space_uid,
             "slug": payload.name,
@@ -7503,6 +7528,98 @@ async fn create_space(
             "path": state.workspace(&space_uid.to_string())
         })),
     ))
+}
+
+/// Completes Space creation after an interrupted local bootstrap. The
+/// scaffold and authorization owner are durable enough to identify the retry
+/// target; the Node binding is then an idempotent final step. This is limited
+/// to the authenticated Node-administrator route.
+async fn ensure_local_space_owner_binding(
+    state: &AppState,
+    slug: &str,
+    account_id: Uuid,
+    display_name: &str,
+) -> ApiResult<(Uuid, bool)> {
+    if let Some(existing_id) = state
+        .service
+        .space_id_by_slug(slug)
+        .await
+        .map_err(ApiError::from_core)?
+    {
+        let space_uid = state
+            .service
+            .space_uid(&existing_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        let principal_id = match authorizer.state(&existing_id).await {
+            Ok(authorization) => authorization
+                .memberships
+                .values()
+                .find(|membership| membership.role == SpaceRole::Owner)
+                .map(|membership| membership.principal_id)
+                .ok_or_else(|| {
+                    ApiError::new(
+                        StatusCode::CONFLICT,
+                        "existing Space has no recoverable owner membership",
+                    )
+                })?,
+            Err(read_error) => {
+                // A crash between the filesystem scaffold and authorization
+                // owner publication leaves no owner to discover. Reusing the
+                // existing immutable Space identity lets the next request
+                // finish bootstrap without creating a second slug.
+                let recovered_principal_id = Uuid::now_v7();
+                authorizer
+                    .initialize_owner(
+                        &existing_id,
+                        space_uid,
+                        recovered_principal_id,
+                        display_name,
+                    )
+                    .await
+                    .map_err(|initialize_error| {
+                        ApiError::from_core(anyhow::anyhow!(
+                            "recover Space authorization after reading existing state ({read_error:#}): {initialize_error:#}"
+                        ))
+                    })?;
+                recovered_principal_id
+            }
+        };
+        if let Some(bound_principal) = state
+            .identity
+            .binding_for_account(space_uid, account_id)
+            .await
+            .map_err(auth_error)?
+        {
+            if bound_principal != principal_id {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "Node account is already bound to a different Space principal",
+                ));
+            }
+            return Ok((space_uid, false));
+        }
+        state
+            .identity
+            .bind_local_owner(space_uid, principal_id, account_id)
+            .await
+            .map_err(auth_error)?;
+        return Ok((space_uid, false));
+    }
+
+    let principal_id = Uuid::now_v7();
+    let space_uid = state
+        .service
+        .create_space_for_principal(slug, principal_id, display_name)
+        .await
+        .map_err(ApiError::from_core)?;
+    state
+        .identity
+        .bind_local_owner(space_uid, principal_id, account_id)
+        .await
+        .map_err(auth_error)?;
+    Ok((space_uid, true))
 }
 
 async fn get_space(
@@ -12063,15 +12180,6 @@ mod authentication_regression_tests {
             .service
             .create_space_for_principal("invitation-saga", owner_principal_id, "Owner")
             .await?;
-        state
-            .identity
-            .add_binding(ugoite_domain::identity::PrincipalBinding {
-                space_uid,
-                principal_id: owner_principal_id,
-                node_account_id: owner_account_id,
-                binding_method: BindingMethod::Setup,
-            })
-            .await?;
         let principal_id = Uuid::now_v7();
         let backup_owner_principal_id = Uuid::now_v7();
         let account = HumanAccount {
@@ -12115,20 +12223,6 @@ mod authentication_regression_tests {
                 &space_uid.to_string(),
                 owner_principal_id,
                 SpacePrincipal {
-                    principal_id,
-                    kind: PrincipalKind::Human,
-                    display_name: account.display_name.clone(),
-                    state: PrincipalState::Active,
-                    created_at: chrono::Utc::now().to_rfc3339(),
-                },
-                SpaceRole::Viewer,
-            )
-            .await?;
-        authorizer
-            .add_human_member(
-                &space_uid.to_string(),
-                owner_principal_id,
-                SpacePrincipal {
                     principal_id: backup_owner_principal_id,
                     kind: PrincipalKind::Human,
                     display_name: "Backup owner".to_string(),
@@ -12138,6 +12232,27 @@ mod authentication_regression_tests {
                 SpaceRole::Owner,
             )
             .await?;
+        // The Node half is already durable, but the inviter's Node binding is
+        // missing. This forces the failure boundary after the Node mutation;
+        // adding that binding below must make the same request converge.
+        assert!(
+            bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+                .await
+                .is_err()
+        );
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid,
+                principal_id: owner_principal_id,
+                node_account_id: owner_account_id,
+                binding_method: BindingMethod::Setup,
+            })
+            .await?;
+        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+            .await
+            .expect("idempotent retry after missing inviter binding");
+
         authorizer
             .change_role(
                 &space_uid.to_string(),
@@ -12147,9 +12262,6 @@ mod authentication_regression_tests {
             )
             .await?;
 
-        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
-            .await
-            .expect("membership-first finalization");
         authorizer
             .revoke_principal(
                 &space_uid.to_string(),
@@ -12157,9 +12269,6 @@ mod authentication_regression_tests {
                 owner_principal_id,
             )
             .await?;
-        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
-            .await
-            .expect("idempotent retry after inviter revocation");
 
         let authorization = authorizer.state(&space_uid.to_string()).await?;
         assert_eq!(authorization.memberships.len(), 3);
@@ -12184,6 +12293,114 @@ mod authentication_regression_tests {
                 .await
                 .is_err()
         );
+
+        // OIDC uses the same Node-first finalization contract. Exercise the
+        // same post-Node failure boundary with its distinct binding method so
+        // a callback retry cannot create a second principal.
+        let oidc_owner_principal_id = Uuid::now_v7();
+        let oidc_owner_account_id = Uuid::now_v7();
+        let oidc_principal_id = Uuid::now_v7();
+        let oidc_account_id = Uuid::now_v7();
+        let oidc_space_uid = state
+            .service
+            .create_space_for_principal(
+                "invitation-oidc-saga",
+                oidc_owner_principal_id,
+                "OIDC owner",
+            )
+            .await?;
+        let oidc_account = HumanAccount {
+            account_id: oidc_account_id,
+            display_name: "OIDC viewer".to_string(),
+            status: AccountStatus::Active,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            node_roles: BTreeSet::new(),
+            credential_generation: 0,
+        };
+        let oidc_invitation = AccountInvitation {
+            invitation_id: Uuid::now_v7(),
+            token_hash: "oidc-test".to_string(),
+            display_name: oidc_account.display_name.clone(),
+            space_uid: Some(oidc_space_uid),
+            role: Some("viewer".to_string()),
+            expires_at: chrono::Utc::now().to_rfc3339(),
+            acceptance: Some(
+                ugoite_identity::node_identity::InvitationAcceptance::Pending {
+                    account_id: oidc_account_id,
+                    principal_id: oidc_principal_id,
+                    kind: ugoite_identity::node_identity::InvitationAcceptanceKind::Oidc,
+                    claimed_at: chrono::Utc::now().to_rfc3339(),
+                    credential_generation: 0,
+                },
+            ),
+            created_by: oidc_owner_account_id,
+        };
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid: oidc_space_uid,
+                principal_id: oidc_principal_id,
+                node_account_id: oidc_account_id,
+                binding_method: BindingMethod::Oidc,
+            })
+            .await?;
+        let oidc_authorizer = Authorizer::new(state.service.operator().clone());
+        assert!(
+            bind_invited_account(&state, &oidc_account, &oidc_invitation, BindingMethod::Oidc,)
+                .await
+                .is_err()
+        );
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid: oidc_space_uid,
+                principal_id: oidc_owner_principal_id,
+                node_account_id: oidc_owner_account_id,
+                binding_method: BindingMethod::Setup,
+            })
+            .await?;
+        bind_invited_account(&state, &oidc_account, &oidc_invitation, BindingMethod::Oidc)
+            .await
+            .expect("OIDC retry after missing inviter binding");
+        assert!(oidc_authorizer
+            .state(&oidc_space_uid.to_string())
+            .await?
+            .memberships
+            .contains_key(&oidc_principal_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_creation_retry_repairs_a_missing_node_binding() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-space-create-recovery")?;
+        state.initialize_node().await?;
+        let account_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("recover-space", principal_id, "Owner")
+            .await?;
+
+        let (recovered_uid, created) =
+            ensure_local_space_owner_binding(&state, "recover-space", account_id, "Owner")
+                .await
+                .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        assert_eq!(recovered_uid, space_uid);
+        assert!(!created);
+        assert_eq!(
+            state
+                .identity
+                .binding_for_account(space_uid, account_id)
+                .await?,
+            Some(principal_id)
+        );
+
+        let (same_uid, created) =
+            ensure_local_space_owner_binding(&state, "recover-space", account_id, "Owner")
+                .await
+                .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        assert_eq!(same_uid, space_uid);
+        assert!(!created);
         Ok(())
     }
 }

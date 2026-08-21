@@ -11,9 +11,8 @@ fn remote_asset_upload_capability_enabled() -> bool {
     matches!(
         std::env::var(REMOTE_ASSET_UPLOAD_CAPABILITY_ENV)
             .ok()
-            .as_deref()
-            .map(str::trim),
-        Some("1" | "true" | "yes")
+            .as_deref(),
+        Some("1")
     )
 }
 

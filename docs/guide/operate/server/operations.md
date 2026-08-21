@@ -64,7 +64,10 @@ Restore each configured backend/prefix while writes are stopped, restore the
 node secret before starting the node, and verify `/health`, authentication,
 Space listing, and a representative read/write/restore path. Moving a Space
 moves the Space prefix only. Re-establish node-local account bindings on the
-destination through normal setup.
+destination through normal setup. If a local `POST /spaces` request fails after
+the Space scaffold or owner is durable, retry the same slug as the Node
+administrator; the create path reuses that immutable Space and repairs its
+missing Node binding instead of creating a second Space.
 
 ## Upgrade
 

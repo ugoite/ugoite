@@ -5110,28 +5110,59 @@ impl NodeIdentityService {
     }
 
     pub async fn add_binding(&self, binding: PrincipalBinding) -> Result<()> {
-        let _guard = self.state_lock.lock().await;
-        let mut state = self.read_state().await?;
-        if state.bindings.iter().any(|candidate| candidate == &binding) {
+        self.add_bindings(vec![binding]).await
+    }
+
+    /// Atomically commits a set of Node-to-Space bindings. Setup can claim
+    /// several existing Spaces after the account is created without leaving
+    /// only a prefix of the claims durable when one individual write fails.
+    pub async fn add_bindings(&self, bindings: Vec<PrincipalBinding>) -> Result<()> {
+        if bindings.is_empty() {
             return Ok(());
         }
-        ensure_node_recovery_mutation_allowed(&mut state, binding.space_uid)?;
-        ensure_node_account_recovery_mutation_allowed(&mut state, binding.node_account_id)?;
-        if state.bindings.iter().any(|candidate| {
-            candidate.space_uid == binding.space_uid
-                && (candidate.principal_id == binding.principal_id
-                    || candidate.node_account_id == binding.node_account_id)
-        }) {
-            bail!("principal or account is already bound in this space");
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        let mut additions = Vec::new();
+        for binding in bindings {
+            if state.bindings.iter().any(|candidate| candidate == &binding)
+                || additions
+                    .iter()
+                    .any(|candidate: &PrincipalBinding| candidate == &binding)
+            {
+                continue;
+            }
+            ensure_node_recovery_mutation_allowed(&mut state, binding.space_uid)?;
+            ensure_node_account_recovery_mutation_allowed(&mut state, binding.node_account_id)?;
+            if state
+                .bindings
+                .iter()
+                .chain(additions.iter())
+                .any(|candidate| {
+                    candidate.space_uid == binding.space_uid
+                        && (candidate.principal_id == binding.principal_id
+                            || candidate.node_account_id == binding.node_account_id)
+                })
+            {
+                bail!("principal or account is already bound in this space");
+            }
+            additions.push(binding);
         }
-        let account_id = binding.node_account_id;
-        state.bindings.push(binding);
+        if additions.is_empty() {
+            return Ok(());
+        }
+        let account_ids = additions
+            .iter()
+            .map(|binding| binding.node_account_id)
+            .collect::<BTreeSet<_>>();
+        state.bindings.extend(additions);
         let now = timestamp(Utc::now());
-        invalidate_pending_recovery_responses(&mut state, account_id, &now);
-        *state
-            .account_lifecycle_epochs
-            .entry(account_id)
-            .or_insert(0) += 1;
+        for account_id in account_ids {
+            invalidate_pending_recovery_responses(&mut state, account_id, &now);
+            *state
+                .account_lifecycle_epochs
+                .entry(account_id)
+                .or_insert(0) += 1;
+        }
         self.write_state(&state).await
     }
 
@@ -6434,6 +6465,22 @@ impl NodeIdentityService {
             bail!("agent credential has expired");
         }
         Ok(credential)
+    }
+
+    /// Returns the active Node credential for an agent so a retried compound
+    /// Space+Node mutation can attach to the already-created credential
+    /// instead of creating another Space principal.
+    pub async fn agent_credential_for_agent(
+        &self,
+        agent_id: Uuid,
+    ) -> Result<Option<AgentCredential>> {
+        Ok(self
+            .read_state()
+            .await?
+            .agent_credentials
+            .values()
+            .find(|credential| credential.agent_id == agent_id && credential.revoked_at.is_none())
+            .cloned())
     }
 
     pub async fn mark_agent_credential_used(&self, credential_id: Uuid) -> Result<()> {
@@ -8562,6 +8609,33 @@ mod tests {
         assert!(state.backup_rotation_requests[&rotation_id]
             .codes_invalidated_at
             .is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn multiple_space_bindings_commit_as_one_node_state_write() -> Result<()> {
+        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
+        service.bootstrap_if_needed().await?;
+        let account_id = Uuid::now_v7();
+        let first = PrincipalBinding {
+            space_uid: Uuid::now_v7(),
+            principal_id: Uuid::now_v7(),
+            node_account_id: account_id,
+            binding_method: BindingMethod::Setup,
+        };
+        let second = PrincipalBinding {
+            space_uid: Uuid::now_v7(),
+            principal_id: Uuid::now_v7(),
+            node_account_id: account_id,
+            binding_method: BindingMethod::Setup,
+        };
+        service
+            .add_bindings(vec![first.clone(), second.clone()])
+            .await?;
+        let state = service.read_state().await?;
+        assert!(state.bindings.contains(&first));
+        assert!(state.bindings.contains(&second));
+        assert_eq!(state.account_lifecycle_epochs.get(&account_id), Some(&1));
         Ok(())
     }
 

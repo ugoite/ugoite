@@ -427,6 +427,7 @@ async fn finish_authorization_lease<T>(lease: AuthorizationLease, result: Result
     }
 }
 
+#[derive(Clone)]
 pub struct CreateAgentRequest {
     pub display_name: String,
     pub description: String,
@@ -2004,6 +2005,64 @@ impl Authorizer {
         Ok(agent)
     }
 
+    /// Returns the active agent produced by the same request, if one exists.
+    /// The server uses this as the retry coordinate when the Space write has
+    /// committed but the subsequent Node credential/audit write did not.
+    pub async fn find_agent_for_request(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        request: &CreateAgentRequest,
+    ) -> Result<Option<AgentPrincipal>> {
+        let state = self.state(space_id).await?;
+        Ok(state
+            .agents
+            .values()
+            .find(|agent| {
+                matches!(agent.status, PrincipalState::Active)
+                    && agent.sponsor_principal_id == actor
+                    && agent.display_name == request.display_name.trim()
+                    && agent.description == request.description.trim()
+                    && agent.mode == request.mode
+                    && agent.owner_principal_ids == request.owner_principal_ids
+                    && agent.expires_at == request.expires_at
+                    && state
+                        .agent_grants
+                        .get(&agent.agent_id)
+                        .is_some_and(|actions| actions == &request.granted_actions)
+            })
+            .cloned())
+    }
+
+    /// Create an agent, or recover the Space half of a request whose later
+    /// Node operation failed. Re-reading after an error also covers an
+    /// ambiguous response where the authorization CAS committed before the
+    /// caller observed the error.
+    pub async fn create_or_recover_agent_with_lease(
+        &self,
+        space_id: &str,
+        actor: Uuid,
+        request: CreateAgentRequest,
+        lease: &AuthorizationLease,
+    ) -> Result<AgentPrincipal> {
+        if let Some(agent) = self
+            .find_agent_for_request(space_id, actor, &request)
+            .await?
+        {
+            return Ok(agent);
+        }
+        match self
+            .create_agent_with_lease(space_id, actor, request.clone(), lease)
+            .await
+        {
+            Ok(agent) => Ok(agent),
+            Err(error) => self
+                .find_agent_for_request(space_id, actor, &request)
+                .await?
+                .ok_or(error),
+        }
+    }
+
     pub async fn revoke_agent(&self, space_id: &str, actor: Uuid, agent_id: Uuid) -> Result<()> {
         let (_, lease) = self.acquire_state_lease(space_id).await?;
         let result = self
@@ -2742,20 +2801,24 @@ mod tests {
                 SpaceRole::Owner,
             )
             .await?;
+        let request = CreateAgentRequest {
+            display_name: "Reader".to_string(),
+            description: "Read-only automation".to_string(),
+            mode: AgentMode::Both,
+            owner_principal_ids: [sponsor].into_iter().collect(),
+            granted_actions: [Action::Read].into_iter().collect(),
+            expires_at: Some((Utc::now() + chrono::Duration::hours(1)).to_rfc3339()),
+        };
         let agent = authorizer
-            .create_agent(
-                "demo",
-                sponsor,
-                CreateAgentRequest {
-                    display_name: "Reader".to_string(),
-                    description: "Read-only automation".to_string(),
-                    mode: AgentMode::Both,
-                    owner_principal_ids: [sponsor].into_iter().collect(),
-                    granted_actions: [Action::Read].into_iter().collect(),
-                    expires_at: Some((Utc::now() + chrono::Duration::hours(1)).to_rfc3339()),
-                },
-            )
+            .create_agent("demo", sponsor, request.clone())
             .await?;
+        assert_eq!(
+            authorizer
+                .find_agent_for_request("demo", sponsor, &request)
+                .await?
+                .map(|candidate| candidate.agent_id),
+            Some(agent.agent_id)
+        );
         let actions = authorizer
             .effective_actions("demo", agent.agent_id, None)
             .await?;
