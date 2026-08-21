@@ -25,8 +25,8 @@ support, and product claims stay aligned with the implementation.
   client, REST, and frontend asset upload surfaces remain available;
 - index run/stats are local core-mode commands. `index run` rebuilds the
   internal AssetText DerivedRelation, while stats reports derived health;
-- general audit-log listing APIs are not exposed; authorization events remain
-  portable Space state;
+- read-only, authorization-checked Node and Space audit-event listing is
+  exposed; audit-event mutation/CRUD remains unavailable;
 - browser-local persistence, offline-first editing, and sync are not
   implemented;
 - Passkey/TOTP/OIDC login, managed service accounts, audit CRUD, and remote CLI

@@ -1,5 +1,6 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use opendal::Operator;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -69,6 +70,7 @@ static ASSET_TEXT_REFRESH_WORKERS: OnceLock<
 static SPACE_CREATION_SERIALIZER: OnceLock<Arc<AsyncMutex<()>>> = OnceLock::new();
 
 const SPACE_SLUG_CLAIMS_DIR: &str = "spaces/.ugoite-space-slug-claims/";
+const SPACE_SLUG_COMMITTED_SUFFIX: &str = ".committed";
 
 const ASSET_TEXT_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 const ASSET_TEXT_REFRESH_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -76,6 +78,14 @@ const MAX_BACKGROUND_REFRESH_WORKERS: usize = 1024;
 const MAX_BACKGROUND_REFRESH_RETRIES: usize = 8;
 const MAX_AUTHORIZED_SCOPE_FORMS: usize = 100_000;
 const MAX_AUTHORIZED_SCOPE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
+
+#[derive(Debug, Deserialize)]
+struct SpaceSlugClaim {
+    slug: String,
+    space_id: String,
+    #[serde(default)]
+    state: String,
+}
 
 impl UgoiteService {
     pub fn new(root_uri: impl Into<String>) -> Result<Self> {
@@ -120,6 +130,11 @@ impl UgoiteService {
 
     pub fn workspace_path(&self, space_id: &str) -> String {
         format!("spaces/{space_id}")
+    }
+
+    async fn validate_complete_space(&self, space_id: &str) -> Result<()> {
+        validate_storage_id(validate_space_id(space_id))?;
+        space::validate_complete_bootstrap(&self.operator, space_id).await
     }
 
     /// Schedules a best-effort derived refresh after an authoritative write.
@@ -294,8 +309,16 @@ impl UgoiteService {
             .clone();
         let _creation_guard = creation_lock.lock().await;
         validate_storage_id(validate_space_id(space_id))?;
+        if self.recover_claimed_space(space_id).await?.is_some() {
+            return Err(AppError::conflict(
+                ErrorCode::SpaceAlreadyExists,
+                format!("Space slug already exists: {space_id}"),
+            )
+            .into());
+        }
         self.claim_space_slug(space_id, space_id).await?;
-        space::create_space(&self.operator, space_id, &self.root_uri).await
+        space::create_space(&self.operator, space_id, &self.root_uri).await?;
+        self.commit_space_slug_claim(space_id, space_id).await
     }
 
     /// Creates an operator-local Space with an immutable UUIDv7 directory and
@@ -306,7 +329,9 @@ impl UgoiteService {
             .clone();
         let _creation_guard = creation_lock.lock().await;
         validate_storage_id(validate_space_id(slug))?;
-        if self.space_id_by_slug(slug).await?.is_some() {
+        if self.recover_claimed_space(slug).await?.is_some()
+            || self.space_id_by_slug(slug).await?.is_some()
+        {
             return Err(AppError::conflict(
                 ugoite_core::error::ErrorCode::SpaceAlreadyExists,
                 format!("Space slug already exists: {slug}"),
@@ -316,6 +341,8 @@ impl UgoiteService {
         let space_id = Uuid::now_v7();
         self.claim_space_slug(slug, &space_id.to_string()).await?;
         space::create_space_with_identity(&self.operator, space_id, slug, &self.root_uri).await?;
+        self.commit_space_slug_claim(slug, &space_id.to_string())
+            .await?;
         Ok(space_id)
     }
 
@@ -323,13 +350,15 @@ impl UgoiteService {
     /// allocating the UUID directory. The process mutex only optimizes local
     /// callers; the claim is the cross-process/shared-backend uniqueness
     /// boundary. A claim is intentionally left behind if bootstrap crashes so
-    /// a later caller fails closed instead of reusing an ambiguous slug.
+    /// an explicit creation-recovery path can resume the same immutable Space
+    /// instead of reusing an ambiguous slug.
     async fn claim_space_slug(&self, slug: &str, space_id: &str) -> Result<()> {
         self.operator.create_dir(SPACE_SLUG_CLAIMS_DIR).await?;
         let claim_path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json");
         let claim = serde_json::to_vec(&json!({
             "slug": slug,
             "space_id": space_id,
+            "state": "pending",
         }))?;
         OpendalStorage::from_operator(&self.operator)
             .write_if_absent(&claim_path, claim)
@@ -356,6 +385,154 @@ impl UgoiteService {
             })
     }
 
+    async fn commit_space_slug_claim(&self, slug: &str, space_id: &str) -> Result<()> {
+        let Some(claim) = self.read_space_slug_claim(slug).await? else {
+            bail!("Space slug claim disappeared before bootstrap commit: {slug}");
+        };
+        if claim.space_id != space_id {
+            bail!("Space slug claim is owned by another Space: {slug}");
+        }
+        if claim.state == "committed" {
+            return Ok(());
+        }
+        let committed_path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}{SPACE_SLUG_COMMITTED_SUFFIX}");
+        let committed = serde_json::to_vec(&json!({
+            "slug": slug,
+            "space_id": space_id,
+        }))?;
+        match OpendalStorage::from_operator(&self.operator)
+            .write_if_absent(&committed_path, committed)
+            .await
+        {
+            Ok(()) => {}
+            Err(error)
+                if error.chain().any(|cause| {
+                    cause.downcast_ref::<opendal::Error>().is_some_and(|error| {
+                        matches!(
+                            error.kind(),
+                            opendal::ErrorKind::AlreadyExists
+                                | opendal::ErrorKind::ConditionNotMatch
+                        )
+                    }) || cause
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|error| error.kind() == std::io::ErrorKind::AlreadyExists)
+                }) =>
+            {
+                let marker: SpaceSlugClaim =
+                    serde_json::from_slice(&self.operator.read(&committed_path).await?.to_vec())?;
+                if marker.slug != slug || marker.space_id != space_id {
+                    bail!("Space slug commit marker is owned by another Space: {slug}");
+                }
+            }
+            Err(error) => return Err(error.context("commit Space slug claim")),
+        }
+        Ok(())
+    }
+
+    async fn space_slug_claim_is_committed(
+        &self,
+        slug: &str,
+        claim: &SpaceSlugClaim,
+    ) -> Result<bool> {
+        if claim.state == "committed" {
+            return Ok(true);
+        }
+        let path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}{SPACE_SLUG_COMMITTED_SUFFIX}");
+        let bytes = match self.operator.read(&path).await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        let marker: SpaceSlugClaim = serde_json::from_slice(&bytes)
+            .map_err(|error| anyhow!("invalid Space slug commit marker for {slug}: {error}"))?;
+        if marker.slug != slug || marker.space_id != claim.space_id {
+            bail!("Space slug commit marker does not match its claim: {slug}");
+        }
+        Ok(true)
+    }
+
+    async fn read_space_slug_claim(&self, slug: &str) -> Result<Option<SpaceSlugClaim>> {
+        validate_storage_id(validate_space_id(slug))?;
+        let path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json");
+        let bytes = match self.operator.read(&path).await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let claim: SpaceSlugClaim = serde_json::from_slice(&bytes)
+            .map_err(|error| anyhow!("invalid Space slug claim for {slug}: {error}"))?;
+        if claim.slug != slug {
+            bail!("Space slug claim path and payload disagree for {slug}");
+        }
+        validate_storage_id(validate_space_id(&claim.space_id))?;
+        Ok(Some(claim))
+    }
+
+    async fn release_space_slug_claim(&self, slug: &str, space_id: &str) -> Result<()> {
+        let path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json");
+        let Some(claim) = self.read_space_slug_claim(slug).await? else {
+            return Ok(());
+        };
+        if claim.space_id == space_id {
+            let committed_path =
+                format!("{SPACE_SLUG_CLAIMS_DIR}{slug}{SPACE_SLUG_COMMITTED_SUFFIX}");
+            match self.operator.delete(&committed_path).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == opendal::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+            self.operator.delete(&path).await?;
+        }
+        Ok(())
+    }
+
+    /// Repairs a claim-backed Space before ordinary slug lookup. A claim is a
+    /// durable recovery pointer, not a reason to permanently reserve a slug:
+    /// complete metadata with a different current slug releases an interrupted
+    /// rename claim, while incomplete bootstrap is resumed under its original
+    /// immutable UUID.
+    async fn recover_claimed_space(&self, slug: &str) -> Result<Option<String>> {
+        let Some(claim) = self.read_space_slug_claim(slug).await? else {
+            return Ok(None);
+        };
+        let committed = self.space_slug_claim_is_committed(slug, &claim).await?;
+        let complete = space::validate_complete_bootstrap(&self.operator, &claim.space_id)
+            .await
+            .is_ok();
+        if committed && !complete {
+            // A committed Space becoming incomplete is corruption, not an
+            // interrupted create. Leave it visible to the normal fail-closed
+            // lookup instead of silently repairing authoritative state.
+            return Ok(None);
+        }
+        if complete {
+            let metadata = space::get_space_raw(&self.operator, &claim.space_id).await?;
+            if metadata.get("slug").and_then(Value::as_str) == Some(slug) {
+                if !committed {
+                    self.commit_space_slug_claim(slug, &claim.space_id).await?;
+                }
+                return Ok(Some(claim.space_id));
+            }
+            self.release_space_slug_claim(slug, &claim.space_id).await?;
+            return Ok(None);
+        }
+
+        if let Ok(space_uid) = Uuid::parse_str(&claim.space_id) {
+            space::repair_space_with_identity(&self.operator, space_uid, slug, &self.root_uri)
+                .await?;
+        } else if space::space_exists(&self.operator, &claim.space_id).await? {
+            space::repair_space(&self.operator, &claim.space_id, slug, &self.root_uri).await?;
+        } else {
+            // A legacy create can crash after claiming but before writing
+            // meta.json. No authoritative object exists in that case, so the
+            // claim is recoverable rather than a permanent reservation.
+            self.release_space_slug_claim(slug, &claim.space_id).await?;
+            return Ok(None);
+        }
+        space::validate_complete_bootstrap(&self.operator, &claim.space_id).await?;
+        Ok(Some(claim.space_id))
+    }
+
     pub async fn create_space_for_principal(
         &self,
         slug: &str,
@@ -373,7 +550,9 @@ impl UgoiteService {
         // be retried under the same slug.
         Authorizer::new(self.operator.clone()).ensure_authoritative_mutation_contract()?;
         validate_storage_id(validate_space_id(slug))?;
-        if self.space_id_by_slug(slug).await?.is_some() {
+        if self.recover_claimed_space(slug).await?.is_some()
+            || self.space_id_by_slug(slug).await?.is_some()
+        {
             return Err(AppError::conflict(
                 ugoite_core::error::ErrorCode::SpaceAlreadyExists,
                 format!("Space slug already exists: {slug}"),
@@ -387,6 +566,7 @@ impl UgoiteService {
         Authorizer::new(self.operator.clone())
             .initialize_owner(&space_id, space_uid, principal_id, display_name)
             .await?;
+        self.commit_space_slug_claim(slug, &space_id).await?;
         Ok(space_uid)
     }
 
@@ -434,6 +614,16 @@ impl UgoiteService {
         Ok(None)
     }
 
+    /// Explicitly repairs a claim-backed interrupted creation, then performs
+    /// the normal complete-Space lookup. Ordinary reads remain side-effect
+    /// free and therefore do not silently finish a crash-left bootstrap.
+    pub async fn recover_space_id_by_slug(&self, slug: &str) -> Result<Option<String>> {
+        if let Some(space_id) = self.recover_claimed_space(slug).await? {
+            return Ok(Some(space_id));
+        }
+        self.space_id_by_slug(slug).await
+    }
+
     pub async fn get_space(&self, space_id: &str) -> Result<Value> {
         validate_storage_id(validate_space_id(space_id))?;
         space::get_space_raw(&self.operator, space_id).await
@@ -443,7 +633,7 @@ impl UgoiteService {
     /// Space. Checkpoint names are caller-supplied because listing storage is
     /// not a source of Catalog or orphan authority.
     pub async fn space_health(&self, space_id: &str, checkpoint_names: &[String]) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         Ok(serde_json::to_value(
@@ -456,7 +646,7 @@ impl UgoiteService {
         space_id: &str,
         checkpoint_name: &str,
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_checkpoint_name(checkpoint_name))?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
@@ -477,29 +667,55 @@ impl UgoiteService {
     }
 
     pub async fn patch_space(&self, space_id: &str, patch: &Value) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_public_space_patch(patch)?;
+        let current = space::get_space_raw(&self.operator, space_id).await?;
+        let current_slug = current
+            .get("slug")
+            .and_then(Value::as_str)
+            .context("Space metadata has no slug")?;
+        let next_slug = patch.get("slug").and_then(Value::as_str);
+        if let Some(next_slug) = next_slug {
+            validate_storage_id(validate_space_id(next_slug))?;
+            if next_slug != current_slug {
+                if self.recover_space_id_by_slug(next_slug).await?.is_some() {
+                    return Err(AppError::conflict(
+                        ErrorCode::SpaceAlreadyExists,
+                        format!("Space slug already exists: {next_slug}"),
+                    )
+                    .into());
+                }
+                self.claim_space_slug(next_slug, space_id).await?;
+                let result = space::patch_space(&self.operator, space_id, patch).await?;
+                self.commit_space_slug_claim(next_slug, space_id).await?;
+                // A failed process between metadata publication and this
+                // cleanup is repaired by recover_claimed_space on the old
+                // slug; releasing it here keeps normal rename semantics.
+                self.release_space_slug_claim(current_slug, space_id)
+                    .await?;
+                return Ok(result);
+            }
+        }
         space::patch_space(&self.operator, space_id, patch).await
     }
 
     pub async fn ensure_space(&self, space_id: &str) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
-        space::get_space(&self.operator, space_id).await.map(|_| ())
+        self.validate_complete_space(space_id).await
     }
 
     pub async fn list_forms(&self, space_id: &str) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         form::list_forms(&self.operator, &self.workspace_path(space_id)).await
     }
 
     pub async fn get_form(&self, space_id: &str, form_name: &str) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_form_name(form_name))?;
         form::get_form(&self.operator, &self.workspace_path(space_id), form_name).await
     }
 
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await?;
         self.schedule_asset_text_refresh(space_id);
         Ok(())
@@ -512,7 +728,7 @@ impl UgoiteService {
         markdown: &str,
         author: &str,
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         let workspace = self.workspace_path(space_id);
@@ -556,7 +772,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let scopes = self
             .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
@@ -579,12 +795,12 @@ impl UgoiteService {
     }
 
     pub async fn list_entries(&self, space_id: &str) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         entry::list_entries(&self.operator, &self.workspace_path(space_id)).await
     }
 
     pub async fn get_entry(&self, space_id: &str, entry_id: &str) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         entry::get_entry(&self.operator, &self.workspace_path(space_id), entry_id).await
     }
@@ -595,7 +811,7 @@ impl UgoiteService {
         entry_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let scopes = self
             .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
@@ -637,7 +853,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         if let Some(parent_revision_id) = parent_revision_id {
             validate_storage_id(validate_revision_id(parent_revision_id))?;
@@ -675,7 +891,7 @@ impl UgoiteService {
         hard_delete: bool,
         actor: &str,
     ) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         entry::delete_entry(
             &self.operator,
@@ -690,7 +906,7 @@ impl UgoiteService {
     }
 
     pub async fn entry_history(&self, space_id: &str, entry_id: &str) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         entry::get_entry_history(&self.operator, &self.workspace_path(space_id), entry_id).await
     }
@@ -702,7 +918,7 @@ impl UgoiteService {
         checkpoint_name: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let checkpoint = self
             .load_named_checkpoint(space_id, checkpoint_name)
@@ -727,7 +943,7 @@ impl UgoiteService {
         entry_id: &str,
         revision_id: &str,
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
         Ok(serde_json::to_value(
@@ -749,7 +965,7 @@ impl UgoiteService {
         checkpoint_name: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
         let checkpoint = self
@@ -789,7 +1005,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
         self.require_entry_action_for_principals(space_id, entry_id, Action::Update, principal_ids)
@@ -826,7 +1042,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
         self.require_entry_action_for_principals(space_id, entry_id, Action::Update, principal_ids)
@@ -861,7 +1077,7 @@ impl UgoiteService {
         checkpoint_name: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let checkpoint = self
             .load_named_checkpoint(space_id, checkpoint_name)
@@ -887,7 +1103,7 @@ impl UgoiteService {
         to_name: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         let from = self.load_named_checkpoint(space_id, from_name).await?;
         let to = self.load_named_checkpoint(space_id, to_name).await?;
         let scopes = self
@@ -1001,7 +1217,7 @@ impl UgoiteService {
         query: Option<&str>,
         limit: usize,
     ) -> Result<Vec<entry::EntrySummary>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         if let Some(form) = form {
             validate_storage_id(validate_form_name(form))?;
         }
@@ -1023,6 +1239,7 @@ impl UgoiteService {
         query: Option<&str>,
         limit: usize,
     ) -> Result<Vec<entry::EntrySummary>> {
+        self.validate_complete_space(space_id).await?;
         let scopes = self
             .authorized_form_entry_scopes(space_id, principal_id)
             .await?;
@@ -1045,6 +1262,7 @@ impl UgoiteService {
         query: Option<&str>,
         limit: usize,
     ) -> Result<Vec<entry::EntrySummary>> {
+        self.validate_complete_space(space_id).await?;
         let scopes = self
             .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
             .await?;
@@ -1064,7 +1282,7 @@ impl UgoiteService {
         space_id: &str,
         query: &str,
     ) -> Result<Vec<search::KeywordSearchResult>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         search::search_entries(
             &self.operator,
             &self.workspace_path(space_id),
@@ -1075,7 +1293,7 @@ impl UgoiteService {
     }
 
     pub async fn query_entries(&self, space_id: &str, filter: &Value) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         index::query_index(
             &self.operator,
             &self.workspace_path(space_id),
@@ -1085,7 +1303,7 @@ impl UgoiteService {
     }
 
     pub async fn execute_sql_query(&self, space_id: &str, sql: &str) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         index::execute_sql_query(&self.operator, &self.workspace_path(space_id), sql).await
     }
 
@@ -1133,6 +1351,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<BTreeMap<String, EntryScope>> {
+        self.validate_complete_space(space_id).await?;
         if principal_ids.is_empty() {
             return Ok(BTreeMap::new());
         }
@@ -1221,6 +1440,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<EntryScope> {
+        self.validate_complete_space(space_id).await?;
         let state = Authorizer::new(self.operator.clone())
             .state(space_id)
             .await?;
@@ -1272,7 +1492,7 @@ impl UgoiteService {
         limit: usize,
         offset: usize,
     ) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         let scopes = self
             .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
             .await?;
@@ -1291,7 +1511,7 @@ impl UgoiteService {
         space_id: &str,
         principal_id: Uuid,
     ) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         let scopes = self
             .authorized_form_entry_scopes(space_id, principal_id)
             .await?;
@@ -1313,6 +1533,7 @@ impl UgoiteService {
         id_field: &str,
         values: Vec<Value>,
     ) -> Result<Vec<Value>> {
+        self.validate_complete_space(space_id).await?;
         let mut resources = Vec::new();
         for value in &values {
             let Some(id) = value.get(id_field).and_then(Value::as_str) else {
@@ -1386,6 +1607,7 @@ impl UgoiteService {
         limit: usize,
         after: Option<(&str, &str, &str)>,
     ) -> Result<Vec<search::KeywordSearchResult>> {
+        self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
         for _ in 0..3 {
             let (revision, stable, result) = authorizer
@@ -1464,7 +1686,7 @@ impl UgoiteService {
         parameters: serde_json::Map<String, Value>,
         parameter_types: BTreeMap<String, String>,
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         require_sql_session_principals(principal_ids)?;
         let relation = index::sql_session_page_relation(sql).map_err(|error| {
             AppError::invalid_input(
@@ -1515,7 +1737,7 @@ impl UgoiteService {
         session_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
         let current_authorization = self
             .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
@@ -1592,6 +1814,7 @@ impl UgoiteService {
         principal_id: Uuid,
         filter: &Value,
     ) -> Result<Vec<Value>> {
+        self.validate_complete_space(space_id).await?;
         let scopes = self
             .authorized_form_entry_scopes(space_id, principal_id)
             .await?;
@@ -1610,6 +1833,7 @@ impl UgoiteService {
         principal_id: Uuid,
         sql: &str,
     ) -> Result<Vec<Value>> {
+        self.validate_complete_space(space_id).await?;
         let scopes = self
             .authorized_form_entry_scopes(space_id, principal_id)
             .await?;
@@ -1623,7 +1847,7 @@ impl UgoiteService {
     }
 
     pub async fn reindex(&self, space_id: &str) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         index::reindex_all(&self.operator, &self.workspace_path(space_id)).await
     }
 
@@ -1631,7 +1855,7 @@ impl UgoiteService {
     /// maintenance. Server workers can keep the delayed grace-period task
     /// alive; `ugoite index run` invokes this pass before it exits.
     pub async fn garbage_collect_asset_text_builds(&self, space_id: &str) -> Result<Vec<String>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         crate::derived_relation::garbage_collect_asset_text(
             &self.operator,
             &self.workspace_path(space_id),
@@ -1644,7 +1868,7 @@ impl UgoiteService {
     /// replaying Catalog history, so server startup and explicit index
     /// maintenance call this bounded sweeper.
     pub async fn garbage_collect_deleted_asset_blobs(&self, space_id: &str) -> Result<usize> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         workspace.garbage_collect_deleted_asset_blobs().await
@@ -1653,7 +1877,7 @@ impl UgoiteService {
     /// Rehydrates derived GC after a server restart. Derived cleanup is
     /// best-effort and never blocks authoritative startup recovery.
     pub async fn rearm_asset_text_gc(&self, space_id: &str) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         crate::derived_relation::rearm_asset_text_gc(&self.operator, &self.workspace_path(space_id))
             .await
     }
@@ -1665,7 +1889,7 @@ impl UgoiteService {
     /// mutation paths continue to use the process-local best-effort worker and
     /// never await this method.
     pub async fn rearm_asset_text_refresh(&self, space_id: &str) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         let ws_path = self.workspace_path(space_id);
         if crate::derived_relation::asset_text_refresh_needed(&self.operator, &ws_path).await? {
             let shared = matches!(
@@ -1683,7 +1907,7 @@ impl UgoiteService {
     }
 
     pub async fn space_stats(&self, space_id: &str) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         index::get_space_stats(&self.operator, &self.workspace_path(space_id)).await
     }
 
@@ -1693,7 +1917,7 @@ impl UgoiteService {
         filename: &str,
         content: &[u8],
     ) -> Result<ugoite_domain::entry::AssetReference> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         asset::save_asset(
             &self.operator,
             &self.workspace_path(space_id),
@@ -1710,7 +1934,7 @@ impl UgoiteService {
         content: &[u8],
         media_type: &str,
     ) -> Result<ugoite_domain::entry::AssetReference> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         asset::save_asset_with_media_type(
             &self.operator,
             &self.workspace_path(space_id),
@@ -1722,7 +1946,7 @@ impl UgoiteService {
     }
 
     pub async fn read_asset(&self, space_id: &str, asset_id: &str) -> Result<asset::AssetContent> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_asset_id(asset_id))?;
         asset::read_asset(&self.operator, &self.workspace_path(space_id), asset_id).await
     }
@@ -1734,7 +1958,7 @@ impl UgoiteService {
         entry_id: &str,
         asset_id: &str,
     ) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_form_name(form_name))?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_asset_id(asset_id))?;
@@ -1801,7 +2025,7 @@ impl UgoiteService {
         asset_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_asset_id(asset_id))?;
         let scopes = if principal_ids.is_empty() {
             let workspace =
@@ -1849,7 +2073,7 @@ impl UgoiteService {
         session_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<u64> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
         let current_authorization = self
             .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
@@ -1878,7 +2102,7 @@ impl UgoiteService {
         offset: usize,
         limit: usize,
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
         let current_authorization = self
             .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
@@ -1904,7 +2128,7 @@ impl UgoiteService {
     /// Lists Saved SQL without resource filtering for operator-local/admin
     /// tooling. Server-backed user requests use the authorized variant below.
     pub async fn list_saved_sql_operator_unscoped(&self, space_id: &str) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         saved_sql::list_sql(
             &self.operator,
             &self.workspace_path(space_id),
@@ -1918,7 +2142,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<Vec<Value>> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         let entry_scope = self
             .authorized_saved_sql_entry_scope_for_principals(space_id, principal_ids)
             .await?;
@@ -1932,7 +2156,7 @@ impl UgoiteService {
         payload: &saved_sql::SqlPayload,
         author: &str,
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_id(sql_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
         saved_sql::create_sql(
@@ -1947,7 +2171,7 @@ impl UgoiteService {
     }
 
     pub async fn get_saved_sql(&self, space_id: &str, sql_id: &str) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_id(sql_id))?;
         saved_sql::get_sql(&self.operator, &self.workspace_path(space_id), sql_id).await
     }
@@ -1960,7 +2184,7 @@ impl UgoiteService {
         parent_revision_id: &str,
         author: &str,
     ) -> Result<Value> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_id(sql_id))?;
         if parent_revision_id.trim().is_empty() {
             return Err(AppError::invalid_input(
@@ -1984,7 +2208,7 @@ impl UgoiteService {
     }
 
     pub async fn delete_saved_sql(&self, space_id: &str, sql_id: &str, actor: &str) -> Result<()> {
-        validate_storage_id(validate_space_id(space_id))?;
+        self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_id(sql_id))?;
         saved_sql::delete_sql(
             &self.operator,
@@ -2291,6 +2515,47 @@ mod tests {
             }
         }
         assert_eq!(matching_spaces, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn slug_claim_recovery_reuses_uuid_after_bootstrap_interruption() -> Result<()> {
+        let service = UgoiteService::new("memory://slug-claim-recovery")?;
+        let space_uid = Uuid::now_v7();
+        service
+            .claim_space_slug("recoverable", &space_uid.to_string())
+            .await?;
+
+        let recovered = service
+            .recover_space_id_by_slug("recoverable")
+            .await?
+            .context("claim-backed Space should be recoverable")?;
+        assert_eq!(recovered, space_uid.to_string());
+        assert_eq!(service.get_space(&recovered).await?["slug"], "recoverable");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_slug_rename_claims_new_slug_and_releases_old_slug() -> Result<()> {
+        let service = UgoiteService::new("memory://slug-rename")?;
+        let space_uid = service.create_operator_space("before-rename").await?;
+        let space_id = space_uid.to_string();
+
+        service
+            .patch_space(&space_id, &json!({"slug": "after-rename"}))
+            .await?;
+
+        assert_eq!(
+            service.space_id_by_slug("after-rename").await?,
+            Some(space_id.clone())
+        );
+        assert_eq!(service.space_id_by_slug("before-rename").await?, None);
+        assert!(
+            !service
+                .operator
+                .exists("spaces/.ugoite-space-slug-claims/before-rename.json")
+                .await?
+        );
         Ok(())
     }
 

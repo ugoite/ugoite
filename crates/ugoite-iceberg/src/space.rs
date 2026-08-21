@@ -242,6 +242,97 @@ pub async fn create_space_with_identity(
     Ok(())
 }
 
+/// Completes a UUID-addressed Space whose durable slug claim was written but
+/// whose bootstrap was interrupted. The immutable metadata is never
+/// regenerated: recovery only creates missing scaffold objects and the
+/// starter Form, then reapplies local permissions.
+pub async fn repair_space_with_identity(
+    op: &Operator,
+    space_uid: uuid::Uuid,
+    slug: &str,
+    root_path: &str,
+) -> Result<()> {
+    let directory_id = space_uid.to_string();
+    validate_space_path_segment(&directory_id)?;
+    validate_space_path_segment(slug)?;
+    let storage = OpendalStorage::from_operator(op);
+    let meta_path = format!("spaces/{directory_id}/meta.json");
+    if !storage.exists(&meta_path).await? {
+        return create_space_with_identity(op, space_uid, slug, root_path).await;
+    }
+
+    let meta = ensure_space_identity(&storage, &directory_id).await?;
+    if meta.get("slug").and_then(serde_json::Value::as_str) != Some(slug) {
+        return Err(anyhow!(
+            "Space slug claim does not match immutable Space metadata"
+        ));
+    }
+
+    repair_space_scaffold(op, &directory_id, slug, root_path).await
+}
+
+/// Repairs a slug-addressed Space after reading its already durable metadata.
+/// This is used only for legacy `spaces/{slug}` directories; a claim-only
+/// record without metadata is safe to release and recreate instead.
+pub async fn repair_space(
+    op: &Operator,
+    directory_id: &str,
+    slug: &str,
+    root_path: &str,
+) -> Result<()> {
+    validate_space_path_segment(directory_id)?;
+    validate_space_path_segment(slug)?;
+    let storage = OpendalStorage::from_operator(op);
+    let meta = ensure_space_identity(&storage, directory_id).await?;
+    if meta.get("slug").and_then(serde_json::Value::as_str) != Some(slug) {
+        return Err(anyhow!(
+            "Space slug claim does not match immutable Space metadata"
+        ));
+    }
+    repair_space_scaffold(op, directory_id, slug, root_path).await
+}
+
+async fn repair_space_scaffold(
+    op: &Operator,
+    directory_id: &str,
+    _slug: &str,
+    _root_path: &str,
+) -> Result<()> {
+    let storage = OpendalStorage::from_operator(op);
+    let ws_path = format!("spaces/{directory_id}");
+
+    for directory in ["security", "forms", "assets", "sql_sessions"] {
+        storage
+            .create_dir(&format!("{ws_path}/{directory}/"))
+            .await?;
+    }
+    let settings_path = format!("{ws_path}/settings.json");
+    if !storage.exists(&settings_path).await? {
+        storage
+            .write_json(
+                &settings_path,
+                &serde_json::json!({"default_form": "Entry"}),
+            )
+            .await?;
+    }
+    let settings: serde_json::Value = storage.read_json(&settings_path).await?;
+    if !settings.is_object()
+        || settings
+            .get("default_form")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+    {
+        return Err(anyhow!(
+            "unsupported Space layout: settings.json requires default_form"
+        ));
+    }
+    if form::get_form(op, &ws_path, "Entry").await.is_err() {
+        form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
+    }
+    apply_local_space_permissions(op, &directory_id)?;
+    Ok(())
+}
+
 async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Result<Vec<String>> {
     let spaces_root = "spaces/";
     if !storage.exists(spaces_root).await? {
@@ -441,6 +532,7 @@ pub(crate) fn validate_current_space_metadata(
 /// a durable creation marker: a crash may leave it before the starter Form
 /// and catalog are committed.
 pub async fn validate_complete_bootstrap(op: &Operator, space_id: &str) -> Result<()> {
+    validate_space_path_segment(space_id)?;
     let storage = OpendalStorage::from_operator(op);
     ensure_space_identity(&storage, space_id).await?;
     for directory in ["security", "forms", "assets", "sql_sessions"] {

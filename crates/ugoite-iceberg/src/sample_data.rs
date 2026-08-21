@@ -640,7 +640,11 @@ async fn read_job(op: &Operator, job_id: &str) -> Result<SampleDataJob> {
         let bytes = op.read(&path).await?.to_vec();
         match serde_json::from_slice(&bytes) {
             Ok(job) => return Ok(job),
-            Err(err) if bytes.is_empty() || err.classify() == serde_json::error::Category::Eof => {
+            Err(err) => {
+                // Filesystem status publication is configured as an atomic
+                // replace by the CLI, but retry every decode failure as a
+                // defensive boundary for an older operator or a concurrent
+                // backend reader that briefly observed a partial object.
                 if attempt == SAMPLE_JOB_READ_RETRIES {
                     return Err(err.into());
                 }
@@ -649,7 +653,6 @@ async fn read_job(op: &Operator, job_id: &str) -> Result<SampleDataJob> {
                 ))
                 .await;
             }
-            Err(err) => return Err(err.into()),
         }
     }
     unreachable!("sample job read loop must return or error")

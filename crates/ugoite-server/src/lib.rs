@@ -7545,7 +7545,7 @@ async fn ensure_local_space_owner_binding(
 ) -> ApiResult<(Uuid, bool)> {
     if let Some(existing_id) = state
         .service
-        .space_id_by_slug(slug)
+        .recover_space_id_by_slug(slug)
         .await
         .map_err(ApiError::from_core)?
     {

@@ -37,7 +37,10 @@ schemas:
         producer_id: {type: string}
         producer_fingerprint: {type: string}
         compatibility_epoch: {type: integer}
-        build_id: {type: string, format: uuid}
+        build_id:
+          type: string
+          format: uuid
+          description: Immutable UUIDv7 build identity. Producers and readers must reject non-UUIDv7 values.
         table_identifier: {type: object}
         table_uuid: {type: string, format: uuid}
         metadata_location: {type: string}

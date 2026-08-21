@@ -2694,6 +2694,9 @@ fn validate_authorization_state(state: &AuthorizationState) -> Result<()> {
             bail!("Space principal lifecycle epochs are inconsistent");
         }
     }
+    if owner_count(state) == 0 {
+        bail!("Space has no active human owner principal");
+    }
     validate_authorization_state_limits(state)
 }
 
