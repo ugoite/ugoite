@@ -143,14 +143,18 @@ async fn renew_space_slug_claim(operator: &Operator, claim: &SpaceSlugClaim) -> 
     let _claim_lock = acquire_local_space_slug_claim_lock(operator, &claim.slug).await?;
     let path = format!("{SPACE_SLUG_CLAIMS_DIR}{}.json", claim.slug);
     let metadata = operator.stat(&path).await?;
+    let etag = metadata
+        .etag()
+        .filter(|etag| !etag.is_empty())
+        .map(str::to_owned);
+    if etag.is_none() && !matches!(operator.info().scheme(), "memory" | "fs" | "file") {
+        bail!("shared Space slug claim renewal requires an exact ETag");
+    }
     let current = operator
         .read_options(
             &path,
             opendal::options::ReadOptions {
-                if_match: metadata
-                    .etag()
-                    .filter(|etag| !etag.is_empty())
-                    .map(str::to_owned),
+                if_match: etag.clone(),
                 ..Default::default()
             },
         )
@@ -163,7 +167,7 @@ async fn renew_space_slug_claim(operator: &Operator, claim: &SpaceSlugClaim) -> 
     current.heartbeat_at = now.to_rfc3339();
     current.expires_at = (now + ChronoDuration::from_std(SPACE_SLUG_CLAIM_LEASE)?).to_rfc3339();
     let bytes = serde_json::to_vec(&current)?;
-    if let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) {
+    if let Some(etag) = etag {
         operator
             .write_options(
                 &path,
@@ -742,15 +746,19 @@ impl UgoiteService {
         let _claim_lock = acquire_local_space_slug_claim_lock(&self.operator, &claim.slug).await?;
         let path = format!("{SPACE_SLUG_CLAIMS_DIR}{}.json", claim.slug);
         let metadata = self.operator.stat(&path).await?;
+        let etag = metadata
+            .etag()
+            .filter(|etag| !etag.is_empty())
+            .map(str::to_owned);
+        if etag.is_none() && !matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            bail!("shared expired Space slug claim takeover requires an exact ETag");
+        }
         let current = self
             .operator
             .read_options(
                 &path,
                 opendal::options::ReadOptions {
-                    if_match: metadata
-                        .etag()
-                        .filter(|etag| !etag.is_empty())
-                        .map(str::to_owned),
+                    if_match: etag.clone(),
                     ..Default::default()
                 },
             )
@@ -769,10 +777,6 @@ impl UgoiteService {
         replacement.heartbeat_at = now.to_rfc3339();
         replacement.expires_at =
             (now + ChronoDuration::from_std(SPACE_SLUG_CLAIM_LEASE)?).to_rfc3339();
-        let etag = metadata
-            .etag()
-            .filter(|etag| !etag.is_empty())
-            .map(str::to_owned);
         if let Some(etag) = etag {
             self.operator
                 .write_options(
@@ -2456,11 +2460,13 @@ impl UgoiteService {
         id_field: &str,
         values: Vec<Value>,
     ) -> Result<Vec<Value>> {
+        require_nonempty_authorized_principals(&[principal_id])?;
         self.validate_complete_space(space_id).await?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
-        Self::filter_json_resources_for_state(&state, principal_id, kind, id_field, values)
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                Self::filter_json_resources_for_state(&state, principal_id, kind, id_field, values)
+            })
+            .await
     }
 
     fn filter_json_resources_for_state(
@@ -4048,6 +4054,7 @@ mod tests {
             .expire_space_slug_claim_for_test("startup-recover")
             .await?;
 
+        service.recover_pending_space_claims().await?;
         let space_ids = service.list_space_ids().await?;
         assert_eq!(space_ids, vec![space_uid.to_string()]);
         Ok(())

@@ -209,6 +209,11 @@ pub struct Authorizer {
 /// object-store lease in this value.
 pub struct AuthorizationLease {
     _guard: OwnedMutexGuard<()>,
+    // Held for the complete protected local mutation, including the
+    // authoritative content write. This is the cross-process counterpart of
+    // the in-process guard; write_state_with_lease deliberately reuses it so
+    // the same process does not try to lock the file twice.
+    _local_lock: Option<std::fs::File>,
     durable: Option<DurableAuthorizationLease>,
 }
 
@@ -462,6 +467,7 @@ impl Authorizer {
         display_name: &str,
     ) -> Result<()> {
         let _guard = self.lock.lock().await;
+        let _local_lock = self.local_authorization_lock(space_id)?;
         let path = state_path(space_id);
         if self.operator.exists(&path).await? {
             bail!("authorization state already exists");
@@ -659,6 +665,7 @@ impl Authorizer {
         space_id: &str,
     ) -> Result<(AuthorizationState, AuthorizationLease)> {
         let guard = self.lock.clone().lock_owned().await;
+        let local_lock = self.local_authorization_lock(space_id)?;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
         let state = match self.state(space_id).await {
             Ok(state) => state,
@@ -673,6 +680,7 @@ impl Authorizer {
             state,
             AuthorizationLease {
                 _guard: guard,
+                _local_lock: local_lock,
                 durable,
             },
         ))
@@ -961,9 +969,11 @@ impl Authorizer {
         F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
     {
         let guard = self.lock.clone().lock_owned().await;
+        let local_lock = self.local_authorization_lock(space_id)?;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
         let lease = AuthorizationLease {
             _guard: guard,
+            _local_lock: local_lock,
             durable,
         };
         let result = self
@@ -1597,21 +1607,23 @@ impl Authorizer {
         action: Action,
         resource: Option<&ResourceRef>,
     ) -> Result<()> {
-        if self
-            .effective_actions(space_id, principal_id, resource)
-            .await?
-            .contains(&action)
-        {
-            let state = self.state(space_id).await?;
+        let resource = resource.cloned();
+        let target = resource
+            .as_ref()
+            .map(ResourceRef::key)
+            .unwrap_or_else(|| "space".to_string());
+        let action_name = format!("{action:?}").to_lowercase();
+        // Keep the decision and the agent-kind check on one exact snapshot.
+        // Callers that already hold an AuthorizationLease may invoke require
+        // while mutating policy; taking the process mutex again here would
+        // self-deadlock. The enclosing lease is the final mutation boundary.
+        let state = self.state(space_id).await?;
+        if effective_actions_for_state(&state, principal_id, resource.as_ref())?.contains(&action) {
             if state
                 .principals
                 .get(&principal_id)
                 .is_some_and(|principal| matches!(principal.kind, PrincipalKind::Agent))
             {
-                let target = resource
-                    .map(ResourceRef::key)
-                    .unwrap_or_else(|| "space".to_string());
-                let action_name = format!("{action:?}").to_lowercase();
                 audit::append_audit_event(
                     &self.operator,
                     space_id,
@@ -1629,9 +1641,6 @@ impl Authorizer {
             }
             return Ok(());
         }
-        let target = resource
-            .map(ResourceRef::key)
-            .unwrap_or_else(|| "space".to_string());
         let _ = audit::append_audit_event(
             &self.operator,
             space_id,
@@ -2322,17 +2331,19 @@ impl Authorizer {
         resources: impl IntoIterator<Item = ResourceRef>,
         action: Action,
     ) -> Result<BTreeSet<String>> {
-        let mut allowed = BTreeSet::new();
-        for resource in resources {
-            if self
-                .effective_actions(space_id, principal_id, Some(&resource))
-                .await?
-                .contains(&action)
-            {
-                allowed.insert(resource.id);
+        let resources = resources.into_iter().collect::<Vec<_>>();
+        self.with_state_lock(space_id, |state| async move {
+            let mut allowed = BTreeSet::new();
+            for resource in resources {
+                if effective_actions_for_state(&state, principal_id, Some(&resource))?
+                    .contains(&action)
+                {
+                    allowed.insert(resource.id);
+                }
             }
-        }
-        Ok(allowed)
+            Ok(allowed)
+        })
+        .await
     }
 
     async fn write_state(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
@@ -2374,11 +2385,24 @@ impl Authorizer {
                 self.write_state_with_durable(space_id, state, durable)
                     .await
             }
-            None => self.write_state_inner(space_id, state).await,
+            None => {
+                self.write_state_inner_with_local_lock(space_id, state, lease._local_lock.is_some())
+                    .await
+            }
         }
     }
 
     async fn write_state_inner(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
+        self.write_state_inner_with_local_lock(space_id, state, false)
+            .await
+    }
+
+    async fn write_state_inner_with_local_lock(
+        &self,
+        space_id: &str,
+        state: &AuthorizationState,
+        local_lock_held: bool,
+    ) -> Result<()> {
         self.ensure_authoritative_mutation_contract()?;
         let path = state_path(space_id);
         validate_authorization_state(state)?;
@@ -2390,7 +2414,11 @@ impl Authorizer {
             );
         }
         let capabilities = self.operator.info().capability();
-        let _local_lock = self.local_authorization_lock(space_id)?;
+        let _local_lock = if local_lock_held {
+            None
+        } else {
+            self.local_authorization_lock(space_id)?
+        };
 
         if state.revision == 1 {
             if capabilities.write_with_if_not_exists {
@@ -2422,10 +2450,8 @@ impl Authorizer {
                 .context("stat Space authorization state for compare-and-swap")?;
             let version = metadata
                 .etag()
-                .or_else(|| metadata.version())
-                .ok_or_else(|| {
-                    anyhow!("Space authorization object has no conditional-write version")
-                })?
+                .filter(|etag| !etag.is_empty())
+                .ok_or_else(|| anyhow!("Space authorization object has no ETag"))?
                 .to_string();
             let current = read_authorization_state_bytes(&self.operator, &path, Some(&version))
                 .await

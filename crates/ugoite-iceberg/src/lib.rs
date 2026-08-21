@@ -147,6 +147,7 @@ pub(crate) async fn read_object_exact(operator: &Operator, path: &str) -> Result
 }
 
 const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
+const FORM_HISTORY_PROPERTY: &str = "ugoite.form.history.v1";
 const FORM_ID_PROPERTY: &str = "ugoite.form.id";
 pub(crate) const FORM_NAME_PROPERTY: &str = "ugoite.form.name";
 const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
@@ -980,6 +981,26 @@ impl IcebergWorkspace {
         Ok(form)
     }
 
+    pub async fn form_history_at_checkpoint(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+    ) -> Result<Vec<FormDefinition>> {
+        self.validate_checkpoint(checkpoint)?;
+        let coordinate = checkpoint
+            .tables
+            .iter()
+            .find(|coordinate| coordinate.form_id == form_id)
+            .ok_or_else(|| CheckpointUnavailable::new(format!("Form {form_id}")))?;
+        let table = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .load_checkpoint_table(checkpoint, coordinate)
+            .await?;
+        form_history_from_table(&table, form_id)
+    }
+
     fn validate_checkpoint(&self, checkpoint: &SpaceCheckpoint) -> Result<()> {
         if checkpoint.space_id != self.space_id {
             return Err(
@@ -1026,6 +1047,11 @@ impl IcebergWorkspace {
     pub async fn load_form(&self, form_id: FormId) -> Result<FormDefinition> {
         let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
         form_from_table(&table, form_id)
+    }
+
+    pub async fn form_history(&self, form_id: FormId) -> Result<Vec<FormDefinition>> {
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        form_history_from_table(&table, form_id)
     }
 
     /// Returns whether the authoritative Catalog Head currently contains this
@@ -1097,6 +1123,13 @@ impl IcebergWorkspace {
             .catalog
             .load_table(&self.form_ident(current.id))
             .await?;
+        let mut form_history = form_history_from_table(&table, current.id)?;
+        if form_history
+            .last()
+            .is_none_or(|form| form.version != current.version)
+        {
+            form_history.push(current.clone());
+        }
         let current_schema = table.metadata().current_schema();
         let additions = evolved
             .fields
@@ -1161,9 +1194,14 @@ impl IcebergWorkspace {
                 metadata_builder =
                     metadata_builder.upgrade_format_version(iceberg::spec::FormatVersion::V3)?;
             }
+            form_history.push(evolved.clone());
             let metadata = metadata_builder
                 .add_current_schema(schema)?
-                .set_properties(form_properties(&evolved, self.write)?)?
+                .set_properties(form_properties_with_history(
+                    &evolved,
+                    self.write,
+                    &form_history,
+                )?)?
                 .build()?
                 .metadata;
             space_catalog
@@ -1176,15 +1214,17 @@ impl IcebergWorkspace {
             return Ok(evolved);
         }
         if additions.is_empty() {
+            form_history.push(evolved.clone());
             let tx = Transaction::new(&table);
             let mut action = tx.update_table_properties();
-            for (key, value) in form_properties(&evolved, self.write)? {
+            for (key, value) in form_properties_with_history(&evolved, self.write, &form_history)? {
                 action = action.set(key, value);
             }
             let catalog = self.mutation_catalog();
             action.apply(tx)?.commit(catalog.as_ref()).await?;
             return Ok(evolved);
         }
+        form_history.push(evolved.clone());
         let tx = Transaction::new(&table);
         let mut schema_action = tx.update_schema();
         for field in additions {
@@ -1195,7 +1235,7 @@ impl IcebergWorkspace {
         }
         let transaction = schema_action.apply(tx)?;
         let mut properties = transaction.update_table_properties();
-        for (key, value) in form_properties(&evolved, self.write)? {
+        for (key, value) in form_properties_with_history(&evolved, self.write, &form_history)? {
             properties = properties.set(key, value);
         }
         let catalog = self.mutation_catalog();
@@ -2598,6 +2638,41 @@ fn form_from_table(table: &iceberg::table::Table, form_id: FormId) -> Result<For
     Ok(form)
 }
 
+fn form_history_from_table(
+    table: &iceberg::table::Table,
+    form_id: FormId,
+) -> Result<Vec<FormDefinition>> {
+    let current = form_from_table(table, form_id)?;
+    let Some(raw) = table.metadata().properties().get(FORM_HISTORY_PROPERTY) else {
+        return Ok(vec![current]);
+    };
+    let history: Vec<FormDefinition> =
+        serde_json::from_str(raw).context("Iceberg Form history metadata is malformed")?;
+    if history.is_empty() {
+        return Err(anyhow!("Iceberg Form history metadata is empty"));
+    }
+    for form in &history {
+        if form.id != form_id || form.version.get() == 0 {
+            return Err(anyhow!("Iceberg Form history identity is invalid"));
+        }
+    }
+    if history
+        .iter()
+        .any(|form| form.version == current.version && form != &current)
+    {
+        return Err(anyhow!(
+            "Iceberg Form history conflicts with current definition"
+        ));
+    }
+    if history.iter().any(|form| form.version == current.version) {
+        Ok(history)
+    } else {
+        let mut history = history;
+        history.push(current);
+        Ok(history)
+    }
+}
+
 /// Attribution is part of the v1-pre physical Form contract. Existing tables
 /// with the former schema are rejected explicitly instead of failing later
 /// with an Arrow column-count or missing-column error; pre-v1 Spaces must be
@@ -2790,10 +2865,22 @@ fn nested_field_id(parent_id: i32, offset: i32) -> i32 {
 }
 
 fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<String, String>> {
+    form_properties_with_history(form, write, std::slice::from_ref(form))
+}
+
+fn form_properties_with_history(
+    form: &FormDefinition,
+    write: WriteConfig,
+    history: &[FormDefinition],
+) -> Result<HashMap<String, String>> {
     Ok(HashMap::from([
         (
             FORM_DEFINITION_PROPERTY.into(),
             serde_json::to_string(form)?,
+        ),
+        (
+            FORM_HISTORY_PROPERTY.into(),
+            serde_json::to_string(history)?,
         ),
         (FORM_ID_PROPERTY.into(), form.id.to_string()),
         (FORM_NAME_PROPERTY.into(), form.name.clone()),

@@ -89,6 +89,39 @@ pub enum CatalogWriteMode {
 /// make recovery dependent on clock skew.  The probe is deleted before the
 /// function returns, and a backend that cannot provide its server timestamp
 /// fails closed.
+struct ServerTimeProbeCleanup {
+    operator: Option<Operator>,
+    path: String,
+}
+
+impl ServerTimeProbeCleanup {
+    fn new(operator: Operator, path: String) -> Self {
+        Self {
+            operator: Some(operator),
+            path,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.operator = None;
+    }
+}
+
+impl Drop for ServerTimeProbeCleanup {
+    fn drop(&mut self) {
+        let Some(operator) = self.operator.take() else {
+            return;
+        };
+        let path = self.path.clone();
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        handle.spawn(async move {
+            let _ = operator.delete(&path).await;
+        });
+    }
+}
+
 pub async fn backend_server_time(operator: &Operator, scope: &str) -> Result<SystemTime> {
     let scope = scope.trim_matches('/');
     let path = format!(
@@ -106,6 +139,7 @@ pub async fn backend_server_time(operator: &Operator, scope: &str) -> Result<Sys
         )
         .await
         .map_err(anyhow::Error::from)?;
+    let mut probe_cleanup = ServerTimeProbeCleanup::new(operator.clone(), path.clone());
     // Do not return before the probe is cleaned up. A stat failure must not
     // turn a short-lived clock probe into a permanent storage leak.
     let timestamp = operator
@@ -123,14 +157,18 @@ pub async fn backend_server_time(operator: &Operator, scope: &str) -> Result<Sys
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
         Err(error) => Err(anyhow::Error::from(error)),
     };
-    match (timestamp, cleanup) {
+    let outcome = match (timestamp, cleanup) {
         (Ok(timestamp), Ok(())) => Ok(timestamp),
         (Err(error), Ok(())) => Err(error),
         (Ok(_), Err(error)) => Err(error),
         (Err(error), Err(cleanup_error)) => Err(error.context(format!(
             "clean up shared backend time probe: {cleanup_error:#}"
         ))),
+    };
+    if outcome.is_ok() {
+        probe_cleanup.disarm();
     }
+    outcome
 }
 
 async fn read_storage_object_exact(operator: &Operator, path: &str) -> Result<Vec<u8>> {
@@ -791,6 +829,19 @@ impl DerivedRelationHeadStore {
                 .as_secs(),
         }))
         .expect("derived build marker is serializable")
+    }
+
+    fn legacy_marker_bytes(generation: Option<u64>) -> Vec<u8> {
+        let mut marker = serde_json::json!({
+            "marked_at": SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        });
+        if let Some(generation) = generation {
+            marker["legacy_generation"] = serde_json::json!(generation);
+        }
+        serde_json::to_vec(&marker).expect("legacy derived marker is serializable")
     }
 
     fn json_time(bytes: &[u8], key: &str) -> Option<SystemTime> {
@@ -2400,6 +2451,18 @@ impl DerivedRelationHeadStore {
     /// in-flight reader that pinned the legacy Head can finish before the
     /// prefix is reclaimed.
     pub async fn mark_legacy_materializations_garbage(&self) -> Result<()> {
+        let generation = self.read_legacy_exact().await?.map(|head| head.generation);
+        self.mark_legacy_materializations_garbage_for_generation(generation)
+            .await
+    }
+
+    /// Records a detached legacy prefix while retaining the exact generation
+    /// that was detached. The generation is evidence for recovery; deletion
+    /// still rechecks that no legacy Head remains immediately before it starts.
+    pub async fn mark_legacy_materializations_garbage_for_generation(
+        &self,
+        generation: Option<u64>,
+    ) -> Result<()> {
         self.ensure_writable()?;
         let entries = self
             .list_derived_entries(&self.legacy_materializations_prefix())
@@ -2414,7 +2477,7 @@ impl DerivedRelationHeadStore {
             .operator
             .write_options(
                 &self.legacy_garbage_marker_path(),
-                Self::build_marker_bytes(),
+                Self::legacy_marker_bytes(generation),
                 WriteOptions {
                     if_not_exists: true,
                     ..Default::default()
@@ -2437,11 +2500,33 @@ impl DerivedRelationHeadStore {
         minimum_gc_age: Duration,
     ) -> Result<bool> {
         self.ensure_writable()?;
+        if self.write_mode == CatalogWriteMode::SingleProcess {
+            let _guard = self.serializer.lock().await;
+            return self
+                .garbage_collect_legacy_materializations_locked(minimum_gc_age)
+                .await;
+        }
+        self.garbage_collect_legacy_materializations_locked(minimum_gc_age)
+            .await
+    }
+
+    async fn garbage_collect_legacy_materializations_locked(
+        &self,
+        minimum_gc_age: Duration,
+    ) -> Result<bool> {
         let marker = self.legacy_garbage_marker_path();
         if !self.operator.exists(&marker).await? {
             return Ok(false);
         }
         if !self.marker_old_enough(&marker, minimum_gc_age).await? {
+            return Ok(true);
+        }
+        // Marker creation can precede legacy Head detachment because local
+        // filesystems have no conditional delete primitive. A crash in that
+        // interval must never turn a still-live legacy coordinate into
+        // deletable storage. Re-read the exact Head at the destructive
+        // boundary; any legacy Head pins the whole materialization prefix.
+        if self.read_legacy_exact().await?.is_some() {
             return Ok(true);
         }
         let entries = self
@@ -2774,10 +2859,12 @@ impl DerivedRelationHeadStore {
         };
         let value: serde_json::Value = serde_json::from_slice(&bytes.to_vec())?;
         if is_legacy_derived_head(&value) {
+            let generation = value.get("generation").and_then(serde_json::Value::as_u64);
             // Detach the old Head, but retain its immutable prefix behind a
             // durable grace-period marker so an already-open legacy reader is
             // not broken by this explicit format discard.
-            self.mark_legacy_materializations_garbage().await?;
+            self.mark_legacy_materializations_garbage_for_generation(generation)
+                .await?;
             self.operator.delete(&self.head_path()).await?;
         }
         Ok(())
@@ -4356,8 +4443,8 @@ impl StorageBackend for OpendalStorage {
 mod tests {
     use super::{
         canonical_head_bytes, operator_from_uri, operator_from_uri_with_endpoint,
-        DerivedRelationHead, DerivedRelationHeadStore, OpendalStorage, SpaceCatalogStore,
-        StorageBackend, MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS,
+        DerivedRelationHead, DerivedRelationHeadStore, OpendalStorage, ServerTimeProbeCleanup,
+        SpaceCatalogStore, StorageBackend, MAX_DERIVED_TERMINAL_TOMBSTONES_PER_PASS,
     };
     use anyhow::Result;
     use futures::future::join_all;
@@ -4412,6 +4499,20 @@ mod tests {
         let memory_bytes = memory_operator.read("hello.txt").await?.to_vec();
         assert_eq!(memory_bytes, b"hello world");
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn canceled_server_time_probe_cleanup_reaps_written_probe() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let path = "spaces/demo/_ugoite/maintenance/server-time-probes/canceled.json";
+        operator.write(path, b"probe".to_vec()).await?;
+        drop(ServerTimeProbeCleanup::new(
+            operator.clone(),
+            path.to_string(),
+        ));
+        tokio::task::yield_now().await;
+        assert!(!operator.exists(path).await?);
         Ok(())
     }
 
@@ -4786,6 +4887,13 @@ mod tests {
         assert!(!operator.exists(&store.head_path()).await?);
         assert!(operator.exists(&legacy_data_path).await?);
         assert!(operator.exists(&store.legacy_garbage_marker_path()).await?);
+        let marker: serde_json::Value = serde_json::from_slice(
+            &operator
+                .read(&store.legacy_garbage_marker_path())
+                .await?
+                .to_vec(),
+        )?;
+        assert_eq!(marker["legacy_generation"], serde_json::json!(1));
         Ok(())
     }
 
@@ -5056,6 +5164,54 @@ mod tests {
         );
         assert!(!operator.exists(&legacy_data).await?);
         assert!(!operator.exists(&store.legacy_garbage_marker_path()).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_gc_never_deletes_while_legacy_head_still_pins_prefix() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let relation_id = uuid::Uuid::from_u128(0xA010);
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
+        let legacy_data = format!(
+            "{}/data/live.parquet",
+            store.legacy_materializations_prefix()
+        );
+        operator.write(&legacy_data, b"legacy".to_vec()).await?;
+        operator
+            .write(
+                &store.head_path(),
+                serde_json::to_vec(&serde_json::json!({
+                    "format_version": 1,
+                    "space_id": "demo",
+                    "relation_id": relation_id,
+                    "generation": 7,
+                    "materialization_id": "legacy",
+                    "base_generation": 0,
+                    "target_generation": 7,
+                    "materialization_manifest_location": "legacy/manifest.json"
+                }))?,
+            )
+            .await?;
+        store
+            .mark_legacy_materializations_garbage_for_generation(Some(7))
+            .await?;
+        operator
+            .write(
+                &store.legacy_garbage_marker_path(),
+                serde_json::to_vec(&serde_json::json!({
+                    "marked_at": 0,
+                    "legacy_generation": 7
+                }))?,
+            )
+            .await?;
+
+        assert!(
+            store
+                .garbage_collect_legacy_materializations(Duration::ZERO)
+                .await?
+        );
+        assert!(operator.exists(&legacy_data).await?);
+        assert!(operator.exists(&store.legacy_garbage_marker_path()).await?);
         Ok(())
     }
 

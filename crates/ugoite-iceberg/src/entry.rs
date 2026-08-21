@@ -213,6 +213,8 @@ pub struct RevisionRow {
     pub integrity: IntegrityPayload,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restored_from: Option<String>,
+    #[serde(default = "initial_form_version")]
+    pub form_version: u32,
     #[serde(default)]
     pub state: Option<EntryRow>,
     #[serde(default = "initial_entry_version")]
@@ -228,6 +230,9 @@ pub struct RevisionRow {
 }
 
 const fn initial_entry_version() -> u64 {
+    1
+}
+const fn initial_form_version() -> u32 {
     1
 }
 fn default_operation() -> String {
@@ -640,7 +645,7 @@ fn revision_row_to_domain(
         operation,
         committed_at_micros: to_timestamp_micros(row.timestamp),
         author_id: row.author.clone(),
-        form_version: form.version,
+        form_version: ugoite_domain::form::FormVersion::new(row.form_version)?,
         source_kind: row.source_kind.clone(),
         source_id: row.source_id.clone(),
         entry,
@@ -934,6 +939,7 @@ fn revision_row_from_domain(
         markdown_checksum: integrity.checksum.clone(),
         integrity,
         restored_from: revision.entry.restored_from.map(|id| id.to_string()),
+        form_version: revision.form_version.get(),
         state: Some(state),
         entry_version: revision.entry_version,
         operation: match revision.operation {
@@ -952,14 +958,29 @@ async fn revision_rows_for_form(
     op: &Operator,
     ws_path: &str,
     form_name: &str,
-) -> Result<(Value, Vec<RevisionRow>)> {
-    let (form, revisions) = iceberg_store::revisions_for_form(op, ws_path, form_name).await?;
+) -> Result<(
+    Value,
+    BTreeMap<u32, ugoite_domain::form::FormDefinition>,
+    Vec<RevisionRow>,
+)> {
+    let (form, form_history, revisions) =
+        iceberg_store::revisions_for_form_with_history(op, ws_path, form_name).await?;
     let form_def = form::from_domain_form(&form);
     let rows = revisions
         .into_iter()
-        .map(|revision| revision_row_from_domain(revision, form_name, &form))
+        .map(|revision| {
+            let revision_form = form_history
+                .get(&revision.form_version.get())
+                .with_context(|| {
+                    format!(
+                        "Form version {} is missing from immutable Form history",
+                        revision.form_version.get()
+                    )
+                })?;
+            revision_row_from_domain(revision, form_name, revision_form)
+        })
         .collect::<Result<Vec<_>>>()?;
-    Ok((form_def, rows))
+    Ok((form_def, form_history, rows))
 }
 
 pub(crate) async fn list_form_names(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
@@ -1499,6 +1520,7 @@ async fn prepare_entry<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: None,
+        form_version: form_def.get("version").and_then(Value::as_u64).unwrap_or(1) as u32,
         state: Some(entry_row.clone()),
         entry_version: entry_row.entry_version,
         operation: "upsert".to_string(),
@@ -1783,13 +1805,20 @@ pub async fn get_entry_revision_content(
         .ok_or_else(|| entry_content_not_found(entry_id))?;
     let row = read_entry_row(op, ws_path, &form_name, entry_id).await?;
 
-    let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
+    let (_form_def, form_history, revisions) =
+        revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
         .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
 
-    let field_order = form_field_names(&form_def);
+    let revision_form = form_history.get(&revision.form_version).ok_or_else(|| {
+        anyhow!(
+            "Form version {} is missing from immutable Form history",
+            revision.form_version
+        )
+    })?;
+    let field_order = form_field_names(&form::from_domain_form(revision_form));
     let merged_fields = merge_entry_fields(&revision.fields, &revision.extra_attributes);
     let revision_title = revision
         .state
@@ -1842,7 +1871,13 @@ async fn checkpoint_revisions_for_entry(
     entry_id: &str,
     view: RevisionView,
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
-) -> Result<Option<(ugoite_domain::form::FormDefinition, Vec<EntryRevision>)>> {
+) -> Result<
+    Option<(
+        ugoite_domain::form::FormDefinition,
+        BTreeMap<u32, ugoite_domain::form::FormDefinition>,
+        Vec<EntryRevision>,
+    )>,
+> {
     let entry_uuid = Uuid::parse_str(entry_id)
         .unwrap_or_else(|_| Uuid::new_v5(&Uuid::NAMESPACE_URL, entry_id.as_bytes()))
         .into();
@@ -1850,6 +1885,12 @@ async fn checkpoint_revisions_for_entry(
         let form = workspace
             .form_at_checkpoint(checkpoint, &sql_relation_name(coordinate.form_id))
             .await?;
+        let form_history = workspace
+            .form_history_at_checkpoint(checkpoint, form.id)
+            .await?
+            .into_iter()
+            .map(|form| (form.version.get(), form))
+            .collect();
         let scope =
             entry_scope_for_lookup(&checkpoint_scope_for_form(form.id, form_scopes), entry_id);
         if matches!(scope, EntryScope::Only(ref ids) if ids.is_empty()) {
@@ -1864,7 +1905,7 @@ async fn checkpoint_revisions_for_entry(
             })
             .collect::<Vec<_>>();
         if !revisions.is_empty() {
-            return Ok(Some((form, revisions)));
+            return Ok(Some((form, form_history, revisions)));
         }
     }
     Ok(None)
@@ -1918,7 +1959,7 @@ pub async fn get_entry_at_checkpoint(
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
 ) -> Result<Value> {
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
-    let Some((form, mut revisions)) = checkpoint_revisions_for_entry(
+    let Some((_form, form_history, mut revisions)) = checkpoint_revisions_for_entry(
         &workspace,
         checkpoint,
         entry_id,
@@ -1930,7 +1971,15 @@ pub async fn get_entry_at_checkpoint(
         return Err(entry_not_found(entry_id).into());
     };
     let revision = revisions.pop().ok_or_else(|| entry_not_found(entry_id))?;
-    entry_value_from_checkpoint_revision(entry_id, &form, revision)
+    let revision_form = form_history
+        .get(&revision.form_version.get())
+        .ok_or_else(|| {
+            anyhow!(
+                "Form version {} is missing from checkpoint Form history",
+                revision.form_version.get()
+            )
+        })?;
+    entry_value_from_checkpoint_revision(entry_id, revision_form, revision)
 }
 
 pub async fn get_entry_history_at_checkpoint(
@@ -1941,7 +1990,7 @@ pub async fn get_entry_history_at_checkpoint(
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
 ) -> Result<Value> {
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
-    let Some((_, mut revisions)) = checkpoint_revisions_for_entry(
+    let Some((_, _, mut revisions)) = checkpoint_revisions_for_entry(
         &workspace,
         checkpoint,
         entry_id,
@@ -1981,7 +2030,7 @@ pub async fn get_entry_revision_at_checkpoint(
     form_scopes: Option<&BTreeMap<FormId, EntryScope>>,
 ) -> Result<Value> {
     let workspace = iceberg_store::native_workspace(op, ws_path).await?;
-    let Some((form, revisions)) = checkpoint_revisions_for_entry(
+    let Some((form, form_history, revisions)) = checkpoint_revisions_for_entry(
         &workspace,
         checkpoint,
         entry_id,
@@ -1997,10 +2046,18 @@ pub async fn get_entry_revision_at_checkpoint(
         .find(|revision| revision.revision_id.to_string() == revision_id)
         .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
     let timestamp = from_timestamp_micros(revision.committed_at_micros);
-    let row = revision_row_from_domain(revision, &form.name, &form)?
+    let revision_form = form_history
+        .get(&revision.form_version.get())
+        .ok_or_else(|| {
+            anyhow!(
+                "Form version {} is missing from checkpoint Form history",
+                revision.form_version.get()
+            )
+        })?;
+    let row = revision_row_from_domain(revision, &form.name, revision_form)?
         .state
         .ok_or_else(|| revision_not_found(entry_id, revision_id))?;
-    let form_def = form::from_domain_form(&form);
+    let form_def = form::from_domain_form(revision_form);
     let form_name = form.name;
     let merged_fields = merge_entry_fields(&row.fields, &row.extra_attributes);
     let markdown = render_markdown(
@@ -2046,7 +2103,7 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
     if matches!(scope, EntryScope::Only(ref ids) if ids.is_empty()) {
         return Err(AppError::forbidden("Form is not readable").into());
     }
-    let Some((_, source_revisions)) = checkpoint_revisions_for_entry(
+    let Some((_, _, source_revisions)) = checkpoint_revisions_for_entry(
         &workspace,
         checkpoint,
         entry_id,
@@ -2127,6 +2184,7 @@ pub async fn restore_entry_from_checkpoint_authorized<I: IntegrityProvider>(
         markdown_checksum: checksum.clone(),
         integrity: row.integrity.clone(),
         restored_from: Some(revision_id.to_string()),
+        form_version: form_def.get("version").and_then(Value::as_u64).unwrap_or(1) as u32,
         state: Some(row),
         entry_version,
         operation: "restore".to_string(),
@@ -2312,6 +2370,7 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: None,
+        form_version: form_def.get("version").and_then(Value::as_u64).unwrap_or(1) as u32,
         state: Some(row.clone()),
         entry_version: row.entry_version,
         operation: "upsert".to_string(),
@@ -2377,6 +2436,7 @@ pub async fn delete_entry(
         markdown_checksum: row.integrity.checksum.clone(),
         integrity: row.integrity.clone(),
         restored_from: None,
+        form_version: form_def.get("version").and_then(Value::as_u64).unwrap_or(1) as u32,
         state: Some(row.clone()),
         entry_version: row.entry_version,
         operation: "delete".to_string(),
@@ -2392,7 +2452,7 @@ pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> 
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
-    let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
+    let (_, _, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
 
     let mut revisions = rows
         .into_iter()
@@ -2443,7 +2503,7 @@ pub async fn get_entry_history_authorized(
         }
     }
     let form_name = selected_form.ok_or_else(|| entry_not_found(entry_id))?;
-    let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
+    let (_, _, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let mut revisions = rows
         .into_iter()
         .filter(|revision| revision.entry_id == entry_id)
@@ -2477,7 +2537,7 @@ pub async fn get_entry_revision(
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
-    let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
+    let (_, _, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = rows
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id);
@@ -2516,7 +2576,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
             return Err(AppError::forbidden("Form is not readable").into());
         }
     }
-    let (form_def, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
+    let (form_def, _, revisions) = revision_rows_for_form(op, ws_path, &form_name).await?;
     let revision = revisions
         .into_iter()
         .find(|rev| rev.entry_id == entry_id && rev.revision_id == revision_id)
@@ -2571,6 +2631,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
             signature: signature.clone(),
         },
         restored_from: Some(revision_id.to_string()),
+        form_version: form_def.get("version").and_then(Value::as_u64).unwrap_or(1) as u32,
         state: Some(row.clone()),
         entry_version: row.entry_version,
         operation: "restore".to_string(),
@@ -2713,6 +2774,7 @@ mod input_conversion_tests {
             markdown_checksum: String::new(),
             integrity: IntegrityPayload::default(),
             restored_from: None,
+            form_version: 1,
             state: None,
             entry_version: 1,
             operation: "upsert".into(),

@@ -82,7 +82,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .unwrap_or("asset")
                     .to_string()
             });
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let asset = service.save_asset(&space_id, &name, &data).await?;
             print_json(&asset);
         }
@@ -108,7 +108,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             if human_approval.is_some() {
                 anyhow::bail!("--human-approval is only supported in backend/api mode");
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             service.delete_asset(&space_id, &asset_id).await?;
             print_json(&serde_json::json!({"deleted": true}));
         }

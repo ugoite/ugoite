@@ -1,6 +1,7 @@
 use anyhow::{Error, Result};
 use opendal::Operator;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
@@ -97,6 +98,28 @@ pub async fn revisions_for_form(
         .read_revision_view(form.id, crate::RevisionView::All)
         .await?;
     Ok((form, revisions))
+}
+
+pub async fn revisions_for_form_with_history(
+    operator: &Operator,
+    workspace_path: &str,
+    form_name: &str,
+) -> Result<(
+    FormDefinition,
+    BTreeMap<u32, FormDefinition>,
+    Vec<EntryRevision>,
+)> {
+    let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
+    let history = workspace
+        .form_history(form.id)
+        .await?
+        .into_iter()
+        .map(|form| (form.version.get(), form))
+        .collect();
+    let revisions = workspace
+        .read_revision_view(form.id, crate::RevisionView::All)
+        .await?;
+    Ok((form, history, revisions))
 }
 
 pub async fn latest_revisions_for_form(

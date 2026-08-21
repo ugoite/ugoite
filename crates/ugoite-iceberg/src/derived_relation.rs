@@ -1204,7 +1204,7 @@ async fn snapshot_asset_text_refresh_request_paths(
 ) -> Result<Vec<String>> {
     let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
     let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
-    if op.exists(&legacy_path).await? {
+    if legacy_asset_text_refresh_pending(op, &legacy_path).await? {
         paths.push(legacy_path);
     }
     let mut lister = op
@@ -1282,10 +1282,8 @@ async fn clear_asset_text_refresh_request_paths_with_admission_lock(
 }
 
 async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Result<usize> {
-    let mut count = usize::from(
-        op.exists(&legacy_asset_text_refresh_request_path(ws_path))
-            .await?,
-    );
+    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
+    let mut count = usize::from(legacy_asset_text_refresh_pending(op, &legacy_path).await?);
     let mut lister = op
         .lister_with(&asset_text_refresh_request_prefix(ws_path))
         .recursive(false)
@@ -1311,11 +1309,8 @@ async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Resul
 
 async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String]) -> Result<()> {
     for path in paths {
-        // The fixed-name marker may still be produced by an older process
-        // during a rolling upgrade. It has no version/ETag acknowledgement
-        // protocol, so deleting it after a snapshot could erase a request
-        // created by that older owner. Leave it for explicit operator cleanup.
         if path.ends_with(&format!("/{LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE}")) {
+            acknowledge_legacy_asset_text_refresh_request(op, path).await?;
             continue;
         }
         match op.delete(path).await {
@@ -1349,8 +1344,7 @@ pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) ->
 }
 
 pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
-    if op
-        .exists(&legacy_asset_text_refresh_request_path(ws_path))
+    if legacy_asset_text_refresh_pending(op, &legacy_asset_text_refresh_request_path(ws_path))
         .await?
     {
         return Ok(true);
@@ -1373,6 +1367,72 @@ pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Resul
         }
     }
     Ok(false)
+}
+
+async fn legacy_asset_text_refresh_pending(op: &Operator, path: &str) -> Result<bool> {
+    let metadata = match op.stat(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let etag = metadata
+        .etag()
+        .filter(|etag| !etag.is_empty())
+        .map(str::to_owned);
+    let bytes = match etag.as_deref() {
+        Some(etag) => {
+            op.read_options(
+                path,
+                ReadOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?
+        }
+        None if !is_shared_backend(op) => op.read(path).await?,
+        None => bail!("shared legacy AssetText refresh marker requires an exact ETag"),
+    };
+    Ok(serde_json::from_slice::<Value>(&bytes.to_vec())
+        .ok()
+        .and_then(|value| value.get("acknowledged").and_then(Value::as_bool))
+        != Some(true))
+}
+
+async fn acknowledge_legacy_asset_text_refresh_request(op: &Operator, path: &str) -> Result<()> {
+    let metadata = match op.stat(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let etag = metadata
+        .etag()
+        .filter(|etag| !etag.is_empty())
+        .map(str::to_owned);
+    let bytes = serde_json::to_vec(&json!({
+        "acknowledged": true,
+        "acknowledged_at": Utc::now(),
+    }))?;
+    let result: opendal::Result<()> = match etag {
+        Some(etag) => op
+            .write_options(
+                path,
+                bytes,
+                WriteOptions {
+                    if_match: Some(etag),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map(|_| ()),
+        None if !is_shared_backend(op) => op.write(path, bytes).await.map(|_| ()),
+        None => bail!("shared legacy AssetText refresh acknowledgement requires an ETag"),
+    };
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Returns whether the durable authoritative source requires an AssetText
@@ -1742,7 +1802,11 @@ async fn rebuild_asset_text_with_mode(
                     let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
                 }
                 if legacy_expected.is_some() {
-                    let _ = head_store.mark_legacy_materializations_garbage().await;
+                    let _ = head_store
+                        .mark_legacy_materializations_garbage_for_generation(
+                            legacy_expected.as_ref().map(|legacy| legacy.generation),
+                        )
+                        .await;
                 }
                 // A previous uncertain publication may have left a garbage
                 // marker on this build. Once the exact Head reread proves the
@@ -1771,7 +1835,11 @@ async fn rebuild_asset_text_with_mode(
         // The new Head is now authoritative. Retain the detached v1 prefix
         // until its reader grace period expires; the marker is durable so a
         // crash after the CAS cannot strand the old bytes.
-        let _ = head_store.mark_legacy_materializations_garbage().await;
+        let _ = head_store
+            .mark_legacy_materializations_garbage_for_generation(
+                legacy_expected.as_ref().map(|legacy| legacy.generation),
+            )
+            .await;
     }
     schedule_asset_text_gc(op, ws_path);
     let current = match head_store.read_exact().await {
@@ -3866,7 +3934,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_refresh_request_marker_is_preserved_during_clear() -> anyhow::Result<()> {
+    async fn legacy_refresh_request_marker_is_acknowledged_during_clear() -> anyhow::Result<()> {
         let operator = opendal::Operator::new(opendal::services::Memory::default())?;
         let workspace = "spaces/legacy-refresh-marker";
         let legacy_path = legacy_asset_text_refresh_request_path(workspace);
@@ -3875,7 +3943,9 @@ mod tests {
         assert!(asset_text_refresh_requested(&operator, workspace).await?);
         clear_asset_text_refresh_requested(&operator, workspace).await?;
         assert!(operator.exists(&legacy_path).await?);
-        assert!(asset_text_refresh_requested(&operator, workspace).await?);
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        let marker: Value = serde_json::from_slice(&operator.read(&legacy_path).await?.to_vec())?;
+        assert_eq!(marker.get("acknowledged"), Some(&Value::Bool(true)));
         Ok(())
     }
 

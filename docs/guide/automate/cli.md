@@ -18,10 +18,9 @@ ugoite config set --mode core
 ugoite config current
 ugoite space list /path/to/workspace
 
-# Server-backed mode
+# Server-backed mode (reference; authentication is not shipped in v0.1)
 ugoite config set --mode backend --backend-url https://ugoite.example.com
 ugoite config current
-ugoite auth login --device-name workstation --actions read,create,update
 ```
 
 In core mode, commands that address a Space take its full local path, such as
@@ -29,23 +28,20 @@ In core mode, commands that address a Space take its full local path, such as
 such as `demo`. `ugoite space list` takes the workspace root only in core mode;
 omit the positional argument in backend/API mode.
 
-## Authentication
+## Authentication (future/reference)
 
-Remote login uses device authorization. Open the displayed verification URL on
-any already signed-in browser, compare the code and requested actions, and
-approve the device. The CLI stores the rotating credential in the OS keychain
-when available, or in `~/.ugoite/cli-credentials.json` with owner-only
-permissions:
+The device authorization, Passkey/TOTP/OIDC login, and CLI credential storage
+flows below are endpoint-inventory reference material only; they are not a
+supported v0.1 authentication contract. Do not use them as setup instructions.
+The supported v0.1 workflow is core mode, which reads the operator-owned Space
+directory directly:
 
 ```bash
-ugoite auth login --device-name workstation --actions read,create,update
-ugoite auth profile
-ugoite auth logout
+ugoite config set --mode core
+ugoite space list /path/to/workspace
 ```
 
-`auth profile` reports metadata only. `auth logout` removes the local device
-credential. The browser credential page can revoke a device that is lost. Core
-mode does not need `auth login`.
+Backend/API authentication remains future work for this release.
 
 ## Spaces and entries
 

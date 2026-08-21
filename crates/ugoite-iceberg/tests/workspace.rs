@@ -1005,6 +1005,10 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         },
     )
     .await?;
+    assert_eq!(
+        workspace.form_history(form.id).await?,
+        vec![form.clone(), evolved.clone()]
+    );
     let table = workspace
         .catalog_for_testing()
         .load_table(&iceberg::TableIdent::new(
@@ -1049,6 +1053,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         current[0].values.get(&FieldId::new(100).unwrap()),
         Some(&FieldValue::String("old".into()))
     );
+    assert_eq!(current[0].form_version, form.version);
     assert!(!current[0].values.contains_key(&FieldId::new(101).unwrap()));
 
     let explicit_snapshot = workspace

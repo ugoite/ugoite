@@ -246,7 +246,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
             // A mutation schedules the process-local coalesced refresh but
             // never drains it; the authoritative commit is the CLI latency
             // boundary and `ugoite index run` is the explicit repair command.
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let meta = service
                 .create_entry(&space_id, &entry_id, &content, &author)
                 .await?;
@@ -281,7 +281,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 return Ok(());
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let result = service
                 .update_entry(
                     &space_id,
@@ -328,7 +328,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 bail!("--human-approval is only supported in backend/api mode");
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             service
                 .delete_entry(&space_id, &entry_id, hard_delete, &author)
                 .await?;
@@ -405,7 +405,7 @@ pub async fn run(cmd: EntryCmd) -> Result<()> {
                 return Ok(());
             }
             // Do not wait for Derived refreshes in a one-shot mutation.
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let result = service
                 .restore_entry(&space_id, &entry_id, &revision_id, &author)
                 .await?;
