@@ -19,11 +19,95 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  required:
-    name: ci-required
+  quality:
+    name: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure Deno cache path
+        run: echo "DENO_DIR=${RUNNER_TEMP}/deno-cache" >>"$GITHUB_ENV"
+
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          install: true
+          cache: true
+
+      - name: Install Rust CI components
+        run: |
+          rustup component add rustfmt clippy
+          rustup target add wasm32-unknown-unknown
+          rustc --version --verbose
+          cargo clippy -V
+          rustfmt --version
+          rustup target list --installed
+
+      - name: Resolve Deno version
+        id: deno-version
+        run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
+
+      - name: Restore Cargo dependency cache
+        id: rust-cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-targets: "false"
+          cache-bin: "false"
+          shared-key: "cargo-deps"
+          add-job-id-key: "false"
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: "v0.17.0"
+
+      - name: Configure Rust compiler cache
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >>"$GITHUB_ENV"
+          echo "SCCACHE_GHA_VERSION=ugoite-v1" >>"$GITHUB_ENV"
+          echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}" >>"$GITHUB_ENV"
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+            echo "SCCACHE_GHA_RW_MODE=READ_WRITE" >>"$GITHUB_ENV"
+          else
+            echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >>"$GITHUB_ENV"
+          fi
+
+      - name: Restore Deno cache
+        id: deno-cache-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            deno-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.deno-version.outputs.version }}-
+
+      - name: Run repository validation
+        id: quality
+        env:
+          MISE_JOBS: "2"
+          CARGO_BUILD_JOBS: "2"
+        run: scripts/measure-step.sh quality mise run ci
+
+      - name: Save Deno cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deno-cache
+          key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
+
+  artifacts:
+    name: artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CARGO_INCREMENTAL: "0"
       UGOITE_IMAGE_TAG: ugoite:e2e
       UGOITE_IMAGE_PLATFORM: linux/amd64
     steps:
@@ -44,7 +128,7 @@ jobs:
           sudo docker system prune --all --force
           df -h
 
-      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           install: true
           cache: true
@@ -62,13 +146,33 @@ jobs:
         id: deno-version
         run: echo "version=$(deno --version | awk 'NR==1 { print $2 }')" >>"$GITHUB_OUTPUT"
 
-      - name: Restore Rust cache
+      - name: Restore Cargo dependency cache
         id: rust-cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: ". -> target/rust"
+          cache-targets: "false"
           cache-bin: "false"
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          shared-key: "cargo-deps"
+          add-job-id-key: "false"
+          save-if: "false"
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: "v0.17.0"
+
+      - name: Configure Rust compiler cache
+        shell: bash
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+          echo "SCCACHE_GHA_ENABLED=on" >>"$GITHUB_ENV"
+          echo "SCCACHE_GHA_VERSION=ugoite-v1" >>"$GITHUB_ENV"
+          echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}" >>"$GITHUB_ENV"
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+            echo "SCCACHE_GHA_RW_MODE=READ_WRITE" >>"$GITHUB_ENV"
+          else
+            echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >>"$GITHUB_ENV"
+          fi
 
       - name: Restore Deno cache
         id: deno-cache-restore
@@ -89,7 +193,7 @@ jobs:
             playwright-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Resolve production Pages metadata
         id: pages
@@ -128,24 +232,12 @@ jobs:
             echo "docker_cache_to=${docker_cache_to}"
           } >>"$GITHUB_OUTPUT"
 
-      - name: Formatting check
-        id: fmt-check
-        run: scripts/measure-step.sh fmt-check mise run fmt:check
-
-      - name: Lint
-        id: lint
-        run: scripts/measure-step.sh lint mise run lint
-
-      - name: Source checks
-        id: check
-        run: scripts/measure-step.sh check mise run check
-
       - name: Install Playwright browser dependencies
         id: install-playwright
         run: scripts/measure-step.sh install-playwright deno task e2e:install:browsers
 
-      - name: Build release outputs
-        id: build
+      - name: Build, package, verify, and test artifacts
+        id: artifacts
         env:
           DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
           DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
@@ -153,52 +245,9 @@ jobs:
           UGOITE_IMAGE_USE_BUILDX: "true"
           UGOITE_IMAGE_CACHE_FROM: ${{ steps.ci-config.outputs.docker_cache_from }}
           UGOITE_IMAGE_CACHE_TO: ${{ steps.ci-config.outputs.docker_cache_to }}
-        run: scripts/measure-step.sh build mise run build
-
-      - name: Package artifacts
-        id: package
-        env:
-          DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
-          DOCSITE_BASE: ${{ steps.ci-config.outputs.docsite_base }}
           UGOITE_CI_RUN_ID: ${{ github.run_id }}
-        run: scripts/measure-step.sh package mise run package
-
-      - name: Verify artifacts
-        id: verify
-        run: scripts/measure-step.sh verify mise run verify
-
-      - name: Rust, tool, frontend, and docsite tests
-        id: test
-        env:
-          # Keep the mise task graph parallel while leaving enough CPU for
-          # Vitest during Cargo's workspace test build.
-          MISE_JOBS: "2"
-          CARGO_BUILD_JOBS: "2"
-        run: scripts/measure-step.sh test mise run test
-
-      - name: Frontend coverage
-        id: test-frontend-coverage
-        run: scripts/measure-step.sh test-frontend-coverage mise run test:frontend:coverage
-
-      - name: Docsite coverage
-        id: test-docsite-coverage
-        run: scripts/measure-step.sh test-docsite-coverage mise run test:docsite:coverage
-
-      - name: Docsite navigation E2E
-        id: test-docsite-navigation
-        env:
           UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
-        run: scripts/measure-step.sh test-docsite-navigation mise run test:docsite:e2e:navigation
-
-      - name: E2E smoke and Form-owned Asset
-        id: test-e2e-smoke-asset-owned
-        env:
-          UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
-        run: scripts/measure-step.sh test-e2e-smoke-asset-owned mise run test:e2e:smoke-and-asset-owned
-
-      - name: Validate release metadata
-        id: validate-release
-        run: scripts/measure-step.sh validate-release mise run validate:release
+        run: scripts/measure-step.sh artifacts mise run ci:artifacts
 
       - name: Upload docsite artifact
         id: upload-docsite
@@ -251,23 +300,14 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-      - name: Save Deno cache
-        id: deno-cache-save
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/deno-cache
-          key: ${{ steps.deno-cache-restore.outputs.cache-primary-key }}
-
       - name: Save Playwright browser cache
-        id: playwright-cache-save
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/playwright-browsers
           key: ${{ steps.playwright-cache-restore.outputs.cache-primary-key }}
 
-      - name: Summarize CI cache and artifact state
+      - name: Summarize artifact lane
         if: always()
         env:
           DOCSITE_ORIGIN: ${{ steps.ci-config.outputs.docsite_origin }}
@@ -328,42 +368,25 @@ jobs:
             rust_target_size_bytes="$(du -sk target/rust | awk '{print $1 * 1024}')"
           fi
 
-          buildx_cache_size_bytes="n/a"
-
           {
-            echo "## CI Summary"
+            echo "## CI Artifact Lane Summary"
             echo
             echo "- Event: \`${GITHUB_EVENT_NAME}\`"
             echo "- Ref: \`${GITHUB_REF}\`"
             echo "- Source SHA: \`${GITHUB_SHA}\`"
-            echo "- Rust cache exact hit: \`${RUST_CACHE_HIT:-}\`"
-            echo "- Rust cache fallback restore: \`n/a (rust-cache exposes exact-hit only)\`"
+            echo "- Cargo dependency cache exact hit: \`${RUST_CACHE_HIT:-}\`"
             echo "- Deno cache exact hit: \`${DENO_CACHE_HIT:-}\`"
             echo "- Deno cache fallback restore: \`${deno_cache_fallback}\`"
             echo "- Playwright browser cache exact hit: \`${PLAYWRIGHT_CACHE_HIT:-}\`"
-            echo "- Playwright browser cache fallback restore: \`${playwright_cache_fallback}\`"
+            echo "- Playwright cache fallback restore: \`${playwright_cache_fallback}\`"
             echo "- Saving shared caches allowed: \`${CACHE_SAVE_ALLOWED}\`"
             echo "- Docker cache scope: \`${DOCKER_CACHE_SCOPE}\`"
             echo "- Docker cache export mode: \`${DOCKER_CACHE_MODE}\`"
             echo "- DOCSITE_ORIGIN: \`${DOCSITE_ORIGIN}\`"
             echo "- DOCSITE_BASE: \`${DOCSITE_BASE}\`"
-            echo
-            echo "### Timings"
-            echo
-            echo "- fmt:check: ${{ steps.fmt-check.outputs.duration_seconds }}s"
-            echo "- lint: ${{ steps.lint.outputs.duration_seconds }}s"
-            echo "- check: ${{ steps.check.outputs.duration_seconds }}s"
-            echo "- install Playwright: ${{ steps.install-playwright.outputs.duration_seconds }}s"
-            echo "- build: ${{ steps.build.outputs.duration_seconds }}s"
-            echo "- test: ${{ steps.test.outputs.duration_seconds }}s"
-            echo "- test:frontend:coverage: ${{ steps.test-frontend-coverage.outputs.duration_seconds }}s"
-            echo "- test:docsite:coverage: ${{ steps.test-docsite-coverage.outputs.duration_seconds }}s"
-            echo "- docsite navigation E2E: ${{ steps.test-docsite-navigation.outputs.duration_seconds }}s"
-            echo "- E2E smoke and asset-owned: ${{ steps.test-e2e-smoke-asset-owned.outputs.duration_seconds }}s"
-            echo "- package: ${{ steps.package.outputs.duration_seconds }}s"
-            echo "- verify: ${{ steps.verify.outputs.duration_seconds }}s"
-            echo "- validate:release: ${{ steps.validate-release.outputs.duration_seconds }}s"
-            echo "- total workflow duration: ${total_duration_seconds}s"
+            echo "- ci:artifacts duration: ${{ steps.artifacts.outputs.duration_seconds }}s"
+            echo "- install Playwright duration: ${{ steps.install-playwright.outputs.duration_seconds }}s"
+            echo "- total artifact lane duration: ${total_duration_seconds}s"
             echo
             echo "### Artifact Digests"
             echo
@@ -386,6 +409,20 @@ jobs:
             echo "- target/rust: \`${rust_target_size_bytes}\` bytes"
             echo "- DENO_DIR: \`${deno_cache_size_bytes}\` bytes"
             echo "- Playwright browsers: \`${playwright_cache_size_bytes}\` bytes"
-            echo "- BuildKit cache: \`${buildx_cache_size_bytes}\`"
             echo "- target/artifacts: \`${artifact_size_bytes}\` bytes"
           } >>"$GITHUB_STEP_SUMMARY"
+
+  required:
+    name: ci-required
+    if: ${{ always() }}
+    needs: [quality, artifacts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require all CI lanes
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          ARTIFACTS_RESULT: ${{ needs.artifacts.result }}
+        run: |
+          test "$QUALITY_RESULT" = success
+          test "$ARTIFACTS_RESULT" = success

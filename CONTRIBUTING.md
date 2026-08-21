@@ -57,7 +57,7 @@ Requirement IDs use `REQ-<CATEGORY>-<NNN>`. Tests should include the relevant ID
 
 ## Pull requests
 
-Describe the behavior change, link an issue, list focused validation, and call out changes to storage compatibility, authentication, OpenAPI, or browser/server boundaries. `mise run ci` is the pull-request gate; `mise run ci:merge` is the merge gate.
+Describe the behavior change, link an issue, list focused validation, and call out changes to storage compatibility, authentication, OpenAPI, or browser/server boundaries. `mise run ci` is the quality lane; `mise run ci:artifacts` is the artifact/E2E lane; `mise run ci:merge` reproduces the complete required merge gate locally.
 
 ## Release flow
 
