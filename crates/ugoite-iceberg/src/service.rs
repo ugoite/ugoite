@@ -309,7 +309,9 @@ impl UgoiteService {
             .clone();
         let _creation_guard = creation_lock.lock().await;
         validate_storage_id(validate_space_id(space_id))?;
-        if self.recover_claimed_space(space_id).await?.is_some() {
+        if self.recover_claimed_space(space_id).await?.is_some()
+            || self.space_id_by_slug(space_id).await?.is_some()
+        {
             return Err(AppError::conflict(
                 ErrorCode::SpaceAlreadyExists,
                 format!("Space slug already exists: {space_id}"),
@@ -392,9 +394,6 @@ impl UgoiteService {
         if claim.space_id != space_id {
             bail!("Space slug claim is owned by another Space: {slug}");
         }
-        if claim.state == "committed" {
-            return Ok(());
-        }
         let committed_path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}{SPACE_SLUG_COMMITTED_SUFFIX}");
         let committed = serde_json::to_vec(&json!({
             "slug": slug,
@@ -434,9 +433,6 @@ impl UgoiteService {
         slug: &str,
         claim: &SpaceSlugClaim,
     ) -> Result<bool> {
-        if claim.state == "committed" {
-            return Ok(true);
-        }
         let path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}{SPACE_SLUG_COMMITTED_SUFFIX}");
         let bytes = match self.operator.read(&path).await {
             Ok(bytes) => bytes.to_vec(),
@@ -465,12 +461,16 @@ impl UgoiteService {
             bail!("Space slug claim path and payload disagree for {slug}");
         }
         validate_storage_id(validate_space_id(&claim.space_id))?;
+        if claim.state != "pending" {
+            bail!("invalid Space slug claim state for {slug}");
+        }
         if claim.space_id != slug {
-            let space_uid = Uuid::parse_str(&claim.space_id).with_context(|| {
-                format!("identity Space slug claim has an invalid UUID: {slug}")
-            })?;
-            if space_uid.get_version() != Some(uuid::Version::SortRand) {
-                bail!("identity Space slug claim must use a UUIDv7: {slug}");
+            if let Ok(space_uid) = Uuid::parse_str(&claim.space_id) {
+                if space_uid.get_version() != Some(uuid::Version::SortRand) {
+                    bail!("identity Space slug claim must use a UUIDv7: {slug}");
+                }
+            } else if !space::space_exists(&self.operator, &claim.space_id).await? {
+                bail!("legacy Space slug claim points to a missing Space: {slug}");
             }
         }
         Ok(Some(claim))
@@ -504,16 +504,11 @@ impl UgoiteService {
             return Ok(None);
         };
         let committed = self.space_slug_claim_is_committed(slug, &claim).await?;
-        let complete = space::validate_complete_bootstrap(&self.operator, &claim.space_id)
-            .await
-            .is_ok();
-        if committed && !complete {
+        if committed {
             // A committed Space becoming incomplete is corruption, not an
-            // interrupted create. Leave it visible to the normal fail-closed
-            // lookup instead of silently repairing authoritative state.
-            return Ok(None);
-        }
-        if complete {
+            // interrupted create. Never turn backend/validation errors into a
+            // repair decision after the durable commit marker exists.
+            space::validate_complete_bootstrap(&self.operator, &claim.space_id).await?;
             let metadata = space::get_space_raw(&self.operator, &claim.space_id).await?;
             if metadata.get("slug").and_then(Value::as_str) == Some(slug) {
                 if !committed {
@@ -526,11 +521,12 @@ impl UgoiteService {
         }
 
         if claim.space_id != claim.slug {
-            let space_uid = Uuid::parse_str(&claim.space_id).with_context(|| {
-                format!("identity Space slug claim has an invalid UUID: {slug}")
-            })?;
-            space::repair_space_with_identity(&self.operator, space_uid, slug, &self.root_uri)
-                .await?;
+            if let Ok(space_uid) = Uuid::parse_str(&claim.space_id) {
+                space::repair_space_with_identity(&self.operator, space_uid, slug, &self.root_uri)
+                    .await?;
+            } else {
+                space::repair_space(&self.operator, &claim.space_id, slug, &self.root_uri).await?;
+            }
         } else if space::space_exists(&self.operator, &claim.space_id).await? {
             space::repair_space(&self.operator, &claim.space_id, slug, &self.root_uri).await?;
         } else {
@@ -2424,6 +2420,44 @@ fn map_checkpoint_error(error: anyhow::Error) -> anyhow::Error {
 }
 
 pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
+    let object = patch
+        .as_object()
+        .context("space patch must be a JSON object")?;
+    for key in object.keys() {
+        if !matches!(
+            key.as_str(),
+            "name" | "slug" | "storage_config" | "settings"
+        ) {
+            bail!("space patch contains unknown field: {key}");
+        }
+    }
+    if let Some(name) = object.get("name") {
+        if !name.as_str().is_some_and(|value| !value.trim().is_empty()) {
+            bail!("space patch name must be a non-empty string");
+        }
+    }
+    if let Some(slug) = object.get("slug") {
+        let slug = slug
+            .as_str()
+            .filter(|value| !value.trim().is_empty())
+            .context("space patch slug must be a non-empty string")?;
+        validate_storage_id(validate_space_id(slug))?;
+    }
+    if let Some(storage_config) = object.get("storage_config") {
+        if !storage_config.is_object() {
+            bail!("space patch storage_config must be an object");
+        }
+        if let Some(uri) = storage_config.get("uri") {
+            if !uri.as_str().is_some_and(|value| !value.trim().is_empty()) {
+                bail!("space patch storage_config.uri must be a non-empty string");
+            }
+        }
+    }
+    if let Some(settings) = object.get("settings") {
+        if !settings.is_object() {
+            bail!("space patch settings must be an object");
+        }
+    }
     let reserved_keys: Vec<&str> = patch
         .as_object()
         .map(|object| {
@@ -2592,6 +2626,23 @@ mod tests {
                 .exists("spaces/.ugoite-space-slug-claims/before-rename.json")
                 .await?
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_slug_space_rename_keeps_legacy_directory_identity() -> Result<()> {
+        let service = UgoiteService::new("memory://legacy-slug-rename")?;
+        service.create_space("legacy-before").await?;
+
+        service
+            .patch_space("legacy-before", &json!({"slug": "legacy-after"}))
+            .await?;
+
+        assert_eq!(
+            service.space_id_by_slug("legacy-after").await?,
+            Some("legacy-before".to_string())
+        );
+        assert_eq!(service.space_id_by_slug("legacy-before").await?, None);
         Ok(())
     }
 

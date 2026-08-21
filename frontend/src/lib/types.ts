@@ -24,6 +24,8 @@ export interface StorageConnectionConfig {
 /** Space metadata */
 export interface Space {
   id: string;
+  space_uid?: string;
+  slug?: string;
   name: string;
   created_at: string;
   storage?: SpaceStorage;
@@ -33,6 +35,7 @@ export interface Space {
 
 /** Space patch payload */
 export interface SpacePatchPayload {
+  slug?: string;
   name?: string;
   storage_config?: StorageConnectionConfig;
   settings?: Record<string, unknown>;

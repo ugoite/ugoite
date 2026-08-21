@@ -1,12 +1,13 @@
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
+use fs2::FileExt;
 use futures::TryStreamExt;
 use opendal::options::{ReadOptions, WriteOptions};
 use opendal::{ErrorKind, Operator};
 use rand::TryRng;
 use std::collections::BTreeMap;
-#[cfg(unix)]
+use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use tokio::sync::Mutex as AsyncMutex;
@@ -236,6 +237,9 @@ pub async fn create_space_with_identity(
     slug: &str,
     root_path: &str,
 ) -> Result<()> {
+    if space_id.get_version() != Some(uuid::Version::SortRand) {
+        return Err(anyhow!("UUID-addressed Space identity must be a UUIDv7"));
+    }
     let directory_id = space_id.to_string();
     let storage = OpendalStorage::from_operator(op);
     create_space_with_storage(&storage, &directory_id, space_id, slug, root_path).await?;
@@ -342,8 +346,20 @@ async fn repair_space_scaffold(
             "unsupported Space layout: settings.json requires default_form"
         ));
     }
-    if form::get_form(op, &ws_path, "Entry").await.is_err() {
-        form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
+    match form::get_form(op, &ws_path, "Entry").await {
+        Ok(_) => {}
+        Err(error)
+            if error.chain().any(|cause| {
+                cause
+                    .downcast_ref::<opendal::Error>()
+                    .is_some_and(|error| error.kind() == ErrorKind::NotFound)
+            }) =>
+        {
+            form::upsert_form(op, &ws_path, &starter_entry_form_definition()).await?;
+        }
+        Err(error) => {
+            return Err(error.context("read authoritative Entry Form during Space repair"))
+        }
     }
     apply_local_space_permissions(op, &directory_id)?;
     Ok(())
@@ -555,12 +571,163 @@ pub(crate) fn validate_current_space_metadata(
     Ok(metadata.space_uid)
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SpacePatchJournal {
+    old_metadata: serde_json::Value,
+    new_metadata: serde_json::Value,
+    old_settings: serde_json::Value,
+    new_settings: serde_json::Value,
+}
+
+fn space_patch_journal_path(space_id: &str) -> String {
+    format!("spaces/{space_id}/.ugoite-space-patch.json")
+}
+
+fn local_space_patch_lock_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
+    if !matches!(op.info().scheme(), "fs" | "file") {
+        return None;
+    }
+    Some(
+        Path::new(op.info().root().as_str())
+            .join("spaces")
+            .join(space_id)
+            .join(".ugoite-space-patch.lock"),
+    )
+}
+
+async fn acquire_local_space_patch_lock(op: &Operator, space_id: &str) -> Result<Option<File>> {
+    let Some(path) = local_space_patch_lock_path(op, space_id) else {
+        return Ok(None);
+    };
+    let file = tokio::task::spawn_blocking(move || -> Result<File> {
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .with_context(|| format!("open Space patch lock {}", path.display()))?;
+        file.lock_exclusive()
+            .with_context(|| format!("lock Space patch {}", path.display()))?;
+        Ok(file)
+    })
+    .await
+    .context("join Space patch lock task")??;
+    Ok(Some(file))
+}
+
+fn is_condition_not_match(error: &opendal::Error) -> bool {
+    matches!(
+        error.kind(),
+        ErrorKind::ConditionNotMatch | ErrorKind::AlreadyExists
+    )
+}
+
+async fn read_space_patch_json(op: &Operator, path: &str) -> Result<Option<serde_json::Value>> {
+    match op.read(path).await {
+        Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes.to_vec())?)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn write_space_patch_value(
+    op: &Operator,
+    path: &str,
+    value: &serde_json::Value,
+    etag: Option<&str>,
+) -> Result<()> {
+    let bytes = serde_json::to_vec_pretty(value)?;
+    if let Some(etag) = etag {
+        op.write_options(
+            path,
+            bytes,
+            WriteOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    } else {
+        op.write(path, bytes).await?;
+    }
+    Ok(())
+}
+
+async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()> {
+    let journal_path = space_patch_journal_path(space_id);
+    let Some(value) = read_space_patch_json(op, &journal_path).await? else {
+        return Ok(());
+    };
+    let journal: SpacePatchJournal =
+        serde_json::from_value(value).context("decode pending Space patch journal")?;
+    validate_current_space_metadata(space_id, &journal.new_metadata)?;
+    if !journal.new_settings.is_object()
+        || journal
+            .new_settings
+            .get("default_form")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+    {
+        return Err(anyhow!("pending Space patch settings are invalid"));
+    }
+    let meta_path = format!("spaces/{space_id}/meta.json");
+    let settings_path = format!("spaces/{space_id}/settings.json");
+    let current_meta: serde_json::Value =
+        serde_json::from_slice(&op.read(&meta_path).await?.to_vec())?;
+    let current_settings: serde_json::Value =
+        serde_json::from_slice(&op.read(&settings_path).await?.to_vec())?;
+    if current_meta != journal.new_metadata {
+        if current_meta != journal.old_metadata {
+            return Err(anyhow!(
+                "pending Space patch journal does not match current metadata"
+            ));
+        }
+        let etag = op
+            .stat(&meta_path)
+            .await?
+            .etag()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        if etag.is_none() && !matches!(op.info().scheme(), "memory" | "fs" | "file") {
+            return Err(anyhow!(
+                "pending Space patch requires an exact metadata ETag"
+            ));
+        }
+        write_space_patch_value(op, &meta_path, &journal.new_metadata, etag.as_deref()).await?;
+    }
+    if current_settings != journal.new_settings {
+        if current_settings != journal.old_settings {
+            return Err(anyhow!(
+                "pending Space patch journal does not match current settings"
+            ));
+        }
+        let etag = op
+            .stat(&settings_path)
+            .await?
+            .etag()
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        if etag.is_none() && !matches!(op.info().scheme(), "memory" | "fs" | "file") {
+            return Err(anyhow!(
+                "pending Space patch requires an exact settings ETag"
+            ));
+        }
+        write_space_patch_value(op, &settings_path, &journal.new_settings, etag.as_deref()).await?;
+    }
+    op.delete(&journal_path).await?;
+    Ok(())
+}
+
 /// Verifies that a Space has completed the current bootstrap before a
 /// recovery path is allowed to publish Node ownership. Metadata alone is not
 /// a durable creation marker: a crash may leave it before the starter Form
 /// and catalog are committed.
 pub async fn validate_complete_bootstrap(op: &Operator, space_id: &str) -> Result<()> {
     validate_space_path_segment(space_id)?;
+    let patch_serializer = space_patch_serializer(op, space_id);
+    let _patch_guard = patch_serializer.lock().await;
+    let _local_patch_lock = acquire_local_space_patch_lock(op, space_id).await?;
+    recover_pending_space_patch(op, space_id).await?;
     let storage = OpendalStorage::from_operator(op);
     ensure_space_identity(&storage, space_id).await?;
     for directory in ["security", "forms", "assets", "sql_sessions"] {
@@ -666,15 +833,30 @@ async fn patch_space_with_operator(
         )
         .into());
     }
-    if !op.exists(&settings_path).await? {
-        return Err(AppError::not_found(
-            ErrorCode::SpaceNotFound,
-            format!("Space settings not found: {space_id}"),
-        )
-        .into());
+    let settings_metadata = match op.stat(&settings_path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(AppError::not_found(
+                ErrorCode::SpaceNotFound,
+                format!("Space settings not found: {space_id}"),
+            )
+            .into())
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let settings_etag = settings_metadata
+        .etag()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    if settings_etag.is_none() && !matches!(op.info().scheme(), "memory" | "fs" | "file") {
+        return Err(anyhow!(
+            "Space settings update requires an exact storage ETag"
+        ));
     }
+    let old_meta = meta.clone();
     let mut settings: serde_json::Value =
         serde_json::from_slice(&op.read(&settings_path).await?.to_vec())?;
+    let old_settings = settings.clone();
 
     if let Some(name) = patch.get("name") {
         meta["name"] = name.clone();
@@ -705,6 +887,34 @@ async fn patch_space_with_operator(
         ));
     }
 
+    validate_current_space_metadata(space_id, &meta)?;
+
+    let journal_path = space_patch_journal_path(space_id);
+    let journal = SpacePatchJournal {
+        old_metadata: old_meta,
+        new_metadata: meta.clone(),
+        old_settings,
+        new_settings: settings.clone(),
+    };
+    match op
+        .write_options(
+            &journal_path,
+            serde_json::to_vec_pretty(&journal)?,
+            WriteOptions {
+                if_not_exists: true,
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(error) if is_condition_not_match(&error) => {
+            recover_pending_space_patch(op, space_id).await?;
+            return Err(anyhow!("Space metadata changed during patch"));
+        }
+        Err(error) => return Err(error.into()),
+    }
+
     let meta_bytes = serde_json::to_vec_pretty(&meta)?;
     match etag {
         Some(etag) => op
@@ -726,8 +936,10 @@ async fn patch_space_with_operator(
             })?,
         None => op.write(&meta_path, meta_bytes).await?,
     };
-    op.write(&settings_path, serde_json::to_vec_pretty(&settings)?)
-        .await?;
+    write_space_patch_value(op, &settings_path, &settings, settings_etag.as_deref()).await?;
+    // The journal is the durable recovery boundary and is always removed only
+    // after both authoritative objects have reached their new values.
+    op.delete(&journal_path).await?;
 
     let mut merged = meta;
     merged["settings"] = settings;

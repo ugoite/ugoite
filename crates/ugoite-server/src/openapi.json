@@ -2119,6 +2119,16 @@
             "$ref": "#/components/parameters/SpaceId"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpacePatchRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -11794,6 +11804,10 @@
           },
           "settings": {
             "$ref": "#/components/schemas/PublicSpaceSettings"
+          },
+          "storage_config": {
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "not": {
@@ -11917,6 +11931,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "slug": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },

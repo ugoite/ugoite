@@ -14,30 +14,12 @@ CI.
 
 ## Authentication surfaces
 
-- `GET /auth/config`: Node lifecycle, issuer, and WebAuthn RP information.
-- `POST /auth/setup/start|finish`: one-use first-account Passkey registration;
-  the Node remains uninitialized until a second Passkey or confirmed TOTP is added.
-- `POST /auth/passkey/start|finish`: discoverable Passkey login and opaque
-  session issuance.
-- `GET|DELETE /auth/session`: inspect or revoke the current browser session.
-- `POST /auth/invitations/start|finish`: invited Passkey registration. The
-  start response can request a retry after a previous registration claim; the
-  browser must complete normal Passkey login and then use authenticated
-  acceptance to converge the Node binding and Space membership. The invitation
-  token alone never creates a session or authenticates an account.
-- `GET /auth/oidc/{provider_id}/start` and `GET /auth/oidc/callback`: OIDC
-  authorization code + PKCE.
-- `GET|POST /auth/oidc/providers`: Node administrator provider configuration.
-- `/auth/passkeys` and `/auth/devices`: credential inventory and revocation.
-- `/auth/recovery/*`: encrypted TOTP enrollment, recovery-code + TOTP
-  self-recovery, and owner-approved WebAuthn recovery. Space Owners can issue
-  a one-time forced-reset token or rotate eight backup codes. Backup-code
-  rotation requires a UUIDv4 `Idempotency-Key`; owner recovery responses are
-  never cached.
-- `/auth/accounts`: Node administrator account inventory and suspension.
-- `POST /oauth/device/authorization`, `/oauth/device/approve`, `/oauth/token`:
-  CLI/MCP device flow and rotating refresh.
-- `POST /oauth/agent/token`: autonomous agent issuance.
+Interactive Passkey/TOTP/OIDC login, account recovery, OAuth device flow,
+managed service-account operations, and audit CRUD are reference-only endpoint
+inventory in this release. They are not shipped v0.1 capabilities and must not
+be used as setup or login instructions. The implementation and checked-in
+OpenAPI remain the source for future work; the current supported local workflow
+is the operator-owned Space filesystem and its CLI commands.
 - `POST /spaces/{space_id}/approvals`: a recently Passkey-authenticated human
   issues a one-time approval bound to `entry.delete`, `sql.delete`,
   `asset.delete`, or `access.put`. The issue response returns the one-time
@@ -45,14 +27,10 @@ CI.
   `X-Ugoite-Human-Approval`. It is never echoed in a mutation JSON body,
   query string, log, or audit event.
 
-Browser requests authenticate with the `ugoite_session` HttpOnly cookie. CLI and
-agent requests use `Authorization: DPoP <opaque-access-token>` plus a DPoP proof
-header. Human MCP device credentials use a resource-bound Bearer token; an
-existing DPoP MCP credential still supplies one DPoP proof. Bearer authorization uses hashes and authorization metadata;
-force-reset response material is encrypted at rest only until its bounded
-one-time response is delivered. Plaintext bearer material is never audited.
-No endpoint accepts external OIDC tokens or preconfigured long-lived
-credentials, or setup values as API authorization.
+The authentication headers, cookies, device credentials, and recovery material
+described by the future endpoint inventory are not supported v0.1 behavior. This
+release does not provide a local authentication bypass or a shipped credential
+contract for those surfaces.
 
 ## Authorization surfaces
 

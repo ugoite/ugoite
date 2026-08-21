@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
@@ -221,11 +221,16 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     // Core-mode background jobs may update a status document while the CLI
     // reads it. Keep OpenDAL's filesystem replacement writes on the same
     // filesystem so readers never observe a truncated JSON document.
-    // A root workspace is valid, but /.ugoite-atomic-writes may be
-    // unwritable even when the actual workspace objects are readable. Keep
-    // the temporary replacement directory on the default local filesystem.
+    // Keep replacement files under the workspace's own filesystem.  Root
+    // workspaces store authoritative objects below /spaces, so use that
+    // directory rather than /tmp (which can be a different filesystem).
     let atomic_write_dir = if root == "/" {
-        std::env::temp_dir().join(format!(".ugoite-atomic-writes-{}", std::process::id()))
+        let spaces = Path::new(root).join("spaces");
+        if spaces.is_dir() {
+            spaces.join(".ugoite-atomic-writes")
+        } else {
+            std::env::temp_dir().join(format!(".ugoite-atomic-writes-{}", std::process::id()))
+        }
     } else {
         Path::new(root).join(".ugoite-atomic-writes")
     };
@@ -249,6 +254,65 @@ fn explicit_core_space_path(space_path: &str) -> Option<(String, String)> {
         return None;
     }
     Some((root.to_string(), space_id.to_string()))
+}
+
+fn validate_local_space_candidate(
+    path: &std::path::Path,
+    directory_id: &str,
+) -> Result<serde_json::Value> {
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path.join("meta.json"))?)?;
+    let object = metadata
+        .as_object()
+        .context("Space metadata must be an object")?;
+    if object
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        != Some(2)
+        || object.get("space_id").and_then(serde_json::Value::as_str) != Some(directory_id)
+        || object.get("id").and_then(serde_json::Value::as_str) != Some(directory_id)
+        || object
+            .get("slug")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+        || object
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+    {
+        bail!("Space metadata identity or required fields are invalid");
+    }
+    let space_uid = object
+        .get("space_uid")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .context("Space metadata must contain a UUIDv7 space_uid")?;
+    if space_uid.get_version() != Some(uuid::Version::SortRand) {
+        bail!("Space metadata space_uid must be a UUIDv7");
+    }
+    if let Ok(directory_uid) = uuid::Uuid::parse_str(directory_id) {
+        if directory_uid.get_version() == Some(uuid::Version::SortRand)
+            && directory_uid != space_uid
+        {
+            bail!("Space directory and metadata space_uid disagree");
+        }
+    }
+    let settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path.join("settings.json"))?)?;
+    if !settings.is_object()
+        || settings
+            .get("default_form")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+    {
+        bail!("Space settings are incomplete");
+    }
+    for directory in ["security", "forms", "assets", "sql_sessions"] {
+        if !path.join(directory).is_dir() {
+            bail!("Space bootstrap is incomplete: missing {directory}");
+        }
+    }
+    Ok(metadata)
 }
 
 pub fn parse_space_path(space_path: &str) -> (String, String) {
@@ -281,12 +345,22 @@ pub fn resolve_space_reference(
         )
     })?;
     let spaces = std::path::Path::new(&root).join("spaces");
-    if spaces.join(&reference).join("meta.json").is_file() {
-        return Ok((root, reference));
-    }
+    let direct_path = spaces.join(&reference);
+    let direct_candidate = if direct_path.join("meta.json").is_file() {
+        Some(
+            validate_local_space_candidate(&direct_path, &reference)
+                .with_context(|| format!("invalid Space selected by identifier: {reference}"))?,
+        )
+    } else {
+        None
+    };
+    let mut matching = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&spaces) {
         for entry in entries.flatten() {
             let meta_path = entry.path().join("meta.json");
+            let Some(immutable_id) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
             let Ok(contents) = std::fs::read(&meta_path) else {
                 continue;
             };
@@ -294,11 +368,23 @@ pub fn resolve_space_reference(
                 continue;
             };
             if meta.get("slug").and_then(serde_json::Value::as_str) == Some(reference.as_str()) {
-                if let Some(immutable_id) = entry.file_name().to_str() {
-                    return Ok((root, immutable_id.to_string()));
-                }
+                validate_local_space_candidate(&entry.path(), &immutable_id)
+                    .with_context(|| format!("invalid Space matching slug: {reference}"))?;
+                matching.push(immutable_id);
             }
         }
+    }
+    if matching.len() > 1 {
+        bail!("Space slug is ambiguous: {reference}");
+    }
+    if let Some(immutable_id) = matching.pop() {
+        if direct_candidate.is_some() && immutable_id != reference {
+            bail!("Space slug is ambiguous: {reference}");
+        }
+        return Ok((root, immutable_id));
+    }
+    if direct_candidate.is_some() {
+        return Ok((root, reference));
     }
     Ok((root, reference))
 }

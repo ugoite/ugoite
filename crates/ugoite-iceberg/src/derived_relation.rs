@@ -1357,7 +1357,10 @@ pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<b
     let source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
     let head_store = asset_text_head_store(op, ws_path).await?;
     let head = match head_store.read_exact().await {
-        Ok(Some(head)) => head.head,
+        Ok(Some(head)) => {
+            validate_asset_text_head_binding(op, ws_path, &head.head).await?;
+            head.head
+        }
         Ok(None) => {
             // An empty Space has no source coordinate and does not need an
             // initial empty build. Once an authoritative mutation creates a
@@ -2157,6 +2160,26 @@ async fn space_id_from_metadata(op: &Operator, ws_path: &str) -> Result<String> 
     Ok(crate::space::validate_current_space_metadata(space_id, &value)?.to_string())
 }
 
+async fn validate_asset_text_head_binding(
+    op: &Operator,
+    ws_path: &str,
+    head: &DerivedRelationHead,
+) -> Result<()> {
+    let space_id = ws_path
+        .strip_prefix("spaces/")
+        .filter(|value| !value.is_empty() && !value.contains('/'))
+        .context("derived workspace path is not a Space directory")?;
+    let path = format!("{ws_path}/meta.json");
+    let metadata: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
+    let current_uid = crate::space::validate_current_space_metadata(space_id, &metadata)?;
+    if head.space_id != current_uid.to_string() {
+        return Err(anyhow!(
+            "DerivedRelation Head space_id does not match the authoritative Space"
+        ));
+    }
+    Ok(())
+}
+
 fn is_shared_backend(op: &Operator) -> bool {
     matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
 }
@@ -2949,6 +2972,9 @@ fn extract_pdf_text_bounded(
             }
             index += 1;
         }
+        if depth != 0 {
+            return Err("malformed_pdf");
+        }
         if let Ok(value) = String::from_utf8(value) {
             if text.len().saturating_add(value.len()) > max_bytes {
                 return Err("parser_limit");
@@ -3125,13 +3151,20 @@ fn extract_pdf_chunks(
     if page_markers > MAX_PDF_PAGES || text_operators > MAX_PDF_TEXT_OPERATORS {
         return Err("parser_limit");
     }
-    let mut text = extract_pdf_text_bounded(bytes, MAX_EXTRACTED_TEXT_BYTES).map_err(|error| {
-        if error == "parser_limit" {
-            error
-        } else {
-            "malformed_pdf"
-        }
-    })?;
+    let mut text = if bytes
+        .windows(b"/FlateDecode".len())
+        .any(|window| window == b"/FlateDecode")
+    {
+        String::new()
+    } else {
+        extract_pdf_text_bounded(bytes, MAX_EXTRACTED_TEXT_BYTES).map_err(|error| {
+            if error == "parser_limit" {
+                error
+            } else {
+                "malformed_pdf"
+            }
+        })?
+    };
     if bytes
         .windows(b"stream".len())
         .any(|window| window == b"stream")
@@ -3375,6 +3408,7 @@ pub async fn register_asset_text_table(
     let Some(head) = head_store.read_exact().await? else {
         return Ok(false);
     };
+    validate_asset_text_head_binding(op, ws_path, &head.head).await?;
     let current_source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
     if head.head.source_coordinate != current_source_coordinate {
         return Ok(false);
@@ -3389,6 +3423,26 @@ pub async fn register_asset_text_table(
     let metadata =
         iceberg::spec::TableMetadata::read_from(&file_io, &head.head.metadata_location).await?;
     let table_ident: TableIdent = serde_json::from_value(head.head.table_identifier.clone())?;
+    let expected_table_ident = TableIdent::new(
+        NamespaceIdent::new("derived".to_string()),
+        format!(
+            "derived_{}",
+            DerivedRelationId::ASSET_TEXT.as_uuid().simple()
+        ),
+    );
+    if table_ident != expected_table_ident {
+        return Err(anyhow!(
+            "AssetText Head table identifier does not match the relation"
+        ));
+    }
+    if metadata.uuid().to_string() != head.head.table_uuid
+        || metadata.current_schema_id() != head.head.schema_id
+        || metadata.current_snapshot_id() != head.head.snapshot_id
+    {
+        return Err(anyhow!(
+            "AssetText Head table identity does not match Iceberg metadata"
+        ));
+    }
     let table = Table::builder()
         .identifier(table_ident)
         .metadata(metadata)
@@ -3482,6 +3536,7 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
     let Some(head) = head_store.read_exact().await? else {
         return Ok(json!({"state":"missing","stale":true}));
     };
+    validate_asset_text_head_binding(op, ws_path, &head.head).await?;
     let manifest_location = format!(
         "{}/manifest.json",
         head_store.builds_path(&head.head.build_id)
@@ -3489,6 +3544,13 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
     let manifest: AssetTextManifest =
         serde_json::from_slice(&op.read(&manifest_location).await?.to_vec())
             .context("decode AssetText build manifest")?;
+    if manifest.relation_id != head.head.relation_id
+        || manifest.build_id != head.head.build_id
+        || manifest.input_digest != head.head.input_digest
+        || manifest.source_coordinate != head.head.source_coordinate
+    {
+        return Err(anyhow!("AssetText build manifest does not match its Head"));
+    }
     let current_source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
     let stale = head.head.producer_fingerprint != asset_text_producer_fingerprint()
         || head.head.definition_fingerprint != asset_text_definition_fingerprint()

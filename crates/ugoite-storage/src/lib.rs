@@ -2154,7 +2154,43 @@ impl DerivedRelationHeadStore {
             }
         })?;
         validate_derived_head_checksum(&head)?;
+        self.validate_derived_head_identity(&head)?;
         Ok(Some(ExactDerivedRelationHead { head, bytes, etag }))
+    }
+
+    fn validate_derived_head_identity(&self, head: &DerivedRelationHead) -> Result<()> {
+        let relation_id = Uuid::parse_str(&head.relation_id)
+            .context("DerivedRelation Head relation_id is not a UUID")?;
+        if relation_id != self.relation_id {
+            return Err(anyhow!(
+                "DerivedRelation Head relation_id does not match its path"
+            ));
+        }
+        let build_id = Uuid::parse_str(&head.build_id)
+            .context("DerivedRelation Head build_id is not a UUIDv7")?;
+        if build_id.get_version_num() != 7 || (build_id.as_bytes()[8] & 0xc0) != 0x80 {
+            return Err(anyhow!("DerivedRelation Head build_id must be UUIDv7"));
+        }
+        let space_uid = Uuid::parse_str(&head.space_id)
+            .context("DerivedRelation Head space_id is not a UUIDv7")?;
+        if space_uid.get_version_num() != 7 || (space_uid.as_bytes()[8] & 0xc0) != 0x80 {
+            return Err(anyhow!("DerivedRelation Head space_id must be UUIDv7"));
+        }
+        Uuid::parse_str(&head.table_uuid)
+            .context("DerivedRelation Head table_uuid is not a UUID")?;
+        if !head.table_identifier.is_object() {
+            return Err(anyhow!(
+                "DerivedRelation Head table_identifier must be an object"
+            ));
+        }
+        if head.metadata_location.trim().is_empty()
+            || !head.metadata_location.contains(&head.build_id)
+        {
+            return Err(anyhow!(
+                "DerivedRelation Head metadata_location is not bound to its build"
+            ));
+        }
+        Ok(())
     }
 
     /// Returns the current build coordinate for GC authority checks. A legacy
@@ -3287,7 +3323,16 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
         .strip_prefix("fs://")
         .or_else(|| uri.strip_prefix("file://"))
         .unwrap_or(uri);
-    let atomic_write_dir = Path::new(root).join(".ugoite-atomic-writes");
+    let atomic_write_dir = if root == "/" {
+        let spaces = Path::new(root).join("spaces");
+        if spaces.is_dir() {
+            spaces.join(".ugoite-atomic-writes")
+        } else {
+            std::env::temp_dir().join(format!(".ugoite-atomic-writes-{}", std::process::id()))
+        }
+    } else {
+        Path::new(root).join(".ugoite-atomic-writes")
+    };
     let op = Operator::new(
         Fs::default()
             .root(root)
@@ -3651,9 +3696,11 @@ mod tests {
         let relation_id = uuid::Uuid::from_u128(0xA001);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id)
             .single_process();
+        let space_uid = Uuid::now_v7();
+        let first_build_id = test_build_id();
         let first = DerivedRelationHead {
             format_version: 1,
-            space_id: "demo".into(),
+            space_id: space_uid.to_string(),
             relation_id: relation_id.to_string(),
             generation: 1,
             definition_version: 1,
@@ -3661,10 +3708,10 @@ mod tests {
             producer_id: "producer".into(),
             producer_fingerprint: "producer-fingerprint".into(),
             compatibility_epoch: 1,
-            build_id: test_build_id(),
+            build_id: first_build_id.clone(),
             table_identifier: serde_json::json!({"table":"derived"}),
-            table_uuid: "table-uuid".into(),
-            metadata_location: "memory:///metadata.json".into(),
+            table_uuid: Uuid::now_v7().to_string(),
+            metadata_location: format!("memory:///builds/{first_build_id}/metadata.json"),
             snapshot_id: None,
             schema_id: 0,
             input_digest: "input-a".into(),
@@ -3680,6 +3727,7 @@ mod tests {
         let mut second = first.clone();
         second.generation = 2;
         second.build_id = test_build_id();
+        second.metadata_location = format!("memory:///builds/{}/metadata.json", second.build_id);
         store.mark_staging(&second.build_id).await?;
         store.replace(None, &second).await?;
         let mut invalid: serde_json::Value =
@@ -4286,9 +4334,11 @@ mod tests {
         let relation_id = uuid::Uuid::from_u128(0xA002);
         let store =
             DerivedRelationHeadStore::new(operator, "spaces/demo", relation_id).single_process();
+        let space_uid = Uuid::now_v7();
+        let build_id = test_build_id();
         let head = DerivedRelationHead {
             format_version: 1,
-            space_id: "demo".into(),
+            space_id: space_uid.to_string(),
             relation_id: relation_id.to_string(),
             generation: 1,
             definition_version: 1,
@@ -4296,10 +4346,10 @@ mod tests {
             producer_id: "producer".into(),
             producer_fingerprint: "producer-fingerprint".into(),
             compatibility_epoch: 1,
-            build_id: test_build_id(),
+            build_id: build_id.clone(),
             table_identifier: serde_json::json!({"table":"derived"}),
-            table_uuid: "table-uuid".into(),
-            metadata_location: "memory:///metadata.json".into(),
+            table_uuid: Uuid::now_v7().to_string(),
+            metadata_location: format!("memory:///builds/{build_id}/metadata.json"),
             snapshot_id: None,
             schema_id: 0,
             input_digest: "input".into(),

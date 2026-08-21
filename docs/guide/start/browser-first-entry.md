@@ -4,24 +4,12 @@ sidebar:
   order: 4
 ---
 
-> Future/reference workflow: the browser is server-backed, but Passkey/TOTP/OIDC
-> account flows are not supported v0.1 product capabilities.
+> Future/reference workflow. The browser is server-backed, but interactive
+> Passkey/TOTP/OIDC authentication is not a supported v0.1 capability.
 
-The shipped browser is server-backed.
-
-1. Start Ugoite with `mise run dev` or Docker Compose.
-2. Open the URL printed by the launcher, or the configured release Compose port.
-3. Complete first-run setup or sign in with a Passkey.
-4. Select a Space for which the identity is a member.
-5. Select or create a Form, then create an Entry.
-
-The browser sends REST requests to the Rust server. Entry data and revisions are
-written under `UGOITE_ROOT`; browser storage is not authoritative in this
-release.
-
-Creating Spaces through REST requires the Node administrator role. Initial setup
-creates the first Node administrator and the first Space owner as separate
-grants.
+This page intentionally does not provide browser setup or login instructions.
+For the supported v0.1 workflow, operate the authoritative Space directory with
+the local CLI. Browser-local persistence and optional sync remain future work.
 
 ## Form field choices
 
