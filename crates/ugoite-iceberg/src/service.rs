@@ -1277,6 +1277,7 @@ impl UgoiteService {
         markdown: &str,
         author: &str,
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
@@ -3172,6 +3173,12 @@ mod tests {
                 .save_asset("remote-space", "asset.txt", b"asset")
                 .await
                 .expect_err("Asset mutation must fail before any remote write"),
+        );
+        assert_unavailable(
+            service
+                .create_entry("remote-space", "entry-1", "# Entry", "author")
+                .await
+                .expect_err("Entry mutation must fail before any remote write"),
         );
         Ok(())
     }

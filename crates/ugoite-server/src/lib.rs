@@ -2867,6 +2867,9 @@ async fn reconcile_all_recovery_fences(state: &AppState) -> anyhow::Result<()> {
 }
 
 async fn reconcile_recovery_fences_api(state: &AppState, space_id: &str) -> ApiResult<()> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     if reconcile_recovery_fences(state, space_id).await.is_ok() {
         return Ok(());
     }
@@ -2886,6 +2889,9 @@ async fn reconcile_recovery_fences_api(state: &AppState, space_id: &str) -> ApiR
 }
 
 async fn reconcile_all_recovery_fences_api(state: &AppState) -> ApiResult<()> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     if reconcile_all_recovery_fences(state).await.is_ok() {
         return Ok(());
     }
@@ -12445,6 +12451,18 @@ mod authentication_regression_tests {
             ensure_local_space_owner_binding(&state, "remote-space", Uuid::now_v7(), "Owner")
                 .await
                 .expect_err("non-local Space creation must fail closed before recovery");
+        assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
+
+        let error = reconcile_recovery_fences_api(&state, "remote-space")
+            .await
+            .expect_err("recovery reconciliation must fail closed before remote writes");
+        assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
+
+        let error = reconcile_all_recovery_fences_api(&state)
+            .await
+            .expect_err("global recovery reconciliation must fail closed before remote writes");
         assert_eq!(error.status, StatusCode::BAD_GATEWAY);
         assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
         Ok(())
