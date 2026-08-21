@@ -62,6 +62,15 @@ pub struct ExactCatalogHead {
     pub etag: Option<String>,
 }
 
+/// Raw current Head evidence used only to replace a corrupt Derived Head under
+/// the same CAS boundary as a normal publication. It is intentionally not a
+/// readable relation coordinate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawDerivedRelationHead {
+    pub bytes: Vec<u8>,
+    pub etag: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CatalogWriteMode {
     Shared,
@@ -2158,6 +2167,59 @@ impl DerivedRelationHeadStore {
         Ok(Some(ExactDerivedRelationHead { head, bytes, etag }))
     }
 
+    pub async fn read_raw_for_rebuild(&self) -> Result<Option<RawDerivedRelationHead>> {
+        let Some((bytes, etag)) = self.read_raw_bytes_exact().await? else {
+            return Ok(None);
+        };
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if Self::head_fence(&value).is_some() {
+                return Ok(None);
+            }
+        }
+        Ok(Some(RawDerivedRelationHead { bytes, etag }))
+    }
+
+    async fn read_raw_bytes_exact(&self) -> Result<Option<(Vec<u8>, Option<String>)>> {
+        for attempt in 0..3 {
+            let metadata = match self.operator.stat(&self.head_path()).await {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(error.into()),
+            };
+            let etag = metadata
+                .etag()
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let read = match etag.as_deref() {
+                Some(etag) => {
+                    self.operator
+                        .read_options(
+                            &self.head_path(),
+                            ReadOptions {
+                                if_match: Some(etag.to_string()),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                }
+                None if self.write_mode == CatalogWriteMode::Shared => {
+                    return Err(anyhow!(
+                        "exact DerivedRelation Head stat did not return an ETag"
+                    ))
+                }
+                None => self.operator.read(&self.head_path()).await,
+            };
+            match read {
+                Ok(bytes) => return Ok(Some((bytes.to_vec(), etag))),
+                Err(error) if error.kind() == ErrorKind::ConditionNotMatch && attempt < 2 => {
+                    continue
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        unreachable!("exact raw DerivedRelation Head reads always return or continue")
+    }
+
     async fn validate_derived_head_identity(&self, head: &DerivedRelationHead) -> Result<()> {
         if head.format_version != 1 {
             return Err(anyhow!(
@@ -2204,14 +2266,23 @@ impl DerivedRelationHeadStore {
                 "DerivedRelation Head table_identifier must be a non-empty object"
             ));
         }
-        let build_path_component = format!("/builds/{}/", head.build_id);
-        let relative_build_path = format!("builds/{}/", head.build_id);
+        let storage = IcebergStorageConfig::from_operator(&self.operator)?;
+        let warehouse_prefix = if storage.warehouse_uri == "memory:" {
+            "memory:///".to_string()
+        } else {
+            format!("{}/", storage.warehouse_uri.trim_end_matches('/'))
+        };
+        let expected_absolute_prefix = format!(
+            "{}{}/_ugoite/derived/relations/{}/builds/{}/",
+            warehouse_prefix, self.space_root, self.relation_id, head.build_id
+        );
         if head.metadata_location.trim().is_empty()
-            || (!head.metadata_location.contains(&build_path_component)
-                && !head.metadata_location.starts_with(&relative_build_path))
+            || !head
+                .metadata_location
+                .starts_with(&expected_absolute_prefix)
         {
             return Err(anyhow!(
-                "DerivedRelation Head metadata_location is not bound to its build"
+                "DerivedRelation Head metadata_location is not bound to its Space, relation, and build"
             ));
         }
 
@@ -2243,7 +2314,11 @@ impl DerivedRelationHeadStore {
                     ));
                 }
             }
-            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                return Err(anyhow!(
+                    "authoritative Space metadata is missing for DerivedRelation Head"
+                ));
+            }
             Err(error) => return Err(error.into()),
         }
         Ok(())
@@ -2632,6 +2707,75 @@ impl DerivedRelationHeadStore {
                 }
             }
             Ok(())
+        }
+        .await;
+        self.finish_publishing_claim(&head.build_id, result, false)
+            .await
+    }
+
+    pub async fn publish_over_corrupt(
+        &self,
+        expected: &RawDerivedRelationHead,
+        head: &DerivedRelationHead,
+    ) -> Result<()> {
+        if self.write_mode == CatalogWriteMode::SingleProcess {
+            let _guard = self.serializer.lock().await;
+            return self
+                .publish_over_corrupt_with_single_process_lock(expected, head)
+                .await;
+        }
+        self.validate_derived_head_identity(head).await?;
+        self.ensure_build_publishable(&head.build_id).await?;
+        let etag = expected
+            .etag
+            .as_deref()
+            .context("shared corrupt DerivedRelation Head replacement requires an ETag")?;
+        self.begin_publishing(&head.build_id).await?;
+        let (heartbeat, heartbeat_lost) = self.start_publishing_claim_heartbeat(&head.build_id);
+        let result = self
+            .operator
+            .write_options(
+                &self.head_path(),
+                canonical_head_bytes(head)?,
+                WriteOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(anyhow::Error::from);
+        heartbeat.abort();
+        self.finish_publishing_claim(
+            &head.build_id,
+            result,
+            heartbeat_lost.load(Ordering::Acquire),
+        )
+        .await
+    }
+
+    pub async fn publish_over_corrupt_with_single_process_lock(
+        &self,
+        expected: &RawDerivedRelationHead,
+        head: &DerivedRelationHead,
+    ) -> Result<()> {
+        self.validate_derived_head_identity(head).await?;
+        self.ensure_build_publishable(&head.build_id).await?;
+        self.begin_publishing(&head.build_id).await?;
+        let result = async {
+            let Some((current_bytes, current_etag)) = self.read_raw_bytes_exact().await? else {
+                return Err(anyhow!("corrupt DerivedRelation Head disappeared"));
+            };
+            if current_bytes != expected.bytes
+                || (expected.etag.is_some() && current_etag != expected.etag)
+            {
+                return Err(anyhow!("corrupt DerivedRelation Head changed"));
+            }
+            self.operator
+                .write(&self.head_path(), canonical_head_bytes(head)?)
+                .await
+                .map(|_| ())
+                .map_err(anyhow::Error::from)
         }
         .await;
         self.finish_publishing_claim(&head.build_id, result, false)
@@ -3384,19 +3528,7 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
         .strip_prefix("fs://")
         .or_else(|| uri.strip_prefix("file://"))
         .unwrap_or(uri);
-    let atomic_write_dir = if root == "/" {
-        let spaces = Path::new(root).join("spaces");
-        if spaces.is_dir() {
-            Some(spaces.join(".ugoite-atomic-writes"))
-        } else {
-            // No authoritative root-backed Space exists yet. Do not fall back
-            // to `/tmp`; a later operator opened after `/spaces` exists will
-            // use an atomic directory on that same filesystem.
-            None
-        }
-    } else {
-        Some(Path::new(root).join(".ugoite-atomic-writes"))
-    };
+    let atomic_write_dir = local_atomic_write_dir(root);
     let mut builder = Fs::default().root(root);
     if let Some(atomic_write_dir) = atomic_write_dir {
         std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
@@ -3409,6 +3541,41 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
     }
     let op = Operator::new(builder)?;
     Ok(op)
+}
+
+fn local_atomic_write_dir(root: &str) -> Option<std::path::PathBuf> {
+    let root_path = Path::new(root);
+    let candidate = if root == "/" {
+        let spaces = root_path.join("spaces");
+        (spaces.is_dir() && same_filesystem(root_path, &spaces))
+            .then(|| spaces.join(".ugoite-atomic-writes"))
+            .or_else(|| {
+                // A root-backed operator may be opened before `/spaces` is
+                // created. Use a private directory only when it is proven to
+                // be on the same filesystem; never use a blind `/tmp`
+                // fallback that could make replacement writes non-atomic.
+                let temp = std::env::temp_dir();
+                same_filesystem(root_path, &temp)
+                    .then(|| temp.join(format!(".ugoite-atomic-writes-{}", std::process::id())))
+            })
+    } else {
+        Some(root_path.join(".ugoite-atomic-writes"))
+    };
+    candidate
+}
+
+#[cfg(unix)]
+fn same_filesystem(first: &Path, second: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    std::fs::metadata(first)
+        .and_then(|first| std::fs::metadata(second).map(|second| first.dev() == second.dev()))
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn same_filesystem(_first: &Path, _second: &Path) -> bool {
+    true
 }
 
 pub fn operator_from_uri(uri: &str) -> Result<Operator> {
@@ -3618,6 +3785,16 @@ mod tests {
         Uuid::now_v7().to_string()
     }
 
+    async fn write_test_space_metadata(operator: &Operator, space_uid: Uuid) -> Result<()> {
+        operator
+            .write(
+                "spaces/demo/meta.json",
+                serde_json::to_vec(&serde_json::json!({"space_uid": space_uid}))?,
+            )
+            .await?;
+        Ok(())
+    }
+
     #[tokio::test]
     async fn operator_from_uri_supports_fs_and_memory() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
@@ -3767,6 +3944,7 @@ mod tests {
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id)
             .single_process();
         let space_uid = Uuid::now_v7();
+        write_test_space_metadata(&operator, space_uid).await?;
         let first_build_id = test_build_id();
         let first = DerivedRelationHead {
             format_version: 1,
@@ -3781,7 +3959,9 @@ mod tests {
             build_id: first_build_id.clone(),
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: Uuid::now_v7().to_string(),
-            metadata_location: format!("memory:///builds/{first_build_id}/metadata.json"),
+            metadata_location: format!(
+                "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{first_build_id}/metadata.json"
+            ),
             snapshot_id: None,
             schema_id: 0,
             input_digest: "input-a".into(),
@@ -3797,7 +3977,10 @@ mod tests {
         let mut second = first.clone();
         second.generation = 2;
         second.build_id = test_build_id();
-        second.metadata_location = format!("memory:///builds/{}/metadata.json", second.build_id);
+        second.metadata_location = format!(
+            "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
+            second.build_id
+        );
         store.mark_staging(&second.build_id).await?;
         store.replace(None, &second).await?;
         let mut invalid: serde_json::Value =
@@ -4402,9 +4585,10 @@ mod tests {
     async fn derived_head_single_process_create_has_one_winner() -> Result<()> {
         let operator = Operator::new(Memory::default())?;
         let relation_id = uuid::Uuid::from_u128(0xA002);
-        let store =
-            DerivedRelationHeadStore::new(operator, "spaces/demo", relation_id).single_process();
+        let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id)
+            .single_process();
         let space_uid = Uuid::now_v7();
+        write_test_space_metadata(&operator, space_uid).await?;
         let build_id = test_build_id();
         let head = DerivedRelationHead {
             format_version: 1,
@@ -4419,7 +4603,9 @@ mod tests {
             build_id: build_id.clone(),
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: Uuid::now_v7().to_string(),
-            metadata_location: format!("memory:///builds/{build_id}/metadata.json"),
+            metadata_location: format!(
+                "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{build_id}/metadata.json"
+            ),
             snapshot_id: None,
             schema_id: 0,
             input_digest: "input".into(),
@@ -4446,6 +4632,7 @@ mod tests {
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id)
             .single_process();
         let space_uid = Uuid::now_v7();
+        write_test_space_metadata(&operator, space_uid).await?;
         let current_build_id = test_build_id();
         operator
             .write(
@@ -4472,7 +4659,9 @@ mod tests {
             build_id: current_build_id.clone(),
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: Uuid::now_v7().to_string(),
-            metadata_location: format!("memory:///builds/{current_build_id}/metadata.json"),
+            metadata_location: format!(
+                "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{current_build_id}/metadata.json"
+            ),
             snapshot_id: None,
             schema_id: 0,
             input_digest: "input".into(),
@@ -4509,6 +4698,7 @@ mod tests {
         let relation_id = uuid::Uuid::from_u128(0xA004);
         let store = DerivedRelationHeadStore::new(operator.clone(), "spaces/demo", relation_id);
         let space_uid = Uuid::now_v7();
+        write_test_space_metadata(&operator, space_uid).await?;
         let first_build_id = test_build_id();
         let mut first = DerivedRelationHead {
             format_version: 1,
@@ -4523,7 +4713,9 @@ mod tests {
             build_id: first_build_id.clone(),
             table_identifier: serde_json::json!({"table":"derived"}),
             table_uuid: Uuid::now_v7().to_string(),
-            metadata_location: format!("memory:///builds/{first_build_id}/metadata.json"),
+            metadata_location: format!(
+                "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{first_build_id}/metadata.json"
+            ),
             snapshot_id: None,
             schema_id: 0,
             input_digest: "input".into(),
@@ -4543,13 +4735,19 @@ mod tests {
         let expected = store.read_exact().await?.expect("initial Head");
         first.generation = 2;
         first.build_id = test_build_id();
-        first.metadata_location = format!("memory:///builds/{}/metadata.json", first.build_id);
+        first.metadata_location = format!(
+            "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
+            first.build_id
+        );
         store.mark_staging(&first.build_id).await?;
         store.publish(Some(&expected), &first).await?;
         let mut loser = first.clone();
         loser.generation = 3;
         loser.build_id = test_build_id();
-        loser.metadata_location = format!("memory:///builds/{}/metadata.json", loser.build_id);
+        loser.metadata_location = format!(
+            "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{}/metadata.json",
+            loser.build_id
+        );
         store.mark_staging(&loser.build_id).await?;
         let error = store
             .publish(Some(&expected), &loser)

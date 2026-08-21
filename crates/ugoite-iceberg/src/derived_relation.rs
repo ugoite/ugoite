@@ -1376,7 +1376,15 @@ pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<b
         {
             return Ok(true);
         }
-        Err(error) => return Err(error),
+        Err(error) => {
+            // A malformed checksum/identity/binding is a rebuildable derived
+            // corruption state. Preserve the raw CAS evidence for the rebuild
+            // path instead of requiring an operator to delete Head manually.
+            if head_store.read_raw_for_rebuild().await?.is_some() {
+                return Ok(true);
+            }
+            return Err(error);
+        }
     };
     let stale = head.source_coordinate != source_coordinate
         || head.producer_fingerprint != asset_text_producer_fingerprint()
@@ -1436,6 +1444,7 @@ async fn rebuild_asset_text_with_mode(
     })
     .await?;
     let mut legacy_expected = None;
+    let mut corrupt_expected = None;
     if let Err(error) = head_store.read_exact().await {
         if error
             .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
@@ -1448,10 +1457,15 @@ async fn rebuild_asset_text_with_mode(
                     .context("legacy DerivedRelation Head disappeared")?,
             );
         } else {
-            return Err(error);
+            corrupt_expected = Some(
+                head_store
+                    .read_raw_for_rebuild()
+                    .await?
+                    .context("corrupt DerivedRelation Head disappeared")?,
+            );
         }
     }
-    let expected = if legacy_expected.is_some() {
+    let expected = if legacy_expected.is_some() || corrupt_expected.is_some() {
         None
     } else {
         head_store.read_exact().await?
@@ -1460,6 +1474,13 @@ async fn rebuild_asset_text_with_mode(
         .as_ref()
         .map(|head| head.head.generation)
         .or_else(|| legacy_expected.as_ref().map(|head| head.generation))
+        .or_else(|| {
+            corrupt_expected.as_ref().and_then(|raw| {
+                serde_json::from_slice::<Value>(&raw.bytes)
+                    .ok()
+                    .and_then(|value| value.get("generation").and_then(Value::as_u64))
+            })
+        })
         .unwrap_or(0);
     let generation = current_generation
         .checked_add(1)
@@ -1663,6 +1684,16 @@ async fn rebuild_asset_text_with_mode(
         } else {
             head_store
                 .publish_over_legacy_with_single_process_lock(legacy_expected, &head)
+                .await
+        }
+    } else if let Some(corrupt_expected) = corrupt_expected.as_ref() {
+        if shared {
+            head_store
+                .publish_over_corrupt(corrupt_expected, &head)
+                .await
+        } else {
+            head_store
+                .publish_over_corrupt_with_single_process_lock(corrupt_expected, &head)
                 .await
         }
     } else if shared {
@@ -2208,6 +2239,10 @@ async fn validate_asset_text_head_binding(
         .strip_prefix("spaces/")
         .filter(|value| !value.is_empty() && !value.contains('/'))
         .context("derived workspace path is not a Space directory")?;
+    // Derived reads are not an alternate Space read boundary. Require the
+    // authoritative scaffold, settings, starter Form, and local permission
+    // checks before opening any relation-local table.
+    crate::space::validate_complete_bootstrap(op, space_id).await?;
     let path = format!("{ws_path}/meta.json");
     let metadata: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
     let current_uid = crate::space::validate_current_space_metadata(space_id, &metadata)?;
@@ -3171,6 +3206,52 @@ fn pdf_object_count_within_limit(bytes: &[u8], maximum: usize) -> bool {
     true
 }
 
+fn pdf_structure_is_valid(bytes: &[u8]) -> bool {
+    if !bytes.starts_with(b"%PDF-") {
+        return false;
+    }
+    let object_count = bytes
+        .windows(b" obj".len())
+        .filter(|window| *window == b" obj")
+        .count();
+    let end_object_count = bytes
+        .windows(b"endobj".len())
+        .filter(|window| *window == b"endobj")
+        .count();
+    if object_count == 0 || end_object_count == 0 || object_count != end_object_count {
+        return false;
+    }
+    let Some(trailer) = bytes
+        .windows(b"trailer".len())
+        .position(|window| window == b"trailer")
+    else {
+        return false;
+    };
+    let trailer_bytes = &bytes[trailer + b"trailer".len()..];
+    if !trailer_bytes.windows(2).any(|window| window == b"<<")
+        || !trailer_bytes.windows(2).any(|window| window == b">>")
+    {
+        return false;
+    }
+    let Some(startxref) = bytes
+        .windows(b"startxref".len())
+        .rposition(|window| window == b"startxref")
+    else {
+        return false;
+    };
+    let Some(offset) = std::str::from_utf8(&bytes[startxref + b"startxref".len()..])
+        .ok()
+        .and_then(|tail| tail.lines().map(str::trim).find(|line| !line.is_empty()))
+        .and_then(|line| line.parse::<usize>().ok())
+    else {
+        return false;
+    };
+    offset < bytes.len()
+        && bytes
+            .windows(b"%%EOF".len())
+            .any(|window| window == b"%%EOF")
+}
+
 fn extract_pdf_chunks(
     bytes: &[u8],
     chunks: &mut Vec<ExtractedChunk>,
@@ -3190,17 +3271,7 @@ fn extract_pdf_chunks(
     if page_markers > MAX_PDF_PAGES || text_operators > MAX_PDF_TEXT_OPERATORS {
         return Err("parser_limit");
     }
-    if !bytes.starts_with(b"%PDF-")
-        || !bytes
-            .windows(b"trailer".len())
-            .any(|window| window == b"trailer")
-        || !bytes
-            .windows(b"startxref".len())
-            .any(|window| window == b"startxref")
-        || !bytes
-            .windows(b"%%EOF".len())
-            .any(|window| window == b"%%EOF")
-    {
+    if !pdf_structure_is_valid(bytes) {
         return Err("malformed_pdf");
     }
     let mut text = if bytes
@@ -3910,6 +3981,17 @@ mod tests {
     }
 
     #[test]
+    fn pdf_markers_without_object_structure_are_a_parser_failure() {
+        assert!(matches!(
+            extract_chunks(
+                &Dispatch::Pdf(parser_identity("pdf")),
+                b"%PDF-1.7\ntrailer\n<< /Size 0 >>\nstartxref\n0\n%%EOF"
+            ),
+            Err("malformed_pdf")
+        ));
+    }
+
+    #[test]
     fn pdf_text_layer_parser_handles_page_content_streams() {
         let mut pdf = b"%PDF-1.4\n".to_vec();
         let mut offsets = vec![0usize];
@@ -4089,6 +4171,34 @@ mod tests {
             None
         };
         assert_eq!(before, after);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn malformed_derived_head_is_replaced_by_the_next_rebuild() -> anyhow::Result<()> {
+        let op = opendal::Operator::new(opendal::services::Memory::default())?;
+        let ws_path = "spaces/derived-corrupt-head";
+        crate::space::create_space(&op, "derived-corrupt-head", "memory:///").await?;
+        let first = rebuild_asset_text(&op, ws_path).await?;
+        let head_path = format!(
+            "{ws_path}/_ugoite/derived/relations/{}/head.json",
+            first.relation_id
+        );
+        op.write(&head_path, b"{not valid json".to_vec()).await?;
+
+        assert!(asset_text_refresh_needed(&op, ws_path).await?);
+        let repaired = rebuild_asset_text(&op, ws_path).await?;
+        assert_ne!(repaired.build_id, first.build_id);
+        assert_eq!(
+            asset_text_head_store(&op, ws_path)
+                .await?
+                .read_exact()
+                .await?
+                .expect("repaired AssetText Head")
+                .head
+                .build_id,
+            repaired.build_id
+        );
         Ok(())
     }
 

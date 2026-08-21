@@ -87,6 +87,20 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
     Ok(())
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn missing_local_space_is_reported_as_space_not_found_before_lock_open() -> anyhow::Result<()>
+{
+    let dir = tempdir()?;
+    let op = Operator::new(Fs::default().root(dir.path().to_string_lossy().as_ref()))?;
+
+    let error = space::get_space_raw(&op, "missing-space")
+        .await
+        .expect_err("missing local Space should be a not-found result");
+    assert!(error.to_string().contains("Space not found: missing-space"));
+    Ok(())
+}
+
 #[tokio::test]
 /// REQ-STO-005
 async fn test_space_req_sto_005_create_space_idempotency() -> anyhow::Result<()> {
