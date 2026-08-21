@@ -2,11 +2,14 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use futures::TryStreamExt;
-use opendal::Operator;
+use opendal::options::{ReadOptions, WriteOptions};
+use opendal::{ErrorKind, Operator};
 use rand::TryRng;
 use std::collections::BTreeMap;
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 
 use crate::form;
@@ -252,6 +255,9 @@ pub async fn repair_space_with_identity(
     slug: &str,
     root_path: &str,
 ) -> Result<()> {
+    if space_uid.get_version() != Some(uuid::Version::SortRand) {
+        return Err(anyhow!("UUID-addressed Space identity must be a UUIDv7"));
+    }
     let directory_id = space_uid.to_string();
     validate_space_path_segment(&directory_id)?;
     validate_space_path_segment(slug)?;
@@ -262,6 +268,16 @@ pub async fn repair_space_with_identity(
     }
 
     let meta = ensure_space_identity(&storage, &directory_id).await?;
+    let metadata_uid = meta
+        .get("space_uid")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .ok_or_else(|| anyhow!("Space metadata has no immutable space_uid"))?;
+    if metadata_uid != space_uid {
+        return Err(anyhow!(
+            "UUID-addressed Space directory and metadata space_uid disagree"
+        ));
+    }
     if meta.get("slug").and_then(serde_json::Value::as_str) != Some(slug) {
         return Err(anyhow!(
             "Space slug claim does not match immutable Space metadata"
@@ -524,6 +540,18 @@ pub(crate) fn validate_current_space_metadata(
             "unsupported Space layout: space_uid must be a UUIDv7"
         ));
     }
+    // Current UUID-addressed Spaces use their immutable UUID as the storage
+    // directory. Legacy Spaces remain slug-addressed, even though their
+    // metadata also carries an immutable UUID for identity binding.
+    if let Ok(directory_uid) = uuid::Uuid::parse_str(expected_directory_id) {
+        if directory_uid.get_version() == Some(uuid::Version::SortRand)
+            && directory_uid != metadata.space_uid
+        {
+            return Err(anyhow!(
+                "unsupported Space layout: UUID directory does not match space_uid"
+            ));
+        }
+    }
     Ok(metadata.space_uid)
 }
 
@@ -572,28 +600,81 @@ pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Valu
     get_space_raw_with_storage(&storage, name).await
 }
 
-async fn patch_space_with_storage<S: StorageBackend + ?Sized>(
-    storage: &S,
+async fn patch_space_with_operator(
+    op: &Operator,
     space_id: &str,
     patch: &serde_json::Value,
+    expected_slug: Option<&str>,
 ) -> Result<serde_json::Value> {
+    let patch_serializer = space_patch_serializer(op, space_id);
+    let _patch_guard = patch_serializer.lock().await;
     validate_space_path_segment(space_id)?;
     let meta_path = format!("spaces/{space_id}/meta.json");
     let settings_path = format!("spaces/{space_id}/settings.json");
 
-    if !storage.exists(&meta_path).await? {
-        return Err(AppError::not_found(
-            ErrorCode::SpaceNotFound,
-            format!("Space not found: {space_id}"),
+    let metadata = match op.stat(&meta_path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(AppError::not_found(
+                ErrorCode::SpaceNotFound,
+                format!("Space not found: {space_id}"),
+            )
+            .into())
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let etag = metadata
+        .etag()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let metadata_bytes = match etag.as_deref() {
+        Some(etag) => op
+            .read_options(
+                &meta_path,
+                ReadOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|error| {
+                if error.kind() == ErrorKind::ConditionNotMatch {
+                    anyhow!("Space metadata changed before patch")
+                } else {
+                    error.into()
+                }
+            })?,
+        None if matches!(op.info().scheme(), "memory" | "fs" | "file") => {
+            op.read(&meta_path).await?
+        }
+        None => {
+            return Err(anyhow!(
+                "Space metadata update requires an exact storage ETag"
+            ))
+        }
+    };
+    let mut meta: serde_json::Value = serde_json::from_slice(&metadata_bytes.to_vec())?;
+    validate_current_space_metadata(space_id, &meta)?;
+    let current_slug = meta
+        .get("slug")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow!("Space metadata has no slug"))?;
+    if expected_slug.is_some_and(|expected| expected != current_slug) {
+        return Err(AppError::conflict(
+            ErrorCode::SpaceAlreadyExists,
+            "Space metadata changed before patch",
         )
         .into());
     }
-
-    let mut meta = ensure_space_identity(storage, space_id).await?;
-    if !storage.exists(&settings_path).await? {
-        return Err(anyhow!("unsupported Space layout: missing settings.json"));
+    if !op.exists(&settings_path).await? {
+        return Err(AppError::not_found(
+            ErrorCode::SpaceNotFound,
+            format!("Space settings not found: {space_id}"),
+        )
+        .into());
     }
-    let mut settings: serde_json::Value = storage.read_json(&settings_path).await?;
+    let mut settings: serde_json::Value =
+        serde_json::from_slice(&op.read(&settings_path).await?.to_vec())?;
 
     if let Some(name) = patch.get("name") {
         meta["name"] = name.clone();
@@ -624,12 +705,44 @@ async fn patch_space_with_storage<S: StorageBackend + ?Sized>(
         ));
     }
 
-    storage.write_json(&meta_path, &meta).await?;
-    storage.write_json(&settings_path, &settings).await?;
+    let meta_bytes = serde_json::to_vec_pretty(&meta)?;
+    match etag {
+        Some(etag) => op
+            .write_options(
+                &meta_path,
+                meta_bytes,
+                WriteOptions {
+                    if_match: Some(etag),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|error| {
+                if error.kind() == ErrorKind::ConditionNotMatch {
+                    anyhow!("Space metadata changed during patch")
+                } else {
+                    error.into()
+                }
+            })?,
+        None => op.write(&meta_path, meta_bytes).await?,
+    };
+    op.write(&settings_path, serde_json::to_vec_pretty(&settings)?)
+        .await?;
 
     let mut merged = meta;
     merged["settings"] = settings;
     Ok(merged)
+}
+
+fn space_patch_serializer(op: &Operator, space_id: &str) -> Arc<AsyncMutex<()>> {
+    static SERIALIZERS: OnceLock<StdMutex<BTreeMap<String, Arc<AsyncMutex<()>>>>> = OnceLock::new();
+    let key = format!("{}:{}:{space_id}", op.info().scheme(), op.info().root());
+    let serializers = SERIALIZERS.get_or_init(|| StdMutex::new(BTreeMap::new()));
+    let mut serializers = serializers.lock().expect("Space patch serializer poisoned");
+    serializers
+        .entry(key)
+        .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+        .clone()
 }
 
 pub async fn patch_space(
@@ -639,8 +752,21 @@ pub async fn patch_space(
 ) -> Result<serde_json::Value> {
     crate::authorization::ensure_authorization_write_fence().await?;
     validate_complete_bootstrap(op, space_id).await?;
-    let storage = OpendalStorage::from_operator(op);
-    patch_space_with_storage(&storage, space_id, patch).await
+    patch_space_with_operator(op, space_id, patch, None).await
+}
+
+/// Patches one Space only if its slug is still the value observed by the
+/// caller. The metadata ETag is the authoritative serialization boundary for
+/// concurrent renames across processes and shared storage instances.
+pub async fn patch_space_if_slug(
+    op: &Operator,
+    space_id: &str,
+    patch: &serde_json::Value,
+    expected_slug: &str,
+) -> Result<serde_json::Value> {
+    crate::authorization::ensure_authorization_write_fence().await?;
+    validate_complete_bootstrap(op, space_id).await?;
+    patch_space_with_operator(op, space_id, patch, Some(expected_slug)).await
 }
 
 /// Test a storage connection by checking if the proposed config is accessible.

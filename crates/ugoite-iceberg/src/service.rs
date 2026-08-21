@@ -465,6 +465,14 @@ impl UgoiteService {
             bail!("Space slug claim path and payload disagree for {slug}");
         }
         validate_storage_id(validate_space_id(&claim.space_id))?;
+        if claim.space_id != slug {
+            let space_uid = Uuid::parse_str(&claim.space_id).with_context(|| {
+                format!("identity Space slug claim has an invalid UUID: {slug}")
+            })?;
+            if space_uid.get_version() != Some(uuid::Version::SortRand) {
+                bail!("identity Space slug claim must use a UUIDv7: {slug}");
+            }
+        }
         Ok(Some(claim))
     }
 
@@ -517,7 +525,10 @@ impl UgoiteService {
             return Ok(None);
         }
 
-        if let Ok(space_uid) = Uuid::parse_str(&claim.space_id) {
+        if claim.space_id != claim.slug {
+            let space_uid = Uuid::parse_str(&claim.space_id).with_context(|| {
+                format!("identity Space slug claim has an invalid UUID: {slug}")
+            })?;
             space::repair_space_with_identity(&self.operator, space_uid, slug, &self.root_uri)
                 .await?;
         } else if space::space_exists(&self.operator, &claim.space_id).await? {
@@ -686,7 +697,16 @@ impl UgoiteService {
                     .into());
                 }
                 self.claim_space_slug(next_slug, space_id).await?;
-                let result = space::patch_space(&self.operator, space_id, patch).await?;
+                let result =
+                    match space::patch_space_if_slug(&self.operator, space_id, patch, current_slug)
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(error) => {
+                            self.release_space_slug_claim(next_slug, space_id).await?;
+                            return Err(error);
+                        }
+                    };
                 self.commit_space_slug_claim(next_slug, space_id).await?;
                 // A failed process between metadata publication and this
                 // cleanup is repaired by recover_claimed_space on the old
@@ -696,7 +716,7 @@ impl UgoiteService {
                 return Ok(result);
             }
         }
-        space::patch_space(&self.operator, space_id, patch).await
+        space::patch_space_if_slug(&self.operator, space_id, patch, current_slug).await
     }
 
     pub async fn ensure_space(&self, space_id: &str) -> Result<()> {
@@ -2536,6 +2556,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn non_v7_identity_claim_is_rejected_before_recovery() -> Result<()> {
+        let service = UgoiteService::new("memory://slug-claim-v4")?;
+        let space_id = Uuid::new_v4().to_string();
+        service
+            .claim_space_slug("invalid-identity", &space_id)
+            .await?;
+
+        let error = service
+            .recover_space_id_by_slug("invalid-identity")
+            .await
+            .expect_err("UUIDv4 identity claims must fail closed");
+        assert!(error.to_string().contains("must use a UUIDv7"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn space_slug_rename_claims_new_slug_and_releases_old_slug() -> Result<()> {
         let service = UgoiteService::new("memory://slug-rename")?;
         let space_uid = service.create_operator_space("before-rename").await?;
@@ -2556,6 +2592,41 @@ mod tests {
                 .exists("spaces/.ugoite-space-slug-claims/before-rename.json")
                 .await?
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn concurrent_space_renames_have_one_metadata_winner() -> Result<()> {
+        let first_service = UgoiteService::new("memory://service-space-rename-race")?;
+        let second_service = UgoiteService::new("memory://service-space-rename-race")?;
+        let space_id = first_service.create_operator_space("rename-source").await?;
+        let space_id = space_id.to_string();
+
+        let left_patch = json!({"slug": "rename-left"});
+        let right_patch = json!({"slug": "rename-right"});
+        let first = space::patch_space_if_slug(
+            first_service.operator(),
+            &space_id,
+            &left_patch,
+            "rename-source",
+        );
+        let second = space::patch_space_if_slug(
+            second_service.operator(),
+            &space_id,
+            &right_patch,
+            "rename-source",
+        );
+        let (first_result, second_result) = tokio::join!(first, second);
+        assert!(first_result.is_ok() ^ second_result.is_ok());
+
+        let final_slug = first_service.get_space(&space_id).await?["slug"]
+            .as_str()
+            .context("winning Space slug")?
+            .to_string();
+        assert!(matches!(
+            final_slug.as_str(),
+            "rename-left" | "rename-right"
+        ));
         Ok(())
     }
 

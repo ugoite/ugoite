@@ -2097,10 +2097,48 @@ pub async fn create_sample_space_job(
 ) -> Result<SampleDataJob> {
     let plan = resolve_sample_data_plan(options)?;
 
+    let job = enqueue_sample_space_job(op, options, &plan).await?;
+    let op_clone = op.clone();
+    let options_clone = options.clone();
+    let root_uri = root_uri.to_string();
+    let plan_clone = plan.clone();
+    let job_for_progress = job.clone();
+    tokio::spawn(async move {
+        let _ = run_sample_space_job_with_plan(
+            &op_clone,
+            &root_uri,
+            &options_clone,
+            &plan_clone,
+            &job_for_progress,
+        )
+        .await;
+    });
+
+    Ok(job)
+}
+
+/// Runs a queued sample job to completion in the current process. One-shot
+/// CLI commands use this entry point because Tokio cancels detached tasks when
+/// the process exits; server or long-lived callers may use the queued API.
+pub async fn create_sample_space_job_and_wait(
+    op: &Operator,
+    root_uri: &str,
+    options: &SampleDataOptions,
+) -> Result<SampleDataJob> {
+    let plan = resolve_sample_data_plan(options)?;
+    let job = enqueue_sample_space_job(op, options, &plan).await?;
+    run_sample_space_job_with_plan(op, root_uri, options, &plan, &job).await?;
+    get_sample_space_job(op, &job.job_id).await
+}
+
+async fn enqueue_sample_space_job(
+    op: &Operator,
+    options: &SampleDataOptions,
+    plan: &ResolvedSampleDataPlan,
+) -> Result<SampleDataJob> {
     ensure_jobs_dir(op).await?;
-    let job_id = Uuid::new_v4().to_string();
     let job = SampleDataJob {
-        job_id: job_id.clone(),
+        job_id: Uuid::new_v4().to_string(),
         space_id: options.space_id.clone(),
         scenario: plan.scenario.clone(),
         entry_count: plan.entry_count,
@@ -2115,46 +2153,32 @@ pub async fn create_sample_space_job(
         error: None,
         summary: None,
     };
-
     write_job(op, &job).await?;
-
-    let op_clone = op.clone();
-    let options_clone = SampleDataOptions {
-        space_id: options.space_id.clone(),
-        scenario: plan.scenario.clone(),
-        entry_count: plan.entry_count,
-        seed: options.seed,
-        owner_display_name: normalize_owner_display_name(options.owner_display_name.as_deref()),
-    };
-    let root_uri = root_uri.to_string();
-    let plan_clone = plan.clone();
-
-    let job_for_progress = job.clone();
-    tokio::spawn(async move {
-        let mut progress = ProgressReporter::Job(Box::new(JobProgressWriter::new(
-            op_clone.clone(),
-            job_for_progress,
-        )));
-        let summary = create_sample_space_with_progress(
-            &op_clone,
-            &root_uri,
-            &options_clone,
-            &plan_clone,
-            &mut progress,
-        )
-        .await;
-
-        match summary {
-            Ok(summary) => {
-                let _ = progress.complete(&summary).await;
-            }
-            Err(err) => {
-                let _ = progress.fail(&err.to_string()).await;
-            }
-        }
-    });
-
     Ok(job)
+}
+
+async fn run_sample_space_job_with_plan(
+    op: &Operator,
+    root_uri: &str,
+    options: &SampleDataOptions,
+    plan: &ResolvedSampleDataPlan,
+    job: &SampleDataJob,
+) -> Result<SampleDataSummary> {
+    let mut progress =
+        ProgressReporter::Job(Box::new(JobProgressWriter::new(op.clone(), job.clone())));
+    let summary =
+        create_sample_space_with_progress(op, root_uri, options, plan, &mut progress).await;
+    match summary {
+        Ok(summary) => {
+            progress.complete(&summary).await?;
+            Ok(summary)
+        }
+        Err(error) => {
+            let error_text = error.to_string();
+            let _ = progress.fail(&error_text).await;
+            Err(error)
+        }
+    }
 }
 
 pub async fn get_sample_space_job(op: &Operator, job_id: &str) -> Result<SampleDataJob> {

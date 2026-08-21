@@ -221,11 +221,17 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     // Core-mode background jobs may update a status document while the CLI
     // reads it. Keep OpenDAL's filesystem replacement writes on the same
     // filesystem so readers never observe a truncated JSON document.
-    let mut builder = Fs::default().root(root);
-    if root != "/" {
-        let atomic_write_dir = Path::new(root).join(".ugoite-atomic-writes");
-        builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
-    }
+    // A root workspace is valid, but /.ugoite-atomic-writes may be
+    // unwritable even when the actual workspace objects are readable. Keep
+    // the temporary replacement directory on the default local filesystem.
+    let atomic_write_dir = if root == "/" {
+        std::env::temp_dir().join(format!(".ugoite-atomic-writes-{}", std::process::id()))
+    } else {
+        Path::new(root).join(".ugoite-atomic-writes")
+    };
+    let builder = Fs::default()
+        .root(root)
+        .atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
     Ok(opendal::Operator::new(builder)?)
 }
 

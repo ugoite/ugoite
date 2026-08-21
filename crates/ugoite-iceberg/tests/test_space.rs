@@ -174,6 +174,25 @@ async fn space_metadata_identity_must_match_directory_and_uuidv7_contract() -> a
 }
 
 #[tokio::test]
+async fn uuid_addressed_space_directory_must_match_metadata_uid() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let space_uid = uuid::Uuid::now_v7();
+    space::create_space_with_identity(&op, space_uid, "identity-uid", "/tmp").await?;
+    let meta_path = format!("spaces/{space_uid}/meta.json");
+    let mut meta: Value = serde_json::from_slice(&op.read(&meta_path).await?.to_vec())?;
+    meta["space_uid"] = Value::String(uuid::Uuid::now_v7().to_string());
+    op.write(&meta_path, serde_json::to_vec(&meta)?).await?;
+
+    let error = space::list_spaces(&op)
+        .await
+        .expect_err("UUID directory and metadata UID mismatch must be rejected");
+    assert!(error
+        .to_string()
+        .contains("UUID directory does not match space_uid"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn incomplete_bootstrap_settings_are_rejected() -> anyhow::Result<()> {
     let op = setup_operator()?;
     space::create_space(&op, "invalid-settings", "/tmp").await?;

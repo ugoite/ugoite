@@ -380,8 +380,10 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 seed,
                 owner_display_name: resolve_sample_owner_display_name(owner),
             };
-            let job =
-                ugoite_iceberg::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;
+            let job = ugoite_iceberg::sample_data::create_sample_space_job_and_wait(
+                &op, &root_uri, &opts,
+            )
+            .await?;
             print_json(&job);
         }
         SpaceSubCmd::SampleJobStatus { root_path, job_id } => {
