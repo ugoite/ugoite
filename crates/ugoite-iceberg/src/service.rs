@@ -432,7 +432,12 @@ impl UgoiteService {
         )
     }
 
+    fn ensure_authoritative_mutation_contract(&self) -> Result<()> {
+        Authorizer::new(self.operator.clone()).ensure_authoritative_mutation_contract()
+    }
+
     pub async fn create_space(&self, space_id: &str) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         let creation_lock = SPACE_CREATION_SERIALIZER
             .get_or_init(|| Arc::new(AsyncMutex::new(())))
             .clone();
@@ -459,6 +464,7 @@ impl UgoiteService {
     /// Creates an operator-local Space with an immutable UUIDv7 directory and
     /// no application principal. A node must explicitly claim it before remote use.
     pub async fn create_operator_space(&self, slug: &str) -> Result<Uuid> {
+        self.ensure_authoritative_mutation_contract()?;
         let creation_lock = SPACE_CREATION_SERIALIZER
             .get_or_init(|| Arc::new(AsyncMutex::new(())))
             .clone();
@@ -884,6 +890,7 @@ impl UgoiteService {
         if self.operator.exists(&state_path).await? {
             Ok(())
         } else {
+            self.ensure_authoritative_mutation_contract()?;
             authorizer
                 .initialize_owner(&claim.space_id, space_uid, principal_id, display_name)
                 .await
@@ -910,6 +917,7 @@ impl UgoiteService {
             if metadata.get("slug").and_then(Value::as_str) == Some(slug) {
                 return Ok(Some(claim.space_id));
             }
+            self.ensure_authoritative_mutation_contract()?;
             self.release_space_slug_claim(slug, &claim.space_id, Some(claim.claim_id))
                 .await?;
             return Ok(None);
@@ -920,6 +928,9 @@ impl UgoiteService {
         // authoritative metadata swap.  Takeover is an ETag-guarded state
         // transition after expiry, so a concurrent heartbeat or recovery
         // winner cannot be silently displaced.
+        if claim.is_expired()? {
+            self.ensure_authoritative_mutation_contract()?;
+        }
         let Some(claim) = self.take_over_expired_space_slug_claim(&claim).await? else {
             return Ok(None);
         };
@@ -1049,6 +1060,7 @@ impl UgoiteService {
     }
 
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
+        self.recover_pending_space_claims().await?;
         let live_pending_space_ids = self.live_pending_claim_space_ids().await?;
         let discovered_space_ids = space::list_spaces_discovery(&self.operator).await?;
         let mut space_ids = Vec::with_capacity(discovered_space_ids.len());
@@ -1094,7 +1106,25 @@ impl UgoiteService {
                 && !claim.is_expired()?
                 && !self.space_slug_claim_is_committed(&slug, &claim).await?
             {
-                space_ids.insert(claim.space_id);
+                // Only a claim whose target metadata still names the claim
+                // slug may hide a crash-left incomplete bootstrap. A rename
+                // claim before metadata publication and a mismatched claim
+                // must not suppress an otherwise valid Space or corruption.
+                if self
+                    .claimed_space_metadata_slug(&claim.space_id)
+                    .await?
+                    .as_deref()
+                    != Some(slug.as_str())
+                {
+                    continue;
+                }
+                match space::validate_complete_bootstrap(&self.operator, &claim.space_id).await {
+                    Ok(()) => {}
+                    Err(error) if error.to_string().contains("incomplete Space bootstrap:") => {
+                        space_ids.insert(claim.space_id);
+                    }
+                    Err(error) => return Err(error),
+                }
             }
         }
         Ok(space_ids)
@@ -1155,6 +1185,7 @@ impl UgoiteService {
         space_id: &str,
         checkpoint_name: &str,
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_checkpoint_name(checkpoint_name))?;
         let workspace =
@@ -1176,6 +1207,7 @@ impl UgoiteService {
     }
 
     pub async fn patch_space(&self, space_id: &str, patch: &Value) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_public_space_patch(patch)?;
         let current = space::get_space_raw(&self.operator, space_id).await?;
@@ -1231,6 +1263,7 @@ impl UgoiteService {
     }
 
     pub async fn upsert_form(&self, space_id: &str, form_def: &Value) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         form::upsert_form(&self.operator, &self.workspace_path(space_id), form_def).await?;
         self.schedule_asset_text_refresh(space_id);
@@ -1288,6 +1321,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let scopes = self
@@ -1369,6 +1403,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         if let Some(parent_revision_id) = parent_revision_id {
@@ -1407,6 +1442,7 @@ impl UgoiteService {
         hard_delete: bool,
         actor: &str,
     ) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         entry::delete_entry(
@@ -1521,6 +1557,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
@@ -1558,6 +1595,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
@@ -2202,6 +2240,7 @@ impl UgoiteService {
         parameters: serde_json::Map<String, Value>,
         parameter_types: BTreeMap<String, String>,
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         require_sql_session_principals(principal_ids)?;
         let relation = index::sql_session_page_relation(sql).map_err(|error| {
@@ -2433,6 +2472,7 @@ impl UgoiteService {
         filename: &str,
         content: &[u8],
     ) -> Result<ugoite_domain::entry::AssetReference> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         asset::save_asset(
             &self.operator,
@@ -2450,6 +2490,7 @@ impl UgoiteService {
         content: &[u8],
         media_type: &str,
     ) -> Result<ugoite_domain::entry::AssetReference> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         asset::save_asset_with_media_type(
             &self.operator,
@@ -2541,6 +2582,7 @@ impl UgoiteService {
         asset_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_asset_id(asset_id))?;
         let scopes = if principal_ids.is_empty() {
@@ -2580,6 +2622,7 @@ impl UgoiteService {
         user_id: &str,
         patch: &Value,
     ) -> Result<preferences::UserPreferences> {
+        self.ensure_authoritative_mutation_contract()?;
         preferences::patch_user_preferences(&self.operator, user_id, patch).await
     }
 
@@ -2672,6 +2715,7 @@ impl UgoiteService {
         payload: &saved_sql::SqlPayload,
         author: &str,
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_id(sql_id))?;
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
@@ -2700,6 +2744,7 @@ impl UgoiteService {
         parent_revision_id: &str,
         author: &str,
     ) -> Result<Value> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_id(sql_id))?;
         if parent_revision_id.trim().is_empty() {
@@ -2724,6 +2769,7 @@ impl UgoiteService {
     }
 
     pub async fn delete_saved_sql(&self, space_id: &str, sql_id: &str, actor: &str) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_id(sql_id))?;
         saved_sql::delete_sql(
@@ -3075,13 +3121,58 @@ mod tests {
     #[tokio::test]
     async fn non_local_space_mutations_fail_closed_before_storage_writes() -> Result<()> {
         let service = UgoiteService::new("s3://ugoite-test-bucket/space")?;
-        let error = service
-            .create_space_for_principal("remote-space", Uuid::now_v7(), "Owner")
-            .await
-            .expect_err("non-local Space mutations must be unavailable in v0.1");
-        assert!(error
-            .to_string()
-            .contains("non-local Space mutations are unavailable in v0.1"));
+        let assert_unavailable = |error: anyhow::Error| {
+            let message = error.to_string();
+            let app_error = error
+                .downcast_ref::<ugoite_core::error::AppError>()
+                .unwrap_or_else(|| {
+                    panic!("non-local mutation returned an untyped error: {message}")
+                });
+            assert_eq!(
+                app_error.code(),
+                ugoite_core::error::ErrorCode::StorageMutationUnavailable
+            );
+            assert!(app_error
+                .message()
+                .contains("non-local Space mutations are unavailable in v0.1"));
+        };
+
+        assert_unavailable(
+            service
+                .create_space("remote-space")
+                .await
+                .expect_err("create_space must fail before any remote write"),
+        );
+        assert_unavailable(
+            service
+                .create_operator_space("remote-space")
+                .await
+                .expect_err("create_operator_space must fail before any remote write"),
+        );
+        assert_unavailable(
+            service
+                .create_space_for_principal("remote-space", Uuid::now_v7(), "Owner")
+                .await
+                .expect_err("principal Space creation must fail before any remote write"),
+        );
+        assert_unavailable(
+            service
+                .patch_space("remote-space", &serde_json::json!({"name": "patched"}))
+                .await
+                .expect_err("patch_space must fail before any remote write"),
+        );
+        assert_unavailable(
+            service
+                .upsert_form("remote-space", &serde_json::json!({"name": "Entry"}))
+                .await
+                .expect_err("Form mutation must fail before any remote write"),
+        );
+        assert_unavailable(
+            service
+                .save_asset("remote-space", "asset.txt", b"asset")
+                .await
+                .expect_err("Asset mutation must fail before any remote write"),
+        );
         Ok(())
     }
 
@@ -3209,9 +3300,20 @@ mod tests {
             .expire_space_slug_claim_for_test("startup-recover")
             .await?;
 
-        service.recover_pending_space_claims().await?;
         let space_ids = service.list_space_ids().await?;
         assert_eq!(space_ids, vec![space_uid.to_string()]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn live_mismatched_claim_does_not_hide_complete_space() -> Result<()> {
+        let service = UgoiteService::new("memory://live-mismatched-space-claim")?;
+        let space_uid = service.create_operator_space("actual-slug").await?;
+        service
+            .claim_space_slug("different-slug", &space_uid.to_string())
+            .await?;
+
+        assert_eq!(service.list_space_ids().await?, vec![space_uid.to_string()]);
         Ok(())
     }
 

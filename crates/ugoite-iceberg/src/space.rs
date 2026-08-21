@@ -107,7 +107,7 @@ fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
     for dir in ["security", "forms", "assets", "sql_sessions"] {
         set_owner_only_mode(&space_dir.join(dir), 0o700)?;
     }
-    for file in ["meta.json", "settings.json"] {
+    for file in ["meta.json", "settings.json", ".ugoite-space-patch.json"] {
         set_owner_only_mode(&space_dir.join(file), 0o600)?;
     }
     Ok(())
@@ -219,6 +219,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
 }
 
 pub async fn create_space(op: &Operator, name: &str, root_path: &str) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let storage = OpendalStorage::from_operator(op);
     create_space_with_storage(&storage, name, uuid::Uuid::now_v7(), name, root_path).await?;
     let ws_path = format!("spaces/{name}");
@@ -238,6 +239,7 @@ pub async fn create_space_with_identity(
     slug: &str,
     root_path: &str,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     if space_id.get_version() != Some(uuid::Version::SortRand) {
         return Err(anyhow!("UUID-addressed Space identity must be a UUIDv7"));
     }
@@ -260,6 +262,7 @@ pub async fn repair_space_with_identity(
     slug: &str,
     root_path: &str,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     if space_uid.get_version() != Some(uuid::Version::SortRand) {
         return Err(anyhow!("UUID-addressed Space identity must be a UUIDv7"));
     }
@@ -301,6 +304,7 @@ pub async fn repair_space(
     slug: &str,
     root_path: &str,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     validate_space_path_segment(directory_id)?;
     validate_space_path_segment(slug)?;
     let storage = OpendalStorage::from_operator(op);
@@ -691,7 +695,12 @@ async fn write_space_patch_value(
     etag: Option<&str>,
 ) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(value)?;
-    if let Some(etag) = etag {
+    if matches!(op.info().scheme(), "fs" | "file") {
+        // The caller holds the local patch lock, so the same-filesystem
+        // rename is the local serialization boundary even if a backend
+        // reports an incidental ETag.
+        write_local_space_json_atomic(op, path, &bytes, false).await?;
+    } else if let Some(etag) = etag {
         op.write_options(
             path,
             bytes,
@@ -701,14 +710,10 @@ async fn write_space_patch_value(
             },
         )
         .await?;
+    } else if op.info().scheme() == "memory" {
+        op.write(path, bytes).await?;
     } else {
-        if matches!(op.info().scheme(), "fs" | "file") {
-            write_local_space_json_atomic(op, path, &bytes, false).await?;
-        } else if op.info().scheme() == "memory" {
-            op.write(path, bytes).await?;
-        } else {
-            bail!("conditional Space patch write requires an ETag: {path}");
-        }
+        bail!("conditional Space patch write requires an ETag: {path}");
     }
     restore_local_space_json_permissions(op, path)?;
     Ok(())
@@ -797,7 +802,10 @@ async fn complete_space_patch_journal(
     let mut completed = journal.clone();
     completed.status = SPACE_PATCH_COMPLETE.to_string();
     let bytes = serde_json::to_vec_pretty(&completed)?;
-    let result = if let Some(etag) = expected_etag {
+    let result = if matches!(op.info().scheme(), "fs" | "file") {
+        write_local_space_json_atomic(op, path, &bytes, false).await?;
+        Ok(())
+    } else if let Some(etag) = expected_etag {
         op.write_options(
             path,
             bytes,
@@ -809,9 +817,6 @@ async fn complete_space_patch_journal(
         .await
         .map(|_| ())
         .map_err(anyhow::Error::from)
-    } else if matches!(op.info().scheme(), "fs" | "file") {
-        write_local_space_json_atomic(op, path, &bytes, false).await?;
-        Ok(())
     } else if op.info().scheme() == "memory" {
         op.write(path, bytes)
             .await
@@ -821,7 +826,10 @@ async fn complete_space_patch_journal(
         bail!("completing Space patch journal requires an ETag: {path}");
     };
     match result {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            restore_local_space_json_permissions(op, path)?;
+            Ok(())
+        }
         Err(error) if is_condition_not_match_anyhow(&error) => {
             let Some((current, _)) = read_space_patch_journal_exact(op, path).await? else {
                 bail!("Space patch journal disappeared while completing")
@@ -854,7 +862,9 @@ async fn write_pending_space_patch(
             if existing.status != SPACE_PATCH_COMPLETE {
                 bail!("invalid Space patch journal status: {}", existing.status);
             }
-            let result = if let Some(etag) = etag {
+            let result = if matches!(op.info().scheme(), "fs" | "file") {
+                write_local_space_json_atomic(op, path, &bytes, false).await
+            } else if let Some(etag) = etag {
                 op.write_options(
                     path,
                     bytes.clone(),
@@ -866,8 +876,6 @@ async fn write_pending_space_patch(
                 .await
                 .map(|_| ())
                 .map_err(anyhow::Error::from)
-            } else if matches!(op.info().scheme(), "fs" | "file") {
-                write_local_space_json_atomic(op, path, &bytes, false).await
             } else if op.info().scheme() == "memory" {
                 op.write(path, bytes.clone())
                     .await
@@ -926,12 +934,17 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
     };
     let journal: SpacePatchJournal =
         serde_json::from_value(value).context("decode pending Space patch journal")?;
+    // The journal contains old and new authoritative metadata, including
+    // integrity material. Repair legacy local modes before any recovery branch
+    // returns, including the already-completed tombstone path.
+    restore_local_space_json_permissions(op, &journal_path)?;
     if journal.status == SPACE_PATCH_COMPLETE {
         return Ok(());
     }
     if journal.status != SPACE_PATCH_PENDING {
         bail!("invalid Space patch journal status: {}", journal.status);
     }
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     validate_current_space_metadata(space_id, &journal.new_metadata)?;
     if !journal.new_settings.is_object()
         || journal
@@ -1198,6 +1211,9 @@ async fn patch_space_with_operator(
 
     let meta_bytes = serde_json::to_vec_pretty(&meta)?;
     match etag {
+        Some(_) if matches!(op.info().scheme(), "fs" | "file") => {
+            write_local_space_json_atomic(op, &meta_path, &meta_bytes, false).await?
+        }
         Some(etag) => op
             .write_options(
                 &meta_path,
@@ -1251,6 +1267,7 @@ pub async fn patch_space(
     space_id: &str,
     patch: &serde_json::Value,
 ) -> Result<serde_json::Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::authorization::ensure_authorization_write_fence().await?;
     validate_complete_bootstrap(op, space_id).await?;
     patch_space_with_operator(op, space_id, patch, None).await
@@ -1265,6 +1282,7 @@ pub async fn patch_space_if_slug(
     patch: &serde_json::Value,
     expected_slug: &str,
 ) -> Result<serde_json::Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     crate::authorization::ensure_authorization_write_fence().await?;
     validate_complete_bootstrap(op, space_id).await?;
     patch_space_with_operator(op, space_id, patch, Some(expected_slug)).await

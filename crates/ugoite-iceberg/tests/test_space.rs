@@ -153,6 +153,49 @@ async fn local_space_validation_repairs_previously_published_json_modes() -> any
 
 #[cfg(unix)]
 #[tokio::test]
+async fn local_space_validation_repairs_patch_journal_mode() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir()?;
+    let op = Operator::new(Fs::default().root(dir.path().to_string_lossy().as_ref()))?;
+    space::create_space(
+        &op,
+        "private-journal",
+        dir.path().to_string_lossy().as_ref(),
+    )
+    .await?;
+    space::patch_space(
+        &op,
+        "private-journal",
+        &serde_json::json!({"name": "patched"}),
+    )
+    .await?;
+
+    let journal = dir
+        .path()
+        .join("spaces/private-journal/.ugoite-space-patch.json");
+    let journal_path = "spaces/private-journal/.ugoite-space-patch.json";
+    let mut pending: Value = serde_json::from_slice(&op.read(journal_path).await?.to_vec())?;
+    pending["status"] = Value::String("pending".to_string());
+    op.write(journal_path, serde_json::to_vec(&pending)?)
+        .await?;
+    std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o644))?;
+    space::validate_complete_bootstrap(&op, "private-journal").await?;
+    assert_eq!(
+        std::fs::metadata(&journal)?.permissions().mode() & 0o777,
+        0o600
+    );
+    std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o644))?;
+    space::validate_complete_bootstrap(&op, "private-journal").await?;
+    assert_eq!(
+        std::fs::metadata(&journal)?.permissions().mode() & 0o777,
+        0o600
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn missing_local_space_is_reported_as_space_not_found_before_lock_open() -> anyhow::Result<()>
 {
     let dir = tempdir()?;

@@ -1351,6 +1351,9 @@ async fn auth_setup_start(
     State(state): State<AppState>,
     Json(payload): Json<SetupStartRequest>,
 ) -> ApiResult<Json<Value>> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     let result = state
         .identity
         .start_setup_registration(&payload.setup_secret, &payload.display_name)
@@ -1372,6 +1375,9 @@ async fn auth_setup_finish(
     State(state): State<AppState>,
     Json(payload): Json<SetupFinishRequest>,
 ) -> ApiResult<Response> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     // Validate every existing Space before the identity service consumes the
     // one-time setup secret and persists the new account. Current-release
     // setup does not upgrade old Space layouts, so an invalid Space must leave
@@ -1385,9 +1391,6 @@ async fn auth_setup_finish(
     // Setup spans Node identity and every existing Space. Shared object
     // storage cannot commit those objects as one transaction, so reject the
     // whole bootstrap before consuming the one-time setup secret.
-    authorizer
-        .ensure_authoritative_mutation_contract()
-        .map_err(ApiError::from_core)?;
     for space_id in &existing_spaces {
         let space_uid = state
             .service
@@ -5963,6 +5966,9 @@ where
     F: FnOnce(Uuid, Vec<Uuid>) -> Fut,
     Fut: Future<Output = ApiResult<T>>,
 {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     if let Some(actions) = &identity.token_actions {
         if !actions.contains(action_name(&action)) {
             return Err(ApiError::new(
@@ -6039,6 +6045,9 @@ where
         Vec<Uuid>,
     ) -> Pin<Box<dyn Future<Output = ApiResult<T>> + Send + 'a>>,
 {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     if let Some(actions) = &identity.token_actions {
         if !actions.contains(action_name(&action)) {
             return Err(ApiError::new(
@@ -6915,6 +6924,9 @@ async fn require_dangerous_resource_action(
     resource_id: &str,
     intent: &Value,
 ) -> ApiResult<(Uuid, Option<PendingHumanApproval>)> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     let audit_details = dangerous_operation_audit_details(
         operation,
         &action,
@@ -7506,6 +7518,9 @@ async fn create_space(
     Extension(identity): Extension<RequestIdentityContext>,
     Json(payload): Json<SpaceCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     require_recent_passkey(&identity)?;
     validate_id(&payload.name, "space_id")?;
     if !identity.node_admin {
@@ -7547,6 +7562,9 @@ async fn ensure_local_space_owner_binding(
     account_id: Uuid,
     display_name: &str,
 ) -> ApiResult<(Uuid, bool)> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     if let Some(existing_id) = state
         .service
         .recover_space_id_by_slug(slug)
@@ -10497,6 +10515,19 @@ mod authentication_regression_tests {
     }
 
     #[test]
+    fn non_local_mutation_error_uses_the_stable_gateway_envelope() {
+        let error = ApiError::from_core(
+            AppError::dependency_unavailable(
+                ErrorCode::StorageMutationUnavailable,
+                "non-local Space mutations are unavailable in v0.1",
+            )
+            .into(),
+        );
+        assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
+    }
+
+    #[test]
     fn owner_recovery_ambiguous_node_commit_stays_fenced() {
         let committed = owner_recovery_commit_api_error(anyhow::anyhow!(
             "node control write committed with an ambiguous response"
@@ -12404,6 +12435,18 @@ mod authentication_regression_tests {
         .await
         .expect_err("incomplete Space bootstrap must not be finalized by recovery");
         assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn non_local_space_creation_rejects_before_recovery_or_binding() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("s3://ugoite-test-bucket/server-space")?;
+        let error =
+            ensure_local_space_owner_binding(&state, "remote-space", Uuid::now_v7(), "Owner")
+                .await
+                .expect_err("non-local Space creation must fail closed before recovery");
+        assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
         Ok(())
     }
 

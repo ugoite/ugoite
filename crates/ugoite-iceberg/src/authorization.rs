@@ -2412,6 +2412,7 @@ impl Authorizer {
     }
 
     async fn write_state_inner(&self, space_id: &str, state: &AuthorizationState) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         let path = state_path(space_id);
         validate_authorization_state(state)?;
         let serialized = serde_json::to_vec_pretty(state)?;
