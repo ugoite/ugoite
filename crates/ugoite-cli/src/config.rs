@@ -222,25 +222,24 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     // reads it. Keep OpenDAL's filesystem replacement writes on a proven
     // same-filesystem directory, including when a root-backed operator is
     // opened before `/spaces` exists.
-    let atomic_write_dir = local_atomic_write_dir(root);
+    let atomic_write_dir = local_atomic_write_dir(root)?;
     let mut builder = Fs::default().root(root);
-    if let Some(atomic_write_dir) = atomic_write_dir {
-        // Do not silently fall back to OpenDAL's truncating write path. Space
-        // metadata/settings replacement relies on this helper for crash-safe
-        // JSON publication, so an unavailable same-filesystem directory is a
-        // configuration error rather than a weaker storage mode.
-        std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
-            format!(
-                "create same-filesystem atomic write directory {}",
-                atomic_write_dir.display()
-            )
-        })?;
-        builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
-    }
+    // Do not silently fall back to OpenDAL's truncating write path. Space
+    // metadata/settings replacement relies on this helper for crash-safe JSON
+    // publication, so an unavailable same-filesystem directory is a
+    // configuration error rather than a weaker storage mode.
+    std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
+        format!(
+            "create same-filesystem atomic write directory {}",
+            atomic_write_dir.display()
+        )
+    })?;
+    set_owner_only_directory(&atomic_write_dir)?;
+    builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
     Ok(opendal::Operator::new(builder)?)
 }
 
-fn local_atomic_write_dir(root: &str) -> Option<PathBuf> {
+fn local_atomic_write_dir(root: &str) -> Result<PathBuf> {
     // Atomic writes target Space objects below root/spaces. If the process is
     // pointed at the filesystem root before that directory exists, use a
     // verified same-filesystem temporary directory; once a spaces directory
@@ -248,13 +247,15 @@ fn local_atomic_write_dir(root: &str) -> Option<PathBuf> {
     if root == "/" {
         let spaces = Path::new(root).join("spaces");
         if spaces.exists() {
-            return Some(spaces.join(".ugoite-atomic-writes"));
+            return Ok(spaces.join(".ugoite-atomic-writes"));
         }
         let temp = std::env::temp_dir();
-        return same_filesystem(Path::new(root), &temp)
-            .then(|| temp.join(format!(".ugoite-atomic-writes-{}", std::process::id())));
+        if same_filesystem(Path::new(root), &temp) {
+            return Ok(temp.join(format!(".ugoite-atomic-writes-{}", std::process::id())));
+        }
+        bail!("cannot configure same-filesystem atomic writes for local root /");
     }
-    Some(Path::new(root).join("spaces").join(".ugoite-atomic-writes"))
+    Ok(Path::new(root).join("spaces").join(".ugoite-atomic-writes"))
 }
 
 #[cfg(unix)]
@@ -269,6 +270,19 @@ fn same_filesystem(first: &Path, second: &Path) -> bool {
 #[cfg(not(unix))]
 fn same_filesystem(_first: &Path, _second: &Path) -> bool {
     true
+}
+
+#[cfg(unix)]
+fn set_owner_only_directory(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_owner_only_directory(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {

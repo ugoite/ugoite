@@ -89,6 +89,34 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
 
 #[cfg(unix)]
 #[tokio::test]
+async fn local_atomic_space_patch_preserves_private_json_modes() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir()?;
+    let atomic_dir = dir.path().join("atomic-writes");
+    std::fs::create_dir_all(&atomic_dir)?;
+    let op = Operator::new(
+        Fs::default()
+            .root(dir.path().to_string_lossy().as_ref())
+            .atomic_write_dir(atomic_dir.to_string_lossy().as_ref()),
+    )?;
+
+    space::create_space(&op, "atomic-patch", dir.path().to_string_lossy().as_ref()).await?;
+    space::patch_space(&op, "atomic-patch", &serde_json::json!({"name": "patched"})).await?;
+    space::validate_complete_bootstrap(&op, "atomic-patch").await?;
+
+    for file_name in ["meta.json", "settings.json"] {
+        let mode = std::fs::metadata(dir.path().join("spaces/atomic-patch").join(file_name))?
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "{file_name} must remain owner-only");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn missing_local_space_is_reported_as_space_not_found_before_lock_open() -> anyhow::Result<()>
 {
     let dir = tempdir()?;

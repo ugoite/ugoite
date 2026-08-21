@@ -1,6 +1,7 @@
 //! Integration tests for asset lifecycle management.
 //! REQ-ASSET-001
 
+use std::net::TcpListener;
 use std::path::Path;
 use std::process::Command;
 
@@ -151,4 +152,45 @@ fn test_asset_req_asset_001_upload_normalizes_markdown_heading_filename() {
         .join("assets")
         .join(asset["asset_id"].as_str().expect("asset id"))
         .exists());
+}
+
+/// Remote CLI upload is deliberately unavailable in this release. The
+/// command must reject before opening a transport connection.
+#[test]
+fn test_asset_remote_upload_is_rejected_without_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("cli-config.json");
+    let asset_file = dir.path().join("test-asset.txt");
+    std::fs::write(&asset_file, b"remote asset content").unwrap();
+    std::fs::write(
+        &config_path,
+        serde_json::json!({
+            "mode": "backend",
+            "backend_url": endpoint,
+            "api_url": "http://127.0.0.1:3000/api"
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output = Command::new(ugoite_bin())
+        .args([
+            "asset",
+            "upload",
+            "remote-space",
+            asset_file.to_str().unwrap(),
+        ])
+        .env("UGOITE_CLI_CONFIG_PATH", &config_path)
+        .output()
+        .expect("run remote asset upload");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("asset upload is not available in backend/api mode"));
+    assert!(matches!(
+        listener.accept(),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
 }

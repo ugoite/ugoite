@@ -1,6 +1,6 @@
 //! Persistence adapter boundary for Ugoite.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use opendal::options::{ReadOptions, WriteOptions};
@@ -3560,26 +3560,63 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
         .strip_prefix("fs://")
         .or_else(|| uri.strip_prefix("file://"))
         .unwrap_or(uri);
-    let atomic_write_dir = local_atomic_write_dir(root);
+    let atomic_write_dir = local_atomic_write_dir(root)?;
     let mut builder = Fs::default().root(root);
-    if let Some(atomic_write_dir) = atomic_write_dir {
-        // If the target filesystem cannot create the helper directory, do
-        // not guess a cross-filesystem temp location. OpenDAL's default is
-        // the safe fallback for roots where atomic replacement cannot be
-        // configured (for example a read-only root).
-        if std::fs::create_dir_all(&atomic_write_dir).is_ok() {
-            builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
-        }
-    }
+    std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
+        format!(
+            "create same-filesystem atomic write directory {}",
+            atomic_write_dir.display()
+        )
+    })?;
+    set_owner_only_directory(&atomic_write_dir)?;
+    builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
     let op = Operator::new(builder)?;
     Ok(op)
 }
 
-fn local_atomic_write_dir(root: &str) -> Option<std::path::PathBuf> {
+fn local_atomic_write_dir(root: &str) -> Result<std::path::PathBuf> {
     // Atomic writes target Space objects below root/spaces. Keep the
     // temporary directory on that exact filesystem, including when `spaces`
     // is a separate mount or does not exist yet.
-    Some(Path::new(root).join("spaces").join(".ugoite-atomic-writes"))
+    if root == "/" {
+        let spaces = Path::new(root).join("spaces");
+        if spaces.exists() {
+            return Ok(spaces.join(".ugoite-atomic-writes"));
+        }
+        let temp = std::env::temp_dir();
+        if same_filesystem(Path::new(root), &temp) {
+            return Ok(temp.join(format!(".ugoite-atomic-writes-{}", std::process::id())));
+        }
+        bail!("cannot configure same-filesystem atomic writes for local root /");
+    }
+    Ok(Path::new(root).join("spaces").join(".ugoite-atomic-writes"))
+}
+
+#[cfg(unix)]
+fn same_filesystem(first: &Path, second: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    std::fs::metadata(first)
+        .and_then(|first| std::fs::metadata(second).map(|second| first.dev() == second.dev()))
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn same_filesystem(_first: &Path, _second: &Path) -> bool {
+    true
+}
+
+#[cfg(unix)]
+fn set_owner_only_directory(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_owner_only_directory(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 pub fn operator_from_uri(uri: &str) -> Result<Operator> {
@@ -3801,6 +3838,9 @@ mod tests {
 
     #[tokio::test]
     async fn operator_from_uri_supports_fs_and_memory() -> Result<()> {
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt;
+
         let temp_dir = tempfile::tempdir()?;
         let fs_uri = format!("fs://{}", temp_dir.path().display());
         let fs_operator = operator_from_uri(&fs_uri)?;
@@ -3809,6 +3849,14 @@ mod tests {
             .await?;
         let fs_bytes = fs_operator.read("hello.txt").await?.to_vec();
         assert_eq!(fs_bytes, b"hello world");
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::metadata(temp_dir.path().join("spaces/.ugoite-atomic-writes"))?
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
 
         let memory_operator = operator_from_uri("memory://storage-crate")?;
         memory_operator

@@ -571,7 +571,7 @@ pub(crate) fn validate_current_space_metadata(
     Ok(metadata.space_uid)
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct SpacePatchJournal {
     #[serde(default = "default_space_patch_journal_status")]
     status: String,
@@ -685,7 +685,30 @@ async fn write_space_patch_value(
             bail!("conditional Space patch write requires an ETag: {path}");
         }
     }
+    restore_local_space_json_permissions(op, path)?;
     Ok(())
+}
+
+fn restore_local_space_json_permissions(op: &Operator, path: &str) -> Result<()> {
+    #[cfg(unix)]
+    if matches!(op.info().scheme(), "fs" | "file") {
+        let target = Path::new(op.info().root().as_str()).join(path);
+        set_owner_only_mode(&target, 0o600)?;
+    }
+    Ok(())
+}
+
+async fn read_space_patch_journal_exact(
+    op: &Operator,
+    path: &str,
+) -> Result<Option<(SpacePatchJournal, Option<String>)>> {
+    let Some((value, etag)) = read_space_json_exact(op, path).await? else {
+        return Ok(None);
+    };
+    Ok(Some((
+        serde_json::from_value(value).context("decode Space patch journal")?,
+        etag,
+    )))
 }
 
 async fn complete_space_patch_journal(
@@ -714,10 +737,18 @@ async fn complete_space_patch_journal(
     };
     match result {
         Ok(_) => Ok(()),
-        // Another recovery worker may have completed this exact journal or a
-        // newer writer may already have replaced the completed record. In
-        // either case, never delete or overwrite the newer journal.
-        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
+            let Some((current, _)) = read_space_patch_journal_exact(op, path).await? else {
+                bail!("Space patch journal disappeared while completing")
+            };
+            if current == completed {
+                // Another worker completed this exact journal. A different
+                // pending journal must never be treated as our completion.
+                Ok(())
+            } else {
+                bail!("Space patch journal changed while completing")
+            }
+        }
         Err(error) => Err(error.into()),
     }
 }
@@ -730,9 +761,7 @@ async fn write_pending_space_patch(
 ) -> Result<Option<String>> {
     let bytes = serde_json::to_vec_pretty(journal)?;
     for _ in 0..4 {
-        if let Some((value, etag)) = read_space_json_exact(op, path).await? {
-            let existing: SpacePatchJournal =
-                serde_json::from_value(value).context("decode existing Space patch journal")?;
+        if let Some((existing, etag)) = read_space_patch_journal_exact(op, path).await? {
             if existing.status == SPACE_PATCH_PENDING {
                 recover_pending_space_patch(op, space_id).await?;
                 continue;
@@ -777,10 +806,18 @@ async fn write_pending_space_patch(
                 Err(error) => return Err(error.into()),
             }
         }
-        let Some((_, etag)) = read_space_json_exact(op, path).await? else {
+        let Some((current, etag)) = read_space_patch_journal_exact(op, path).await? else {
             continue;
         };
-        return Ok(etag);
+        if current == *journal {
+            return Ok(etag);
+        }
+        // A concurrent writer replaced the journal between our conditional
+        // write and verification. Recover or retry without ever borrowing
+        // that writer's ETag for this transaction.
+        if current.status == SPACE_PATCH_PENDING {
+            recover_pending_space_patch(op, space_id).await?;
+        }
     }
     bail!("Space patch journal changed while publishing")
 }
@@ -1078,6 +1115,7 @@ async fn patch_space_with_operator(
             })?,
         None => op.write(&meta_path, meta_bytes).await?,
     };
+    restore_local_space_json_permissions(op, &meta_path)?;
     write_space_patch_value(op, &settings_path, &settings, settings_etag.as_deref()).await?;
     // Keep a completed journal as a version-fenced tombstone. A future patch
     // can replace it with its own pending transaction, but recovery must never
