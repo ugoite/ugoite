@@ -1791,10 +1791,18 @@ pub async fn get_entry_revision_content(
 
     let field_order = form_field_names(&form_def);
     let merged_fields = merge_entry_fields(&revision.fields, &revision.extra_attributes);
+    let revision_title = revision
+        .state
+        .as_ref()
+        .map_or(row.title.as_str(), |state| state.title.as_str());
+    let revision_tags = revision
+        .state
+        .as_ref()
+        .map_or(row.tags.as_slice(), |state| state.tags.as_slice());
     let markdown = render_markdown(
-        &row.title,
+        revision_title,
         &form_name,
-        &row.tags,
+        revision_tags,
         &merged_fields,
         &field_order,
     );
@@ -1808,7 +1816,7 @@ pub async fn get_entry_revision_content(
         markdown,
         frontmatter: serde_json::json!({
             "form": form_name,
-            "tags": row.tags,
+            "tags": revision_tags,
         }),
         sections: sections_from_fields(&merged_fields),
         computed: Value::Object(Map::new()),
@@ -2413,6 +2421,51 @@ pub async fn get_entry_history(op: &Operator, ws_path: &str, entry_id: &str) -> 
         "entry_id": entry_id,
         "revisions": revisions,
     }))
+}
+
+pub async fn get_entry_history_authorized(
+    op: &Operator,
+    ws_path: &str,
+    entry_id: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<Value> {
+    let mut selected_form = None;
+    for form_name in list_form_names(op, ws_path).await? {
+        let Some(entry_scope) = relation_scopes.get(&form_name.to_ascii_lowercase()) else {
+            continue;
+        };
+        if read_entry_row_authorized(op, ws_path, &form_name, entry_id, entry_scope)
+            .await
+            .is_ok()
+        {
+            selected_form = Some(form_name);
+            break;
+        }
+    }
+    let form_name = selected_form.ok_or_else(|| entry_not_found(entry_id))?;
+    let (_, rows) = revision_rows_for_form(op, ws_path, &form_name).await?;
+    let mut revisions = rows
+        .into_iter()
+        .filter(|revision| revision.entry_id == entry_id)
+        .map(|revision| {
+            serde_json::json!({
+                "revision_id": revision.revision_id,
+                "timestamp": revision.timestamp,
+                "checksum": revision.integrity.checksum,
+                "signature": revision.integrity.signature,
+                "author": revision.author,
+                "updated_by": revision.updated_by,
+                "deleted_by": revision.deleted_by,
+                "operation": revision.operation,
+            })
+        })
+        .collect::<Vec<_>>();
+    revisions.sort_by(|a, b| {
+        let a_ts = a.get("timestamp").and_then(Value::as_f64).unwrap_or(0.0);
+        let b_ts = b.get("timestamp").and_then(Value::as_f64).unwrap_or(0.0);
+        a_ts.partial_cmp(&b_ts).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Ok(serde_json::json!({"entry_id": entry_id, "revisions": revisions}))
 }
 
 pub async fn get_entry_revision(

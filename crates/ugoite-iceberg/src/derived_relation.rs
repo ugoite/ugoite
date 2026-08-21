@@ -800,6 +800,7 @@ fn refresh_request_admission_lock_bytes(
 fn refresh_request_admission_lock_reclaimable(
     bytes: &[u8],
     last_modified: Option<SystemTime>,
+    shared_backend: bool,
 ) -> bool {
     let value = serde_json::from_slice::<Value>(bytes).ok();
     if value
@@ -810,12 +811,13 @@ fn refresh_request_admission_lock_reclaimable(
     {
         return true;
     }
-    // JSON timestamps are diagnostic only. Lease expiry must use the
-    // backend's modification timestamp so clock skew between shared writers
-    // cannot reclaim a live admission lock.
-    last_modified
-        .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
-        .is_some_and(|age| age >= ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL)
+    // A backend timestamp is not comparable with this process's wall clock
+    // across shared writers. Fail closed for an active shared lock until the
+    // backend exposes a server-time/monotonic lease contract.
+    !shared_backend
+        && last_modified
+            .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+            .is_some_and(|age| age >= ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL)
 }
 
 async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str) -> Result<String> {
@@ -894,6 +896,7 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
         if !refresh_request_admission_lock_reclaimable(
             &bytes,
             metadata.last_modified().map(Into::into),
+            matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls"),
         ) {
             bail!("AssetText refresh marker admission is busy")
         }

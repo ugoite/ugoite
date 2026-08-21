@@ -213,6 +213,7 @@ pub struct DerivedRelationHeadStore {
     relation_id: Uuid,
     write_mode: CatalogWriteMode,
     serializer: Arc<AsyncMutex<()>>,
+    read_only: bool,
 }
 
 impl std::fmt::Debug for DerivedRelationHeadStore {
@@ -255,6 +256,7 @@ impl DerivedRelationHeadStore {
             relation_id,
             write_mode,
             serializer,
+            read_only: false,
         }
     }
 
@@ -278,6 +280,7 @@ impl DerivedRelationHeadStore {
     /// backend contract is still behaviorally verified before publishing.
     pub fn shared_read_only(mut self) -> Self {
         self.write_mode = CatalogWriteMode::Shared;
+        self.read_only = true;
         self
     }
 
@@ -294,6 +297,15 @@ impl DerivedRelationHeadStore {
 
     pub fn write_mode(&self) -> CatalogWriteMode {
         self.write_mode
+    }
+
+    fn ensure_writable(&self) -> Result<()> {
+        if self.read_only {
+            return Err(anyhow!(
+                "DerivedRelation Head store is read-only and cannot mutate"
+            ));
+        }
+        Ok(())
     }
 
     pub fn head_path(&self) -> String {
@@ -394,7 +406,10 @@ impl DerivedRelationHeadStore {
         let safe_build_id = if Self::is_valid_build_id(build_id) {
             build_id.to_string()
         } else {
-            format!("invalid-build-id-{}", build_id.len())
+            format!(
+                "invalid-build-id-{}",
+                ugoite_domain::derived_relation::sha256_digest(build_id.as_bytes())
+            )
         };
         format!(
             "{}/_ugoite/derived/relations/{}/builds/{safe_build_id}",
@@ -443,6 +458,7 @@ impl DerivedRelationHeadStore {
     /// failed marker write aborts staging before it can leave an unidentifiable
     /// prefix behind.
     pub async fn mark_staging(&self, build_id: &str) -> Result<()> {
+        self.ensure_writable()?;
         // Build IDs are the durable publication fence.  Reusing an ID after
         // its terminal claim has been reaped would let a paused producer
         // recreate a deleted prefix, so the lifecycle accepts only the UUIDv7
@@ -504,6 +520,7 @@ impl DerivedRelationHeadStore {
     }
 
     pub async fn clear_staging(&self, build_id: &str) -> Result<()> {
+        self.ensure_writable()?;
         Self::validate_build_id(build_id)?;
         match self
             .operator
@@ -521,6 +538,7 @@ impl DerivedRelationHeadStore {
     /// without object modification metadata still need a durable age boundary
     /// after a process crash.
     pub async fn renew_staging(&self, build_id: &str) -> Result<()> {
+        self.ensure_writable()?;
         Self::validate_build_id(build_id)?;
         if !self
             .operator
@@ -575,6 +593,11 @@ impl DerivedRelationHeadStore {
             .etag()
             .filter(|etag| !etag.is_empty())
             .map(str::to_owned);
+        if self.write_mode == CatalogWriteMode::Shared && etag.is_none() {
+            return Err(anyhow!(
+                "shared DerivedRelation claim read requires an ETag"
+            ));
+        }
         let bytes = match etag.as_deref() {
             Some(etag) => {
                 self.operator
@@ -596,13 +619,15 @@ impl DerivedRelationHeadStore {
         )))
     }
 
-    fn claim_is_stale(_bytes: &[u8], last_modified: Option<SystemTime>) -> bool {
-        // Claim timestamps are written by an arbitrary producer clock. Only
-        // backend metadata is suitable for a shared lease deadline; when it
-        // is unavailable, fail closed and let an operator/repair pass decide.
-        last_modified
-            .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
-            .is_some_and(|age| age >= DERIVED_BUILD_CLAIM_TTL)
+    fn claim_is_stale(&self, _bytes: &[u8], last_modified: Option<SystemTime>) -> bool {
+        // A backend timestamp is not comparable with a producer's local clock
+        // across shared writers. Until a server-time/monotonic lease contract
+        // exists, shared GC fails closed for active claims; local mode keeps
+        // the existing bounded recovery behavior.
+        self.write_mode != CatalogWriteMode::Shared
+            && last_modified
+                .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
+                .is_some_and(|age| age >= DERIVED_BUILD_CLAIM_TTL)
     }
 
     fn build_id_time(build_id: &str) -> Option<SystemTime> {
@@ -625,6 +650,12 @@ impl DerivedRelationHeadStore {
 
     fn old_enough(timestamp: Option<SystemTime>, minimum_gc_age: Duration) -> bool {
         Self::old_enough_at(timestamp, minimum_gc_age, SystemTime::now())
+    }
+
+    fn gc_old_enough(&self, timestamp: Option<SystemTime>, minimum_gc_age: Duration) -> bool {
+        minimum_gc_age.is_zero()
+            || (self.write_mode != CatalogWriteMode::Shared
+                && Self::old_enough(timestamp, minimum_gc_age))
     }
 
     fn old_enough_at(
@@ -689,6 +720,9 @@ impl DerivedRelationHeadStore {
         };
         if minimum_gc_age.is_zero() {
             return Ok(true);
+        }
+        if self.write_mode == CatalogWriteMode::Shared {
+            return Ok(false);
         }
         Ok(self
             .marker_time_or_metadata(path, metadata.last_modified().map(Into::into))
@@ -810,7 +844,7 @@ impl DerivedRelationHeadStore {
                     }
                 }
                 Some("publishing") => {
-                    if !Self::claim_is_stale(&bytes, last_modified)
+                    if !self.claim_is_stale(&bytes, last_modified)
                         || !self
                             .replace_build_claim(
                                 build_id,
@@ -934,7 +968,7 @@ impl DerivedRelationHeadStore {
                     ));
                 }
                 if Self::claim_role(&bytes).as_deref() != Some("complete")
-                    && !Self::claim_is_stale(&bytes, last_modified)
+                    && !self.claim_is_stale(&bytes, last_modified)
                 {
                     return Ok(None);
                 }
@@ -1319,6 +1353,7 @@ impl DerivedRelationHeadStore {
     /// old, long-lived current build still gets a full reader grace period
     /// after the Head swap.
     pub async fn mark_garbage(&self, build_id: &str) -> Result<()> {
+        self.ensure_writable()?;
         Self::validate_build_id(build_id)?;
         // GC retains the publishing claim as a terminal tombstone after it
         // has deleted the build. A delayed producer may still finish an
@@ -1364,6 +1399,7 @@ impl DerivedRelationHeadStore {
     }
 
     pub async fn clear_garbage(&self, build_id: &str) -> Result<()> {
+        self.ensure_writable()?;
         Self::validate_build_id(build_id)?;
         match self
             .operator
@@ -1438,7 +1474,7 @@ impl DerivedRelationHeadStore {
         }
         let owner =
             Self::claim_owner(&bytes).context("terminal DerivedRelation claim has no owner")?;
-        if !Self::old_enough(last_modified, DERIVED_TERMINAL_CLAIM_RETENTION) {
+        if !self.gc_old_enough(last_modified, DERIVED_TERMINAL_CLAIM_RETENTION) {
             return Ok(false);
         }
         if role.as_deref() == Some("complete")
@@ -1590,6 +1626,7 @@ impl DerivedRelationHeadStore {
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
     ) -> Result<Vec<String>> {
+        self.ensure_writable()?;
         if self.write_mode == CatalogWriteMode::SingleProcess {
             let _guard = self.serializer.lock().await;
             return self
@@ -1662,10 +1699,7 @@ impl DerivedRelationHeadStore {
             } else {
                 modified
             };
-            let old_enough = minimum_gc_age.is_zero()
-                || marker_time
-                    .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
-                    .is_some_and(|age| age >= minimum_gc_age);
+            let old_enough = self.gc_old_enough(marker_time, minimum_gc_age);
             let candidate = candidates.entry(build_id.to_string()).or_default();
             candidate.has_garbage_marker |= is_garbage_marker;
             candidate.has_staging_marker |= is_staging_marker;
@@ -1716,9 +1750,9 @@ impl DerivedRelationHeadStore {
                     // marker-last cleanup. With no late objects, the terminal
                     // claim is the durable proof that no build data remains;
                     // a late object keeps this candidate pending instead.
-                    // Keep maintenance alive until the terminal retention
-                    // deadline, even when no new mutation occurs.  The
-                    // scheduler will wake again and reap the claim when due.
+                    // The terminal claim is a permanent non-reuse fence, so
+                    // it must not keep maintenance alive after the build data
+                    // has already been removed.
                     if candidate.has_garbage_marker {
                         self.clear_garbage(&build_id).await?;
                     }
@@ -1733,10 +1767,10 @@ impl DerivedRelationHeadStore {
                             Some("released") => true,
                             Some("complete") => {
                                 !candidate.has_build_object
-                                    || Self::old_enough(last_modified, minimum_gc_age)
+                                    || self.gc_old_enough(last_modified, minimum_gc_age)
                             }
                             Some("reaping") => true,
-                            Some("publishing") => Self::claim_is_stale(&bytes, last_modified),
+                            Some("publishing") => self.claim_is_stale(&bytes, last_modified),
                             // A garbage claim without garbage.json means the
                             // final marker deletion already happened but the
                             // terminal-role transition may not have. Keep it
@@ -1754,10 +1788,10 @@ impl DerivedRelationHeadStore {
                 && !candidate.has_publishing_marker
                 && (candidate
                     .newest_object_modified
-                    .is_some_and(|modified| Self::old_enough(Some(modified), minimum_gc_age))
+                    .is_some_and(|modified| self.gc_old_enough(Some(modified), minimum_gc_age))
                     || (self.write_mode == CatalogWriteMode::SingleProcess
                         && candidate.newest_object_modified.is_none()
-                        && Self::old_enough(Self::build_id_time(&build_id), minimum_gc_age)));
+                        && self.gc_old_enough(Self::build_id_time(&build_id), minimum_gc_age)));
             if candidate.stale_staging_old_enough || stale_publishing || markerless_orphan {
                 return Ok(true);
             }
@@ -1780,6 +1814,7 @@ impl DerivedRelationHeadStore {
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
     ) -> Result<Vec<String>> {
+        self.ensure_writable()?;
         self.recover_malformed_head_fence().await?;
         self.reap_expired_terminal_tombstones().await?;
         self.recover_completed_empty_head_fence().await?;
@@ -1836,10 +1871,7 @@ impl DerivedRelationHeadStore {
             } else {
                 modified
             };
-            let age = marker_modified
-                .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok());
-            let old_enough =
-                minimum_gc_age.is_zero() || age.is_some_and(|age| age >= minimum_gc_age);
+            let old_enough = self.gc_old_enough(marker_modified, minimum_gc_age);
             let candidate = candidates.entry(build_id.to_string()).or_default();
             if is_garbage_marker {
                 candidate.has_garbage_marker = true;
@@ -1890,11 +1922,11 @@ impl DerivedRelationHeadStore {
                             Some("released") => true,
                             Some("complete") => {
                                 candidate.complete_claim_old_enough = candidate.has_build_object
-                                    && Self::old_enough(last_modified, minimum_gc_age);
+                                    && self.gc_old_enough(last_modified, minimum_gc_age);
                                 candidate.complete_claim_old_enough
                             }
                             Some("staging") | Some("publishing") | Some("garbage") => {
-                                Self::claim_is_stale(&bytes, last_modified)
+                                self.claim_is_stale(&bytes, last_modified)
                             }
                             Some("reaping") => true,
                             _ => false,
@@ -1914,10 +1946,10 @@ impl DerivedRelationHeadStore {
                 && !candidate.has_publishing_marker
                 && (candidate
                     .newest_object_modified
-                    .is_some_and(|modified| Self::old_enough(Some(modified), minimum_gc_age))
+                    .is_some_and(|modified| self.gc_old_enough(Some(modified), minimum_gc_age))
                     || (self.write_mode == CatalogWriteMode::SingleProcess
                         && candidate.newest_object_modified.is_none()
-                        && Self::old_enough(Self::build_id_time(build_id), minimum_gc_age)));
+                        && self.gc_old_enough(Self::build_id_time(build_id), minimum_gc_age)));
         }
         let mut deleted = Vec::new();
         for (build_id, candidate) in candidates {
@@ -2127,7 +2159,7 @@ impl DerivedRelationHeadStore {
                 // The garbage marker is the final durable cleanup record. If
                 // a publisher won the Head CAS after the previous check, the
                 // marker must remain so the build is rediscovered safely. The
-                // The claim is intentionally retained as a terminal tombstone,
+                // claim is intentionally retained as a terminal tombstone,
                 // fencing delayed publishers even after this marker is removed.
                 if self.current_build_id().await?.as_deref() == Some(build_id.as_str()) {
                     continue;
@@ -2179,6 +2211,7 @@ impl DerivedRelationHeadStore {
     /// in-flight reader that pinned the legacy Head can finish before the
     /// prefix is reclaimed.
     pub async fn mark_legacy_materializations_garbage(&self) -> Result<()> {
+        self.ensure_writable()?;
         let entries = self
             .list_derived_entries(&self.legacy_materializations_prefix())
             .await?;
@@ -2214,6 +2247,7 @@ impl DerivedRelationHeadStore {
         &self,
         minimum_gc_age: Duration,
     ) -> Result<bool> {
+        self.ensure_writable()?;
         let marker = self.legacy_garbage_marker_path();
         if !self.operator.exists(&marker).await? {
             return Ok(false);
@@ -2528,6 +2562,7 @@ impl DerivedRelationHeadStore {
     /// the relation under the current-build layout. Shared mode fails closed
     /// because OpenDAL has no conditional delete operation.
     pub async fn invalidate_legacy_head(&self) -> Result<()> {
+        self.ensure_writable()?;
         if self.write_mode == CatalogWriteMode::Shared {
             return Err(anyhow!(
                 "legacy DerivedRelation Head requires a single-process rebuild"
@@ -2567,6 +2602,7 @@ impl DerivedRelationHeadStore {
     }
 
     pub async fn create(&self, head: &DerivedRelationHead) -> Result<()> {
+        self.ensure_writable()?;
         self.validate_derived_head_identity(head).await?;
         self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
@@ -2642,6 +2678,7 @@ impl DerivedRelationHeadStore {
         expected_etag: Option<&str>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_writable()?;
         self.validate_derived_head_identity(head).await?;
         self.ensure_build_publishable(&head.build_id).await?;
         let bytes = canonical_head_bytes(head)?;
@@ -2680,6 +2717,7 @@ impl DerivedRelationHeadStore {
         expected: Option<&ExactDerivedRelationHead>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_writable()?;
         if self.write_mode == CatalogWriteMode::SingleProcess {
             let _guard = self.serializer.lock().await;
             return self.publish_with_single_process_lock(expected, head).await;
@@ -2708,6 +2746,7 @@ impl DerivedRelationHeadStore {
         expected: &ExactLegacyDerivedRelationHead,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_writable()?;
         if self.write_mode != CatalogWriteMode::Shared {
             return Err(anyhow!(
                 "legacy DerivedRelation replacement requires shared mode"
@@ -2751,6 +2790,7 @@ impl DerivedRelationHeadStore {
         expected: &ExactLegacyDerivedRelationHead,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_writable()?;
         if self.write_mode != CatalogWriteMode::SingleProcess {
             return Err(anyhow!(
                 "single-process legacy DerivedRelation replacement requires local mode"
@@ -2786,6 +2826,7 @@ impl DerivedRelationHeadStore {
         expected: Option<&ExactDerivedRelationHead>,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_writable()?;
         self.validate_derived_head_identity(head).await?;
         self.begin_publishing(&head.build_id).await?;
         if self.write_mode != CatalogWriteMode::SingleProcess {
@@ -2837,6 +2878,7 @@ impl DerivedRelationHeadStore {
         expected: &RawDerivedRelationHead,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_writable()?;
         if self.write_mode == CatalogWriteMode::SingleProcess {
             let _guard = self.serializer.lock().await;
             return self
@@ -2878,6 +2920,7 @@ impl DerivedRelationHeadStore {
         expected: &RawDerivedRelationHead,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        self.ensure_writable()?;
         if self.write_mode != CatalogWriteMode::SingleProcess {
             return Err(anyhow!(
                 "single-process corrupt DerivedRelation publication requires a local backend"
@@ -3885,15 +3928,33 @@ impl OpendalStorage {
         Self::new(operator.clone())
     }
 
-    fn local_path(&self, path: &str) -> Option<std::path::PathBuf> {
-        match self.operator.info().scheme() {
-            "fs" | "file" => Some(Path::new(self.operator.info().root().as_str()).join(path)),
-            _ => None,
+    fn local_path(&self, path: &str) -> Result<Option<std::path::PathBuf>> {
+        if !matches!(self.operator.info().scheme(), "fs" | "file") {
+            return Ok(None);
         }
+        let relative = Path::new(path);
+        if path.is_empty()
+            || relative.is_absolute()
+            || relative.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::Prefix(_)
+                        | std::path::Component::RootDir
+                        | std::path::Component::ParentDir
+                )
+            })
+        {
+            return Err(anyhow!(
+                "storage path must be relative and traversal-free: {path}"
+            ));
+        }
+        Ok(Some(
+            Path::new(self.operator.info().root().as_str()).join(relative),
+        ))
     }
 
     async fn write_local_json_atomic(&self, path: &str, data: &[u8]) -> Result<bool> {
-        let Some(target) = self.local_path(path) else {
+        let Some(target) = self.local_path(path)? else {
             return Ok(false);
         };
         let parent = target
@@ -3946,7 +4007,7 @@ impl StorageBackend for OpendalStorage {
     }
 
     async fn write_if_absent(&self, path: &str, data: Vec<u8>) -> Result<()> {
-        if let Some(target) = self.local_path(path) {
+        if let Some(target) = self.local_path(path)? {
             let parent = target
                 .parent()
                 .ok_or_else(|| anyhow!("storage path has no parent: {path}"))?;
@@ -4017,7 +4078,7 @@ impl StorageBackend for OpendalStorage {
     }
 
     async fn set_private(&self, path: &str) -> Result<()> {
-        let Some(target) = self.local_path(path) else {
+        let Some(target) = self.local_path(path)? else {
             return Ok(());
         };
 
@@ -4388,6 +4449,28 @@ mod tests {
         assert!(error
             .to_string()
             .contains("ETag-bound reads and conditional writes"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn derived_head_shared_read_only_store_rejects_mutations() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        let store =
+            DerivedRelationHeadStore::new(operator, "spaces/demo", uuid::Uuid::from_u128(0xA016))
+                .shared_read_only();
+        let build_id = test_build_id();
+
+        let error = store
+            .mark_staging(&build_id)
+            .await
+            .expect_err("read-only shared stores must reject staging");
+        assert!(error.to_string().contains("read-only"));
+
+        let error = store
+            .garbage_collect(None, Duration::ZERO)
+            .await
+            .expect_err("read-only shared stores must reject GC");
+        assert!(error.to_string().contains("read-only"));
         Ok(())
     }
 

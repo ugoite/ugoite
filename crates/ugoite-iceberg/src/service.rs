@@ -1322,6 +1322,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -1379,16 +1380,21 @@ impl UgoiteService {
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
-        let scopes = self
-            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-            .await?;
-        entry::get_entry_authorized(
-            &self.operator,
-            &self.workspace_path(space_id),
-            entry_id,
-            &scopes,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                entry::get_entry_authorized(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    &scopes,
+                )
+                .await
+            })
+            .await
     }
 
     pub async fn update_entry(
@@ -1399,15 +1405,25 @@ impl UgoiteService {
         parent_revision_id: Option<&str>,
         author: &str,
     ) -> Result<Value> {
-        self.update_entry_authorized_for_principals(
-            space_id,
+        self.ensure_authoritative_mutation_contract()?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        if let Some(parent_revision_id) = parent_revision_id {
+            validate_storage_id(validate_revision_id(parent_revision_id))?;
+        }
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let result = entry::update_entry(
+            &self.operator,
+            &self.workspace_path(space_id),
             entry_id,
             markdown,
             parent_revision_id,
             author,
-            &[],
+            &integrity,
         )
-        .await
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(result)
     }
 
     pub async fn update_entry_authorized_for_principals(
@@ -1419,6 +1435,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -1429,15 +1446,13 @@ impl UgoiteService {
             let (state, lease) = Authorizer::new(self.operator.clone())
                 .acquire_state_lease(space_id)
                 .await?;
-            if !principal_ids.is_empty() {
-                self.require_action_for_principals_in_state(
-                    &state,
-                    entry_id,
-                    ResourceKind::Entry,
-                    Action::Update,
-                    principal_ids,
-                )?;
-            }
+            self.require_action_for_principals_in_state(
+                &state,
+                entry_id,
+                ResourceKind::Entry,
+                Action::Update,
+                principal_ids,
+            )?;
             (Some(state), Some(lease))
         };
         let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
@@ -1496,6 +1511,31 @@ impl UgoiteService {
         entry::get_entry_history(&self.operator, &self.workspace_path(space_id), entry_id).await
     }
 
+    pub async fn entry_history_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                entry::get_entry_history_authorized(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    &scopes,
+                )
+                .await
+            })
+            .await
+    }
+
     pub async fn entry_history_at_checkpoint(
         &self,
         space_id: &str,
@@ -1505,24 +1545,26 @@ impl UgoiteService {
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
-        let checkpoint = self
-            .load_named_checkpoint(space_id, checkpoint_name)
-            .await?;
-        let scopes = self
-            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
-            .await?;
-        entry::get_entry_history_at_checkpoint(
-            &self.operator,
-            &self.workspace_path(space_id),
-            entry_id,
-            &checkpoint,
-            scopes.as_ref(),
-        )
-        .await
-        .map_err(map_checkpoint_error)
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let checkpoint = self
+                    .load_named_checkpoint(space_id, checkpoint_name)
+                    .await?;
+                let scopes = self
+                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                entry::get_entry_history_at_checkpoint(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    &checkpoint,
+                    scopes.as_ref(),
+                )
+                .await
+                .map_err(map_checkpoint_error)
+            })
+            .await
     }
 
     pub async fn entry_revision(
@@ -1545,6 +1587,63 @@ impl UgoiteService {
         )?)
     }
 
+    pub async fn entry_revision_authorized_for_principals(
+        &self,
+        space_id: &str,
+        entry_id: &str,
+        revision_id: &str,
+        principal_ids: &[Uuid],
+    ) -> Result<Value> {
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_revision_id(revision_id))?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                let mut visible = false;
+                for form_name in
+                    entry::list_form_names(&self.operator, &self.workspace_path(space_id)).await?
+                {
+                    let Some(scope) = scopes.get(&form_name.to_ascii_lowercase()) else {
+                        continue;
+                    };
+                    if entry::read_entry_row_authorized(
+                        &self.operator,
+                        &self.workspace_path(space_id),
+                        &form_name,
+                        entry_id,
+                        scope,
+                    )
+                    .await
+                    .is_ok()
+                    {
+                        visible = true;
+                        break;
+                    }
+                }
+                if !visible {
+                    return Err(AppError::not_found(
+                        ErrorCode::EntryNotFound,
+                        format!("Entry not found: {entry_id}"),
+                    )
+                    .into());
+                }
+                Ok(serde_json::to_value(
+                    entry::get_entry_revision(
+                        &self.operator,
+                        &self.workspace_path(space_id),
+                        entry_id,
+                        revision_id,
+                    )
+                    .await?,
+                )?)
+            })
+            .await
+    }
+
     pub async fn entry_revision_at_checkpoint(
         &self,
         space_id: &str,
@@ -1556,25 +1655,27 @@ impl UgoiteService {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         validate_storage_id(validate_revision_id(revision_id))?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
-        let checkpoint = self
-            .load_named_checkpoint(space_id, checkpoint_name)
-            .await?;
-        let scopes = self
-            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
-            .await?;
-        entry::get_entry_revision_at_checkpoint(
-            &self.operator,
-            &self.workspace_path(space_id),
-            entry_id,
-            revision_id,
-            &checkpoint,
-            scopes.as_ref(),
-        )
-        .await
-        .map_err(map_checkpoint_error)
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let checkpoint = self
+                    .load_named_checkpoint(space_id, checkpoint_name)
+                    .await?;
+                let scopes = self
+                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                entry::get_entry_revision_at_checkpoint(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    revision_id,
+                    &checkpoint,
+                    scopes.as_ref(),
+                )
+                .await
+                .map_err(map_checkpoint_error)
+            })
+            .await
     }
 
     pub async fn restore_entry(
@@ -1584,8 +1685,22 @@ impl UgoiteService {
         revision_id: &str,
         author: &str,
     ) -> Result<Value> {
-        self.restore_entry_authorized_for_principals(space_id, entry_id, revision_id, author, &[])
-            .await
+        self.ensure_authoritative_mutation_contract()?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_entry_id(entry_id))?;
+        validate_storage_id(validate_revision_id(revision_id))?;
+        let integrity = RealIntegrityProvider::from_space(&self.operator, space_id).await?;
+        let result = entry::restore_entry(
+            &self.operator,
+            &self.workspace_path(space_id),
+            entry_id,
+            revision_id,
+            author,
+            &integrity,
+        )
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(result)
     }
 
     pub async fn restore_entry_authorized_for_principals(
@@ -1596,6 +1711,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -1651,6 +1767,7 @@ impl UgoiteService {
         author: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
@@ -1706,24 +1823,26 @@ impl UgoiteService {
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
-        let checkpoint = self
-            .load_named_checkpoint(space_id, checkpoint_name)
-            .await?;
-        let scopes = self
-            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
-            .await?;
-        entry::get_entry_at_checkpoint(
-            &self.operator,
-            &self.workspace_path(space_id),
-            entry_id,
-            &checkpoint,
-            scopes.as_ref(),
-        )
-        .await
-        .map_err(map_checkpoint_error)
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let checkpoint = self
+                    .load_named_checkpoint(space_id, checkpoint_name)
+                    .await?;
+                let scopes = self
+                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                entry::get_entry_at_checkpoint(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    entry_id,
+                    &checkpoint,
+                    scopes.as_ref(),
+                )
+                .await
+                .map_err(map_checkpoint_error)
+            })
+            .await
     }
 
     pub async fn diff_checkpoints_authorized_for_principals(
@@ -1734,21 +1853,24 @@ impl UgoiteService {
         principal_ids: &[Uuid],
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
+        let authorizer = Authorizer::new(self.operator.clone());
+        let mut diff = authorizer
+            .with_state_lock(space_id, |state| async move {
+                let from = self.load_named_checkpoint(space_id, from_name).await?;
+                let to = self.load_named_checkpoint(space_id, to_name).await?;
+                let scopes = self
+                    .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                let workspace =
+                    iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id))
+                        .await?;
+                let diff = workspace
+                    .diff_checkpoints_with_scopes(&from, &to, scopes.as_ref())
+                    .await
+                    .map_err(map_checkpoint_error)?;
+                Ok::<Value, anyhow::Error>(serde_json::to_value(diff)?)
+            })
             .await?;
-        let from = self.load_named_checkpoint(space_id, from_name).await?;
-        let to = self.load_named_checkpoint(space_id, to_name).await?;
-        let scopes = self
-            .checkpoint_form_scopes_for_state(space_id, &state, principal_ids)
-            .await?;
-        let workspace =
-            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
-        let diff = workspace
-            .diff_checkpoints_with_scopes(&from, &to, scopes.as_ref())
-            .await
-            .map_err(map_checkpoint_error)?;
-        let mut diff = serde_json::to_value(diff)?;
         if let Some(changes) = diff.get_mut("changes").and_then(Value::as_array_mut) {
             for change in changes {
                 let external_id = ["to", "from"].into_iter().find_map(|side| {
@@ -1822,9 +1944,7 @@ impl UgoiteService {
         action: Action,
         principal_ids: &[Uuid],
     ) -> Result<()> {
-        if principal_ids.is_empty() {
-            return Ok(());
-        }
+        require_nonempty_authorized_principals(principal_ids)?;
         let resource = ResourceRef {
             kind: resource_kind,
             id: entry_id.to_string(),
@@ -1872,18 +1992,23 @@ impl UgoiteService {
         limit: usize,
     ) -> Result<Vec<entry::EntrySummary>> {
         self.validate_complete_space(space_id).await?;
-        let scopes = self
-            .authorized_form_entry_scopes(space_id, principal_id)
-            .await?;
-        entry::list_entry_summaries_with_scopes(
-            &self.operator,
-            &self.workspace_path(space_id),
-            form,
-            query,
-            limit,
-            &scopes,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, &[principal_id])
+                    .await?;
+                entry::list_entry_summaries_with_scopes(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    form,
+                    query,
+                    limit,
+                    &scopes,
+                )
+                .await
+            })
+            .await
     }
 
     pub async fn list_entry_options_authorized_for_principals(
@@ -1895,18 +2020,23 @@ impl UgoiteService {
         limit: usize,
     ) -> Result<Vec<entry::EntrySummary>> {
         self.validate_complete_space(space_id).await?;
-        let scopes = self
-            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-            .await?;
-        entry::list_entry_summaries_with_scopes(
-            &self.operator,
-            &self.workspace_path(space_id),
-            form,
-            query,
-            limit,
-            &scopes,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                entry::list_entry_summaries_with_scopes(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    form,
+                    query,
+                    limit,
+                    &scopes,
+                )
+                .await
+            })
+            .await
     }
 
     pub async fn search_entries(
@@ -2125,17 +2255,22 @@ impl UgoiteService {
         offset: usize,
     ) -> Result<Vec<Value>> {
         self.validate_complete_space(space_id).await?;
-        let scopes = self
-            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-            .await?;
-        entry::list_entries_with_scopes(
-            &self.operator,
-            &self.workspace_path(space_id),
-            &scopes,
-            limit,
-            offset,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                entry::list_entries_with_scopes(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    &scopes,
+                    limit,
+                    offset,
+                )
+                .await
+            })
+            .await
     }
 
     pub async fn list_entries_authorized(
@@ -2144,17 +2279,22 @@ impl UgoiteService {
         principal_id: Uuid,
     ) -> Result<Vec<Value>> {
         self.validate_complete_space(space_id).await?;
-        let scopes = self
-            .authorized_form_entry_scopes(space_id, principal_id)
-            .await?;
-        entry::list_entries_with_scopes(
-            &self.operator,
-            &self.workspace_path(space_id),
-            &scopes,
-            crate::MAX_NORMAL_READ_ROWS,
-            0,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, &[principal_id])
+                    .await?;
+                entry::list_entries_with_scopes(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    &scopes,
+                    crate::MAX_NORMAL_READ_ROWS,
+                    0,
+                )
+                .await
+            })
+            .await
     }
 
     pub async fn filter_json_resources_authorized(
@@ -2302,16 +2442,22 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         filter: &Value,
     ) -> Result<Vec<Value>> {
-        let scopes = self
-            .authorized_form_entry_scopes_for_principals(space_id, principal_ids)
-            .await?;
-        index::query_index_authorized_by_form_scopes(
-            &self.operator,
-            &self.workspace_path(space_id),
-            &filter.to_string(),
-            &scopes,
-        )
-        .await
+        self.validate_complete_space(space_id).await?;
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await?;
+                index::query_index_authorized_by_form_scopes(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    &filter.to_string(),
+                    &scopes,
+                )
+                .await
+            })
+            .await
     }
 
     pub async fn create_sql_session_authorized_for_principals(
@@ -2338,6 +2484,12 @@ impl UgoiteService {
         parameters: serde_json::Map<String, Value>,
         parameter_types: BTreeMap<String, String>,
     ) -> Result<Value> {
+        let relation = index::sql_session_page_relation(sql).map_err(|error| {
+            AppError::invalid_input(
+                ugoite_core::error::ErrorCode::InvalidInput,
+                error.to_string(),
+            )
+        })?;
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         require_sql_session_principals(principal_ids)?;
@@ -2345,17 +2497,12 @@ impl UgoiteService {
             .acquire_state_lease(space_id)
             .await?;
         for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Update)
-            {
-                return Err(AppError::forbidden("SQL session is not writable").into());
+            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+                return Err(
+                    AppError::forbidden("principal is not authorized to read this Space").into(),
+                );
             }
         }
-        let relation = index::sql_session_page_relation(sql).map_err(|error| {
-            AppError::invalid_input(
-                ugoite_core::error::ErrorCode::InvalidInput,
-                error.to_string(),
-            )
-        })?;
         let workspace =
             iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
         let checkpoint = workspace.capture_checkpoint().await?;
@@ -2398,22 +2545,31 @@ impl UgoiteService {
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
-        let current_authorization = self
-            .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
-            .await?;
-        sql_session::get_sql_session_status_authorized(
-            &self.operator,
-            &self.workspace_path(space_id),
-            session_id,
-            sql_session::SqlSessionExecutionAuthorization {
-                authorization: sql_session::SqlSessionAuthorization {
-                    principal_ids,
-                    policy_hash: &current_authorization.policy_hash,
-                },
-                query_policy: &current_authorization.query_policy,
-            },
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |_state| async move {
+                let current_authorization = self
+                    .sql_session_current_execution_authorization(
+                        space_id,
+                        session_id,
+                        principal_ids,
+                    )
+                    .await?;
+                sql_session::get_sql_session_status_authorized(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    session_id,
+                    sql_session::SqlSessionExecutionAuthorization {
+                        authorization: sql_session::SqlSessionAuthorization {
+                            principal_ids,
+                            policy_hash: &current_authorization.policy_hash,
+                        },
+                        query_policy: &current_authorization.query_policy,
+                    },
+                )
+                .await
+            })
+            .await
     }
 
     /// Rebuilds the execution policy from immutable checkpoint metadata and
@@ -2474,16 +2630,21 @@ impl UgoiteService {
         filter: &Value,
     ) -> Result<Vec<Value>> {
         self.validate_complete_space(space_id).await?;
-        let scopes = self
-            .authorized_form_entry_scopes(space_id, principal_id)
-            .await?;
-        index::query_index_authorized_by_form_scopes(
-            &self.operator,
-            &self.workspace_path(space_id),
-            &filter.to_string(),
-            &scopes,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let scopes = self
+                    .authorized_form_entry_scopes_for_state(space_id, &state, &[principal_id])
+                    .await?;
+                index::query_index_authorized_by_form_scopes(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    &filter.to_string(),
+                    &scopes,
+                )
+                .await
+            })
+            .await
     }
 
     pub async fn execute_sql_query_authorized(
@@ -2658,8 +2819,26 @@ impl UgoiteService {
     }
 
     pub async fn delete_asset(&self, space_id: &str, asset_id: &str) -> Result<()> {
-        self.delete_asset_with_principal(space_id, asset_id, None)
-            .await
+        self.ensure_authoritative_mutation_contract()?;
+        self.validate_complete_space(space_id).await?;
+        validate_storage_id(validate_asset_id(asset_id))?;
+        let workspace =
+            iceberg_store::native_workspace(&self.operator, &self.workspace_path(space_id)).await?;
+        let scopes = workspace
+            .list_forms()
+            .await?
+            .into_iter()
+            .map(|form| (form.name.to_ascii_lowercase(), EntryScope::AllCurrent))
+            .collect();
+        asset::delete_asset(
+            &self.operator,
+            &self.workspace_path(space_id),
+            asset_id,
+            &scopes,
+        )
+        .await?;
+        self.schedule_asset_text_refresh(space_id);
+        Ok(())
     }
 
     pub async fn delete_asset_with_principal(
@@ -2673,10 +2852,7 @@ impl UgoiteService {
                 self.delete_asset_with_principals(space_id, asset_id, &[principal_id])
                     .await
             }
-            None => {
-                self.delete_asset_with_principals(space_id, asset_id, &[])
-                    .await
-            }
+            None => self.delete_asset(space_id, asset_id).await,
         }
     }
 
@@ -2686,6 +2862,7 @@ impl UgoiteService {
         asset_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<()> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.ensure_authoritative_mutation_contract()?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_asset_id(asset_id))?;
@@ -2757,23 +2934,32 @@ impl UgoiteService {
     ) -> Result<u64> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
-        let current_authorization = self
-            .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
-            .await?;
-        let authorization = sql_session::SqlSessionExecutionAuthorization {
-            authorization: sql_session::SqlSessionAuthorization {
-                principal_ids,
-                policy_hash: &current_authorization.policy_hash,
-            },
-            query_policy: &current_authorization.query_policy,
-        };
-        sql_session::get_sql_session_count_authorized_by_form(
-            &self.operator,
-            &self.workspace_path(space_id),
-            session_id,
-            authorization,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |_state| async move {
+                let current_authorization = self
+                    .sql_session_current_execution_authorization(
+                        space_id,
+                        session_id,
+                        principal_ids,
+                    )
+                    .await?;
+                let authorization = sql_session::SqlSessionExecutionAuthorization {
+                    authorization: sql_session::SqlSessionAuthorization {
+                        principal_ids,
+                        policy_hash: &current_authorization.policy_hash,
+                    },
+                    query_policy: &current_authorization.query_policy,
+                };
+                sql_session::get_sql_session_count_authorized_by_form(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    session_id,
+                    authorization,
+                )
+                .await
+            })
+            .await
     }
 
     pub async fn get_sql_session_rows_authorized_for_principals(
@@ -2786,25 +2972,34 @@ impl UgoiteService {
     ) -> Result<Value> {
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
-        let current_authorization = self
-            .sql_session_current_execution_authorization(space_id, session_id, principal_ids)
-            .await?;
-        let authorization = sql_session::SqlSessionExecutionAuthorization {
-            authorization: sql_session::SqlSessionAuthorization {
-                principal_ids,
-                policy_hash: &current_authorization.policy_hash,
-            },
-            query_policy: &current_authorization.query_policy,
-        };
-        sql_session::get_sql_session_rows_authorized_by_form(
-            &self.operator,
-            &self.workspace_path(space_id),
-            session_id,
-            authorization,
-            offset,
-            limit,
-        )
-        .await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |_state| async move {
+                let current_authorization = self
+                    .sql_session_current_execution_authorization(
+                        space_id,
+                        session_id,
+                        principal_ids,
+                    )
+                    .await?;
+                let authorization = sql_session::SqlSessionExecutionAuthorization {
+                    authorization: sql_session::SqlSessionAuthorization {
+                        principal_ids,
+                        policy_hash: &current_authorization.policy_hash,
+                    },
+                    query_policy: &current_authorization.query_policy,
+                };
+                sql_session::get_sql_session_rows_authorized_by_form(
+                    &self.operator,
+                    &self.workspace_path(space_id),
+                    session_id,
+                    authorization,
+                    offset,
+                    limit,
+                )
+                .await
+            })
+            .await
     }
 
     /// Lists Saved SQL without resource filtering for operator-local/admin
@@ -2825,10 +3020,14 @@ impl UgoiteService {
         principal_ids: &[Uuid],
     ) -> Result<Vec<Value>> {
         self.validate_complete_space(space_id).await?;
-        let entry_scope = self
-            .authorized_saved_sql_entry_scope_for_principals(space_id, principal_ids)
-            .await?;
-        saved_sql::list_sql(&self.operator, &self.workspace_path(space_id), entry_scope).await
+        let authorizer = Authorizer::new(self.operator.clone());
+        authorizer
+            .with_state_lock(space_id, |state| async move {
+                let entry_scope = Self::saved_sql_entry_scope_for_state(&state, principal_ids)?;
+                saved_sql::list_sql(&self.operator, &self.workspace_path(space_id), entry_scope)
+                    .await
+            })
+            .await
     }
 
     pub async fn create_saved_sql(
@@ -2916,6 +3115,15 @@ fn require_sql_session_principals(principal_ids: &[Uuid]) -> Result<()> {
     if principal_ids.is_empty() {
         return Err(
             AppError::forbidden("SQL session requires at least one authorized principal").into(),
+        );
+    }
+    Ok(())
+}
+
+fn require_nonempty_authorized_principals(principal_ids: &[Uuid]) -> Result<()> {
+    if principal_ids.is_empty() {
+        return Err(
+            AppError::forbidden("authorized mutation requires at least one principal").into(),
         );
     }
     Ok(())

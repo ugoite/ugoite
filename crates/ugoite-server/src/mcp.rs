@@ -952,9 +952,13 @@ async fn history_projection(
     entry_id: &str,
     request_id: &Value,
 ) -> Result<Value, Response> {
+    let principal_id = principal_for_space(state, &auth.space_id, &auth.identity)
+        .await
+        .map_err(|_| invalid_resource_id(request_id.clone()))?;
+    let principals = authorization_principal_ids(&auth.identity, principal_id);
     let history = state
         .service
-        .entry_history(&auth.space_id, entry_id)
+        .entry_history_authorized_for_principals(&auth.space_id, entry_id, &principals)
         .await
         .map_err(|_| invalid_resource_id(request_id.clone()))?;
     let events = history
@@ -1196,7 +1200,7 @@ async fn save(
             .map_err(|_| tool_error("INVALID_ARGUMENT", "Save arguments are invalid"))?;
         let content = input.content.clone();
         let id_for_write = id.clone();
-        let entry = with_authorized_mutation(
+        let entry = with_authorized_service_mutation(
             state,
             &auth.space_id,
             &auth.identity,
@@ -1229,7 +1233,7 @@ async fn save(
         let id = Uuid::now_v7().to_string();
         let id_for_write = id.clone();
         let content = input.content.clone();
-        let entry = with_authorized_mutation(
+        let entry = with_authorized_service_mutation(
             state,
             &auth.space_id,
             &auth.identity,

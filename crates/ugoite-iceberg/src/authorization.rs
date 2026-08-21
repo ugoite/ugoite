@@ -1729,45 +1729,6 @@ impl Authorizer {
         .await
     }
 
-    /// Apply a policy from inside an approval-bound mutation. The caller must
-    /// already hold the authorizer write lock, which is what keeps ACL
-    /// revocation from racing the approved mutation.
-    pub async fn set_policy_after_approval(
-        &self,
-        space_id: &str,
-        actor: Uuid,
-        resource: &ResourceRef,
-        policy: AccessPolicy,
-    ) -> Result<()> {
-        self.set_policy_locked(space_id, actor, resource, policy, false, None)
-            .await
-    }
-
-    /// Apply a policy from an approval callback while reusing the callback's
-    /// already-held authorization lease.
-    pub async fn set_policy_after_approval_with_lease(
-        &self,
-        space_id: &str,
-        actor: Uuid,
-        resource: &ResourceRef,
-        policy: AccessPolicy,
-        lease: &AuthorizationLease,
-    ) -> Result<()> {
-        lease
-            .durable
-            .as_ref()
-            .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
-        self.set_policy_locked(
-            space_id,
-            actor,
-            resource,
-            policy,
-            false,
-            lease.durable.as_ref(),
-        )
-        .await
-    }
-
     async fn set_policy_locked(
         &self,
         space_id: &str,

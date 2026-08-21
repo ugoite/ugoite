@@ -518,8 +518,21 @@ impl AppState {
     }
 
     pub async fn initialize_node(&self) -> anyhow::Result<()> {
-        Authorizer::new(self.service.operator().clone())
-            .ensure_authoritative_mutation_contract()?;
+        if let Err(error) = Authorizer::new(self.service.operator().clone())
+            .ensure_authoritative_mutation_contract()
+        {
+            if error
+                .downcast_ref::<AppError>()
+                .is_some_and(|error| error.code() == ErrorCode::StorageMutationUnavailable)
+            {
+                // Remote operators are a read-only server mode in v1. Do not
+                // bootstrap identity, recover claims, or start maintenance:
+                // those paths mutate multiple authoritative objects. Existing
+                // response-signing material remains usable by request paths.
+                return Ok(());
+            }
+            return Err(error);
+        }
         if let Some(bootstrap) = self.identity.bootstrap_if_needed().await? {
             println!(
                 "Ugoite setup URL (expires {}): {}",
@@ -6040,6 +6053,58 @@ where
     result
 }
 
+/// Use this boundary when the service operation performs the authoritative
+/// authorization check and acquires the Space lease itself. Holding the
+/// server wrapper lease here would deadlock on the same non-reentrant mutex.
+/// The wrapper still checks the request token and snapshot for early rejection;
+/// the service method is the final protected check immediately before its
+/// write.
+async fn with_authorized_service_mutation<T, F, Fut>(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+    action: Action,
+    resource: Option<ResourceRef>,
+    operation: F,
+) -> ApiResult<T>
+where
+    F: FnOnce(Uuid, Vec<Uuid>) -> Fut,
+    Fut: Future<Output = ApiResult<T>>,
+{
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
+    if let Some(actions) = &identity.token_actions {
+        if !actions.contains(action_name(&action)) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "access token does not grant the required action",
+            ));
+        }
+    }
+    let principal_id = principal_for_space(state, space_id, identity).await?;
+    let principals = authorization_principal_ids(identity, principal_id);
+    let authorization_state = Authorizer::new(state.service.operator().clone())
+        .state(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    for subject in &principals {
+        let actions = ugoite_iceberg::authorization::effective_actions_for_state(
+            &authorization_state,
+            *subject,
+            resource.as_ref(),
+        )
+        .map_err(ApiError::from_core)?;
+        if !actions.contains(&action) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "principal is not authorized for the mutation",
+            ));
+        }
+    }
+    operation(principal_id, principals).await
+}
+
 /// Lease-aware form of [`with_authorized_mutation`] for mutations that also
 /// update the authorization document. The callback must reuse this exact
 /// lease when it calls an Authorizer mutation; otherwise a shared backend
@@ -7385,7 +7450,7 @@ async fn put_access_policy(
             execute_approved_mutation(&state, &space_id, &identity, pending, move |lease| {
                 Box::pin(async move {
                     Authorizer::new(policy_operator)
-                        .set_policy_after_approval_with_lease(
+                        .set_policy_without_audit_with_lease(
                             &policy_space_id,
                             mutation_actor,
                             &policy_resource,
@@ -8011,11 +8076,11 @@ async fn create_sql_session(
     let parameter_types = payload.parameter_types;
     let service = state.service.clone();
     let mutation_space_id = space_id.clone();
-    let value = with_authorized_mutation(
+    let value = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
-        Action::Update,
+        Action::Read,
         None,
         move |_principal_id, principals| async move {
             service
@@ -8223,7 +8288,7 @@ async fn create_entry(
     let markdown = payload.markdown.clone();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
-    let created = with_authorized_mutation(
+    let created = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
@@ -8378,7 +8443,7 @@ async fn update_entry(
     let parent_revision_id = payload.parent_revision_id.clone();
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
-    let value = with_authorized_mutation(
+    let value = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
@@ -8575,7 +8640,7 @@ async fn entry_history(
     } else {
         state
             .service
-            .entry_history(&space_id, &entry_id)
+            .entry_history_authorized_for_principals(&space_id, &entry_id, &principals)
             .await
             .map_err(ApiError::from_core)?
     };
@@ -8630,7 +8695,12 @@ async fn entry_revision(
     } else {
         state
             .service
-            .entry_revision(&space_id, &entry_id, &revision_id)
+            .entry_revision_authorized_for_principals(
+                &space_id,
+                &entry_id,
+                &revision_id,
+                &principals,
+            )
             .await
             .map_err(ApiError::from_core)?
     };
@@ -8686,7 +8756,7 @@ async fn restore_entry(
     let service = state.service.clone();
     let space_id_for_write = space_id.clone();
     let entry_id_for_write = entry_id.clone();
-    let value = with_authorized_mutation(
+    let value = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
@@ -9352,7 +9422,11 @@ async fn delete_asset(
         };
         mutation
     } else {
-        with_authorized_mutation(
+        let mutation_state = state.clone();
+        let mutation_identity = identity.clone();
+        let mutation_space_id = space_id.clone();
+        let mutation_asset_id = asset_id.clone();
+        with_authorized_service_mutation(
             &state,
             &space_id,
             &identity,
@@ -9362,11 +9436,15 @@ async fn delete_asset(
                 id: asset_id.clone(),
                 parent: None,
             }),
-            |_principal_id, _principals| async {
-                with_active_request_credential(&state, &identity, || async {
-                    state
+            |_principal_id, principals| async move {
+                with_active_request_credential(&mutation_state, &mutation_identity, || async {
+                    mutation_state
                         .service
-                        .delete_asset_with_principals(&space_id, &asset_id, &principals)
+                        .delete_asset_with_principals(
+                            &mutation_space_id,
+                            &mutation_asset_id,
+                            &principals,
+                        )
                         .await
                 })
                 .await
@@ -12477,14 +12555,10 @@ mod authentication_regression_tests {
         assert_eq!(error.status, StatusCode::BAD_GATEWAY);
         assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
 
-        let error = state
+        state
             .initialize_node()
             .await
-            .expect_err("startup reconciliation must fail closed before remote writes");
-        let app_error = error
-            .downcast_ref::<AppError>()
-            .expect("startup contract error must remain typed");
-        assert_eq!(app_error.code(), ErrorCode::StorageMutationUnavailable);
+            .expect("read-only remote startup must not require mutation capability");
         Ok(())
     }
 
