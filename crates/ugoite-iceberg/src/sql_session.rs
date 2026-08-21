@@ -85,7 +85,7 @@ async fn write_json(op: &Operator, path: &str, value: &Value) -> Result<()> {
 }
 
 async fn read_json(op: &Operator, path: &str) -> Result<Value> {
-    let bytes = op.read(path).await?;
+    let bytes = crate::read_object_exact(op, path).await?;
     Ok(serde_json::from_slice(&bytes.to_vec())?)
 }
 
@@ -116,10 +116,11 @@ fn is_expired(meta: &Value) -> bool {
 async fn load_session_meta(op: &Operator, ws_path: &str, session_id: &str) -> Result<Value> {
     let mut meta = read_json(op, &meta_path(ws_path, session_id)).await?;
     if is_expired(&meta) {
-        crate::authorization::Authorizer::new(op.clone())
-            .ensure_authoritative_mutation_contract()?;
+        // Expiry is a derived view of session metadata, not an authoritative
+        // mutation. Read-only callers, including shared/read-only operators,
+        // must receive the documented expired response without attempting to
+        // persist a status transition.
         meta["status"] = Value::String("expired".to_string());
-        write_json(op, &meta_path(ws_path, session_id), &meta).await?;
     }
     Ok(meta)
 }

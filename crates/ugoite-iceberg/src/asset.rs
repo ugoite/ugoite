@@ -152,6 +152,10 @@ pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<
     if metadata.content_length() > MAX_ASSET_BYTES as u64 {
         anyhow::bail!("asset exceeds the {MAX_ASSET_BYTES}-byte size limit");
     }
+    let etag = metadata.etag().filter(|etag| !etag.is_empty());
+    if crate::is_shared_backend(op) && etag.is_none() {
+        anyhow::bail!("exact Asset read requires an ETag: {path}");
+    }
     let mut reader = op.reader_with(&path);
     if let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) {
         reader = reader.if_match(etag);

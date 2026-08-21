@@ -17,7 +17,8 @@ async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<Sp
             "unsupported Space layout: missing immutable metadata at {metadata_path}"
         ));
     }
-    let metadata: Value = serde_json::from_slice(&operator.read(&metadata_path).await?.to_vec())?;
+    let metadata: Value =
+        serde_json::from_slice(&crate::read_object_exact(operator, &metadata_path).await?)?;
     let directory_id = workspace_path
         .trim_matches('/')
         .rsplit('/')

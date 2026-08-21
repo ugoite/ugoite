@@ -117,7 +117,7 @@ pub async fn run(cmd: FormCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new_without_background_refresh(&root)?;
+            let service = UgoiteService::new(&root)?;
             service.upsert_form(&space_id, &form_def).await?;
             print_json(&serde_json::json!({"updated": true}));
         }

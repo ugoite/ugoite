@@ -7378,28 +7378,19 @@ async fn get_access_policy(
     Path((space_id, kind, resource_id)): Path<(String, String, String)>,
 ) -> ApiResult<Json<Value>> {
     let resource_kind = parse_resource_kind(&kind)?;
-    require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        resource_kind.clone(),
-        &resource_id,
-    )
-    .await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     let resource = ugoite_iceberg::authorization::ResourceRef {
         kind: resource_kind,
         id: resource_id,
         parent: None,
     };
-    let authorization = Authorizer::new(state.service.operator().clone())
-        .state(&space_id)
+    let policy = state
+        .service
+        .get_access_policy_authorized_for_principals(&space_id, &principals, resource)
         .await
         .map_err(ApiError::from_core)?;
-    Ok(Json(
-        serde_json::to_value(authorization.policies.get(&resource.key()))
-            .map_err(|error| auth_error(error.into()))?,
-    ))
+    Ok(Json(policy))
 }
 
 async fn put_access_policy(
@@ -7906,26 +7897,27 @@ async fn list_members(
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let authorization = Authorizer::new(state.service.operator().clone())
-        .state(&space_id)
+    let members = Authorizer::new(state.service.operator().clone())
+        .with_state_lock(&space_id, |authorization| async move {
+            Ok(authorization
+                .memberships
+                .values()
+                .filter_map(|membership| {
+                    authorization
+                        .principals
+                        .get(&membership.principal_id)
+                        .map(|principal| {
+                            json!({
+                                "principal": principal,
+                                "role": membership.role,
+                                "created_at": membership.created_at,
+                            })
+                        })
+                })
+                .collect::<Vec<_>>())
+        })
         .await
         .map_err(ApiError::from_core)?;
-    let members = authorization
-        .memberships
-        .values()
-        .filter_map(|membership| {
-            authorization
-                .principals
-                .get(&membership.principal_id)
-                .map(|principal| {
-                    json!({
-                        "principal": principal,
-                        "role": membership.role,
-                        "created_at": membership.created_at,
-                    })
-                })
-        })
-        .collect();
     Ok(Json(Value::Array(members)))
 }
 
@@ -8619,19 +8611,10 @@ async fn entry_history(
     Path((space_id, entry_id)): Path<(String, String)>,
     Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        ResourceKind::Entry,
-        &entry_id,
-    )
-    .await?;
     validate_id(&entry_id, "entry_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    let mut history = if let Some(checkpoint) = query.checkpoint.as_deref() {
+    let history = if let Some(checkpoint) = query.checkpoint.as_deref() {
         state
             .service
             .entry_history_at_checkpoint(&space_id, &entry_id, checkpoint, &principals)
@@ -8644,20 +8627,6 @@ async fn entry_history(
             .await
             .map_err(ApiError::from_core)?
     };
-    history["access_policy_history"] = serde_json::to_value(
-        Authorizer::new(state.service.operator().clone())
-            .resource_policy_history(
-                &space_id,
-                &ugoite_iceberg::authorization::ResourceRef {
-                    kind: ResourceKind::Entry,
-                    id: entry_id,
-                    parent: None,
-                },
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    )
-    .map_err(|error| ApiError::from_core(error.into()))?;
     Ok(Json(history))
 }
 
@@ -8667,15 +8636,6 @@ async fn entry_revision(
     Path((space_id, entry_id, revision_id)): Path<(String, String, String)>,
     Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        ResourceKind::Entry,
-        &entry_id,
-    )
-    .await?;
     validate_id(&entry_id, "entry_id")?;
     validate_id(&revision_id, "revision_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
@@ -8704,17 +8664,13 @@ async fn entry_revision(
             .await
             .map_err(ApiError::from_core)?
     };
-    let policy_history = Authorizer::new(state.service.operator().clone())
-        .resource_policy_history(
-            &space_id,
-            &ugoite_iceberg::authorization::ResourceRef {
-                kind: ResourceKind::Entry,
-                id: entry_id,
-                parent: None,
-            },
-        )
-        .await
-        .map_err(ApiError::from_core)?;
+    let policy_history = revision
+        .get("access_policy_history")
+        .cloned()
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    let policy_history: Vec<ugoite_iceberg::authorization::PolicyRevision> =
+        serde_json::from_value(policy_history)
+            .map_err(|error| ApiError::from_core(error.into()))?;
     let revision_time = revision
         .get("timestamp")
         .and_then(Value::as_f64)
@@ -8807,22 +8763,10 @@ async fn list_forms(
     let principals = authorization_principal_ids(&identity, principal_id);
     let forms = state
         .service
-        .list_forms(&space_id)
+        .list_forms_authorized_for_principals(&space_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
-    Ok(Json(Value::Array(
-        state
-            .service
-            .filter_json_resources_authorized_for_principals(
-                &space_id,
-                &principals,
-                ResourceKind::Form,
-                "name",
-                forms,
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    )))
+    Ok(Json(Value::Array(forms)))
 }
 
 async fn form_types(
@@ -8846,20 +8790,13 @@ async fn get_form(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, form_name)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        ResourceKind::Form,
-        &form_name,
-    )
-    .await?;
     validate_id(&form_name, "form_name")?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     Ok(Json(
         state
             .service
-            .get_form(&space_id, &form_name)
+            .get_form_authorized_for_principals(&space_id, &form_name, &principals)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -9300,56 +9237,17 @@ async fn get_asset(
     })?;
     validate_id(&asset_id, "asset_id")?;
     validate_id(&entry_id, "entry_id")?;
-    let principal_id = require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        ResourceKind::Entry,
-        &entry_id,
-    )
-    .await?;
-    let entry_parent = ugoite_iceberg::authorization::ResourceRef {
-        kind: ResourceKind::Entry,
-        id: entry_id.clone(),
-        parent: None,
-    };
-    state
-        .service
-        .require_resource_action(
-            &space_id,
-            principal_id,
-            Action::Read,
-            ResourceKind::Asset,
-            &asset_id,
-            Some(entry_parent.clone()),
-        )
-        .await
-        .map_err(ApiError::from_core)?;
-    if let Some(actor_principal_id) = identity.token_actor_principal_id {
-        if actor_principal_id != principal_id {
-            state
-                .service
-                .require_resource_action(
-                    &space_id,
-                    actor_principal_id,
-                    Action::Read,
-                    ResourceKind::Asset,
-                    &asset_id,
-                    Some(entry_parent),
-                )
-                .await
-                .map_err(ApiError::from_core)?;
-        }
-    }
-    state
-        .service
-        .ensure_asset_reference_is_readable(&space_id, &form_name, &entry_id, &asset_id)
-        .await
-        .map_err(ApiError::from_core)?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     let content = state
         .service
-        .read_asset(&space_id, &asset_id)
+        .read_asset_authorized_for_principals(
+            &space_id,
+            &form_name,
+            &entry_id,
+            &asset_id,
+            &principals,
+        )
         .await
         .map_err(ApiError::from_core)?;
     let mut response = content.bytes.into_response();

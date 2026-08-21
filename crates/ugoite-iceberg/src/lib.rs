@@ -65,6 +65,8 @@ use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
+use opendal::options::ReadOptions;
+use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -88,6 +90,52 @@ use ugoite_domain::form::{
 use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
 use uuid::Uuid;
+
+pub(crate) fn is_shared_backend(operator: &Operator) -> bool {
+    matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
+}
+
+/// Read an object against the exact version observed by `stat`.
+///
+/// Shared object stores must never fall back to an unconditional read after a
+/// missing ETag: the caller would otherwise be able to combine metadata from
+/// different revisions while believing it read one snapshot.
+pub(crate) async fn read_object_exact_optional(
+    operator: &Operator,
+    path: &str,
+) -> Result<Option<Vec<u8>>> {
+    let metadata = match operator.stat(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let etag = metadata
+        .etag()
+        .filter(|etag| !etag.is_empty())
+        .map(str::to_owned);
+    let bytes = match etag.as_deref() {
+        Some(etag) => {
+            operator
+                .read_options(
+                    path,
+                    ReadOptions {
+                        if_match: Some(etag.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await?
+        }
+        None if !is_shared_backend(operator) => operator.read(path).await?,
+        None => return Err(anyhow!("exact read requires an ETag: {path}")),
+    };
+    Ok(Some(bytes.to_vec()))
+}
+
+pub(crate) async fn read_object_exact(operator: &Operator, path: &str) -> Result<Vec<u8>> {
+    read_object_exact_optional(operator, path)
+        .await?
+        .ok_or_else(|| anyhow!("object not found: {path}"))
+}
 
 const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
 const FORM_ID_PROPERTY: &str = "ugoite.form.id";

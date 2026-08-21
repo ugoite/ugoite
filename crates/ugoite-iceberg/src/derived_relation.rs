@@ -52,7 +52,9 @@ use ugoite_domain::derived_relation::{
 use ugoite_domain::entry::AssetReference;
 use ugoite_domain::form::FieldType;
 use ugoite_domain::id::validate_asset_id;
-use ugoite_storage::{DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore};
+use ugoite_storage::{
+    backend_server_time, DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore,
+};
 use uuid::Uuid;
 use zip::ZipArchive;
 
@@ -801,6 +803,7 @@ fn refresh_request_admission_lock_reclaimable(
     bytes: &[u8],
     last_modified: Option<SystemTime>,
     shared_backend: bool,
+    server_now: Option<SystemTime>,
 ) -> bool {
     let value = serde_json::from_slice::<Value>(bytes).ok();
     if value
@@ -811,13 +814,13 @@ fn refresh_request_admission_lock_reclaimable(
     {
         return true;
     }
-    // A backend timestamp is not comparable with this process's wall clock
-    // across shared writers. Fail closed for an active shared lock until the
-    // backend exposes a server-time/monotonic lease contract.
-    !shared_backend
-        && last_modified
-            .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
-            .is_some_and(|age| age >= ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL)
+    let now = if shared_backend {
+        server_now
+    } else {
+        Some(SystemTime::now())
+    };
+    now.and_then(|now| last_modified.and_then(|timestamp| now.duration_since(timestamp).ok()))
+        .is_some_and(|age| age >= ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL)
 }
 
 async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str) -> Result<String> {
@@ -893,10 +896,26 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
             Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
             Err(error) => return Err(error.into()),
         };
+        let shared_backend = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+        let server_now = if shared_backend {
+            Some(
+                backend_server_time(
+                    op,
+                    &format!(
+                        "{ws_path}/_ugoite/derived/relations/{}",
+                        DerivedRelationId::ASSET_TEXT
+                    ),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
         if !refresh_request_admission_lock_reclaimable(
             &bytes,
             metadata.last_modified().map(Into::into),
-            matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls"),
+            shared_backend,
+            server_now,
         ) {
             bail!("AssetText refresh marker admission is busy")
         }
@@ -2232,7 +2251,7 @@ async fn space_id_from_metadata(op: &Operator, ws_path: &str) -> Result<String> 
     // directory name. Never fall back to mutable space_id fields here.
     crate::space::validate_complete_bootstrap(op, space_id).await?;
     let path = format!("{ws_path}/meta.json");
-    let value: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
+    let value: Value = serde_json::from_slice(&crate::read_object_exact(op, &path).await?)?;
     Ok(crate::space::validate_current_space_metadata(space_id, &value)?.to_string())
 }
 
@@ -2247,7 +2266,7 @@ async fn validate_asset_text_head_binding(
         .filter(|value| !value.is_empty() && !value.contains('/'))
         .context("derived workspace path is not a Space directory")?;
     let path = format!("{ws_path}/meta.json");
-    let metadata: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
+    let metadata: Value = serde_json::from_slice(&crate::read_object_exact(op, &path).await?)?;
     let current_uid = crate::space::validate_current_space_metadata(space_id, &metadata)?;
     if head.space_id != current_uid.to_string() {
         return Err(anyhow!(
@@ -2777,8 +2796,12 @@ async fn read_asset_exact_with_limit(
     max_bytes: usize,
 ) -> Result<Vec<u8>> {
     let metadata = op.stat(path).await?;
+    let etag = metadata.etag().filter(|etag| !etag.is_empty());
+    if crate::is_shared_backend(op) && etag.is_none() {
+        bail!("exact derived object read requires an ETag: {path}");
+    }
     let mut reader = op.reader_with(path);
-    if let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) {
+    if let Some(etag) = etag {
         reader = reader.if_match(etag);
     }
     let reader = reader.chunk(READER_CHUNK_BYTES).await?;
@@ -3589,7 +3612,7 @@ async fn validate_asset_text_manifest(
     let head_store = asset_text_head_store(op, ws_path).await?;
     let manifest_location = format!("{}/manifest.json", head_store.builds_path(&head.build_id));
     let manifest: AssetTextManifest =
-        serde_json::from_slice(&op.read(&manifest_location).await?.to_vec())
+        serde_json::from_slice(&crate::read_object_exact(op, &manifest_location).await?)
             .context("decode AssetText build manifest")?;
     if manifest.format_version != 2
         || manifest.relation_id != head.relation_id

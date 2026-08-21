@@ -8,6 +8,7 @@ use opendal::services::{Fs, Memory, S3};
 use opendal::{EntryMode, ErrorKind, Operator};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -78,6 +79,69 @@ pub struct RawDerivedRelationHead {
 pub enum CatalogWriteMode {
     Shared,
     SingleProcess,
+}
+
+/// Obtain a backend-relative wall clock from an object store.
+///
+/// Object metadata timestamps are authoritative only when compared with a
+/// timestamp returned by the same backend.  Callers use this for shared lease
+/// recovery; comparing `last_modified` with a producer's local clock would
+/// make recovery dependent on clock skew.  The probe is deleted before the
+/// function returns, and a backend that cannot provide its server timestamp
+/// fails closed.
+pub async fn backend_server_time(operator: &Operator, scope: &str) -> Result<SystemTime> {
+    let scope = scope.trim_matches('/');
+    let path = format!(
+        "{scope}/_ugoite/maintenance/server-time-probes/{}.json",
+        Uuid::now_v7()
+    );
+    operator
+        .write_options(
+            &path,
+            br#"{"probe":"ugoite"}"#.to_vec(),
+            WriteOptions {
+                if_not_exists: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(anyhow::Error::from)?;
+    let timestamp = operator
+        .stat(&path)
+        .await
+        .map_err(anyhow::Error::from)?
+        .last_modified()
+        .map(Into::into)
+        .context("shared backend did not return a server modification timestamp")?;
+    match operator.delete(&path).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(timestamp)
+}
+
+async fn read_storage_object_exact(operator: &Operator, path: &str) -> Result<Vec<u8>> {
+    let metadata = operator.stat(path).await?;
+    let etag = metadata.etag().filter(|etag| !etag.is_empty());
+    let bytes = match etag {
+        Some(etag) => {
+            operator
+                .read_options(
+                    path,
+                    ReadOptions {
+                        if_match: Some(etag.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await?
+        }
+        None if matches!(operator.info().scheme(), "memory" | "fs" | "file") => {
+            operator.read(path).await?
+        }
+        None => return Err(anyhow!("exact storage read requires an ETag: {path}")),
+    };
+    Ok(bytes.to_vec())
 }
 
 /// The storage-side admission check for authoritative Catalog writes.
@@ -233,15 +297,13 @@ impl DerivedRelationHeadStore {
         let trimmed_space_root = raw_space_root.trim_matches('/');
         // This constructor predates the fallible Catalog constructor and is
         // retained for the storage adapter API. Invalid roots are quarantined
-        // under a fixed safe prefix; no caller-controlled separator or dot
-        // segment is ever interpolated into a DerivedRelation path.
+        // under a digest of the raw input; no caller-controlled separator or
+        // dot segment is ever interpolated into a DerivedRelation path.
         let space_root = if SpaceCatalogStore::validate_space_root(trimmed_space_root).is_ok() {
             trimmed_space_root.to_string()
         } else {
-            format!(
-                "_ugoite/quarantine/invalid-space-root-{}",
-                raw_space_root.len()
-            )
+            let digest = hex::encode(Sha256::digest(raw_space_root.as_bytes()));
+            format!("_ugoite/quarantine/invalid-space-root-{digest}")
         };
         let serializer =
             catalog_serializer(&operator, &format!("{space_root}/derived/{relation_id}"));
@@ -619,15 +681,40 @@ impl DerivedRelationHeadStore {
         )))
     }
 
-    fn claim_is_stale(&self, _bytes: &[u8], last_modified: Option<SystemTime>) -> bool {
-        // A backend timestamp is not comparable with a producer's local clock
-        // across shared writers. Until a server-time/monotonic lease contract
-        // exists, shared GC fails closed for active claims; local mode keeps
-        // the existing bounded recovery behavior.
+    async fn claim_is_stale(
+        &self,
+        _bytes: &[u8],
+        last_modified: Option<SystemTime>,
+    ) -> Result<bool> {
+        let now = if self.write_mode == CatalogWriteMode::Shared {
+            Some(
+                backend_server_time(
+                    &self.operator,
+                    &format!(
+                        "{}/_ugoite/derived/relations/{}",
+                        self.space_root, self.relation_id
+                    ),
+                )
+                .await?,
+            )
+        } else {
+            Some(SystemTime::now())
+        };
+        Ok(self.claim_is_stale_at(_bytes, last_modified, now))
+    }
+
+    fn claim_is_stale_at(
+        &self,
+        _bytes: &[u8],
+        last_modified: Option<SystemTime>,
+        now: Option<SystemTime>,
+    ) -> bool {
+        now.is_some_and(|now| Self::old_enough_at(last_modified, DERIVED_BUILD_CLAIM_TTL, now))
+    }
+
+    fn claim_is_stale_sync(&self, last_modified: Option<SystemTime>) -> bool {
         self.write_mode != CatalogWriteMode::Shared
-            && last_modified
-                .and_then(|timestamp| SystemTime::now().duration_since(timestamp).ok())
-                .is_some_and(|age| age >= DERIVED_BUILD_CLAIM_TTL)
+            && self.claim_is_stale_at(&[], last_modified, Some(SystemTime::now()))
     }
 
     fn build_id_time(build_id: &str) -> Option<SystemTime> {
@@ -656,6 +743,20 @@ impl DerivedRelationHeadStore {
         minimum_gc_age.is_zero()
             || (self.write_mode != CatalogWriteMode::Shared
                 && Self::old_enough(timestamp, minimum_gc_age))
+    }
+
+    fn gc_old_enough_at(
+        &self,
+        timestamp: Option<SystemTime>,
+        minimum_gc_age: Duration,
+        server_now: Option<SystemTime>,
+    ) -> bool {
+        minimum_gc_age.is_zero()
+            || match self.write_mode {
+                CatalogWriteMode::SingleProcess => Self::old_enough(timestamp, minimum_gc_age),
+                CatalogWriteMode::Shared => server_now
+                    .is_some_and(|now| Self::old_enough_at(timestamp, minimum_gc_age, now)),
+            }
     }
 
     fn old_enough_at(
@@ -722,7 +823,19 @@ impl DerivedRelationHeadStore {
             return Ok(true);
         }
         if self.write_mode == CatalogWriteMode::Shared {
-            return Ok(false);
+            let now = backend_server_time(
+                &self.operator,
+                &format!(
+                    "{}/_ugoite/derived/relations/{}",
+                    self.space_root, self.relation_id
+                ),
+            )
+            .await?;
+            return Ok(Self::old_enough_at(
+                metadata.last_modified().map(Into::into),
+                minimum_gc_age,
+                now,
+            ));
         }
         Ok(self
             .marker_time_or_metadata(path, metadata.last_modified().map(Into::into))
@@ -844,7 +957,7 @@ impl DerivedRelationHeadStore {
                     }
                 }
                 Some("publishing") => {
-                    if !self.claim_is_stale(&bytes, last_modified)
+                    if !self.claim_is_stale(&bytes, last_modified).await?
                         || !self
                             .replace_build_claim(
                                 build_id,
@@ -968,7 +1081,7 @@ impl DerivedRelationHeadStore {
                     ));
                 }
                 if Self::claim_role(&bytes).as_deref() != Some("complete")
-                    && !self.claim_is_stale(&bytes, last_modified)
+                    && !self.claim_is_stale(&bytes, last_modified).await?
                 {
                     return Ok(None);
                 }
@@ -1474,7 +1587,21 @@ impl DerivedRelationHeadStore {
         }
         let owner =
             Self::claim_owner(&bytes).context("terminal DerivedRelation claim has no owner")?;
-        if !self.gc_old_enough(last_modified, DERIVED_TERMINAL_CLAIM_RETENTION) {
+        let server_now = if self.write_mode == CatalogWriteMode::Shared {
+            Some(
+                backend_server_time(
+                    &self.operator,
+                    &format!(
+                        "{}/_ugoite/derived/relations/{}",
+                        self.space_root, self.relation_id
+                    ),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+        if !self.gc_old_enough_at(last_modified, DERIVED_TERMINAL_CLAIM_RETENTION, server_now) {
             return Ok(false);
         }
         if role.as_deref() == Some("complete")
@@ -1646,7 +1773,6 @@ impl DerivedRelationHeadStore {
         current_build_id: Option<&str>,
         minimum_gc_age: Duration,
     ) -> Result<bool> {
-        self.recover_malformed_head_fence().await?;
         // Terminal tombstones are permanent non-reuse fences, not pending
         // cleanup. They must not make every maintenance pass report work
         // forever after an otherwise successful garbage collection.
@@ -1705,7 +1831,8 @@ impl DerivedRelationHeadStore {
             candidate.has_staging_marker |= is_staging_marker;
             candidate.has_publishing_marker |= is_publishing_marker;
             if is_staging_marker {
-                candidate.stale_staging_old_enough |= old_enough;
+                candidate.stale_staging_old_enough |=
+                    old_enough || self.write_mode == CatalogWriteMode::Shared;
             }
             if !is_garbage_marker && !is_staging_marker && !is_publishing_marker {
                 candidate.has_build_object = true;
@@ -1753,9 +1880,6 @@ impl DerivedRelationHeadStore {
                     // The terminal claim is a permanent non-reuse fence, so
                     // it must not keep maintenance alive after the build data
                     // has already been removed.
-                    if candidate.has_garbage_marker {
-                        self.clear_garbage(&build_id).await?;
-                    }
                     return Ok(true);
                 }
                 return Ok(true);
@@ -1770,7 +1894,15 @@ impl DerivedRelationHeadStore {
                                     || self.gc_old_enough(last_modified, minimum_gc_age)
                             }
                             Some("reaping") => true,
-                            Some("publishing") => self.claim_is_stale(&bytes, last_modified),
+                            // This is a read-only scheduling query. Shared
+                            // claim age is evaluated by the writable GC pass
+                            // against backend server time; conservatively wake
+                            // maintenance for every active shared claim so a
+                            // crashed holder cannot become invisible here.
+                            Some("staging") | Some("publishing") => {
+                                self.write_mode == CatalogWriteMode::Shared
+                                    || self.claim_is_stale_sync(last_modified)
+                            }
                             // A garbage claim without garbage.json means the
                             // final marker deletion already happened but the
                             // terminal-role transition may not have. Keep it
@@ -1819,6 +1951,20 @@ impl DerivedRelationHeadStore {
         self.reap_expired_terminal_tombstones().await?;
         self.recover_completed_empty_head_fence().await?;
         let observed_current_build_id = self.current_build_id().await?;
+        let server_now = if self.write_mode == CatalogWriteMode::Shared {
+            Some(
+                backend_server_time(
+                    &self.operator,
+                    &format!(
+                        "{}/_ugoite/derived/relations/{}",
+                        self.space_root, self.relation_id
+                    ),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
         // The caller's build ID is a scheduling hint only.  The exact Head
         // reread above is the sole authority used to skip a build.
         let _ = current_build_id;
@@ -1871,7 +2017,7 @@ impl DerivedRelationHeadStore {
             } else {
                 modified
             };
-            let old_enough = self.gc_old_enough(marker_modified, minimum_gc_age);
+            let old_enough = self.gc_old_enough_at(marker_modified, minimum_gc_age, server_now);
             let candidate = candidates.entry(build_id.to_string()).or_default();
             if is_garbage_marker {
                 candidate.has_garbage_marker = true;
@@ -1917,20 +2063,21 @@ impl DerivedRelationHeadStore {
             // an unmarked stale garbage claim is recoverable cleanup intent.
             if candidate.has_publishing_marker {
                 if let Some((bytes, _, last_modified)) = self.read_build_claim(build_id).await? {
-                    candidate.stale_publishing_old_enough =
-                        match Self::claim_role(&bytes).as_deref() {
-                            Some("released") => true,
-                            Some("complete") => {
-                                candidate.complete_claim_old_enough = candidate.has_build_object
-                                    && self.gc_old_enough(last_modified, minimum_gc_age);
-                                candidate.complete_claim_old_enough
-                            }
-                            Some("staging") | Some("publishing") | Some("garbage") => {
-                                self.claim_is_stale(&bytes, last_modified)
-                            }
-                            Some("reaping") => true,
-                            _ => false,
-                        };
+                    candidate.stale_publishing_old_enough = match Self::claim_role(&bytes)
+                        .as_deref()
+                    {
+                        Some("released") => true,
+                        Some("complete") => {
+                            candidate.complete_claim_old_enough = candidate.has_build_object
+                                && self.gc_old_enough_at(last_modified, minimum_gc_age, server_now);
+                            candidate.complete_claim_old_enough
+                        }
+                        Some("staging") | Some("publishing") | Some("garbage") => {
+                            self.claim_is_stale_at(&bytes, last_modified, server_now)
+                        }
+                        Some("reaping") => true,
+                        _ => false,
+                    };
                 }
             }
             // A marker-less prefix can be left behind by a crash immediately
@@ -1944,12 +2091,15 @@ impl DerivedRelationHeadStore {
                 && !candidate.has_garbage_fence
                 && !candidate.has_staging_marker
                 && !candidate.has_publishing_marker
-                && (candidate
-                    .newest_object_modified
-                    .is_some_and(|modified| self.gc_old_enough(Some(modified), minimum_gc_age))
-                    || (self.write_mode == CatalogWriteMode::SingleProcess
-                        && candidate.newest_object_modified.is_none()
-                        && self.gc_old_enough(Self::build_id_time(build_id), minimum_gc_age)));
+                && (candidate.newest_object_modified.is_some_and(|modified| {
+                    self.gc_old_enough_at(Some(modified), minimum_gc_age, server_now)
+                }) || (self.write_mode == CatalogWriteMode::SingleProcess
+                    && candidate.newest_object_modified.is_none()
+                    && self.gc_old_enough_at(
+                        Self::build_id_time(build_id),
+                        minimum_gc_age,
+                        server_now,
+                    )));
         }
         let mut deleted = Vec::new();
         for (build_id, candidate) in candidates {
@@ -2450,27 +2600,20 @@ impl DerivedRelationHeadStore {
             }
         }
         let metadata_path = format!("{}/meta.json", self.space_root);
-        match self.operator.read(&metadata_path).await {
-            Ok(bytes) => {
-                let metadata: serde_json::Value = serde_json::from_slice(&bytes.to_vec())
-                    .context("decode authoritative Space metadata for DerivedRelation Head")?;
-                let authoritative_uid = metadata
-                    .get("space_uid")
-                    .and_then(serde_json::Value::as_str)
-                    .context("authoritative Space metadata has no space_uid")?
-                    .parse::<Uuid>()?;
-                if authoritative_uid.get_version_num() != 7 || authoritative_uid != space_uid {
-                    return Err(anyhow!(
-                        "DerivedRelation Head space_id does not match authoritative Space metadata"
-                    ));
-                }
-            }
-            Err(error) if error.kind() == ErrorKind::NotFound => {
-                return Err(anyhow!(
-                    "authoritative Space metadata is missing for DerivedRelation Head"
-                ));
-            }
-            Err(error) => return Err(error.into()),
+        let bytes = read_storage_object_exact(&self.operator, &metadata_path)
+            .await
+            .context("read authoritative Space metadata for DerivedRelation Head")?;
+        let metadata: serde_json::Value = serde_json::from_slice(&bytes)
+            .context("decode authoritative Space metadata for DerivedRelation Head")?;
+        let authoritative_uid = metadata
+            .get("space_uid")
+            .and_then(serde_json::Value::as_str)
+            .context("authoritative Space metadata has no space_uid")?
+            .parse::<Uuid>()?;
+        if authoritative_uid.get_version_num() != 7 || authoritative_uid != space_uid {
+            return Err(anyhow!(
+                "DerivedRelation Head space_id does not match authoritative Space metadata"
+            ));
         }
         Ok(())
     }
@@ -3998,7 +4141,26 @@ impl StorageBackend for OpendalStorage {
     }
 
     async fn read(&self, path: &str) -> Result<Vec<u8>> {
-        Ok(self.operator.read(path).await?.to_vec())
+        let metadata = self.operator.stat(path).await?;
+        let etag = metadata.etag().filter(|etag| !etag.is_empty());
+        let bytes = match etag {
+            Some(etag) => {
+                self.operator
+                    .read_options(
+                        path,
+                        ReadOptions {
+                            if_match: Some(etag.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await?
+            }
+            None if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") => {
+                self.operator.read(path).await?
+            }
+            None => return Err(anyhow!("exact storage read requires an ETag: {path}")),
+        };
+        Ok(bytes.to_vec())
     }
 
     async fn write(&self, path: &str, data: Vec<u8>) -> Result<()> {

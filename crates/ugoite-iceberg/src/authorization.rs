@@ -519,8 +519,9 @@ impl Authorizer {
 
         let settings_path = format!("spaces/{space_id}/settings.json");
         if self.operator.exists(&settings_path).await? {
-            let settings: serde_json::Value =
-                serde_json::from_slice(&self.operator.read(&settings_path).await?.to_vec())?;
+            let settings: serde_json::Value = serde_json::from_slice(
+                &crate::read_object_exact(&self.operator, &settings_path).await?,
+            )?;
             if let Some(legacy_key) = crate::service::MEMBERSHIP_MANAGED_SPACE_SETTING_KEYS
                 .iter()
                 .find(|key| settings.get(*key).is_some())
@@ -2804,9 +2805,12 @@ async fn read_authorization_state_bytes(
             MAX_AUTHORIZATION_STATE_BYTES
         );
     }
+    let metadata_etag = metadata.etag().filter(|etag| !etag.is_empty());
+    if crate::is_shared_backend(operator) && metadata_etag.is_none() && exact_version.is_none() {
+        bail!("exact authorization-state read requires an ETag: {path}");
+    }
     let mut reader = operator.reader_with(path);
-    if let Some(version) = exact_version.or_else(|| metadata.etag().filter(|etag| !etag.is_empty()))
-    {
+    if let Some(version) = exact_version.or(metadata_etag) {
         reader = reader.if_match(version);
     }
     let reader = reader.chunk(AUTHORIZATION_STATE_READER_CHUNK_BYTES).await?;

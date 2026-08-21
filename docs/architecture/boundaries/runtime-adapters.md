@@ -16,7 +16,10 @@ Static browser files may be served from `UGOITE_STATIC_DIR`.
 
 Core mode constructs `UgoiteService` against a local root. Backend/API mode uses
 `ugoite-api-client` request preparation and a native HTTP transport. Local-only
-index maintenance is intentionally unavailable in remote mode.
+index maintenance is intentionally unavailable in remote mode. One-shot core
+Entry/Form/Asset mutations return after the authoritative commit; their
+process-local Derived refresh is best effort and is never drained at command
+exit. `ugoite index run` is the explicit freshness repair command.
 
 ## Browser
 
