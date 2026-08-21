@@ -2283,11 +2283,10 @@ async fn asset_text_head_store(op: &Operator, ws_path: &str) -> Result<DerivedRe
 
 async fn catalog_store_for_read(op: &Operator, ws_path: &str) -> Result<SpaceCatalogStore> {
     let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
-    if is_shared_backend(op) {
-        store.verify_shared_writes().await
-    } else {
-        Ok(store.single_process())
-    }
+    // Read paths must not write capability probes. Exact Head reads work with
+    // the returned store; mutation paths are the only callers that opt into
+    // the behavioral shared-write probe.
+    Ok(store)
 }
 
 async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result<Value> {

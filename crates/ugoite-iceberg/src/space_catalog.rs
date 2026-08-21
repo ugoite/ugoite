@@ -18,7 +18,7 @@ use std::sync::Arc;
 use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
 use ugoite_domain::id::{validate_asset_id, FormId, SpaceId};
 use ugoite_storage::{
-    CatalogMutationPermit, CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore,
+    operator_from_uri, CatalogMutationPermit, CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore,
 };
 use uuid::Uuid;
 
@@ -315,8 +315,17 @@ impl SpaceCatalog {
             ));
         }
         let file_io = if storage.scheme == "memory" {
+            let memory_uri = storage.memory_uri.as_deref().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::DataInvalid,
+                    "memory Catalog has no registered operator",
+                )
+            })?;
             FileIOBuilder::new(Arc::new(FixedOpenDalStorageFactory {
-                storage: Arc::new(OpenDalStorage::Memory(store.iceberg_operator())),
+                storage: Arc::new(OpenDalStorage::Memory(
+                    operator_from_uri(memory_uri)
+                        .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?,
+                )),
             }))
             .build()
         } else {
@@ -339,8 +348,11 @@ impl SpaceCatalog {
     }
 
     pub(crate) fn ensure_authoritative_mutation_contract(&self) -> anyhow::Result<()> {
-        crate::authorization::Authorizer::new(self.store.iceberg_operator())
-            .ensure_authoritative_mutation_contract()
+        self.store.mutation_permit().map(|_| ()).map_err(|_| {
+            anyhow::anyhow!(
+                "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract"
+            )
+        })
     }
 
     fn mutation_permit(&self) -> anyhow::Result<CatalogMutationPermit> {
@@ -3380,8 +3392,14 @@ impl SpaceCatalog {
 pub(crate) fn file_io_for_store(store: &SpaceCatalogStore) -> FileIO {
     let storage = store.iceberg_storage();
     if storage.scheme == "memory" {
+        let memory_uri = storage
+            .memory_uri
+            .as_deref()
+            .expect("memory Catalog has no registered operator");
         FileIOBuilder::new(Arc::new(FixedOpenDalStorageFactory {
-            storage: Arc::new(OpenDalStorage::Memory(store.iceberg_operator())),
+            storage: Arc::new(OpenDalStorage::Memory(
+                operator_from_uri(memory_uri).expect("memory operator"),
+            )),
         }))
         .build()
     } else {

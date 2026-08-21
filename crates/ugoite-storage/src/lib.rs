@@ -29,6 +29,7 @@ pub struct IcebergStorageConfig {
     pub scheme: String,
     pub warehouse_uri: String,
     pub properties: HashMap<String, String>,
+    pub memory_uri: Option<String>,
 }
 
 impl IcebergStorageConfig {
@@ -48,10 +49,12 @@ impl IcebergStorageConfig {
                 return Err(anyhow!("unsupported Iceberg storage scheme: {unsupported}"))
             }
         };
+        let memory_uri = (scheme == "memory").then(|| register_memory_operator(operator));
         Ok(Self {
             scheme,
             warehouse_uri: warehouse_uri.trim_end_matches('/').to_string(),
             properties: HashMap::new(),
+            memory_uri,
         })
     }
 }
@@ -227,11 +230,16 @@ impl DerivedRelationHeadStore {
         let space_root = space_root.into().trim_matches('/').to_string();
         let serializer =
             catalog_serializer(&operator, &format!("{space_root}/derived/{relation_id}"));
+        let write_mode = if matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+            CatalogWriteMode::Shared
+        } else {
+            CatalogWriteMode::SingleProcess
+        };
         Self {
             operator,
             space_root,
             relation_id,
-            write_mode: CatalogWriteMode::SingleProcess,
+            write_mode,
             serializer,
         }
     }
@@ -249,7 +257,13 @@ impl DerivedRelationHeadStore {
     }
 
     pub fn single_process(mut self) -> Self {
-        self.write_mode = CatalogWriteMode::SingleProcess;
+        // A remote relation must never be downgraded to unconditional
+        // Head writes. Callers may request the local mode for local backends;
+        // remote backends remain in shared CAS mode until their capability
+        // probe has completed.
+        if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            self.write_mode = CatalogWriteMode::SingleProcess;
+        }
         self
     }
 
@@ -1471,10 +1485,6 @@ impl DerivedRelationHeadStore {
     /// scan, parse, and publish concurrently for the same relation.
     pub fn single_process_lock(&self) -> Arc<AsyncMutex<()>> {
         self.serializer.clone()
-    }
-
-    pub fn operator(&self) -> &Operator {
-        &self.operator
     }
 
     async fn list_derived_entries(&self, prefix: &str) -> Result<Vec<opendal::Entry>> {
@@ -2802,6 +2812,11 @@ impl DerivedRelationHeadStore {
         expected: &RawDerivedRelationHead,
         head: &DerivedRelationHead,
     ) -> Result<()> {
+        if self.write_mode != CatalogWriteMode::SingleProcess {
+            return Err(anyhow!(
+                "single-process corrupt DerivedRelation publication requires a local backend"
+            ));
+        }
         self.validate_derived_head_identity(head).await?;
         self.ensure_build_publishable(&head.build_id).await?;
         self.begin_publishing(&head.build_id).await?;
@@ -2953,6 +2968,32 @@ impl SpaceCatalogStore {
         } else {
             Err(anyhow!("Catalog mutation permit belongs to another store"))
         }
+    }
+
+    fn validate_catalog_component(value: &str, label: &str) -> Result<()> {
+        if value.is_empty()
+            || value == "."
+            || value == ".."
+            || value.contains('/')
+            || value.contains('\\')
+        {
+            return Err(anyhow!("invalid Catalog {label}"));
+        }
+        Ok(())
+    }
+
+    fn validate_publication_path(&self, path: &str) -> Result<()> {
+        let prefix = self.catalog_path("publications/");
+        let Some(file_name) = path.strip_prefix(&prefix) else {
+            return Err(anyhow!(
+                "publication path is outside the Catalog publication prefix"
+            ));
+        };
+        Self::validate_catalog_component(file_name, "publication path")?;
+        if !file_name.ends_with(".json") {
+            return Err(anyhow!("Catalog publication path must be a JSON object"));
+        }
+        Ok(())
     }
 
     /// A process-local serializer, used only in explicit single-process mode.
@@ -3150,13 +3191,6 @@ impl SpaceCatalogStore {
         &self.storage
     }
 
-    /// The authoritative operator is shared only with the physical Iceberg
-    /// adapter so its test-only memory service sees the same immutable table
-    /// metadata as Catalog Head operations. Core never receives this handle.
-    pub fn iceberg_operator(&self) -> Operator {
-        self.operator.clone()
-    }
-
     pub fn warehouse_uri(&self) -> String {
         if self.space_root.is_empty() {
             format!("{}/forms", self.storage.warehouse_uri)
@@ -3330,6 +3364,7 @@ impl SpaceCatalogStore {
         bytes: Vec<u8>,
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
+        Self::validate_catalog_component(asset_id, "Asset lifecycle identifier")?;
         let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
         self.operator
             .write_options(
@@ -3360,6 +3395,7 @@ impl SpaceCatalogStore {
         bytes: Vec<u8>,
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
+        Self::validate_catalog_component(asset_id, "Asset lifecycle identifier")?;
         self.replace_exact_object(
             &self.catalog_path(&format!("asset-lifecycle/{asset_id}")),
             etag,
@@ -3374,6 +3410,7 @@ impl SpaceCatalogStore {
         asset_id: &str,
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
+        Self::validate_catalog_component(asset_id, "Asset lifecycle identifier")?;
         let path = self.catalog_path(&format!("asset-lifecycle/{asset_id}"));
         match self.operator.delete(&path).await {
             Ok(()) => Ok(()),
@@ -3421,6 +3458,7 @@ impl SpaceCatalogStore {
         asset_id: &str,
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
+        Self::validate_catalog_component(asset_id, "Asset identifier")?;
         let path = self.space_path(&format!("assets/{asset_id}"));
         match self.operator.delete(&path).await {
             Ok(()) => Ok(()),
@@ -3436,6 +3474,7 @@ impl SpaceCatalogStore {
         bytes: Vec<u8>,
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
+        self.validate_publication_path(path)?;
         self.operator
             .write_options(
                 path,
@@ -3463,6 +3502,7 @@ impl SpaceCatalogStore {
         bytes: Vec<u8>,
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
+        Self::validate_catalog_component(command_id, "command identifier")?;
         self.operator
             .write_options(
                 &self.command_receipt_path(command_id),
@@ -3492,6 +3532,7 @@ impl SpaceCatalogStore {
         bytes: Vec<u8>,
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
+        Self::validate_catalog_component(command_id, "command identifier")?;
         self.replace_exact_object(&self.command_receipt_path(command_id), etag, bytes)
             .await
     }
@@ -3503,6 +3544,7 @@ impl SpaceCatalogStore {
         bytes: Vec<u8>,
     ) -> Result<()> {
         self.require_mutation_permit(permit)?;
+        Self::validate_catalog_component(name, "checkpoint name")?;
         if !self.operator.info().capability().write_with_if_not_exists {
             return Err(anyhow!(
                 "immutable checkpoint creation requires OpenDAL if_not_exists support"
@@ -3634,6 +3676,15 @@ static MEMORY_OPERATORS: OnceLock<Mutex<HashMap<String, Operator>>> = OnceLock::
 
 fn memory_cache() -> &'static Mutex<HashMap<String, Operator>> {
     MEMORY_OPERATORS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn register_memory_operator(operator: &Operator) -> String {
+    let uri = format!("memory://ugoite-catalog-{}", Uuid::now_v7());
+    memory_cache()
+        .lock()
+        .expect("memory operator cache lock poisoned")
+        .insert(uri.clone(), operator.clone());
+    uri
 }
 
 fn local_operator_from_uri(uri: &str) -> Result<Operator> {

@@ -10,6 +10,7 @@ use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::io::{stderr, IsTerminal, Write};
+use ugoite_storage::{OpendalStorage, StorageBackend};
 use uuid::Uuid;
 
 pub const DEFAULT_SCENARIO: &str = "renewable-ops";
@@ -18,6 +19,7 @@ const MAX_ENTRY_COUNT: usize = 20_000;
 const SAMPLE_JOBS_DIR: &str = "sample_jobs";
 const SAMPLE_JOB_READ_RETRIES: usize = 50;
 const SAMPLE_JOB_READ_RETRY_DELAY_MS: u64 = 20;
+const SAMPLE_JOB_ORPHAN_AFTER: Duration = Duration::minutes(10);
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -629,8 +631,8 @@ async fn ensure_jobs_dir(op: &Operator) -> Result<()> {
 }
 
 async fn write_job(op: &Operator, job: &SampleDataJob) -> Result<()> {
-    op.write(&job_path(&job.job_id), serde_json::to_vec_pretty(job)?)
-        .await?;
+    let storage = OpendalStorage::from_operator(op);
+    storage.write_json(&job_path(&job.job_id), job).await?;
     Ok(())
 }
 
@@ -674,6 +676,13 @@ impl JobProgressWriter {
             job,
             last_flushed: 0,
         }
+    }
+
+    async fn start(&mut self) -> Result<()> {
+        self.job.status = SampleJobStatus::Running;
+        self.job.status_message = Some("Running".to_string());
+        self.last_flushed = self.job.processed_entries;
+        write_job(&self.op, &self.job).await
     }
 
     async fn maybe_update(&mut self, processed: usize, message: &str) -> Result<()> {
@@ -2102,11 +2111,12 @@ pub async fn create_sample_space_job(
     let plan = resolve_sample_data_plan(options)?;
 
     let job = enqueue_sample_space_job(op, options, &plan).await?;
+    let running_job = mark_sample_space_job_running(op, &job).await?;
     let op_clone = op.clone();
     let options_clone = options.clone();
     let root_uri = root_uri.to_string();
     let plan_clone = plan.clone();
-    let job_for_progress = job.clone();
+    let job_for_progress = running_job;
     tokio::spawn(async move {
         let _ = run_sample_space_job_with_plan(
             &op_clone,
@@ -2132,7 +2142,8 @@ pub async fn create_sample_space_job_and_wait(
     crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
     let job = enqueue_sample_space_job(op, options, &plan).await?;
-    run_sample_space_job_with_plan(op, root_uri, options, &plan, &job).await?;
+    let running_job = mark_sample_space_job_running(op, &job).await?;
+    run_sample_space_job_with_plan(op, root_uri, options, &plan, &running_job).await?;
     get_sample_space_job(op, &job.job_id).await
 }
 
@@ -2153,13 +2164,27 @@ async fn enqueue_sample_space_job(
         status_message: Some("Queued".to_string()),
         processed_entries: 0,
         total_entries: plan.entry_count,
-        started_at: None,
+        // This timestamp is the durable enqueue/start deadline. The queued
+        // state is returned to the caller, then atomically advanced to Running
+        // before a detached worker is spawned.
+        started_at: Some(Utc::now()),
         completed_at: None,
         error: None,
         summary: None,
     };
     write_job(op, &job).await?;
     Ok(job)
+}
+
+async fn mark_sample_space_job_running(
+    op: &Operator,
+    job: &SampleDataJob,
+) -> Result<SampleDataJob> {
+    let mut running = job.clone();
+    running.status = SampleJobStatus::Running;
+    running.status_message = Some("Running".to_string());
+    write_job(op, &running).await?;
+    Ok(running)
 }
 
 async fn run_sample_space_job_with_plan(
@@ -2169,8 +2194,9 @@ async fn run_sample_space_job_with_plan(
     plan: &ResolvedSampleDataPlan,
     job: &SampleDataJob,
 ) -> Result<SampleDataSummary> {
-    let mut progress =
-        ProgressReporter::Job(Box::new(JobProgressWriter::new(op.clone(), job.clone())));
+    let mut writer = JobProgressWriter::new(op.clone(), job.clone());
+    writer.start().await?;
+    let mut progress = ProgressReporter::Job(Box::new(writer));
     let summary =
         create_sample_space_with_progress(op, root_uri, options, plan, &mut progress).await;
     match summary {
@@ -2192,5 +2218,21 @@ pub async fn get_sample_space_job(op: &Operator, job_id: &str) -> Result<SampleD
     if !op.exists(&path).await? {
         return Err(anyhow!("Sample data job not found: {}", job_id));
     }
-    read_job(op, job_id).await
+    let mut job = read_job(op, job_id).await?;
+    if matches!(
+        job.status,
+        SampleJobStatus::Queued | SampleJobStatus::Running
+    ) && job
+        .started_at
+        .is_some_and(|started_at| Utc::now() - started_at > SAMPLE_JOB_ORPHAN_AFTER)
+    {
+        // Status reads remain read-only. A stale detached worker is explicitly
+        // classified in the returned value instead of being silently repaired
+        // by a GET that would mutate the durable job object.
+        job.status = SampleJobStatus::Failed;
+        job.status_message = Some("Worker interrupted".to_string());
+        job.completed_at = Some(Utc::now());
+        job.error = Some("sample job worker heartbeat expired".to_string());
+    }
+    Ok(job)
 }

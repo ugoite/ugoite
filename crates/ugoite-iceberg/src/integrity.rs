@@ -205,11 +205,13 @@ pub async fn load_response_hmac_material(
     op: &Operator,
     space_name: &str,
 ) -> Result<(String, Vec<u8>)> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let storage = OpendalStorage::from_operator(op);
     load_response_hmac_material_with_storage(&storage, space_name).await
 }
 
 pub async fn load_default_response_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let storage = OpendalStorage::from_operator(op);
     load_default_response_hmac_material_with_storage(&storage).await
 }
@@ -219,6 +221,7 @@ pub async fn build_response_signature(
     space_name: &str,
     body: &[u8],
 ) -> Result<(String, String)> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let storage = OpendalStorage::from_operator(op);
     let (key_id, secret) = load_response_hmac_material_with_storage(&storage, space_name).await?;
     let provider = RealIntegrityProvider::new(secret);
@@ -229,6 +232,7 @@ pub async fn build_default_response_signature(
     op: &Operator,
     body: &[u8],
 ) -> Result<(String, String)> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let storage = OpendalStorage::from_operator(op);
     let (key_id, secret) = load_default_response_hmac_material_with_storage(&storage).await?;
     let provider = RealIntegrityProvider::new(secret);

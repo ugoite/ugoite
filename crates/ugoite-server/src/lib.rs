@@ -532,7 +532,16 @@ impl AppState {
         // it before strict enumeration so a crash-left pending bootstrap does
         // not prevent the server from reaching its listener on restart.
         self.service.recover_pending_space_claims().await?;
-        for space_id in self.service.list_space_ids().await? {
+        let space_ids = self.service.list_space_ids().await?;
+        // Resolve every durable recovery fence and audit obligation before
+        // launching maintenance. Maintenance can mutate derived/asset
+        // storage, so it must not race an unresolved recovery decision.
+        for space_id in &space_ids {
+            reconcile_recovery_fences(self, space_id).await?;
+            reconcile_recovery_audit_outbox(self, space_id).await?;
+            reconcile_human_approval_audit_outbox(self, space_id).await?;
+        }
+        for space_id in space_ids {
             // Rehydrate relation-local maintenance on every server start. A
             // previous process may have left durable garbage markers after the
             // grace timer was lost; bound the number of concurrent full
@@ -575,9 +584,6 @@ impl AppState {
                     }
                 }
             });
-            reconcile_recovery_fences(self, &space_id).await?;
-            reconcile_recovery_audit_outbox(self, &space_id).await?;
-            reconcile_human_approval_audit_outbox(self, &space_id).await?;
         }
         Ok(())
     }
