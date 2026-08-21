@@ -5929,6 +5929,23 @@ fn authorization_principal_ids(
     principals
 }
 
+fn require_actions_in_authorization_state(
+    state: &AuthorizationState,
+    principal_ids: &[Uuid],
+    action: Action,
+) -> anyhow::Result<()> {
+    for principal_id in principal_ids {
+        let actions =
+            ugoite_iceberg::authorization::effective_actions_for_state(state, *principal_id, None)?;
+        if !actions.contains(&action) {
+            return Err(
+                AppError::forbidden("principal is not authorized for the requested read").into(),
+            );
+        }
+    }
+    Ok(())
+}
+
 async fn require_resource_action(
     state: &AppState,
     space_id: &str,
@@ -7377,6 +7394,7 @@ async fn get_access_policy(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, kind, resource_id)): Path<(String, String, String)>,
 ) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let resource_kind = parse_resource_kind(&kind)?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
@@ -7559,23 +7577,21 @@ async fn list_spaces(
         .map_err(ApiError::from_core)?;
     let mut items = Vec::new();
     for id in ids {
-        let Ok(principal_id) = principal_for_space(&state, &id, &identity).await else {
+        let Ok(principal_id) = require_space_action(&state, &id, &identity, Action::Read).await
+        else {
             continue;
         };
-        if Authorizer::new(state.service.operator().clone())
-            .require(&id, principal_id, Action::Read, None)
+        let principals = authorization_principal_ids(&identity, principal_id);
+        let id_for_read = id.clone();
+        let service = state.service.clone();
+        let value = Authorizer::new(service.operator().clone())
+            .with_state_lock(&id, move |authorization| async move {
+                require_actions_in_authorization_state(&authorization, &principals, Action::Read)?;
+                service.get_space(&id_for_read).await
+            })
             .await
-            .is_err()
-        {
-            continue;
-        }
-        let value = sanitize_space_response(
-            state
-                .service
-                .get_space(&id)
-                .await
-                .map_err(ApiError::from_core)?,
-        );
+            .map(sanitize_space_response)
+            .map_err(ApiError::from_core)?;
         items.push(value);
     }
     Ok(Json(Value::Array(items)))
@@ -7701,14 +7717,17 @@ async fn get_space(
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let value = sanitize_space_response(
-        state
-            .service
-            .get_space(&space_id)
-            .await
-            .map_err(ApiError::from_core)?,
-    );
+    let principal_id = require_space_action(&state, &space_id, &identity, Action::Read).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let space_id_for_read = space_id.clone();
+    let value = Authorizer::new(state.service.operator().clone())
+        .with_state_lock(&space_id, move |authorization| async move {
+            require_actions_in_authorization_state(&authorization, &principals, Action::Read)?;
+            state.service.get_space(&space_id_for_read).await
+        })
+        .await
+        .map(sanitize_space_response)
+        .map_err(ApiError::from_core)?;
     Ok(Json(value))
 }
 
@@ -7724,10 +7743,18 @@ async fn space_health(
     Path(space_id): Path<String>,
     Query(query): Query<SpaceHealthQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    state
-        .service
-        .space_health(&space_id, &query.checkpoint)
+    let principal_id = require_space_action(&state, &space_id, &identity, Action::Share).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let space_id_for_health = space_id.clone();
+    let checkpoint_names = query.checkpoint;
+    Authorizer::new(state.service.operator().clone())
+        .with_state_lock(&space_id, move |authorization| async move {
+            require_actions_in_authorization_state(&authorization, &principals, Action::Share)?;
+            state
+                .service
+                .space_health(&space_id_for_health, &checkpoint_names)
+                .await
+        })
         .await
         .map(Json)
         .map_err(|_| {
@@ -7841,21 +7868,28 @@ async fn list_audit_events(
     Path(space_id): Path<String>,
     Query(query): Query<AuditQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    audit::list_audit_events(
-        state.service.operator(),
-        &space_id,
-        AuditListOptions {
-            offset: query.offset,
-            limit: query.limit,
-            action: query.action,
-            actor_principal_id: query.actor_principal_id,
-            outcome: query.outcome,
-        },
-    )
-    .await
-    .map(Json)
-    .map_err(ApiError::from_core)
+    let principal_id = require_space_action(&state, &space_id, &identity, Action::Share).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let space_id_for_read = space_id.clone();
+    Authorizer::new(state.service.operator().clone())
+        .with_state_lock(&space_id, move |authorization| async move {
+            require_actions_in_authorization_state(&authorization, &principals, Action::Share)?;
+            audit::list_audit_events(
+                state.service.operator(),
+                &space_id_for_read,
+                AuditListOptions {
+                    offset: query.offset,
+                    limit: query.limit,
+                    action: query.action,
+                    actor_principal_id: query.actor_principal_id,
+                    outcome: query.outcome,
+                },
+            )
+            .await
+        })
+        .await
+        .map(Json)
+        .map_err(ApiError::from_core)
 }
 
 async fn get_preferences(
@@ -8611,6 +8645,7 @@ async fn entry_history(
     Path((space_id, entry_id)): Path<(String, String)>,
     Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&entry_id, "entry_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
@@ -8636,6 +8671,7 @@ async fn entry_revision(
     Path((space_id, entry_id, revision_id)): Path<(String, String, String)>,
     Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&entry_id, "entry_id")?;
     validate_id(&revision_id, "revision_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
@@ -8790,6 +8826,7 @@ async fn get_form(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, form_name)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&form_name, "form_name")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
@@ -9223,6 +9260,7 @@ async fn get_asset(
     Path((space_id, asset_id)): Path<(String, String)>,
     Query(query): Query<AssetReadQuery>,
 ) -> ApiResult<Response> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let form_name = query.form.ok_or_else(|| {
         ApiError::new(
             StatusCode::FORBIDDEN,

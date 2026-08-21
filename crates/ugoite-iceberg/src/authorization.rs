@@ -645,6 +645,11 @@ impl Authorizer {
         Fut: Future<Output = Result<T>>,
     {
         let _guard: OwnedMutexGuard<()> = self.lock.clone().lock_owned().await;
+        // The process mutex does not coordinate a second CLI/server process
+        // using the same local Space. Hold the filesystem lock shared for the
+        // complete protected read so an ACL writer cannot commit between the
+        // snapshot and the content read.
+        let _local_read_lock = self.local_authorization_read_lock(space_id)?;
         let state = self.state(space_id).await?;
         operation(state).await
     }
@@ -2517,6 +2522,29 @@ impl Authorizer {
             .write(true)
             .open(lock_path)?;
         file.lock_exclusive()?;
+        Ok(Some(file))
+    }
+
+    fn local_authorization_read_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+        if !matches!(self.operator.info().scheme(), "fs" | "file") {
+            return Ok(None);
+        }
+        let root_value = self.operator.info().root();
+        let root = Path::new(root_value.as_str());
+        let lock_path = root
+            .join("spaces")
+            .join(space_id)
+            .join("security/principals.json.lock");
+        if let Some(parent) = lock_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(lock_path)?;
+        file.lock_shared()?;
         Ok(Some(file))
     }
 }

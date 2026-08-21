@@ -850,15 +850,11 @@ async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str)
             Ok(_) => {
                 let metadata = match op.stat(&path).await {
                     Ok(metadata) => metadata,
-                    Err(error) => {
-                        let _ = op.delete(&path).await;
-                        return Err(error.into());
-                    }
+                    Err(error) => return Err(error.into()),
                 };
                 if metadata.etag().filter(|etag| !etag.is_empty()).is_none()
                     || metadata.last_modified().is_none()
                 {
-                    let _ = op.delete(&path).await;
                     bail!("AssetText refresh marker admission lock lacks server metadata");
                 }
                 return Ok(owner);
@@ -984,7 +980,7 @@ async fn release_asset_text_refresh_admission_lock(
         .and_then(Value::as_str)
         .map(str::to_owned);
     if current_owner.as_deref() != Some(owner) {
-        return Ok(());
+        bail!("AssetText refresh marker admission lock owner changed");
     }
     match op
         .write_options(
@@ -1315,6 +1311,13 @@ async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Resul
 
 async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String]) -> Result<()> {
     for path in paths {
+        // The fixed-name marker may still be produced by an older process
+        // during a rolling upgrade. It has no version/ETag acknowledgement
+        // protocol, so deleting it after a snapshot could erase a request
+        // created by that older owner. Leave it for explicit operator cleanup.
+        if path.ends_with(&format!("/{LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE}")) {
+            continue;
+        }
         match op.delete(path).await {
             Ok(()) => {}
             Err(error) if error.kind() == ErrorKind::NotFound => {}
@@ -3863,7 +3866,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_refresh_request_marker_is_migrated_by_clear() -> anyhow::Result<()> {
+    async fn legacy_refresh_request_marker_is_preserved_during_clear() -> anyhow::Result<()> {
         let operator = opendal::Operator::new(opendal::services::Memory::default())?;
         let workspace = "spaces/legacy-refresh-marker";
         let legacy_path = legacy_asset_text_refresh_request_path(workspace);
@@ -3871,8 +3874,8 @@ mod tests {
         operator.write(&legacy_path, b"{}".to_vec()).await?;
         assert!(asset_text_refresh_requested(&operator, workspace).await?);
         clear_asset_text_refresh_requested(&operator, workspace).await?;
-        assert!(!operator.exists(&legacy_path).await?);
-        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        assert!(operator.exists(&legacy_path).await?);
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
         Ok(())
     }
 

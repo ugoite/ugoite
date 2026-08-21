@@ -104,6 +104,15 @@ pub(crate) async fn read_object_exact_optional(
     operator: &Operator,
     path: &str,
 ) -> Result<Option<Vec<u8>>> {
+    Ok(read_object_exact_optional_with_etag(operator, path)
+        .await?
+        .map(|(bytes, _)| bytes))
+}
+
+pub(crate) async fn read_object_exact_optional_with_etag(
+    operator: &Operator,
+    path: &str,
+) -> Result<Option<(Vec<u8>, Option<String>)>> {
     let metadata = match operator.stat(path).await {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(None),
@@ -128,7 +137,7 @@ pub(crate) async fn read_object_exact_optional(
         None if !is_shared_backend(operator) => operator.read(path).await?,
         None => return Err(anyhow!("exact read requires an ETag: {path}")),
     };
-    Ok(Some(bytes.to_vec()))
+    Ok(Some((bytes.to_vec(), etag)))
 }
 
 pub(crate) async fn read_object_exact(operator: &Operator, path: &str) -> Result<Vec<u8>> {

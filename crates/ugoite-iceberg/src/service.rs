@@ -1439,6 +1439,7 @@ impl UgoiteService {
         entry_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let authorizer = Authorizer::new(self.operator.clone());
@@ -1946,6 +1947,7 @@ impl UgoiteService {
         checkpoint_name: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_entry_id(entry_id))?;
         let authorizer = Authorizer::new(self.operator.clone());
@@ -1977,6 +1979,7 @@ impl UgoiteService {
         to_name: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
         let mut diff = authorizer
@@ -2142,6 +2145,7 @@ impl UgoiteService {
         query: Option<&str>,
         limit: usize,
     ) -> Result<Vec<entry::EntrySummary>> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
         authorizer
@@ -2261,10 +2265,11 @@ impl UgoiteService {
     ) -> Result<BTreeMap<String, EntryScope>> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
-        self.authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                self.authorized_form_entry_scopes_for_state(space_id, &state, principal_ids)
+                    .await
+            })
             .await
     }
 
@@ -2349,19 +2354,18 @@ impl UgoiteService {
     ) -> Result<EntryScope> {
         require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
-        Self::saved_sql_entry_scope_for_state(&state, principal_ids)
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                Self::saved_sql_entry_scope_for_state(&state, principal_ids)
+            })
+            .await
     }
 
     pub(crate) fn saved_sql_entry_scope_for_state(
         state: &AuthorizationState,
         principal_ids: &[Uuid],
     ) -> Result<EntryScope> {
-        if principal_ids.is_empty() {
-            return Ok(EntryScope::Only(BTreeSet::new()));
-        }
+        require_nonempty_authorized_principals(principal_ids)?;
         for principal_id in principal_ids {
             if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
                 return Ok(EntryScope::Only(BTreeSet::new()));
@@ -2504,21 +2508,23 @@ impl UgoiteService {
         id_field: &str,
         values: Vec<Value>,
     ) -> Result<Vec<Value>> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
-        let state = Authorizer::new(self.operator.clone())
-            .state(space_id)
-            .await?;
-        let mut filtered = values;
-        for principal_id in principal_ids {
-            filtered = Self::filter_json_resources_for_state(
-                &state,
-                *principal_id,
-                kind.clone(),
-                id_field,
-                filtered,
-            )?;
-        }
-        Ok(filtered)
+        Authorizer::new(self.operator.clone())
+            .with_state_lock(space_id, |state| async move {
+                let mut filtered = values;
+                for principal_id in principal_ids {
+                    filtered = Self::filter_json_resources_for_state(
+                        &state,
+                        *principal_id,
+                        kind.clone(),
+                        id_field,
+                        filtered,
+                    )?;
+                }
+                Ok(filtered)
+            })
+            .await
     }
 
     pub async fn search_entries_authorized_for_principals(
@@ -2546,6 +2552,7 @@ impl UgoiteService {
         limit: usize,
         after: Option<(&str, &str, &str)>,
     ) -> Result<Vec<search::KeywordSearchResult>> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
         for _ in 0..3 {
@@ -2589,6 +2596,7 @@ impl UgoiteService {
         principal_ids: &[Uuid],
         filter: &Value,
     ) -> Result<Vec<Value>> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
         authorizer
@@ -2690,6 +2698,7 @@ impl UgoiteService {
         session_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
         let authorizer = Authorizer::new(self.operator.clone());
@@ -3178,6 +3187,7 @@ impl UgoiteService {
         session_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<u64> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
         let authorizer = Authorizer::new(self.operator.clone());
@@ -3217,6 +3227,7 @@ impl UgoiteService {
         offset: usize,
         limit: usize,
     ) -> Result<Value> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         validate_storage_id(validate_sql_session_id(session_id))?;
         let authorizer = Authorizer::new(self.operator.clone());
@@ -3267,6 +3278,7 @@ impl UgoiteService {
         space_id: &str,
         principal_ids: &[Uuid],
     ) -> Result<Vec<Value>> {
+        require_nonempty_authorized_principals(principal_ids)?;
         self.validate_complete_space(space_id).await?;
         let authorizer = Authorizer::new(self.operator.clone());
         authorizer
@@ -3676,6 +3688,9 @@ mod tests {
             EntryScope::AllExcept(ids) => assert_eq!(ids.len(), crate::MAX_NORMAL_READ_ROWS + 1),
             other => panic!("expected a provider-side exclusion scope, got {other:?}"),
         }
+        let error = UgoiteService::saved_sql_entry_scope_for_state(&state, &[])
+            .expect_err("an empty authorized principal set must fail closed");
+        assert!(error.to_string().contains("at least one principal"));
         Ok(())
     }
 

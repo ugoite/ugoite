@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use opendal::options::{ReadOptions, WriteOptions};
 use opendal::services::{Fs, Memory, S3};
-use opendal::{EntryMode, ErrorKind, Operator};
+use opendal::{EntryMode, Error, ErrorKind, Operator};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -106,19 +106,31 @@ pub async fn backend_server_time(operator: &Operator, scope: &str) -> Result<Sys
         )
         .await
         .map_err(anyhow::Error::from)?;
+    // Do not return before the probe is cleaned up. A stat failure must not
+    // turn a short-lived clock probe into a permanent storage leak.
     let timestamp = operator
         .stat(&path)
         .await
-        .map_err(anyhow::Error::from)?
-        .last_modified()
-        .map(Into::into)
-        .context("shared backend did not return a server modification timestamp")?;
-    match operator.delete(&path).await {
-        Ok(()) => {}
-        Err(error) if error.kind() == ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
+        .map_err(anyhow::Error::from)
+        .and_then(|metadata| {
+            metadata
+                .last_modified()
+                .map(Into::into)
+                .context("shared backend did not return a server modification timestamp")
+        });
+    let cleanup = match operator.delete(&path).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(anyhow::Error::from(error)),
+    };
+    match (timestamp, cleanup) {
+        (Ok(timestamp), Ok(())) => Ok(timestamp),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(cleanup_error)) => Err(error.context(format!(
+            "clean up shared backend time probe: {cleanup_error:#}"
+        ))),
     }
-    Ok(timestamp)
 }
 
 async fn read_storage_object_exact(operator: &Operator, path: &str) -> Result<Vec<u8>> {
@@ -674,6 +686,7 @@ impl DerivedRelationHeadStore {
             }
             None => self.operator.read(&path).await,
         }?;
+        Self::validate_claim(build_id, &bytes.to_vec())?;
         Ok(Some((
             bytes.to_vec(),
             etag,
@@ -866,6 +879,47 @@ impl DerivedRelationHeadStore {
             })
     }
 
+    fn validate_claim(build_id: &str, bytes: &[u8]) -> Result<()> {
+        let value: serde_json::Value =
+            serde_json::from_slice(bytes).context("decode DerivedRelation build claim")?;
+        let embedded_build_id = value
+            .get("build_id")
+            .and_then(serde_json::Value::as_str)
+            .context("DerivedRelation build claim has no build_id")?;
+        Self::validate_build_id(embedded_build_id)?;
+        if embedded_build_id != build_id {
+            return Err(anyhow!(
+                "DerivedRelation build claim belongs to a different build"
+            ));
+        }
+        let role = value
+            .get("role")
+            .and_then(serde_json::Value::as_str)
+            .context("DerivedRelation build claim has no role")?;
+        if !matches!(
+            role,
+            "staging" | "publishing" | "released" | "garbage" | "complete" | "reaping"
+        ) {
+            return Err(anyhow!("invalid DerivedRelation build claim role"));
+        }
+        let owner = value
+            .get("owner")
+            .and_then(serde_json::Value::as_str)
+            .filter(|owner| !owner.is_empty())
+            .context("DerivedRelation build claim has no owner")?;
+        if matches!(role, "staging" | "publishing" | "released") && owner != build_id {
+            return Err(anyhow!(
+                "DerivedRelation {role} claim owner does not match its build"
+            ));
+        }
+        if matches!(role, "garbage" | "complete" | "reaping") && !Self::is_valid_build_id(owner) {
+            return Err(anyhow!(
+                "DerivedRelation terminal claim owner must be UUIDv7"
+            ));
+        }
+        Ok(())
+    }
+
     async fn replace_build_claim(
         &self,
         build_id: &str,
@@ -945,12 +999,7 @@ impl DerivedRelationHeadStore {
                 // can finish staging while its heartbeat is still fresh.
                 Some("staging") => {
                     if !self
-                        .replace_build_claim(
-                            build_id,
-                            etag.as_deref(),
-                            "publishing",
-                            &Self::claim_owner(&bytes).unwrap_or_else(|| build_id.to_string()),
-                        )
+                        .replace_build_claim(build_id, etag.as_deref(), "publishing", build_id)
                         .await?
                     {
                         return Err(anyhow!("DerivedRelation build claim is held"));
@@ -959,12 +1008,7 @@ impl DerivedRelationHeadStore {
                 Some("publishing") => {
                     if !self.claim_is_stale(&bytes, last_modified).await?
                         || !self
-                            .replace_build_claim(
-                                build_id,
-                                etag.as_deref(),
-                                "publishing",
-                                &Self::claim_owner(&bytes).unwrap_or_else(|| build_id.to_string()),
-                            )
+                            .replace_build_claim(build_id, etag.as_deref(), "publishing", build_id)
                             .await?
                     {
                         return Err(anyhow!("DerivedRelation build claim is held"));
@@ -972,12 +1016,7 @@ impl DerivedRelationHeadStore {
                 }
                 Some("released") => {
                     if !self
-                        .replace_build_claim(
-                            build_id,
-                            etag.as_deref(),
-                            "publishing",
-                            &Self::claim_owner(&bytes).unwrap_or_else(|| build_id.to_string()),
-                        )
+                        .replace_build_claim(build_id, etag.as_deref(), "publishing", build_id)
                         .await?
                     {
                         return Err(anyhow!("DerivedRelation build claim is held"));
@@ -3261,6 +3300,9 @@ impl SpaceCatalogStore {
         {
             return Err(anyhow!("invalid Catalog Space root"));
         }
+        if value == "_ugoite/quarantine" || value.starts_with("_ugoite/quarantine/") {
+            return Err(anyhow!("Catalog Space root is reserved for quarantine"));
+        }
         for component in value.split('/') {
             Self::validate_catalog_component(component, "Space root component")?;
         }
@@ -3530,6 +3572,29 @@ impl SpaceCatalogStore {
         unreachable!("exact Head read attempts always return or continue")
     }
 
+    async fn read_exact_object_bytes(&self, path: &str) -> opendal::Result<Vec<u8>> {
+        let metadata = self.operator.stat(path).await?;
+        let etag = metadata.etag().filter(|etag| !etag.is_empty());
+        match etag {
+            Some(etag) => self
+                .operator
+                .read_options(
+                    path,
+                    ReadOptions {
+                        if_match: Some(etag.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map(|bytes| bytes.to_vec()),
+            None if self.write_mode == CatalogWriteMode::Shared => Err(Error::new(
+                ErrorKind::Unexpected,
+                format!("exact Catalog object read requires an ETag: {path}"),
+            )),
+            None => self.operator.read(path).await.map(|bytes| bytes.to_vec()),
+        }
+    }
+
     async fn replace_exact_object(
         &self,
         path: &str,
@@ -3704,10 +3769,12 @@ impl SpaceCatalogStore {
             let Some(asset_id) = entry.path().rsplit('/').next().filter(|id| !id.is_empty()) else {
                 continue;
             };
-            markers.push((
-                asset_id.to_string(),
-                self.operator.read(entry.path()).await?.to_vec(),
-            ));
+            let bytes = match self.read_exact_object_bytes(entry.path()).await {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            };
+            markers.push((asset_id.to_string(), bytes));
         }
         Ok(markers)
     }
@@ -3757,7 +3824,7 @@ impl SpaceCatalogStore {
         if let Some(counter) = &self.read_counter {
             counter.fetch_add(1, Ordering::Relaxed);
         }
-        Ok(self.operator.read(path).await?.to_vec())
+        self.read_exact_object_bytes(path).await
     }
 
     pub async fn create_command_receipt(
@@ -3833,11 +3900,8 @@ impl SpaceCatalogStore {
     pub async fn read_checkpoint(&self, name: &str) -> opendal::Result<Vec<u8>> {
         Self::validate_catalog_component(name, "checkpoint name")
             .map_err(|error| opendal::Error::new(ErrorKind::ConfigInvalid, error.to_string()))?;
-        Ok(self
-            .operator
-            .read(&self.checkpoint_path(name))
-            .await?
-            .to_vec())
+        self.read_exact_object_bytes(&self.checkpoint_path(name))
+            .await
     }
 
     pub fn supports_shared_writes(&self) -> bool {
@@ -4438,6 +4502,33 @@ mod tests {
         assert_eq!(op.info().scheme(), "s3");
         assert_eq!(op.info().root(), "/prefix/");
 
+        Ok(())
+    }
+
+    #[test]
+    fn catalog_quarantine_namespace_is_reserved() -> Result<()> {
+        let operator = Operator::new(Memory::default())?;
+        assert!(SpaceCatalogStore::new(
+            operator,
+            "_ugoite/quarantine/invalid-space-root-collision"
+        )
+        .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn derived_claim_rejects_cross_build_identity_and_owner() -> Result<()> {
+        let build_id = test_build_id();
+        let other_build_id = test_build_id();
+        let claim = serde_json::json!({
+            "build_id": other_build_id,
+            "role": "publishing",
+            "owner": build_id,
+        });
+        let error =
+            DerivedRelationHeadStore::validate_claim(&build_id, &serde_json::to_vec(&claim)?)
+                .expect_err("a claim for another build must fail closed");
+        assert!(error.to_string().contains("different build"));
         Ok(())
     }
 
