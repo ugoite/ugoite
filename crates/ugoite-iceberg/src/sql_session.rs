@@ -116,6 +116,8 @@ fn is_expired(meta: &Value) -> bool {
 async fn load_session_meta(op: &Operator, ws_path: &str, session_id: &str) -> Result<Value> {
     let mut meta = read_json(op, &meta_path(ws_path, session_id)).await?;
     if is_expired(&meta) {
+        crate::authorization::Authorizer::new(op.clone())
+            .ensure_authoritative_mutation_contract()?;
         meta["status"] = Value::String("expired".to_string());
         write_json(op, &meta_path(ws_path, session_id), &meta).await?;
     }
@@ -306,6 +308,7 @@ pub async fn create_sql_session_authorized_for_principals_by_form_with_parameter
     authorization: SqlSessionCreateAuthorization<'_>,
     saved_sql_entry_scope: EntryScope,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     authorization.authorization.require_principals()?;
     let relation = index::sql_session_page_relation(sql).map_err(session_query_error)?;
     let readable_entry_ids = authorization
@@ -363,6 +366,7 @@ pub async fn create_sql_session_authorized_for_principals_with_frozen_policy_and
     query_policy: index::SqlSessionQueryPolicy,
     saved_sql_entry_scope: &EntryScope,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     authorization.require_principals()?;
     index::validate_sql_session_query_at_checkpoint(
         op,

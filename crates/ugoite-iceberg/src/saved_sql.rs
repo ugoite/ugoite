@@ -410,6 +410,7 @@ pub async fn create_sql<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_def = ensure_sql_form(op, ws_path).await?;
     validate_sql_metadata(payload)?;
     let variables = normalize_sql_variables(Some(&payload.variables))?;
@@ -478,6 +479,7 @@ pub async fn update_sql<I: IntegrityProvider>(
     author: &str,
     integrity: &I,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     ensure_sql_form(op, ws_path).await?;
     let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
     let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;
@@ -555,6 +557,7 @@ pub async fn update_sql<I: IntegrityProvider>(
 }
 
 pub async fn delete_sql(op: &Operator, ws_path: &str, sql_id: &str, actor: &str) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     ensure_sql_form(op, ws_path).await?;
     let form_def = form::read_form_definition(op, ws_path, SQL_FORM_NAME).await?;
     let mut row = entry::read_entry_row(op, ws_path, SQL_FORM_NAME, sql_id).await?;

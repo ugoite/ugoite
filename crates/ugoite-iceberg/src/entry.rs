@@ -525,6 +525,7 @@ async fn append_revision_rows_to_workspace_authorized(
     form_def: &Value,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     if rows.is_empty() {
         return Err(anyhow!("revision batch must not be empty"));
     }
@@ -1090,6 +1091,7 @@ pub async fn append_revision_batch_for_form(
     form_name: &str,
     rows: &[RevisionRow],
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_def = form::read_form_definition(op, ws_path, form_name).await?;
     append_revision_rows_to_workspace(op, ws_path, rows, &form_def).await
 }
@@ -1166,6 +1168,7 @@ pub async fn create_entries_with_scopes<I: IntegrityProvider>(
     integrity: &I,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Vec<EntryMeta>> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     if requests.is_empty() {
         return Ok(Vec::new());
     }
@@ -2187,6 +2190,7 @@ pub async fn update_entry_authorized<I: IntegrityProvider>(
     integrity: &I,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_name = find_entry_form(op, ws_path, entry_id)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
@@ -2326,6 +2330,7 @@ pub async fn delete_entry(
     hard_delete: bool,
     actor: &str,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;
@@ -2448,6 +2453,7 @@ pub async fn restore_entry_authorized<I: IntegrityProvider>(
     integrity: &I,
     relation_scopes: Option<&BTreeMap<String, ugoite_core::query::EntryScope>>,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_name = find_entry_form_with_deleted(op, ws_path, entry_id, true)
         .await?
         .ok_or_else(|| entry_not_found(entry_id))?;

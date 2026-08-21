@@ -63,6 +63,7 @@ pub async fn get_form(op: &Operator, ws_path: &str, form_name: &str) -> Result<V
 }
 
 pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_name = form_def
         .get("name")
         .and_then(|value| value.as_str())

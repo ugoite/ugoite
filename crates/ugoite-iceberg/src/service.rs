@@ -3180,6 +3180,70 @@ mod tests {
                 .await
                 .expect_err("Entry mutation must fail before any remote write"),
         );
+        assert_unavailable(
+            crate::entry::append_revision_batch_for_form(
+                service.operator(),
+                "spaces/remote-space",
+                "Entry",
+                &[],
+            )
+            .await
+            .expect_err("low-level Entry writer must fail before any remote write"),
+        );
+        assert_unavailable(
+            crate::form::upsert_form(
+                service.operator(),
+                "spaces/remote-space",
+                &serde_json::json!({"name": "Entry"}),
+            )
+            .await
+            .expect_err("low-level Form writer must fail before any remote write"),
+        );
+        assert_unavailable(
+            crate::asset::save_asset(
+                service.operator(),
+                "spaces/remote-space",
+                "asset.txt",
+                b"asset",
+            )
+            .await
+            .expect_err("low-level Asset writer must fail before any remote write"),
+        );
+        assert_unavailable(
+            crate::audit::append_audit_event(
+                service.operator(),
+                "remote-space",
+                &serde_json::json!({
+                    "action": "test",
+                    "subject_principal_id": Uuid::now_v7().to_string(),
+                }),
+                None,
+            )
+            .await
+            .expect_err("low-level audit writer must fail before any remote write"),
+        );
+        let principal_ids = [Uuid::now_v7()];
+        let readable_entries_by_form = BTreeMap::new();
+        let sql_authorization = crate::sql_session::SqlSessionCreateAuthorization {
+            authorization: crate::sql_session::SqlSessionAuthorization {
+                principal_ids: &principal_ids,
+                policy_hash: "policy",
+            },
+            readable_entries_by_form: &readable_entries_by_form,
+        };
+        assert_unavailable(
+            crate::sql_session::create_sql_session_authorized_for_principals_by_form_with_parameters(
+                service.operator(),
+                "spaces/remote-space",
+                "SELECT * FROM Entry",
+                serde_json::Map::new(),
+                BTreeMap::new(),
+                sql_authorization,
+                EntryScope::AllCurrent,
+            )
+            .await
+            .expect_err("low-level SQL-session writer must fail before any remote write"),
+        );
         Ok(())
     }
 

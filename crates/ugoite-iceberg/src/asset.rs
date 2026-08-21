@@ -107,6 +107,7 @@ pub async fn save_asset_with_media_type(
     content: &[u8],
     media_type: &str,
 ) -> Result<AssetReference> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     if content.len() > MAX_ASSET_BYTES {
         anyhow::bail!("asset exceeds the {MAX_ASSET_BYTES}-byte size limit");
     }
@@ -323,6 +324,7 @@ pub async fn delete_asset(
     asset_id: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     validate_asset_id(asset_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
     let path = asset_path(ws_path, asset_id);
     if !op.exists(&path).await? {

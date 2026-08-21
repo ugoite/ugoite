@@ -518,6 +518,8 @@ impl AppState {
     }
 
     pub async fn initialize_node(&self) -> anyhow::Result<()> {
+        Authorizer::new(self.service.operator().clone())
+            .ensure_authoritative_mutation_contract()?;
         if let Some(bootstrap) = self.identity.bootstrap_if_needed().await? {
             println!(
                 "Ugoite setup URL (expires {}): {}",
@@ -6789,6 +6791,9 @@ async fn issue_human_approval(
     Path(space_id): Path<String>,
     Json(payload): Json<HumanApprovalIssuePayload>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     require_recent_passkey(&identity)?;
     reconcile_human_approval_audit_outbox(&state, &space_id)
         .await
@@ -12465,6 +12470,15 @@ mod authentication_regression_tests {
             .expect_err("global recovery reconciliation must fail closed before remote writes");
         assert_eq!(error.status, StatusCode::BAD_GATEWAY);
         assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
+
+        let error = state
+            .initialize_node()
+            .await
+            .expect_err("startup reconciliation must fail closed before remote writes");
+        let app_error = error
+            .downcast_ref::<AppError>()
+            .expect("startup contract error must remain typed");
+        assert_eq!(app_error.code(), ErrorCode::StorageMutationUnavailable);
         Ok(())
     }
 

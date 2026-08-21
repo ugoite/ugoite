@@ -383,6 +383,7 @@ pub async fn append_audit_event(
     payload: &Value,
     retention_limit: Option<usize>,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let mut last_conflict = None;
     for _attempt in 0..3 {
         match append_audit_event_once(op, space_id, payload, retention_limit).await {

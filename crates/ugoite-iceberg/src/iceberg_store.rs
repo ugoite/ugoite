@@ -45,6 +45,8 @@ pub async fn ensure_form_tables(
     workspace_path: &str,
     form_definition: &Value,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(operator.clone())
+        .ensure_authoritative_mutation_contract()?;
     let form = crate::form::to_domain_form(form_definition)?;
     // SQL helpers may call this function from read paths that lazily create
     // the system Form. That creation is still authoritative and must not
