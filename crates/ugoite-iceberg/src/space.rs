@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 
@@ -365,7 +366,9 @@ async fn repair_space_scaffold(
     Ok(())
 }
 
-async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Result<Vec<String>> {
+async fn list_spaces_discovery_with_storage<S: StorageBackend + ?Sized>(
+    storage: &S,
+) -> Result<Vec<String>> {
     let spaces_root = "spaces/";
     if !storage.exists(spaces_root).await? {
         return Ok(vec![]);
@@ -419,13 +422,22 @@ async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Re
 
 pub async fn list_spaces(op: &Operator) -> Result<Vec<String>> {
     let storage = OpendalStorage::from_operator(op);
-    let spaces = list_spaces_with_storage(&storage).await?;
+    let spaces = list_spaces_discovery_with_storage(&storage).await?;
     // Directory listing is discovery only. Do not expose a metadata-only or
     // crash-left Space through a public enumeration result.
     for space_id in &spaces {
         validate_complete_bootstrap(op, space_id).await?;
     }
     Ok(spaces)
+}
+
+/// Discovers metadata-backed Space directories without deciding whether a
+/// pending creation claim has made them publicly enumerable. Service-level
+/// startup recovery uses this discovery result to skip live pending claims,
+/// while still strictly validating every unclaimed or committed Space.
+pub async fn list_spaces_discovery(op: &Operator) -> Result<Vec<String>> {
+    let storage = OpendalStorage::from_operator(op);
+    list_spaces_discovery_with_storage(&storage).await
 }
 
 async fn get_space_with_storage<S: StorageBackend + ?Sized>(
@@ -631,6 +643,17 @@ fn is_condition_not_match(error: &opendal::Error) -> bool {
     )
 }
 
+fn is_condition_not_match_anyhow(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<opendal::Error>()
+            .is_some_and(is_condition_not_match)
+            || cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::AlreadyExists)
+    })
+}
+
 async fn read_space_json_exact(
     op: &Operator,
     path: &str,
@@ -679,7 +702,9 @@ async fn write_space_patch_value(
         )
         .await?;
     } else {
-        if matches!(op.info().scheme(), "memory" | "fs" | "file") {
+        if matches!(op.info().scheme(), "fs" | "file") {
+            write_local_space_json_atomic(op, path, &bytes, false).await?;
+        } else if op.info().scheme() == "memory" {
             op.write(path, bytes).await?;
         } else {
             bail!("conditional Space patch write requires an ETag: {path}");
@@ -687,6 +712,58 @@ async fn write_space_patch_value(
     }
     restore_local_space_json_permissions(op, path)?;
     Ok(())
+}
+
+/// OpenDAL's local atomic writer creates its temporary file with the process
+/// umask, then fixes permissions after the rename. Space metadata and settings
+/// contain secrets and are validated as private files, so the mode must be
+/// correct before the target becomes visible. This helper keeps that property
+/// across a crash between rename and the caller's next instruction.
+async fn write_local_space_json_atomic(
+    op: &Operator,
+    path: &str,
+    bytes: &[u8],
+    if_not_exists: bool,
+) -> Result<()> {
+    if !matches!(op.info().scheme(), "fs" | "file") {
+        bail!("local atomic Space JSON writer used for non-local operator: {path}");
+    }
+    let target = Path::new(op.info().root().as_str()).join(path);
+    let parent = target
+        .parent()
+        .ok_or_else(|| anyhow!("Space JSON path has no parent: {path}"))?;
+    tokio::fs::create_dir_all(parent).await?;
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| anyhow!("Space JSON path has no file name: {path}"))?
+        .to_string_lossy();
+    let temporary = parent.join(format!(".{file_name}.{}.tmp", uuid::Uuid::now_v7()));
+    let result = async {
+        let mut options = tokio::fs::OpenOptions::new();
+        options.create_new(true).write(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options.open(&temporary).await?;
+        file.write_all(bytes).await?;
+        file.sync_all().await?;
+        drop(file);
+        if if_not_exists {
+            tokio::fs::hard_link(&temporary, &target).await?;
+            tokio::fs::remove_file(&temporary).await?;
+        } else {
+            tokio::fs::rename(&temporary, &target).await?;
+        }
+        #[cfg(unix)]
+        if let Ok(directory) = tokio::fs::File::open(parent).await {
+            directory.sync_all().await?;
+        }
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&temporary).await;
+    }
+    result
 }
 
 fn restore_local_space_json_permissions(op: &Operator, path: &str) -> Result<()> {
@@ -730,14 +807,22 @@ async fn complete_space_patch_journal(
             },
         )
         .await
-    } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
-        op.write(path, bytes).await
+        .map(|_| ())
+        .map_err(anyhow::Error::from)
+    } else if matches!(op.info().scheme(), "fs" | "file") {
+        write_local_space_json_atomic(op, path, &bytes, false).await?;
+        Ok(())
+    } else if op.info().scheme() == "memory" {
+        op.write(path, bytes)
+            .await
+            .map(|_| ())
+            .map_err(anyhow::Error::from)
     } else {
         bail!("completing Space patch journal requires an ETag: {path}");
     };
     match result {
         Ok(_) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => {
+        Err(error) if is_condition_not_match_anyhow(&error) => {
             let Some((current, _)) = read_space_patch_journal_exact(op, path).await? else {
                 bail!("Space patch journal disappeared while completing")
             };
@@ -779,19 +864,28 @@ async fn write_pending_space_patch(
                     },
                 )
                 .await
-            } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
-                op.write(path, bytes.clone()).await
+                .map(|_| ())
+                .map_err(anyhow::Error::from)
+            } else if matches!(op.info().scheme(), "fs" | "file") {
+                write_local_space_json_atomic(op, path, &bytes, false).await
+            } else if op.info().scheme() == "memory" {
+                op.write(path, bytes.clone())
+                    .await
+                    .map(|_| ())
+                    .map_err(anyhow::Error::from)
             } else {
                 bail!("replacing Space patch journal requires an ETag: {path}");
             };
             match result {
                 Ok(_) => {}
-                Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
+                Err(error) if is_condition_not_match_anyhow(&error) => continue,
                 Err(error) => return Err(error.into()),
             }
         } else {
-            match op
-                .write_options(
+            let result = if matches!(op.info().scheme(), "fs" | "file") {
+                write_local_space_json_atomic(op, path, &bytes, true).await
+            } else {
+                op.write_options(
                     path,
                     bytes.clone(),
                     WriteOptions {
@@ -800,9 +894,12 @@ async fn write_pending_space_patch(
                     },
                 )
                 .await
-            {
+                .map(|_| ())
+                .map_err(anyhow::Error::from)
+            };
+            match result {
                 Ok(_) => {}
-                Err(error) if is_condition_not_match(&error) => continue,
+                Err(error) if is_condition_not_match_anyhow(&error) => continue,
                 Err(error) => return Err(error.into()),
             }
         }
@@ -951,6 +1048,11 @@ async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Re
     form::get_form(op, &workspace_path, "Entry")
         .await
         .context("incomplete Space bootstrap: starter Entry Form is missing")?;
+    // Repair permissions before validation as a compatibility guard for a
+    // process that crashed after publishing an older umask-created JSON file.
+    // New writes already establish 0600 before rename; this closes the
+    // recovery path for values that were visible before that guarantee.
+    apply_local_space_permissions(op, space_id)?;
     validate_local_space_permissions(op, space_id)?;
     Ok(())
 }
@@ -1106,6 +1208,7 @@ async fn patch_space_with_operator(
                 },
             )
             .await
+            .map(|_| ())
             .map_err(|error| {
                 if error.kind() == ErrorKind::ConditionNotMatch {
                     anyhow!("Space metadata changed during patch")
@@ -1113,7 +1216,12 @@ async fn patch_space_with_operator(
                     error.into()
                 }
             })?,
-        None => op.write(&meta_path, meta_bytes).await?,
+        None if matches!(op.info().scheme(), "fs" | "file") => {
+            write_local_space_json_atomic(op, &meta_path, &meta_bytes, false).await?
+        }
+        None => {
+            op.write(&meta_path, meta_bytes).await?;
+        }
     };
     restore_local_space_json_permissions(op, &meta_path)?;
     write_space_patch_value(op, &settings_path, &settings, settings_etag.as_deref()).await?;

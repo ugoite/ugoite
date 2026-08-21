@@ -1,8 +1,9 @@
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use fs2::FileExt;
+use futures::TryStreamExt;
 use opendal::options::WriteOptions;
-use opendal::Operator;
+use opendal::{EntryMode, ErrorKind, Operator};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -1048,11 +1049,68 @@ impl UgoiteService {
     }
 
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
-        let space_ids = space::list_spaces(&self.operator).await?;
-        for space_id in &space_ids {
-            space::validate_complete_bootstrap(&self.operator, space_id).await?;
+        let live_pending_space_ids = self.live_pending_claim_space_ids().await?;
+        let discovered_space_ids = space::list_spaces_discovery(&self.operator).await?;
+        let mut space_ids = Vec::with_capacity(discovered_space_ids.len());
+        for space_id in discovered_space_ids {
+            if live_pending_space_ids.contains(&space_id) {
+                continue;
+            }
+            space::validate_complete_bootstrap(&self.operator, &space_id).await?;
+            space_ids.push(space_id);
         }
         Ok(space_ids)
+    }
+
+    async fn list_space_slug_claims(&self) -> Result<Vec<(String, SpaceSlugClaim)>> {
+        let mut lister = match self.operator.lister(SPACE_SLUG_CLAIMS_DIR).await {
+            Ok(lister) => lister,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        let mut claims = Vec::new();
+        while let Some(entry) = lister.try_next().await? {
+            if entry.metadata().mode() != EntryMode::FILE {
+                continue;
+            }
+            let Some(slug) = entry
+                .path()
+                .strip_prefix(SPACE_SLUG_CLAIMS_DIR)
+                .and_then(|name| name.strip_suffix(".json"))
+            else {
+                continue;
+            };
+            if let Some(claim) = self.read_space_slug_claim(slug).await? {
+                claims.push((slug.to_string(), claim));
+            }
+        }
+        Ok(claims)
+    }
+
+    async fn live_pending_claim_space_ids(&self) -> Result<BTreeSet<String>> {
+        let mut space_ids = BTreeSet::new();
+        for (slug, claim) in self.list_space_slug_claims().await? {
+            if claim.state == "pending"
+                && !claim.is_expired()?
+                && !self.space_slug_claim_is_committed(&slug, &claim).await?
+            {
+                space_ids.insert(claim.space_id);
+            }
+        }
+        Ok(space_ids)
+    }
+
+    /// Reconcile expired create/rename claims before strict Space enumeration.
+    /// A pending claim is the durable recovery pointer for a crash-left
+    /// bootstrap; live claims remain untouched, while committed claims are
+    /// deliberately left to strict validation so corruption cannot be hidden.
+    pub async fn recover_pending_space_claims(&self) -> Result<()> {
+        for (slug, claim) in self.list_space_slug_claims().await? {
+            if claim.state == "pending" {
+                let _ = self.recover_claimed_space(&slug).await?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn space_id_by_slug(&self, slug: &str) -> Result<Option<String>> {
@@ -3015,6 +3073,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn non_local_space_mutations_fail_closed_before_storage_writes() -> Result<()> {
+        let service = UgoiteService::new("s3://ugoite-test-bucket/space")?;
+        let error = service
+            .create_space_for_principal("remote-space", Uuid::now_v7(), "Owner")
+            .await
+            .expect_err("non-local Space mutations must be unavailable in v0.1");
+        assert!(error
+            .to_string()
+            .contains("non-local Space mutations are unavailable in v0.1"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn slug_claim_recovery_reuses_uuid_after_bootstrap_interruption() -> Result<()> {
         let service = UgoiteService::new("memory://slug-claim-recovery")?;
         let space_uid = Uuid::now_v7();
@@ -3088,13 +3159,84 @@ mod tests {
         let service = UgoiteService::new("memory://live-space-slug-claim")?;
         service.claim_space_slug("live-claim", "live-claim").await?;
 
+        let incomplete_uid = Uuid::now_v7();
+        service
+            .claim_space_slug("live-incomplete", &incomplete_uid.to_string())
+            .await?;
+        space::create_space_with_identity(
+            service.operator(),
+            incomplete_uid,
+            "live-incomplete",
+            service.root_uri(),
+        )
+        .await?;
+        service
+            .operator
+            .delete(&format!("spaces/{incomplete_uid}/settings.json"))
+            .await?;
+
+        service.recover_pending_space_claims().await?;
         assert_eq!(service.recover_space_id_by_slug("live-claim").await?, None);
+        assert!(service.list_space_ids().await?.is_empty());
         assert!(
             service
                 .operator
                 .exists("spaces/.ugoite-space-slug-claims/live-claim.json")
                 .await?
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn startup_claim_recovery_precedes_strict_space_listing() -> Result<()> {
+        let service = UgoiteService::new("memory://startup-space-claim-recovery")?;
+        let space_uid = Uuid::now_v7();
+        service
+            .claim_space_slug("startup-recover", &space_uid.to_string())
+            .await?;
+        space::create_space_with_identity(
+            service.operator(),
+            space_uid,
+            "startup-recover",
+            service.root_uri(),
+        )
+        .await?;
+        service
+            .operator
+            .delete(&format!("spaces/{space_uid}/settings.json"))
+            .await?;
+        service
+            .expire_space_slug_claim_for_test("startup-recover")
+            .await?;
+
+        service.recover_pending_space_claims().await?;
+        let space_ids = service.list_space_ids().await?;
+        assert_eq!(space_ids, vec![space_uid.to_string()]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unclaimed_incomplete_space_is_not_hidden_by_claim_recovery() -> Result<()> {
+        let service = UgoiteService::new("memory://unclaimed-incomplete-space")?;
+        let space_uid = Uuid::now_v7();
+        space::create_space_with_identity(
+            service.operator(),
+            space_uid,
+            "unclaimed-corrupt",
+            service.root_uri(),
+        )
+        .await?;
+        service
+            .operator
+            .delete(&format!("spaces/{space_uid}/settings.json"))
+            .await?;
+
+        service.recover_pending_space_claims().await?;
+        let error = service
+            .list_space_ids()
+            .await
+            .expect_err("unclaimed incomplete Space must remain visible as corruption");
+        assert!(error.to_string().contains("incomplete Space bootstrap"));
         Ok(())
     }
 

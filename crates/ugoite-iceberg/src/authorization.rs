@@ -257,14 +257,6 @@ fn authorization_mutation_lock_bytes(owner: &str, released: bool) -> Vec<u8> {
     .expect("authorization mutation lock is serializable")
 }
 
-fn shared_authorization_lock_contract(operator: &Operator) -> bool {
-    let capabilities = operator.info().capability();
-    capabilities.stat
-        && capabilities.read_with_if_match
-        && capabilities.write_with_if_not_exists
-        && capabilities.write_with_if_match
-}
-
 impl DurableAuthorizationLease {
     async fn release(mut self) -> Result<()> {
         if let Some(heartbeat) = self.heartbeat.take() {
@@ -635,23 +627,11 @@ impl Authorizer {
         if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
             return Ok(());
         }
-        if !shared_authorization_lock_contract(&self.operator) {
-            bail!(
-                "shared Space authorization mutations require conditional object storage capabilities"
-            );
-        }
-        // The lock protects the authorization document, while Entry/Form/
-        // Asset/Node mutations live in separate durable objects. OpenDAL's
-        // per-object if-match operations cannot make those writes one atomic
-        // transaction. A pre-write ETag check would therefore be a TOCTOU
-        // check: a reclaimed lease could still be followed by the old writer
-        // committing its second object. Keep shared DerivedRelation Head CAS
-        // available, but fail closed for cross-object authorization/content
-        // mutations until the configured backend exposes an atomic
-        // multi-object transaction or a resource-level fencing contract.
-        bail!(
-            "shared authorization/content mutations require an atomic multi-object fencing contract"
-        );
+        Err(AppError::dependency_unavailable(
+            ErrorCode::StorageMutationUnavailable,
+            "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract",
+        )
+        .into())
     }
 
     /// Runs an authorization-dependent read while holding the same process

@@ -6,6 +6,13 @@ title: REST API
 checked-in OpenAPI snapshot and generated frontend path registry are verified in
 CI.
 
+The v0.1 server mutation boundary is local/memory-backed Space storage. S3-
+compatible and other non-local operators remain available for supported
+connection/configuration and derived CAS paths, but authoritative REST
+mutations fail closed until a backend-level atomic multi-object fencing
+contract is implemented. The stable error code is
+`STORAGE_MUTATION_UNAVAILABLE`.
+
 > Release boundary: this page documents the server endpoint inventory and
 > implementation reference. Passkey/TOTP/OIDC login, managed service-account
 > operations, audit CRUD, and remote CLI asset upload are not supported v0.1

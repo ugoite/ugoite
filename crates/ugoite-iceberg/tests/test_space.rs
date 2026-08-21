@@ -117,6 +117,42 @@ async fn local_atomic_space_patch_preserves_private_json_modes() -> anyhow::Resu
 
 #[cfg(unix)]
 #[tokio::test]
+async fn local_space_validation_repairs_previously_published_json_modes() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir()?;
+    let op = Operator::new(Fs::default().root(dir.path().to_string_lossy().as_ref()))?;
+    space::create_space(
+        &op,
+        "published-modes",
+        dir.path().to_string_lossy().as_ref(),
+    )
+    .await?;
+
+    let space_dir = dir.path().join("spaces/published-modes");
+    for file_name in ["meta.json", "settings.json"] {
+        std::fs::set_permissions(
+            space_dir.join(file_name),
+            std::fs::Permissions::from_mode(0o644),
+        )?;
+    }
+
+    space::validate_complete_bootstrap(&op, "published-modes").await?;
+    for file_name in ["meta.json", "settings.json"] {
+        let mode = std::fs::metadata(space_dir.join(file_name))?
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "{file_name} should be repaired before validation"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn missing_local_space_is_reported_as_space_not_found_before_lock_open() -> anyhow::Result<()>
 {
     let dir = tempdir()?;

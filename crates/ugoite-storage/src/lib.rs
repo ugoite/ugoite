@@ -3680,6 +3680,43 @@ impl OpendalStorage {
             _ => None,
         }
     }
+
+    async fn write_local_json_atomic(&self, path: &str, data: &[u8]) -> Result<bool> {
+        let Some(target) = self.local_path(path) else {
+            return Ok(false);
+        };
+        let parent = target
+            .parent()
+            .ok_or_else(|| anyhow!("storage path has no parent: {path}"))?;
+        tokio::fs::create_dir_all(parent).await?;
+        let file_name = target
+            .file_name()
+            .ok_or_else(|| anyhow!("storage path has no file name: {path}"))?
+            .to_string_lossy();
+        let temporary = parent.join(format!(".{file_name}.{}.tmp", Uuid::now_v7()));
+        let result = async {
+            let mut options = tokio::fs::OpenOptions::new();
+            options.create_new(true).write(true).truncate(true);
+            #[cfg(unix)]
+            options.mode(0o600);
+            let mut file = options.open(&temporary).await?;
+            file.write_all(data).await?;
+            file.sync_all().await?;
+            drop(file);
+            tokio::fs::rename(&temporary, &target).await?;
+            #[cfg(unix)]
+            if let Ok(directory) = tokio::fs::File::open(parent).await {
+                directory.sync_all().await?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        if result.is_err() {
+            let _ = tokio::fs::remove_file(&temporary).await;
+        }
+        result?;
+        Ok(true)
+    }
 }
 
 #[async_trait]
@@ -3753,6 +3790,18 @@ impl StorageBackend for OpendalStorage {
                 },
             )
             .await?;
+        Ok(())
+    }
+
+    async fn write_json<T>(&self, path: &str, value: &T) -> Result<()>
+    where
+        T: Serialize + Sync,
+    {
+        let data = serde_json::to_vec_pretty(value)?;
+        if self.write_local_json_atomic(path, &data).await? {
+            return Ok(());
+        }
+        self.operator.write(path, data).await?;
         Ok(())
     }
 

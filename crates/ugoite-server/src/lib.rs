@@ -526,6 +526,10 @@ impl AppState {
         }
         let maintenance_permits =
             Arc::new(Semaphore::new(MAX_STARTUP_DERIVED_MAINTENANCE_CONCURRENCY));
+        // Claim-backed Space creation is the explicit recovery boundary. Run
+        // it before strict enumeration so a crash-left pending bootstrap does
+        // not prevent the server from reaching its listener on restart.
+        self.service.recover_pending_space_claims().await?;
         for space_id in self.service.list_space_ids().await? {
             // Rehydrate relation-local maintenance on every server start. A
             // previous process may have left durable garbage markers after the
