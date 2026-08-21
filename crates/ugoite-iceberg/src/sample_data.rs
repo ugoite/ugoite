@@ -1,7 +1,7 @@
 use crate::entry::{self, EntryCreateRequest};
 use crate::form;
 use crate::integrity::RealIntegrityProvider;
-use crate::space;
+use crate::service::UgoiteService;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use opendal::Operator;
@@ -2002,8 +2002,8 @@ async fn create_sample_space_with_progress(
     progress: &mut ProgressReporter,
 ) -> Result<SampleDataSummary> {
     progress.report(0, "Creating space").await?;
-    let space_uid = Uuid::now_v7();
-    space::create_space_with_identity(op, space_uid, &options.space_id, root_uri).await?;
+    let service = UgoiteService::from_operator(op.clone(), root_uri);
+    let space_uid = service.create_operator_space(&options.space_id).await?;
     let actual_space_id = space_uid.to_string();
     if let Some(owner) = normalize_owner_display_name(options.owner_display_name.as_deref()) {
         crate::authorization::Authorizer::new(op.clone())
@@ -2093,15 +2093,8 @@ pub async fn create_sample_space_job(
     options: &SampleDataOptions,
 ) -> Result<SampleDataJob> {
     let plan = resolve_sample_data_plan(options)?;
-    let mut slug_exists = false;
-    for existing_id in space::list_spaces(op).await? {
-        let meta = space::get_space_raw(op, &existing_id).await?;
-        if meta.get("slug").and_then(Value::as_str) == Some(options.space_id.as_str()) {
-            slug_exists = true;
-            break;
-        }
-    }
-    if slug_exists {
+    let service = UgoiteService::from_operator(op.clone(), root_uri);
+    if service.space_id_by_slug(&options.space_id).await?.is_some() {
         return Err(anyhow!("Space already exists: {}", options.space_id));
     }
 

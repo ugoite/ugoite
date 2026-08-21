@@ -1355,9 +1355,7 @@ pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Resul
 /// Derived Head remains observable and can be rearmed on the next startup.
 pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<bool> {
     let source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
-    let head_store =
-        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
-            .single_process();
+    let head_store = asset_text_head_store(op, ws_path).await?;
     let head = match head_store.read_exact().await {
         Ok(Some(head)) => head.head,
         Ok(None) => {
@@ -2155,8 +2153,31 @@ async fn space_id_from_metadata(op: &Operator, ws_path: &str) -> Result<String> 
         .context("Space metadata has no immutable space ID")
 }
 
+fn is_shared_backend(op: &Operator) -> bool {
+    matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
+}
+
+async fn asset_text_head_store(op: &Operator, ws_path: &str) -> Result<DerivedRelationHeadStore> {
+    let store =
+        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid());
+    if is_shared_backend(op) {
+        store.shared().await
+    } else {
+        Ok(store.single_process())
+    }
+}
+
+async fn catalog_store_for_read(op: &Operator, ws_path: &str) -> Result<SpaceCatalogStore> {
+    let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
+    if is_shared_backend(op) {
+        store.verify_shared_writes().await
+    } else {
+        Ok(store.single_process())
+    }
+}
+
 async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result<Value> {
-    let store = SpaceCatalogStore::new(op.clone(), ws_path)?.single_process();
+    let store = catalog_store_for_read(op, ws_path).await?;
     let Some(exact) = store.read_exact_head().await? else {
         // A newly created, still-empty Space has no Catalog Head.  This is a
         // valid empty source coordinate, not a derived corruption state.
@@ -3345,10 +3366,8 @@ pub async fn register_asset_text_table(
     ws_path: &str,
     table_name: &str,
 ) -> Result<bool> {
-    let store = SpaceCatalogStore::new(op.clone(), ws_path)?.single_process();
-    let head_store =
-        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
-            .single_process();
+    let store = catalog_store_for_read(op, ws_path).await?;
+    let head_store = asset_text_head_store(op, ws_path).await?;
     let Some(head) = head_store.read_exact().await? else {
         return Ok(false);
     };
@@ -3455,9 +3474,7 @@ pub async fn asset_text_search_matches(
 }
 
 pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
-    let head_store =
-        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
-            .single_process();
+    let head_store = asset_text_head_store(op, ws_path).await?;
     let Some(head) = head_store.read_exact().await? else {
         return Ok(json!({"state":"missing","stale":true}));
     };

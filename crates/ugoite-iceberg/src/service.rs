@@ -375,31 +375,21 @@ impl UgoiteService {
     }
 
     pub async fn list_space_ids(&self) -> Result<Vec<String>> {
-        space::list_spaces(&self.operator).await
+        let space_ids = space::list_spaces(&self.operator).await?;
+        for space_id in &space_ids {
+            space::validate_complete_bootstrap(&self.operator, space_id).await?;
+        }
+        Ok(space_ids)
     }
 
     pub async fn space_id_by_slug(&self, slug: &str) -> Result<Option<String>> {
-        let mut seen_uids = BTreeMap::<Uuid, String>::new();
-        let mut matched = None;
         for space_id in self.list_space_ids().await? {
             let meta = self.get_space(&space_id).await?;
-            let space_uid = meta
-                .get("space_uid")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
-                .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
-            if let Some(previous_id) = seen_uids.insert(space_uid, space_id.clone()) {
-                bail!(
-                    "duplicate immutable space_uid {space_uid} is used by Spaces {previous_id} and {space_id}"
-                );
-            }
             if meta.get("slug").and_then(Value::as_str) == Some(slug) {
-                if matched.replace(space_id).is_some() {
-                    bail!("Space slug is not unique: {slug}");
-                }
+                return Ok(Some(space_id));
             }
         }
-        Ok(matched)
+        Ok(None)
     }
 
     pub async fn get_space(&self, space_id: &str) -> Result<Value> {

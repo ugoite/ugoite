@@ -4,6 +4,7 @@ use chrono::Utc;
 use futures::TryStreamExt;
 use opendal::Operator;
 use rand::TryRng;
+use std::collections::BTreeMap;
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use url::Url;
@@ -248,6 +249,8 @@ async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Re
     }
 
     let mut spaces = Vec::new();
+    let mut seen_uids = BTreeMap::<uuid::Uuid, String>::new();
+    let mut seen_slugs = BTreeMap::<String, String>::new();
     for entry in storage.list_dir(spaces_root).await? {
         if !entry.is_dir {
             continue;
@@ -263,6 +266,25 @@ async fn list_spaces_with_storage<S: StorageBackend + ?Sized>(storage: &S) -> Re
         }
         let meta_path = format!("spaces/{space_id}/meta.json");
         if storage.exists(&meta_path).await? {
+            validate_space_path_segment(space_id)?;
+            let meta = ensure_space_identity(storage, space_id).await?;
+            let space_uid = meta
+                .get("space_uid")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| anyhow!("Space is missing immutable space_uid"))
+                .and_then(|value| uuid::Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+            if let Some(previous_id) = seen_uids.insert(space_uid, space_id.to_string()) {
+                bail!(
+                    "duplicate immutable space_uid {space_uid} is used by Spaces {previous_id} and {space_id}"
+                );
+            }
+            let slug = meta
+                .get("slug")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| anyhow!("Space metadata has no slug"))?;
+            if let Some(previous_id) = seen_slugs.insert(slug.to_string(), space_id.to_string()) {
+                bail!("Space slug is not unique: {slug} ({previous_id}, {space_id})");
+            }
             spaces.push(space_id.to_string());
         }
     }
@@ -311,11 +333,10 @@ async fn get_space_raw_with_storage<S: StorageBackend + ?Sized>(
     let settings_path = format!("spaces/{name}/settings.json");
     let mut meta = ensure_space_identity(storage, name).await?;
 
-    let settings = if storage.exists(&settings_path).await? {
-        storage.read_json(&settings_path).await?
-    } else {
-        serde_json::json!({})
-    };
+    if !storage.exists(&settings_path).await? {
+        return Err(anyhow!("unsupported Space layout: missing settings.json"));
+    }
+    let settings: serde_json::Value = storage.read_json(&settings_path).await?;
     meta["settings"] = settings;
     Ok(meta)
 }
@@ -416,6 +437,17 @@ pub async fn validate_complete_bootstrap(op: &Operator, space_id: &str) -> Resul
     let settings_path = format!("spaces/{space_id}/settings.json");
     if !storage.exists(&settings_path).await? {
         return Err(anyhow!("incomplete Space bootstrap: missing settings.json"));
+    }
+    let settings: serde_json::Value = storage.read_json(&settings_path).await?;
+    if !settings.is_object()
+        || settings
+            .get("default_form")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+    {
+        return Err(anyhow!(
+            "incomplete Space bootstrap: settings.json requires default_form"
+        ));
     }
     let workspace_path = format!("spaces/{space_id}");
     form::get_form(op, &workspace_path, "Entry")

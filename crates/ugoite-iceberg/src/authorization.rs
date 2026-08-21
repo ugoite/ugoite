@@ -599,6 +599,20 @@ impl Authorizer {
         let state: AuthorizationState =
             serde_json::from_slice(&bytes).context("decode Space authorization state")?;
         validate_authorization_state(&state)?;
+        let metadata_path = format!("spaces/{space_id}/meta.json");
+        if self.operator.exists(&metadata_path).await? {
+            let metadata = crate::space::get_space_raw(&self.operator, space_id)
+                .await
+                .context("read Space metadata for authorization binding")?;
+            let metadata_space_uid = metadata
+                .get("space_uid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("Space metadata has no immutable space_uid"))
+                .and_then(|value| Uuid::parse_str(value).map_err(anyhow::Error::from))?;
+            if state.space_uid != metadata_space_uid {
+                bail!("Space metadata and authorization state use different space_uid values");
+            }
+        }
         Ok(state)
     }
 
@@ -2569,6 +2583,18 @@ fn validate_authorization_state(state: &AuthorizationState) -> Result<()> {
         if *principal_id != principal.principal_id {
             bail!("Space principal map key does not match principal_id");
         }
+        if !state.principal_lifecycle_epochs.contains_key(principal_id) {
+            bail!("Space principal is missing a lifecycle epoch");
+        }
+        match principal.kind {
+            PrincipalKind::Human if !state.memberships.contains_key(principal_id) => {
+                bail!("Space human principal is missing a membership");
+            }
+            PrincipalKind::Agent if state.memberships.contains_key(principal_id) => {
+                bail!("Space agent principal must not have a membership");
+            }
+            _ => {}
+        }
         if matches!(principal.kind, PrincipalKind::Agent) != state.agents.contains_key(principal_id)
         {
             bail!("Space agent principal and agent record are inconsistent");
@@ -2581,6 +2607,13 @@ fn validate_authorization_state(state: &AuthorizationState) -> Result<()> {
         if !state.principals.contains_key(principal_id) {
             bail!("Space membership references an unknown principal");
         }
+        if !state
+            .principals
+            .get(principal_id)
+            .is_some_and(|principal| matches!(principal.kind, PrincipalKind::Human))
+        {
+            bail!("Space membership must reference a human principal");
+        }
     }
     for (agent_id, agent) in &state.agents {
         if *agent_id != agent.agent_id
@@ -2588,7 +2621,8 @@ fn validate_authorization_state(state: &AuthorizationState) -> Result<()> {
                 .principals
                 .get(agent_id)
                 .is_some_and(|principal| matches!(principal.kind, PrincipalKind::Agent))
-            || !state.agent_grants.contains_key(agent_id)
+            || matches!(agent.status, PrincipalState::Active)
+                != state.agent_grants.contains_key(agent_id)
         {
             bail!("Space agent records are inconsistent");
         }
@@ -2713,10 +2747,11 @@ pub fn effective_actions_for_state(
             state.policies.get(&resource.key()),
         );
     }
-    if state
-        .memberships
-        .get(&principal_id)
-        .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
+    if matches!(principal.kind, PrincipalKind::Human)
+        && state
+            .memberships
+            .get(&principal_id)
+            .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
     {
         effective.extend(role_actions(&SpaceRole::Owner));
     }
@@ -2898,6 +2933,22 @@ mod tests {
             .effective_actions("demo", agent.agent_id, None)
             .await?;
         assert_eq!(actions, [Action::Read].into_iter().collect());
+        authorizer
+            .revoke_agent("demo", sponsor, agent.agent_id)
+            .await?;
+        let revoked_state = authorizer.state("demo").await?;
+        assert!(matches!(
+            revoked_state
+                .agents
+                .get(&agent.agent_id)
+                .map(|agent| &agent.status),
+            Some(PrincipalState::Revoked)
+        ));
+        assert!(!revoked_state.agent_grants.contains_key(&agent.agent_id));
+        assert!(authorizer
+            .effective_actions("demo", agent.agent_id, None)
+            .await
+            .is_err());
         authorizer
             .revoke_principal("demo", other_owner, sponsor)
             .await?;

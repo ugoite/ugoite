@@ -174,6 +174,26 @@ async fn space_metadata_identity_must_match_directory_and_uuidv7_contract() -> a
 }
 
 #[tokio::test]
+async fn incomplete_bootstrap_settings_are_rejected() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "invalid-settings", "/tmp").await?;
+    let settings_path = "spaces/invalid-settings/settings.json";
+
+    op.write(settings_path, br#"{}"#.to_vec()).await?;
+    let error = space::validate_complete_bootstrap(&op, "invalid-settings")
+        .await
+        .expect_err("settings without default_form must be rejected");
+    assert!(error.to_string().contains("requires default_form"));
+
+    op.write(settings_path, br#"[]"#.to_vec()).await?;
+    let error = space::validate_complete_bootstrap(&op, "invalid-settings")
+        .await
+        .expect_err("non-object settings must be rejected");
+    assert!(error.to_string().contains("requires default_form"));
+    Ok(())
+}
+
+#[tokio::test]
 /// REQ-STO-004
 async fn test_space_req_sto_004_list_spaces_from_directory() -> anyhow::Result<()> {
     let op = setup_operator()?;

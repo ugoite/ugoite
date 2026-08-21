@@ -11770,7 +11770,8 @@
           },
           "space_uid": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Immutable UUIDv7 Space identity."
           },
           "slug": {
             "type": "string"

@@ -12422,6 +12422,13 @@ mod authentication_regression_tests {
         operator
             .write(&authorization_path, serde_json::to_vec(&authorization)?)
             .await?;
+        let state_error = authorizer
+            .state(&space_uid.to_string())
+            .await
+            .expect_err("regular authorization reads must bind state to metadata");
+        assert!(state_error
+            .to_string()
+            .contains("different space_uid values"));
         let validation_error = authorizer
             .validate_current_layout(&space_uid.to_string(), space_uid)
             .await
