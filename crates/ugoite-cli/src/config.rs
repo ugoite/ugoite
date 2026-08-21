@@ -225,46 +225,22 @@ pub fn operator_for_path(path: &str) -> Result<opendal::Operator> {
     let atomic_write_dir = local_atomic_write_dir(root);
     let mut builder = Fs::default().root(root);
     if let Some(atomic_write_dir) = atomic_write_dir {
-        std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
-            format!(
-                "create same-filesystem atomic write directory {}",
-                atomic_write_dir.display()
-            )
-        })?;
-        builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
+        // If the target filesystem cannot create the helper directory, do
+        // not guess a cross-filesystem temp location. OpenDAL's default is
+        // the safe fallback for roots where atomic replacement cannot be
+        // configured (for example a read-only root).
+        if std::fs::create_dir_all(&atomic_write_dir).is_ok() {
+            builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
+        }
     }
     Ok(opendal::Operator::new(builder)?)
 }
 
 fn local_atomic_write_dir(root: &str) -> Option<PathBuf> {
-    let root_path = Path::new(root);
-    let candidate = if root == "/" {
-        let spaces = root_path.join("spaces");
-        (spaces.is_dir() && same_filesystem(root_path, &spaces))
-            .then(|| spaces.join(".ugoite-atomic-writes"))
-            .or_else(|| {
-                let temp = std::env::temp_dir();
-                same_filesystem(root_path, &temp)
-                    .then(|| temp.join(format!(".ugoite-atomic-writes-{}", std::process::id())))
-            })
-    } else {
-        Some(root_path.join(".ugoite-atomic-writes"))
-    };
-    candidate
-}
-
-#[cfg(unix)]
-fn same_filesystem(first: &Path, second: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-
-    std::fs::metadata(first)
-        .and_then(|first| std::fs::metadata(second).map(|second| first.dev() == second.dev()))
-        .unwrap_or(false)
-}
-
-#[cfg(not(unix))]
-fn same_filesystem(_first: &Path, _second: &Path) -> bool {
-    true
+    // Atomic writes target Space objects below root/spaces. Put OpenDAL's
+    // temporary files under that exact directory so a separately mounted
+    // `spaces` filesystem is handled correctly as well.
+    Some(Path::new(root).join("spaces").join(".ugoite-atomic-writes"))
 }
 
 pub fn space_ws_path(_root_path: &str, space_id: &str) -> String {

@@ -2267,19 +2267,51 @@ impl DerivedRelationHeadStore {
             ));
         }
         let storage = IcebergStorageConfig::from_operator(&self.operator)?;
-        let warehouse_prefix = if storage.warehouse_uri == "memory:" {
+        let warehouse_uri = if storage.warehouse_uri == "memory:" {
             "memory:///".to_string()
         } else {
             format!("{}/", storage.warehouse_uri.trim_end_matches('/'))
         };
-        let expected_absolute_prefix = format!(
-            "{}{}/_ugoite/derived/relations/{}/builds/{}/",
-            warehouse_prefix, self.space_root, self.relation_id, head.build_id
+        let expected_prefix = format!(
+            "{}{}/_ugoite/derived/relations/{}/builds/{}",
+            warehouse_uri, self.space_root, self.relation_id, head.build_id
         );
+        let expected_url = url::Url::parse(&expected_prefix)
+            .context("parse expected DerivedRelation metadata URI")?;
+        let actual_url = url::Url::parse(&head.metadata_location)
+            .context("parse DerivedRelation Head metadata_location")?;
+        let raw_has_dot_segment = head.metadata_location.split('/').any(|segment| {
+            let segment = segment
+                .split(['?', '#'])
+                .next()
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            matches!(segment.as_str(), "." | ".." | "%2e" | "%2e%2e")
+        });
+        let expected_segments = expected_url
+            .path_segments()
+            .map(|segments| segments.collect::<Vec<_>>())
+            .unwrap_or_default();
+        let actual_segments = actual_url
+            .path_segments()
+            .map(|segments| segments.collect::<Vec<_>>())
+            .unwrap_or_default();
+        let exact_authority = actual_url.scheme() == expected_url.scheme()
+            && actual_url.username() == expected_url.username()
+            && actual_url.password() == expected_url.password()
+            && actual_url.host() == expected_url.host()
+            && actual_url.port_or_known_default() == expected_url.port_or_known_default();
+        let has_safe_metadata_path = actual_segments.len() > expected_segments.len()
+            && actual_segments[..expected_segments.len()] == expected_segments[..]
+            && actual_segments[expected_segments.len()..]
+                .iter()
+                .all(|segment| !matches!(*segment, "." | ".."));
         if head.metadata_location.trim().is_empty()
-            || !head
-                .metadata_location
-                .starts_with(&expected_absolute_prefix)
+            || !exact_authority
+            || actual_url.query().is_some()
+            || actual_url.fragment().is_some()
+            || raw_has_dot_segment
+            || !has_safe_metadata_path
         {
             return Err(anyhow!(
                 "DerivedRelation Head metadata_location is not bound to its Space, relation, and build"
@@ -3531,51 +3563,23 @@ fn local_operator_from_uri(uri: &str) -> Result<Operator> {
     let atomic_write_dir = local_atomic_write_dir(root);
     let mut builder = Fs::default().root(root);
     if let Some(atomic_write_dir) = atomic_write_dir {
-        std::fs::create_dir_all(&atomic_write_dir).with_context(|| {
-            format!(
-                "create same-filesystem atomic write directory {}",
-                atomic_write_dir.display()
-            )
-        })?;
-        builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
+        // If the target filesystem cannot create the helper directory, do
+        // not guess a cross-filesystem temp location. OpenDAL's default is
+        // the safe fallback for roots where atomic replacement cannot be
+        // configured (for example a read-only root).
+        if std::fs::create_dir_all(&atomic_write_dir).is_ok() {
+            builder = builder.atomic_write_dir(atomic_write_dir.to_string_lossy().as_ref());
+        }
     }
     let op = Operator::new(builder)?;
     Ok(op)
 }
 
 fn local_atomic_write_dir(root: &str) -> Option<std::path::PathBuf> {
-    let root_path = Path::new(root);
-    let candidate = if root == "/" {
-        let spaces = root_path.join("spaces");
-        (spaces.is_dir() && same_filesystem(root_path, &spaces))
-            .then(|| spaces.join(".ugoite-atomic-writes"))
-            .or_else(|| {
-                // A root-backed operator may be opened before `/spaces` is
-                // created. Use a private directory only when it is proven to
-                // be on the same filesystem; never use a blind `/tmp`
-                // fallback that could make replacement writes non-atomic.
-                let temp = std::env::temp_dir();
-                same_filesystem(root_path, &temp)
-                    .then(|| temp.join(format!(".ugoite-atomic-writes-{}", std::process::id())))
-            })
-    } else {
-        Some(root_path.join(".ugoite-atomic-writes"))
-    };
-    candidate
-}
-
-#[cfg(unix)]
-fn same_filesystem(first: &Path, second: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-
-    std::fs::metadata(first)
-        .and_then(|first| std::fs::metadata(second).map(|second| first.dev() == second.dev()))
-        .unwrap_or(false)
-}
-
-#[cfg(not(unix))]
-fn same_filesystem(_first: &Path, _second: &Path) -> bool {
-    true
+    // Atomic writes target Space objects below root/spaces. Keep the
+    // temporary directory on that exact filesystem, including when `spaces`
+    // is a separate mount or does not exist yet.
+    Some(Path::new(root).join("spaces").join(".ugoite-atomic-writes"))
 }
 
 pub fn operator_from_uri(uri: &str) -> Result<Operator> {
@@ -3973,6 +3977,20 @@ mod tests {
         store.create(&first).await?;
         let exact_first = store.read_exact().await?.expect("derived Head");
         assert!(!exact_first.head.checksum.is_empty());
+
+        let escaped_build_id = test_build_id();
+        let mut escaped = first.clone();
+        escaped.generation = 2;
+        escaped.build_id = escaped_build_id.clone();
+        escaped.metadata_location = format!(
+            "memory:///spaces/demo/_ugoite/derived/relations/{relation_id}/builds/{escaped_build_id}/../outside/metadata.json"
+        );
+        store.mark_staging(&escaped.build_id).await?;
+        let escape_error = store
+            .replace(None, &escaped)
+            .await
+            .expect_err("metadata must not escape the relation build prefix");
+        assert!(escape_error.to_string().contains("metadata_location"));
 
         let mut second = first.clone();
         second.generation = 2;

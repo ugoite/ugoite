@@ -1354,6 +1354,7 @@ pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Resul
 /// even if a process crashes before it can write a refresh marker, a stale
 /// Derived Head remains observable and can be rearmed on the next startup.
 pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<bool> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
     let source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
     let head_store = asset_text_head_store(op, ws_path).await?;
     let head = match head_store.read_exact().await {
@@ -1416,6 +1417,7 @@ async fn rebuild_asset_text_with_mode(
     ws_path: &str,
     shared: bool,
 ) -> Result<DerivedRelationHead> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
     let definition = asset_text_definition();
     let producer_fingerprint = asset_text_producer_fingerprint();
     let relation_uuid = definition.relation_id.as_uuid();
@@ -2235,14 +2237,11 @@ async fn validate_asset_text_head_binding(
     ws_path: &str,
     head: &DerivedRelationHead,
 ) -> Result<()> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
     let space_id = ws_path
         .strip_prefix("spaces/")
         .filter(|value| !value.is_empty() && !value.contains('/'))
         .context("derived workspace path is not a Space directory")?;
-    // Derived reads are not an alternate Space read boundary. Require the
-    // authoritative scaffold, settings, starter Form, and local permission
-    // checks before opening any relation-local table.
-    crate::space::validate_complete_bootstrap(op, space_id).await?;
     let path = format!("{ws_path}/meta.json");
     let metadata: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
     let current_uid = crate::space::validate_current_space_metadata(space_id, &metadata)?;
@@ -2251,6 +2250,19 @@ async fn validate_asset_text_head_binding(
             "DerivedRelation Head space_id does not match the authoritative Space"
         ));
     }
+    Ok(())
+}
+
+async fn validate_asset_text_read_boundary(op: &Operator, ws_path: &str) -> Result<()> {
+    let space_id = ws_path
+        .strip_prefix("spaces/")
+        .filter(|value| !value.is_empty() && !value.contains('/'))
+        .context("derived workspace path is not a Space directory")?;
+    // Derived reads are not an alternate Space read boundary. Require the
+    // authoritative scaffold, settings, starter Form, and local permission
+    // checks before opening any relation-local table or deciding that a Head
+    // is missing/stale.
+    crate::space::validate_complete_bootstrap(op, space_id).await?;
     Ok(())
 }
 
@@ -3658,6 +3670,7 @@ pub async fn register_asset_text_table(
     ws_path: &str,
     table_name: &str,
 ) -> Result<bool> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
     let head_store = asset_text_head_store(op, ws_path).await?;
     let Some(head) = head_store.read_exact().await? else {
         return Ok(false);
@@ -3685,6 +3698,7 @@ pub async fn asset_text_search_matches(
     ws_path: &str,
     query: &str,
 ) -> Result<Option<HashSet<String>>> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
     if query.len() > MAX_ASSET_TEXT_QUERY_BYTES {
         bail!("AssetText search query exceeds its byte limit");
     }
@@ -3757,6 +3771,7 @@ pub async fn asset_text_search_matches(
 }
 
 pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
     let head_store = asset_text_head_store(op, ws_path).await?;
     let Some(head) = head_store.read_exact().await? else {
         return Ok(json!({"state":"missing","stale":true}));
@@ -3912,10 +3927,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_space_has_no_durable_refresh_need_without_a_catalog_head() -> anyhow::Result<()>
-    {
+    async fn starter_form_catalog_head_requires_initial_derived_build() -> anyhow::Result<()> {
         let operator = opendal::Operator::new(opendal::services::Memory::default())?;
-        assert!(!asset_text_refresh_needed(&operator, "spaces/empty").await?);
+        crate::space::create_space(&operator, "empty", "memory:///").await?;
+        assert!(asset_text_refresh_needed(&operator, "spaces/empty").await?);
         Ok(())
     }
 
@@ -4205,6 +4220,7 @@ mod tests {
     #[tokio::test]
     async fn asset_text_search_rejects_an_oversized_query_before_planning() -> anyhow::Result<()> {
         let op = opendal::Operator::new(opendal::services::Memory::default())?;
+        crate::space::create_space(&op, "missing", "memory:///").await?;
         let error = asset_text_search_matches(
             &op,
             "spaces/missing",

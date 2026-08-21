@@ -1,11 +1,14 @@
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use fs2::FileExt;
 use opendal::options::WriteOptions;
 use opendal::Operator;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{File, OpenOptions};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::time::Duration;
@@ -136,6 +139,7 @@ impl Drop for SpaceSlugClaimLease {
 }
 
 async fn renew_space_slug_claim(operator: &Operator, claim: &SpaceSlugClaim) -> Result<()> {
+    let _claim_lock = acquire_local_space_slug_claim_lock(operator, &claim.slug).await?;
     let path = format!("{SPACE_SLUG_CLAIMS_DIR}{}.json", claim.slug);
     let metadata = operator.stat(&path).await?;
     let current = operator
@@ -175,6 +179,40 @@ async fn renew_space_slug_claim(operator: &Operator, claim: &SpaceSlugClaim) -> 
         bail!("shared Space slug claim renewal requires an exact ETag")
     }
     Ok(())
+}
+
+fn local_space_slug_claim_lock_path(operator: &Operator, slug: &str) -> Option<PathBuf> {
+    if !matches!(operator.info().scheme(), "fs" | "file") {
+        return None;
+    }
+    Some(
+        Path::new(operator.info().root().as_str())
+            .join(SPACE_SLUG_CLAIMS_DIR.trim_end_matches('/'))
+            .join(format!("{slug}.lock")),
+    )
+}
+
+async fn acquire_local_space_slug_claim_lock(
+    operator: &Operator,
+    slug: &str,
+) -> Result<Option<File>> {
+    let Some(path) = local_space_slug_claim_lock_path(operator, slug) else {
+        return Ok(None);
+    };
+    let file = tokio::task::spawn_blocking(move || -> Result<File> {
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .with_context(|| format!("open Space slug claim lock {}", path.display()))?;
+        file.lock_exclusive()
+            .with_context(|| format!("lock Space slug claim {}", path.display()))?;
+        Ok(file)
+    })
+    .await
+    .context("join Space slug claim lock task")??;
+    Ok(Some(file))
 }
 
 impl UgoiteService {
@@ -462,6 +500,7 @@ impl UgoiteService {
         owner: Option<(Uuid, String)>,
     ) -> Result<SpaceSlugClaim> {
         self.operator.create_dir(SPACE_SLUG_CLAIMS_DIR).await?;
+        let _claim_lock = acquire_local_space_slug_claim_lock(&self.operator, slug).await?;
         let claim_path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json");
         let now = Utc::now();
         let claim_record = SpaceSlugClaim {
@@ -476,29 +515,41 @@ impl UgoiteService {
             owner_display_name: owner.map(|(_, display_name)| display_name),
         };
         let claim = serde_json::to_vec(&claim_record)?;
-        OpendalStorage::from_operator(&self.operator)
-            .write_if_absent(&claim_path, claim)
-            .await
-            .map_err(|error| {
-                if error.chain().any(|cause| {
-                    cause.downcast_ref::<opendal::Error>().is_some_and(|error| {
-                        matches!(
-                            error.kind(),
-                            opendal::ErrorKind::AlreadyExists
-                                | opendal::ErrorKind::ConditionNotMatch
+        if let Some((existing, etag)) = self.read_space_slug_claim_exact(slug).await? {
+            if existing.state != "released" {
+                return Err(AppError::conflict(
+                    ErrorCode::SpaceAlreadyExists,
+                    format!("Space slug already exists: {slug}"),
+                )
+                .into());
+            }
+            self.write_space_slug_claim(&claim_path, claim, etag.as_deref())
+                .await?;
+        } else {
+            OpendalStorage::from_operator(&self.operator)
+                .write_if_absent(&claim_path, claim)
+                .await
+                .map_err(|error| {
+                    if error.chain().any(|cause| {
+                        cause.downcast_ref::<opendal::Error>().is_some_and(|error| {
+                            matches!(
+                                error.kind(),
+                                opendal::ErrorKind::AlreadyExists
+                                    | opendal::ErrorKind::ConditionNotMatch
+                            )
+                        }) || cause
+                            .downcast_ref::<std::io::Error>()
+                            .is_some_and(|error| error.kind() == std::io::ErrorKind::AlreadyExists)
+                    }) {
+                        return AppError::conflict(
+                            ErrorCode::SpaceAlreadyExists,
+                            format!("Space slug already exists: {slug}"),
                         )
-                    }) || cause
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|error| error.kind() == std::io::ErrorKind::AlreadyExists)
-                }) {
-                    return AppError::conflict(
-                        ErrorCode::SpaceAlreadyExists,
-                        format!("Space slug already exists: {slug}"),
-                    )
-                    .into();
-                }
-                error.context("claim Space slug with conditional storage create")
-            })?;
+                        .into();
+                    }
+                    error.context("claim Space slug with conditional storage create")
+                })?;
+        }
         Ok(claim_record)
     }
 
@@ -508,43 +559,37 @@ impl UgoiteService {
         space_id: &str,
         claim_id: Uuid,
     ) -> Result<()> {
-        let Some(claim) = self.read_space_slug_claim(slug).await? else {
+        let _claim_lock = acquire_local_space_slug_claim_lock(&self.operator, slug).await?;
+        let Some((claim, etag)) = self.read_space_slug_claim_exact(slug).await? else {
             bail!("Space slug claim disappeared before bootstrap commit: {slug}");
         };
-        if claim.space_id != space_id || claim.claim_id != claim_id || claim.is_expired()? {
+        if claim.state == "committed" {
+            if claim.space_id == space_id && claim.claim_id == claim_id {
+                return Ok(());
+            }
             bail!("Space slug claim is owned by another Space: {slug}");
         }
-        let committed_path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}{SPACE_SLUG_COMMITTED_SUFFIX}");
+        if claim.state != "pending"
+            || claim.space_id != space_id
+            || claim.claim_id != claim_id
+            || claim.is_expired()?
+        {
+            bail!("Space slug claim is owned by another Space: {slug}");
+        }
         let mut committed_claim = claim;
         committed_claim.state = "committed".to_string();
         let committed = serde_json::to_vec(&committed_claim)?;
-        match OpendalStorage::from_operator(&self.operator)
-            .write_if_absent(&committed_path, committed)
-            .await
-        {
-            Ok(()) => {}
-            Err(error)
-                if error.chain().any(|cause| {
-                    cause.downcast_ref::<opendal::Error>().is_some_and(|error| {
-                        matches!(
-                            error.kind(),
-                            opendal::ErrorKind::AlreadyExists
-                                | opendal::ErrorKind::ConditionNotMatch
-                        )
-                    }) || cause
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|error| error.kind() == std::io::ErrorKind::AlreadyExists)
-                }) =>
-            {
-                let marker: SpaceSlugClaim =
-                    serde_json::from_slice(&self.operator.read(&committed_path).await?.to_vec())?;
-                if marker.slug != slug || marker.space_id != space_id || marker.claim_id != claim_id
-                {
-                    bail!("Space slug commit marker is owned by another Space: {slug}");
-                }
-            }
-            Err(error) => return Err(error.context("commit Space slug claim")),
-        }
+        self.write_space_slug_claim(
+            &format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json"),
+            committed.clone(),
+            etag.as_deref(),
+        )
+        .await?;
+        // The claim JSON is the version-fenced commit record. The marker is a
+        // derived discovery hint and may be rewritten after a released slug
+        // is claimed again; it is never used to authorize the transition.
+        let committed_path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}{SPACE_SLUG_COMMITTED_SUFFIX}");
+        self.operator.write(&committed_path, committed).await?;
         Ok(())
     }
 
@@ -553,6 +598,9 @@ impl UgoiteService {
         slug: &str,
         claim: &SpaceSlugClaim,
     ) -> Result<bool> {
+        if claim.state == "committed" {
+            return Ok(true);
+        }
         let path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}{SPACE_SLUG_COMMITTED_SUFFIX}");
         let bytes = match self.operator.read(&path).await {
             Ok(bytes) => bytes.to_vec(),
@@ -566,26 +614,57 @@ impl UgoiteService {
             || marker.claim_id != claim.claim_id
             || marker.state != "committed"
         {
-            bail!("Space slug commit marker does not match its claim: {slug}");
+            return Ok(false);
         }
         Ok(true)
     }
 
     async fn read_space_slug_claim(&self, slug: &str) -> Result<Option<SpaceSlugClaim>> {
+        Ok(self
+            .read_space_slug_claim_exact(slug)
+            .await?
+            .map(|(claim, _)| claim))
+    }
+
+    async fn read_space_slug_claim_exact(
+        &self,
+        slug: &str,
+    ) -> Result<Option<(SpaceSlugClaim, Option<String>)>> {
         validate_storage_id(validate_space_id(slug))?;
         let path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json");
-        let bytes = match self.operator.read(&path).await {
-            Ok(bytes) => bytes.to_vec(),
+        let metadata = match self.operator.stat(&path).await {
+            Ok(metadata) => metadata,
             Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
-        let claim: SpaceSlugClaim = serde_json::from_slice(&bytes)
+        let etag = metadata
+            .etag()
+            .filter(|etag| !etag.is_empty())
+            .map(str::to_owned);
+        let bytes = match etag.as_deref() {
+            Some(etag) => {
+                self.operator
+                    .read_options(
+                        &path,
+                        opendal::options::ReadOptions {
+                            if_match: Some(etag.to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await?
+            }
+            None if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") => {
+                self.operator.read(&path).await?
+            }
+            None => bail!("shared Space slug claim read requires an exact ETag"),
+        };
+        let claim: SpaceSlugClaim = serde_json::from_slice(&bytes.to_vec())
             .map_err(|error| anyhow!("invalid Space slug claim for {slug}: {error}"))?;
         if claim.slug != slug {
             bail!("Space slug claim path and payload disagree for {slug}");
         }
         validate_storage_id(validate_space_id(&claim.space_id))?;
-        if claim.state != "pending" {
+        if !matches!(claim.state.as_str(), "pending" | "committed" | "released") {
             bail!("invalid Space slug claim state for {slug}");
         }
         if claim.space_id != slug {
@@ -597,7 +676,32 @@ impl UgoiteService {
                 bail!("legacy Space slug claim points to a missing Space: {slug}");
             }
         }
-        Ok(Some(claim))
+        Ok(Some((claim, etag)))
+    }
+
+    async fn write_space_slug_claim(
+        &self,
+        path: &str,
+        bytes: Vec<u8>,
+        expected_etag: Option<&str>,
+    ) -> Result<()> {
+        if let Some(etag) = expected_etag {
+            self.operator
+                .write_options(
+                    path,
+                    bytes,
+                    WriteOptions {
+                        if_match: Some(etag.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+        } else if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+            self.operator.write(path, bytes).await?;
+        } else {
+            bail!("shared Space slug claim write requires an exact ETag")
+        }
+        Ok(())
     }
 
     fn start_space_slug_claim_heartbeat(&self, claim: &SpaceSlugClaim) -> SpaceSlugClaimLease {
@@ -630,6 +734,7 @@ impl UgoiteService {
         if !claim.is_expired()? {
             return Ok(None);
         }
+        let _claim_lock = acquire_local_space_slug_claim_lock(&self.operator, &claim.slug).await?;
         let path = format!("{SPACE_SLUG_CLAIMS_DIR}{}.json", claim.slug);
         let metadata = self.operator.stat(&path).await?;
         let current = self
@@ -646,7 +751,10 @@ impl UgoiteService {
             )
             .await?;
         let current: SpaceSlugClaim = serde_json::from_slice(&current.to_vec())?;
-        if current.claim_id != claim.claim_id || !current.is_expired()? {
+        if current.state != "pending"
+            || current.claim_id != claim.claim_id
+            || !current.is_expired()?
+        {
             return Ok(None);
         }
         let now = Utc::now();
@@ -688,8 +796,9 @@ impl UgoiteService {
         space_id: &str,
         claim_id: Option<Uuid>,
     ) -> Result<()> {
+        let _claim_lock = acquire_local_space_slug_claim_lock(&self.operator, slug).await?;
         let path = format!("{SPACE_SLUG_CLAIMS_DIR}{slug}.json");
-        let Some(claim) = self.read_space_slug_claim(slug).await? else {
+        let Some((claim, etag)) = self.read_space_slug_claim_exact(slug).await? else {
             return Ok(());
         };
         if claim.space_id == space_id && claim_id.is_none_or(|expected| expected == claim.claim_id)
@@ -701,7 +810,23 @@ impl UgoiteService {
                 Err(error) if error.kind() == opendal::ErrorKind::NotFound => {}
                 Err(error) => return Err(error.into()),
             }
-            self.operator.delete(&path).await?;
+            let mut released = claim;
+            released.state = "released".to_string();
+            if matches!(self.operator.info().scheme(), "memory" | "fs" | "file") {
+                // Local claim operations are protected by the inter-process
+                // lock above. Removing the local tombstone keeps the
+                // filesystem layout compact; shared backends retain the
+                // version-fenced released record for the next conditional
+                // claimant.
+                match self.operator.delete(&path).await {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == opendal::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            } else {
+                self.write_space_slug_claim(&path, serde_json::to_vec(&released)?, etag.as_deref())
+                    .await?;
+            }
         }
         Ok(())
     }
@@ -747,11 +872,16 @@ impl UgoiteService {
         let space_uid = Uuid::parse_str(&claim.space_id)
             .context("principal-backed Space slug claim does not use a UUID directory")?;
         let authorizer = Authorizer::new(self.operator.clone());
+        // Apply the same legacy-layout rejection before either validating or
+        // creating authorization state. Recovery must not upgrade an
+        // ambiguous pre-current ownership layout merely because the claim is
+        // otherwise expired and structurally repairable.
+        authorizer
+            .validate_current_layout(&claim.space_id, space_uid)
+            .await?;
         let state_path = format!("spaces/{}/security/principals.json", claim.space_id);
         if self.operator.exists(&state_path).await? {
-            authorizer
-                .validate_current_layout(&claim.space_id, space_uid)
-                .await
+            Ok(())
         } else {
             authorizer
                 .initialize_owner(&claim.space_id, space_uid, principal_id, display_name)
