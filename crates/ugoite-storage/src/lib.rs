@@ -475,7 +475,7 @@ impl DerivedRelationHeadStore {
         let build_id = value.get("build_id").and_then(serde_json::Value::as_str);
         matches!(state, Some("garbage_fence" | "head_fence_released"))
             && relation_id == Some(self.relation_id)
-            && !build_id.is_some_and(|value| Self::is_valid_build_id(value))
+            && !build_id.is_some_and(Self::is_valid_build_id)
     }
 
     /// Replace a malformed empty-head fence with a valid released sentinel.
@@ -2650,10 +2650,10 @@ impl DerivedRelationHeadStore {
         }
         Uuid::parse_str(&head.table_uuid)
             .context("DerivedRelation Head table_uuid is not a UUID")?;
-        if !head
+        if head
             .table_identifier
             .as_object()
-            .is_some_and(|object| !object.is_empty())
+            .is_none_or(|object| object.is_empty())
         {
             return Err(anyhow!(
                 "DerivedRelation Head table_identifier must be a non-empty object"
