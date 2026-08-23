@@ -3035,7 +3035,7 @@ mod tests {
 
     #[tokio::test]
     async fn agent_is_revoked_when_an_owner_is_demoted() -> Result<()> {
-        let op = operator_from_uri("memory://agent-owner-demotion").map_err(anyhow::Error::from)?;
+        let op = operator_from_uri("memory://agent-owner-demotion")?;
         op.create_dir("spaces/demo/").await?;
         let authorizer = Authorizer::new(op);
         let sponsor = Uuid::now_v7();

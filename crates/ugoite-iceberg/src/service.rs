@@ -207,6 +207,7 @@ async fn acquire_local_space_slug_claim_lock(
     let file = tokio::task::spawn_blocking(move || -> Result<File> {
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&path)
@@ -2081,7 +2082,7 @@ impl UgoiteService {
             parent: None,
         };
         for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+            if !effective_actions_for_state(state, *principal_id, Some(&resource))?
                 .contains(&action)
             {
                 return Err(
@@ -2285,7 +2286,7 @@ impl UgoiteService {
     ) -> Result<BTreeMap<String, EntryScope>> {
         require_nonempty_authorized_principals(principal_ids)?;
         for principal_id in principal_ids {
-            if !effective_actions_for_state(&state, *principal_id, None)?.contains(&Action::Read) {
+            if !effective_actions_for_state(state, *principal_id, None)?.contains(&Action::Read) {
                 return Ok(BTreeMap::new());
             }
         }
@@ -2305,7 +2306,7 @@ impl UgoiteService {
                     parent: None,
                 };
                 principal_ids.iter().all(|principal_id| {
-                    effective_actions_for_state(&state, *principal_id, Some(&resource))
+                    effective_actions_for_state(state, *principal_id, Some(&resource))
                         .map(|actions| actions.contains(&Action::Read))
                         .unwrap_or(false)
                 })
@@ -2323,7 +2324,7 @@ impl UgoiteService {
             };
             let mut readable_by_every_principal = true;
             for principal_id in principal_ids {
-                if !effective_actions_for_state(&state, *principal_id, Some(&resource))?
+                if !effective_actions_for_state(state, *principal_id, Some(&resource))?
                     .contains(&Action::Read)
                 {
                     readable_by_every_principal = false;
@@ -2753,7 +2754,7 @@ impl UgoiteService {
                 .map_err(sql_session_metadata_authorization_error)?;
         let relation = index::sql_session_page_relation(&inputs.sql)
             .map_err(sql_session_metadata_authorization_error)?;
-        let entry_scope = sql_session_entry_scope(&state, principal_ids)?;
+        let entry_scope = sql_session_entry_scope(state, principal_ids)?;
         let query_policy = index::sql_session_query_policy_at_checkpoint(
             &self.operator,
             &workspace_path,
@@ -3575,7 +3576,7 @@ pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
         }
     }
     if let Some(name) = object.get("name") {
-        if !name.as_str().is_some_and(|value| !value.trim().is_empty()) {
+        if name.as_str().is_none_or(|value| value.trim().is_empty()) {
             bail!("space patch name must be a non-empty string");
         }
     }
@@ -3591,7 +3592,7 @@ pub fn validate_public_space_patch(patch: &Value) -> Result<()> {
             bail!("space patch storage_config must be an object");
         }
         if let Some(uri) = storage_config.get("uri") {
-            if !uri.as_str().is_some_and(|value| !value.trim().is_empty()) {
+            if uri.as_str().is_none_or(|value| value.trim().is_empty()) {
                 bail!("space patch storage_config.uri must be a non-empty string");
             }
         }

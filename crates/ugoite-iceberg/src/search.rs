@@ -223,6 +223,7 @@ fn sql_string_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn asset_text_search_authorized(
     op: &Operator,
     ws_path: &str,
@@ -271,6 +272,7 @@ async fn asset_text_search_authorized(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn asset_text_search_authorized_inner(
     op: &Operator,
     ws_path: &str,

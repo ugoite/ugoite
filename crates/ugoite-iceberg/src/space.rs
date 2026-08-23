@@ -366,7 +366,7 @@ async fn repair_space_scaffold(
             return Err(error.context("read authoritative Entry Form during Space repair"))
         }
     }
-    apply_local_space_permissions(op, &directory_id)?;
+    apply_local_space_permissions(op, directory_id)?;
     Ok(())
 }
 
@@ -627,6 +627,7 @@ async fn acquire_local_space_patch_lock(op: &Operator, space_id: &str) -> Result
     let file = tokio::task::spawn_blocking(move || -> Result<File> {
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&path)
@@ -842,7 +843,7 @@ async fn complete_space_patch_journal(
                 bail!("Space patch journal changed while completing")
             }
         }
-        Err(error) => Err(error.into()),
+        Err(error) => Err(error),
     }
 }
 
@@ -887,7 +888,7 @@ async fn write_pending_space_patch(
             match result {
                 Ok(_) => {}
                 Err(error) if is_condition_not_match_anyhow(&error) => continue,
-                Err(error) => return Err(error.into()),
+                Err(error) => return Err(error),
             }
         } else {
             let result = if matches!(op.info().scheme(), "fs" | "file") {
@@ -908,7 +909,7 @@ async fn write_pending_space_patch(
             match result {
                 Ok(_) => {}
                 Err(error) if is_condition_not_match_anyhow(&error) => continue,
-                Err(error) => return Err(error.into()),
+                Err(error) => return Err(error),
             }
         }
         let Some((current, etag)) = read_space_patch_journal_exact(op, path).await? else {

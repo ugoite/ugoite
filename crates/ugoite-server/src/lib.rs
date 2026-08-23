@@ -1448,11 +1448,11 @@ async fn auth_setup_finish(
         for space_id in &existing_spaces {
             let space_uid = state
                 .service
-                .space_uid(&space_id)
+                .space_uid(space_id)
                 .await
                 .map_err(ApiError::from_core)?;
             let principal_id = authorizer
-                .ensure_owner(&space_id, space_uid, &result.account.display_name)
+                .ensure_owner(space_id, space_uid, &result.account.display_name)
                 .await
                 .map_err(ApiError::from_core)?;
             claims.push((space_uid, principal_id));

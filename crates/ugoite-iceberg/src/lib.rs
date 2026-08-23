@@ -2301,7 +2301,6 @@ impl SpaceCommitCoordinator {
             .as_ref()
             .context("coordinator is missing its SpaceCatalog")?
             .ensure_authoritative_mutation_contract()
-            .map_err(Into::into)
     }
 
     async fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
