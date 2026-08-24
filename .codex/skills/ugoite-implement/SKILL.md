@@ -1,51 +1,70 @@
 ---
 name: ugoite-implement
-description: Use when implementing, refactoring, or fixing Ugoite code or docs and you need the repo-specific workflow.
+description: Use when implementing, refactoring, or fixing Ugoite code, docs, or repository workflow guidance.
 ---
 
 # Ugoite Implementation
 
-Use this skill when you are making a change rather than just investigating.
+Use the smallest workflow that satisfies the requested delivery unit. Keep
+authoritative data portable and preserve the architecture in `AGENTS.md`.
 
 ## Workflow
 
 1. Read the owning surface docs and relevant spec entries.
-2. Make the smallest change that satisfies the requirement.
-3. Add or update tests in the same surface.
-4. Run the narrowest CI-aligned check first.
-5. Expand to the repo-wide check only when the change crosses surfaces.
+2. Confirm worktree, branch, exact base, and pre-existing changes.
+3. If a failure is reported, reproduce the same command, endpoint, or CI task
+   before broad exploration.
+4. Define the smallest coherent delivery unit. Split independent invariants
+   into separate issues/PRs when that makes them independently reviewable;
+   keep coupled changes together when an intermediate state would not be a
+   valid product state.
+5. Make the smallest change that satisfies the requirement.
+6. Add or update tests in the owning surface.
+7. Run the narrowest CI-aligned validation first. Expand only when the changed
+   surface or merge gate requires it.
+8. Review the result, publish the branch, and use the repository PR/CI flow.
 
-## Surface map
+## Diagnosis and implementation discipline
 
-- `backend`: FastAPI and Python service logic.
-- `frontend`: SolidStart UI.
-- `docsite`: documentation app and doc rendering checks.
-- `ugoite-core`: Rust core plus Python bindings.
-- `ugoite-cli`: Rust CLI and release-facing command behavior.
-- `ugoite-minimum`: portable Rust core / WASM-oriented logic.
-- `e2e`: Playwright flows against running services.
-- `docs`: spec, guide, and requirement consistency.
+- Follow the real call path from the observed failure to its owning layer.
+- Treat synchronous filesystem locks, blocking network calls, DNS, Docker, and
+  Playwright readiness as possible hang boundaries.
+- Do not rely on `tokio::time::timeout` to protect code that can block the
+  executor thread in synchronous I/O. Use `spawn_blocking`, a child process,
+  or a platform-appropriate process-level timeout.
+- Prefer repo-native abstractions and existing patterns.
+- If requirements or user-visible behavior change, update the relevant spec or
+  docs in the same delivery unit.
+- Do not rename public interfaces, flags, or file layouts unless required.
 
-## Change discipline
+## Review convergence
 
-- Keep behavior changes narrow unless the task explicitly asks for a broader
-  migration.
-- Prefer repo-native abstractions and existing patterns over introducing new
-  ones.
-- If a change touches requirements or user-visible behavior, update the
-  relevant docs/specs at the same time.
-- Do not rename public interfaces, command flags, or file layouts unless the
-  task requires it.
+The primary agent owns review orchestration. A reviewer must report the commit
+it actually reviewed using this compact record:
 
-## Pull Request Creation
+```text
+REVIEW_BASE: <commit>
+REVIEWED_HEAD: <commit>
+REVIEW_SCOPE: <scope>
+VERDICT: APPROVE | CHANGE_REQUEST
+BLOCKERS: <none or complete list>
+FOLLOW_UPS: <issue links or none>
+EVIDENCE: <focused tests/checks>
+LIMITATIONS: <environment limitations>
+```
 
-- When the task ends with opening a PR, write the PR body to a file and use
-  `scripts/create_pr.py` instead of composing the body inline.
-- Keep the PR body aligned with `.github/pull_request_template.md` so the repo's
-  PR validation gate stays green on the first attempt.
+The first review covers the defined cumulative scope. Later reviews are
+delta-first from `REVIEWED_HEAD`, then verify the cumulative invariants touched
+by the new delta. Do not re-report unchanged findings or re-run completed
+checks without new evidence. `CHANGE_REQUEST` is reserved for a problem that
+makes the merge unsafe or impossible; other findings become follow-up issues.
 
-## OpenAI guidance
+## Public PR content
 
-- When the task is about AI guidance rather than repo code, follow the current
-  official OpenAI docs and model guidance instead of embedding a fixed model id
-  in repo instructions.
+The PR body is a public artifact. Include only the externally safe problem
+statement, behavior change, design impact, related issue, and validation
+results. Do not include private conversations, local filesystem paths,
+credentials, internal environment details, reviewer prompts, token usage, or
+private implementation history.
+
+When opening a PR, use `codex-pr-safety` and the repository PR template.
