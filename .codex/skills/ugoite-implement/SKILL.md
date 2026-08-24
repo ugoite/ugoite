@@ -30,8 +30,10 @@ authoritative data portable and preserve the architecture in `AGENTS.md`.
 - Treat synchronous filesystem locks, blocking network calls, DNS, Docker, and
   Playwright readiness as possible hang boundaries.
 - Do not rely on `tokio::time::timeout` to protect code that can block the
-  executor thread in synchronous I/O. Use `spawn_blocking`, a child process,
-  or a platform-appropriate process-level timeout.
+  executor thread in synchronous I/O. `spawn_blocking` isolates executor
+  starvation but does not terminate a stuck closure; use it together with
+  cooperative cancellation where available, and use a child process or a
+  platform-appropriate process-level timeout when termination is required.
 - Prefer repo-native abstractions and existing patterns.
 - If requirements or user-visible behavior change, update the relevant spec or
   docs in the same delivery unit.
@@ -44,10 +46,14 @@ it actually reviewed using this compact record:
 
 ```text
 REVIEW_BASE: <commit>
+REVIEWED_FROM: <previous REVIEWED_HEAD, or none for the first review>
 REVIEWED_HEAD: <commit>
 REVIEW_SCOPE: <scope>
+REVIEWED_INVARIANTS: <invariants checked>
+REVIEWED_CHECKS: <checks and CI evidence considered>
 VERDICT: APPROVE | CHANGE_REQUEST
-BLOCKERS: <none or complete list>
+CARRIED_BLOCKERS: <none or each prior blocker with RESOLVED | STILL_OPEN>
+NEW_BLOCKERS: <none or complete list>
 FOLLOW_UPS: <issue links or none>
 EVIDENCE: <focused tests/checks>
 LIMITATIONS: <environment limitations>
@@ -55,9 +61,14 @@ LIMITATIONS: <environment limitations>
 
 The first review covers the defined cumulative scope. Later reviews are
 delta-first from `REVIEWED_HEAD`, then verify the cumulative invariants touched
-by the new delta. Do not re-report unchanged findings or re-run completed
-checks without new evidence. `CHANGE_REQUEST` is reserved for a problem that
-makes the merge unsafe or impossible; other findings become follow-up issues.
+by the new delta. The primary agent keeps a review ledger containing every
+review record and passes the previous record to the next reviewer; do not rely
+on reviewer memory. Every later reviewer must enumerate all carried blockers
+and mark each one `RESOLVED` or `STILL_OPEN`. An omitted or still-open carried
+blocker requires `CHANGE_REQUEST`. Do not re-report unchanged findings or
+re-run completed checks without new evidence. `CHANGE_REQUEST` is reserved for
+a problem that makes the merge unsafe or impossible; other findings become
+follow-up issues.
 
 ## Public PR content
 

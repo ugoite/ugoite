@@ -31,8 +31,11 @@ Pay special attention to synchronous calls inside async functions:
 - Docker and Playwright startup.
 
 An async timeout cannot fire while the executor thread is blocked in a
-synchronous call. Protect such code with `spawn_blocking`, a separate process,
-or a platform-appropriate process-level timeout.
+synchronous call. Use `spawn_blocking` to keep the executor responsive, but do
+not treat it as termination: a stuck blocking closure can continue running.
+Use cooperative cancellation when the operation supports it; use a separate
+process or a platform-appropriate process-level timeout when the operation
+must be forcibly terminated.
 
 ## CI and review handoff
 

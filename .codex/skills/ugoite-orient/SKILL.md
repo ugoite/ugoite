@@ -25,6 +25,7 @@ CI or storage, or the owning code path is not already known.
 - `ugoite-storage`: filesystem/object-store mechanics.
 - `ugoite-core`: application behavior.
 - `ugoite-iceberg`: storage-backed forms, entries, authorization, search, and derived relations.
+- `ugoite-identity`: node authentication, recovery, OAuth, and credential state.
 - `ugoite-server`, `ugoite-cli`, `ugoite-wasm`: thin adapters.
 - `frontend`: SolidStart UI using the portable protocol.
 - `docsite`: Astro documentation.
