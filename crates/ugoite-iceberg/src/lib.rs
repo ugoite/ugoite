@@ -65,12 +65,16 @@ use iceberg::writer::file_writer::ParquetWriterBuilder;
 use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::{Catalog, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_datafusion::{IcebergCatalogProvider, IcebergStaticTableProvider};
+use opendal::options::ReadOptions;
+use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::Duration;
-use tokio::sync::{Notify, Semaphore};
+#[cfg(debug_assertions)]
+use tokio::sync::Notify;
+use tokio::sync::Semaphore;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::{
     AuthorizedQueryForm, AuthorizedQueryPolicy, EntryScope, QueryLimits, QuerySystemColumn,
@@ -87,7 +91,63 @@ use ugoite_domain::id::{validate_checkpoint_name, FormId, RevisionId, SpaceId};
 use ugoite_storage::{operator_from_uri, SpaceCatalogStore};
 use uuid::Uuid;
 
+pub(crate) fn is_shared_backend(operator: &Operator) -> bool {
+    matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
+}
+
+/// Read an object against the exact version observed by `stat`.
+///
+/// Shared object stores must never fall back to an unconditional read after a
+/// missing ETag: the caller would otherwise be able to combine metadata from
+/// different revisions while believing it read one snapshot.
+pub(crate) async fn read_object_exact_optional(
+    operator: &Operator,
+    path: &str,
+) -> Result<Option<Vec<u8>>> {
+    Ok(read_object_exact_optional_with_etag(operator, path)
+        .await?
+        .map(|(bytes, _)| bytes))
+}
+
+pub(crate) async fn read_object_exact_optional_with_etag(
+    operator: &Operator,
+    path: &str,
+) -> Result<Option<(Vec<u8>, Option<String>)>> {
+    let metadata = match operator.stat(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == opendal::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let etag = metadata
+        .etag()
+        .filter(|etag| !etag.is_empty())
+        .map(str::to_owned);
+    let bytes = match etag.as_deref() {
+        Some(etag) => {
+            operator
+                .read_options(
+                    path,
+                    ReadOptions {
+                        if_match: Some(etag.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await?
+        }
+        None if !is_shared_backend(operator) => operator.read(path).await?,
+        None => return Err(anyhow!("exact read requires an ETag: {path}")),
+    };
+    Ok(Some((bytes.to_vec(), etag)))
+}
+
+pub(crate) async fn read_object_exact(operator: &Operator, path: &str) -> Result<Vec<u8>> {
+    read_object_exact_optional(operator, path)
+        .await?
+        .ok_or_else(|| anyhow!("object not found: {path}"))
+}
+
 const FORM_DEFINITION_PROPERTY: &str = "ugoite.form.definition.v1";
+const FORM_HISTORY_PROPERTY: &str = "ugoite.form.history.v1";
 const FORM_ID_PROPERTY: &str = "ugoite.form.id";
 pub(crate) const FORM_NAME_PROPERTY: &str = "ugoite.form.name";
 const FORM_VERSION_PROPERTY: &str = "ugoite.form.version";
@@ -147,6 +207,10 @@ fn validate_revision_payload(form: &FormDefinition, revision: &EntryRevision) ->
             RevisionError::InvalidAssetReference(_) => "Asset reference metadata is invalid",
             RevisionError::DuplicateAssetReference(_) => {
                 "The same asset is referenced more than once in this list"
+            }
+            RevisionError::TooManyAssetReferences => "Entry contains too many AssetReferences",
+            RevisionError::AssetReferenceMetadataTooLarge => {
+                "Entry AssetReference metadata exceeds the size limit"
             }
             _ => "Entry revision payload is not valid for this Form",
         };
@@ -214,8 +278,16 @@ pub struct IcebergWorkspace {
 /// Query permits are process-wide per Space coordinate. A request creates a
 /// short-lived authorization context, but it must not thereby create a fresh
 /// production concurrency budget.
-static SPACE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Arc<Semaphore>>>> =
+static SPACE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Weak<Semaphore>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Derived rebuilds have their own maintenance budget. They may be expensive,
+/// but they must not consume the permit reserved for interactive authorized
+/// reads.
+static SPACE_MAINTENANCE_QUERY_PERMITS: LazyLock<Mutex<HashMap<String, Weak<Semaphore>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+const MAX_SPACE_PERMIT_KEYS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SchemaCommitCapability {
@@ -237,6 +309,7 @@ pub enum RevisionView {
 /// explicit, separate operation and may materialize its complete revision
 /// stream.
 pub const MAX_NORMAL_READ_ROWS: usize = 10_000;
+const DERIVED_REVISION_PAGE_SIZE: usize = 2_048;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WriteConfig {
@@ -444,10 +517,34 @@ impl IcebergWorkspace {
         let mut permits = SPACE_QUERY_PERMITS
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        permits
-            .entry(key)
-            .or_insert_with(|| Arc::new(Semaphore::new(max_concurrency)))
-            .clone()
+        permits.retain(|_, permit| permit.strong_count() > 0);
+        if let Some(permit) = permits.get(&key).and_then(Weak::upgrade) {
+            return permit;
+        }
+        let permit = Arc::new(Semaphore::new(max_concurrency));
+        // Weak entries avoid retaining a semaphore forever, while this cap
+        // also bounds dead coordinate keys when a process sees many Spaces
+        // and does not subsequently revisit them.
+        if permits.len() < MAX_SPACE_PERMIT_KEYS {
+            permits.insert(key, Arc::downgrade(&permit));
+        }
+        permit
+    }
+
+    pub(crate) fn maintenance_query_permits(&self, max_concurrency: usize) -> Arc<Semaphore> {
+        let key = format!("{}:{}", self.warehouse, self.space_id);
+        let mut permits = SPACE_MAINTENANCE_QUERY_PERMITS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        permits.retain(|_, permit| permit.strong_count() > 0);
+        if let Some(permit) = permits.get(&key).and_then(Weak::upgrade) {
+            return permit;
+        }
+        let permit = Arc::new(Semaphore::new(max_concurrency));
+        if permits.len() < MAX_SPACE_PERMIT_KEYS {
+            permits.insert(key, Arc::downgrade(&permit));
+        }
+        permit
     }
 
     pub async fn open_space(
@@ -473,6 +570,7 @@ impl IcebergWorkspace {
     ) -> Result<Self> {
         let namespace = namespace_for_space(space_id);
         if !catalog.namespace_exists(&namespace).await? {
+            catalog.ensure_authoritative_mutation_contract()?;
             catalog.create_namespace(&namespace, HashMap::new()).await?;
         }
         Ok(Self {
@@ -530,6 +628,10 @@ impl IcebergWorkspace {
     /// coordinator is intentionally the only public mutation API; read APIs
     /// remain on `IcebergWorkspace`.
     pub fn commit(&self, publication: PublicationContext) -> Result<SpaceCommitCoordinator> {
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCommitCoordinator requires the OpenDAL-backed SpaceCatalog")?
+            .ensure_authoritative_mutation_contract()?;
         if self.space_catalog.is_none() {
             return Err(anyhow!(
                 "SpaceCommitCoordinator requires the OpenDAL-backed SpaceCatalog"
@@ -571,6 +673,11 @@ impl IcebergWorkspace {
     /// Persists a named immutable checkpoint through the Space's OpenDAL
     /// boundary. Reusing a name fails rather than silently replacing history.
     pub async fn save_checkpoint(&self, name: &str, checkpoint: &SpaceCheckpoint) -> Result<()> {
+        self.space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .ensure_authoritative_mutation_contract()?;
+        crate::authorization::ensure_authorization_write_fence().await?;
         validate_checkpoint_name(name)?;
         self.validate_checkpoint(checkpoint)?;
         self.space_catalog
@@ -874,6 +981,26 @@ impl IcebergWorkspace {
         Ok(form)
     }
 
+    pub async fn form_history_at_checkpoint(
+        &self,
+        checkpoint: &SpaceCheckpoint,
+        form_id: FormId,
+    ) -> Result<Vec<FormDefinition>> {
+        self.validate_checkpoint(checkpoint)?;
+        let coordinate = checkpoint
+            .tables
+            .iter()
+            .find(|coordinate| coordinate.form_id == form_id)
+            .ok_or_else(|| CheckpointUnavailable::new(format!("Form {form_id}")))?;
+        let table = self
+            .space_catalog
+            .as_ref()
+            .context("SpaceCheckpoint requires the OpenDAL-backed SpaceCatalog")?
+            .load_checkpoint_table(checkpoint, coordinate)
+            .await?;
+        form_history_from_table(&table, form_id)
+    }
+
     fn validate_checkpoint(&self, checkpoint: &SpaceCheckpoint) -> Result<()> {
         if checkpoint.space_id != self.space_id {
             return Err(
@@ -922,6 +1049,11 @@ impl IcebergWorkspace {
         form_from_table(&table, form_id)
     }
 
+    pub async fn form_history(&self, form_id: FormId) -> Result<Vec<FormDefinition>> {
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        form_history_from_table(&table, form_id)
+    }
+
     /// Returns whether the authoritative Catalog Head currently contains this
     /// Form table. This is a domain read and intentionally exposes neither a
     /// physical table handle nor a mutation path.
@@ -930,10 +1062,43 @@ impl IcebergWorkspace {
     }
 
     pub async fn list_forms(&self) -> Result<Vec<FormDefinition>> {
+        self.list_forms_bounded(usize::MAX, usize::MAX).await
+    }
+
+    /// Loads Form definitions with explicit count and serialized-size bounds.
+    /// Catalog implementations may return table identifiers as a Vec, so the
+    /// count is checked before any table metadata is retained. Definitions are
+    /// then loaded one at a time and the cumulative persisted representation is
+    /// bounded before the returned collection can grow without limit.
+    pub async fn list_forms_bounded(
+        &self,
+        max_forms: usize,
+        max_serialized_bytes: usize,
+    ) -> Result<Vec<FormDefinition>> {
+        let identifiers = if let Some(catalog) = &self.space_catalog {
+            catalog
+                .list_tables_bounded(&self.namespace, max_forms)
+                .await?
+        } else {
+            let identifiers = self.catalog.list_tables(&self.namespace).await?;
+            if identifiers.len() > max_forms {
+                return Err(anyhow!("Form catalog exceeds its configured count limit"));
+            }
+            identifiers
+        };
         let mut forms = Vec::new();
-        for ident in self.catalog.list_tables(&self.namespace).await? {
+        let mut serialized_bytes = 0usize;
+        for ident in identifiers {
             let table = self.catalog.load_table(&ident).await?;
             if let Some(raw) = table.metadata().properties().get(FORM_DEFINITION_PROPERTY) {
+                serialized_bytes = serialized_bytes
+                    .checked_add(raw.len())
+                    .context("Form definition size overflow")?;
+                if serialized_bytes > max_serialized_bytes {
+                    return Err(anyhow!(
+                        "Form definitions exceed their configured serialized-size limit"
+                    ));
+                }
                 let form: FormDefinition = serde_json::from_str(raw)?;
                 forms.push(form_from_table(&table, form.id)?);
             }
@@ -958,6 +1123,13 @@ impl IcebergWorkspace {
             .catalog
             .load_table(&self.form_ident(current.id))
             .await?;
+        let mut form_history = form_history_from_table(&table, current.id)?;
+        if form_history
+            .last()
+            .is_none_or(|form| form.version != current.version)
+        {
+            form_history.push(current.clone());
+        }
         let current_schema = table.metadata().current_schema();
         let additions = evolved
             .fields
@@ -1022,9 +1194,14 @@ impl IcebergWorkspace {
                 metadata_builder =
                     metadata_builder.upgrade_format_version(iceberg::spec::FormatVersion::V3)?;
             }
+            form_history.push(evolved.clone());
             let metadata = metadata_builder
                 .add_current_schema(schema)?
-                .set_properties(form_properties(&evolved, self.write)?)?
+                .set_properties(form_properties_with_history(
+                    &evolved,
+                    self.write,
+                    &form_history,
+                )?)?
                 .build()?
                 .metadata;
             space_catalog
@@ -1037,15 +1214,17 @@ impl IcebergWorkspace {
             return Ok(evolved);
         }
         if additions.is_empty() {
+            form_history.push(evolved.clone());
             let tx = Transaction::new(&table);
             let mut action = tx.update_table_properties();
-            for (key, value) in form_properties(&evolved, self.write)? {
+            for (key, value) in form_properties_with_history(&evolved, self.write, &form_history)? {
                 action = action.set(key, value);
             }
             let catalog = self.mutation_catalog();
             action.apply(tx)?.commit(catalog.as_ref()).await?;
             return Ok(evolved);
         }
+        form_history.push(evolved.clone());
         let tx = Transaction::new(&table);
         let mut schema_action = tx.update_schema();
         for field in additions {
@@ -1056,7 +1235,7 @@ impl IcebergWorkspace {
         }
         let transaction = schema_action.apply(tx)?;
         let mut properties = transaction.update_table_properties();
-        for (key, value) in form_properties(&evolved, self.write)? {
+        for (key, value) in form_properties_with_history(&evolved, self.write, &form_history)? {
             properties = properties.set(key, value);
         }
         let catalog = self.mutation_catalog();
@@ -1366,6 +1545,15 @@ impl IcebergWorkspace {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn garbage_collect_deleted_asset_blobs(&self) -> Result<usize> {
+        self.space_catalog
+            .as_ref()
+            .context("Asset lifecycle requires the OpenDAL-backed SpaceCatalog")?
+            .garbage_collect_deleted_asset_blobs()
+            .await
+            .map_err(Into::into)
+    }
+
     async fn mark_asset_deleted(&self, asset_id: &str) -> Result<()> {
         self.space_catalog
             .as_ref()
@@ -1470,7 +1658,7 @@ impl IcebergWorkspace {
         let parquet_writer = ParquetWriterBuilder::from_table_properties(
             &table_properties,
             table.metadata().current_schema().clone(),
-        );
+        )?;
         let location_generator = DefaultLocationGenerator::new(table.metadata())?;
         let file_name_generator = DefaultFileNameGenerator::new(
             Uuid::now_v7().to_string(),
@@ -1662,8 +1850,14 @@ impl IcebergWorkspace {
                 .await?
             }
             RevisionView::LatestIncludingTombstones | RevisionView::Current => {
-                self.read_latest_revision_batches(&table, &entry_scope, snapshot_id, view)
-                    .await?
+                self.read_latest_revision_batches(
+                    &table,
+                    &entry_scope,
+                    snapshot_id,
+                    view,
+                    Some(MAX_NORMAL_READ_ROWS),
+                )
+                .await?
             }
         };
         let schema = table.metadata().current_schema().clone();
@@ -1707,6 +1901,7 @@ impl IcebergWorkspace {
                 &EntryScope::Only(entry_ids.iter().copied().collect()),
                 None,
                 RevisionView::LatestIncludingTombstones,
+                Some(MAX_NORMAL_READ_ROWS),
             )
             .await?;
         let mut revisions = Vec::new();
@@ -1877,21 +2072,43 @@ impl IcebergWorkspace {
         entry_scope: &EntryScope,
         snapshot_id: Option<i64>,
         view: RevisionView,
+        max_rows: Option<usize>,
+    ) -> Result<Vec<RecordBatch>> {
+        self.read_latest_revision_batches_with_permits(
+            table,
+            entry_scope,
+            snapshot_id,
+            view,
+            max_rows,
+            self.shared_query_permits(1),
+        )
+        .await
+    }
+
+    async fn read_latest_revision_batches_with_permits(
+        &self,
+        table: &iceberg::table::Table,
+        entry_scope: &EntryScope,
+        snapshot_id: Option<i64>,
+        view: RevisionView,
+        max_rows: Option<usize>,
+        permits: Arc<Semaphore>,
     ) -> Result<Vec<RecordBatch>> {
         let (provider, query_snapshot_id) = self.revision_provider(table, snapshot_id).await?;
         let context = self
-            .authorized_revision_query_context(
+            .authorized_revision_query_context_with_permits(
                 provider,
                 table.metadata().uuid().to_string(),
                 query_snapshot_id,
                 entry_scope,
                 QueryLimits {
                     max_memory_bytes: 64 * 1024 * 1024,
-                    max_rows: MAX_NORMAL_READ_ROWS,
+                    max_rows: max_rows.unwrap_or(i64::MAX as usize / 2),
                     timeout: Duration::from_secs(30),
                     max_concurrency: 1,
                     allowed_functions: BTreeSet::new(),
                 },
+                permits,
             )
             .await?;
         let ids = context
@@ -1915,7 +2132,7 @@ impl IcebergWorkspace {
                 revision_ids.push(uuid_at(revision_values, row)?);
             }
         }
-        if entry_ids.len() > MAX_NORMAL_READ_ROWS {
+        if max_rows.is_some_and(|max_rows| entry_ids.len() > max_rows) {
             return Err(anyhow!(
                 "normal Entry reads are limited to {MAX_NORMAL_READ_ROWS} current rows"
             ));
@@ -1947,6 +2164,69 @@ impl IcebergWorkspace {
                 revision_ids.len(),
             )
             .await
+    }
+
+    /// Visits every current Entry in bounded keyset pages. Derived rebuilds
+    /// intentionally bypass the API response ceiling, but never bypass the
+    /// authorized latest-state plan or materialize a whole Form through one
+    /// giant revision-id list.
+    pub(crate) async fn visit_current_revision_view_for_derived<F>(
+        &self,
+        form_id: FormId,
+        mut visit: F,
+    ) -> Result<()>
+    where
+        F: FnMut(EntryRevision) -> Result<()>,
+    {
+        let form = self.load_form(form_id).await?;
+        let table = self.catalog.load_table(&self.form_ident(form_id)).await?;
+        let (provider, query_snapshot_id) = self.revision_provider(&table, None).await?;
+        let context = self
+            .authorized_revision_query_context_with_permits(
+                provider,
+                table.metadata().uuid().to_string(),
+                query_snapshot_id,
+                &EntryScope::AllCurrent,
+                QueryLimits {
+                    max_memory_bytes: 64 * 1024 * 1024,
+                    max_rows: DERIVED_REVISION_PAGE_SIZE,
+                    timeout: Duration::from_secs(30),
+                    max_concurrency: 1,
+                    allowed_functions: BTreeSet::new(),
+                },
+                self.maintenance_query_permits(1),
+            )
+            .await?;
+        let schema = table.metadata().current_schema().clone();
+        let mut after_entry_id = None;
+        tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                let batches = context
+                    .execute_latest_revision_page(
+                        &EntryScope::AllCurrent,
+                        RevisionView::LatestIncludingTombstones,
+                        after_entry_id.as_deref(),
+                        DERIVED_REVISION_PAGE_SIZE,
+                    )
+                    .await?;
+                let mut page_rows = 0usize;
+                for batch in batches {
+                    let revisions = revisions_from_batch(&batch, &form, &schema)?;
+                    page_rows = page_rows.saturating_add(revisions.len());
+                    for revision in revisions {
+                        after_entry_id = Some(revision.entry_id.as_uuid().as_bytes().to_vec());
+                        visit(revision)?;
+                    }
+                }
+                if page_rows < DERIVED_REVISION_PAGE_SIZE {
+                    break;
+                }
+            }
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .map_err(|_| anyhow!("derived current Entry stream timed out"))??;
+        Ok(())
     }
 
     pub async fn query(&self, sql: &str) -> Result<Vec<RecordBatch>> {
@@ -2015,6 +2295,14 @@ fn checkpoint_query_error(error: anyhow::Error) -> anyhow::Error {
 }
 
 impl SpaceCommitCoordinator {
+    fn ensure_authoritative_mutation_contract(&self) -> Result<()> {
+        self.workspace
+            .space_catalog
+            .as_ref()
+            .context("coordinator is missing its SpaceCatalog")?
+            .ensure_authoritative_mutation_contract()
+    }
+
     async fn attempt_workspace(&self) -> Result<IcebergWorkspace> {
         let catalog = self
             .workspace
@@ -2057,6 +2345,7 @@ impl SpaceCommitCoordinator {
     }
 
     pub async fn create_form(&self, form: &FormDefinition) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
             if self.publication_receipt().await?.is_some() {
                 return Ok(());
@@ -2071,6 +2360,7 @@ impl SpaceCommitCoordinator {
     }
 
     pub async fn evolve_form(&self, changes: &FormChangeSet) -> Result<FormDefinition> {
+        self.ensure_authoritative_mutation_contract()?;
         for _ in 0..MAX_PUBLICATION_ATTEMPTS {
             if self.publication_receipt().await?.is_some() {
                 return self.workspace.load_form(changes.form_id).await;
@@ -2101,6 +2391,7 @@ impl SpaceCommitCoordinator {
         revisions: Vec<EntryRevision>,
         relation_scopes: Option<&BTreeMap<String, EntryScope>>,
     ) -> Result<CommitReceipt> {
+        self.ensure_authoritative_mutation_contract()?;
         if let Some(receipt) = self.publication_receipt().await? {
             return Ok(CommitReceipt {
                 command_id: receipt.command_id,
@@ -2193,6 +2484,7 @@ impl SpaceCommitCoordinator {
         asset_id: &str,
         relation_scopes: &BTreeMap<String, ugoite_core::query::EntryScope>,
     ) -> Result<()> {
+        self.ensure_authoritative_mutation_contract()?;
         if self.publication_receipt().await?.is_some() {
             return Ok(());
         }
@@ -2343,6 +2635,41 @@ fn form_from_table(table: &iceberg::table::Table, form_id: FormId) -> Result<For
         }
     }
     Ok(form)
+}
+
+fn form_history_from_table(
+    table: &iceberg::table::Table,
+    form_id: FormId,
+) -> Result<Vec<FormDefinition>> {
+    let current = form_from_table(table, form_id)?;
+    let Some(raw) = table.metadata().properties().get(FORM_HISTORY_PROPERTY) else {
+        return Ok(vec![current]);
+    };
+    let history: Vec<FormDefinition> =
+        serde_json::from_str(raw).context("Iceberg Form history metadata is malformed")?;
+    if history.is_empty() {
+        return Err(anyhow!("Iceberg Form history metadata is empty"));
+    }
+    for form in &history {
+        if form.id != form_id || form.version.get() == 0 {
+            return Err(anyhow!("Iceberg Form history identity is invalid"));
+        }
+    }
+    if history
+        .iter()
+        .any(|form| form.version == current.version && form != &current)
+    {
+        return Err(anyhow!(
+            "Iceberg Form history conflicts with current definition"
+        ));
+    }
+    if history.iter().any(|form| form.version == current.version) {
+        Ok(history)
+    } else {
+        let mut history = history;
+        history.push(current);
+        Ok(history)
+    }
 }
 
 /// Attribution is part of the v1-pre physical Form contract. Existing tables
@@ -2537,10 +2864,22 @@ fn nested_field_id(parent_id: i32, offset: i32) -> i32 {
 }
 
 fn form_properties(form: &FormDefinition, write: WriteConfig) -> Result<HashMap<String, String>> {
+    form_properties_with_history(form, write, std::slice::from_ref(form))
+}
+
+fn form_properties_with_history(
+    form: &FormDefinition,
+    write: WriteConfig,
+    history: &[FormDefinition],
+) -> Result<HashMap<String, String>> {
     Ok(HashMap::from([
         (
             FORM_DEFINITION_PROPERTY.into(),
             serde_json::to_string(form)?,
+        ),
+        (
+            FORM_HISTORY_PROPERTY.into(),
+            serde_json::to_string(history)?,
         ),
         (FORM_ID_PROPERTY.into(), form.id.to_string()),
         (FORM_NAME_PROPERTY.into(), form.name.clone()),
@@ -3451,7 +3790,7 @@ pub(crate) fn parse_zoned_timestamp_nanos(value: &str) -> Result<Option<i64>> {
     ))
 }
 
-fn uuid_value_at(array: &dyn Array, row: usize) -> Result<Uuid> {
+pub(crate) fn uuid_value_at(array: &dyn Array, row: usize) -> Result<Uuid> {
     if array.is_null(row) {
         return Err(anyhow!("UUID column contains a null value"));
     }
@@ -3698,14 +4037,18 @@ fn required_struct_i64_at(array: &StructArray, name: &str, row: usize) -> Result
 }
 
 fn asset_reference_at(array: &StructArray, row: usize) -> Result<FieldValue> {
-    Ok(FieldValue::AssetReference(AssetReference {
+    let reference = AssetReference {
         asset_id: required_struct_string_at(array, "asset_id", row)?,
         name: required_struct_string_at(array, "name", row)?,
         media_type: required_struct_string_at(array, "media_type", row)?,
         size_bytes: u64::try_from(required_struct_i64_at(array, "size_bytes", row)?)
             .context("asset reference size_bytes must be non-negative")?,
         sha256: required_struct_string_at(array, "sha256", row)?,
-    }))
+    };
+    reference
+        .validate()
+        .map_err(|error| anyhow!("invalid persisted AssetReference: {error}"))?;
+    Ok(FieldValue::AssetReference(reference))
 }
 
 fn integrity_at(array: &StructArray, row: usize) -> Result<EntryIntegrity> {
@@ -4220,7 +4563,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         )
@@ -4236,7 +4581,7 @@ mod asset_reference_decode_tests {
                 name: "file.txt".into(),
                 media_type: "text/plain".into(),
                 size_bytes: 4,
-                sha256: "sha256:hash".into(),
+                sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             }))
         );
 
@@ -4254,7 +4599,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         );
@@ -4267,7 +4614,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![None])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         );
@@ -4280,7 +4629,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![Some(-1)])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         );
@@ -4300,7 +4651,9 @@ mod asset_reference_decode_tests {
                 Arc::new(StringArray::from(vec![Some("file.txt")])) as ArrayRef,
                 Arc::new(StringArray::from(vec![Some("text/plain")])) as ArrayRef,
                 Arc::new(Int64Array::from(vec![Some(4)])) as ArrayRef,
-                Arc::new(StringArray::from(vec![Some("sha256:hash")])) as ArrayRef,
+                Arc::new(StringArray::from(vec![Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )])) as ArrayRef,
             ],
             None,
         );

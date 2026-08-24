@@ -63,6 +63,7 @@ pub async fn get_form(op: &Operator, ws_path: &str, form_name: &str) -> Result<V
 }
 
 pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let form_name = form_def
         .get("name")
         .and_then(|value| value.as_str())
@@ -97,6 +98,7 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
                 "form.evolve",
                 &changes,
             )?;
+            crate::authorization::ensure_authorization_write_fence().await?;
             workspace
                 .commit(command)?
                 .evolve_form(&FormChangeSet {
@@ -112,6 +114,7 @@ pub async fn upsert_form(op: &Operator, ws_path: &str, form_def: &Value) -> Resu
     // Validate the authoring payload before entering the storage mutation path.
     // This keeps malformed user input typed while leaving storage failures internal.
     to_domain_form(&normalized).map_err(|error| invalid_form_input(error.to_string()))?;
+    crate::authorization::ensure_authorization_write_fence().await?;
     iceberg_store::ensure_form_tables(op, ws_path, &normalized).await?;
     Ok(())
 }
@@ -777,7 +780,7 @@ fn preserve_stable_identities(normalized: &mut Value, existing: &Value) -> Resul
     Ok(())
 }
 
-fn enrich_form_definition(form_def: &Value) -> Result<Value> {
+pub(crate) fn enrich_form_definition(form_def: &Value) -> Result<Value> {
     let form_id = FormId::from(Uuid::parse_str(
         form_def
             .get("id")

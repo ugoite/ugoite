@@ -22,6 +22,8 @@ impl RealIntegrityProvider {
     }
 
     pub async fn from_space(op: &Operator, space_name: &str) -> Result<Self> {
+        crate::authorization::Authorizer::new(op.clone())
+            .ensure_authoritative_mutation_contract()?;
         let storage = OpendalStorage::from_operator(op);
         Self::from_storage(&storage, space_name).await
     }
@@ -131,6 +133,7 @@ async fn load_hmac_material_with_storage<S: StorageBackend + ?Sized>(
 }
 
 pub async fn load_hmac_material(op: &Operator, space_name: &str) -> Result<(String, Vec<u8>)> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let storage = OpendalStorage::from_operator(op);
     load_hmac_material_with_storage(&storage, space_name).await
 }
@@ -164,6 +167,23 @@ async fn load_response_hmac_material_with_storage<S: StorageBackend + ?Sized>(
     response_hmac_payload(&path, payload)
 }
 
+async fn load_existing_response_hmac_material_with_storage<S: StorageBackend + ?Sized>(
+    storage: &S,
+    space_name: &str,
+) -> Result<(String, Vec<u8>)> {
+    let safe_space_name = validate_response_hmac_space_id(space_name)?;
+    let meta_path = format!("spaces/{safe_space_name}/meta.json");
+    if !storage.exists(&meta_path).await? {
+        return Err(anyhow!("Space not found: {safe_space_name}"));
+    }
+    let path = response_hmac_path(&safe_space_name);
+    if !storage.exists(&path).await? {
+        return Err(anyhow!("response HMAC material is not provisioned: {path}"));
+    }
+    let payload: Value = storage.read_json(&path).await?;
+    response_hmac_payload(&path, payload)
+}
+
 async fn load_default_response_hmac_material_with_storage<S: StorageBackend + ?Sized>(
     storage: &S,
 ) -> Result<(String, Vec<u8>)> {
@@ -180,6 +200,17 @@ async fn load_default_response_hmac_material_with_storage<S: StorageBackend + ?S
         }
     }
     storage.set_private(path).await?;
+    let payload: Value = storage.read_json(path).await?;
+    response_hmac_payload(path, payload)
+}
+
+async fn load_existing_default_response_hmac_material_with_storage<S: StorageBackend + ?Sized>(
+    storage: &S,
+) -> Result<(String, Vec<u8>)> {
+    let path = default_response_hmac_path();
+    if !storage.exists(path).await? {
+        return Err(anyhow!("default response HMAC material is not provisioned"));
+    }
     let payload: Value = storage.read_json(path).await?;
     response_hmac_payload(path, payload)
 }
@@ -203,12 +234,26 @@ pub async fn load_response_hmac_material(
     space_name: &str,
 ) -> Result<(String, Vec<u8>)> {
     let storage = OpendalStorage::from_operator(op);
-    load_response_hmac_material_with_storage(&storage, space_name).await
+    if crate::authorization::Authorizer::new(op.clone())
+        .ensure_authoritative_mutation_contract()
+        .is_ok()
+    {
+        load_response_hmac_material_with_storage(&storage, space_name).await
+    } else {
+        load_existing_response_hmac_material_with_storage(&storage, space_name).await
+    }
 }
 
 pub async fn load_default_response_hmac_material(op: &Operator) -> Result<(String, Vec<u8>)> {
     let storage = OpendalStorage::from_operator(op);
-    load_default_response_hmac_material_with_storage(&storage).await
+    if crate::authorization::Authorizer::new(op.clone())
+        .ensure_authoritative_mutation_contract()
+        .is_ok()
+    {
+        load_default_response_hmac_material_with_storage(&storage).await
+    } else {
+        load_existing_default_response_hmac_material_with_storage(&storage).await
+    }
 }
 
 pub async fn build_response_signature(
@@ -216,8 +261,7 @@ pub async fn build_response_signature(
     space_name: &str,
     body: &[u8],
 ) -> Result<(String, String)> {
-    let storage = OpendalStorage::from_operator(op);
-    let (key_id, secret) = load_response_hmac_material_with_storage(&storage, space_name).await?;
+    let (key_id, secret) = load_response_hmac_material(op, space_name).await?;
     let provider = RealIntegrityProvider::new(secret);
     Ok((key_id, provider.signature_bytes(body)))
 }
@@ -226,8 +270,7 @@ pub async fn build_default_response_signature(
     op: &Operator,
     body: &[u8],
 ) -> Result<(String, String)> {
-    let storage = OpendalStorage::from_operator(op);
-    let (key_id, secret) = load_default_response_hmac_material_with_storage(&storage).await?;
+    let (key_id, secret) = load_default_response_hmac_material(op).await?;
     let provider = RealIntegrityProvider::new(secret);
     Ok((key_id, provider.signature_bytes(body)))
 }

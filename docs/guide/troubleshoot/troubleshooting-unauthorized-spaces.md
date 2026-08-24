@@ -14,5 +14,8 @@ required permission.
 5. For Space creation, confirm the account has the Node administrator role;
    Space ownership does not grant it.
 
-Re-authenticating as the same account cannot repair a missing Space binding,
-role, or resource grant. Ask a Space owner to inspect the principal state.
+Re-authenticating as the same account cannot repair an arbitrary missing Space
+binding, role, or resource grant. For a failed local Space creation, retry the
+same slug as the Node administrator; the create operation has a dedicated
+binding-repair path. Otherwise ask a Space owner to inspect the principal
+state.

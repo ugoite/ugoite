@@ -751,7 +751,7 @@ async fn count_files_under(operator: &Operator, prefix: &str) -> anyhow::Result<
 #[tokio::test]
 async fn append_recovery_adopts_existing_publication_without_rewriting_iceberg(
 ) -> anyhow::Result<()> {
-    let operator = Operator::new(Memory::default())?.finish();
+    let operator = Operator::new(Memory::default())?;
     let store = SpaceCatalogStore::new(operator.clone(), "spaces/append-publication-recovery")?
         .single_process();
     let workspace = IcebergWorkspace::open_space(
@@ -1005,6 +1005,10 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         },
     )
     .await?;
+    assert_eq!(
+        workspace.form_history(form.id).await?,
+        vec![form.clone(), evolved.clone()]
+    );
     let table = workspace
         .catalog_for_testing()
         .load_table(&iceberg::TableIdent::new(
@@ -1049,6 +1053,7 @@ async fn form_rename_and_optional_addition_read_old_and_new_files_by_stable_id(
         current[0].values.get(&FieldId::new(100).unwrap()),
         Some(&FieldValue::String("old".into()))
     );
+    assert_eq!(current[0].form_version, form.version);
     assert!(!current[0].values.contains_key(&FieldId::new(101).unwrap()));
 
     let explicit_snapshot = workspace

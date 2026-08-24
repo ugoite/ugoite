@@ -1,6 +1,7 @@
 use anyhow::{Error, Result};
 use opendal::Operator;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 use ugoite_core::error::{AppError, ErrorCode};
 use ugoite_core::query::EntryScope;
@@ -17,8 +18,15 @@ async fn stable_space_id(operator: &Operator, workspace_path: &str) -> Result<Sp
             "unsupported Space layout: missing immutable metadata at {metadata_path}"
         ));
     }
-    let metadata: Value = serde_json::from_slice(&operator.read(&metadata_path).await?.to_vec())?;
-    let uuid = crate::space::validate_current_space_metadata(&metadata)?;
+    let metadata: Value =
+        serde_json::from_slice(&crate::read_object_exact(operator, &metadata_path).await?)?;
+    let directory_id = workspace_path
+        .trim_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("unsupported Space layout: invalid workspace path"))?;
+    let uuid = crate::space::validate_current_space_metadata(directory_id, &metadata)?;
     Ok(SpaceId::from(uuid))
 }
 
@@ -30,7 +38,12 @@ pub async fn native_workspace(
     workspace_path: &str,
 ) -> Result<crate::IcebergWorkspace> {
     let space_id = stable_space_id(operator, workspace_path).await?;
-    let store = SpaceCatalogStore::new(operator.clone(), workspace_path)?.single_process();
+    let store = SpaceCatalogStore::new(operator.clone(), workspace_path)?;
+    let store = if matches!(operator.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+        store.shared_read_only()
+    } else {
+        store.single_process()
+    };
     crate::IcebergWorkspace::open_space(store, space_id, crate::WriteConfig::default()).await
 }
 
@@ -39,7 +52,13 @@ pub async fn ensure_form_tables(
     workspace_path: &str,
     form_definition: &Value,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(operator.clone())
+        .ensure_authoritative_mutation_contract()?;
     let form = crate::form::to_domain_form(form_definition)?;
+    // SQL helpers may call this function from read paths that lazily create
+    // the system Form. That creation is still authoritative and must not
+    // bypass the request's authorization write fence.
+    crate::authorization::ensure_authorization_write_fence().await?;
     let workspace = native_workspace(operator, workspace_path).await?;
     if !workspace.has_form(form.id).await? {
         let command =
@@ -79,6 +98,28 @@ pub async fn revisions_for_form(
         .read_revision_view(form.id, crate::RevisionView::All)
         .await?;
     Ok((form, revisions))
+}
+
+pub async fn revisions_for_form_with_history(
+    operator: &Operator,
+    workspace_path: &str,
+    form_name: &str,
+) -> Result<(
+    FormDefinition,
+    BTreeMap<u32, FormDefinition>,
+    Vec<EntryRevision>,
+)> {
+    let (workspace, form) = domain_form_by_name(operator, workspace_path, form_name).await?;
+    let history = workspace
+        .form_history(form.id)
+        .await?
+        .into_iter()
+        .map(|form| (form.version.get(), form))
+        .collect();
+    let revisions = workspace
+        .read_revision_view(form.id, crate::RevisionView::All)
+        .await?;
+    Ok((form, history, revisions))
 }
 
 pub async fn latest_revisions_for_form(

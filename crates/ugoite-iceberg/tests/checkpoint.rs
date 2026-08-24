@@ -459,7 +459,7 @@ async fn manifest_and_data_locations(
         .first()
         .ok_or_else(|| anyhow::anyhow!("test snapshot has no manifest"))?;
     let manifest_path = manifest.manifest_path.clone();
-    let loaded_manifest = manifest.load_manifest(table.file_io()).await?;
+    let loaded_manifest = table.manifest_reader().read(manifest).await?;
     let data = loaded_manifest
         .entries()
         .first()

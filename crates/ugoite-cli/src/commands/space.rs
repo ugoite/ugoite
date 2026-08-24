@@ -222,7 +222,7 @@ pub async fn create_space_cmd(
         return Ok(());
     }
     let root_path = require_local_root(root_path, command_name)?;
-    let service = UgoiteService::new(root_path)?;
+    let service = UgoiteService::new_without_background_refresh(root_path)?;
     let immutable_id = service.create_operator_space(space_id).await?;
     print_json(&serde_json::json!({"created": true, "id": immutable_id, "slug": space_id}));
     Ok(())
@@ -246,7 +246,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let immutable_id = service.create_operator_space(&requested_slug).await?;
             print_json(
                 &serde_json::json!({"created": true, "id": immutable_id, "slug": requested_slug}),
@@ -266,7 +266,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 return Ok(());
             }
             let root_path = require_space_list_root(root_path.as_deref())?;
-            let service = UgoiteService::new(&root_path)?;
+            let service = UgoiteService::new_without_background_refresh(&root_path)?;
             let spaces = service.list_space_ids().await?;
             if fmt != Format::Json {
                 print_list_table("SPACE_ID", &spaces);
@@ -287,7 +287,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let space = service.get_space(&space_id).await?;
             print_json(&space);
         }
@@ -322,7 +322,7 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 print_json(&result);
                 return Ok(());
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let result = service
                 .patch_space(&space_id, &serde_json::Value::Object(patch))
                 .await?;
@@ -380,8 +380,10 @@ pub async fn run(cmd: SpaceCmd) -> Result<()> {
                 seed,
                 owner_display_name: resolve_sample_owner_display_name(owner),
             };
-            let job =
-                ugoite_iceberg::sample_data::create_sample_space_job(&op, &root_uri, &opts).await?;
+            let job = ugoite_iceberg::sample_data::create_sample_space_job_and_wait(
+                &op, &root_uri, &opts,
+            )
+            .await?;
             print_json(&job);
         }
         SpaceSubCmd::SampleJobStatus { root_path, job_id } => {

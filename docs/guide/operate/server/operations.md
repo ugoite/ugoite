@@ -4,6 +4,9 @@ sidebar:
   order: 4
 ---
 
+> Release note: Node account, Passkey, and session details on this page are
+> future/reference architecture, not supported v0.1 product promises.
+
 ```bash
 export UGOITE_NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"
 docker compose up -d
@@ -61,7 +64,10 @@ Restore each configured backend/prefix while writes are stopped, restore the
 node secret before starting the node, and verify `/health`, authentication,
 Space listing, and a representative read/write/restore path. Moving a Space
 moves the Space prefix only. Re-establish node-local account bindings on the
-destination through normal setup.
+destination through normal setup. If a local `POST /spaces` request fails after
+the Space scaffold or owner is durable, retry the same slug as the Node
+administrator; the create path reuses that immutable Space and repairs its
+missing Node binding instead of creating a second Space.
 
 ## Upgrade
 
@@ -71,5 +77,12 @@ destination through normal setup.
 3. start it against the same mount;
 4. verify `/health`, login, Space listing, and a representative
    read/write/restore path.
+
+AssetText refresh admission markers are an internal storage protocol. During a
+rolling upgrade, stop old server workers before allowing the new process to
+drain refresh markers; old workers may still emit the legacy fixed-name marker
+without participating in the new admission lock. After the old workers are
+drained, run `ugoite index run` once per affected Space if `index stats` reports
+stale derived state.
 
 The repository does not require a separate worker, queue, or database service.

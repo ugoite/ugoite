@@ -87,7 +87,7 @@ Counts and pages remain bounded by the same DataFusion memory, timeout, and
 single-query concurrency limits.
 
 Sessions expire after ten minutes by default. Accessing an expired session
-persists `status: "expired"` and returns an expiration error. Expiry is a
-logical access lifetime only: metadata remains physically retained in OpenDAL
-until an operator performs documented cleanup. A periodic cleanup worker is
-not shipped.
+derives `status: "expired"` in memory and returns an expiration error; reads do
+not persist status changes. Expiry is a logical access lifetime only: metadata
+remains physically retained in OpenDAL until an operator performs documented
+cleanup. A periodic cleanup worker is not shipped.

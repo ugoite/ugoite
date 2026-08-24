@@ -93,7 +93,12 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let result = rt.block_on(run(cli));
+    let result = rt.block_on(async {
+        // Derived refreshes are best-effort and process-local. A one-shot core
+        // CLI command ends after the authoritative commit; `ugoite index run`
+        // is the explicit repair path for derived freshness.
+        run(cli).await
+    });
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);

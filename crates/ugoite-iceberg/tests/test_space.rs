@@ -63,9 +63,10 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
 
     let dir = tempdir()?;
     let builder = Fs::default().root(dir.path().to_string_lossy().as_ref());
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
 
     space::create_space(&op, "private-space", dir.path().to_string_lossy().as_ref()).await?;
+    space::validate_complete_bootstrap(&op, "private-space").await?;
 
     let spaces_root = dir.path().join("spaces");
     let space_dir = spaces_root.join("private-space");
@@ -83,6 +84,127 @@ async fn test_space_req_sto_003_local_space_permissions() -> anyhow::Result<()> 
         assert_eq!(mode(&space_dir.join(file_name))?, 0o600);
     }
 
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn local_atomic_space_patch_preserves_private_json_modes() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir()?;
+    let atomic_dir = dir.path().join("atomic-writes");
+    std::fs::create_dir_all(&atomic_dir)?;
+    let op = Operator::new(
+        Fs::default()
+            .root(dir.path().to_string_lossy().as_ref())
+            .atomic_write_dir(atomic_dir.to_string_lossy().as_ref()),
+    )?;
+
+    space::create_space(&op, "atomic-patch", dir.path().to_string_lossy().as_ref()).await?;
+    space::patch_space(&op, "atomic-patch", &serde_json::json!({"name": "patched"})).await?;
+    space::validate_complete_bootstrap(&op, "atomic-patch").await?;
+
+    for file_name in ["meta.json", "settings.json"] {
+        let mode = std::fs::metadata(dir.path().join("spaces/atomic-patch").join(file_name))?
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "{file_name} must remain owner-only");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn local_space_validation_repairs_previously_published_json_modes() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir()?;
+    let op = Operator::new(Fs::default().root(dir.path().to_string_lossy().as_ref()))?;
+    space::create_space(
+        &op,
+        "published-modes",
+        dir.path().to_string_lossy().as_ref(),
+    )
+    .await?;
+
+    let space_dir = dir.path().join("spaces/published-modes");
+    for file_name in ["meta.json", "settings.json"] {
+        std::fs::set_permissions(
+            space_dir.join(file_name),
+            std::fs::Permissions::from_mode(0o644),
+        )?;
+    }
+
+    space::validate_complete_bootstrap(&op, "published-modes").await?;
+    for file_name in ["meta.json", "settings.json"] {
+        let mode = std::fs::metadata(space_dir.join(file_name))?
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "{file_name} should be repaired before validation"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn local_space_validation_repairs_patch_journal_mode() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir()?;
+    let op = Operator::new(Fs::default().root(dir.path().to_string_lossy().as_ref()))?;
+    space::create_space(
+        &op,
+        "private-journal",
+        dir.path().to_string_lossy().as_ref(),
+    )
+    .await?;
+    space::patch_space(
+        &op,
+        "private-journal",
+        &serde_json::json!({"name": "patched"}),
+    )
+    .await?;
+
+    let journal = dir
+        .path()
+        .join("spaces/private-journal/.ugoite-space-patch.json");
+    let journal_path = "spaces/private-journal/.ugoite-space-patch.json";
+    let mut pending: Value = serde_json::from_slice(&op.read(journal_path).await?.to_vec())?;
+    pending["status"] = Value::String("pending".to_string());
+    op.write(journal_path, serde_json::to_vec(&pending)?)
+        .await?;
+    std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o644))?;
+    space::validate_complete_bootstrap(&op, "private-journal").await?;
+    assert_eq!(
+        std::fs::metadata(&journal)?.permissions().mode() & 0o777,
+        0o600
+    );
+    std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o644))?;
+    space::validate_complete_bootstrap(&op, "private-journal").await?;
+    assert_eq!(
+        std::fs::metadata(&journal)?.permissions().mode() & 0o777,
+        0o600
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn missing_local_space_is_reported_as_space_not_found_before_lock_open() -> anyhow::Result<()>
+{
+    let dir = tempdir()?;
+    let op = Operator::new(Fs::default().root(dir.path().to_string_lossy().as_ref()))?;
+
+    let error = space::get_space_raw(&op, "missing-space")
+        .await
+        .expect_err("missing local Space should be a not-found result");
+    assert!(error.to_string().contains("Space not found: missing-space"));
     Ok(())
 }
 
@@ -140,6 +262,168 @@ async fn incomplete_current_space_metadata_is_rejected() -> anyhow::Result<()> {
     assert!(workspace_error
         .to_string()
         .contains("unsupported Space layout"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn space_metadata_identity_must_match_directory_and_uuidv7_contract() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "identity-contract", "/tmp").await?;
+    let meta_path = "spaces/identity-contract/meta.json";
+    let original: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+
+    let mut wrong_directory = original.clone();
+    wrong_directory["space_id"] = Value::String("another-space".to_string());
+    op.write(meta_path, serde_json::to_vec(&wrong_directory)?)
+        .await?;
+    assert!(space::get_space(&op, "identity-contract")
+        .await
+        .expect_err("directory/space_id mismatch must be rejected")
+        .to_string()
+        .contains("does not match its directory"));
+
+    let mut wrong_uuid_version = original;
+    wrong_uuid_version["space_uid"] = Value::String(uuid::Uuid::new_v4().to_string());
+    op.write(meta_path, serde_json::to_vec(&wrong_uuid_version)?)
+        .await?;
+    assert!(space::get_space(&op, "identity-contract")
+        .await
+        .expect_err("non-UUIDv7 Space identity must be rejected")
+        .to_string()
+        .contains("must be a UUIDv7"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn uuid_addressed_space_directory_must_match_metadata_uid() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    let space_uid = uuid::Uuid::now_v7();
+    space::create_space_with_identity(&op, space_uid, "identity-uid", "/tmp").await?;
+    let meta_path = format!("spaces/{space_uid}/meta.json");
+    let mut meta: Value = serde_json::from_slice(&op.read(&meta_path).await?.to_vec())?;
+    meta["space_uid"] = Value::String(uuid::Uuid::now_v7().to_string());
+    op.write(&meta_path, serde_json::to_vec(&meta)?).await?;
+
+    let error = space::list_spaces(&op)
+        .await
+        .expect_err("UUID directory and metadata UID mismatch must be rejected");
+    assert!(error
+        .to_string()
+        .contains("UUID directory does not match space_uid"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn incomplete_bootstrap_settings_are_rejected() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "invalid-settings", "/tmp").await?;
+    let settings_path = "spaces/invalid-settings/settings.json";
+
+    op.write(settings_path, br#"{}"#.to_vec()).await?;
+    let error = space::validate_complete_bootstrap(&op, "invalid-settings")
+        .await
+        .expect_err("settings without default_form must be rejected");
+    assert!(error.to_string().contains("requires default_form"));
+    assert!(space::get_space(&op, "invalid-settings").await.is_err());
+    assert!(space::list_spaces(&op).await.is_err());
+
+    op.write(settings_path, br#"[]"#.to_vec()).await?;
+    let error = space::validate_complete_bootstrap(&op, "invalid-settings")
+        .await
+        .expect_err("non-object settings must be rejected");
+    assert!(error.to_string().contains("requires default_form"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "patch-recovery", "memory:///").await?;
+    let meta_path = "spaces/patch-recovery/meta.json";
+    let settings_path = "spaces/patch-recovery/settings.json";
+    let old_meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    let old_settings: Value = serde_json::from_slice(&op.read(settings_path).await?.to_vec())?;
+    let mut new_meta = old_meta.clone();
+    new_meta["name"] = Value::String("recovered-name".to_string());
+    let mut new_settings = old_settings.clone();
+    new_settings["default_form"] = Value::String("Entry".to_string());
+    op.write(
+        "spaces/patch-recovery/.ugoite-space-patch.json",
+        serde_json::to_vec(&serde_json::json!({
+            "old_metadata": old_meta,
+            "new_metadata": new_meta,
+            "old_settings": old_settings,
+            "new_settings": new_settings,
+        }))?,
+    )
+    .await?;
+
+    space::validate_complete_bootstrap(&op, "patch-recovery").await?;
+    let recovered: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    assert_eq!(recovered["name"], "recovered-name");
+    let journal: Value = serde_json::from_slice(
+        &op.read("spaces/patch-recovery/.ugoite-space-patch.json")
+            .await?
+            .to_vec(),
+    )?;
+    assert_eq!(journal["status"], "complete");
+    Ok(())
+}
+
+#[tokio::test]
+async fn stale_space_patch_journal_is_discarded_after_a_valid_winner() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "stale-patch", "memory:///").await?;
+    let meta_path = "spaces/stale-patch/meta.json";
+    let settings_path = "spaces/stale-patch/settings.json";
+    let old_meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    let old_settings: Value = serde_json::from_slice(&op.read(settings_path).await?.to_vec())?;
+    let mut new_meta = old_meta.clone();
+    new_meta["name"] = Value::String("journal-winner".to_string());
+    op.write(
+        "spaces/stale-patch/.ugoite-space-patch.json",
+        serde_json::to_vec(&serde_json::json!({
+            "old_metadata": old_meta,
+            "new_metadata": new_meta,
+            "old_settings": old_settings.clone(),
+            "new_settings": old_settings,
+        }))?,
+    )
+    .await?;
+    let mut external_meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    external_meta["name"] = Value::String("external-winner".to_string());
+    op.write(meta_path, serde_json::to_vec(&external_meta)?)
+        .await?;
+
+    space::validate_complete_bootstrap(&op, "stale-patch").await?;
+    let observed: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
+    assert_eq!(observed["name"], "external-winner");
+    let journal: Value = serde_json::from_slice(
+        &op.read("spaces/stale-patch/.ugoite-space-patch.json")
+            .await?
+            .to_vec(),
+    )?;
+    assert_eq!(journal["status"], "complete");
+    Ok(())
+}
+
+#[tokio::test]
+async fn completed_space_patch_journal_is_reused_with_version_fencing() -> anyhow::Result<()> {
+    let op = setup_operator()?;
+    space::create_space(&op, "patch-reuse", "memory:///").await?;
+
+    space::patch_space(&op, "patch-reuse", &serde_json::json!({"name": "first"})).await?;
+    space::patch_space(&op, "patch-reuse", &serde_json::json!({"name": "second"})).await?;
+
+    let metadata: Value =
+        serde_json::from_slice(&op.read("spaces/patch-reuse/meta.json").await?.to_vec())?;
+    assert_eq!(metadata["name"], "second");
+    let journal: Value = serde_json::from_slice(
+        &op.read("spaces/patch-reuse/.ugoite-space-patch.json")
+            .await?
+            .to_vec(),
+    )?;
+    assert_eq!(journal["status"], "complete");
     Ok(())
 }
 

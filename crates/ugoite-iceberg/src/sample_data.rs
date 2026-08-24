@@ -1,7 +1,7 @@
 use crate::entry::{self, EntryCreateRequest};
 use crate::form;
 use crate::integrity::RealIntegrityProvider;
-use crate::space;
+use crate::service::UgoiteService;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use opendal::Operator;
@@ -10,6 +10,7 @@ use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::io::{stderr, IsTerminal, Write};
+use ugoite_storage::{OpendalStorage, StorageBackend};
 use uuid::Uuid;
 
 pub const DEFAULT_SCENARIO: &str = "renewable-ops";
@@ -18,6 +19,7 @@ const MAX_ENTRY_COUNT: usize = 20_000;
 const SAMPLE_JOBS_DIR: &str = "sample_jobs";
 const SAMPLE_JOB_READ_RETRIES: usize = 50;
 const SAMPLE_JOB_READ_RETRY_DELAY_MS: u64 = 20;
+const SAMPLE_JOB_ORPHAN_AFTER: Duration = Duration::minutes(10);
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -629,8 +631,8 @@ async fn ensure_jobs_dir(op: &Operator) -> Result<()> {
 }
 
 async fn write_job(op: &Operator, job: &SampleDataJob) -> Result<()> {
-    op.write(&job_path(&job.job_id), serde_json::to_vec_pretty(job)?)
-        .await?;
+    let storage = OpendalStorage::from_operator(op);
+    storage.write_json(&job_path(&job.job_id), job).await?;
     Ok(())
 }
 
@@ -640,7 +642,11 @@ async fn read_job(op: &Operator, job_id: &str) -> Result<SampleDataJob> {
         let bytes = op.read(&path).await?.to_vec();
         match serde_json::from_slice(&bytes) {
             Ok(job) => return Ok(job),
-            Err(err) if bytes.is_empty() || err.classify() == serde_json::error::Category::Eof => {
+            Err(err) => {
+                // Filesystem status publication is configured as an atomic
+                // replace by the CLI, but retry every decode failure as a
+                // defensive boundary for an older operator or a concurrent
+                // backend reader that briefly observed a partial object.
                 if attempt == SAMPLE_JOB_READ_RETRIES {
                     return Err(err.into());
                 }
@@ -649,7 +655,6 @@ async fn read_job(op: &Operator, job_id: &str) -> Result<SampleDataJob> {
                 ))
                 .await;
             }
-            Err(err) => return Err(err.into()),
         }
     }
     unreachable!("sample job read loop must return or error")
@@ -671,6 +676,13 @@ impl JobProgressWriter {
             job,
             last_flushed: 0,
         }
+    }
+
+    async fn start(&mut self) -> Result<()> {
+        self.job.status = SampleJobStatus::Running;
+        self.job.status_message = Some("Running".to_string());
+        self.last_flushed = self.job.processed_entries;
+        write_job(&self.op, &self.job).await
     }
 
     async fn maybe_update(&mut self, processed: usize, message: &str) -> Result<()> {
@@ -2001,9 +2013,10 @@ async fn create_sample_space_with_progress(
     plan: &ResolvedSampleDataPlan,
     progress: &mut ProgressReporter,
 ) -> Result<SampleDataSummary> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     progress.report(0, "Creating space").await?;
-    let space_uid = Uuid::now_v7();
-    space::create_space_with_identity(op, space_uid, &options.space_id, root_uri).await?;
+    let service = UgoiteService::from_operator(op.clone(), root_uri);
+    let space_uid = service.create_operator_space(&options.space_id).await?;
     let actual_space_id = space_uid.to_string();
     if let Some(owner) = normalize_owner_display_name(options.owner_display_name.as_deref()) {
         crate::authorization::Authorizer::new(op.clone())
@@ -2063,6 +2076,7 @@ pub async fn create_sample_space(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataSummary> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
     let mut progress = ProgressReporter::None;
     create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await
@@ -2073,6 +2087,7 @@ pub async fn create_sample_space_with_terminal_progress(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataSummary> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
     let mut progress = ProgressReporter::Terminal(TerminalProgressWriter::new(plan.entry_count));
     match create_sample_space_with_progress(op, root_uri, options, &plan, &mut progress).await {
@@ -2092,23 +2107,54 @@ pub async fn create_sample_space_job(
     root_uri: &str,
     options: &SampleDataOptions,
 ) -> Result<SampleDataJob> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let plan = resolve_sample_data_plan(options)?;
-    let mut slug_exists = false;
-    for existing_id in space::list_spaces(op).await? {
-        let meta = space::get_space_raw(op, &existing_id).await?;
-        if meta.get("slug").and_then(Value::as_str) == Some(options.space_id.as_str()) {
-            slug_exists = true;
-            break;
-        }
-    }
-    if slug_exists {
-        return Err(anyhow!("Space already exists: {}", options.space_id));
-    }
 
+    let job = enqueue_sample_space_job(op, options, &plan).await?;
+    let running_job = mark_sample_space_job_running(op, &job).await?;
+    let op_clone = op.clone();
+    let options_clone = options.clone();
+    let root_uri = root_uri.to_string();
+    let plan_clone = plan.clone();
+    let job_for_progress = running_job;
+    tokio::spawn(async move {
+        let _ = run_sample_space_job_with_plan(
+            &op_clone,
+            &root_uri,
+            &options_clone,
+            &plan_clone,
+            &job_for_progress,
+        )
+        .await;
+    });
+
+    Ok(job)
+}
+
+/// Runs a queued sample job to completion in the current process. One-shot
+/// CLI commands use this entry point because Tokio cancels detached tasks when
+/// the process exits; server or long-lived callers may use the queued API.
+pub async fn create_sample_space_job_and_wait(
+    op: &Operator,
+    root_uri: &str,
+    options: &SampleDataOptions,
+) -> Result<SampleDataJob> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    let plan = resolve_sample_data_plan(options)?;
+    let job = enqueue_sample_space_job(op, options, &plan).await?;
+    let running_job = mark_sample_space_job_running(op, &job).await?;
+    run_sample_space_job_with_plan(op, root_uri, options, &plan, &running_job).await?;
+    get_sample_space_job(op, &job.job_id).await
+}
+
+async fn enqueue_sample_space_job(
+    op: &Operator,
+    options: &SampleDataOptions,
+    plan: &ResolvedSampleDataPlan,
+) -> Result<SampleDataJob> {
     ensure_jobs_dir(op).await?;
-    let job_id = Uuid::new_v4().to_string();
     let job = SampleDataJob {
-        job_id: job_id.clone(),
+        job_id: Uuid::new_v4().to_string(),
         space_id: options.space_id.clone(),
         scenario: plan.scenario.clone(),
         entry_count: plan.entry_count,
@@ -2118,59 +2164,75 @@ pub async fn create_sample_space_job(
         status_message: Some("Queued".to_string()),
         processed_entries: 0,
         total_entries: plan.entry_count,
-        started_at: None,
+        // This timestamp is the durable enqueue/start deadline. The queued
+        // state is returned to the caller, then atomically advanced to Running
+        // before a detached worker is spawned.
+        started_at: Some(Utc::now()),
         completed_at: None,
         error: None,
         summary: None,
     };
-
     write_job(op, &job).await?;
-
-    let op_clone = op.clone();
-    let options_clone = SampleDataOptions {
-        space_id: options.space_id.clone(),
-        scenario: plan.scenario.clone(),
-        entry_count: plan.entry_count,
-        seed: options.seed,
-        owner_display_name: normalize_owner_display_name(options.owner_display_name.as_deref()),
-    };
-    let root_uri = root_uri.to_string();
-    let plan_clone = plan.clone();
-
-    let job_for_progress = job.clone();
-    tokio::spawn(async move {
-        let mut progress = ProgressReporter::Job(Box::new(JobProgressWriter::new(
-            op_clone.clone(),
-            job_for_progress,
-        )));
-        let summary = create_sample_space_with_progress(
-            &op_clone,
-            &root_uri,
-            &options_clone,
-            &plan_clone,
-            &mut progress,
-        )
-        .await;
-
-        match summary {
-            Ok(summary) => {
-                let _ = progress.complete(&summary).await;
-            }
-            Err(err) => {
-                let _ = progress.fail(&err.to_string()).await;
-            }
-        }
-    });
-
     Ok(job)
+}
+
+async fn mark_sample_space_job_running(
+    op: &Operator,
+    job: &SampleDataJob,
+) -> Result<SampleDataJob> {
+    let mut running = job.clone();
+    running.status = SampleJobStatus::Running;
+    running.status_message = Some("Running".to_string());
+    write_job(op, &running).await?;
+    Ok(running)
+}
+
+async fn run_sample_space_job_with_plan(
+    op: &Operator,
+    root_uri: &str,
+    options: &SampleDataOptions,
+    plan: &ResolvedSampleDataPlan,
+    job: &SampleDataJob,
+) -> Result<SampleDataSummary> {
+    let mut writer = JobProgressWriter::new(op.clone(), job.clone());
+    writer.start().await?;
+    let mut progress = ProgressReporter::Job(Box::new(writer));
+    let summary =
+        create_sample_space_with_progress(op, root_uri, options, plan, &mut progress).await;
+    match summary {
+        Ok(summary) => {
+            progress.complete(&summary).await?;
+            Ok(summary)
+        }
+        Err(error) => {
+            let error_text = error.to_string();
+            let _ = progress.fail(&error_text).await;
+            Err(error)
+        }
+    }
 }
 
 pub async fn get_sample_space_job(op: &Operator, job_id: &str) -> Result<SampleDataJob> {
     validate_job_id(job_id)?;
-    ensure_jobs_dir(op).await?;
     let path = job_path(job_id);
     if !op.exists(&path).await? {
         return Err(anyhow!("Sample data job not found: {}", job_id));
     }
-    read_job(op, job_id).await
+    let mut job = read_job(op, job_id).await?;
+    if matches!(
+        job.status,
+        SampleJobStatus::Queued | SampleJobStatus::Running
+    ) && job
+        .started_at
+        .is_some_and(|started_at| Utc::now() - started_at > SAMPLE_JOB_ORPHAN_AFTER)
+    {
+        // Status reads remain read-only. A stale detached worker is explicitly
+        // classified in the returned value instead of being silently repaired
+        // by a GET that would mutate the durable job object.
+        job.status = SampleJobStatus::Failed;
+        job.status_message = Some("Worker interrupted".to_string());
+        job.completed_at = Some(Utc::now());
+        job.error = Some("sample job worker heartbeat expired".to_string());
+    }
+    Ok(job)
 }

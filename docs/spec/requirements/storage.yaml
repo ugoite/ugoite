@@ -19,7 +19,8 @@ requirements:
   title: Storage Abstraction Using the Shared OpenDAL Runtime Layer
   description: 'Runtime Space I/O must use the shared Rust storage layer: `ugoite-core` delegates storage mechanics
     through OpenDAL and portable types from `ugoite-domain`. Direct runtime Space access outside that boundary should
-    be avoided.'
+    be avoided. In v0.1, authoritative multi-object Space mutations are limited to local/memory operators until a
+    non-local backend supplies an atomic fencing contract.'
   related_spec:
   - architecture/overview.md#architecture-overview
   - stories/core.yaml#STORY-003
@@ -42,7 +43,7 @@ requirements:
   - SPEC-ARCH-DERIVED-RELATIONS
   id: REQ-STO-013
   title: Rebuildable Derived Relations
-  description: 'DerivedRelation Heads and immutable Iceberg materializations MUST
+  description: 'DerivedRelation Heads and immutable Iceberg builds MUST
     remain under the owning Space prefix. They MUST use exact conditional Head
     publication, remain outside the authoritative Catalog Head and SpaceCheckpoint,
     and be safely rebuildable from authoritative data.'

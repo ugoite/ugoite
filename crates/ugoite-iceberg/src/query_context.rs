@@ -19,7 +19,7 @@ use iceberg_datafusion::IcebergStaticTableProvider;
 use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use ugoite_core::query::{AuthorizedQueryPolicy, EntryScope, QuerySystemColumn};
 use ugoite_domain::form::sql_column_name;
 
@@ -41,6 +41,19 @@ pub(crate) fn latest_revision_dataframe(
     revisions: DataFrame,
     entry_scope: &EntryScope,
     view: crate::RevisionView,
+) -> Result<DataFrame> {
+    latest_revision_dataframe_after(revisions, entry_scope, view, None)
+}
+
+/// Builds one ordered keyset page of the latest revision view. The cursor
+/// predicate is applied before the max-version aggregate so a maintenance
+/// rebuild never materializes the entire current Entry set merely to return a
+/// bounded page.
+pub(crate) fn latest_revision_dataframe_after(
+    revisions: DataFrame,
+    entry_scope: &EntryScope,
+    view: crate::RevisionView,
+    after_entry_id: Option<&[u8]>,
 ) -> Result<DataFrame> {
     let scoped = match entry_scope {
         EntryScope::AllCurrent => revisions,
@@ -64,6 +77,11 @@ pub(crate) fn latest_revision_dataframe(
                 true,
             ),
         )?,
+    };
+    let scoped = if let Some(after_entry_id) = after_entry_id {
+        scoped.filter(col("entry_id").gt(lit(after_entry_id.to_vec())))?
+    } else {
+        scoped
     };
     let maxima = scoped
         .clone()
@@ -105,6 +123,7 @@ pub struct AuthorizedQueryContext {
     authorized_relations: BTreeSet<String>,
     authorized_scans: BTreeSet<AuthorizedScan>,
     duplicate_head_checks: Vec<(Arc<dyn TableProvider>, DataFrame)>,
+    duplicate_head_checks_validated: Arc<AsyncMutex<BTreeSet<usize>>>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -152,7 +171,9 @@ impl AuthorizedQueryError {
     }
 }
 
-fn bounded_session_context(limits: &ugoite_core::query::QueryLimits) -> Result<SessionContext> {
+pub(crate) fn bounded_session_context(
+    limits: &ugoite_core::query::QueryLimits,
+) -> Result<SessionContext> {
     limits.validate().map_err(|message| anyhow!(message))?;
     let config = SessionConfig::new()
         .with_information_schema(false)
@@ -380,6 +401,7 @@ impl IcebergWorkspace {
             authorized_relations: relations,
             authorized_scans,
             duplicate_head_checks,
+            duplicate_head_checks_validated: Arc::new(AsyncMutex::new(BTreeSet::new())),
         })
     }
 }
@@ -396,6 +418,27 @@ impl IcebergWorkspace {
         snapshot_id: Option<i64>,
         entry_scope: &EntryScope,
         limits: ugoite_core::query::QueryLimits,
+    ) -> Result<AuthorizedQueryContext> {
+        let permits = self.shared_query_permits(limits.max_concurrency);
+        self.authorized_revision_query_context_with_permits(
+            provider,
+            table_uuid,
+            snapshot_id,
+            entry_scope,
+            limits,
+            permits,
+        )
+        .await
+    }
+
+    pub(crate) async fn authorized_revision_query_context_with_permits(
+        &self,
+        provider: Arc<dyn TableProvider>,
+        table_uuid: String,
+        snapshot_id: Option<i64>,
+        entry_scope: &EntryScope,
+        limits: ugoite_core::query::QueryLimits,
+        permits: Arc<Semaphore>,
     ) -> Result<AuthorizedQueryContext> {
         let context = bounded_session_context(&limits)?;
         context.register_table("revisions", provider.clone())?;
@@ -417,13 +460,14 @@ impl IcebergWorkspace {
         Ok(AuthorizedQueryContext {
             context,
             limits: limits.clone(),
-            permits: self.shared_query_permits(limits.max_concurrency),
+            permits,
             authorized_relations: BTreeSet::from(["revisions".to_string()]),
             authorized_scans: BTreeSet::from([AuthorizedScan {
                 table_uuid,
                 snapshot_id,
             }]),
             duplicate_head_checks: vec![(provider, duplicate_head_check)],
+            duplicate_head_checks_validated: Arc::new(AsyncMutex::new(BTreeSet::new())),
         })
     }
 }
@@ -473,6 +517,55 @@ impl AuthorizedQueryContext {
         self.execute_frame(frame, limit).await
     }
 
+    pub(crate) async fn execute_latest_revision_page(
+        &self,
+        entry_scope: &EntryScope,
+        view: crate::RevisionView,
+        after_entry_id: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        if limit == 0 || limit > self.limits.max_rows {
+            return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                "latest revision page exceeds its configured row limit"
+            ))
+            .into());
+        }
+        let source = self
+            .context
+            .table("revisions")
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        let heads = latest_revision_dataframe_after(
+            source,
+            entry_scope,
+            crate::RevisionView::LatestIncludingTombstones,
+            after_entry_id,
+        )
+        .map_err(AuthorizedQueryError::invalid_query)?;
+        let selected = match view {
+            crate::RevisionView::Current => heads
+                .filter(col("operation").not_eq(lit("delete")))
+                .map_err(AuthorizedQueryError::invalid_query)?,
+            crate::RevisionView::LatestIncludingTombstones => heads,
+            crate::RevisionView::All => {
+                return Err(AuthorizedQueryError::invalid_query(anyhow!(
+                    "bounded latest revision page does not support full history"
+                ))
+                .into())
+            }
+        };
+        let frame = selected
+            .sort(vec![SortExpr {
+                expr: col("entry_id"),
+                asc: true,
+                nulls_first: true,
+            }])
+            .map_err(AuthorizedQueryError::invalid_query)?
+            .limit(0, Some(limit))
+            .map_err(AuthorizedQueryError::invalid_query)?;
+        self.execute_frame(frame, limit).await
+    }
+
     /// Executes a trusted relation plan assembled by a typed read surface.
     /// The caller can request unnesting for a typed list, but cannot provide a
     /// provider, relation, catalog, or arbitrary SQL object. The same permit,
@@ -490,6 +583,64 @@ impl AuthorizedQueryContext {
         distinct: bool,
         preserve_unnest_columns: bool,
         limit: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_relation_plan_with_byte_limit(
+            relation,
+            unnest_columns,
+            predicates,
+            projection,
+            sort,
+            distinct,
+            preserve_unnest_columns,
+            limit,
+            None,
+        )
+        .await
+    }
+
+    /// Executes a trusted relation plan while rejecting oversized Arrow
+    /// materialization batches before callers convert them to owned JSON.
+    /// AssetText authorization uses this narrower path because a row-count
+    /// limit alone does not bound a large title or AssetReference payload.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn execute_relation_plan_bounded(
+        &self,
+        relation: &str,
+        unnest_columns: &[(String, String)],
+        predicates: Vec<Expr>,
+        projection: Vec<Expr>,
+        sort: Vec<SortExpr>,
+        distinct: bool,
+        preserve_unnest_columns: bool,
+        limit: usize,
+        max_bytes: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_relation_plan_with_byte_limit(
+            relation,
+            unnest_columns,
+            predicates,
+            projection,
+            sort,
+            distinct,
+            preserve_unnest_columns,
+            limit,
+            Some(max_bytes),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_relation_plan_with_byte_limit(
+        &self,
+        relation: &str,
+        unnest_columns: &[(String, String)],
+        predicates: Vec<Expr>,
+        projection: Vec<Expr>,
+        sort: Vec<SortExpr>,
+        distinct: bool,
+        preserve_unnest_columns: bool,
+        limit: usize,
+        max_bytes: Option<usize>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
         if limit == 0 || limit > self.limits.max_rows.saturating_add(1) {
             return Err(AuthorizedQueryError::resource_limit(anyhow!(
@@ -553,7 +704,8 @@ impl AuthorizedQueryContext {
         let frame = frame
             .limit(0, Some(limit))
             .map_err(AuthorizedQueryError::invalid_query)?;
-        self.execute_frame(frame, limit).await
+        self.execute_frame_with_byte_limit(frame, limit, max_bytes)
+            .await
     }
 
     /// Runs a DataFusion aggregate over one authorized relation. Statistics
@@ -673,6 +825,15 @@ impl AuthorizedQueryContext {
         frame: DataFrame,
         limit: usize,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_frame_with_byte_limit(frame, limit, None).await
+    }
+
+    async fn execute_frame_with_byte_limit(
+        &self,
+        frame: DataFrame,
+        limit: usize,
+        max_bytes: Option<usize>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
         let _permit = self
             .permits
             .clone()
@@ -692,7 +853,10 @@ impl AuthorizedQueryContext {
                 .execute_logical_plan(plan)
                 .await
                 .map_err(AuthorizedQueryError::execution_failed)?;
-            let batches = self.collect_frame(frame).await?;
+            let batches = match max_bytes {
+                Some(max_bytes) => self.collect_frame_bounded(frame, max_bytes).await?,
+                None => self.collect_frame(frame).await?,
+            };
             let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
             if rows > self.limits.max_rows || rows > limit {
                 return Err(AuthorizedQueryError::resource_limit(anyhow!(
@@ -780,6 +944,27 @@ impl AuthorizedQueryContext {
     /// above the trusted Entry filter embedded in every registered view.
     pub async fn execute(&self, sql: &str) -> Result<Vec<arrow_array::RecordBatch>> {
         self.execute_with_parameters(sql, HashMap::new()).await
+    }
+
+    /// Executes a read-only statement with a pre-JSON Arrow materialization
+    /// bound. This is used by the search candidate path, where a row limit
+    /// does not constrain the size of user-controlled string columns.
+    pub(crate) async fn execute_with_byte_limit(
+        &self,
+        sql: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let _permit = self
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(AuthorizedQueryError::resource_limit)?;
+        tokio::time::timeout(
+            self.limits.timeout,
+            self.execute_with_permit_and_byte_limit(sql, HashMap::new(), Some(max_bytes)),
+        )
+        .await
+        .map_err(|_| AuthorizedQueryError::QueryTimedOut)?
     }
 
     /// Binds DataFusion-native `$name` placeholders after parsing and before
@@ -886,6 +1071,16 @@ impl AuthorizedQueryContext {
         sql: &str,
         parameters: HashMap<String, datafusion::scalar::ScalarValue>,
     ) -> Result<Vec<arrow_array::RecordBatch>> {
+        self.execute_with_permit_and_byte_limit(sql, parameters, None)
+            .await
+    }
+
+    async fn execute_with_permit_and_byte_limit(
+        &self,
+        sql: &str,
+        parameters: HashMap<String, datafusion::scalar::ScalarValue>,
+        max_bytes: Option<usize>,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
         let plan = self.prepared_plan(sql, parameters).await?;
         let validation_plan = plan.clone();
         let frame = self
@@ -902,7 +1097,10 @@ impl AuthorizedQueryContext {
         let frame = frame
             .limit(0, Some(max_rows_with_sentinel))
             .map_err(AuthorizedQueryError::resource_limit)?;
-        let batches = self.collect_frame(frame).await?;
+        let batches = match max_bytes {
+            Some(max_bytes) => self.collect_frame_bounded(frame, max_bytes).await?,
+            None => self.collect_frame(frame).await?,
+        };
         let rows = batches.iter().map(|batch| batch.num_rows()).sum::<usize>();
         if rows > self.limits.max_rows {
             return Err(AuthorizedQueryError::resource_limit(anyhow!(
@@ -1103,12 +1301,54 @@ impl AuthorizedQueryContext {
         Ok(batches)
     }
 
+    async fn collect_frame_bounded(
+        &self,
+        frame: DataFrame,
+        max_bytes: usize,
+    ) -> Result<Vec<arrow_array::RecordBatch>> {
+        let task_context = Arc::new(frame.task_ctx());
+        let physical = frame
+            .create_physical_plan()
+            .await
+            .map_err(AuthorizedQueryError::execution_failed)?;
+        validate_physical_plan(&physical, &self.authorized_scans)
+            .map_err(AuthorizedQueryError::unauthorized)?;
+        let mut stream = datafusion::physical_plan::execute_stream(physical, task_context)
+            .map_err(classify_datafusion_error)?;
+        let mut batches = Vec::new();
+        let mut bytes = 0usize;
+        while let Some(batch) = futures::TryStreamExt::try_next(&mut stream)
+            .await
+            .map_err(classify_datafusion_error)?
+        {
+            bytes = bytes
+                .checked_add(batch.get_array_memory_size())
+                .ok_or_else(|| {
+                    AuthorizedQueryError::resource_limit(anyhow!(
+                        "authorized query materialization exceeds its byte limit"
+                    ))
+                })?;
+            if bytes > max_bytes {
+                return Err(AuthorizedQueryError::resource_limit(anyhow!(
+                    "authorized query materialization exceeds its byte limit"
+                ))
+                .into());
+            }
+            batches.push(batch);
+        }
+        Ok(batches)
+    }
+
     async fn validate_revision_invariants(&self, plan: &LogicalPlan) -> Result<()> {
         let mut scanned_providers = BTreeSet::new();
         collect_scanned_provider_addresses(plan, &mut scanned_providers);
+        let mut validated = self.duplicate_head_checks_validated.lock().await;
         for (provider, check) in &self.duplicate_head_checks {
             let provider_address = Arc::as_ptr(provider) as *const () as usize;
             if !scanned_providers.contains(&provider_address) {
+                continue;
+            }
+            if validated.contains(&provider_address) {
                 continue;
             }
             if self
@@ -1119,6 +1359,7 @@ impl AuthorizedQueryContext {
             {
                 return Err(AuthorizedQueryError::RevisionInvariantViolation.into());
             }
+            validated.insert(provider_address);
         }
         Ok(())
     }

@@ -148,6 +148,7 @@ pub async fn patch_user_preferences(
     user_id: &str,
     patch: &Value,
 ) -> Result<UserPreferences> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let storage = OpendalStorage::from_operator(op);
     patch_user_preferences_with_storage(&storage, user_id, patch).await
 }

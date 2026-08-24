@@ -2,6 +2,7 @@ use crate::config::{load_config, print_json, resolve_space_reference, validated_
 use crate::http;
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use std::io::Read;
 use ugoite_iceberg::service::UgoiteService;
 
 #[derive(Args)]
@@ -14,7 +15,7 @@ pub struct AssetCmd {
 pub enum AssetSubCmd {
     /// Upload an asset
     #[command(
-        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\n  # Backend mode\n  ugoite asset upload my-space ./logo.png"
+        long_about = "Upload an asset.\n\nExamples:\n  # Core mode\n  ugoite asset upload /root/spaces/my-space ./logo.png\n\nRemote CLI upload is not available in this release; use the API client or REST surface for remote uploads."
     )]
     Upload {
         #[arg(
@@ -56,7 +57,24 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     "asset upload is not available in backend/api mode in this release; upload through the API client or REST surface"
                 );
             }
-            let data = std::fs::read(&file_path)?;
+            let file_size = std::fs::metadata(&file_path)?.len();
+            if file_size > ugoite_iceberg::asset::MAX_ASSET_BYTES as u64 {
+                anyhow::bail!(
+                    "asset exceeds the {}-byte size limit",
+                    ugoite_iceberg::asset::MAX_ASSET_BYTES
+                );
+            }
+            let mut file = std::fs::File::open(&file_path)?;
+            let mut data = Vec::with_capacity(file_size as usize);
+            file.by_ref()
+                .take(ugoite_iceberg::asset::MAX_ASSET_BYTES as u64 + 1)
+                .read_to_end(&mut data)?;
+            if data.len() > ugoite_iceberg::asset::MAX_ASSET_BYTES {
+                anyhow::bail!(
+                    "asset exceeds the {}-byte size limit",
+                    ugoite_iceberg::asset::MAX_ASSET_BYTES
+                );
+            }
             let name = filename.unwrap_or_else(|| {
                 std::path::Path::new(&file_path)
                     .file_name()
@@ -64,7 +82,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
                     .unwrap_or("asset")
                     .to_string()
             });
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             let asset = service.save_asset(&space_id, &name, &data).await?;
             print_json(&asset);
         }
@@ -90,7 +108,7 @@ pub async fn run(cmd: AssetCmd) -> Result<()> {
             if human_approval.is_some() {
                 anyhow::bail!("--human-approval is only supported in backend/api mode");
             }
-            let service = UgoiteService::new(&root)?;
+            let service = UgoiteService::new_without_background_refresh(&root)?;
             service.delete_asset(&space_id, &asset_id).await?;
             print_json(&serde_json::json!({"deleted": true}));
         }

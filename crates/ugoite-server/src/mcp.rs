@@ -952,9 +952,13 @@ async fn history_projection(
     entry_id: &str,
     request_id: &Value,
 ) -> Result<Value, Response> {
+    let principal_id = principal_for_space(state, &auth.space_id, &auth.identity)
+        .await
+        .map_err(|_| invalid_resource_id(request_id.clone()))?;
+    let principals = authorization_principal_ids(&auth.identity, principal_id);
     let history = state
         .service
-        .entry_history(&auth.space_id, entry_id)
+        .entry_history_authorized_for_principals(&auth.space_id, entry_id, &principals)
         .await
         .map_err(|_| invalid_resource_id(request_id.clone()))?;
     let events = history
@@ -1190,50 +1194,68 @@ async fn save(
     }
     let input: SaveInput = serde_json::from_value(Value::Object(arguments.clone()))
         .map_err(|_| tool_error("INVALID_ARGUMENT", "Save arguments are invalid"))?;
-    let principal = principal_for_space(state, &auth.space_id, &auth.identity)
-        .await
-        .map_err(|_| tool_error("TARGET_UNAVAILABLE", "The Entry is unavailable"))?;
-    let principals = authorization_principal_ids(&auth.identity, principal);
-    let mutation_actor = auth
-        .claims
-        .actor_principal_id
-        .unwrap_or(principal)
-        .to_string();
+    let actor_principal_id = auth.claims.actor_principal_id;
     let (id, status, entry) = if let Some(id) = input.id {
         validate_id(&id, "entry_id")
             .map_err(|_| tool_error("INVALID_ARGUMENT", "Save arguments are invalid"))?;
-        if !has_resource_action(state, auth, Action::Update, ResourceKind::Entry, &id).await {
-            return Err(tool_error("TARGET_UNAVAILABLE", "The Entry is unavailable"));
-        }
-        let entry = state
-            .service
-            .update_entry_authorized_for_principals(
-                &auth.space_id,
-                &id,
-                &input.content,
-                None,
-                &mutation_actor,
-                &principals,
-            )
-            .await
-            .map_err(|_| tool_error("VALIDATION_FAILED", "The Entry could not be updated"))?;
+        let content = input.content.clone();
+        let id_for_write = id.clone();
+        let entry = with_authorized_service_mutation(
+            state,
+            &auth.space_id,
+            &auth.identity,
+            Action::Update,
+            Some(ResourceRef {
+                kind: ResourceKind::Entry,
+                id: id.clone(),
+                parent: None,
+            }),
+            |principal_id, principals| async move {
+                let mutation_actor = actor_principal_id.unwrap_or(principal_id).to_string();
+                state
+                    .service
+                    .update_entry_authorized_for_principals(
+                        &auth.space_id,
+                        &id_for_write,
+                        &content,
+                        None,
+                        &mutation_actor,
+                        &principals,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            },
+        )
+        .await
+        .map_err(|_| tool_error("VALIDATION_FAILED", "The Entry could not be updated"))?;
         (id, "updated", entry)
     } else {
-        if !has_action(state, auth, Action::Create).await {
-            return Err(tool_error("TARGET_UNAVAILABLE", "The Entry is unavailable"));
-        }
         let id = Uuid::now_v7().to_string();
-        let entry = state
-            .service
-            .create_entry_authorized_for_principals(
-                &auth.space_id,
-                &id,
-                &input.content,
-                &mutation_actor,
-                &principals,
-            )
-            .await
-            .map_err(|_| tool_error("VALIDATION_FAILED", "The Entry could not be created"))?;
+        let id_for_write = id.clone();
+        let content = input.content.clone();
+        let entry = with_authorized_service_mutation(
+            state,
+            &auth.space_id,
+            &auth.identity,
+            Action::Create,
+            None,
+            |principal_id, principals| async move {
+                let mutation_actor = actor_principal_id.unwrap_or(principal_id).to_string();
+                state
+                    .service
+                    .create_entry_authorized_for_principals(
+                        &auth.space_id,
+                        &id_for_write,
+                        &content,
+                        &mutation_actor,
+                        &principals,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            },
+        )
+        .await
+        .map_err(|_| tool_error("VALIDATION_FAILED", "The Entry could not be created"))?;
         (id, "created", entry)
     };
     let uri = format!("ugoite://entry/{id}");
@@ -1252,20 +1274,36 @@ async fn delete(
         .map_err(|_| tool_error("INVALID_ARGUMENT", "Delete arguments are invalid"))?;
     validate_id(&input.id, "entry_id")
         .map_err(|_| tool_error("INVALID_ARGUMENT", "Delete arguments are invalid"))?;
-    if auth.claims.principal_type == "agent"
-        || auth.claims.actor_principal_id.is_some()
-        || !has_resource_action(state, auth, Action::Delete, ResourceKind::Entry, &input.id).await
-    {
+    if auth.claims.principal_type == "agent" || auth.claims.actor_principal_id.is_some() {
         return Err(tool_error("TARGET_UNAVAILABLE", "The Entry is unavailable"));
     }
-    let principal = principal_for_space(state, &auth.space_id, &auth.identity)
-        .await
-        .map_err(|_| tool_error("TARGET_UNAVAILABLE", "The Entry is unavailable"))?;
-    state
-        .service
-        .delete_entry(&auth.space_id, &input.id, false, &principal.to_string())
-        .await
-        .map_err(|_| tool_error("TARGET_UNAVAILABLE", "The Entry is unavailable"))?;
+    let actor_principal_id = auth.claims.actor_principal_id;
+    let id_for_write = input.id.clone();
+    with_authorized_mutation(
+        state,
+        &auth.space_id,
+        &auth.identity,
+        Action::Delete,
+        Some(ResourceRef {
+            kind: ResourceKind::Entry,
+            id: input.id.clone(),
+            parent: None,
+        }),
+        |principal_id, _principals| async move {
+            state
+                .service
+                .delete_entry(
+                    &auth.space_id,
+                    &id_for_write,
+                    false,
+                    &actor_principal_id.unwrap_or(principal_id).to_string(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await
+    .map_err(|_| tool_error("TARGET_UNAVAILABLE", "The Entry is unavailable"))?;
     let uri = format!("ugoite://entry/{}", input.id);
     let payload = json!({"id":input.id,"uri":uri,"status":"deleted","_untrusted_content":true});
     Ok(

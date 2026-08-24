@@ -4,6 +4,9 @@ sidebar:
   order: 2
 ---
 
+> Release note: Passkey/TOTP/OIDC account setup described below is future
+> reference material and is not a supported v0.1 product promise.
+
 Generate an encryption root and start the source image:
 
 ```bash

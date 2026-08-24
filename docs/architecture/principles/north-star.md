@@ -52,8 +52,11 @@ Readers pin immutable Head and snapshot coordinates and never lock. Writers can
 prepare immutable objects concurrently, but make a mutation visible only by
 replacing Head with the exact ETag they read. Backends that cannot prove the
 conditional read/create/replace contract are read-only unless an operator
-explicitly selects single-process mode. No lease, heartbeat, TTL, lock file, or
-fencing protocol participates in correctness.
+explicitly selects single-process mode. Catalog authority and Form/Checkpoint
+correctness do not depend on leases, heartbeats, TTLs, lock files, or fencing.
+DerivedRelation garbage collection may use durable staging heartbeats and
+terminal claims only to make cleanup safe; those records never establish
+visibility, authority, or checkpoint state.
 
 ## Target state
 
@@ -70,8 +73,8 @@ not become the mandatory owner of user data.
 3. Catalog Head is the only authoritative mutable root. Object listing never
    establishes catalog state or publication order.
 4. Forms own authoritative history. DerivedRelation Heads own only replaceable
-   current materializations for indexes and projections; they never enter
-   SpaceCheckpoint or authorization authority.
+   current builds for indexes and projections; they never enter SpaceCheckpoint
+   or authorization authority.
 5. Domain and use-case behavior lives in reusable Rust crates.
 6. CLI, server, WASM, and browser transport code remain adapters.
 7. Authentication and authorization do not change ownership of Space data.

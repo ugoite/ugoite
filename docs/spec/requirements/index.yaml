@@ -17,7 +17,7 @@ requirements:
   description: >-
     `ugoite index run` rebuilds registered search-related DerivedRelations from
     current authoritative Entry references. The initial AssetText producer
-    publishes a replaceable Iceberg materialization through its independent
+    publishes the current Iceberg build through its independent
     Relation Head without mutating the main Catalog Head.
   related_spec:
   - architecture/overview.md#architecture-overview
@@ -138,7 +138,7 @@ requirements:
   - SPEC-API-REST
   id: REQ-IDX-006
   title: Indexing watch loop
-  description: A durable watch loop and generic per-entry incremental producer engine remain future work. Current maintenance uses replace-all AssetText rebuilds and best-effort hooks after authoritative Entry writes.
+  description: A durable watch loop and generic per-entry incremental producer engine remain future work. Current maintenance uses explicit replace-all AssetText rebuilds; authoritative Entry writes never synchronously rebuild derived data.
   related_spec:
   - architecture/overview.md#architecture-overview
   priority: low

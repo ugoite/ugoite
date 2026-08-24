@@ -2,14 +2,15 @@
 //!
 //! The Relation Head in `ugoite-storage` is the only durable visibility
 //! coordinate in this module.  Iceberg metadata and data files are immutable
-//! build products below a materialization prefix; a failed build therefore
+//! build products below a build prefix; a failed build therefore
 //! cannot replace the currently visible result or the authoritative Catalog.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use arrow_array::builder::{Int64Builder, StringBuilder};
 use arrow_array::{Array, RecordBatch, StringArray, TimestampMicrosecondArray};
 use chrono::Utc;
 use datafusion::prelude::SessionContext;
+use flate2::read::{DeflateDecoder, ZlibDecoder};
 use futures::TryStreamExt;
 use iceberg::io::FileIO;
 use iceberg::spec::TableMetadataBuilder;
@@ -28,47 +29,198 @@ use iceberg::{
     NamespaceIdent, Runtime, TableCreation, TableIdent,
 };
 use iceberg_datafusion::IcebergStaticTableProvider;
-use opendal::options::WriteOptions;
+use opendal::options::{ReadOptions, WriteOptions};
 use opendal::{ErrorKind, Operator};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::future::Future;
 use std::io::{Cursor, Read, Seek};
 use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime};
+use tokio::sync::{Mutex, Notify, Semaphore};
 use ugoite_domain::derived_relation::DerivedRelationId;
 use ugoite_domain::derived_relation::{
     canonical_json, sha256_digest, DerivedErrorCode, DerivedExposure, DerivedRelationDefinition,
     DerivedValueType, RelationField, TypedSchema,
 };
 use ugoite_domain::entry::AssetReference;
-use ugoite_domain::form::{FieldType, FormDefinition};
-use ugoite_storage::{DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore};
+use ugoite_domain::form::FieldType;
+use ugoite_domain::id::validate_asset_id;
+use ugoite_storage::{
+    backend_server_time, DerivedRelationHead, DerivedRelationHeadStore, SpaceCatalogStore,
+};
 use uuid::Uuid;
 use zip::ZipArchive;
 
 pub const ASSET_TEXT_PRODUCER_ID: &str = "ugoite.asset_text";
-pub const ASSET_TEXT_PARSER_VERSION: &str = "1";
-pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 1;
-const MAX_ASSET_BYTES: u64 = 64 * 1024 * 1024;
+pub const ASSET_TEXT_PARSER_VERSION: &str = "3";
+// Bump this whenever the persisted AssetText contract changes in a way that
+// makes an existing build unsafe to reuse. AssetReference path validation is
+// part of the contract, so epoch 3 builds must be rebuilt before registration.
+pub const ASSET_TEXT_COMPATIBILITY_EPOCH: u64 = 4;
+const MAX_ASSET_BYTES: u64 = crate::asset::MAX_ASSET_BYTES as u64;
 const MAX_ZIP_ENTRIES: usize = 10_000;
 const MAX_ZIP_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_PDF_PAGES: usize = 10_000;
+const MAX_PDF_OBJECTS: usize = 100_000;
 const MAX_PDF_TEXT_OPERATORS: usize = 1_000_000;
 const MAX_XML_DEPTH: usize = 256;
 const MAX_EXTRACTED_TEXT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TEXT_CHUNK_CHARS: usize = 16 * 1024;
+const MAX_TOTAL_ASSET_TEXT_ROWS: usize = 1_000_000;
+const MAX_TOTAL_ASSET_TEXT_BYTES: usize = 512 * 1024 * 1024;
+const ASSET_TEXT_APPEND_BATCH_ROWS: usize = 8_192;
+const MAX_SOURCE_ASSETS: usize = 1_000_000;
+const MAX_SOURCE_FORMS: usize = 100_000;
+const MAX_SOURCE_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
+const MAX_SOURCE_METADATA_BYTES: usize = 256 * 1024 * 1024;
+
+#[derive(Debug)]
+struct AssetParserInputLimit;
+
+impl std::fmt::Display for AssetParserInputLimit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("asset parser input exceeds configured limit")
+    }
+}
+
+impl std::error::Error for AssetParserInputLimit {}
+const MAX_ASSET_REFERENCES_PER_ENTRY: usize = ugoite_domain::entry::MAX_ASSET_REFERENCES_PER_ENTRY;
+const MAX_ASSET_TEXT_MATCHES: usize = 1_000_000;
+pub const MAX_ASSET_TEXT_QUERY_BYTES: usize = 8 * 1024;
+const MAX_ASSET_TEXT_MATCH_BYTES: usize = 64 * 1024 * 1024;
 const READER_CHUNK_BYTES: usize = 256 * 1024;
+const MINIMUM_GC_AGE: Duration = Duration::from_secs(60 * 60);
+const GC_RETRY_DELAY: Duration = Duration::from_secs(60);
+const GC_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const ASSET_TEXT_REBUILD_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const MAX_SOURCE_CHANGE_RETRIES: usize = 3;
+const MAX_BACKGROUND_GC_SCHEDULERS: usize = 1024;
+const MAX_CONSECUTIVE_GC_FAILURES: usize = 10;
+const MAX_ASSET_TEXT_REFRESH_REQUESTS: usize = 16_384;
+const MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES: usize = 64 * 1024;
+const ASSET_TEXT_REFRESH_ADMISSION_LOCK: &str = "admission.lock";
+// v1 used one fixed marker beside the relation. Keep it as a migration input
+// until an admitted clear has removed it; upgraded Spaces must not lose a
+// durable refresh request merely because current writers use tokenized paths.
+const LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE: &str = "refresh-request.json";
+const ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL: Duration = Duration::from_secs(5 * 60);
+const ASSET_TEXT_REFRESH_ADMISSION_HEARTBEAT: Duration = Duration::from_secs(30);
+
+static ASSET_TEXT_REFRESH_LOCAL_ADMISSION: OnceLock<Mutex<()>> = OnceLock::new();
+
+struct AbortOnDrop(Option<tokio::task::JoinHandle<()>>);
+
+impl AbortOnDrop {
+    fn new(handle: tokio::task::JoinHandle<()>) -> Self {
+        Self(Some(handle))
+    }
+
+    fn abort(mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
+}
+
+/// A staged build remains discoverable if the rebuild future is cancelled
+/// after `staging.json` is installed. The async best-effort marker write is
+/// only a fast path; the staging marker remains the durable fallback for a
+/// process that exits before this task can run.
+struct StagedBuildCleanup {
+    store: Option<DerivedRelationHeadStore>,
+    build_id: String,
+}
+
+struct AssetTextAdmissionCleanup {
+    operator: Option<Operator>,
+    ws_path: String,
+    owner: String,
+}
+
+impl AssetTextAdmissionCleanup {
+    fn new(operator: Operator, ws_path: String, owner: String) -> Self {
+        Self {
+            operator: Some(operator),
+            ws_path,
+            owner,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.operator = None;
+    }
+}
+
+impl Drop for AssetTextAdmissionCleanup {
+    fn drop(&mut self) {
+        let Some(operator) = self.operator.take() else {
+            return;
+        };
+        let ws_path = self.ws_path.clone();
+        let owner = self.owner.clone();
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        handle.spawn(async move {
+            let _ = release_asset_text_refresh_admission_lock(&operator, &ws_path, &owner).await;
+        });
+    }
+}
+
+impl StagedBuildCleanup {
+    fn new(store: DerivedRelationHeadStore, build_id: String) -> Self {
+        Self {
+            store: Some(store),
+            build_id,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.store = None;
+    }
+}
+
+impl Drop for StagedBuildCleanup {
+    fn drop(&mut self) {
+        let Some(store) = self.store.take() else {
+            return;
+        };
+        let build_id = self.build_id.clone();
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        handle.spawn(async move {
+            let _ = ensure_cleanup_marker(&store, &build_id).await;
+        });
+    }
+}
+
+struct AssetTextGcScheduler {
+    notify: Notify,
+    deadline: StdMutex<Option<Instant>>,
+    started: AtomicBool,
+}
+
+static ASSET_TEXT_GC_SCHEDULERS: OnceLock<StdMutex<BTreeMap<String, Arc<AssetTextGcScheduler>>>> =
+    OnceLock::new();
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct AssetTextRow {
-    pub form_id: String,
-    pub entry_id: String,
-    pub entry_version: i64,
     pub asset_id: String,
     pub source_sha256: String,
     pub source_size_bytes: i64,
@@ -88,7 +240,7 @@ pub struct AssetTextRow {
 struct AssetTextManifest {
     format_version: u32,
     relation_id: String,
-    materialization_id: String,
+    build_id: String,
     producer_fingerprint: String,
     input_digest: String,
     row_count: usize,
@@ -115,11 +267,68 @@ struct AssetTextStatusCounts {
     assets_unsupported: usize,
 }
 
+#[derive(Default)]
+struct BoundedAssetTextRows {
+    rows: Vec<AssetTextRow>,
+    total_bytes: usize,
+    error: Option<anyhow::Error>,
+}
+
+impl BoundedAssetTextRows {
+    fn failed(&self) -> bool {
+        self.error.is_some()
+    }
+
+    fn push(&mut self, row: AssetTextRow) {
+        if self.error.is_some() {
+            return;
+        }
+        let Some(row_bytes) = [
+            row.asset_id.len(),
+            row.source_sha256.len(),
+            row.parser_id.len(),
+            row.parser_version.len(),
+            row.producer_fingerprint.len(),
+            row.status.len(),
+            row.source_locator.as_ref().map_or(0, String::len),
+            row.text.as_ref().map_or(0, String::len),
+            row.parsed_at.len(),
+            row.error_code.as_ref().map_or(0, String::len),
+            std::mem::size_of::<AssetTextRow>(),
+        ]
+        .into_iter()
+        .try_fold(0usize, usize::checked_add) else {
+            self.error = Some(anyhow::anyhow!("AssetText rebuild output size overflow"));
+            return;
+        };
+        let Some(next_total_bytes) = self.total_bytes.checked_add(row_bytes) else {
+            self.error = Some(anyhow::anyhow!(
+                "AssetText rebuild output exceeds its total byte limit"
+            ));
+            return;
+        };
+        if self.rows.len() >= MAX_TOTAL_ASSET_TEXT_ROWS
+            || next_total_bytes > MAX_TOTAL_ASSET_TEXT_BYTES
+        {
+            self.error = Some(anyhow::anyhow!(
+                "AssetText rebuild output exceeds its aggregate limit"
+            ));
+            return;
+        }
+        self.total_bytes = next_total_bytes;
+        self.rows.push(row);
+    }
+
+    fn finish(self) -> Result<Vec<AssetTextRow>> {
+        if let Some(error) = self.error {
+            return Err(error);
+        }
+        Ok(self.rows)
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 struct SourceReference {
-    form_id: String,
-    entry_id: String,
-    entry_version: u64,
     asset_id: String,
     name: String,
     media_type: String,
@@ -165,22 +374,19 @@ impl Dispatch {
 
 pub fn asset_text_definition() -> DerivedRelationDefinition {
     let fields = vec![
-        (1, "form_id", DerivedValueType::String, false),
-        (2, "entry_id", DerivedValueType::String, false),
-        (3, "entry_version", DerivedValueType::Long, false),
-        (4, "asset_id", DerivedValueType::String, false),
-        (5, "source_sha256", DerivedValueType::String, false),
-        (6, "source_size_bytes", DerivedValueType::Long, false),
-        (7, "parser_id", DerivedValueType::String, false),
-        (8, "parser_version", DerivedValueType::String, false),
-        (9, "producer_fingerprint", DerivedValueType::String, false),
-        (10, "status", DerivedValueType::String, false),
-        (11, "chunk_index", DerivedValueType::Long, false),
-        (12, "source_locator", DerivedValueType::String, true),
-        (13, "text", DerivedValueType::String, true),
-        (14, "text_length", DerivedValueType::Long, false),
-        (15, "parsed_at", DerivedValueType::Timestamp, false),
-        (16, "error_code", DerivedValueType::String, true),
+        (1, "asset_id", DerivedValueType::String, false),
+        (2, "source_sha256", DerivedValueType::String, false),
+        (3, "source_size_bytes", DerivedValueType::Long, false),
+        (4, "parser_id", DerivedValueType::String, false),
+        (5, "parser_version", DerivedValueType::String, false),
+        (6, "producer_fingerprint", DerivedValueType::String, false),
+        (7, "status", DerivedValueType::String, false),
+        (8, "chunk_index", DerivedValueType::Long, false),
+        (9, "source_locator", DerivedValueType::String, true),
+        (10, "text", DerivedValueType::String, true),
+        (11, "text_length", DerivedValueType::Long, false),
+        (12, "parsed_at", DerivedValueType::Timestamp, false),
+        (13, "error_code", DerivedValueType::String, true),
     ]
     .into_iter()
     .map(|(field_id, name, value_type, nullable)| RelationField {
@@ -193,15 +399,9 @@ pub fn asset_text_definition() -> DerivedRelationDefinition {
     DerivedRelationDefinition {
         relation_id: DerivedRelationId::ASSET_TEXT,
         name: ASSET_TEXT_PRODUCER_ID.to_string(),
-        definition_version: 1,
+        definition_version: 2,
         schema: TypedSchema { fields },
-        logical_key: vec![
-            "form_id".into(),
-            "entry_id".into(),
-            "entry_version".into(),
-            "asset_id".into(),
-            "chunk_index".into(),
-        ],
+        logical_key: vec!["asset_id".into(), "chunk_index".into()],
         exposure: DerivedExposure::Internal,
         producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
     }
@@ -211,7 +411,7 @@ pub fn asset_text_producer_fingerprint() -> String {
     // This is deliberately a semantic contract, not a crate version.  Any
     // parser, normalization, dispatch, or chunking change must update it.
     sha256_digest(
-        b"ugoite.asset_text/protocol=1;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=text-layer;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+128MiB-zip+10000-pdf-pages+16MiB-text+256-xml-depth;schema=1",
+        b"ugoite.asset_text/protocol=3;dispatch=text/plain,text/markdown,pdf,docx,xlsx,pptx;pdf=literal+bounded-flate;normalization=line-endings+control-chars;chunk=semantic-boundary+16384-unicode-scalars;limits=64MiB-input+10000-zip-entries+128MiB-zip+10000-pdf-pages+100000-pdf-objects+1000000-pdf-text-operators+16MiB-text+256-xml-depth+1000000-total-rows+512MiB-total-text+16MiB-pdf-decoded-stream;blocking=bounded-4;schema=2",
     )
 }
 
@@ -232,68 +432,55 @@ fn asset_text_schema() -> Schema {
     }
     Schema::builder()
         .with_fields(vec![
-            field(1, "form_id", Type::Primitive(PrimitiveType::String), true),
-            field(2, "entry_id", Type::Primitive(PrimitiveType::String), true),
+            field(1, "asset_id", Type::Primitive(PrimitiveType::String), true),
             field(
-                3,
-                "entry_version",
-                Type::Primitive(PrimitiveType::Long),
-                true,
-            ),
-            field(4, "asset_id", Type::Primitive(PrimitiveType::String), true),
-            field(
-                5,
+                2,
                 "source_sha256",
                 Type::Primitive(PrimitiveType::String),
                 true,
             ),
             field(
-                6,
+                3,
                 "source_size_bytes",
                 Type::Primitive(PrimitiveType::Long),
                 true,
             ),
-            field(7, "parser_id", Type::Primitive(PrimitiveType::String), true),
+            field(4, "parser_id", Type::Primitive(PrimitiveType::String), true),
             field(
-                8,
+                5,
                 "parser_version",
                 Type::Primitive(PrimitiveType::String),
                 true,
             ),
             field(
-                9,
+                6,
                 "producer_fingerprint",
                 Type::Primitive(PrimitiveType::String),
                 true,
             ),
-            field(10, "status", Type::Primitive(PrimitiveType::String), true),
+            field(7, "status", Type::Primitive(PrimitiveType::String), true),
+            field(8, "chunk_index", Type::Primitive(PrimitiveType::Long), true),
             field(
-                11,
-                "chunk_index",
-                Type::Primitive(PrimitiveType::Long),
-                true,
-            ),
-            field(
-                12,
+                9,
                 "source_locator",
                 Type::Primitive(PrimitiveType::String),
                 false,
             ),
-            field(13, "text", Type::Primitive(PrimitiveType::String), false),
+            field(10, "text", Type::Primitive(PrimitiveType::String), false),
             field(
-                14,
+                11,
                 "text_length",
                 Type::Primitive(PrimitiveType::Long),
                 true,
             ),
             field(
-                15,
+                12,
                 "parsed_at",
                 Type::Primitive(PrimitiveType::Timestamptz),
                 true,
             ),
             field(
-                16,
+                13,
                 "error_code",
                 Type::Primitive(PrimitiveType::String),
                 false,
@@ -455,7 +642,7 @@ impl Catalog for DerivedRelationCatalog {
     async fn drop_table(&self, _table: &TableIdent) -> iceberg::Result<()> {
         Err(IcebergError::new(
             IcebergErrorKind::FeatureUnsupported,
-            "derived tables are replaced by materialization swap",
+            "derived tables are replaced by current-build swap",
         ))
     }
 
@@ -514,17 +701,876 @@ impl Catalog for DerivedRelationCatalog {
 }
 
 pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedRelationHead> {
+    let shared = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+    rebuild_asset_text_with_timeout(op, ws_path, shared).await
+}
+
+/// Shared backends use the exact-read/if-match path and deliberately do not
+/// take the process-local rebuild mutex. A losing build remains an immutable
+/// garbage candidate and is never published.
+pub async fn rebuild_asset_text_shared(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<DerivedRelationHead> {
+    rebuild_asset_text_with_timeout(op, ws_path, true).await
+}
+
+async fn rebuild_asset_text_with_timeout(
+    op: &Operator,
+    ws_path: &str,
+    shared: bool,
+) -> Result<DerivedRelationHead> {
+    match tokio::time::timeout(ASSET_TEXT_REBUILD_OPERATION_TIMEOUT, async {
+        let mut last_source_change = None;
+        for _ in 0..=MAX_SOURCE_CHANGE_RETRIES {
+            match rebuild_asset_text_with_mode(op, ws_path, shared).await {
+                Ok(head) => return Ok(head),
+                Err(error) if is_asset_text_source_changed(&error) => {
+                    last_source_change = Some(error);
+                    tokio::task::yield_now().await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_source_change.expect("source-change retry must have an error"))
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            // A timeout may drop an in-flight build after staging. Its
+            // durable staging marker remains recoverable by relation GC.
+            schedule_asset_text_gc(op, ws_path);
+            Err(anyhow!("AssetText rebuild operation timed out"))
+        }
+    }
+}
+
+pub fn is_asset_text_source_changed(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("authoritative source changed"))
+}
+
+fn asset_text_refresh_request_prefix(ws_path: &str) -> String {
+    format!(
+        "{ws_path}/_ugoite/derived/relations/{}/refresh-requests/",
+        DerivedRelationId::ASSET_TEXT,
+    )
+}
+
+fn asset_text_refresh_request_path(ws_path: &str, token: &str) -> String {
+    format!("{}{token}.json", asset_text_refresh_request_prefix(ws_path))
+}
+
+fn legacy_asset_text_refresh_request_path(ws_path: &str) -> String {
+    format!(
+        "{ws_path}/_ugoite/derived/relations/{}/{}",
+        DerivedRelationId::ASSET_TEXT,
+        LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE,
+    )
+}
+
+fn refresh_request_token(path: &str) -> Option<&str> {
+    let token = path.rsplit('/').next()?.strip_suffix(".json")?;
+    let uuid = Uuid::parse_str(token).ok()?;
+    (uuid.get_version_num() == 7 && (uuid.as_bytes()[8] & 0xc0) == 0x80).then_some(token)
+}
+
+fn refresh_request_admission_lock_path(ws_path: &str) -> String {
+    format!(
+        "{}{ASSET_TEXT_REFRESH_ADMISSION_LOCK}",
+        asset_text_refresh_request_prefix(ws_path),
+    )
+}
+
+fn refresh_request_admission_lock_bytes(
+    owner: &str,
+    released: bool,
+    acquired_at: i64,
+    heartbeat_at: i64,
+) -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "owner": owner,
+        "acquired_at": acquired_at,
+        "heartbeat_at": heartbeat_at,
+        "released": released,
+    }))
+    .expect("AssetText refresh admission lock is serializable")
+}
+
+fn refresh_request_admission_lock_reclaimable(
+    bytes: &[u8],
+    last_modified: Option<SystemTime>,
+    shared_backend: bool,
+    server_now: Option<SystemTime>,
+) -> bool {
+    let value = serde_json::from_slice::<Value>(bytes).ok();
+    if value
+        .as_ref()
+        .and_then(|value| value.get("released"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return true;
+    }
+    let now = if shared_backend {
+        server_now
+    } else {
+        Some(SystemTime::now())
+    };
+    now.and_then(|now| last_modified.and_then(|timestamp| now.duration_since(timestamp).ok()))
+        .is_some_and(|age| age >= ASSET_TEXT_REFRESH_ADMISSION_LOCK_TTL)
+}
+
+async fn acquire_asset_text_refresh_admission_lock(op: &Operator, ws_path: &str) -> Result<String> {
+    let capabilities = op.info().capability();
+    let has_shared_contract = capabilities.stat
+        && capabilities.read_with_if_match
+        && capabilities.write_with_if_not_exists
+        && capabilities.write_with_if_match;
+    if !has_shared_contract {
+        bail!("AssetText refresh marker admission requires conditional object writes");
+    }
+    let path = refresh_request_admission_lock_path(ws_path);
+    let owner = Uuid::now_v7().to_string();
+    for _ in 0..3 {
+        let now = Utc::now().timestamp();
+        match op
+            .write_options(
+                &path,
+                refresh_request_admission_lock_bytes(&owner, false, now, now),
+                WriteOptions {
+                    if_not_exists: true,
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => {
+                let metadata = match op.stat(&path).await {
+                    Ok(metadata) => metadata,
+                    Err(error) => return Err(error.into()),
+                };
+                if metadata.etag().filter(|etag| !etag.is_empty()).is_none()
+                    || metadata.last_modified().is_none()
+                {
+                    bail!("AssetText refresh marker admission lock lacks server metadata");
+                }
+                return Ok(owner);
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::ConditionNotMatch | ErrorKind::AlreadyExists
+                ) => {}
+            Err(error) => return Err(error.into()),
+        }
+
+        let metadata = match op.stat(&path).await {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+            bail!("AssetText refresh marker admission lock has no ETag")
+        };
+        if metadata.last_modified().is_none() {
+            bail!("AssetText refresh marker admission lock has no server timestamp")
+        }
+        let bytes = match op
+            .read_options(
+                &path,
+                ReadOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(bytes) => bytes.to_vec(),
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let shared_backend = matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls");
+        let server_now = if shared_backend {
+            Some(
+                backend_server_time(
+                    op,
+                    &format!(
+                        "{ws_path}/_ugoite/derived/relations/{}",
+                        DerivedRelationId::ASSET_TEXT
+                    ),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+        if !refresh_request_admission_lock_reclaimable(
+            &bytes,
+            metadata.last_modified().map(Into::into),
+            shared_backend,
+            server_now,
+        ) {
+            bail!("AssetText refresh marker admission is busy")
+        }
+        let now = Utc::now().timestamp();
+        match op
+            .write_options(
+                &path,
+                refresh_request_admission_lock_bytes(&owner, false, now, now),
+                WriteOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(_) => {
+                let metadata = match op.stat(&path).await {
+                    Ok(metadata) => metadata,
+                    Err(error) => return Err(error.into()),
+                };
+                if metadata.etag().filter(|etag| !etag.is_empty()).is_none()
+                    || metadata.last_modified().is_none()
+                {
+                    bail!("AssetText refresh marker admission lock lacks server metadata");
+                }
+                return Ok(owner);
+            }
+            Err(error) if error.kind() == ErrorKind::ConditionNotMatch => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    bail!("AssetText refresh marker admission changed while acquiring its lock")
+}
+
+async fn release_asset_text_refresh_admission_lock(
+    op: &Operator,
+    ws_path: &str,
+    owner: &str,
+) -> Result<()> {
+    let path = refresh_request_admission_lock_path(ws_path);
+    let metadata = match op.stat(&path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+        bail!("AssetText refresh marker admission lock has no ETag")
+    };
+    let bytes = match op
+        .read_options(
+            &path,
+            ReadOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(bytes) => bytes.to_vec(),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => return Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let current_owner = serde_json::from_slice::<Value>(&bytes)?
+        .get("owner")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    if current_owner.as_deref() != Some(owner) {
+        bail!("AssetText refresh marker admission lock owner changed");
+    }
+    match op
+        .write_options(
+            &path,
+            refresh_request_admission_lock_bytes(
+                owner,
+                true,
+                Utc::now().timestamp(),
+                Utc::now().timestamp(),
+            ),
+            WriteOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Renews the durable admission lease while a shared refresh-marker drain is
+/// scanning/deleting a large prefix. A false result means that another writer
+/// has already replaced or removed this owner's lease; callers must then fail
+/// closed rather than continue claiming atomic capacity or marker ownership.
+async fn renew_asset_text_refresh_admission_lock(
+    op: &Operator,
+    ws_path: &str,
+    owner: &str,
+) -> Result<bool> {
+    let path = refresh_request_admission_lock_path(ws_path);
+    let metadata = match op.stat(&path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) else {
+        bail!("AssetText refresh marker admission lock has no ETag")
+    };
+    let bytes = match op
+        .read_options(
+            &path,
+            ReadOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(bytes) => bytes.to_vec(),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => return Ok(false),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let value = serde_json::from_slice::<Value>(&bytes)?;
+    if value.get("owner").and_then(Value::as_str) != Some(owner)
+        || value.get("released").and_then(Value::as_bool) == Some(true)
+    {
+        return Ok(false);
+    }
+    let acquired_at = value
+        .get("acquired_at")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| Utc::now().timestamp());
+    let now = Utc::now().timestamp();
+    match op
+        .write_options(
+            &path,
+            refresh_request_admission_lock_bytes(owner, false, acquired_at, now),
+            WriteOptions {
+                if_match: Some(etag.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn with_asset_text_refresh_admission_lock<T, F, Fut>(
+    op: &Operator,
+    ws_path: &str,
+    operation: F,
+) -> Result<T>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let capabilities = op.info().capability();
+    let has_shared_contract = capabilities.stat
+        && capabilities.read_with_if_match
+        && capabilities.write_with_if_not_exists
+        && capabilities.write_with_if_match;
+    if !has_shared_contract {
+        // The in-memory backend intentionally has no conditional-object
+        // contract. It is a single-process test/local backend, so retain the
+        // same admission invariant with one process-local mutex. Shared
+        // remote writers are rejected rather than pretending a read-then-write
+        // check is atomic.
+        if !matches!(op.info().scheme(), "memory" | "fs" | "file") {
+            bail!("AssetText refresh marker admission requires conditional object writes");
+        }
+        let lock = ASSET_TEXT_REFRESH_LOCAL_ADMISSION.get_or_init(Mutex::default);
+        let guard = lock.lock().await;
+        let result = operation().await;
+        drop(guard);
+        return result;
+    }
+    // Capability flags are only an advertised shape. Reuse the storage
+    // boundary's behavioral probe before admitting a shared refresh drain, so
+    // a backend that merely reports conditional-write support cannot create
+    // two owners of the same marker snapshot.
+    SpaceCatalogStore::new(op.clone(), ws_path.to_string())?
+        .verify_shared_writes()
+        .await?;
+    let owner = acquire_asset_text_refresh_admission_lock(op, ws_path).await?;
+    let mut admission_cleanup =
+        AssetTextAdmissionCleanup::new(op.clone(), ws_path.to_owned(), owner.clone());
+    let lease_lost = Arc::new(AtomicBool::new(false));
+    let heartbeat = {
+        let op = op.clone();
+        let ws_path = ws_path.to_owned();
+        let owner = owner.clone();
+        let lease_lost = lease_lost.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(ASSET_TEXT_REFRESH_ADMISSION_HEARTBEAT).await;
+                match renew_asset_text_refresh_admission_lock(&op, &ws_path, &owner).await {
+                    Ok(true) => {}
+                    Ok(false) | Err(_) => {
+                        lease_lost.store(true, Ordering::Release);
+                        break;
+                    }
+                }
+            }
+        })
+    };
+    // Do not cancel an in-flight marker mutation when the heartbeat reports a
+    // loss. The operation may already have committed at the storage boundary;
+    // letting it settle gives the caller a reconciliable result instead of an
+    // ambiguous cancellation. The latched post-check fails closed.
+    let result = operation().await;
+    heartbeat.abort();
+    let _ = heartbeat.await;
+    let result = if lease_lost.load(Ordering::Acquire) {
+        Err(anyhow!(
+            "AssetText refresh marker admission lease was lost during operation"
+        ))
+    } else {
+        result
+    };
+    let release = release_asset_text_refresh_admission_lock(op, ws_path, &owner).await;
+    if release.is_ok() {
+        admission_cleanup.disarm();
+    }
+    match (result, release) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(release_error)) => Err(error.context(format!(
+            "release AssetText refresh marker admission lock: {release_error:#}"
+        ))),
+    }
+}
+
+#[cfg(test)]
+fn refresh_request_is_at_or_before(path: &str, cutoff: &str) -> bool {
+    refresh_request_token(path).is_some_and(|token| token <= cutoff)
+}
+
+/// Lists one bounded batch from the marker snapshot. UUID-v7 marker names are
+/// ordered by creation time; the cutoff makes markers created while a build is
+/// running ineligible for acknowledgement even when the directory is larger
+/// than the in-memory batch bound.
+#[cfg(test)]
+async fn asset_text_refresh_request_batch_before(
+    op: &Operator,
+    ws_path: &str,
+    cutoff: &str,
+) -> Result<Vec<String>> {
+    let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    let mut examined = 0usize;
+    while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
+        let path = entry.path();
+        if path.ends_with(".json")
+            && refresh_request_is_at_or_before(path, cutoff)
+            && paths.len() < MAX_ASSET_TEXT_REFRESH_REQUESTS
+        {
+            paths.push(path.to_string());
+        }
+        if paths.len() == MAX_ASSET_TEXT_REFRESH_REQUESTS {
+            break;
+        }
+    }
+    Ok(paths)
+}
+
+/// Capture the exact immutable marker paths admitted by one worker. The
+/// admission lock serializes all current writers, so a later writer cannot
+/// create one of these paths before the old owner deletes it. This deliberately
+/// avoids using UUID-v7 lexical order as a cross-process timestamp fence.
+async fn snapshot_asset_text_refresh_request_paths(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<Vec<String>> {
+    let mut paths = Vec::with_capacity(MAX_ASSET_TEXT_REFRESH_REQUESTS);
+    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
+    if legacy_asset_text_refresh_pending(op, &legacy_path).await? {
+        paths.push(legacy_path);
+    }
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    let mut examined = 0usize;
+    while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
+        if refresh_request_token(entry.path()).is_some() {
+            paths.push(entry.path().to_string());
+            if paths.len() > MAX_ASSET_TEXT_REFRESH_REQUESTS {
+                bail!(
+                    "AssetText refresh request markers exceed {}",
+                    MAX_ASSET_TEXT_REFRESH_REQUESTS
+                );
+            }
+        }
+    }
+    Ok(paths)
+}
+
+/// A bounded drain is repeated until no marker from the build's snapshot
+/// remains. Markers created after the cutoff stay durable for the next worker
+/// or startup rearm, including when the initial directory exceeded capacity.
+#[cfg(test)]
+async fn clear_asset_text_refresh_requests_through(
+    op: &Operator,
+    ws_path: &str,
+    cutoff: &str,
+) -> Result<()> {
+    loop {
+        let paths = asset_text_refresh_request_batch_before(op, ws_path, cutoff).await?;
+        if paths.is_empty() {
+            return Ok(());
+        }
+        clear_asset_text_refresh_request_paths(op, &paths).await?;
+    }
+}
+
+async fn clear_asset_text_refresh_requests_with_admission_lock(
+    op: &Operator,
+    ws_path: &str,
+) -> Result<()> {
+    with_asset_text_refresh_admission_lock(op, ws_path, || async {
+        // Capture exact paths at the admission boundary. UUID-v7 lexical
+        // ordering is not a cross-process fence: independently generated
+        // markers in one millisecond can sort either way. Current writers
+        // also no longer use the old fixed-name marker, whose path could not
+        // be safely conditionally deleted after a lease takeover.
+        let paths = snapshot_asset_text_refresh_request_paths(op, ws_path).await?;
+        clear_asset_text_refresh_request_paths(op, &paths).await
+    })
+    .await
+}
+
+async fn clear_asset_text_refresh_request_paths_with_admission_lock(
+    op: &Operator,
+    ws_path: &str,
+    paths: &[String],
+) -> Result<()> {
+    with_asset_text_refresh_admission_lock(op, ws_path, || async {
+        // The caller captured these immutable token paths at rebuild
+        // admission.  Requests created after that point must remain durable
+        // for the next refresh, even if this build finishes much later.
+        clear_asset_text_refresh_request_paths(op, paths).await
+    })
+    .await
+}
+
+async fn asset_text_refresh_request_count(op: &Operator, ws_path: &str) -> Result<usize> {
+    let legacy_path = legacy_asset_text_refresh_request_path(ws_path);
+    let mut count = usize::from(legacy_asset_text_refresh_pending(op, &legacy_path).await?);
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    let mut examined = 0usize;
+    while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
+        if refresh_request_token(entry.path()).is_some() {
+            count = count.saturating_add(1);
+            if count >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
+                return Ok(count);
+            }
+        }
+    }
+    Ok(count)
+}
+
+async fn clear_asset_text_refresh_request_paths(op: &Operator, paths: &[String]) -> Result<()> {
+    for path in paths {
+        if path.ends_with(&format!("/{LEGACY_ASSET_TEXT_REFRESH_REQUEST_FILE}")) {
+            acknowledge_legacy_asset_text_refresh_request(op, path).await?;
+            continue;
+        }
+        match op.delete(path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+pub async fn mark_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<String> {
+    with_asset_text_refresh_admission_lock(op, ws_path, || async {
+        if asset_text_refresh_request_count(op, ws_path).await? >= MAX_ASSET_TEXT_REFRESH_REQUESTS {
+            bail!("AssetText refresh request markers exceed {MAX_ASSET_TEXT_REFRESH_REQUESTS}");
+        }
+        let token = Uuid::now_v7().to_string();
+        op.write(
+            &asset_text_refresh_request_path(ws_path, &token),
+            serde_json::to_vec(&json!({"token": token, "requested_at": Utc::now()}))?,
+        )
+        .await
+        .map(|_| token)
+        .map_err(Into::into)
+    })
+    .await
+}
+
+pub async fn clear_asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<()> {
+    clear_asset_text_refresh_requests_with_admission_lock(op, ws_path).await
+}
+
+pub async fn asset_text_refresh_requested(op: &Operator, ws_path: &str) -> Result<bool> {
+    if legacy_asset_text_refresh_pending(op, &legacy_asset_text_refresh_request_path(ws_path))
+        .await?
+    {
+        return Ok(true);
+    }
+    let mut lister = op
+        .lister_with(&asset_text_refresh_request_prefix(ws_path))
+        .recursive(false)
+        .await?;
+    let mut examined = 0usize;
+    while let Some(entry) = lister.try_next().await? {
+        examined = examined.saturating_add(1);
+        if examined > MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES {
+            bail!(
+                "AssetText refresh marker prefix exceeds the {}-entry safety bound",
+                MAX_ASSET_TEXT_REFRESH_SCAN_ENTRIES
+            );
+        }
+        if refresh_request_token(entry.path()).is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+async fn legacy_asset_text_refresh_pending(op: &Operator, path: &str) -> Result<bool> {
+    let metadata = match op.stat(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let etag = metadata
+        .etag()
+        .filter(|etag| !etag.is_empty())
+        .map(str::to_owned);
+    let bytes = match etag.as_deref() {
+        Some(etag) => {
+            op.read_options(
+                path,
+                ReadOptions {
+                    if_match: Some(etag.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await?
+        }
+        None if !is_shared_backend(op) => op.read(path).await?,
+        None => bail!("shared legacy AssetText refresh marker requires an exact ETag"),
+    };
+    Ok(serde_json::from_slice::<Value>(&bytes.to_vec())
+        .ok()
+        .and_then(|value| value.get("acknowledged").and_then(Value::as_bool))
+        != Some(true))
+}
+
+async fn acknowledge_legacy_asset_text_refresh_request(op: &Operator, path: &str) -> Result<()> {
+    let metadata = match op.stat(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let etag = metadata
+        .etag()
+        .filter(|etag| !etag.is_empty())
+        .map(str::to_owned);
+    let bytes = serde_json::to_vec(&json!({
+        "acknowledged": true,
+        "acknowledged_at": Utc::now(),
+    }))?;
+    let result: opendal::Result<()> = match etag {
+        Some(etag) => op
+            .write_options(
+                path,
+                bytes,
+                WriteOptions {
+                    if_match: Some(etag),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map(|_| ()),
+        None if !is_shared_backend(op) => op.write(path, bytes).await.map(|_| ()),
+        None => bail!("shared legacy AssetText refresh acknowledgement requires an ETag"),
+    };
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::ConditionNotMatch => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Returns whether the durable authoritative source requires an AssetText
+/// refresh. The Catalog Head coordinate is the commit-coupled fallback intent:
+/// even if a process crashes before it can write a refresh marker, a stale
+/// Derived Head remains observable and can be rearmed on the next startup.
+pub async fn asset_text_refresh_needed(op: &Operator, ws_path: &str) -> Result<bool> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
+    let source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
+    let head_store = asset_text_head_store(op, ws_path).await?;
+    let head = match head_store.read_exact().await {
+        Ok(Some(head)) => {
+            validate_asset_text_head_binding(op, ws_path, &head.head).await?;
+            head.head
+        }
+        Ok(None) => {
+            // An empty Space has no source coordinate and does not need an
+            // initial empty build. Once an authoritative mutation creates a
+            // Catalog Head, the missing Derived Head is stale by definition.
+            return Ok(source_coordinate
+                .get("catalog_head_sha256")
+                .is_some_and(|value| !value.is_null()));
+        }
+        Err(error)
+            if error
+                .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
+                .is_some() =>
+        {
+            return Ok(true);
+        }
+        Err(error) => {
+            // A malformed checksum/identity/binding is a rebuildable derived
+            // corruption state. Preserve the raw CAS evidence for the rebuild
+            // path instead of requiring an operator to delete Head manually.
+            if head_store.read_raw_for_rebuild().await?.is_some() {
+                return Ok(true);
+            }
+            return Err(error);
+        }
+    };
+    let stale = head.source_coordinate != source_coordinate
+        || head.producer_fingerprint != asset_text_producer_fingerprint()
+        || head.definition_fingerprint != asset_text_definition_fingerprint()
+        || head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH;
+    if stale {
+        return Ok(true);
+    }
+    if validate_asset_text_build(op, ws_path, &head).await.is_err() {
+        return Ok(true);
+    }
+    asset_text_refresh_requested(op, ws_path).await
+}
+
+/// Returns true when a shared Relation Head replacement lost its conditional
+/// write race. The immutable build is garbage, but the refresh worker should
+/// retry from the newest Head instead of allowing a quiet Space to remain
+/// stale indefinitely.
+pub fn is_shared_publish_conflict(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<opendal::Error>()
+            .is_some_and(|error| error.kind() == ErrorKind::ConditionNotMatch)
+    })
+}
+
+async fn rebuild_asset_text_with_mode(
+    op: &Operator,
+    ws_path: &str,
+    shared: bool,
+) -> Result<DerivedRelationHead> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
     let definition = asset_text_definition();
     let producer_fingerprint = asset_text_producer_fingerprint();
     let relation_uuid = definition.relation_id.as_uuid();
-    let head_store =
-        DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process();
-    let expected = head_store.read_exact().await?;
-    let base_generation = expected
+    let head_store = if shared {
+        DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid)
+            .shared()
+            .await?
+    } else {
+        DerivedRelationHeadStore::new(op.clone(), ws_path, relation_uuid).single_process()
+    };
+    // v1 Heads point to the removed materializations layout. Keep the exact
+    // disposable coordinate pinned until the new build is ready, then replace
+    // it under the same relation-local mutex/CAS used for current Heads. The
+    // detached prefix is marked for grace-period GC only after that swap.
+    let _rebuild_guard = if shared {
+        None
+    } else {
+        Some(head_store.single_process_lock().lock_owned().await)
+    };
+    // Capture the exact refresh requests admitted to this build before the
+    // authoritative scan starts.  Clearing the live marker directory after
+    // publication would acknowledge mutations that were not included in this
+    // build, especially when the worker is delayed by a large parse.
+    let refresh_request_paths = with_asset_text_refresh_admission_lock(op, ws_path, || async {
+        snapshot_asset_text_refresh_request_paths(op, ws_path).await
+    })
+    .await?;
+    let mut legacy_expected = None;
+    let mut corrupt_expected = None;
+    if let Err(error) = head_store.read_exact().await {
+        if error
+            .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
+            .is_some()
+        {
+            legacy_expected = Some(
+                head_store
+                    .read_legacy_exact()
+                    .await?
+                    .context("legacy DerivedRelation Head disappeared")?,
+            );
+        } else {
+            corrupt_expected = Some(
+                head_store
+                    .read_raw_for_rebuild()
+                    .await?
+                    .context("corrupt DerivedRelation Head disappeared")?,
+            );
+        }
+    }
+    let expected = if legacy_expected.is_some() || corrupt_expected.is_some() {
+        None
+    } else {
+        head_store.read_exact().await?
+    };
+    let current_generation = expected
         .as_ref()
         .map(|head| head.head.generation)
+        .or_else(|| legacy_expected.as_ref().map(|head| head.generation))
+        .or_else(|| {
+            corrupt_expected.as_ref().and_then(|raw| {
+                serde_json::from_slice::<Value>(&raw.bytes)
+                    .ok()
+                    .and_then(|value| value.get("generation").and_then(Value::as_u64))
+            })
+        })
         .unwrap_or(0);
-    let target_generation = base_generation
+    let generation = current_generation
         .checked_add(1)
         .context("derived generation overflow")?;
     let source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
@@ -533,116 +1579,612 @@ pub async fn rebuild_asset_text(op: &Operator, ws_path: &str) -> Result<DerivedR
     if source_coordinate != source_coordinate_after_scan {
         bail!("authoritative source changed during AssetText rebuild; retry");
     }
-    let input_digest = sha256_digest(&canonical_json(&source_rows)?);
+    let input_digest = source_references_digest(&source_rows)?;
     let rows = build_asset_text_rows(op, ws_path, &source_rows, &producer_fingerprint).await?;
-    let row_digest = sha256_digest(&canonical_json(&rows)?);
-    let materialization_id = Uuid::now_v7().to_string();
-    let materialization_path = format!(
-        "{ws_path}/_ugoite/derived/relations/{relation_uuid}/materializations/{materialization_id}"
-    );
-    let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
-    // Iceberg locations must use the same URI namespace as the official
-    // SpaceCatalog FileIO.  `Operator::info().root()` is not a portable
-    // warehouse URI for all OpenDAL backends (notably memory and remote
-    // stores), so do not manufacture a second location scheme here.
-    let table_location = format!("{}{}", iceberg_root_uri(&store), materialization_path);
-    let catalog = DerivedRelationCatalog::new(
-        crate::space_catalog::file_io_for_store(&store),
-        Runtime::current(),
-        NamespaceIdent::new("derived".to_string()),
-    );
-    let namespace = NamespaceIdent::new("derived".to_string());
-    catalog.create_namespace(&namespace, HashMap::new()).await?;
-    let table_name = format!("derived_{}", relation_uuid.simple());
-    let table = catalog
-        .create_table(
-            &namespace,
-            TableCreation::builder()
-                .name(table_name.clone())
-                .location(table_location)
-                .schema(asset_text_schema())
-                .partition_spec(UnboundPartitionSpec::default())
-                .sort_order(SortOrder::unsorted_order())
-                .build(),
+    let source_coordinate_after_rows = authoritative_source_coordinate(op, ws_path).await?;
+    if source_coordinate != source_coordinate_after_rows {
+        bail!("authoritative source changed while parsing AssetText; retry");
+    }
+    let row_digest = asset_text_rows_digest(&rows)?;
+    let build_id = Uuid::now_v7().to_string();
+    let build_path = head_store.builds_path(&build_id);
+    if let Err(error) = head_store.mark_staging(&build_id).await {
+        // Shared marker installation is two durable writes. If the claim was
+        // installed but staging.json was not, wake relation maintenance now;
+        // the claim/marker recovery path will reclaim the partial build after
+        // its normal grace boundary instead of waiting for another mutation or
+        // a process restart.
+        let _ = ensure_cleanup_marker(&head_store, &build_id).await;
+        schedule_asset_text_gc(op, ws_path);
+        return Err(error);
+    }
+    let mut staged_cleanup = StagedBuildCleanup::new(head_store.clone(), build_id.clone());
+    let heartbeat_store = head_store.clone();
+    let heartbeat_build_id = build_id.clone();
+    let staging_heartbeat_lost = Arc::new(AtomicBool::new(false));
+    let heartbeat_lost = staging_heartbeat_lost.clone();
+    let staging_heartbeat = AbortOnDrop::new(tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            if heartbeat_store
+                .renew_staging(&heartbeat_build_id)
+                .await
+                .is_err()
+            {
+                heartbeat_lost.store(true, Ordering::Release);
+                return;
+            }
+        }
+    }));
+    // Every object written below belongs to this immutable build. If staging
+    // fails before publication, leave an explicit garbage marker and staging
+    // marker so relation GC can reclaim the partial prefix as well.
+    let build_result: Result<DerivedRelationHead> = async {
+        let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
+        // Iceberg locations must use the same URI namespace as the official
+        // SpaceCatalog FileIO.  `Operator::info().root()` is not a portable
+        // warehouse URI for all OpenDAL backends (notably memory and remote
+        // stores), so do not manufacture a second location scheme here.
+        let table_location = format!("{}{}", iceberg_root_uri(&store), build_path);
+        let catalog = DerivedRelationCatalog::new(
+            crate::space_catalog::file_io_for_store(&store),
+            Runtime::current(),
+            NamespaceIdent::new("derived".to_string()),
+        );
+        let namespace = NamespaceIdent::new("derived".to_string());
+        catalog.create_namespace(&namespace, HashMap::new()).await?;
+        let table_name = format!("derived_{}", relation_uuid.simple());
+        let table = catalog
+            .create_table(
+                &namespace,
+                TableCreation::builder()
+                    .name(table_name.clone())
+                    .location(table_location)
+                    .schema(asset_text_schema())
+                    .partition_spec(UnboundPartitionSpec::default())
+                    .sort_order(SortOrder::unsorted_order())
+                    .build(),
+            )
+            .await?;
+        let status_counts = asset_text_status_counts(&source_rows, &rows);
+        let batches = rows
+            .chunks(ASSET_TEXT_APPEND_BATCH_ROWS)
+            .collect::<Vec<_>>();
+        for (index, batch) in batches.iter().enumerate() {
+            let snapshot_properties = (index + 1 == batches.len()).then(|| {
+                HashMap::from([
+                    (
+                        "ugoite.asset_text.row_digest".to_string(),
+                        row_digest.clone(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_referenced".to_string(),
+                        status_counts.assets_referenced.to_string(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_ready".to_string(),
+                        status_counts.assets_ready.to_string(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_empty".to_string(),
+                        status_counts.assets_empty.to_string(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_failed".to_string(),
+                        status_counts.assets_failed.to_string(),
+                    ),
+                    (
+                        "ugoite.asset_text.assets_unsupported".to_string(),
+                        status_counts.assets_unsupported.to_string(),
+                    ),
+                ])
+            });
+            append_rows(&table, &catalog, batch, snapshot_properties).await?;
+        }
+        let final_table = catalog
+            .load_table(&TableIdent::new(namespace.clone(), table_name.clone()))
+            .await?;
+        let metadata_location = final_table.metadata_location_result()?.to_string();
+        let manifest = AssetTextManifest {
+            format_version: 2,
+            relation_id: relation_uuid.to_string(),
+            build_id: build_id.clone(),
+            producer_fingerprint: producer_fingerprint.clone(),
+            input_digest: input_digest.clone(),
+            row_count: rows.len(),
+            source_coordinate: source_coordinate.clone(),
+            row_digest: row_digest.clone(),
+            assets_referenced: status_counts.assets_referenced,
+            assets_ready: status_counts.assets_ready,
+            assets_empty: status_counts.assets_empty,
+            assets_failed: status_counts.assets_failed,
+            assets_unsupported: status_counts.assets_unsupported,
+        };
+        let manifest_bytes = serde_json::to_vec(&manifest)?;
+        let manifest_location = format!("{build_path}/manifest.json");
+        op.write_options(
+            &manifest_location,
+            manifest_bytes,
+            WriteOptions {
+                if_not_exists: true,
+                ..Default::default()
+            },
         )
         .await?;
-    if !rows.is_empty() {
-        append_rows(&table, &catalog, &rows).await?;
+        Ok(DerivedRelationHead {
+            format_version: 1,
+            space_id: space_id_from_metadata(op, ws_path).await?,
+            relation_id: relation_uuid.to_string(),
+            generation,
+            definition_version: definition.definition_version,
+            definition_fingerprint: definition.fingerprint(),
+            producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
+            producer_fingerprint,
+            compatibility_epoch: ASSET_TEXT_COMPATIBILITY_EPOCH,
+            build_id: build_id.clone(),
+            table_identifier: serde_json::to_value(final_table.identifier())?,
+            table_uuid: final_table.metadata().uuid().to_string(),
+            metadata_location,
+            snapshot_id: final_table.metadata().current_snapshot_id(),
+            schema_id: final_table.metadata().current_schema_id(),
+            input_digest,
+            source_coordinate,
+            head_fence: String::new(),
+            checksum: String::new(),
+        })
     }
-    let final_table = catalog
-        .load_table(&TableIdent::new(namespace.clone(), table_name.clone()))
-        .await?;
-    let metadata_location = final_table.metadata_location_result()?.to_string();
-    let status_counts = asset_text_status_counts(&source_rows, &rows);
-    let manifest = AssetTextManifest {
-        format_version: 1,
-        relation_id: relation_uuid.to_string(),
-        materialization_id: materialization_id.clone(),
-        producer_fingerprint: producer_fingerprint.clone(),
-        input_digest: input_digest.clone(),
-        row_count: rows.len(),
-        source_coordinate: source_coordinate.clone(),
-        row_digest: row_digest.clone(),
-        assets_referenced: status_counts.assets_referenced,
-        assets_ready: status_counts.assets_ready,
-        assets_empty: status_counts.assets_empty,
-        assets_failed: status_counts.assets_failed,
-        assets_unsupported: status_counts.assets_unsupported,
+    .await;
+    staging_heartbeat.abort();
+    if staging_heartbeat_lost.load(Ordering::Acquire) {
+        let _ = ensure_cleanup_marker(&head_store, &build_id).await;
+        schedule_asset_text_gc(op, ws_path);
+        return Err(anyhow!(
+            "DerivedRelation staging heartbeat was lost before publication"
+        ));
+    }
+    let head = match build_result {
+        Ok(head) => head,
+        Err(error) => {
+            let _ = ensure_cleanup_marker(&head_store, &build_id).await;
+            schedule_asset_text_gc(op, ws_path);
+            return Err(error);
+        }
     };
-    let manifest_bytes = serde_json::to_vec(&manifest)?;
-    let manifest_location = format!("{materialization_path}/manifest.json");
-    op.write_options(
-        &manifest_location,
-        manifest_bytes.clone(),
-        WriteOptions {
-            if_not_exists: true,
-            ..Default::default()
-        },
-    )
-    .await?;
-    let head = DerivedRelationHead {
-        format_version: 1,
-        space_id: space_id_from_metadata(op, ws_path).await?,
-        relation_id: relation_uuid.to_string(),
-        generation: target_generation,
-        definition_version: definition.definition_version,
-        definition_fingerprint: definition.fingerprint(),
-        producer_id: ASSET_TEXT_PRODUCER_ID.to_string(),
-        producer_fingerprint,
-        compatibility_epoch: ASSET_TEXT_COMPATIBILITY_EPOCH,
-        materialization_id,
-        table_identifier: serde_json::to_value(final_table.identifier())?,
-        table_uuid: final_table.metadata().uuid().to_string(),
-        metadata_location,
-        snapshot_id: final_table.metadata().current_snapshot_id(),
-        schema_id: final_table.metadata().current_schema_id(),
-        base_generation,
-        target_generation,
-        build_id: Uuid::now_v7().to_string(),
-        input_digest,
-        source_coordinate,
-        materialization_manifest_location: manifest_location,
-        materialization_manifest_checksum: sha256_digest(&manifest_bytes),
-        last_command_id: format!("index:asset-text:{target_generation}"),
-        checksum: String::new(),
+    let source_coordinate_before_publish = match authoritative_source_coordinate(op, ws_path).await
+    {
+        Ok(coordinate) => coordinate,
+        Err(error) => {
+            let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+            schedule_asset_text_gc(op, ws_path);
+            return Err(error);
+        }
     };
-    if let Err(publication_error) = head_store.publish(expected.as_ref(), &head).await {
+    if source_coordinate_before_publish != head.source_coordinate {
+        let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+        schedule_asset_text_gc(op, ws_path);
+        return Err(anyhow!(
+            "authoritative source changed before AssetText publication; retry"
+        ));
+    }
+    let publish_result = if let Some(legacy_expected) = legacy_expected.as_ref() {
+        if shared {
+            head_store.publish_over_legacy(legacy_expected, &head).await
+        } else {
+            head_store
+                .publish_over_legacy_with_single_process_lock(legacy_expected, &head)
+                .await
+        }
+    } else if let Some(corrupt_expected) = corrupt_expected.as_ref() {
+        if shared {
+            head_store
+                .publish_over_corrupt(corrupt_expected, &head)
+                .await
+        } else {
+            head_store
+                .publish_over_corrupt_with_single_process_lock(corrupt_expected, &head)
+                .await
+        }
+    } else if shared {
+        head_store.publish(expected.as_ref(), &head).await
+    } else {
+        head_store
+            .publish_with_single_process_lock(expected.as_ref(), &head)
+            .await
+    };
+    if let Err(publication_error) = publish_result {
         // A conditional write can succeed at the storage boundary while its
         // response is lost.  Derived relations do not need the authoritative
         // publication-chain proof, but they still reread their own Head and
         // accept the outcome when this build command is visibly current.
         if let Ok(Some(current)) = head_store.read_exact().await {
-            if current.head.last_command_id == head.last_command_id {
+            if current.head.build_id == head.build_id {
+                if let Some(expected) = expected.as_ref() {
+                    let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
+                }
+                if legacy_expected.is_some() {
+                    let _ = head_store
+                        .mark_legacy_materializations_garbage_for_generation(
+                            legacy_expected.as_ref().map(|legacy| legacy.generation),
+                        )
+                        .await;
+                }
+                // A previous uncertain publication may have left a garbage
+                // marker on this build. Once the exact Head reread proves the
+                // build is current, that marker must not retain its old age
+                // and make the next swap eligible for premature GC.
+                let _ = head_store.clear_garbage(&head.build_id).await;
+                // Keep staging protection until the successful Head outcome
+                // is observed. A slow GC must not delete this build between
+                // validation and publication.
+                let _ = head_store.clear_staging(&head.build_id).await;
+                schedule_asset_text_gc(op, ws_path);
                 return Ok(current.head);
             }
         }
+        let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+        schedule_asset_text_gc(op, ws_path);
         return Err(publication_error);
     }
-    Ok(head_store
-        .read_exact()
-        .await?
-        .context("published derived Head disappeared")?
-        .head)
+    if let Some(expected) = expected.as_ref() {
+        // The CAS already made the new build visible. Record the superseded
+        // build before the confirmation read so a transient read failure does
+        // not strand it without a durable cleanup candidate.
+        let _ = ensure_cleanup_marker(&head_store, &expected.head.build_id).await;
+    }
+    if legacy_expected.is_some() {
+        // The new Head is now authoritative. Retain the detached v1 prefix
+        // until its reader grace period expires; the marker is durable so a
+        // crash after the CAS cannot strand the old bytes.
+        let _ = head_store
+            .mark_legacy_materializations_garbage_for_generation(
+                legacy_expected.as_ref().map(|legacy| legacy.generation),
+            )
+            .await;
+    }
+    schedule_asset_text_gc(op, ws_path);
+    let current = match head_store.read_exact().await {
+        Ok(Some(current)) => current.head,
+        Ok(None) => {
+            let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+            schedule_asset_text_gc(op, ws_path);
+            return Err(anyhow::anyhow!("published derived Head disappeared"));
+        }
+        Err(error) => {
+            let _ = ensure_cleanup_marker(&head_store, &head.build_id).await;
+            schedule_asset_text_gc(op, ws_path);
+            return Err(error);
+        }
+    };
+    let candidate_cleanup_marked = if current.build_id != head.build_id {
+        // A shared writer may have won immediately after this writer's CAS.
+        // The successful candidate is then garbage too; leaving only its
+        // staging marker would make it invisible to lifecycle GC forever.
+        ensure_cleanup_marker(&head_store, &head.build_id).await
+    } else {
+        // The build may have been conservatively marked garbage after an
+        // uncertain CAS response. Current Head confirmation makes that marker
+        // invalid, regardless of its original timestamp.
+        let _ = head_store.clear_garbage(&head.build_id).await;
+        true
+    };
+    // A completed build no longer needs its active-build heartbeat. If this
+    // delete is interrupted, the conservative staging marker still keeps the
+    // build protected until the grace period has elapsed.
+    if candidate_cleanup_marked {
+        let _ = head_store.clear_staging(&head.build_id).await;
+    }
+    let source_coordinate_after_publish = match authoritative_source_coordinate(op, ws_path).await {
+        Ok(coordinate) => coordinate,
+        Err(error) => {
+            if current.build_id == head.build_id {
+                let _ = ensure_cleanup_marker(&head_store, &current.build_id).await;
+            }
+            schedule_asset_text_gc(op, ws_path);
+            return Err(error);
+        }
+    };
+    if source_coordinate_after_publish != current.source_coordinate {
+        if current.build_id == head.build_id {
+            let _ = ensure_cleanup_marker(&head_store, &current.build_id).await;
+        }
+        schedule_asset_text_gc(op, ws_path);
+        return Err(anyhow!(
+            "authoritative source changed after AssetText publication; retry"
+        ));
+    }
+    if current.build_id == head.build_id {
+        staged_cleanup.disarm();
+    }
+    let _ = head_store
+        .garbage_collect_with_single_process_lock(Some(&current.build_id), MINIMUM_GC_AGE)
+        .await;
+    schedule_asset_text_gc(op, ws_path);
+    // Remove only the requests observed before this build. The drain is
+    // bounded per listing/deletion batch, so marker overflow cannot strand
+    // old requests or require an unbounded in-memory snapshot.
+    if let Err(error) = clear_asset_text_refresh_request_paths_with_admission_lock(
+        op,
+        ws_path,
+        &refresh_request_paths,
+    )
+    .await
+    {
+        // Head publication is already complete. Keep durable request markers
+        // for the next maintenance pass instead of reporting a failed build
+        // and triggering full-rebuild retry churn.
+        eprintln!("AssetText refresh marker cleanup deferred for {ws_path}: {error:#}");
+        schedule_asset_text_gc(op, ws_path);
+    }
+    Ok(current)
+}
+
+fn schedule_asset_text_gc(op: &Operator, ws_path: &str) {
+    schedule_asset_text_gc_after_delay(op, ws_path, MINIMUM_GC_AGE);
+}
+
+fn schedule_asset_text_gc_after_delay(op: &Operator, ws_path: &str, delay: Duration) {
+    let relation_id = asset_text_definition().relation_id.as_uuid();
+    let key = format!(
+        "{}:{}:{}:operator={:p}:{}:{}",
+        op.info().scheme(),
+        op.info().name(),
+        op.info().root(),
+        Arc::as_ptr(op.service()),
+        ws_path,
+        relation_id,
+    );
+    let schedulers = ASSET_TEXT_GC_SCHEDULERS.get_or_init(|| StdMutex::new(BTreeMap::new()));
+    let scheduler = {
+        let mut schedulers = schedulers
+            .lock()
+            .expect("AssetText GC scheduler map poisoned");
+        if !schedulers.contains_key(&key) && schedulers.len() >= MAX_BACKGROUND_GC_SCHEDULERS {
+            // Derived refresh is best effort.  A full process-local registry
+            // must not turn an authoritative mutation into unbounded memory
+            // growth; explicit `index run` remains the repair path.
+            return;
+        }
+        let scheduler = schedulers
+            .entry(key.clone())
+            .or_insert_with(|| {
+                Arc::new(AssetTextGcScheduler {
+                    notify: Notify::new(),
+                    deadline: StdMutex::new(None),
+                    started: AtomicBool::new(false),
+                })
+            })
+            .clone();
+        let mut deadline = scheduler
+            .deadline
+            .lock()
+            .expect("AssetText GC deadline poisoned");
+        let next = Instant::now() + delay;
+        if deadline.is_none_or(|current| next < current) {
+            *deadline = Some(next);
+        }
+        drop(deadline);
+        scheduler
+    };
+    scheduler.notify.notify_one();
+    if scheduler
+        .started
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        let operator = op.clone();
+        let workspace_path = ws_path.to_string();
+        let scheduler_key = key;
+        let scheduler = scheduler.clone();
+        tokio::spawn(async move {
+            let mut consecutive_failures = 0usize;
+            loop {
+                let deadline = scheduler
+                    .deadline
+                    .lock()
+                    .expect("AssetText GC deadline poisoned")
+                    .to_owned();
+                let Some(deadline) = deadline else {
+                    scheduler.notify.notified().await;
+                    continue;
+                };
+                tokio::select! {
+                    _ = scheduler.notify.notified() => {}
+                    _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                        let due = {
+                            let mut deadline_slot = scheduler
+                                .deadline
+                                .lock()
+                                .expect("AssetText GC deadline poisoned");
+                            if deadline_slot.is_some_and(|current| current <= Instant::now()) {
+                                *deadline_slot = None;
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                        if !due {
+                            continue;
+                        }
+                        let base = DerivedRelationHeadStore::new(
+                            operator.clone(),
+                            &workspace_path,
+                            relation_id,
+                        );
+                        let maintenance = tokio::time::timeout(GC_OPERATION_TIMEOUT, async {
+                            let head_store = if matches!(
+                                operator.info().scheme(),
+                                "s3" | "gcs" | "oss" | "azdls"
+                            ) {
+                                base.shared().await?
+                            } else {
+                                base.single_process()
+                            };
+                            let current_build = head_store.read_exact().await?;
+                            let current_build_id =
+                                current_build.map(|head| head.head.build_id);
+                            head_store.mark_legacy_materializations_garbage().await?;
+                            head_store
+                                .garbage_collect_legacy_materializations(MINIMUM_GC_AGE)
+                                .await?;
+                            head_store
+                                .garbage_collect(
+                                    current_build_id.as_deref(),
+                                    MINIMUM_GC_AGE,
+                                )
+                                .await?;
+                            let pending = head_store
+                                .has_pending_garbage(
+                                    current_build_id.as_deref(),
+                                    MINIMUM_GC_AGE,
+                                )
+                                .await?;
+                            Ok::<bool, anyhow::Error>(pending)
+                        })
+                        .await;
+                        let (retry_gc, storage_failed) = match maintenance {
+                            Ok(Ok(pending)) => (pending, false),
+                            Ok(Err(_)) | Err(_) => (true, true),
+                        };
+                        if storage_failed {
+                            consecutive_failures = consecutive_failures.saturating_add(1);
+                        } else {
+                            consecutive_failures = 0;
+                        }
+                        if consecutive_failures >= MAX_CONSECUTIVE_GC_FAILURES {
+                            // Durable markers are rediscovered on the next
+                            // process startup or explicit maintenance run;
+                            // never retain an Operator forever on a broken
+                            // backend.
+                            let mut schedulers = ASSET_TEXT_GC_SCHEDULERS
+                                .get_or_init(|| StdMutex::new(BTreeMap::new()))
+                                .lock()
+                                .expect("AssetText GC scheduler map poisoned");
+                            if schedulers
+                                .get(&scheduler_key)
+                                .is_some_and(|current| Arc::ptr_eq(current, &scheduler))
+                            {
+                                schedulers.remove(&scheduler_key);
+                            }
+                            return;
+                        }
+                        if retry_gc {
+                            // GC is maintenance, not request authority. Keep
+                            // the scheduler alive when cleanup was deferred or
+                            // a durable candidate remains, and retry transient
+                            // storage failures instead of losing the only
+                            // process-local wake-up for durable garbage.
+                            schedule_asset_text_gc_after_delay(
+                                &operator,
+                                &workspace_path,
+                                GC_RETRY_DELAY,
+                            );
+                        }
+                        let should_exit = {
+                            // Schedule and retirement both take the map lock
+                            // before the scheduler deadline lock. This makes
+                            // the final idle check atomic with respect to a
+                            // new refresh notification and lets the task
+                            // remove its own per-Space entry safely.
+                            let mut schedulers = ASSET_TEXT_GC_SCHEDULERS
+                                .get_or_init(|| StdMutex::new(BTreeMap::new()))
+                                .lock()
+                                .expect("AssetText GC scheduler map poisoned");
+                            let is_current = schedulers
+                                .get(&scheduler_key)
+                                .is_some_and(|current| Arc::ptr_eq(current, &scheduler));
+                            let idle = scheduler
+                                .deadline
+                                .lock()
+                                .expect("AssetText GC deadline poisoned")
+                                .is_none();
+                            if is_current && idle {
+                                schedulers.remove(&scheduler_key);
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                        if should_exit {
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+async fn ensure_cleanup_marker(head_store: &DerivedRelationHeadStore, build_id: &str) -> bool {
+    for _ in 0..3 {
+        if let Ok(()) = head_store.mark_garbage(build_id).await {
+            return true;
+        }
+    }
+    // A staging marker is also a durable GC candidate. Keep it when writing
+    // garbage.json is temporarily unavailable, so a successful Head swap can
+    // never make the superseded prefix undiscoverable to a later GC pass.
+    for _ in 0..3 {
+        if head_store.mark_staging(build_id).await.is_ok() {
+            return false;
+        }
+    }
+    false
+}
+
+/// Runs the relation GC synchronously for one-shot local maintenance commands.
+/// The normal server path schedules the same work after the reader grace
+/// period; a short-lived CLI cannot keep that timer task alive after exit.
+pub async fn garbage_collect_asset_text(op: &Operator, ws_path: &str) -> Result<Vec<String>> {
+    let relation_id = asset_text_definition().relation_id.as_uuid();
+    let base = DerivedRelationHeadStore::new(op.clone(), ws_path, relation_id);
+    let head_store = if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+        base.shared().await?
+    } else {
+        base.single_process()
+    };
+    let current_build_id = match head_store.read_exact().await {
+        Ok(head) => {
+            // A current-build Head is authoritative. Any v1 materialization
+            // prefix is now detached garbage, including one left by a crash
+            // immediately after a shared legacy-to-current swap. Discovery and
+            // deletion both honor the reader grace period.
+            head_store.mark_legacy_materializations_garbage().await?;
+            head_store
+                .garbage_collect_legacy_materializations(MINIMUM_GC_AGE)
+                .await?;
+            head.map(|head| head.head.build_id)
+        }
+        Err(error)
+            if error
+                .downcast_ref::<ugoite_storage::LegacyDerivedRelationHead>()
+                .is_some() =>
+        {
+            // Never mark or delete the v1 prefix while its legacy Head still
+            // points at it. A later rebuild will replace that Head by exact
+            // CAS first.
+            None
+        }
+        Err(error) => return Err(error),
+    };
+    head_store
+        .garbage_collect(current_build_id.as_deref(), MINIMUM_GC_AGE)
+        .await
+}
+
+/// Rehydrates the process-local GC wake-up for an existing Space. This is
+/// called during server startup so durable markers from a previous process are
+/// discovered without waiting for a new rebuild.
+pub async fn rearm_asset_text_gc(op: &Operator, ws_path: &str) -> Result<()> {
+    match garbage_collect_asset_text(op, ws_path).await {
+        Ok(_) => {
+            schedule_asset_text_gc(op, ws_path);
+            Ok(())
+        }
+        Err(error) => {
+            schedule_asset_text_gc_after_delay(op, ws_path, GC_RETRY_DELAY);
+            Err(error)
+        }
+    }
 }
 
 fn iceberg_root_uri(store: &SpaceCatalogStore) -> String {
@@ -658,13 +2200,11 @@ async fn append_rows(
     table: &Table,
     catalog: &DerivedRelationCatalog,
     rows: &[AssetTextRow],
+    snapshot_properties: Option<HashMap<String, String>>,
 ) -> Result<()> {
     let arrow_schema = Arc::new(iceberg::arrow::schema_to_arrow_schema(
         table.metadata().current_schema(),
     )?);
-    let mut form_id = StringBuilder::new();
-    let mut entry_id = StringBuilder::new();
-    let mut entry_version = Int64Builder::new();
     let mut asset_id = StringBuilder::new();
     let mut source_sha256 = StringBuilder::new();
     let mut source_size_bytes = Int64Builder::new();
@@ -679,9 +2219,6 @@ async fn append_rows(
     let mut parsed_at = Vec::with_capacity(rows.len());
     let mut error_code = StringBuilder::new();
     for row in rows {
-        form_id.append_value(&row.form_id);
-        entry_id.append_value(&row.entry_id);
-        entry_version.append_value(row.entry_version);
         asset_id.append_value(&row.asset_id);
         source_sha256.append_value(&row.source_sha256);
         source_size_bytes.append_value(row.source_size_bytes);
@@ -699,9 +2236,6 @@ async fn append_rows(
     let batch = RecordBatch::try_new(
         arrow_schema,
         vec![
-            Arc::new(form_id.finish()),
-            Arc::new(entry_id.finish()),
-            Arc::new(entry_version.finish()),
             Arc::new(asset_id.finish()),
             Arc::new(source_sha256.finish()),
             Arc::new(source_size_bytes.finish()),
@@ -721,7 +2255,7 @@ async fn append_rows(
     let parquet_writer = ParquetWriterBuilder::from_table_properties(
         &table_properties,
         table.metadata().current_schema().clone(),
-    );
+    )?;
     let location_generator = DefaultLocationGenerator::new(table.metadata())?;
     let file_name_generator = DefaultFileNameGenerator::new(
         Uuid::now_v7().to_string(),
@@ -744,7 +2278,11 @@ async fn append_rows(
         bail!("AssetText writer produced no data files");
     }
     let tx = Transaction::new(table);
-    tx.fast_append()
+    let mut append = tx.fast_append();
+    if let Some(snapshot_properties) = snapshot_properties {
+        append = append.set_snapshot_properties(snapshot_properties);
+    }
+    append
         .add_data_files(data_files)
         .apply(tx)?
         .commit(catalog)
@@ -752,19 +2290,104 @@ async fn append_rows(
     Ok(())
 }
 
+fn asset_text_rows_digest(rows: &[AssetTextRow]) -> Result<String> {
+    // Digest rows one at a time.  The aggregate output is already bounded,
+    // but canonicalizing the whole Vec would create a second peak-sized JSON
+    // allocation before Arrow writing starts.
+    let mut digest = Sha256::new();
+    for row in rows {
+        digest.update(canonical_json(row)?);
+        digest.update([0]);
+    }
+    Ok(format!("sha256:{}", hex::encode(digest.finalize())))
+}
+
+fn source_references_digest(references: &[SourceReference]) -> Result<String> {
+    let mut digest = Sha256::new();
+    for reference in references {
+        digest.update(canonical_json(reference)?);
+        digest.update([0]);
+    }
+    Ok(format!("sha256:{}", hex::encode(digest.finalize())))
+}
+
 async fn space_id_from_metadata(op: &Operator, ws_path: &str) -> Result<String> {
+    let space_id = ws_path
+        .strip_prefix("spaces/")
+        .filter(|space_id| !space_id.is_empty() && !space_id.contains('/'))
+        .context("derived workspace path is not a Space directory")?;
+    // A derived Head is only meaningful inside a complete authoritative Space.
+    // Validate the same metadata/bootstrap contract used by public Space reads,
+    // then return only the immutable UUIDv7 identity validated against the
+    // directory name. Never fall back to mutable space_id fields here.
+    crate::space::validate_complete_bootstrap(op, space_id).await?;
     let path = format!("{ws_path}/meta.json");
-    let value: Value = serde_json::from_slice(&op.read(&path).await?.to_vec())?;
-    value
-        .get("space_uid")
-        .or_else(|| value.get("space_id"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .context("Space metadata has no immutable space ID")
+    let value: Value = serde_json::from_slice(&crate::read_object_exact(op, &path).await?)?;
+    Ok(crate::space::validate_current_space_metadata(space_id, &value)?.to_string())
+}
+
+async fn validate_asset_text_head_binding(
+    op: &Operator,
+    ws_path: &str,
+    head: &DerivedRelationHead,
+) -> Result<()> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
+    let space_id = ws_path
+        .strip_prefix("spaces/")
+        .filter(|value| !value.is_empty() && !value.contains('/'))
+        .context("derived workspace path is not a Space directory")?;
+    let path = format!("{ws_path}/meta.json");
+    let metadata: Value = serde_json::from_slice(&crate::read_object_exact(op, &path).await?)?;
+    let current_uid = crate::space::validate_current_space_metadata(space_id, &metadata)?;
+    if head.space_id != current_uid.to_string() {
+        return Err(anyhow!(
+            "DerivedRelation Head space_id does not match the authoritative Space"
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_asset_text_read_boundary(op: &Operator, ws_path: &str) -> Result<()> {
+    let space_id = ws_path
+        .strip_prefix("spaces/")
+        .filter(|value| !value.is_empty() && !value.contains('/'))
+        .context("derived workspace path is not a Space directory")?;
+    // Derived reads are not an alternate Space read boundary. Require the
+    // authoritative scaffold, settings, starter Form, and local permission
+    // checks before opening any relation-local table or deciding that a Head
+    // is missing/stale.
+    crate::space::validate_complete_bootstrap(op, space_id).await?;
+    Ok(())
+}
+
+fn is_shared_backend(op: &Operator) -> bool {
+    matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls")
+}
+
+async fn asset_text_head_store(op: &Operator, ws_path: &str) -> Result<DerivedRelationHeadStore> {
+    let store =
+        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid());
+    if is_shared_backend(op) {
+        Ok(store.shared_read_only())
+    } else {
+        Ok(store.single_process())
+    }
+}
+
+async fn catalog_store_for_read(op: &Operator, ws_path: &str) -> Result<SpaceCatalogStore> {
+    let store = SpaceCatalogStore::new(op.clone(), ws_path)?;
+    // Read paths must not write capability probes, but remote reads must still
+    // use exact ETag-bound semantics. A remote backend without that contract
+    // fails closed in `read_exact_head` rather than observing a moving Head.
+    Ok(if is_shared_backend(op) {
+        store.shared_read_only()
+    } else {
+        store
+    })
 }
 
 async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result<Value> {
-    let store = SpaceCatalogStore::new(op.clone(), ws_path)?.single_process();
+    let store = catalog_store_for_read(op, ws_path).await?;
     let Some(exact) = store.read_exact_head().await? else {
         // A newly created, still-empty Space has no Catalog Head.  This is a
         // valid empty source coordinate, not a derived corruption state.
@@ -777,15 +2400,18 @@ async fn authoritative_source_coordinate(op: &Operator, ws_path: &str) -> Result
 }
 
 async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<SourceReference>> {
-    let form_names = crate::entry::list_form_names(op, ws_path).await?;
-    let mut definitions = BTreeMap::<String, FormDefinition>::new();
-    for name in &form_names {
-        let definition = crate::iceberg_store::load_domain_form(op, ws_path, name).await?;
-        definitions.insert(name.clone(), definition);
-    }
-    let mut references = BTreeMap::<(String, String, u64, String), SourceReference>::new();
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let definitions = workspace
+        .list_forms_bounded(MAX_SOURCE_FORMS, MAX_SOURCE_FORM_DEFINITION_BYTES)
+        .await?
+        .into_iter()
+        .map(|definition| (definition.name.clone(), definition))
+        .collect::<BTreeMap<_, _>>();
+    let form_names = definitions.keys().cloned().collect::<Vec<_>>();
+    let mut references = BTreeMap::<String, SourceReference>::new();
     let mut asset_checksums = BTreeMap::<String, (String, u64)>::new();
     let mut conflicting_assets = HashSet::new();
+    let mut source_metadata_bytes = 0usize;
     for form_name in form_names {
         let definition = definitions
             .get(&form_name)
@@ -794,72 +2420,77 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
         // table directly and is not subject to the normal 10k search window.
         // Delete tombstones are deliberately excluded after max-version
         // selection, so deleted Entries cannot seed a derived source set.
-        let (_, revisions) =
-            crate::iceberg_store::latest_revisions_for_form(op, ws_path, &form_name).await?;
-        for revision in revisions {
-            if matches!(
-                revision.operation,
-                ugoite_domain::entry::EntryOperation::Delete
-            ) {
-                continue;
-            }
-            for field in &definition.fields {
-                if !matches!(
-                    field.field_type,
-                    FieldType::AssetReference | FieldType::List
+        workspace
+            .visit_current_revision_view_for_derived(definition.id, |revision| {
+                if matches!(
+                    revision.operation,
+                    ugoite_domain::entry::EntryOperation::Delete
                 ) {
-                    continue;
+                    return Ok(());
                 }
-                let Some(value) = revision.values.get(&field.id) else {
-                    continue;
-                };
-                let mut asset_references = Vec::new();
-                collect_asset_references(&serde_json::to_value(value)?, &mut asset_references);
-                for reference in asset_references {
-                    let key = (
-                        definition.id.to_string(),
-                        revision.entry.external_id.clone(),
-                        revision.entry_version,
-                        reference.asset_id.clone(),
-                    );
-                    let candidate = SourceReference {
-                        form_id: definition.id.to_string(),
-                        entry_id: revision.entry.external_id.clone(),
-                        entry_version: revision.entry_version,
-                        asset_id: reference.asset_id,
-                        name: reference.name,
-                        media_type: reference.media_type,
-                        source_sha256: reference.sha256,
-                        source_size_bytes: reference.size_bytes,
-                        integrity_error: None,
+                let mut asset_reference_count = 0usize;
+                for field in &definition.fields {
+                    if !matches!(
+                        field.field_type,
+                        FieldType::AssetReference | FieldType::List
+                    ) {
+                        continue;
+                    }
+                    let Some(value) = revision.values.get(&field.id) else {
+                        continue;
                     };
-                    if let Some((sha256, size_bytes)) = asset_checksums.get(&candidate.asset_id) {
-                        if sha256 != &candidate.source_sha256
-                            || *size_bytes != candidate.source_size_bytes
-                        {
-                            conflicting_assets.insert(candidate.asset_id.clone());
-                        }
-                    } else {
-                        asset_checksums.insert(
-                            candidate.asset_id.clone(),
-                            (candidate.source_sha256.clone(), candidate.source_size_bytes),
+                    let asset_references = typed_asset_references_for_field(field, value)?;
+                    asset_reference_count = asset_reference_count
+                        .checked_add(asset_references.len())
+                        .ok_or_else(|| anyhow!("Entry AssetReference count overflowed"))?;
+                    if asset_reference_count > MAX_ASSET_REFERENCES_PER_ENTRY {
+                        bail!(
+                            "Entry AssetReference payload exceeds {MAX_ASSET_REFERENCES_PER_ENTRY} references"
                         );
                     }
-                    if let Some(existing) = references.get(&key) {
-                        if existing.source_sha256 != candidate.source_sha256
-                            || existing.source_size_bytes != candidate.source_size_bytes
+                    for reference in asset_references {
+                        let candidate = SourceReference {
+                            asset_id: reference.asset_id,
+                            name: reference.name,
+                            media_type: reference.media_type,
+                            source_sha256: reference.sha256,
+                            source_size_bytes: reference.size_bytes,
+                            integrity_error: None,
+                        };
+                        if !references.contains_key(&candidate.asset_id)
+                            && references.len() >= MAX_SOURCE_ASSETS
                         {
-                            // Keep one deterministic row and mark every reference
-                            // to this asset as an integrity diagnostic below.
-                            conflicting_assets.insert(candidate.asset_id.clone());
-                            continue;
+                            bail!("AssetText source exceeds its unique-asset limit");
                         }
-                    } else {
-                        references.insert(key, candidate);
+                        if !references.contains_key(&candidate.asset_id) {
+                            let candidate_bytes = [
+                                candidate.asset_id.len(),
+                                candidate.name.len(),
+                                candidate.media_type.len(),
+                                candidate.source_sha256.len(),
+                                std::mem::size_of::<SourceReference>(),
+                            ]
+                            .into_iter()
+                            .try_fold(0usize, usize::checked_add)
+                            .context("AssetText source metadata size overflow")?;
+                            source_metadata_bytes = source_metadata_bytes
+                                .checked_add(candidate_bytes)
+                                .context("AssetText source metadata size overflow")?;
+                            if source_metadata_bytes > MAX_SOURCE_METADATA_BYTES {
+                                bail!("AssetText source metadata exceeds its byte limit");
+                            }
+                        }
+                        merge_source_reference(
+                            &mut references,
+                            &mut asset_checksums,
+                            &mut conflicting_assets,
+                            candidate,
+                        );
                     }
                 }
-            }
-        }
+                Ok(())
+            })
+            .await?;
     }
     Ok(references
         .into_values()
@@ -876,23 +2507,128 @@ async fn collect_source_references(op: &Operator, ws_path: &str) -> Result<Vec<S
         .collect())
 }
 
-fn collect_asset_references(value: &Value, output: &mut Vec<AssetReference>) {
-    match value {
-        Value::Array(values) => values
-            .iter()
-            .for_each(|value| collect_asset_references(value, output)),
-        Value::Object(object) => {
-            if let Ok(reference) =
-                serde_json::from_value::<AssetReference>(Value::Object(object.clone()))
-            {
-                output.push(reference);
-            } else {
-                object
-                    .values()
-                    .for_each(|value| collect_asset_references(value, output));
-            }
+fn merge_source_reference(
+    references: &mut BTreeMap<String, SourceReference>,
+    asset_checksums: &mut BTreeMap<String, (String, u64)>,
+    conflicting_assets: &mut HashSet<String>,
+    candidate: SourceReference,
+) {
+    if let Some((sha256, size_bytes)) = asset_checksums.get(&candidate.asset_id) {
+        if sha256 != &candidate.source_sha256 || *size_bytes != candidate.source_size_bytes {
+            conflicting_assets.insert(candidate.asset_id.clone());
         }
-        _ => {}
+    } else {
+        asset_checksums.insert(
+            candidate.asset_id.clone(),
+            (candidate.source_sha256.clone(), candidate.source_size_bytes),
+        );
+    }
+    references
+        .entry(candidate.asset_id.clone())
+        .and_modify(|existing| {
+            if existing.source_sha256 != candidate.source_sha256
+                || existing.source_size_bytes != candidate.source_size_bytes
+            {
+                conflicting_assets.insert(candidate.asset_id.clone());
+            } else if source_reference_is_preferred(&candidate, existing) {
+                // Asset metadata is Entry-owned and can be represented by
+                // several references. Keep the most useful parser hint so a
+                // generic first reference cannot make a parse unsupported.
+                existing.name = candidate.name.clone();
+                existing.media_type = candidate.media_type.clone();
+            }
+        })
+        .or_insert(candidate);
+}
+
+fn source_reference_metadata_rank(reference: &SourceReference) -> u8 {
+    let name = reference.name.to_ascii_lowercase();
+    let media_type = reference.media_type.to_ascii_lowercase();
+    if matches!(media_type.as_str(), "text/plain" | "text/markdown") {
+        // Text MIME is the safest fallback for an opaque object. Structured
+        // formats still win when their bytes have a PDF/OOXML signature in
+        // detect_dispatch, while this avoids routing plain bytes through a
+        // conflicting PDF or Office hint.
+        4
+    } else if matches!(
+        media_type.as_str(),
+        "application/pdf"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ) {
+        3
+    } else if [".pdf", ".txt", ".md", ".docx", ".xlsx", ".pptx"]
+        .iter()
+        .any(|extension| name.ends_with(extension))
+    {
+        2
+    } else if !reference.name.is_empty() || !reference.media_type.is_empty() {
+        1
+    } else {
+        0
+    }
+}
+
+fn source_reference_is_preferred(candidate: &SourceReference, existing: &SourceReference) -> bool {
+    let candidate_rank = source_reference_metadata_rank(candidate);
+    let existing_rank = source_reference_metadata_rank(existing);
+    candidate_rank > existing_rank
+        || (candidate_rank == existing_rank
+            && source_reference_tie_break_key(candidate) < source_reference_tie_break_key(existing))
+}
+
+fn source_reference_tie_break_key(reference: &SourceReference) -> (String, String, String, String) {
+    (
+        reference.name.to_ascii_lowercase(),
+        reference.media_type.to_ascii_lowercase(),
+        reference.name.clone(),
+        reference.media_type.clone(),
+    )
+}
+
+fn typed_asset_references_for_field(
+    field: &ugoite_domain::form::FormField,
+    value: &ugoite_domain::entry::FieldValue,
+) -> Result<Vec<AssetReference>> {
+    match (&field.field_type, field.list_item.as_ref(), value) {
+        (_, _, ugoite_domain::entry::FieldValue::Null) => Ok(Vec::new()),
+        (
+            FieldType::AssetReference,
+            _,
+            ugoite_domain::entry::FieldValue::AssetReference(reference),
+        ) => {
+            reference
+                .validate()
+                .map_err(|error| anyhow!("invalid persisted AssetReference: {error}"))?;
+            Ok(vec![reference.clone()])
+        }
+        (FieldType::AssetReference, _, _) => {
+            bail!("Entry AssetReference field has an invalid value")
+        }
+        (FieldType::List, Some(item), ugoite_domain::entry::FieldValue::List(values))
+            if item.field_type == FieldType::AssetReference =>
+        {
+            if values.len() > MAX_ASSET_REFERENCES_PER_ENTRY {
+                bail!("Entry AssetReference list exceeds {MAX_ASSET_REFERENCES_PER_ENTRY} items");
+            }
+            values
+                .iter()
+                .filter_map(|value| match value {
+                    ugoite_domain::entry::FieldValue::Null => None,
+                    ugoite_domain::entry::FieldValue::AssetReference(reference) => Some(
+                        reference
+                            .validate()
+                            .map_err(|error| anyhow!("invalid persisted AssetReference: {error}"))
+                            .map(|()| reference.clone()),
+                    ),
+                    _ => Some(Err(anyhow::anyhow!(
+                        "Entry AssetReference list has an invalid value"
+                    ))),
+                })
+                .collect()
+        }
+        _ => Ok(Vec::new()),
     }
 }
 
@@ -938,8 +2674,13 @@ async fn build_asset_text_rows(
     producer_fingerprint: &str,
 ) -> Result<Vec<AssetTextRow>> {
     let parsed_at = Utc::now().to_rfc3339();
-    let mut rows = Vec::new();
+    let mut rows = BoundedAssetTextRows::default();
     for reference in references {
+        validate_asset_id(&reference.asset_id)
+            .map_err(|error| anyhow!("invalid AssetReference asset_id: {error}"))?;
+        if rows.failed() {
+            return rows.finish();
+        }
         let base = |parser_id: String,
                     parser_version: String,
                     status: &str,
@@ -947,9 +2688,6 @@ async fn build_asset_text_rows(
                     locator: Option<String>,
                     text: Option<String>,
                     error_code: Option<&str>| AssetTextRow {
-            form_id: reference.form_id.clone(),
-            entry_id: reference.entry_id.clone(),
-            entry_version: i64::try_from(reference.entry_version).unwrap_or(i64::MAX),
             asset_id: reference.asset_id.clone(),
             source_sha256: reference.source_sha256.clone(),
             source_size_bytes: i64::try_from(reference.source_size_bytes).unwrap_or(i64::MAX),
@@ -998,6 +2736,18 @@ async fn build_asset_text_rows(
                 ));
                 continue;
             }
+            Err(error) if error.downcast_ref::<AssetParserInputLimit>().is_some() => {
+                rows.push(base(
+                    "reader".into(),
+                    ASSET_TEXT_PARSER_VERSION.into(),
+                    "failed",
+                    0,
+                    None,
+                    None,
+                    Some(DerivedErrorCode::AssetParserLimit.as_str()),
+                ));
+                continue;
+            }
             Err(_) => {
                 rows.push(base(
                     "reader".into(),
@@ -1023,19 +2773,6 @@ async fn build_asset_text_rows(
             ));
             continue;
         }
-        let actual_sha = hex::encode(Sha256::digest(&bytes));
-        if actual_sha != reference.source_sha256 {
-            rows.push(base(
-                "integrity".into(),
-                ASSET_TEXT_PARSER_VERSION.into(),
-                "source_mismatch",
-                0,
-                None,
-                None,
-                Some(DerivedErrorCode::AssetChecksumMismatch.as_str()),
-            ));
-            continue;
-        }
         if bytes.len() as u64 > MAX_ASSET_BYTES {
             rows.push(base(
                 "limits".into(),
@@ -1048,24 +2785,37 @@ async fn build_asset_text_rows(
             ));
             continue;
         }
-        let dispatch = detect_dispatch(&reference.name, &reference.media_type, &bytes);
-        let parser = dispatch.parser().clone();
-        let chunks = match extract_chunks(&dispatch, &bytes) {
-            Ok(chunks) => chunks,
-            Err(code) => {
-                rows.push(base(
-                    parser.id.into(),
-                    parser.version.into(),
-                    "failed",
-                    0,
-                    None,
-                    None,
-                    Some(code),
-                ));
-                continue;
-            }
-        };
-        if matches!(dispatch, Dispatch::Unsupported(_)) {
+        let (actual_sha, parser, unsupported, chunks) =
+            match process_asset_async(reference.name.clone(), reference.media_type.clone(), bytes)
+                .await
+            {
+                Ok(value) => value,
+                Err(code) => {
+                    rows.push(base(
+                        "parser".into(),
+                        ASSET_TEXT_PARSER_VERSION.into(),
+                        "failed",
+                        0,
+                        None,
+                        None,
+                        Some(coarse_parser_error_code(code)),
+                    ));
+                    continue;
+                }
+            };
+        if actual_sha != reference.source_sha256 {
+            rows.push(base(
+                "integrity".into(),
+                ASSET_TEXT_PARSER_VERSION.into(),
+                "source_mismatch",
+                0,
+                None,
+                None,
+                Some(DerivedErrorCode::AssetChecksumMismatch.as_str()),
+            ));
+            continue;
+        }
+        if unsupported {
             rows.push(base(
                 parser.id.into(),
                 parser.version.into(),
@@ -1087,7 +2837,7 @@ async fn build_asset_text_rows(
             ));
         } else {
             for (index, chunk) in chunks.into_iter().enumerate() {
-                let text = normalize_text(&chunk.text);
+                let text = chunk.text;
                 let status = if text.is_empty() { "empty" } else { "ready" };
                 rows.push(base(
                     parser.id.into(),
@@ -1098,16 +2848,31 @@ async fn build_asset_text_rows(
                     (!text.is_empty()).then_some(text),
                     None,
                 ));
+                if rows.failed() {
+                    return rows.finish();
+                }
             }
         }
     }
-    Ok(rows)
+    rows.finish()
 }
 
 async fn read_asset_exact(op: &Operator, path: &str) -> Result<Vec<u8>> {
+    read_asset_exact_with_limit(op, path, MAX_ASSET_BYTES as usize).await
+}
+
+async fn read_asset_exact_with_limit(
+    op: &Operator,
+    path: &str,
+    max_bytes: usize,
+) -> Result<Vec<u8>> {
     let metadata = op.stat(path).await?;
+    let etag = metadata.etag().filter(|etag| !etag.is_empty());
+    if crate::is_shared_backend(op) && etag.is_none() {
+        bail!("exact derived object read requires an ETag: {path}");
+    }
     let mut reader = op.reader_with(path);
-    if let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) {
+    if let Some(etag) = etag {
         reader = reader.if_match(etag);
     }
     let reader = reader.chunk(READER_CHUNK_BYTES).await?;
@@ -1115,8 +2880,8 @@ async fn read_asset_exact(op: &Operator, path: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     while let Some(buffer) = stream.try_next().await? {
         bytes.extend(buffer.into_iter().flatten());
-        if bytes.len() > MAX_ASSET_BYTES as usize {
-            bail!("asset parser input exceeds configured limit");
+        if bytes.len() > max_bytes {
+            return Err(anyhow::Error::new(AssetParserInputLimit));
         }
     }
     Ok(bytes)
@@ -1125,32 +2890,15 @@ async fn read_asset_exact(op: &Operator, path: &str) -> Result<Vec<u8>> {
 fn detect_dispatch(name: &str, media_type: &str, bytes: &[u8]) -> Dispatch {
     let lower_name = name.to_ascii_lowercase();
     let lower_media = media_type.to_ascii_lowercase();
-    if lower_media == "application/pdf"
-        || lower_name.ends_with(".pdf")
-        || bytes.starts_with(b"%PDF-")
-    {
+    // Object bytes are authoritative when they carry a strong container
+    // signature. Entry-owned names can differ for the same Asset, so inspect
+    // the immutable object before using a per-reference filename hint.
+    if bytes.starts_with(b"%PDF-") {
         return Dispatch::Pdf(parser_identity("pdf_text_layer"));
     }
-    if lower_name.ends_with(".docx")
-        || lower_media == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    {
-        return Dispatch::Docx(parser_identity("docx_xml"));
-    }
-    if lower_name.ends_with(".xlsx")
-        || lower_media == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    {
-        return Dispatch::Xlsx(parser_identity("xlsx_xml"));
-    }
-    if lower_name.ends_with(".pptx")
-        || lower_media
-            == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    {
-        return Dispatch::Pptx(parser_identity("pptx_xml"));
-    }
-    // MIME and filename are only hints. Valid OOXML containers are also
-    // recognized by their internal part names, while malformed recognized
-    // containers remain on the format-specific parser path above.
-    if bytes.starts_with(b"PK") {
+    // MIME and filename are only hints. Valid OOXML containers are recognized
+    // by their internal part names before either hint can misroute them.
+    if bytes.starts_with(b"PK") && validate_zip_entry_count(bytes).is_ok() {
         if let Ok(mut archive) = ZipArchive::new(Cursor::new(bytes)) {
             if archive.len() <= MAX_ZIP_ENTRIES {
                 let mut has_document = false;
@@ -1177,18 +2925,46 @@ fn detect_dispatch(name: &str, media_type: &str, bytes: &[u8]) -> Dispatch {
             }
         }
     }
-    if lower_media == "text/plain"
-        || lower_media == "text/markdown"
-        || lower_name.ends_with(".txt")
-        || lower_name.ends_with(".md")
-    {
-        return Dispatch::PlainText(parser_identity(
-            if lower_media == "text/markdown" || lower_name.ends_with(".md") {
-                "markdown"
-            } else {
-                "plain_text"
-            },
-        ));
+    // A consistent MIME type outranks a conflicting Entry-owned filename.
+    // This is important for one Asset referenced by Entries with different
+    // display names.
+    if lower_media == "application/pdf" {
+        return Dispatch::Pdf(parser_identity("pdf_text_layer"));
+    }
+    if lower_media == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+        return Dispatch::Docx(parser_identity("docx_xml"));
+    }
+    if lower_media == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" {
+        return Dispatch::Xlsx(parser_identity("xlsx_xml"));
+    }
+    if lower_media == "application/vnd.openxmlformats-officedocument.presentationml.presentation" {
+        return Dispatch::Pptx(parser_identity("pptx_xml"));
+    }
+    if lower_media == "text/plain" || lower_media == "text/markdown" {
+        return Dispatch::PlainText(parser_identity(if lower_media == "text/markdown" {
+            "markdown"
+        } else {
+            "plain_text"
+        }));
+    }
+    if lower_name.ends_with(".pdf") {
+        return Dispatch::Pdf(parser_identity("pdf_text_layer"));
+    }
+    if lower_name.ends_with(".docx") {
+        return Dispatch::Docx(parser_identity("docx_xml"));
+    }
+    if lower_name.ends_with(".xlsx") {
+        return Dispatch::Xlsx(parser_identity("xlsx_xml"));
+    }
+    if lower_name.ends_with(".pptx") {
+        return Dispatch::Pptx(parser_identity("pptx_xml"));
+    }
+    if lower_name.ends_with(".txt") || lower_name.ends_with(".md") {
+        return Dispatch::PlainText(parser_identity(if lower_name.ends_with(".md") {
+            "markdown"
+        } else {
+            "plain_text"
+        }));
     }
     Dispatch::Unsupported(parser_identity("unsupported"))
 }
@@ -1197,20 +2973,95 @@ fn extract_chunks(
     dispatch: &Dispatch,
     bytes: &[u8],
 ) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    let mut chunks = Vec::new();
+    let mut total_bytes = 0;
     match dispatch {
-        Dispatch::PlainText(_) => Ok(split_text_chunks(
+        Dispatch::PlainText(_) => append_text_chunks(
+            &mut chunks,
+            &mut total_bytes,
             String::from_utf8_lossy(bytes).as_ref(),
             json!({"block": 0}),
-        )),
-        Dispatch::Pdf(_) => extract_pdf_chunks(bytes),
-        Dispatch::Docx(_) => extract_ooxml_chunks(bytes, "word/document.xml", "paragraph"),
-        Dispatch::Xlsx(_) => extract_ooxml_workbook_chunks(bytes),
-        Dispatch::Pptx(_) => extract_ooxml_slides(bytes),
-        Dispatch::Unsupported(_) => Ok(Vec::new()),
+        )?,
+        Dispatch::Pdf(_) => extract_pdf_chunks(bytes, &mut chunks, &mut total_bytes)?,
+        Dispatch::Docx(_) => extract_ooxml_chunks(
+            bytes,
+            "word/document.xml",
+            "paragraph",
+            &mut chunks,
+            &mut total_bytes,
+        )?,
+        Dispatch::Xlsx(_) => extract_ooxml_workbook_chunks(bytes, &mut chunks, &mut total_bytes)?,
+        Dispatch::Pptx(_) => extract_ooxml_slides(bytes, &mut chunks, &mut total_bytes)?,
+        Dispatch::Unsupported(_) => {}
+    }
+    Ok(chunks)
+}
+
+fn coarse_parser_error_code(code: &str) -> &'static str {
+    match code {
+        "parser_limit" => DerivedErrorCode::AssetParserLimit.as_str(),
+        _ => DerivedErrorCode::AssetParserFailed.as_str(),
     }
 }
 
-fn split_text_chunks(text: &str, locator: Value) -> Vec<ExtractedChunk> {
+async fn process_asset_async(
+    name: String,
+    media_type: String,
+    bytes: Vec<u8>,
+) -> std::result::Result<(String, ParserIdentity, bool, Vec<ExtractedChunk>), &'static str> {
+    // Dispatch, hashing, plain-text normalization, and structured extraction
+    // all run behind the same bounded blocking budget. A large TXT asset must
+    // not bypass the semaphore merely because it does not need an Office/PDF
+    // parser.
+    static PARSER_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    let semaphore = PARSER_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(4)))
+        .clone();
+    let permit = semaphore
+        .acquire_owned()
+        .await
+        .map_err(|_| "parser_failed")?;
+    tokio::task::spawn_blocking(move || {
+        // Keep the permit inside the blocking job. Cancelling the async wait
+        // must not make another job eligible while this CPU/memory-heavy
+        // parser is still running on Tokio's blocking pool.
+        let _permit = permit;
+        let actual_sha = hex::encode(Sha256::digest(&bytes));
+        let dispatch = detect_dispatch(&name, &media_type, &bytes);
+        let parser = dispatch.parser().clone();
+        let unsupported = matches!(dispatch, Dispatch::Unsupported(_));
+        let mut chunks = extract_chunks(&dispatch, &bytes)?;
+        for chunk in &mut chunks {
+            chunk.text = normalize_text(&chunk.text);
+        }
+        Ok((actual_sha, parser, unsupported, chunks))
+    })
+    .await
+    .map_err(|_| "parser_failed")?
+}
+
+fn append_extracted_chunk(
+    output: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+    chunk: ExtractedChunk,
+) -> std::result::Result<(), &'static str> {
+    let next_total = total_bytes
+        .checked_add(chunk.text.len())
+        .ok_or("parser_limit")?;
+    if next_total > MAX_EXTRACTED_TEXT_BYTES {
+        return Err("parser_limit");
+    }
+    *total_bytes = next_total;
+    output.push(chunk);
+    Ok(())
+}
+
+fn append_text_chunks(
+    output: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+    text: &str,
+    locator: Value,
+) -> std::result::Result<(), &'static str> {
     let normalized = normalize_text(text);
     let mut blocks = normalized
         .split("\n\n")
@@ -1219,26 +3070,36 @@ fn split_text_chunks(text: &str, locator: Value) -> Vec<ExtractedChunk> {
     if blocks.is_empty() && !normalized.is_empty() {
         blocks.push(&normalized);
     }
-    let mut chunks = Vec::new();
     for block in blocks {
         let mut current = String::new();
+        let mut current_chars = 0usize;
         for character in block.chars() {
             current.push(character);
-            if current.chars().count() >= MAX_TEXT_CHUNK_CHARS {
-                chunks.push(ExtractedChunk {
-                    locator: locator.clone(),
-                    text: std::mem::take(&mut current),
-                });
+            current_chars += 1;
+            if current_chars >= MAX_TEXT_CHUNK_CHARS {
+                append_extracted_chunk(
+                    output,
+                    total_bytes,
+                    ExtractedChunk {
+                        locator: locator.clone(),
+                        text: std::mem::take(&mut current),
+                    },
+                )?;
+                current_chars = 0;
             }
         }
         if !current.is_empty() {
-            chunks.push(ExtractedChunk {
-                locator: locator.clone(),
-                text: current,
-            });
+            append_extracted_chunk(
+                output,
+                total_bytes,
+                ExtractedChunk {
+                    locator: locator.clone(),
+                    text: current,
+                },
+            )?;
         }
     }
-    chunks
+    Ok(())
 }
 
 fn normalize_text(text: &str) -> String {
@@ -1253,6 +3114,13 @@ fn normalize_text(text: &str) -> String {
 
 #[cfg(test)]
 fn extract_pdf_text(bytes: &[u8]) -> String {
+    extract_pdf_text_bounded(bytes, MAX_EXTRACTED_TEXT_BYTES).unwrap_or_default()
+}
+
+fn extract_pdf_text_bounded(
+    bytes: &[u8],
+    max_bytes: usize,
+) -> std::result::Result<String, &'static str> {
     let mut text = String::new();
     let mut index = 0;
     while index < bytes.len() {
@@ -1286,64 +3154,347 @@ fn extract_pdf_text(bytes: &[u8]) -> String {
                 }
                 byte => value.push(byte),
             }
+            if value.len() > max_bytes {
+                return Err("parser_limit");
+            }
             index += 1;
         }
+        if depth != 0 {
+            return Err("malformed_pdf");
+        }
         if let Ok(value) = String::from_utf8(value) {
+            if text.len().saturating_add(value.len()) > max_bytes {
+                return Err("parser_limit");
+            }
             if !text.is_empty() {
                 text.push(' ');
             }
             text.push_str(&value);
         }
     }
-    text
+    Ok(text)
 }
 
-fn extract_pdf_chunks(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
-    // pdf-extract handles compressed content streams, text encodings, and
-    // page boundaries.  Keep the call behind the explicit input/page limits
-    // and convert parser failures to a coarse diagnostic; source bytes never
-    // become a durable error payload.
+fn bounded_flate_decode(
+    input: &[u8],
+    max_bytes: usize,
+) -> std::result::Result<Vec<u8>, &'static str> {
+    fn read_bounded<R: Read>(
+        reader: R,
+        max_bytes: usize,
+    ) -> std::result::Result<Vec<u8>, &'static str> {
+        let mut output = Vec::new();
+        reader
+            .take(max_bytes.saturating_add(1) as u64)
+            .read_to_end(&mut output)
+            .map_err(|_| "malformed_pdf")?;
+        if output.len() > max_bytes {
+            return Err("parser_limit");
+        }
+        Ok(output)
+    }
+
+    match read_bounded(ZlibDecoder::new(input), max_bytes) {
+        Ok(output) => Ok(output),
+        Err("parser_limit") => Err("parser_limit"),
+        Err(_) => read_bounded(DeflateDecoder::new(input), max_bytes),
+    }
+}
+
+fn extract_pdf_stream_text_bounded(
+    bytes: &[u8],
+    max_bytes: usize,
+    text_operators: &mut usize,
+) -> std::result::Result<String, &'static str> {
+    if !pdf_object_count_within_limit(bytes, MAX_PDF_OBJECTS) {
+        return Err("parser_limit");
+    }
+    let mut decoded_bytes = 0usize;
+    let mut text = String::new();
+    let mut stream_count = 0usize;
+    let mut offset = 0usize;
+    while let Some(relative) = bytes[offset..]
+        .windows(b"stream".len())
+        .position(|window| window == b"stream")
+    {
+        let stream_start = offset + relative;
+        stream_count = stream_count.checked_add(1).ok_or("parser_limit")?;
+        if stream_count > MAX_PDF_OBJECTS {
+            return Err("parser_limit");
+        }
+        let mut data_start = stream_start + b"stream".len();
+        if bytes.get(data_start..data_start + 2) == Some(b"\r\n") {
+            data_start += 2;
+        } else if bytes.get(data_start..data_start + 1) == Some(b"\n") {
+            data_start += 1;
+        }
+        let Some(relative_end) = bytes[data_start..]
+            .windows(b"endstream".len())
+            .position(|window| window == b"endstream")
+        else {
+            return Err("malformed_pdf");
+        };
+        let stream_end = data_start + relative_end;
+        let dictionary_start = bytes[..stream_start]
+            .windows(2)
+            .rposition(|window| window == b"<<")
+            .unwrap_or(stream_start);
+        let dictionary = &bytes[dictionary_start..stream_start];
+        let has_filter = dictionary
+            .windows(b"/Filter".len())
+            .any(|window| window == b"/Filter");
+        let has_flate = dictionary
+            .windows(b"/FlateDecode".len())
+            .any(|window| window == b"/FlateDecode");
+        if has_filter && !has_flate {
+            return Err("malformed_pdf");
+        }
+        if !has_flate {
+            offset = stream_end + b"endstream".len();
+            continue;
+        }
+        let remaining = max_bytes.saturating_sub(decoded_bytes);
+        let decoded = bounded_flate_decode(&bytes[data_start..stream_end], remaining)?;
+        decoded_bytes = decoded_bytes
+            .checked_add(decoded.len())
+            .ok_or("parser_limit")?;
+        let stream_operators = decoded.windows(2).filter(|window| *window == b"Tj").count()
+            + decoded.windows(2).filter(|window| *window == b"TJ").count();
+        *text_operators = text_operators
+            .checked_add(stream_operators)
+            .ok_or("parser_limit")?;
+        if *text_operators > MAX_PDF_TEXT_OPERATORS {
+            return Err("parser_limit");
+        }
+        let remaining = max_bytes.saturating_sub(text.len());
+        let stream_text = extract_pdf_text_bounded(&decoded, remaining)?;
+        if !stream_text.is_empty() {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(&stream_text);
+        }
+        offset = stream_end + b"endstream".len();
+    }
+    Ok(text)
+}
+
+fn pdf_object_count_within_limit(bytes: &[u8], maximum: usize) -> bool {
+    let mut count = 0usize;
+    let mut offset = 0usize;
+    while let Some(relative) = bytes[offset..]
+        .windows(b" obj".len())
+        .position(|window| window == b" obj")
+    {
+        let object_token = offset + relative;
+        let mut cursor = object_token;
+        while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+            cursor -= 1;
+        }
+        let generation_end = cursor;
+        while cursor > 0 && bytes[cursor - 1].is_ascii_digit() {
+            cursor -= 1;
+        }
+        if cursor == generation_end {
+            offset = object_token + b" obj".len();
+            continue;
+        }
+        while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+            cursor -= 1;
+        }
+        let object_number_end = cursor;
+        while cursor > 0 && bytes[cursor - 1].is_ascii_digit() {
+            cursor -= 1;
+        }
+        if cursor == object_number_end || (cursor > 0 && !bytes[cursor - 1].is_ascii_whitespace()) {
+            offset = object_token + b" obj".len();
+            continue;
+        }
+        count += 1;
+        if count > maximum {
+            return false;
+        }
+        offset = object_token + b" obj".len();
+    }
+    true
+}
+
+fn pdf_structure_is_valid(bytes: &[u8]) -> bool {
+    if !bytes.starts_with(b"%PDF-") {
+        return false;
+    }
+    let object_count = bytes
+        .windows(b" obj".len())
+        .filter(|window| *window == b" obj")
+        .count();
+    let end_object_count = bytes
+        .windows(b"endobj".len())
+        .filter(|window| *window == b"endobj")
+        .count();
+    if object_count == 0 || end_object_count == 0 || object_count != end_object_count {
+        return false;
+    }
+    let Some(trailer) = bytes
+        .windows(b"trailer".len())
+        .position(|window| window == b"trailer")
+    else {
+        return false;
+    };
+    let trailer_bytes = &bytes[trailer + b"trailer".len()..];
+    if !trailer_bytes.windows(2).any(|window| window == b"<<")
+        || !trailer_bytes.windows(2).any(|window| window == b">>")
+    {
+        return false;
+    }
+    let Some(startxref) = bytes
+        .windows(b"startxref".len())
+        .rposition(|window| window == b"startxref")
+    else {
+        return false;
+    };
+    let Some(offset) = std::str::from_utf8(&bytes[startxref + b"startxref".len()..])
+        .ok()
+        .and_then(|tail| tail.lines().map(str::trim).find(|line| !line.is_empty()))
+        .and_then(|line| line.parse::<usize>().ok())
+    else {
+        return false;
+    };
+    offset < bytes.len()
+        && bytes
+            .windows(b"%%EOF".len())
+            .any(|window| window == b"%%EOF")
+}
+
+fn extract_pdf_chunks(
+    bytes: &[u8],
+    chunks: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+) -> std::result::Result<(), &'static str> {
+    // Use a bounded literal text-layer scanner plus bounded Flate decoding.
+    // General PDF extraction APIs commonly materialize a complete decoded
+    // stream before the caller can enforce its output quota; that is not safe
+    // for an untrusted Asset. Unsupported filters are a coarse parser failure
+    // and never publish a partial build.
     let page_markers = bytes
         .windows(b"/Type /Page".len() + 1)
         .filter(|window| window.starts_with(b"/Type /Page") && window[b"/Type /Page".len()] != b's')
         .count();
-    let text_operators = bytes.windows(2).filter(|window| *window == b"Tj").count()
+    let mut text_operators = bytes.windows(2).filter(|window| *window == b"Tj").count()
         + bytes.windows(2).filter(|window| *window == b"TJ").count();
     if page_markers > MAX_PDF_PAGES || text_operators > MAX_PDF_TEXT_OPERATORS {
         return Err("parser_limit");
     }
-    let pages = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        pdf_extract::extract_text_from_mem_by_pages(bytes)
-    }))
-    .map_err(|_| "malformed_pdf")?
-    .map_err(|_| "malformed_pdf")?;
-    if pages.len() > MAX_PDF_PAGES {
-        return Err("parser_limit");
+    if !pdf_structure_is_valid(bytes) {
+        return Err("malformed_pdf");
     }
-    let mut chunks = Vec::new();
-    for (index, page) in pages.into_iter().enumerate() {
-        chunks.extend(split_text_chunks(&page, json!({"page": index + 1})));
+    let mut text = if bytes
+        .windows(b"/FlateDecode".len())
+        .any(|window| window == b"/FlateDecode")
+    {
+        String::new()
+    } else {
+        extract_pdf_text_bounded(bytes, MAX_EXTRACTED_TEXT_BYTES).map_err(|error| {
+            if error == "parser_limit" {
+                error
+            } else {
+                "malformed_pdf"
+            }
+        })?
+    };
+    if bytes
+        .windows(b"stream".len())
+        .any(|window| window == b"stream")
+    {
+        let stream_text = extract_pdf_stream_text_bounded(
+            bytes,
+            MAX_EXTRACTED_TEXT_BYTES.saturating_sub(text.len()),
+            &mut text_operators,
+        )?;
+        if !stream_text.is_empty() {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(&stream_text);
+        }
     }
-    Ok(chunks)
+    if text.is_empty() {
+        return Ok(());
+    }
+    append_text_chunks(chunks, total_bytes, &text, json!({"page": 1}))?;
+    Ok(())
+}
+
+/// Reject an excessive ZIP central-directory count before `ZipArchive::new`.
+/// The archive constructor parses and allocates the directory, so checking
+/// `archive.len()` after construction is too late for untrusted Asset bytes.
+fn validate_zip_entry_count(bytes: &[u8]) -> std::result::Result<(), &'static str> {
+    let Some(eocd) = bytes.windows(4).rposition(|window| window == b"PK\x05\x06") else {
+        return Err("malformed_container");
+    };
+    if bytes.len().saturating_sub(eocd) < 22 {
+        return Err("malformed_container");
+    }
+    let count = u16::from_le_bytes([bytes[eocd + 10], bytes[eocd + 11]]);
+    if count != u16::MAX {
+        return if usize::from(count) <= MAX_ZIP_ENTRIES {
+            Ok(())
+        } else {
+            Err("parser_limit")
+        };
+    }
+    let Some(locator) = eocd.checked_sub(20) else {
+        return Err("malformed_container");
+    };
+    if bytes.get(locator..locator + 4) != Some(b"PK\x06\x07") {
+        return Err("malformed_container");
+    }
+    let zip64_offset = u64::from_le_bytes(
+        bytes[locator + 8..locator + 16]
+            .try_into()
+            .map_err(|_| "malformed_container")?,
+    );
+    let zip64_offset = usize::try_from(zip64_offset).map_err(|_| "parser_limit")?;
+    if bytes.get(zip64_offset..zip64_offset + 40).is_none()
+        || bytes.get(zip64_offset..zip64_offset + 4) != Some(b"PK\x06\x06")
+    {
+        return Err("malformed_container");
+    }
+    let total_entries = u64::from_le_bytes(
+        bytes[zip64_offset + 32..zip64_offset + 40]
+            .try_into()
+            .map_err(|_| "malformed_container")?,
+    );
+    if total_entries > MAX_ZIP_ENTRIES as u64 {
+        Err("parser_limit")
+    } else {
+        Ok(())
+    }
 }
 
 fn extract_ooxml_chunks(
     bytes: &[u8],
     target: &str,
     kind: &str,
-) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    chunks: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+) -> std::result::Result<(), &'static str> {
+    validate_zip_entry_count(bytes)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
     let mut file = archive.by_name(target).map_err(|_| "malformed_container")?;
     let xml = read_zip_entry(&mut file)?;
     let text = xml_text(&xml)?;
-    Ok(split_text_chunks(&text, json!({kind: 1})))
+    append_text_chunks(chunks, total_bytes, &text, json!({kind: 1}))
 }
 
-fn extract_ooxml_slides(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+fn extract_ooxml_slides(
+    bytes: &[u8],
+    chunks: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+) -> std::result::Result<(), &'static str> {
+    validate_zip_entry_count(bytes)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
-    let mut chunks = Vec::new();
     let mut slide_index = 0usize;
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|_| "malformed_container")?;
@@ -1351,31 +3502,37 @@ fn extract_ooxml_slides(bytes: &[u8]) -> std::result::Result<Vec<ExtractedChunk>
         if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
             slide_index += 1;
             let xml = read_zip_entry(&mut file)?;
-            chunks.extend(split_text_chunks(
+            append_text_chunks(
+                chunks,
+                total_bytes,
                 &xml_text(&xml)?,
                 json!({"slide": slide_index}),
-            ));
+            )?;
         }
     }
     if chunks.is_empty() {
         return Err("malformed_container");
     }
-    Ok(chunks)
+    Ok(())
 }
 
 fn extract_ooxml_workbook_chunks(
     bytes: &[u8],
-) -> std::result::Result<Vec<ExtractedChunk>, &'static str> {
+    chunks: &mut Vec<ExtractedChunk>,
+    total_bytes: &mut usize,
+) -> std::result::Result<(), &'static str> {
+    validate_zip_entry_count(bytes)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| "malformed_container")?;
     validate_zip_limits(&mut archive)?;
-    let mut chunks = Vec::new();
     let mut sheet_index = 0usize;
     if let Ok(mut shared_strings) = archive.by_name("xl/sharedStrings.xml") {
         let xml = read_zip_entry(&mut shared_strings)?;
-        chunks.extend(split_text_chunks(
+        append_text_chunks(
+            chunks,
+            total_bytes,
             &xml_text(&xml)?,
             json!({"sheet": "shared_strings"}),
-        ));
+        )?;
     }
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|_| "malformed_container")?;
@@ -1383,16 +3540,18 @@ fn extract_ooxml_workbook_chunks(
         if name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml") {
             sheet_index += 1;
             let xml = read_zip_entry(&mut file)?;
-            chunks.extend(split_text_chunks(
+            append_text_chunks(
+                chunks,
+                total_bytes,
                 &xml_text(&xml)?,
                 json!({"sheet": sheet_index}),
-            ));
+            )?;
         }
     }
     if chunks.is_empty() {
         return Err("malformed_container");
     }
-    Ok(chunks)
+    Ok(())
 }
 
 fn read_zip_entry<R: Read>(
@@ -1474,85 +3633,267 @@ fn xml_text(bytes: &[u8]) -> std::result::Result<String, &'static str> {
     Ok(output)
 }
 
+async fn asset_text_table_from_head(
+    op: &Operator,
+    ws_path: &str,
+    head: &ugoite_storage::DerivedRelationHead,
+) -> Result<Table> {
+    validate_asset_text_head_binding(op, ws_path, head).await?;
+    let store = catalog_store_for_read(op, ws_path).await?;
+    let file_io = crate::space_catalog::file_io_for_store(&store);
+    let metadata =
+        iceberg::spec::TableMetadata::read_from(&file_io, &head.metadata_location).await?;
+    let table_ident: TableIdent = serde_json::from_value(head.table_identifier.clone())?;
+    let expected_table_ident = TableIdent::new(
+        NamespaceIdent::new("derived".to_string()),
+        format!(
+            "derived_{}",
+            DerivedRelationId::ASSET_TEXT.as_uuid().simple()
+        ),
+    );
+    if table_ident != expected_table_ident {
+        return Err(anyhow!(
+            "AssetText Head table identifier does not match the relation"
+        ));
+    }
+    if metadata.uuid().to_string() != head.table_uuid
+        || metadata.current_schema_id() != head.schema_id
+        || metadata.current_snapshot_id() != head.snapshot_id
+    {
+        return Err(anyhow!(
+            "AssetText Head table identity does not match Iceberg metadata"
+        ));
+    }
+    Table::builder()
+        .identifier(table_ident)
+        .metadata(metadata)
+        .metadata_location(head.metadata_location.clone())
+        .file_io(file_io)
+        .runtime(Runtime::current())
+        .build()
+        .map_err(Into::into)
+}
+
+async fn validate_asset_text_manifest(
+    op: &Operator,
+    ws_path: &str,
+    head: &ugoite_storage::DerivedRelationHead,
+    table: &Table,
+) -> Result<AssetTextManifest> {
+    let head_store = asset_text_head_store(op, ws_path).await?;
+    let manifest_location = format!("{}/manifest.json", head_store.builds_path(&head.build_id));
+    let manifest: AssetTextManifest =
+        serde_json::from_slice(&crate::read_object_exact(op, &manifest_location).await?)
+            .context("decode AssetText build manifest")?;
+    if manifest.format_version != 2
+        || manifest.relation_id != head.relation_id
+        || manifest.build_id != head.build_id
+        || manifest.producer_fingerprint != head.producer_fingerprint
+        || manifest.input_digest != head.input_digest
+        || manifest.source_coordinate != head.source_coordinate
+        || !manifest.row_digest.starts_with("sha256:")
+        || manifest.row_digest.trim_start_matches("sha256:").len() != 64
+        || hex::decode(manifest.row_digest.trim_start_matches("sha256:")).is_err()
+    {
+        return Err(anyhow!("AssetText build manifest does not match its Head"));
+    }
+    let status_total = manifest
+        .assets_ready
+        .checked_add(manifest.assets_empty)
+        .and_then(|value| value.checked_add(manifest.assets_failed))
+        .and_then(|value| value.checked_add(manifest.assets_unsupported))
+        .context("AssetText manifest status count overflow")?;
+    if status_total != manifest.assets_referenced || manifest.row_count > MAX_TOTAL_ASSET_TEXT_ROWS
+    {
+        return Err(anyhow!(
+            "AssetText build manifest status or row count is invalid"
+        ));
+    }
+
+    let Some(snapshot) = table.metadata().current_snapshot() else {
+        if manifest.row_count != 0
+            || manifest.assets_referenced != 0
+            || manifest.row_digest != asset_text_rows_digest(&[])?
+        {
+            return Err(anyhow!(
+                "AssetText manifest describes rows but the Iceberg table is empty"
+            ));
+        }
+        return Ok(manifest);
+    };
+    let properties = &snapshot.summary().additional_properties;
+    let total_records = properties
+        .get("total-records")
+        .context("AssetText snapshot has no total-records summary")?
+        .parse::<usize>()
+        .context("AssetText snapshot total-records is invalid")?;
+    if total_records != manifest.row_count
+        || properties.get("ugoite.asset_text.row_digest") != Some(&manifest.row_digest)
+    {
+        return Err(anyhow!(
+            "AssetText snapshot row count or digest does not match its manifest"
+        ));
+    }
+    for (name, expected) in [
+        ("assets_referenced", manifest.assets_referenced),
+        ("assets_ready", manifest.assets_ready),
+        ("assets_empty", manifest.assets_empty),
+        ("assets_failed", manifest.assets_failed),
+        ("assets_unsupported", manifest.assets_unsupported),
+    ] {
+        let key = format!("ugoite.asset_text.{name}");
+        let actual = properties
+            .get(&key)
+            .with_context(|| format!("AssetText snapshot has no {name} summary"))?
+            .parse::<usize>()
+            .with_context(|| format!("AssetText snapshot {name} summary is invalid"))?;
+        if actual != expected {
+            return Err(anyhow!(
+                "AssetText snapshot {name} summary does not match its manifest"
+            ));
+        }
+    }
+    Ok(manifest)
+}
+
+async fn validate_asset_text_build(
+    op: &Operator,
+    ws_path: &str,
+    head: &ugoite_storage::DerivedRelationHead,
+) -> Result<AssetTextManifest> {
+    let table = asset_text_table_from_head(op, ws_path, head).await?;
+    validate_asset_text_manifest(op, ws_path, head, &table).await
+}
+
+pub async fn register_asset_text_table(
+    context: &SessionContext,
+    op: &Operator,
+    ws_path: &str,
+    table_name: &str,
+) -> Result<bool> {
+    validate_asset_text_read_boundary(op, ws_path).await?;
+    let head_store = asset_text_head_store(op, ws_path).await?;
+    let Some(head) = head_store.read_exact().await? else {
+        return Ok(false);
+    };
+    validate_asset_text_head_binding(op, ws_path, &head.head).await?;
+    let current_source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
+    if head.head.source_coordinate != current_source_coordinate {
+        return Ok(false);
+    }
+    if head.head.producer_fingerprint != asset_text_producer_fingerprint()
+        || head.head.definition_fingerprint != asset_text_definition_fingerprint()
+        || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH
+    {
+        return Ok(false);
+    }
+    let table = asset_text_table_from_head(op, ws_path, &head.head).await?;
+    validate_asset_text_manifest(op, ws_path, &head.head, &table).await?;
+    let provider = IcebergStaticTableProvider::try_new_from_table(table).await?;
+    context.register_table(table_name, Arc::new(provider))?;
+    Ok(true)
+}
+
 pub async fn asset_text_search_matches(
     op: &Operator,
     ws_path: &str,
     query: &str,
 ) -> Result<Option<HashSet<String>>> {
-    let store = SpaceCatalogStore::new(op.clone(), ws_path)?.single_process();
-    let head_store =
-        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
-            .single_process();
-    let Some(head) = head_store.read_exact().await? else {
-        return Ok(None);
-    };
-    if head.head.definition_fingerprint != asset_text_definition_fingerprint()
-        || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH
-    {
+    validate_asset_text_read_boundary(op, ws_path).await?;
+    if query.len() > MAX_ASSET_TEXT_QUERY_BYTES {
+        bail!("AssetText search query exceeds its byte limit");
+    }
+    let context =
+        crate::query_context::bounded_session_context(&ugoite_core::query::QueryLimits {
+            max_memory_bytes: 64 * 1024 * 1024,
+            max_rows: MAX_ASSET_TEXT_MATCHES.saturating_add(1),
+            timeout: Duration::from_secs(30),
+            max_concurrency: 1,
+            allowed_functions: BTreeSet::from(["lower".to_string()]),
+        })?;
+    if !register_asset_text_table(&context, op, ws_path, "__ugoite_internal_asset_text").await? {
         return Ok(None);
     }
-    let file_io = crate::space_catalog::file_io_for_store(&store);
-    let metadata =
-        iceberg::spec::TableMetadata::read_from(&file_io, &head.head.metadata_location).await?;
-    let table_ident: TableIdent = serde_json::from_value(head.head.table_identifier.clone())?;
-    let table = Table::builder()
-        .identifier(table_ident)
-        .metadata(metadata)
-        .metadata_location(head.head.metadata_location.clone())
-        .file_io(file_io)
-        .runtime(Runtime::current())
-        .build()?;
-    let provider = IcebergStaticTableProvider::try_new_from_table(table).await?;
-    let context = SessionContext::new();
-    context.register_table("__ugoite_internal_asset_text", Arc::new(provider))?;
     let escaped = query
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
         .replace('\'', "''");
-    let sql = format!("SELECT asset_id FROM __ugoite_internal_asset_text WHERE status = 'ready' AND text IS NOT NULL AND lower(text) LIKE lower('%{escaped}%') ESCAPE '\\'");
-    let batches = context.sql(&sql).await?.collect().await?;
+    let sql = format!(
+        "SELECT asset_id FROM __ugoite_internal_asset_text WHERE status = 'ready' AND text IS NOT NULL AND lower(text) LIKE lower('%{escaped}%') ESCAPE '\\' LIMIT {}",
+        MAX_ASSET_TEXT_MATCHES.saturating_add(1)
+    );
+    let mut stream = context.sql(&sql).await?.execute_stream().await?;
     let mut matches = HashSet::new();
-    for batch in batches {
-        let values = batch
-            .column_by_name("asset_id")
-            .context("AssetText provider omitted asset_id")?;
-        let values = values
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .context("AssetText asset_id has invalid type")?;
-        for index in 0..values.len() {
-            if !values.is_null(index) {
-                matches.insert(values.value(index).to_string());
+    let mut matched_bytes = 0usize;
+    let mut scanned_rows = 0usize;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while let Some(batch) = stream.try_next().await? {
+            scanned_rows = scanned_rows
+                .checked_add(batch.num_rows())
+                .context("AssetText search row count overflow")?;
+            if scanned_rows > MAX_ASSET_TEXT_MATCHES {
+                bail!("AssetText search exceeds its matching-row limit");
+            }
+            if batch.get_array_memory_size() > 64 * 1024 * 1024 {
+                bail!("AssetText search batch exceeds its memory limit");
+            }
+            let values = batch
+                .column_by_name("asset_id")
+                .context("AssetText provider omitted asset_id")?;
+            let values = values
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .context("AssetText asset_id has invalid type")?;
+            for index in 0..values.len() {
+                if !values.is_null(index) {
+                    let asset_id = values.value(index);
+                    if !matches.contains(asset_id) && matches.len() >= MAX_ASSET_TEXT_MATCHES {
+                        bail!("AssetText search exceeds its matching-asset limit");
+                    }
+                    if matches.contains(asset_id) {
+                        continue;
+                    }
+                    matched_bytes = matched_bytes
+                        .checked_add(asset_id.len())
+                        .context("AssetText search matched-ID byte count overflow")?;
+                    if matched_bytes > MAX_ASSET_TEXT_MATCH_BYTES {
+                        bail!("AssetText search exceeds its matched-ID byte limit");
+                    }
+                    matches.insert(asset_id.to_string());
+                }
             }
         }
-    }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .map_err(|_| anyhow!("AssetText search timed out"))??;
     Ok(Some(matches))
 }
 
 pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
-    let head_store =
-        DerivedRelationHeadStore::new(op.clone(), ws_path, DerivedRelationId::ASSET_TEXT.as_uuid())
-            .single_process();
+    validate_asset_text_read_boundary(op, ws_path).await?;
+    let head_store = asset_text_head_store(op, ws_path).await?;
     let Some(head) = head_store.read_exact().await? else {
         return Ok(json!({"state":"missing","stale":true}));
     };
-    let manifest: AssetTextManifest = serde_json::from_slice(
-        &op.read(&head.head.materialization_manifest_location)
-            .await?
-            .to_vec(),
-    )
-    .context("decode AssetText materialization manifest")?;
+    validate_asset_text_head_binding(op, ws_path, &head.head).await?;
+    let table = asset_text_table_from_head(op, ws_path, &head.head).await?;
+    let manifest = validate_asset_text_manifest(op, ws_path, &head.head, &table).await?;
+    let current_source_coordinate = authoritative_source_coordinate(op, ws_path).await?;
     let stale = head.head.producer_fingerprint != asset_text_producer_fingerprint()
         || head.head.definition_fingerprint != asset_text_definition_fingerprint()
-        || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH;
+        || head.head.compatibility_epoch != ASSET_TEXT_COMPATIBILITY_EPOCH
+        || head.head.source_coordinate != current_source_coordinate;
+    let refresh_requested = asset_text_refresh_requested(op, ws_path).await?;
     Ok(json!({
         "state": "ready",
         "current_producer_fingerprint": asset_text_producer_fingerprint(),
         "materialized_producer_fingerprint": head.head.producer_fingerprint,
         "compatibility_epoch": head.head.compatibility_epoch,
         "stale": stale,
-        "materialization_id": head.head.materialization_id,
+        "refresh_requested": refresh_requested,
+        "build_id": head.head.build_id,
         "generation": head.head.generation,
         "assets_referenced": manifest.assets_referenced,
         "assets_ready": manifest.assets_ready,
@@ -1566,6 +3907,136 @@ pub async fn asset_text_stats(op: &Operator, ws_path: &str) -> Result<Value> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn oversized_asset_read_is_classified_as_parser_limit() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        operator
+            .write("spaces/parser-limit/assets/a", b"12345".to_vec())
+            .await?;
+        let error = read_asset_exact_with_limit(&operator, "spaces/parser-limit/assets/a", 4)
+            .await
+            .expect_err("reader must stop at its configured limit");
+        assert!(error.downcast_ref::<AssetParserInputLimit>().is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn refresh_request_marker_survives_until_a_successful_clear() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let workspace = "spaces/refresh-marker";
+
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        mark_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
+        clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_refresh_request_marker_is_acknowledged_during_clear() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let workspace = "spaces/legacy-refresh-marker";
+        let legacy_path = legacy_asset_text_refresh_request_path(workspace);
+
+        operator.write(&legacy_path, b"{}".to_vec()).await?;
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
+        clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(operator.exists(&legacy_path).await?);
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        let marker: Value = serde_json::from_slice(&operator.read(&legacy_path).await?.to_vec())?;
+        assert_eq!(marker.get("acknowledged"), Some(&Value::Bool(true)));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalization_cannot_clear_a_newer_refresh_request() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let workspace = "spaces/refresh-marker-race";
+
+        let first = mark_asset_text_refresh_requested(&operator, workspace).await?;
+        let first_path = asset_text_refresh_request_path(workspace, &first);
+        let _second = mark_asset_text_refresh_requested(&operator, workspace).await?;
+
+        // A build that started with only the first marker may acknowledge only
+        // that immutable token. The newer request must remain for the worker
+        // or startup rearm to observe.
+        clear_asset_text_refresh_request_paths(&operator, &[first_path]).await?;
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
+
+        clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn refresh_marker_overflow_drains_in_batches_and_preserves_newer_requests(
+    ) -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let workspace = "spaces/refresh-marker-overflow";
+
+        for _ in 0..MAX_ASSET_TEXT_REFRESH_REQUESTS {
+            let token = Uuid::now_v7().to_string();
+            operator
+                .write(
+                    &asset_text_refresh_request_path(workspace, &token),
+                    b"{}".to_vec(),
+                )
+                .await?;
+        }
+        assert!(mark_asset_text_refresh_requested(&operator, workspace)
+            .await
+            .is_err());
+
+        let cutoff = Uuid::now_v7().to_string();
+        let newer = Uuid::now_v7().to_string();
+        operator
+            .write(
+                &asset_text_refresh_request_path(workspace, &newer),
+                b"{}".to_vec(),
+            )
+            .await?;
+        clear_asset_text_refresh_requests_through(&operator, workspace, &cutoff).await?;
+        assert!(asset_text_refresh_requested(&operator, workspace).await?);
+        clear_asset_text_refresh_requested(&operator, workspace).await?;
+        assert!(!asset_text_refresh_requested(&operator, workspace).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn invalid_legacy_asset_reference_cannot_escape_space_storage() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        let outside_path = "spaces/other/assets/sentinel";
+        operator
+            .write(outside_path, b"must not be read".to_vec())
+            .await?;
+        let reference = SourceReference {
+            asset_id: "../other/assets/sentinel".to_string(),
+            name: "sentinel.txt".to_string(),
+            media_type: "text/plain".to_string(),
+            source_sha256: "a".repeat(64),
+            source_size_bytes: 16,
+            integrity_error: None,
+        };
+
+        let error = build_asset_text_rows(&operator, "spaces/demo", &[reference], "test-producer")
+            .await
+            .expect_err("invalid legacy asset IDs must fail closed before object reads");
+        assert!(error
+            .to_string()
+            .contains("invalid AssetReference asset_id"));
+        assert!(operator.exists(outside_path).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn starter_form_catalog_head_requires_initial_derived_build() -> anyhow::Result<()> {
+        let operator = opendal::Operator::new(opendal::services::Memory::default())?;
+        crate::space::create_space(&operator, "empty", "memory:///").await?;
+        assert!(asset_text_refresh_needed(&operator, "spaces/empty").await?);
+        Ok(())
+    }
+
     #[test]
     fn asset_text_schema_and_definition_share_stable_fields() {
         let definition = asset_text_definition();
@@ -1576,6 +4047,29 @@ mod tests {
         assert_eq!(
             definition.logical_key.last().map(String::as_str),
             Some("chunk_index")
+        );
+        assert_eq!(
+            definition
+                .schema
+                .fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "asset_id",
+                "source_sha256",
+                "source_size_bytes",
+                "parser_id",
+                "parser_version",
+                "producer_fingerprint",
+                "status",
+                "chunk_index",
+                "source_locator",
+                "text",
+                "text_length",
+                "parsed_at",
+                "error_code",
+            ]
         );
     }
 
@@ -1591,6 +4085,28 @@ mod tests {
             extract_pdf_text("BT (設備投資) Tj ET".as_bytes()),
             "設備投資"
         );
+    }
+
+    #[test]
+    fn truncated_pdf_signature_is_a_parser_failure_not_empty_text() {
+        assert!(matches!(
+            extract_chunks(
+                &Dispatch::Pdf(parser_identity("pdf")),
+                b"%PDF-1.7\nBT (truncated) Tj"
+            ),
+            Err("malformed_pdf")
+        ));
+    }
+
+    #[test]
+    fn pdf_markers_without_object_structure_are_a_parser_failure() {
+        assert!(matches!(
+            extract_chunks(
+                &Dispatch::Pdf(parser_identity("pdf")),
+                b"%PDF-1.7\ntrailer\n<< /Size 0 >>\nstartxref\n0\n%%EOF"
+            ),
+            Err("malformed_pdf")
+        ));
     }
 
     #[test]
@@ -1621,16 +4137,82 @@ mod tests {
         pdf.extend_from_slice(
             format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
         );
-        let chunks = extract_pdf_chunks(&pdf).expect("valid PDF fixture");
+        let chunks = extract_chunks(&Dispatch::Pdf(parser_identity("pdf")), &pdf)
+            .expect("valid PDF fixture");
         assert!(chunks.iter().any(|chunk| chunk.text.contains("Investment")));
         assert_eq!(chunks[0].locator, json!({"page": 1}));
+    }
+
+    #[test]
+    fn pdf_decoded_stream_limit_is_enforced_before_expansion() {
+        use std::io::Write;
+
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder
+            .write_all(&vec![b'x'; MAX_EXTRACTED_TEXT_BYTES + 1])
+            .expect("compress hostile stream");
+        let compressed = encoder.finish().expect("finish hostile stream");
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "1 0 obj\n<< /Length {} /Filter /FlateDecode >>\nstream\n",
+                compressed.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&compressed);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 2\n0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+
+        assert!(matches!(
+            extract_chunks(&Dispatch::Pdf(parser_identity("pdf")), &pdf),
+            Err("parser_limit")
+        ));
+    }
+
+    #[test]
+    fn pdf_decoded_stream_operator_limit_is_enforced_after_decompression() {
+        use std::io::Write;
+
+        let content = b"() Tj ".repeat(MAX_PDF_TEXT_OPERATORS + 1);
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(&content).expect("compress operators");
+        let compressed = encoder.finish().expect("finish operators");
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "1 0 obj\n<< /Length {} /Filter /FlateDecode >>\nstream\n",
+                compressed.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&compressed);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        let xref = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 2\n0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes(),
+        );
+
+        assert!(matches!(
+            extract_chunks(&Dispatch::Pdf(parser_identity("pdf")), &pdf),
+            Err("parser_limit")
+        ));
     }
 
     #[test]
     fn parser_limits_reject_hostile_pdf_and_xml_work() {
         let hostile_pdf = b"/Type /Page ".repeat(MAX_PDF_PAGES + 1);
         assert!(matches!(
-            extract_pdf_chunks(&hostile_pdf),
+            extract_chunks(&Dispatch::Pdf(parser_identity("pdf")), &hostile_pdf),
             Err("parser_limit")
         ));
 
@@ -1645,9 +4227,52 @@ mod tests {
         assert_eq!(xml_text(deeply_nested.as_bytes()), Err("parser_limit"));
     }
 
+    #[test]
+    fn pdf_object_limit_is_checked_before_stream_decode() {
+        let bytes = b"1 0 obj\nendobj\n2 0 obj\nendobj\n";
+        assert!(pdf_object_count_within_limit(bytes, 2));
+        assert!(!pdf_object_count_within_limit(bytes, 1));
+    }
+
+    #[test]
+    fn zip_entry_limit_is_checked_before_archive_materialization() {
+        let mut bytes = vec![0; 22];
+        bytes[..4].copy_from_slice(b"PK\x05\x06");
+        bytes[10..12].copy_from_slice(&u16::try_from(MAX_ZIP_ENTRIES + 1).unwrap().to_le_bytes());
+        assert_eq!(validate_zip_entry_count(&bytes), Err("parser_limit"));
+        assert!(matches!(
+            extract_chunks(&Dispatch::Docx(parser_identity("docx")), &bytes),
+            Err("parser_limit")
+        ));
+    }
+
+    #[test]
+    fn extracted_text_limit_is_shared_by_plain_text_dispatch() {
+        let bytes = vec![b'x'; MAX_EXTRACTED_TEXT_BYTES + 1];
+        assert!(matches!(
+            extract_chunks(&Dispatch::PlainText(parser_identity("plain_text")), &bytes),
+            Err("parser_limit")
+        ));
+    }
+
+    #[test]
+    fn extracted_text_limit_is_enforced_while_accumulating_chunks() {
+        let first = "x".repeat(MAX_EXTRACTED_TEXT_BYTES / 2);
+        let second = "x".repeat(MAX_EXTRACTED_TEXT_BYTES / 2 + 1);
+        let mut chunks = Vec::new();
+        let mut total_bytes = 0;
+        append_text_chunks(&mut chunks, &mut total_bytes, &first, json!({"part": 1}))
+            .expect("first parser part fits");
+        assert!(
+            append_text_chunks(&mut chunks, &mut total_bytes, &second, json!({"part": 2}),)
+                .is_err()
+        );
+        assert!(total_bytes <= MAX_EXTRACTED_TEXT_BYTES);
+    }
+
     #[tokio::test]
     async fn empty_space_rebuild_publishes_only_a_derived_head() -> anyhow::Result<()> {
-        let op = opendal::Operator::new(opendal::services::Memory::default())?.finish();
+        let op = opendal::Operator::new(opendal::services::Memory::default())?;
         crate::space::create_space(&op, "derived-empty", "memory:///").await?;
         let catalog_head_path = "spaces/derived-empty/_ugoite/catalog/head.json";
         let before = if op.exists(catalog_head_path).await? {
@@ -1668,8 +4293,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn malformed_derived_head_is_replaced_by_the_next_rebuild() -> anyhow::Result<()> {
+        let op = opendal::Operator::new(opendal::services::Memory::default())?;
+        let ws_path = "spaces/derived-corrupt-head";
+        crate::space::create_space(&op, "derived-corrupt-head", "memory:///").await?;
+        let first = rebuild_asset_text(&op, ws_path).await?;
+        let head_path = format!(
+            "{ws_path}/_ugoite/derived/relations/{}/head.json",
+            first.relation_id
+        );
+        op.write(&head_path, b"{not valid json".to_vec()).await?;
+
+        assert!(asset_text_refresh_needed(&op, ws_path).await?);
+        let repaired = rebuild_asset_text(&op, ws_path).await?;
+        assert_ne!(repaired.build_id, first.build_id);
+        assert_eq!(
+            asset_text_head_store(&op, ws_path)
+                .await?
+                .read_exact()
+                .await?
+                .expect("repaired AssetText Head")
+                .head
+                .build_id,
+            repaired.build_id
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn asset_text_search_rejects_an_oversized_query_before_planning() -> anyhow::Result<()> {
+        let op = opendal::Operator::new(opendal::services::Memory::default())?;
+        crate::space::create_space(&op, "missing", "memory:///").await?;
+        let error = asset_text_search_matches(
+            &op,
+            "spaces/missing",
+            &"x".repeat(MAX_ASSET_TEXT_QUERY_BYTES + 1),
+        )
+        .await
+        .expect_err("oversized query must fail before DataFusion planning");
+        assert!(error.to_string().contains("query exceeds"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn text_asset_materializes_and_is_searchable() -> anyhow::Result<()> {
-        let op = opendal::Operator::new(opendal::services::Memory::default())?.finish();
+        let op = opendal::Operator::new(opendal::services::Memory::default())?;
         crate::space::create_space(&op, "derived-text", "memory:///").await?;
         let ws_path = "spaces/derived-text";
         crate::form::upsert_form(
@@ -1699,6 +4367,15 @@ mod tests {
         let catalog_head_before = op.read(&catalog_head_path).await?.to_vec();
         let head = rebuild_asset_text(&op, ws_path).await?;
         assert!(head.snapshot_id.is_some());
+        let manifest: AssetTextManifest = serde_json::from_slice(
+            &op.read(&format!(
+                "{ws_path}/_ugoite/derived/relations/{}/builds/{}/manifest.json",
+                head.relation_id, head.build_id
+            ))
+            .await?
+            .to_vec(),
+        )?;
+        assert_eq!(manifest.assets_referenced, 1);
         assert_eq!(
             op.read(&catalog_head_path).await?.to_vec(),
             catalog_head_before
@@ -1729,5 +4406,104 @@ mod tests {
                 .is_empty()
         );
         Ok(())
+    }
+
+    #[test]
+    fn same_asset_referenced_by_one_hundred_entries_is_one_source() {
+        let mut references = BTreeMap::new();
+        let mut checksums = BTreeMap::new();
+        let mut conflicts = HashSet::new();
+        for _ in 0..100 {
+            merge_source_reference(
+                &mut references,
+                &mut checksums,
+                &mut conflicts,
+                SourceReference {
+                    asset_id: "asset-1".into(),
+                    name: "report.txt".into(),
+                    media_type: "text/plain".into(),
+                    source_sha256: "sha".into(),
+                    source_size_bytes: 3,
+                    integrity_error: None,
+                },
+            );
+        }
+        assert_eq!(references.len(), 1);
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn duplicate_asset_reference_uses_mime_before_conflicting_filename() {
+        let mut references = BTreeMap::new();
+        let mut checksums = BTreeMap::new();
+        let mut conflicts = HashSet::new();
+        merge_source_reference(
+            &mut references,
+            &mut checksums,
+            &mut conflicts,
+            SourceReference {
+                asset_id: "asset-1".into(),
+                name: "z.txt".into(),
+                media_type: "text/plain".into(),
+                source_sha256: "sha".into(),
+                source_size_bytes: 10,
+                integrity_error: None,
+            },
+        );
+        merge_source_reference(
+            &mut references,
+            &mut checksums,
+            &mut conflicts,
+            SourceReference {
+                asset_id: "asset-1".into(),
+                name: "a.pdf".into(),
+                media_type: "text/plain".into(),
+                source_sha256: "sha".into(),
+                source_size_bytes: 10,
+                integrity_error: None,
+            },
+        );
+        let reference = references.get("asset-1").expect("merged Asset reference");
+        let dispatch = detect_dispatch(&reference.name, &reference.media_type, b"plain text");
+        assert!(matches!(dispatch, Dispatch::PlainText(_)));
+    }
+
+    #[test]
+    fn duplicate_asset_reference_prefers_text_mime_over_structured_mime() {
+        let mut references = BTreeMap::new();
+        let mut checksums = BTreeMap::new();
+        let mut conflicts = HashSet::new();
+        merge_source_reference(
+            &mut references,
+            &mut checksums,
+            &mut conflicts,
+            SourceReference {
+                asset_id: "asset-1".into(),
+                name: "a.pdf".into(),
+                media_type: "application/pdf".into(),
+                source_sha256: "sha".into(),
+                source_size_bytes: 10,
+                integrity_error: None,
+            },
+        );
+        merge_source_reference(
+            &mut references,
+            &mut checksums,
+            &mut conflicts,
+            SourceReference {
+                asset_id: "asset-1".into(),
+                name: "z.txt".into(),
+                media_type: "text/plain".into(),
+                source_sha256: "sha".into(),
+                source_size_bytes: 10,
+                integrity_error: None,
+            },
+        );
+        let reference = references.get("asset-1").expect("merged Asset reference");
+        assert_eq!(reference.media_type, "text/plain");
+        assert!(matches!(
+            detect_dispatch(&reference.name, &reference.media_type, b"plain text"),
+            Dispatch::PlainText(_)
+        ));
     }
 }

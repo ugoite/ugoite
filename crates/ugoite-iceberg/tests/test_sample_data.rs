@@ -6,8 +6,8 @@ use tokio::time::{sleep, Duration};
 use ugoite_iceberg::authorization::Authorizer;
 use ugoite_iceberg::entry;
 use ugoite_iceberg::sample_data::{
-    create_sample_space, create_sample_space_job, get_sample_space_job, list_sample_scenarios,
-    SampleDataJob, SampleDataOptions, SampleJobStatus,
+    create_sample_space, create_sample_space_job, create_sample_space_job_and_wait,
+    get_sample_space_job, list_sample_scenarios, SampleDataJob, SampleDataOptions, SampleJobStatus,
 };
 use uuid::Uuid;
 
@@ -145,6 +145,25 @@ async fn test_sample_data_req_api_010_job_lifecycle() -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn one_shot_sample_job_completes_before_the_caller_exits() -> anyhow::Result<()> {
+    let tempdir = tempfile::tempdir()?;
+    let root_uri = temp_root_uri(&tempdir);
+    let op = setup_operator()?;
+    let options = SampleDataOptions {
+        space_id: unique_space_id("sample-job-sync"),
+        scenario: "lab-qa".to_string(),
+        entry_count: 6,
+        seed: Some(12),
+        owner_display_name: None,
+    };
+
+    let job = create_sample_space_job_and_wait(&op, &root_uri, &options).await?;
+    assert_eq!(job.status, SampleJobStatus::Completed);
+    assert_eq!(job.summary.expect("summary").entry_count, 6);
     Ok(())
 }
 

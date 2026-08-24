@@ -209,11 +209,10 @@ fn rehash_chain(events: &mut [Value]) -> Result<()> {
 
 async fn read_events(op: &Operator, space_id: &str) -> Result<Vec<Value>> {
     let path = audit_file_path(space_id);
-    if !op.exists(&path).await? {
+    let Some(bytes) = crate::read_object_exact_optional(op, &path).await? else {
         return Ok(Vec::new());
-    }
-    let bytes = op.read(&path).await?;
-    let content = String::from_utf8(bytes.to_vec())?;
+    };
+    let content = String::from_utf8(bytes)?;
     let mut events = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim();
@@ -249,7 +248,7 @@ async fn write_events(
     let bytes = payload.into_bytes();
     if let Some(version) = expected_version {
         op.write_with(&path, bytes).if_match(version).await?;
-    } else if op.info().full_capability().write_with_if_not_exists && !op.exists(&path).await? {
+    } else if op.info().capability().write_with_if_not_exists && !op.exists(&path).await? {
         op.write_with(&path, bytes).if_not_exists(true).await?;
     } else if matches!(op.info().scheme(), "memory" | "fs" | "file") {
         op.write(&path, bytes).await?;
@@ -285,15 +284,11 @@ async fn read_event_marker(
     event_id: &str,
 ) -> Result<Option<(Value, Option<String>)>> {
     let path = audit_event_id_path(space_id, event_id);
-    if !op.exists(&path).await? {
+    let Some((bytes, version)) = crate::read_object_exact_optional_with_etag(op, &path).await?
+    else {
         return Ok(None);
-    }
-    let marker = serde_json::from_slice::<Value>(&op.read(&path).await?.to_vec())?;
-    let metadata = op.stat(&path).await?;
-    let version = metadata
-        .etag()
-        .or_else(|| metadata.version())
-        .map(str::to_string);
+    };
+    let marker = serde_json::from_slice::<Value>(&bytes)?;
     Ok(Some((marker, version)))
 }
 
@@ -310,7 +305,7 @@ async fn create_pending_marker(
         "payload": payload,
     });
     let bytes = serde_json::to_vec(&marker)?;
-    let capabilities = op.info().full_capability();
+    let capabilities = op.info().capability();
     if capabilities.write_with_if_not_exists {
         if let Err(error) = op.write_with(&path, bytes).if_not_exists(true).await {
             let message = error.to_string().to_lowercase();
@@ -345,7 +340,7 @@ async fn commit_event_marker(
     let path = audit_event_id_path(space_id, event_id);
     let marker = json!({"status": "committed", "event": event});
     let bytes = serde_json::to_vec(&marker)?;
-    let capabilities = op.info().full_capability();
+    let capabilities = op.info().capability();
     if let Some(version) = expected_version {
         if capabilities.write_with_if_match {
             op.write_with(&path, bytes).if_match(version).await?;
@@ -383,6 +378,7 @@ pub async fn append_audit_event(
     payload: &Value,
     retention_limit: Option<usize>,
 ) -> Result<Value> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     let mut last_conflict = None;
     for _attempt in 0..3 {
         match append_audit_event_once(op, space_id, payload, retention_limit).await {
@@ -478,7 +474,7 @@ async fn append_audit_event_once(
     let _local_lock = local_audit_lock(op, &safe_space_id)?;
 
     let path = audit_file_path(&safe_space_id);
-    let capabilities = op.info().full_capability();
+    let capabilities = op.info().capability();
     let path_exists = op.exists(&path).await?;
     let local_process_store = matches!(op.info().scheme(), "memory" | "fs" | "file");
     if !local_process_store

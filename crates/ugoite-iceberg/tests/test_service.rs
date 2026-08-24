@@ -345,12 +345,10 @@ async fn saved_sql_acl_is_applied_before_payload_decode() -> Result<()> {
     service
         .create_saved_sql(&space_id, "hidden", &payload("Hidden"), "owner")
         .await?;
-    assert_eq!(
-        service
-            .authorized_saved_sql_entry_scope_for_principals(&space_id, &[])
-            .await?,
-        ugoite_core::query::EntryScope::Only(std::collections::BTreeSet::new())
-    );
+    service
+        .authorized_saved_sql_entry_scope_for_principals(&space_id, &[])
+        .await
+        .expect_err("authorized saved-SQL reads must reject an empty principal set");
 
     let authorizer = Authorizer::new(service.operator().clone());
     authorizer

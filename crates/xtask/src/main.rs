@@ -404,6 +404,73 @@ fn docs_current_stack_check() -> Result<()> {
             }
         }
     }
+    let auth_registry = fs::read_to_string("docs/spec/features/auth.yaml")
+        .context("read authentication feature registry")?;
+    if auth_registry
+        .lines()
+        .any(|line| line.trim() == "status: implemented")
+    {
+        violations.push(
+            "docs/spec/features/auth.yaml marks an authentication surface as implemented; v0.1 must keep it future/reference"
+                .to_string(),
+        );
+    }
+    let deferred_requirements = [
+        (
+            "docs/spec/requirements/security.yaml",
+            [
+                "REQ-SEC-003",
+                "REQ-SEC-004",
+                "REQ-SEC-005",
+                "REQ-SEC-007",
+                "REQ-SEC-008",
+                "REQ-SEC-009",
+                "REQ-SEC-012",
+                "REQ-SEC-013",
+            ]
+            .as_slice(),
+        ),
+        (
+            "docs/spec/requirements/ops.yaml",
+            ["REQ-OPS-015"].as_slice(),
+        ),
+    ];
+    for (path, ids) in deferred_requirements {
+        let text = fs::read_to_string(path).with_context(|| format!("read {path}"))?;
+        for block in text.split("- set_id:").skip(1) {
+            let Some(id) = ids.iter().find(|id| block.contains(&format!("id: {id}"))) else {
+                continue;
+            };
+            if block
+                .lines()
+                .any(|line| line.trim() == "status: implemented")
+            {
+                violations.push(format!(
+                    "{path} marks future capability {id} as implemented"
+                ));
+            }
+        }
+    }
+    let user_management = fs::read_to_string("docs/version/v0.1/user-management.yaml")
+        .context("read user-management tracker")?;
+    if user_management
+        .lines()
+        .take(5)
+        .any(|line| line == "status: completed")
+    {
+        violations.push(
+            "docs/version/v0.1/user-management.yaml marks future account-management work completed"
+                .to_string(),
+        );
+    }
+    let openapi = fs::read_to_string("crates/ugoite-server/src/openapi.json")
+        .context("read OpenAPI release boundary")?;
+    if !openapi.contains("does not advertise Passkey/TOTP/OIDC login") {
+        violations.push(
+            "server OpenAPI must carry the v0.1 capability boundary for reference-only auth surfaces"
+                .to_string(),
+        );
+    }
     if !violations.is_empty() {
         bail!("{}", violations.join("\n"));
     }

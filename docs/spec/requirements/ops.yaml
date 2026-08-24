@@ -230,7 +230,7 @@ requirements:
   - testing/ci-cd.md
   - ../../guide/operate/server/operations.md
   priority: medium
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: crates/ugoite-cli/src/commands/auth.rs

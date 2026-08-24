@@ -7,6 +7,7 @@ use arrow_json::writer::ArrayWriter;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use datafusion::logical_expr::SortExpr;
 use datafusion::prelude::{array_has, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use opendal::Operator;
@@ -15,9 +16,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_yaml;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use ugoite_domain::form::{sql_column_name, sql_relation_name};
+use ugoite_domain::form::{sql_column_name, sql_relation_name, FormDefinition};
 use ugoite_domain::id::FormId;
 pub use ugoite_domain::text::compute_word_count;
 use uuid::Uuid;
@@ -36,6 +38,65 @@ pub const SQL_SESSION_MAX_ROWS: usize = 1_000;
 pub const SQL_SESSION_MAX_AUTHORIZATION_SCOPE_IDS: usize = SQL_SESSION_MAX_ROWS;
 pub const SQL_SESSION_MAX_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 pub const SQL_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const AUTHORIZED_ASSET_REFERENCE_MAX_ROWS: usize = usize::MAX / 2;
+const MAX_QUERY_FORMS: usize = 100_000;
+const MAX_QUERY_FORM_DEFINITION_BYTES: usize = 256 * 1024 * 1024;
+pub(crate) const ASSET_TEXT_SEARCH_MAX_QUERY_BYTES: usize =
+    crate::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES;
+pub(crate) const ASSET_TEXT_SEARCH_MAX_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const MAX_ASSET_REFERENCES_PER_ENTRY: usize =
+    ugoite_domain::entry::MAX_ASSET_REFERENCES_PER_ENTRY;
+
+/// Shared accounting for one authorized AssetText search. It covers the
+/// current Entry projection, the derived join batches, and the final result
+/// conversion rather than relying only on DataFusion's row/memory limits.
+#[derive(Clone, Debug)]
+pub(crate) struct AssetTextSearchBudget {
+    used_bytes: Arc<AtomicUsize>,
+}
+
+impl AssetTextSearchBudget {
+    pub(crate) fn new() -> Self {
+        Self {
+            used_bytes: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    pub(crate) fn reserve(&self, bytes: usize) -> Result<()> {
+        let mut current = self.used_bytes.load(Ordering::Relaxed);
+        loop {
+            let next = current
+                .checked_add(bytes)
+                .ok_or_else(|| anyhow!("AssetText search result exceeds byte limit"))?;
+            if next > ASSET_TEXT_SEARCH_MAX_BYTES {
+                return Err(anyhow!(
+                    "AssetText search result exceeds the {} byte limit",
+                    ASSET_TEXT_SEARCH_MAX_BYTES
+                ));
+            }
+            match self.used_bytes.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(()),
+                Err(observed) => current = observed,
+            }
+        }
+    }
+
+    pub(crate) fn checkpoint(&self) -> usize {
+        self.used_bytes.load(Ordering::Acquire)
+    }
+
+    /// Rolls back reservations made by a failed DataFusion join attempt.
+    /// Search execution is single-consumer, so the checkpoint is only used by
+    /// the join-to-authoritative-fallback transition.
+    pub(crate) fn restore(&self, checkpoint: usize) {
+        self.used_bytes.store(checkpoint, Ordering::Release);
+    }
+}
 
 /// Immutable execution inputs for one authorized SQL-session page.
 ///
@@ -274,7 +335,7 @@ pub(crate) struct EntryCandidate {
 }
 
 struct EntryCandidatePage<'a> {
-    limit: usize,
+    limit: Option<usize>,
     offset: usize,
     after: Option<(&'a str, &'a str, &'a str)>,
 }
@@ -339,7 +400,7 @@ pub(crate) async fn query_entry_candidates_authorized_after(
         form_filter,
         keyword,
         &EntryCandidatePage {
-            limit,
+            limit: Some(limit),
             offset: 0,
             after,
         },
@@ -402,14 +463,22 @@ async fn query_entry_candidates_in_context(
             )
         })
         .unwrap_or_default();
+    let pagination = match (page.limit, page.offset) {
+        (Some(limit), offset) => format!(" LIMIT {limit} OFFSET {offset}"),
+        (None, 0) => String::new(),
+        (None, offset) => format!(" OFFSET {offset}"),
+    };
     let sql = format!(
-        "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\"{} ORDER BY \"_ugoite_title\", \"_ugoite_id\", \"_ugoite_form\" LIMIT {} OFFSET {}",
+        "SELECT \"_ugoite_id\", \"_ugoite_title\", \"_ugoite_created_at\", \"_ugoite_updated_at\", \"_ugoite_form\" FROM ({}) AS \"_ugoite_entry_candidates\"{} ORDER BY \"_ugoite_title\", \"_ugoite_id\", \"_ugoite_form\"{}",
         branches.join(" UNION ALL "),
         after_clause,
-        page.limit,
-        page.offset,
+        pagination,
     );
-    let values = record_batches_to_values(&context.execute(&sql).await.map_err(map_sql_error)?)?;
+    let batches = context
+        .execute_with_byte_limit(&sql, ASSET_TEXT_SEARCH_MAX_BYTES)
+        .await
+        .map_err(map_sql_error)?;
+    let values = record_batches_to_values_bounded(&batches, ASSET_TEXT_SEARCH_MAX_BYTES)?;
     let mut candidates = values
         .into_iter()
         .map(|value| {
@@ -472,7 +541,9 @@ async fn query_entry_candidates_in_context(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    candidates.truncate(page.limit);
+    if let Some(limit) = page.limit {
+        candidates.truncate(limit);
+    }
     Ok(candidates)
 }
 
@@ -488,10 +559,144 @@ pub(crate) async fn query_entry_rows_authorized(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<(String, entry::EntryRow)>> {
-    if limit == 0 {
+    query_entry_rows_authorized_internal(
+        op,
+        ws_path,
+        relation_scopes,
+        form_filter,
+        keyword,
+        Some(limit),
+        offset,
+        None,
+        Some(crate::MAX_NORMAL_READ_ROWS),
+    )
+    .await
+}
+
+/// The AssetText authorization join needs only current Entry identity and the
+/// declared AssetReference fields. Keeping this projection separate from the
+/// ordinary EntryRow reader prevents large unrelated field values and opaque
+/// extra attributes from being materialized in Rust during a search.
+#[derive(Debug, Clone)]
+pub(crate) struct AuthorizedAssetReferenceRow {
+    pub entry_id: String,
+    pub title: String,
+    pub created_at: f64,
+    pub updated_at: f64,
+    pub deleted: bool,
+    pub fields: Value,
+}
+
+/// Creates the reusable authorized context used by the AssetText provider's
+/// keyset pages. The Form views and their Iceberg providers are opened once per
+/// search, rather than once per page.
+pub(crate) async fn authorized_asset_reference_query_context(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+) -> Result<(
+    crate::query_context::AuthorizedQueryContext,
+    HashMap<String, Value>,
+)> {
+    // Read the Form definitions on both sides of context construction. The
+    // authorized DataFusion context opens its own latest Form snapshot; if an
+    // authoritative Form commit races that construction, reject this join so
+    // the caller can use the authoritative fallback instead of mixing schemas.
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    let form_definitions = load_form_definitions(op, ws_path).await?;
+    let forms_before = form_definitions
+        .iter()
+        .map(|form| {
+            let value = crate::form::from_domain_form(form);
+            crate::form::enrich_form_definition(&value).map(|value| (form.name.clone(), value))
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
+    let context = datafusion_sql_context_with_form_snapshot(
+        workspace,
+        EntryScope::AllCurrent,
+        None,
+        Some(relation_scopes),
+        None,
+        BTreeSet::new(),
+        AUTHORIZED_ASSET_REFERENCE_MAX_ROWS,
+        true,
+        form_definitions,
+    )
+    .await
+    .map_err(map_sql_error)?;
+    let forms_after = load_forms(op, ws_path).await?;
+    if forms_before != forms_after {
+        return Err(anyhow!(
+            "Form definitions changed while opening authorized AssetReference context"
+        ));
+    }
+    Ok((context, forms_before))
+}
+
+/// Reads the authorized current AssetReference projection once for a Form.
+/// AssetText's DataFusion provider pages this in memory after the trusted
+/// current-state view has been evaluated, rather than rebuilding the latest
+/// revision plan for every 2,048-row page.
+pub(crate) async fn query_asset_reference_rows_authorized_in_context(
+    context: &crate::query_context::AuthorizedQueryContext,
+    forms: &HashMap<String, Value>,
+    form_name: &str,
+    asset_field_names: &BTreeSet<String>,
+    after_entry_id: Option<&str>,
+    limit: usize,
+    budget: &AssetTextSearchBudget,
+) -> Result<Vec<AuthorizedAssetReferenceRow>> {
+    if asset_field_names.is_empty() {
         return Ok(Vec::new());
     }
-    if limit > crate::MAX_NORMAL_READ_ROWS.saturating_add(1) {
+    let form = forms
+        .get(form_name)
+        .with_context(|| format!("missing Form definition {form_name}"))?;
+    let relation = form
+        .get("sql_relation")
+        .and_then(Value::as_str)
+        .with_context(|| format!("Form {form_name} is missing its SQL relation"))?;
+    let mut predicates = Vec::new();
+    if let Some(after_entry_id) = after_entry_id {
+        predicates.push(col("_ugoite_id").gt(lit(after_entry_id.to_string())));
+    }
+    let batches = context
+        .execute_relation_plan_bounded(
+            relation,
+            &[],
+            predicates,
+            asset_reference_projection(form, asset_field_names)?,
+            vec![SortExpr {
+                expr: col("_ugoite_id"),
+                asc: true,
+                nulls_first: true,
+            }],
+            false,
+            false,
+            limit,
+            ASSET_TEXT_SEARCH_MAX_BYTES / 8,
+        )
+        .await
+        .map_err(map_sql_error)?;
+    asset_reference_rows_from_batches(form, &batches, asset_field_names, budget)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn query_entry_rows_authorized_internal(
+    op: &Operator,
+    ws_path: &str,
+    relation_scopes: &BTreeMap<String, EntryScope>,
+    form_filter: Option<&str>,
+    keyword: Option<&str>,
+    limit: Option<usize>,
+    offset: usize,
+    after: Option<(&str, &str, &str)>,
+    response_limit: Option<usize>,
+) -> Result<Vec<(String, entry::EntryRow)>> {
+    if limit == Some(0) {
+        return Ok(Vec::new());
+    }
+    if response_limit.is_some_and(|max| limit.is_some_and(|limit| limit > max.saturating_add(1))) {
         return Err(anyhow!(
             "normal Entry reads are limited to {} rows",
             crate::MAX_NORMAL_READ_ROWS
@@ -506,7 +711,7 @@ pub(crate) async fn query_entry_rows_authorized(
         Some(relation_scopes),
         None,
         BTreeSet::from(["array_to_string".to_string(), "lower".to_string()]),
-        crate::MAX_NORMAL_READ_ROWS,
+        response_limit.unwrap_or(i64::MAX as usize / 2),
         true,
     )
     .await
@@ -520,7 +725,7 @@ pub(crate) async fn query_entry_rows_authorized(
         &EntryCandidatePage {
             limit,
             offset,
-            after: None,
+            after,
         },
     )
     .await?;
@@ -703,6 +908,162 @@ fn payload_projection(form: &Value, preserved_inputs: &BTreeSet<String>) -> Resu
     Ok(projection)
 }
 
+fn asset_reference_projection(
+    form: &Value,
+    asset_field_names: &BTreeSet<String>,
+) -> Result<Vec<Expr>> {
+    let mut projection = vec![
+        col("_ugoite_id"),
+        col("_ugoite_title"),
+        col("_ugoite_created_at"),
+        col("_ugoite_updated_at"),
+        col("_ugoite_deleted"),
+    ];
+    if let Some(fields) = form.get("fields").and_then(Value::as_object) {
+        for (name, field) in fields {
+            if asset_field_names.contains(name) {
+                let column = field_sql_column(field)?;
+                projection.push(col(&column).alias(column));
+            }
+        }
+    }
+    Ok(projection)
+}
+
+fn asset_reference_rows_from_batches(
+    form: &Value,
+    batches: &[arrow_array::RecordBatch],
+    asset_field_names: &BTreeSet<String>,
+    budget: &AssetTextSearchBudget,
+) -> Result<Vec<AuthorizedAssetReferenceRow>> {
+    let fields = form
+        .get("fields")
+        .and_then(Value::as_object)
+        .context("Form definition is missing fields")?;
+    let mut rows = Vec::new();
+    for batch in batches {
+        for row in 0..batch.num_rows() {
+            let projected_fields = fields
+                .iter()
+                .filter(|(name, _)| asset_field_names.contains(*name))
+                .map(|(name, definition)| {
+                    let column = field_sql_column(definition)?;
+                    let array = batch.column_by_name(&column).with_context(|| {
+                        format!("Entry payload is missing field column {column}")
+                    })?;
+                    let field_type: ugoite_domain::form::FieldType = serde_json::from_value(
+                        definition
+                            .get("type")
+                            .cloned()
+                            .context("Form field is missing its type")?,
+                    )?;
+                    let list_item = definition
+                        .get("items")
+                        .filter(|items| !items.is_null())
+                        .cloned()
+                        .map(serde_json::from_value)
+                        .transpose()?;
+                    let value = crate::field_value_at(
+                        array.as_ref(),
+                        row,
+                        &field_type,
+                        list_item.as_ref(),
+                    )?
+                    .unwrap_or(ugoite_domain::entry::FieldValue::Null);
+                    Ok((name.clone(), serde_json::to_value(value)?))
+                })
+                .collect::<Result<Map<_, _>>>()?;
+            let entry_id_value =
+                required_string_value_column(batch, row, "_ugoite_id", "external ID")?;
+            let title_value = required_string_value_column(batch, row, "_ugoite_title", "title")?;
+            let projected_value = Value::Object(projected_fields);
+            validate_asset_reference_value(&projected_value, MAX_ASSET_REFERENCES_PER_ENTRY)?;
+            budget.reserve(
+                entry_id_value.len()
+                    + title_value.len()
+                    + estimated_json_bytes(&projected_value)
+                    + std::mem::size_of::<AuthorizedAssetReferenceRow>(),
+            )?;
+            rows.push(AuthorizedAssetReferenceRow {
+                entry_id: entry_id_value.to_owned(),
+                title: title_value.to_owned(),
+                created_at: required_timestamp_seconds_column(
+                    batch,
+                    row,
+                    "_ugoite_created_at",
+                    "created_at",
+                )?,
+                updated_at: required_timestamp_seconds_column(
+                    batch,
+                    row,
+                    "_ugoite_updated_at",
+                    "updated_at",
+                )?,
+                deleted: required_bool_column(batch, row, "_ugoite_deleted", "deleted")?,
+                fields: projected_value,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+fn validate_asset_reference_value(value: &Value, max_references: usize) -> Result<()> {
+    fn visit(value: &Value, count: &mut usize, max_references: usize) -> Result<()> {
+        match value {
+            Value::Array(values) => {
+                for value in values {
+                    visit(value, count, max_references)?;
+                }
+            }
+            Value::Object(object) => {
+                if object.get("asset_id").and_then(Value::as_str).is_some() {
+                    *count = count.saturating_add(1);
+                    if *count > max_references {
+                        return Err(anyhow!(
+                            "authorized Entry contains more than {max_references} AssetReferences"
+                        ));
+                    }
+                } else {
+                    for value in object.values() {
+                        visit(value, count, max_references)?;
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    let mut count = 0;
+    visit(value, &mut count, max_references)
+}
+
+fn estimated_json_bytes(value: &Value) -> usize {
+    match value {
+        Value::Null => 4,
+        Value::Bool(value) => {
+            if *value {
+                4
+            } else {
+                5
+            }
+        }
+        Value::Number(value) => value.to_string().len(),
+        Value::String(value) => value.len().saturating_mul(6).saturating_add(2),
+        Value::Array(values) => values
+            .iter()
+            .map(estimated_json_bytes)
+            .fold(2usize, |total, size| {
+                total.saturating_add(size).saturating_add(1)
+            }),
+        Value::Object(values) => values.iter().fold(2usize, |total, (key, value)| {
+            total
+                .saturating_add(key.len().saturating_mul(6).saturating_add(3))
+                .saturating_add(estimated_json_bytes(value))
+        }),
+    }
+}
+
 fn entry_rows_from_batches(
     form_name: &str,
     form: &Value,
@@ -809,6 +1170,15 @@ fn required_string_column(
     name: &str,
     label: &str,
 ) -> Result<String> {
+    Ok(required_string_value_column(batch, row, name, label)?.to_owned())
+}
+
+fn required_string_value_column<'a>(
+    batch: &'a arrow_array::RecordBatch,
+    row: usize,
+    name: &str,
+    label: &str,
+) -> Result<&'a str> {
     let column = payload_column(batch, name)?;
     let values = column
         .as_any()
@@ -817,7 +1187,7 @@ fn required_string_column(
     if values.is_null(row) {
         return Err(anyhow!("Entry payload is missing {label}"));
     }
-    Ok(values.value(row).to_owned())
+    Ok(values.value(row))
 }
 
 fn optional_string_column(
@@ -1802,7 +2172,35 @@ async fn datafusion_sql_context_with_limits(
     include_payload: bool,
 ) -> Result<crate::query_context::AuthorizedQueryContext> {
     let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
-    let forms = workspace.list_forms().await?;
+    let forms = workspace
+        .list_forms_bounded(MAX_QUERY_FORMS, MAX_QUERY_FORM_DEFINITION_BYTES)
+        .await?;
+    datafusion_sql_context_with_form_snapshot(
+        workspace,
+        entry_scope,
+        allowed_relations,
+        relation_scopes,
+        checkpoint,
+        allowed_functions,
+        max_rows,
+        include_payload,
+        forms,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn datafusion_sql_context_with_form_snapshot(
+    workspace: crate::IcebergWorkspace,
+    entry_scope: EntryScope,
+    allowed_relations: Option<&HashSet<String>>,
+    relation_scopes: Option<&BTreeMap<String, EntryScope>>,
+    checkpoint: Option<SpaceCheckpoint>,
+    allowed_functions: BTreeSet<String>,
+    max_rows: usize,
+    include_payload: bool,
+    forms: Vec<FormDefinition>,
+) -> Result<crate::query_context::AuthorizedQueryContext> {
     let mut policy_forms = BTreeMap::new();
     for form in forms {
         let relation = sql_relation_name(form.id);
@@ -1879,6 +2277,50 @@ fn record_batches_to_values(batches: &[arrow_array::RecordBatch]) -> Result<Vec<
     serde_json::from_slice(&writer.into_inner()).context("decode DataFusion result rows")
 }
 
+/// Converts only bounded Arrow batches to JSON. The per-batch preflight keeps
+/// ArrayWriter from receiving an arbitrarily large user-controlled string, and
+/// the encoded bytes are checked before they are appended to the accumulated
+/// result. General SQL surfaces retain the existing conversion because their
+/// own row/session limits are the governing contract; AssetText search calls
+/// this helper with its dedicated byte ceiling.
+fn record_batches_to_values_bounded(
+    batches: &[arrow_array::RecordBatch],
+    max_bytes: usize,
+) -> Result<Vec<Value>> {
+    let mut values = Vec::new();
+    let mut encoded_bytes = 0usize;
+    for batch in batches {
+        // JSON escaping can expand a UTF-8 string. Keep enough headroom that
+        // the bounded writer output cannot exceed the configured ceiling just
+        // because of escaping overhead.
+        let encoded_preflight = batch
+            .get_array_memory_size()
+            .checked_mul(8)
+            .ok_or_else(|| anyhow!("DataFusion result exceeds its byte limit"))?;
+        if encoded_preflight > max_bytes {
+            return Err(anyhow!("DataFusion result exceeds its byte limit"));
+        }
+        let mut writer = ArrayWriter::new(Vec::new());
+        writer
+            .write_batches(&[batch])
+            .context("encode bounded DataFusion result rows as JSON")?;
+        writer
+            .finish()
+            .context("finish bounded DataFusion JSON encoding")?;
+        let encoded = writer.into_inner();
+        encoded_bytes = encoded_bytes
+            .checked_add(encoded.len())
+            .ok_or_else(|| anyhow!("DataFusion result exceeds its byte limit"))?;
+        if encoded_bytes > max_bytes {
+            return Err(anyhow!("DataFusion result exceeds its byte limit"));
+        }
+        let mut batch_values: Vec<Value> =
+            serde_json::from_slice(&encoded).context("decode bounded DataFusion result rows")?;
+        values.append(&mut batch_values);
+    }
+    Ok(values)
+}
+
 fn map_sql_error(error: anyhow::Error) -> anyhow::Error {
     use crate::query_context::AuthorizedQueryError;
 
@@ -1913,7 +2355,11 @@ fn extract_sql_query(value: &Value) -> Option<String> {
 }
 
 pub async fn reindex_all(op: &Operator, ws_path: &str) -> Result<()> {
-    crate::derived_relation::rebuild_asset_text(op, ws_path).await?;
+    if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+        crate::derived_relation::rebuild_asset_text_shared(op, ws_path).await?;
+    } else {
+        crate::derived_relation::rebuild_asset_text(op, ws_path).await?;
+    }
     Ok(())
 }
 
@@ -2057,7 +2503,11 @@ pub async fn get_space_stats(op: &Operator, ws_path: &str) -> Result<Value> {
 
 pub async fn update_entry_index(op: &Operator, ws_path: &str, entry_id: &str) -> Result<()> {
     let _ = entry_id;
-    crate::derived_relation::rebuild_asset_text(op, ws_path).await?;
+    if matches!(op.info().scheme(), "s3" | "gcs" | "oss" | "azdls") {
+        crate::derived_relation::rebuild_asset_text_shared(op, ws_path).await?;
+    } else {
+        crate::derived_relation::rebuild_asset_text(op, ws_path).await?;
+    }
     Ok(())
 }
 
@@ -2513,14 +2963,23 @@ pub fn aggregate_stats(entries: &Map<String, Value>) -> Value {
     )
 }
 
-async fn load_forms(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
-    let mut forms = HashMap::new();
-    for form_name in crate::form::list_form_names(op, ws_path).await? {
-        if let Ok(value) = crate::form::get_form(op, ws_path, &form_name).await {
-            forms.insert(form_name, value);
-        }
-    }
-    Ok(forms)
+async fn load_form_definitions(op: &Operator, ws_path: &str) -> Result<Vec<FormDefinition>> {
+    let workspace = crate::iceberg_store::native_workspace(op, ws_path).await?;
+    workspace
+        .list_forms_bounded(MAX_QUERY_FORMS, MAX_QUERY_FORM_DEFINITION_BYTES)
+        .await
+}
+
+pub(crate) async fn load_forms(op: &Operator, ws_path: &str) -> Result<HashMap<String, Value>> {
+    load_form_definitions(op, ws_path)
+        .await?
+        .into_iter()
+        .map(|form| {
+            let name = form.name.clone();
+            let value = crate::form::from_domain_form(&form);
+            crate::form::enrich_form_definition(&value).map(|value| (name, value))
+        })
+        .collect::<Result<HashMap<_, _>>>()
 }
 
 async fn collect_filtered_entries_with_form_scopes(
@@ -2861,12 +3320,18 @@ async fn build_record(
 
 #[cfg(test)]
 mod tests {
-    use super::{datafusion_parameters, filter_literal, sql_session_page_relation};
+    use super::{
+        asset_reference_projection, datafusion_parameters, filter_literal,
+        sql_session_page_relation,
+    };
+    use arrow_array::{ArrayRef, RecordBatch, StringArray};
+    use arrow_schema::{DataType, Field, Schema};
     use chrono::DateTime;
     use datafusion::logical_expr::Expr;
     use datafusion::scalar::ScalarValue;
-    use serde_json::{Map, Value};
-    use std::collections::BTreeMap;
+    use serde_json::{json, Map, Value};
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
 
     #[test]
     fn sql_session_relation_parser_uses_identifier_value_without_quotes() {
@@ -2980,5 +3445,46 @@ mod tests {
             ),
             ScalarValue::TimestampNanosecond(Some(_), Some(_))
         ));
+    }
+
+    #[test]
+    fn asset_reference_projection_excludes_unrelated_payload_fields() {
+        let form = json!({
+            "fields": {
+                "attachment": {"id": 1, "type": "asset_reference"},
+                "large_body": {"id": 2, "type": "long_text"}
+            }
+        });
+        let projection =
+            asset_reference_projection(&form, &BTreeSet::from(["attachment".to_string()]))
+                .expect("asset projection");
+        let rendered = projection
+            .iter()
+            .map(|expression| format!("{expression:?}"))
+            .collect::<Vec<_>>();
+        assert_eq!(projection.len(), 6);
+        assert!(rendered
+            .iter()
+            .any(|expression| expression.contains("field_1")));
+        assert!(!rendered
+            .iter()
+            .any(|expression| expression.contains("field_2")));
+    }
+
+    #[test]
+    fn bounded_candidate_materialization_rejects_large_arrow_batches_before_json() {
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![Field::new(
+                "value",
+                DataType::Utf8,
+                false,
+            )])),
+            vec![Arc::new(StringArray::from(vec!["x".repeat(9 * 1024 * 1024)])) as ArrayRef],
+        )
+        .expect("large candidate batch");
+        let error =
+            super::record_batches_to_values_bounded(&[batch], super::ASSET_TEXT_SEARCH_MAX_BYTES)
+                .expect_err("large candidate JSON conversion must be rejected");
+        assert!(error.to_string().contains("byte limit"));
     }
 }

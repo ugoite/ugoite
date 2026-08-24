@@ -21,7 +21,7 @@ spaces/{space_id}/
   meta.json
   settings.json
   _ugoite/catalog/        # Head plus immutable publication records
-  _ugoite/derived/        # lazy, replaceable DerivedRelation Heads/materializations
+  _ugoite/derived/        # lazy, replaceable relation Heads and builds
   forms/                  # Iceberg-owned table locations
   assets/
   sql_sessions/

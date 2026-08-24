@@ -74,7 +74,7 @@ requirements:
   - api/rest.md#authentication
   - api/mcp.md#model-context-protocol-v1
   priority: high
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
@@ -106,7 +106,7 @@ requirements:
   - api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: crates/ugoite-identity/src/node_identity.rs
@@ -139,7 +139,7 @@ requirements:
   - security/overview.md
   - api/rest.md#authentication
   priority: high
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: crates/ugoite-identity/src/node_identity.rs
@@ -202,7 +202,7 @@ requirements:
   - stories/experimental.yaml
   - api/rest.md#endpoints
   priority: high
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: e2e/space-membership.test.ts
@@ -227,7 +227,7 @@ requirements:
   - security/overview.md
   - api/rest.md#authentication
   priority: high
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: crates/ugoite-iceberg/src/authorization.rs
@@ -257,7 +257,7 @@ requirements:
   - api/rest.md#authentication
   - api/mcp.md#model-context-protocol-v1
   priority: high
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: crates/ugoite-iceberg/src/authorization.rs
@@ -350,7 +350,7 @@ requirements:
   - api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: crates/ugoite-server/tests/owner_recovery.rs
@@ -386,7 +386,7 @@ requirements:
   - security/overview.md
   - quality/error-handling.md
   priority: high
-  status: implemented
+  status: planned
   verification: traced
   tests:
   - file: crates/ugoite-identity/src/node_identity.rs

@@ -4,6 +4,10 @@ sidebar:
   order: 2
 ---
 
+> Release note: this page is an implementation/design reference. Passkey,
+> TOTP, OIDC, service-account, and audit-management workflows are not supported
+> v0.1 product promises.
+
 Ugoite separates identity that belongs to one server from identity that must
 move with a Space.
 

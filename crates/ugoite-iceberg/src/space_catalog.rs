@@ -16,8 +16,10 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use ugoite_domain::checkpoint::{CheckpointTable, SpaceCheckpoint};
-use ugoite_domain::id::{FormId, SpaceId};
-use ugoite_storage::{CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore};
+use ugoite_domain::id::{validate_asset_id, FormId, SpaceId};
+use ugoite_storage::{
+    operator_from_uri, CatalogMutationPermit, CatalogWriteMode, ExactCatalogHead, SpaceCatalogStore,
+};
 use uuid::Uuid;
 
 use crate::health::{
@@ -30,6 +32,7 @@ use crate::FORM_ID_PROPERTY;
 const SPACE_FORMAT_VERSION: u32 = 1;
 const MAX_HEAD_BYTES: usize = 1 << 20;
 const SMALL_FILE_THRESHOLD_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_DELETED_ASSET_BLOBS_PER_PASS: usize = 1_024;
 
 /// Holds the official OpenDAL Iceberg storage instance for test-only memory
 /// spaces. It adds no I/O behavior; it merely keeps Iceberg metadata and
@@ -42,8 +45,7 @@ struct FixedOpenDalStorageFactory {
 
 fn default_memory_storage() -> Arc<OpenDalStorage> {
     let operator = opendal::Operator::new(opendal::services::Memory::default())
-        .expect("memory operator configuration")
-        .finish();
+        .expect("memory operator configuration");
     Arc::new(OpenDalStorage::Memory(operator))
 }
 
@@ -313,8 +315,17 @@ impl SpaceCatalog {
             ));
         }
         let file_io = if storage.scheme == "memory" {
+            let memory_uri = storage.memory_uri.as_deref().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::DataInvalid,
+                    "memory Catalog has no registered operator",
+                )
+            })?;
             FileIOBuilder::new(Arc::new(FixedOpenDalStorageFactory {
-                storage: Arc::new(OpenDalStorage::Memory(store.iceberg_operator())),
+                storage: Arc::new(OpenDalStorage::Memory(
+                    operator_from_uri(memory_uri)
+                        .map_err(|error| Error::new(ErrorKind::DataInvalid, error.to_string()))?,
+                )),
             }))
             .build()
         } else {
@@ -334,6 +345,20 @@ impl SpaceCatalog {
             publication_gate: crate::current_test_publication_gate(),
             bound_attempt: None,
         })
+    }
+
+    pub(crate) fn ensure_authoritative_mutation_contract(&self) -> anyhow::Result<()> {
+        self.store.mutation_permit().map(|_| ()).map_err(|_| {
+            ugoite_core::error::AppError::dependency_unavailable(
+                ugoite_core::error::ErrorCode::StorageMutationUnavailable,
+                "non-local Space mutations are unavailable in v0.1 until the storage backend provides an atomic multi-object fencing contract",
+            )
+            .into()
+        })
+    }
+
+    fn mutation_permit(&self) -> anyhow::Result<CatalogMutationPermit> {
+        self.store.mutation_permit()
     }
 
     pub(crate) fn with_publication_context(mut self, publication: PublicationContext) -> Self {
@@ -776,18 +801,18 @@ impl SpaceCatalog {
                             let mut max_file_size = None;
                             let mut small_file_count = 0_u64;
                             for manifest_file in manifests.entries() {
-                                let manifest = match manifest_file
-                                    .load_manifest(&self.file_io)
-                                    .await
-                                {
-                                    Ok(manifest) => manifest,
-                                    Err(_) => {
-                                        report.status = HealthStatus::Degraded;
-                                        report.issue =
-                                            Some(health_issue("manifest_unavailable", "manifest"));
-                                        return report;
-                                    }
-                                };
+                                let manifest =
+                                    match table.manifest_reader().read(manifest_file).await {
+                                        Ok(manifest) => manifest,
+                                        Err(_) => {
+                                            report.status = HealthStatus::Degraded;
+                                            report.issue = Some(health_issue(
+                                                "manifest_unavailable",
+                                                "manifest",
+                                            ));
+                                            return report;
+                                        }
+                                    };
                                 for entry in
                                     manifest.entries().iter().filter(|entry| entry.is_alive())
                                 {
@@ -972,7 +997,7 @@ impl SpaceCatalog {
                     }
                 };
                 for manifest_file in manifests.entries() {
-                    let manifest = match manifest_file.load_manifest(&self.file_io).await {
+                    let manifest = match table.manifest_reader().read(manifest_file).await {
                         Ok(manifest) => manifest,
                         Err(_) => {
                             return checkpoint_issue(
@@ -1149,7 +1174,8 @@ impl SpaceCatalog {
         checkpoint: &SpaceCheckpoint,
     ) -> anyhow::Result<()> {
         let bytes = serde_json::to_vec(checkpoint)?;
-        self.store.create_checkpoint(name, bytes).await?;
+        let permit = self.mutation_permit()?;
+        self.store.create_checkpoint(&permit, name, bytes).await?;
         Ok(())
     }
 
@@ -1261,6 +1287,7 @@ impl SpaceCatalog {
         );
         let pending = CommandReceiptRecord::pending(&attempt, intended);
         let bytes = serde_json::to_vec(&pending).map_err(json_error)?;
+        let permit = self.mutation_permit().map_err(storage_error)?;
         let existing = self
             .store
             .read_command_receipt(&attempt.publication.command_id)
@@ -1269,7 +1296,7 @@ impl SpaceCatalog {
         let Some((existing_bytes, etag)) = existing else {
             match self
                 .store
-                .create_command_receipt(&attempt.publication.command_id, bytes)
+                .create_command_receipt(&permit, &attempt.publication.command_id, bytes)
                 .await
             {
                 Ok(()) => return Ok(()),
@@ -1325,6 +1352,7 @@ impl SpaceCatalog {
             CommandReceiptState::Stale => match self
                 .store
                 .replace_command_receipt(
+                    &permit,
                     &attempt.publication.command_id,
                     etag.as_deref(),
                     serde_json::to_vec(&pending).map_err(json_error)?,
@@ -1557,7 +1585,12 @@ impl SpaceCatalog {
                 "Catalog Head exceeds its 1 MiB safety limit",
             ));
         }
-        match self.store.replace_head(exact.etag.as_deref(), bytes).await {
+        let permit = self.mutation_permit().map_err(storage_error)?;
+        match self
+            .store
+            .replace_head(&permit, exact.etag.as_deref(), bytes)
+            .await
+        {
             Ok(()) => Ok(()),
             Err(error) if is_condition_conflict(&error) => Err(Error::new(
                 ErrorKind::DataInvalid,
@@ -1654,9 +1687,10 @@ impl SpaceCatalog {
         record.catalog_generation = catalog_generation;
         record.snapshot_id = snapshot_id;
         let bytes = serde_json::to_vec(&record).map_err(json_error)?;
+        let permit = self.mutation_permit().map_err(storage_error)?;
         match self
             .store
-            .replace_command_receipt(&record.command_id, etag.as_deref(), bytes)
+            .replace_command_receipt(&permit, &record.command_id, etag.as_deref(), bytes)
             .await
         {
             Ok(()) => Ok(record),
@@ -1824,9 +1858,10 @@ impl SpaceCatalog {
         record.catalog_generation = None;
         record.snapshot_id = None;
         let bytes = serde_json::to_vec(&record).map_err(json_error)?;
+        let permit = self.mutation_permit().map_err(storage_error)?;
         match self
             .store
-            .replace_command_receipt(&record.command_id, etag.as_deref(), bytes)
+            .replace_command_receipt(&permit, &record.command_id, etag.as_deref(), bytes)
             .await
         {
             Ok(()) => Ok(record),
@@ -2061,9 +2096,11 @@ impl SpaceCatalog {
         asset_id: &str,
         marker: &AssetLifecycleMarker,
     ) -> Result<()> {
+        let permit = self.mutation_permit().map_err(storage_error)?;
         match self
             .store
             .create_asset_lifecycle_marker(
+                &permit,
                 asset_id,
                 serde_json::to_vec(marker).map_err(json_error)?,
             )
@@ -2087,9 +2124,10 @@ impl SpaceCatalog {
     ) -> Result<AssetLifecycleMarker> {
         marker.state = state;
         let bytes = serde_json::to_vec(&marker).map_err(json_error)?;
+        let permit = self.mutation_permit().map_err(storage_error)?;
         match self
             .store
-            .replace_asset_lifecycle_marker(asset_id, etag.as_deref(), bytes)
+            .replace_asset_lifecycle_marker(&permit, asset_id, etag.as_deref(), bytes)
             .await
         {
             Ok(()) => Ok(marker),
@@ -2240,9 +2278,10 @@ impl SpaceCatalog {
         }
         marker.state = AssetLifecycleState::Stale;
         let bytes = serde_json::to_vec(&marker).map_err(json_error)?;
+        let permit = self.mutation_permit().map_err(storage_error)?;
         match self
             .store
-            .replace_asset_lifecycle_marker(asset_id, etag.as_deref(), bytes)
+            .replace_asset_lifecycle_marker(&permit, asset_id, etag.as_deref(), bytes)
             .await
         {
             Ok(()) => Ok(marker),
@@ -2370,9 +2409,10 @@ impl SpaceCatalog {
             AssetLifecycleState::Pending => {
                 marker.state = AssetLifecycleState::Publishing;
                 let bytes = serde_json::to_vec(&marker).map_err(json_error)?;
+                let permit = self.mutation_permit().map_err(storage_error)?;
                 match self
                     .store
-                    .replace_asset_lifecycle_marker(asset_id, etag.as_deref(), bytes)
+                    .replace_asset_lifecycle_marker(&permit, asset_id, etag.as_deref(), bytes)
                     .await
                 {
                     Ok(()) => Ok(()),
@@ -2556,6 +2596,39 @@ impl SpaceCatalog {
         }
     }
 
+    /// Reclaims Asset bytes whose authoritative deletion publication already
+    /// committed but whose physical delete was interrupted.  The lifecycle
+    /// marker is retained as the durable tombstone, so a later pass can retry
+    /// indefinitely without consulting or mutating Catalog history.
+    pub(crate) async fn garbage_collect_deleted_asset_blobs(&self) -> Result<usize> {
+        let markers = self
+            .store
+            .list_asset_lifecycle_markers()
+            .await
+            .map_err(storage_error)?;
+        let mut deleted = 0usize;
+        for (asset_id, bytes) in markers {
+            if deleted >= MAX_DELETED_ASSET_BLOBS_PER_PASS {
+                break;
+            }
+            if validate_asset_id(&asset_id).is_err() {
+                continue;
+            }
+            let marker: AssetLifecycleMarker =
+                serde_json::from_slice(&bytes).map_err(json_error)?;
+            if marker.state != AssetLifecycleState::Committed {
+                continue;
+            }
+            let permit = self.mutation_permit().map_err(storage_error)?;
+            self.store
+                .delete_asset_blob(&permit, &asset_id)
+                .await
+                .map_err(storage_error)?;
+            deleted = deleted.saturating_add(1);
+        }
+        Ok(deleted)
+    }
+
     async fn recover_existing_asset_publication(
         &self,
         asset_id: &str,
@@ -2724,8 +2797,9 @@ impl SpaceCatalog {
         let _marker_after_claim = match marker.1 {
             Some(etag) if marker.0.state == AssetLifecycleState::Stale => {
                 let bytes = serde_json::to_vec(&pending).map_err(json_error)?;
+                let permit = self.mutation_permit().map_err(storage_error)?;
                 self.store
-                    .replace_asset_lifecycle_marker(asset_id, Some(&etag), bytes)
+                    .replace_asset_lifecycle_marker(&permit, asset_id, Some(&etag), bytes)
                     .await
                     .map_err(|error| {
                         if is_condition_conflict(&error) {
@@ -2747,8 +2821,10 @@ impl SpaceCatalog {
             None if marker.0.state == AssetLifecycleState::Stale => {
                 // Single-process backends do not provide an ETag. The
                 // serializer still makes this replacement safe locally.
+                let permit = self.mutation_permit().map_err(storage_error)?;
                 self.store
                     .replace_asset_lifecycle_marker(
+                        &permit,
                         asset_id,
                         None,
                         serde_json::to_vec(&pending).map_err(json_error)?,
@@ -2827,7 +2903,12 @@ impl SpaceCatalog {
             .store
             .publication_path(publication.generation, &publication.command_id);
         let bytes = encode_publication(publication)?;
-        match self.store.create_publication(&path, bytes.clone()).await {
+        let permit = self.mutation_permit().map_err(storage_error)?;
+        match self
+            .store
+            .create_publication(&permit, &path, bytes.clone())
+            .await
+        {
             Ok(()) => Ok(path),
             Err(error) if is_condition_conflict(&error) => {
                 let existing = self
@@ -2885,9 +2966,11 @@ impl SpaceCatalog {
             CommandReceiptState::Pending => {
                 record.state = CommandReceiptState::Publishing;
                 let bytes = serde_json::to_vec(&record).map_err(json_error)?;
+                let permit = self.mutation_permit().map_err(storage_error)?;
                 match self
                     .store
                     .replace_command_receipt(
+                        &permit,
                         &attempt.publication.command_id,
                         etag.as_deref(),
                         bytes,
@@ -3048,12 +3131,13 @@ impl SpaceCatalog {
                 ));
             }
         }
+        let permit = self.mutation_permit().map_err(storage_error)?;
         let result = if attempt.expected_head.is_some() {
             self.store
-                .replace_head(attempt.expected_head_etag.as_deref(), bytes)
+                .replace_head(&permit, attempt.expected_head_etag.as_deref(), bytes)
                 .await
         } else {
-            self.store.create_head(bytes).await
+            self.store.create_head(&permit, bytes).await
         };
         match result {
             Ok(()) => {
@@ -3310,8 +3394,14 @@ impl SpaceCatalog {
 pub(crate) fn file_io_for_store(store: &SpaceCatalogStore) -> FileIO {
     let storage = store.iceberg_storage();
     if storage.scheme == "memory" {
+        let memory_uri = storage
+            .memory_uri
+            .as_deref()
+            .expect("memory Catalog has no registered operator");
         FileIOBuilder::new(Arc::new(FixedOpenDalStorageFactory {
-            storage: Arc::new(OpenDalStorage::Memory(store.iceberg_operator())),
+            storage: Arc::new(OpenDalStorage::Memory(
+                operator_from_uri(memory_uri).expect("memory operator"),
+            )),
         }))
         .build()
     } else {
@@ -3368,6 +3458,40 @@ pub(crate) fn error_chain_contains_not_found(error: &(dyn std::error::Error + 's
     false
 }
 
+impl SpaceCatalog {
+    /// Returns at most `max_tables` identifiers without first allocating an
+    /// unbounded identifier vector. Rebuild and authorization paths use this
+    /// as their catalog-size guard before loading table metadata.
+    pub(crate) async fn list_tables_bounded(
+        &self,
+        namespace: &NamespaceIdent,
+        max_tables: usize,
+    ) -> Result<Vec<TableIdent>> {
+        if namespace != &self.namespace {
+            return Ok(Vec::new());
+        }
+        let head = if let Some(attempt) = &self.bound_attempt {
+            attempt.expected_head.clone()
+        } else {
+            self.exact_head().await?.map(|(head, _)| head)
+        };
+        let Some(head) = head else {
+            return Ok(Vec::new());
+        };
+        let mut identifiers = Vec::new();
+        for reference in head.tables.values() {
+            if identifiers.len() >= max_tables {
+                return Err(Error::new(
+                    ErrorKind::DataInvalid,
+                    "catalog table count exceeds its configured limit",
+                ));
+            }
+            identifiers.push(reference.identifier.to_table_ident());
+        }
+        Ok(identifiers)
+    }
+}
+
 #[async_trait]
 impl Catalog for SpaceCatalog {
     async fn list_namespaces(
@@ -3421,22 +3545,7 @@ impl Catalog for SpaceCatalog {
     }
 
     async fn list_tables(&self, namespace: &NamespaceIdent) -> Result<Vec<TableIdent>> {
-        if namespace != &self.namespace {
-            return Ok(Vec::new());
-        }
-        let head = if let Some(attempt) = &self.bound_attempt {
-            attempt.expected_head.clone()
-        } else {
-            self.exact_head().await?.map(|(head, _)| head)
-        };
-        let Some(head) = head else {
-            return Ok(Vec::new());
-        };
-        Ok(head
-            .tables
-            .values()
-            .map(|reference| reference.identifier.to_table_ident())
-            .collect())
+        self.list_tables_bounded(namespace, usize::MAX).await
     }
 
     async fn create_table(
@@ -3444,6 +3553,8 @@ impl Catalog for SpaceCatalog {
         namespace: &NamespaceIdent,
         creation: TableCreation,
     ) -> Result<iceberg::table::Table> {
+        self.ensure_authoritative_mutation_contract()
+            .map_err(storage_error)?;
         self.claim_mutation()?;
         let _write_guard = if self.store.write_mode() == CatalogWriteMode::SingleProcess {
             Some(self.store.single_process_serializer().lock_owned().await)
@@ -3580,6 +3691,8 @@ impl Catalog for SpaceCatalog {
     }
 
     async fn update_table(&self, commit: TableCommit) -> Result<iceberg::table::Table> {
+        self.ensure_authoritative_mutation_contract()
+            .map_err(storage_error)?;
         self.claim_mutation()?;
         let _write_guard = if self.store.write_mode() == CatalogWriteMode::SingleProcess {
             Some(self.store.single_process_serializer().lock_owned().await)
@@ -3914,12 +4027,12 @@ mod tests {
     use opendal::services::{Fs, Memory};
     use opendal::Operator;
     use tempfile::tempdir;
+    use ugoite_storage::operator_from_uri;
 
     #[tokio::test]
     async fn creates_reopens_and_updates_a_table_through_head_publication() -> AnyResult<()> {
         let temp = tempdir()?;
-        let operator =
-            Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?.finish();
+        let operator = Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?;
         let catalog = SpaceCatalog::new(
             SpaceCatalogStore::new(operator.clone(), "spaces/demo")?.single_process(),
             SpaceId::from(Uuid::from_u128(1)),
@@ -4013,7 +4126,7 @@ mod tests {
 
     #[tokio::test]
     async fn keeps_memory_metadata_in_the_same_space_operator() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let catalog = SpaceCatalog::new(
             SpaceCatalogStore::new(operator.clone(), "spaces/memory")?.single_process(),
             SpaceId::from(Uuid::from_u128(2)),
@@ -4042,7 +4155,7 @@ mod tests {
 
     #[tokio::test]
     async fn ignores_an_interrupted_publication_before_head_cas() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let catalog = SpaceCatalog::new(
             SpaceCatalogStore::new(operator, "spaces/interrupted")?.single_process(),
             SpaceId::from(Uuid::from_u128(4)),
@@ -4092,7 +4205,7 @@ mod tests {
 
     #[tokio::test]
     async fn stale_initialization_does_not_replace_the_winner_head() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let winner = SpaceCatalog::new(
             SpaceCatalogStore::new(operator.clone(), "spaces/conflict")?.single_process(),
             SpaceId::from(Uuid::from_u128(5)),
@@ -4162,8 +4275,7 @@ mod tests {
     #[tokio::test]
     async fn opens_the_head_after_many_publications_without_replaying_history() -> AnyResult<()> {
         let temp = tempdir()?;
-        let operator =
-            Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?.finish();
+        let operator = Operator::new(Fs::default().root(temp.path().to_string_lossy().as_ref()))?;
         let store =
             SpaceCatalogStore::new(operator.clone(), "spaces/many-publications")?.single_process();
         let space_id = SpaceId::from(Uuid::from_u128(3));
@@ -4275,9 +4387,10 @@ mod tests {
     #[tokio::test]
     async fn exact_key_receipts_and_terminal_asset_markers_do_not_replay_history() -> AnyResult<()>
     {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let (store, read_counter) =
             SpaceCatalogStore::new(operator, "spaces/online-index")?.with_read_counter();
+        let permit = store.mutation_permit()?;
         let space_id = SpaceId::from(Uuid::from_u128(18_521));
 
         for generation in 0..64 {
@@ -4325,7 +4438,11 @@ mod tests {
             intended_publication: Some(store.publication_path(2, "stale-asset-command")),
         };
         store
-            .create_asset_lifecycle_marker("live-after-stale-marker", serde_json::to_vec(&stale)?)
+            .create_asset_lifecycle_marker(
+                &permit,
+                "live-after-stale-marker",
+                serde_json::to_vec(&stale)?,
+            )
             .await?;
         read_counter.store(0, Ordering::Relaxed);
         assert!(!catalog.asset_is_deleted("live-after-stale-marker").await?);
@@ -4368,7 +4485,7 @@ mod tests {
         let intended = store.publication_path(crash_head.generation + 1, &crash.command_id);
         let pending = CommandReceiptRecord::pending(&crash_attempt, intended);
         store
-            .create_command_receipt(&crash.command_id, serde_json::to_vec(&pending)?)
+            .create_command_receipt(&permit, &crash.command_id, serde_json::to_vec(&pending)?)
             .await?;
         for generation in 0..16 {
             publish_test_generation(&store, space_id, &format!("after-crash-{generation}")).await?;
@@ -4381,8 +4498,9 @@ mod tests {
 
     #[tokio::test]
     async fn pending_command_receipt_head_race_cannot_end_as_stale() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/receipt-race")?.single_process();
+        let permit = store.mutation_permit()?;
         let space_id = SpaceId::from(Uuid::from_u128(18_523));
         publish_test_generation(&store, space_id, "receipt-race-base").await?;
 
@@ -4401,7 +4519,7 @@ mod tests {
         let intended = store.publication_path(observed_head.generation + 1, &command.command_id);
         let pending = CommandReceiptRecord::pending(&attempt, intended.clone());
         store
-            .create_command_receipt(&command.command_id, serde_json::to_vec(&pending)?)
+            .create_command_receipt(&permit, &command.command_id, serde_json::to_vec(&pending)?)
             .await?;
         let (_, pending_etag) = store
             .read_command_receipt(&command.command_id)
@@ -4469,7 +4587,11 @@ mod tests {
             store.publication_path(reverse_head.generation + 1, &reverse.command_id);
         let reverse_pending = CommandReceiptRecord::pending(&reverse_attempt, reverse_intended);
         store
-            .create_command_receipt(&reverse.command_id, serde_json::to_vec(&reverse_pending)?)
+            .create_command_receipt(
+                &permit,
+                &reverse.command_id,
+                serde_json::to_vec(&reverse_pending)?,
+            )
             .await?;
         let (_, reverse_etag) = store
             .read_command_receipt(&reverse.command_id)
@@ -4510,9 +4632,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn direct_non_local_catalog_table_writes_fail_before_metadata_io() -> AnyResult<()> {
+        let operator = operator_from_uri("s3://ugoite-test-bucket/catalog-table-boundary")?;
+        let store = SpaceCatalogStore::new(operator, "spaces/catalog-table-boundary")?;
+        let space_id = SpaceId::from(Uuid::from_u128(18_526));
+        let catalog = SpaceCatalog::new(store, space_id)?;
+        let namespace = catalog.namespace().clone();
+        let error = catalog
+            .create_table(
+                &namespace,
+                TableCreation::builder()
+                    .name("form_direct_boundary".to_string())
+                    .location("s3://ugoite-test-bucket/catalog-table-boundary/form".to_string())
+                    .schema(
+                        iceberg::spec::Schema::builder()
+                            .with_fields(vec![])
+                            .build()?,
+                    )
+                    .build(),
+            )
+            .await
+            .expect_err("direct Catalog table writes must fail closed");
+        assert!(error
+            .to_string()
+            .contains("non-local Space mutations are unavailable"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn pending_asset_marker_head_race_cannot_end_as_stale() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/asset-marker-race")?.single_process();
+        let permit = store.mutation_permit()?;
         let space_id = SpaceId::from(Uuid::from_u128(18_524));
         publish_test_generation(&store, space_id, "asset-race-base").await?;
 
@@ -4541,7 +4692,7 @@ mod tests {
             ),
         };
         store
-            .create_asset_lifecycle_marker("race-asset", serde_json::to_vec(&marker)?)
+            .create_asset_lifecycle_marker(&permit, "race-asset", serde_json::to_vec(&marker)?)
             .await?;
         let (_, marker_etag) = store
             .read_asset_lifecycle_marker("race-asset")
@@ -4628,6 +4779,7 @@ mod tests {
         };
         store
             .create_asset_lifecycle_marker(
+                &permit,
                 "race-asset-reverse",
                 serde_json::to_vec(&reverse_marker)?,
             )
@@ -4663,8 +4815,9 @@ mod tests {
 
     #[tokio::test]
     async fn publishing_command_receipt_can_resume_after_restart() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/receipt-restart")?.single_process();
+        let permit = store.mutation_permit()?;
         let space_id = SpaceId::from(Uuid::from_u128(18_525));
         publish_test_generation(&store, space_id, "receipt-restart-base").await?;
 
@@ -4681,6 +4834,7 @@ mod tests {
         let intended = store.publication_path(base_head.generation + 1, &command.command_id);
         store
             .create_command_receipt(
+                &permit,
                 &command.command_id,
                 serde_json::to_vec(&CommandReceiptRecord::pending(&attempt, intended.clone()))?,
             )
@@ -4769,7 +4923,7 @@ mod tests {
     #[tokio::test]
     async fn publishing_asset_marker_can_resume_after_restart_with_partial_receipt() -> AnyResult<()>
     {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/asset-restart")?.single_process();
         let space_id = SpaceId::from(Uuid::from_u128(18_526));
         publish_test_generation(&store, space_id, "asset-restart-base").await?;
@@ -4897,8 +5051,9 @@ mod tests {
 
     #[tokio::test]
     async fn asset_lifecycle_recovery_is_subordinate_to_the_authoritative_head() -> AnyResult<()> {
-        let operator = Operator::new(Memory::default())?.finish();
+        let operator = Operator::new(Memory::default())?;
         let store = SpaceCatalogStore::new(operator, "spaces/asset-recovery")?.single_process();
+        let permit = store.mutation_permit()?;
         let space_id = SpaceId::from(Uuid::from_u128(18_520));
         let catalog = SpaceCatalog::new(store.clone(), space_id)?;
         let namespace = catalog.namespace().clone();
@@ -4929,6 +5084,7 @@ mod tests {
         );
         base.store
             .create_asset_lifecycle_marker(
+                &permit,
                 "before-publication",
                 asset_marker_for(&base, &before_publication, &base_head)?,
             )
@@ -4945,6 +5101,7 @@ mod tests {
         );
         base.store
             .create_asset_lifecycle_marker(
+                &permit,
                 "before-head-cas",
                 asset_marker_for(&base, &before_head_cas, &base_head)?,
             )
@@ -4971,6 +5128,7 @@ mod tests {
         );
         base.store
             .create_asset_lifecycle_marker(
+                &permit,
                 "committed",
                 asset_marker_for(&base, &committed, &base_head)?,
             )
@@ -4997,6 +5155,7 @@ mod tests {
             .expect("reference race base Head");
         base.store
             .create_asset_lifecycle_marker(
+                &permit,
                 "reference-wins",
                 asset_marker_for(
                     &reference_base_catalog,

@@ -49,7 +49,8 @@ authorization and reproducibility contract is specified.
 Checkpoint capture is a read-only, reproducible coordinate over one exact
 Head: it pins immutable Iceberg metadata and snapshots without claiming a
 cross-Form transaction. Authorization-aware DataFusion reads and read-only
-health evidence remain target work. One Form table commit is the mutation
-atomicity boundary; Ugoite does not claim cross-Form transactions.
+health evidence are implemented at the current service boundary. One Form
+table commit is the mutation atomicity boundary; Ugoite does not claim
+cross-Form transactions.
 
 The current browser is server-backed. The target architecture adds a browser-local runtime and optional synchronization without making the server the mandatory owner of data.

@@ -33,7 +33,11 @@ use std::{
     env,
     future::Future,
     net::IpAddr,
+    pin::Pin,
+    sync::Arc,
+    time::Duration,
 };
+use tokio::sync::Semaphore;
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestId, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
@@ -86,6 +90,8 @@ const OAUTH_RESOURCE_DOCUMENTATION_URL: &str =
 const SECURITY_HEADERS_CSP: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob: data:; frame-src 'self' blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'";
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 const MAX_SIGNED_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_STARTUP_REFRESH_REARM_RETRIES: usize = 8;
+const MAX_STARTUP_DERIVED_MAINTENANCE_CONCURRENCY: usize = 8;
 const RESPONSE_KEY_ID_HEADER: HeaderName = HeaderName::from_static("x-ugoite-key-id");
 const RESPONSE_SIGNATURE_HEADER: HeaderName = HeaderName::from_static("x-ugoite-signature");
 
@@ -267,7 +273,7 @@ mod remote_asset_upload_tests {
     }
 
     #[tokio::test]
-    async fn asset_upload_app_layer_rejects_payloads_over_twenty_mib() {
+    async fn asset_upload_app_layer_rejects_payloads_over_asset_limit() {
         let state =
             AppState::new_for_tests("memory://server-asset-upload-limit").expect("test state");
         let principal_id = Uuid::now_v7();
@@ -281,7 +287,10 @@ mod remote_asset_upload_tests {
             "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"large.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
         )
         .into_bytes();
-        body.extend(std::iter::repeat_n(b'x', 20 * 1024 * 1024));
+        body.extend(std::iter::repeat_n(
+            b'x',
+            ugoite_iceberg::asset::MAX_ASSET_BYTES + 1,
+        ));
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
         let router = Router::new()
@@ -303,6 +312,33 @@ mod remote_asset_upload_tests {
             .expect("response");
 
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn asset_upload_accepts_exact_asset_limit_with_multipart_framing() {
+        let state = AppState::new_for_tests("memory://server-asset-upload-exact-limit")
+            .expect("test state");
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("remote-space", principal_id, "Asset upload test")
+            .await
+            .expect("create test Space");
+        let boundary = "asset-upload-exact-boundary";
+        let mut body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"exact.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+        )
+        .into_bytes();
+        body.extend(std::iter::repeat_n(
+            b'x',
+            ugoite_iceberg::asset::MAX_ASSET_BYTES,
+        ));
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        assert_eq!(
+            upload_status(state, space_uid, principal_id, boundary, body).await,
+            StatusCode::CREATED
+        );
     }
 
     async fn upload_status(
@@ -482,16 +518,85 @@ impl AppState {
     }
 
     pub async fn initialize_node(&self) -> anyhow::Result<()> {
+        if let Err(error) = Authorizer::new(self.service.operator().clone())
+            .ensure_authoritative_mutation_contract()
+        {
+            if error
+                .downcast_ref::<AppError>()
+                .is_some_and(|error| error.code() == ErrorCode::StorageMutationUnavailable)
+            {
+                // Remote operators are a read-only server mode in v1. Do not
+                // bootstrap identity, recover claims, or start maintenance:
+                // those paths mutate multiple authoritative objects. Existing
+                // response-signing material remains usable by request paths.
+                return Ok(());
+            }
+            return Err(error);
+        }
         if let Some(bootstrap) = self.identity.bootstrap_if_needed().await? {
             println!(
                 "Ugoite setup URL (expires {}): {}",
                 bootstrap.expires_at, bootstrap.setup_url
             );
         }
-        for space_id in self.service.list_space_ids().await? {
-            reconcile_recovery_fences(self, &space_id).await?;
-            reconcile_recovery_audit_outbox(self, &space_id).await?;
-            reconcile_human_approval_audit_outbox(self, &space_id).await?;
+        let maintenance_permits =
+            Arc::new(Semaphore::new(MAX_STARTUP_DERIVED_MAINTENANCE_CONCURRENCY));
+        // Claim-backed Space creation is the explicit recovery boundary. Run
+        // it before strict enumeration so a crash-left pending bootstrap does
+        // not prevent the server from reaching its listener on restart.
+        self.service.recover_pending_space_claims().await?;
+        let space_ids = self.service.list_space_ids().await?;
+        // Resolve every durable recovery fence and audit obligation before
+        // launching maintenance. Maintenance can mutate derived/asset
+        // storage, so it must not race an unresolved recovery decision.
+        for space_id in &space_ids {
+            reconcile_recovery_fences(self, space_id).await?;
+            reconcile_recovery_audit_outbox(self, space_id).await?;
+            reconcile_human_approval_audit_outbox(self, space_id).await?;
+        }
+        for space_id in space_ids {
+            // Rehydrate relation-local maintenance on every server start. A
+            // previous process may have left durable garbage markers after the
+            // grace timer was lost; bound the number of concurrent full
+            // listings/rebuilds so a large node cannot stampede its backend.
+            let maintenance_service = self.service.clone();
+            let maintenance_space_id = space_id.clone();
+            let maintenance_permits = maintenance_permits.clone();
+            tokio::spawn(async move {
+                let Ok(_permit) = maintenance_permits.acquire_owned().await else {
+                    return;
+                };
+                let _ = maintenance_service
+                    .garbage_collect_deleted_asset_blobs(&maintenance_space_id)
+                    .await;
+                let _ = maintenance_service
+                    .rearm_asset_text_gc(&maintenance_space_id)
+                    .await;
+                for attempt in 0..=MAX_STARTUP_REFRESH_REARM_RETRIES {
+                    match maintenance_service
+                        .rearm_asset_text_refresh(&maintenance_space_id)
+                        .await
+                    {
+                        Ok(()) => return,
+                        Err(error) => {
+                            eprintln!(
+                                "AssetText startup refresh rearm failed for Space {} (attempt {}): {error:#}{}",
+                                maintenance_space_id,
+                                attempt + 1,
+                                if attempt < MAX_STARTUP_REFRESH_REARM_RETRIES {
+                                    "; retrying"
+                                } else {
+                                    "; durable stale state remains for explicit repair"
+                                },
+                            );
+                            if attempt < MAX_STARTUP_REFRESH_REARM_RETRIES {
+                                let delay = Duration::from_secs(1u64 << (attempt + 1).min(6));
+                                tokio::time::sleep(delay).await;
+                            }
+                        }
+                    }
+                }
+            });
         }
         Ok(())
     }
@@ -790,7 +895,10 @@ async fn mark_signable_api_response(request: Request, next: Next) -> Response {
 
 fn app_layers(router: Router<AppState>, state: AppState) -> Router {
     let mut router = router
-        .layer(DefaultBodyLimit::max(20 * 1024 * 1024))
+        .layer(DefaultBodyLimit::max(
+            ugoite_iceberg::asset::MAX_ASSET_BYTES
+                + ugoite_iceberg::asset::MAX_ASSET_MULTIPART_OVERHEAD_BYTES,
+        ))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuidV7))
         .layer(TraceLayer::new_for_http())
@@ -1264,6 +1372,9 @@ async fn auth_setup_start(
     State(state): State<AppState>,
     Json(payload): Json<SetupStartRequest>,
 ) -> ApiResult<Json<Value>> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     let result = state
         .identity
         .start_setup_registration(&payload.setup_secret, &payload.display_name)
@@ -1285,6 +1396,9 @@ async fn auth_setup_finish(
     State(state): State<AppState>,
     Json(payload): Json<SetupFinishRequest>,
 ) -> ApiResult<Response> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     // Validate every existing Space before the identity service consumes the
     // one-time setup secret and persists the new account. Current-release
     // setup does not upgrade old Space layouts, so an invalid Space must leave
@@ -1295,10 +1409,16 @@ async fn auth_setup_finish(
         .await
         .map_err(ApiError::from_core)?;
     let authorizer = Authorizer::new(state.service.operator().clone());
+    // Setup spans Node identity and every existing Space. Shared object
+    // storage cannot commit those objects as one transaction, so reject the
+    // whole bootstrap before consuming the one-time setup secret.
     for space_id in &existing_spaces {
         let space_uid = state
             .service
             .space_uid(space_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        space::validate_complete_bootstrap(state.service.operator(), space_id)
             .await
             .map_err(ApiError::from_core)?;
         authorizer
@@ -1315,7 +1435,7 @@ async fn auth_setup_finish(
         )
         .await
         .map_err(recovery_aware_auth_error)?;
-    let mut claimed_space_uids = Vec::new();
+    let mut claims = Vec::new();
     if existing_spaces.is_empty() {
         let principal_id = Uuid::now_v7();
         let space_uid = state
@@ -1323,41 +1443,42 @@ async fn auth_setup_finish(
             .create_space_for_principal("default", principal_id, &result.account.display_name)
             .await
             .map_err(ApiError::from_core)?;
-        state
-            .identity
-            .add_binding(ugoite_domain::identity::PrincipalBinding {
-                space_uid,
-                principal_id,
-                node_account_id: result.account.account_id,
-                binding_method: BindingMethod::Setup,
-            })
-            .await
-            .map_err(auth_error)?;
-        claimed_space_uids.push(space_uid);
+        claims.push((space_uid, principal_id));
     } else {
-        for space_id in existing_spaces {
+        for space_id in &existing_spaces {
             let space_uid = state
                 .service
-                .space_uid(&space_id)
+                .space_uid(space_id)
                 .await
                 .map_err(ApiError::from_core)?;
             let principal_id = authorizer
-                .ensure_owner(&space_id, space_uid, &result.account.display_name)
+                .ensure_owner(space_id, space_uid, &result.account.display_name)
                 .await
                 .map_err(ApiError::from_core)?;
-            state
-                .identity
-                .add_binding(ugoite_domain::identity::PrincipalBinding {
-                    space_uid,
-                    principal_id,
-                    node_account_id: result.account.account_id,
-                    binding_method: BindingMethod::Setup,
-                })
-                .await
-                .map_err(auth_error)?;
-            claimed_space_uids.push(space_uid);
+            claims.push((space_uid, principal_id));
         }
     }
+    state
+        .identity
+        .add_bindings(
+            claims
+                .iter()
+                .map(
+                    |(space_uid, principal_id)| ugoite_domain::identity::PrincipalBinding {
+                        space_uid: *space_uid,
+                        principal_id: *principal_id,
+                        node_account_id: result.account.account_id,
+                        binding_method: BindingMethod::Setup,
+                    },
+                )
+                .collect(),
+        )
+        .await
+        .map_err(auth_error)?;
+    let claimed_space_uids = claims
+        .iter()
+        .map(|(space_uid, _)| *space_uid)
+        .collect::<Vec<_>>();
     let space_uid = claimed_space_uids.first().copied();
     state
         .identity
@@ -2767,6 +2888,9 @@ async fn reconcile_all_recovery_fences(state: &AppState) -> anyhow::Result<()> {
 }
 
 async fn reconcile_recovery_fences_api(state: &AppState, space_id: &str) -> ApiResult<()> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     if reconcile_recovery_fences(state, space_id).await.is_ok() {
         return Ok(());
     }
@@ -2786,6 +2910,9 @@ async fn reconcile_recovery_fences_api(state: &AppState, space_id: &str) -> ApiR
 }
 
 async fn reconcile_all_recovery_fences_api(state: &AppState) -> ApiResult<()> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     if reconcile_all_recovery_fences(state).await.is_ok() {
         return Ok(());
     }
@@ -4284,96 +4411,123 @@ async fn bind_invited_account(
         ApiError::new(StatusCode::CONFLICT, "invitation acceptance is incomplete")
     })?;
     let authorizer = Authorizer::new(state.service.operator().clone());
-    let authorization = authorizer
-        .state(&space_id)
+    let (authorization, lease) = authorizer
+        .acquire_state_lease(&space_id)
         .await
         .map_err(recovery_aware_auth_error)?;
-    if has_active_recovery_fence(&authorization) {
-        return Err(recovery_fence_unavailable());
-    }
-    let active_space_member =
-        authorization
-            .principals
-            .get(&principal_id)
-            .is_some_and(|principal| {
-                matches!(principal.kind, PrincipalKind::Human)
-                    && matches!(principal.state, PrincipalState::Active)
-                    && authorization.memberships.contains_key(&principal_id)
-            });
-    let principal_has_conflicting_space_state = authorization
-        .principals
-        .get(&principal_id)
-        .is_some_and(|principal| {
-            !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
-        });
-    let existing_binding = state
-        .identity
-        .binding_for_account(space_uid, account.account_id)
-        .await
-        .map_err(auth_error)?;
-    if existing_binding.is_some_and(|existing| existing != principal_id) {
-        return Err(ApiError::new(
-            StatusCode::CONFLICT,
-            json!({
-                "code": "ACCOUNT_ALREADY_BOUND",
-                "message": "account is already bound to this Space",
-            }),
-        ));
-    }
-    if principal_has_conflicting_space_state
-        && (existing_binding.is_none() || authorization.principals.contains_key(&principal_id))
-    {
-        return Err(ApiError::new(
-            StatusCode::CONFLICT,
-            json!({
-                "code": "SPACE_MEMBERSHIP_CONFLICT",
-                "message": "Space authorization state conflicts with the invitation principal",
-            }),
-        ));
-    }
+    let fence = lease.write_fence();
+    let result = match lease
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                async {
+                    if has_active_recovery_fence(&authorization) {
+                        return Err(recovery_fence_unavailable());
+                    }
+            let active_space_member = authorization
+                .principals
+                .get(&principal_id)
+                .is_some_and(|principal| {
+                    matches!(principal.kind, PrincipalKind::Human)
+                        && matches!(principal.state, PrincipalState::Active)
+                        && authorization.memberships.contains_key(&principal_id)
+                });
+            let principal_has_conflicting_space_state = authorization
+                .principals
+                .get(&principal_id)
+                .is_some_and(|principal| {
+                    !active_space_member || !matches!(principal.kind, PrincipalKind::Human)
+                });
+            let existing_binding = state
+                .identity
+                .binding_for_account(space_uid, account.account_id)
+                .await
+                .map_err(auth_error)?;
+            if existing_binding.is_some_and(|existing| existing != principal_id) {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({
+                        "code": "ACCOUNT_ALREADY_BOUND",
+                        "message": "account is already bound to this Space",
+                    }),
+                ));
+            }
+            if principal_has_conflicting_space_state
+                && (existing_binding.is_none()
+                    || authorization.principals.contains_key(&principal_id))
+            {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    json!({
+                        "code": "SPACE_MEMBERSHIP_CONFLICT",
+                        "message": "Space authorization state conflicts with the invitation principal",
+                    }),
+                ));
+            }
 
-    if existing_binding.is_none() {
-        // Commit the generation check, Node binding, and invitation completion
-        // in one Node CAS before creating an active Space membership. If
-        // recovery wins the race, no active membership is left behind.
-        state
-            .identity
-            .finalize_invitation_binding(
-                invitation.invitation_id,
-                account.account_id,
-                principal_id,
-                binding_method,
-            )
-            .await
-            .map_err(recovery_aware_auth_error)?;
-    }
-    if active_space_member {
-        return Ok(());
-    }
-
-    if !active_space_member {
-        let inviter = state
-            .identity
-            .principal_for_account(space_uid, invitation.created_by)
-            .await
-            .map_err(auth_error)?;
-        authorizer
-            .add_human_member(
-                &space_id,
-                inviter,
-                SpacePrincipal {
-                    principal_id,
-                    kind: PrincipalKind::Human,
-                    display_name: account.display_name.clone(),
-                    state: PrincipalState::Active,
-                    created_at: chrono::Utc::now().to_rfc3339(),
+            // Commit the Node half first. If the process exits before the
+            // Space CAS below, retry sees the durable Node binding and can
+            // finish the Space membership. A terminal Node rejection cannot
+            // therefore strand an active Space member with no Node binding.
+            if existing_binding.is_none() {
+                ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                    .await
+                    .map_err(recovery_aware_auth_error)?;
+                state
+                    .identity
+                    .finalize_invitation_binding(
+                        invitation.invitation_id,
+                        account.account_id,
+                        principal_id,
+                        binding_method,
+                    )
+                    .await
+                    .map_err(recovery_aware_auth_error)?;
+            }
+            if !active_space_member {
+                let inviter = state
+                    .identity
+                    .principal_for_account(space_uid, invitation.created_by)
+                    .await
+                    .map_err(auth_error)?;
+                authorizer
+                    .add_human_member_with_lease(
+                        &space_id,
+                        inviter,
+                        SpacePrincipal {
+                            principal_id,
+                            kind: PrincipalKind::Human,
+                            state: PrincipalState::Active,
+                            display_name: account.display_name.clone(),
+                            created_at: chrono::Utc::now().to_rfc3339(),
+                        },
+                        parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
+                        &lease,
+                    )
+                    .await
+                    .map_err(recovery_aware_auth_error)?;
+            }
+            Ok(())
                 },
-                parse_space_role(invitation.role.as_deref().unwrap_or("viewer"))?,
             )
-            .await
-            .map_err(recovery_aware_auth_error)?;
+        })
+        .await
+    {
+        Ok(result) => result,
+        Err(()) => Err(recovery_fence_unavailable()),
+    };
+    let release = lease.release().await;
+    match (result, release) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(error)) => Err(ApiError::from_core(error)),
+        (Err(error), Err(release_error)) => {
+            eprintln!(
+                "release Space authorization mutation lease after invitation failure: {release_error:#}"
+            );
+            Err(error)
+        }
     }
-    Ok(())
 }
 
 fn parse_space_role(role: &str) -> ApiResult<SpaceRole> {
@@ -4571,40 +4725,58 @@ async fn oauth_authorize_approve(
     } else {
         validate_access_credential_actions(&actions)?;
     }
-    let principal_id = principal_for_space(&state, &payload.space_id, &identity).await?;
-    let effective = Authorizer::new(state.service.operator().clone())
-        .effective_actions(&payload.space_id, principal_id, None)
-        .await
-        .map_err(ApiError::from_core)?;
-    if actions
-        .iter()
-        .any(|action| parse_action(action).is_ok_and(|action| !effective.contains(&action)))
-    {
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "requested scope exceeds the principal's permission",
-        ));
-    }
     let space_uid = state
         .service
         .space_uid(&payload.space_id)
         .await
         .map_err(ApiError::from_core)?;
-    let code = state
-        .identity
-        .issue_authorization_code(
-            &payload.client_id,
-            &payload.redirect_uri,
-            &payload.code_challenge,
-            public_key_jwk,
-            identity.account_id,
-            principal_id,
-            space_uid,
-            actions,
-            payload.resource.clone(),
-        )
-        .await
-        .map_err(auth_error)?;
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let identity_service = state.identity.clone();
+    let client_id = payload.client_id.clone();
+    let redirect_uri = payload.redirect_uri.clone();
+    let code_challenge = payload.code_challenge.clone();
+    let resource = payload.resource.clone();
+    let space_id_for_auth = payload.space_id.clone();
+    let account_id = identity.account_id;
+    let code = with_authorization_lease(&state, &payload.space_id, move |_lease| {
+        Box::pin(async move {
+            let principal_id = identity_service
+                .principal_for_account(space_uid, account_id)
+                .await
+                .map_err(auth_error)?;
+            let effective = authorizer
+                .effective_actions(&space_id_for_auth, principal_id, None)
+                .await
+                .map_err(ApiError::from_core)?;
+            if actions
+                .iter()
+                .any(|action| parse_action(action).is_ok_and(|action| !effective.contains(&action)))
+            {
+                return Err(ApiError::new(
+                    StatusCode::FORBIDDEN,
+                    "requested scope exceeds the principal's permission",
+                ));
+            }
+            ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                .await
+                .map_err(ApiError::from_core)?;
+            identity_service
+                .issue_authorization_code(
+                    &client_id,
+                    &redirect_uri,
+                    &code_challenge,
+                    public_key_jwk,
+                    account_id,
+                    principal_id,
+                    space_uid,
+                    actions,
+                    resource,
+                )
+                .await
+                .map_err(auth_error)
+        })
+    })
+    .await?;
     let mut redirect = url::Url::parse(&payload.redirect_uri)
         .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "invalid redirect_uri"))?;
     redirect
@@ -4754,7 +4926,6 @@ async fn oauth_device_approve(
             "approved Space differs from the CLI request",
         ));
     }
-    let principal_id = principal_for_space(&state, &payload.space_id, &identity).await?;
     if payload.granted_actions.is_empty() {
         payload.granted_actions = pending.requested_actions.clone();
     }
@@ -4773,49 +4944,67 @@ async fn oauth_device_approve(
             "approval cannot expand requested actions",
         ));
     }
-    let effective = Authorizer::new(state.service.operator().clone())
-        .effective_actions(&payload.space_id, principal_id, None)
-        .await
-        .map_err(ApiError::from_core)?;
-    for action in &payload.granted_actions {
-        let required = parse_action(action)?;
-        if !effective.contains(&required) {
-            return Err(ApiError::new(
-                StatusCode::FORBIDDEN,
-                format!("principal cannot grant {action}"),
-            ));
-        }
-    }
-    state
-        .identity
-        .approve_device_authorization(
-            &payload.user_code,
-            identity.account_id,
-            principal_id,
-            space_uid,
-            payload.granted_actions.clone(),
-        )
-        .await
-        .map_err(auth_error)?;
-    state
-        .identity
-        .append_node_audit(NodeAuditInput {
-            subject_account_id: Some(identity.account_id),
-            actor_account_id: Some(identity.account_id),
-            credential_id: None,
-            action: "oauth_grant.approved",
-            target_type: "cli_device_request",
-            target_id: None,
-            outcome: "success",
-            request_id: None,
-            safe_metadata: json!({
-                "space_uid": space_uid,
-                "device_name": pending.device_name,
-                "granted_actions": payload.granted_actions,
-            }),
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let identity_service = state.identity.clone();
+    let user_code = payload.user_code.clone();
+    let granted_actions = payload.granted_actions.clone();
+    let device_name = pending.device_name.clone();
+    let account_id = identity.account_id;
+    let space_id_for_auth = payload.space_id.clone();
+    let (_principal_id, ()) = with_authorization_lease(&state, &payload.space_id, move |_lease| {
+        Box::pin(async move {
+            let principal_id = identity_service
+                .principal_for_account(space_uid, account_id)
+                .await
+                .map_err(auth_error)?;
+            let effective = authorizer
+                .effective_actions(&space_id_for_auth, principal_id, None)
+                .await
+                .map_err(ApiError::from_core)?;
+            for action in &granted_actions {
+                let required = parse_action(action)?;
+                if !effective.contains(&required) {
+                    return Err(ApiError::new(
+                        StatusCode::FORBIDDEN,
+                        format!("principal cannot grant {action}"),
+                    ));
+                }
+            }
+            ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                .await
+                .map_err(ApiError::from_core)?;
+            identity_service
+                .approve_device_authorization(
+                    &user_code,
+                    account_id,
+                    principal_id,
+                    space_uid,
+                    granted_actions.clone(),
+                )
+                .await
+                .map_err(auth_error)?;
+            identity_service
+                .append_node_audit(NodeAuditInput {
+                    subject_account_id: Some(account_id),
+                    actor_account_id: Some(account_id),
+                    credential_id: None,
+                    action: "oauth_grant.approved",
+                    target_type: "cli_device_request",
+                    target_id: None,
+                    outcome: "success",
+                    request_id: None,
+                    safe_metadata: json!({
+                        "space_uid": space_uid,
+                        "device_name": device_name,
+                        "granted_actions": granted_actions,
+                    }),
+                })
+                .await
+                .map_err(auth_error)?;
+            Ok((principal_id, ()))
         })
-        .await
-        .map_err(auth_error)?;
+    })
+    .await?;
     Ok(Json(
         json!({"approved": true, "space_uid": space_uid, "granted_actions": payload.granted_actions}),
     ))
@@ -5125,41 +5314,76 @@ async fn create_agent(
         .iter()
         .map(|action| parse_action(action))
         .collect::<ApiResult<BTreeSet<_>>>()?;
-    let agent = Authorizer::new(state.service.operator().clone())
-        .create_agent(
-            &space_id,
-            sponsor,
-            ugoite_iceberg::authorization::CreateAgentRequest {
-                display_name: payload.display_name,
-                description: payload.description,
-                mode: payload.mode,
-                owner_principal_ids: payload.owner_principal_ids,
-                granted_actions: grants,
-                expires_at: payload.expires_at.clone(),
-            },
-        )
-        .await
-        .map_err(ApiError::from_core)?;
-    let credential = state
-        .identity
-        .register_agent_credential(agent.agent_id, payload.public_key_jwk, payload.expires_at)
-        .await
-        .map_err(auth_error)?;
-    state
-        .identity
-        .append_node_audit(NodeAuditInput {
-            subject_account_id: Some(identity.account_id),
-            actor_account_id: Some(identity.account_id),
-            credential_id: Some(credential.credential_id),
-            action: "agent_credential.registered",
-            target_type: "agent",
-            target_id: Some(agent.agent_id.to_string()),
-            outcome: "success",
-            request_id: None,
-            safe_metadata: json!({"space_id": space_id}),
-        })
-        .await
-        .map_err(auth_error)?;
+    let agent_request = ugoite_iceberg::authorization::CreateAgentRequest {
+        display_name: payload.display_name,
+        description: payload.description,
+        mode: payload.mode,
+        owner_principal_ids: payload.owner_principal_ids,
+        granted_actions: grants,
+        expires_at: payload.expires_at.clone(),
+    };
+    let public_key_jwk = payload.public_key_jwk;
+    let expires_at = payload.expires_at;
+    let operator = state.service.operator().clone();
+    let identity_service = state.identity.clone();
+    let space_id_for_mutation = space_id.clone();
+    let account_id = identity.account_id;
+    let (agent, credential) = with_authorized_mutation_with_lease(
+        &state,
+        &space_id,
+        &identity,
+        Action::Share,
+        None,
+        move |lease, sponsor, _principals| {
+            Box::pin(async move {
+                let agent = Authorizer::new(operator)
+                    .create_or_recover_agent_with_lease(
+                        &space_id_for_mutation,
+                        sponsor,
+                        agent_request.clone(),
+                        lease,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)?;
+                ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                    .await
+                    .map_err(ApiError::from_core)?;
+                let credential = match identity_service
+                    .agent_credential_for_agent(agent.agent_id)
+                    .await
+                    .map_err(auth_error)?
+                {
+                    Some(existing) if existing.public_key_jwk == public_key_jwk => existing,
+                    Some(_) => {
+                        return Err(ApiError::new(
+                            StatusCode::CONFLICT,
+                            "recovered agent already has a different active credential",
+                        ));
+                    }
+                    None => identity_service
+                        .register_agent_credential(agent.agent_id, public_key_jwk, expires_at)
+                        .await
+                        .map_err(auth_error)?,
+                };
+                identity_service
+                    .append_node_audit(NodeAuditInput {
+                        subject_account_id: Some(account_id),
+                        actor_account_id: Some(account_id),
+                        credential_id: Some(credential.credential_id),
+                        action: "agent_credential.registered",
+                        target_type: "agent",
+                        target_id: Some(agent.agent_id.to_string()),
+                        outcome: "success",
+                        request_id: None,
+                        safe_metadata: json!({"space_id": space_id_for_mutation}),
+                    })
+                    .await
+                    .map_err(auth_error)?;
+                Ok((agent, credential))
+            })
+        },
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({"agent": agent, "credential": credential})),
@@ -5192,31 +5416,47 @@ async fn revoke_agent(
 ) -> ApiResult<StatusCode> {
     require_recent_passkey(&identity)?;
     reconcile_recovery_fences_api(&state, &space_id).await?;
-    let actor = principal_for_space(&state, &space_id, &identity).await?;
-    Authorizer::new(state.service.operator().clone())
-        .revoke_agent(&space_id, actor, agent_id)
-        .await
-        .map_err(ApiError::from_core)?;
-    state
-        .identity
-        .revoke_agent_credentials(agent_id)
-        .await
-        .map_err(auth_error)?;
-    state
-        .identity
-        .append_node_audit(NodeAuditInput {
-            subject_account_id: Some(identity.account_id),
-            actor_account_id: Some(identity.account_id),
-            credential_id: None,
-            action: "agent.revoked",
-            target_type: "agent",
-            target_id: Some(agent_id.to_string()),
-            outcome: "success",
-            request_id: None,
-            safe_metadata: json!({"space_id": space_id}),
-        })
-        .await
-        .map_err(auth_error)?;
+    let operator = state.service.operator().clone();
+    let identity_service = state.identity.clone();
+    let space_id_for_mutation = space_id.clone();
+    let account_id = identity.account_id;
+    with_authorized_mutation_with_lease(
+        &state,
+        &space_id,
+        &identity,
+        Action::Share,
+        None,
+        move |lease, actor, _principals| {
+            Box::pin(async move {
+                Authorizer::new(operator)
+                    .revoke_agent_with_lease(&space_id_for_mutation, actor, agent_id, lease)
+                    .await
+                    .map_err(ApiError::from_core)?;
+                ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                    .await
+                    .map_err(ApiError::from_core)?;
+                identity_service
+                    .revoke_agent_credentials(agent_id)
+                    .await
+                    .map_err(auth_error)?;
+                identity_service
+                    .append_node_audit(NodeAuditInput {
+                        subject_account_id: Some(account_id),
+                        actor_account_id: Some(account_id),
+                        credential_id: None,
+                        action: "agent.revoked",
+                        target_type: "agent",
+                        target_id: Some(agent_id.to_string()),
+                        outcome: "success",
+                        request_id: None,
+                        safe_metadata: json!({"space_id": space_id_for_mutation}),
+                    })
+                    .await
+                    .map_err(auth_error)
+            })
+        },
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -5363,93 +5603,132 @@ async fn issue_agent_token(
     validate_action_names(&requested_actions)?;
     validate_access_credential_actions(&requested_actions)?;
     let authorizer = Authorizer::new(state.service.operator().clone());
-    let authorization = authorizer
-        .state(space_id)
+    let (authorization, lease) = authorizer
+        .acquire_state_lease(space_id)
         .await
         .map_err(ApiError::from_core)?;
-    let agent_actions = authorizer
-        .effective_actions(space_id, agent_id, None)
-        .await
+    let result: ApiResult<Json<Value>> = async {
+        let agent_actions = ugoite_iceberg::authorization::effective_actions_for_state(
+            &authorization,
+            agent_id,
+            None,
+        )
         .map_err(ApiError::from_core)?;
-    let human_effective = if let Some(human) = on_behalf_of {
-        let human_actions = authorizer
-            .effective_actions(space_id, human, None)
+        let human_effective = if let Some(human) = on_behalf_of {
+            Some(
+                ugoite_iceberg::authorization::effective_actions_for_state(
+                    &authorization,
+                    human,
+                    None,
+                )
+                .map_err(ApiError::from_core)?,
+            )
+        } else {
+            None
+        };
+        let effective = human_effective
+            .as_ref()
+            .map(|human_actions| delegated_agent_actions(&agent_actions, human_actions))
+            .unwrap_or_else(|| agent_actions.clone());
+        if requested_actions.is_empty() {
+            requested_actions = effective
+                .iter()
+                .map(|action| action_name(action).to_string())
+                .collect();
+        }
+        if resource.is_some() {
+            validate_mcp_requested_actions(&requested_actions)?;
+        }
+        for action in &requested_actions {
+            let parsed = parse_action(action)?;
+            let dangerous_scope = matches!(parsed, Action::Delete | Action::Share)
+                && (agent_actions.contains(&parsed)
+                    || authorization.policies.values().any(|policy| {
+                        policy.grants.iter().any(|grant| {
+                            grant.principal_id == agent_id && grant.actions.contains(&parsed)
+                        })
+                    }))
+                && human_effective
+                    .as_ref()
+                    .is_none_or(|human_actions| human_actions.contains(&parsed));
+            if !effective.contains(&parsed) && !dangerous_scope {
+                return Err(ApiError::new(
+                    StatusCode::FORBIDDEN,
+                    format!("agent cannot perform {action}"),
+                ));
+            }
+        }
+        let space_uid = state
+            .service
+            .space_uid(space_id)
             .await
             .map_err(ApiError::from_core)?;
-        Some(human_actions)
-    } else {
-        None
-    };
-    let effective = human_effective
-        .as_ref()
-        .map(|human_actions| delegated_agent_actions(&agent_actions, human_actions))
-        .unwrap_or_else(|| agent_actions.clone());
-    if requested_actions.is_empty() {
-        requested_actions = effective
-            .iter()
-            .map(|action| action_name(action).to_string())
-            .collect();
-    }
-    if resource.is_some() {
-        validate_mcp_requested_actions(&requested_actions)?;
-    }
-    for action in &requested_actions {
-        let parsed = parse_action(action)?;
-        let dangerous_scope = matches!(parsed, Action::Delete | Action::Share)
-            && (agent_actions.contains(&parsed)
-                || authorization.policies.values().any(|policy| {
-                    policy.grants.iter().any(|grant| {
-                        grant.principal_id == agent_id && grant.actions.contains(&parsed)
-                    })
-                }))
-            && human_effective
-                .as_ref()
-                .is_none_or(|human_actions| human_actions.contains(&parsed));
-        if !effective.contains(&parsed) && !dangerous_scope {
-            return Err(ApiError::new(
-                StatusCode::FORBIDDEN,
-                format!("agent cannot perform {action}"),
-            ));
+        let mut actor_chain = vec![agent_id];
+        if let Some(human) = on_behalf_of {
+            actor_chain.push(human);
         }
+        let claims = build_agent_token_claims(
+            issuer,
+            node_id,
+            agent_id,
+            credential_id,
+            public_key_jwk,
+            requested_actions,
+            actor_chain,
+            space_uid,
+            on_behalf_of,
+            resource,
+        )?;
+        let claims_for_node = claims.clone();
+        let access_token = match lease
+            .run_while_held(|| {
+                let fence = lease.write_fence();
+                ugoite_iceberg::authorization::with_authorization_write_fence(fence, async {
+                    ugoite_iceberg::authorization::ensure_authorization_write_fence()
+                        .await
+                        .map_err(ApiError::from_core)?;
+                    let access_token = state
+                        .identity
+                        .issue_access_credential(claims_for_node)
+                        .await
+                        .map_err(auth_error)?;
+                    state
+                        .identity
+                        .mark_agent_credential_used(credential_id)
+                        .await
+                        .map_err(auth_error)?;
+                    Ok::<_, ApiError>(access_token)
+                })
+            })
+            .await
+        {
+            Ok(access_token) => access_token?,
+            Err(()) => {
+                return Err(ApiError::from_core(anyhow::anyhow!(
+                    "Space authorization mutation lease was lost"
+                )))
+            }
+        };
+        authorizer
+            .mark_agent_used_with_lease(space_id, agent_id, &lease)
+            .await
+            .map_err(ApiError::from_core)?;
+        Ok(Json(json!({
+            "access_token": access_token,
+            "token_type": "DPoP",
+            "expires_in": 300,
+            "space_uid": space_uid,
+            "actor_chain": claims.actor_chain
+        })))
     }
-    let space_uid = state
-        .service
-        .space_uid(space_id)
-        .await
-        .map_err(ApiError::from_core)?;
-    let mut actor_chain = vec![agent_id];
-    if let Some(human) = on_behalf_of {
-        actor_chain.push(human);
+    .await;
+    let release = lease.release().await;
+    match (result, release) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(ApiError::from_core(error)),
+        (Err(error), Err(_release_error)) => Err(error),
     }
-    let claims = build_agent_token_claims(
-        issuer,
-        node_id,
-        agent_id,
-        credential_id,
-        public_key_jwk,
-        requested_actions,
-        actor_chain,
-        space_uid,
-        on_behalf_of,
-        resource,
-    )?;
-    let access_token = state
-        .identity
-        .issue_access_credential(claims.clone())
-        .await
-        .map_err(auth_error)?;
-    state
-        .identity
-        .mark_agent_credential_used(credential_id)
-        .await
-        .map_err(auth_error)?;
-    authorizer
-        .mark_agent_used(space_id, agent_id)
-        .await
-        .map_err(ApiError::from_core)?;
-    Ok(Json(
-        json!({"access_token": access_token, "token_type": "DPoP", "expires_in": 300, "space_uid": space_uid, "actor_chain": claims.actor_chain}),
-    ))
 }
 
 fn agent_token_audience(issuer: &str, resource: Option<&str>) -> String {
@@ -5650,6 +5929,23 @@ fn authorization_principal_ids(
     principals
 }
 
+fn require_actions_in_authorization_state(
+    state: &AuthorizationState,
+    principal_ids: &[Uuid],
+    action: Action,
+) -> anyhow::Result<()> {
+    for principal_id in principal_ids {
+        let actions =
+            ugoite_iceberg::authorization::effective_actions_for_state(state, *principal_id, None)?;
+        if !actions.contains(&action) {
+            return Err(
+                AppError::forbidden("principal is not authorized for the requested read").into(),
+            );
+        }
+    }
+    Ok(())
+}
+
 async fn require_resource_action(
     state: &AppState,
     space_id: &str,
@@ -5696,6 +5992,346 @@ async fn require_resource_action(
         }
     }
     Ok(principal_id)
+}
+
+/// Runs a content mutation under the same authorization lock used by ACL
+/// mutations. Local callers use the process lock; shared operators also hold
+/// a heartbeat-backed object-store lease, so the permission check and the
+/// authoritative write share one cross-process linearization window.
+async fn with_authorized_mutation<T, F, Fut>(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+    action: Action,
+    resource: Option<ResourceRef>,
+    operation: F,
+) -> ApiResult<T>
+where
+    F: FnOnce(Uuid, Vec<Uuid>) -> Fut,
+    Fut: Future<Output = ApiResult<T>>,
+{
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
+    if let Some(actions) = &identity.token_actions {
+        if !actions.contains(action_name(&action)) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "access token does not grant the required action",
+            ));
+        }
+    }
+    let principal_id = principal_for_space(state, space_id, identity).await?;
+    let principals = authorization_principal_ids(identity, principal_id);
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let (authorization_state, lease) = authorizer
+        .acquire_state_lease(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let authorization_result = (|| -> ApiResult<()> {
+        for subject in &principals {
+            let actions = ugoite_iceberg::authorization::effective_actions_for_state(
+                &authorization_state,
+                *subject,
+                resource.as_ref(),
+            )
+            .map_err(ApiError::from_core)?;
+            if !actions.contains(&action) {
+                return Err(ApiError::new(
+                    StatusCode::FORBIDDEN,
+                    "principal is not authorized for the mutation",
+                ));
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = authorization_result {
+        let _ = lease.release().await;
+        return Err(error);
+    }
+    let fence = lease.write_fence();
+    let result = match lease
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                operation(principal_id, principals),
+            )
+        })
+        .await
+    {
+        Ok(result) => result,
+        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
+            "Space authorization mutation lease was lost"
+        ))),
+    };
+    if let Err(error) = lease.release().await {
+        return Err(ApiError::from_core(error));
+    }
+    result
+}
+
+/// Use this boundary when the service operation performs the authoritative
+/// authorization check and acquires the Space lease itself. Holding the
+/// server wrapper lease here would deadlock on the same non-reentrant mutex.
+/// The wrapper still checks the request token and snapshot for early rejection;
+/// the service method is the final protected check immediately before its
+/// write.
+async fn with_authorized_service_mutation<T, F, Fut>(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+    action: Action,
+    resource: Option<ResourceRef>,
+    operation: F,
+) -> ApiResult<T>
+where
+    F: FnOnce(Uuid, Vec<Uuid>) -> Fut,
+    Fut: Future<Output = ApiResult<T>>,
+{
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
+    if let Some(actions) = &identity.token_actions {
+        if !actions.contains(action_name(&action)) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "access token does not grant the required action",
+            ));
+        }
+    }
+    let principal_id = principal_for_space(state, space_id, identity).await?;
+    let principals = authorization_principal_ids(identity, principal_id);
+    let authorization_state = Authorizer::new(state.service.operator().clone())
+        .state(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    for subject in &principals {
+        let actions = ugoite_iceberg::authorization::effective_actions_for_state(
+            &authorization_state,
+            *subject,
+            resource.as_ref(),
+        )
+        .map_err(ApiError::from_core)?;
+        if !actions.contains(&action) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "principal is not authorized for the mutation",
+            ));
+        }
+    }
+    operation(principal_id, principals).await
+}
+
+/// Lease-aware form of [`with_authorized_mutation`] for mutations that also
+/// update the authorization document. The callback must reuse this exact
+/// lease when it calls an Authorizer mutation; otherwise a shared backend
+/// would try to acquire the same durable lock twice.
+async fn with_authorized_mutation_with_lease<T, F>(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+    action: Action,
+    resource: Option<ResourceRef>,
+    operation: F,
+) -> ApiResult<T>
+where
+    F: for<'a> FnOnce(
+        &'a ugoite_iceberg::authorization::AuthorizationLease,
+        Uuid,
+        Vec<Uuid>,
+    ) -> Pin<Box<dyn Future<Output = ApiResult<T>> + Send + 'a>>,
+{
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
+    if let Some(actions) = &identity.token_actions {
+        if !actions.contains(action_name(&action)) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "access token does not grant the required action",
+            ));
+        }
+    }
+    let principal_id = principal_for_space(state, space_id, identity).await?;
+    let principals = authorization_principal_ids(identity, principal_id);
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let (authorization_state, lease) = authorizer
+        .acquire_state_lease(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let authorization_result = (|| -> ApiResult<()> {
+        for subject in &principals {
+            let actions = ugoite_iceberg::authorization::effective_actions_for_state(
+                &authorization_state,
+                *subject,
+                resource.as_ref(),
+            )
+            .map_err(ApiError::from_core)?;
+            if !actions.contains(&action) {
+                return Err(ApiError::new(
+                    StatusCode::FORBIDDEN,
+                    "principal is not authorized for the mutation",
+                ));
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = authorization_result {
+        let _ = lease.release().await;
+        return Err(error);
+    }
+    let fence = lease.write_fence();
+    let result = match lease
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                operation(&lease, principal_id, principals),
+            )
+        })
+        .await
+    {
+        Ok(result) => result,
+        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
+            "Space authorization mutation lease was lost"
+        ))),
+    };
+    if let Err(error) = lease.release().await {
+        return Err(ApiError::from_core(error));
+    }
+    result
+}
+
+async fn with_authorization_lease<T, F>(
+    state: &AppState,
+    space_id: &str,
+    operation: F,
+) -> ApiResult<T>
+where
+    F: for<'a> FnOnce(
+        &'a ugoite_iceberg::authorization::AuthorizationLease,
+    ) -> Pin<Box<dyn Future<Output = ApiResult<T>> + Send + 'a>>,
+{
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let lease = authorizer
+        .acquire_state_lease(space_id)
+        .await
+        .map_err(ApiError::from_core)?
+        .1;
+    let fence = lease.write_fence();
+    let result = match lease
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                operation(&lease),
+            )
+        })
+        .await
+    {
+        Ok(result) => result,
+        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
+            "Space authorization mutation lease was lost"
+        ))),
+    };
+    if let Err(error) = lease.release().await {
+        return Err(ApiError::from_core(error));
+    }
+    result
+}
+
+/// Form upsert has a state-dependent action: creating a new Form requires
+/// `create`, while replacing an existing Form requires `update`. Resolve that
+/// distinction only after acquiring the same lease as the authorization
+/// check, otherwise a concurrent Form creation can turn a checked update into
+/// an unchecked create (or vice versa).
+async fn with_authorized_form_upsert<T, F, Fut>(
+    state: &AppState,
+    space_id: &str,
+    identity: &RequestIdentityContext,
+    form_name: &str,
+    operation: F,
+) -> ApiResult<T>
+where
+    F: FnOnce(&ugoite_iceberg::authorization::AuthorizationLease) -> Fut,
+    Fut: Future<Output = ApiResult<T>>,
+{
+    let principal_id = principal_for_space(state, space_id, identity).await?;
+    let principals = authorization_principal_ids(identity, principal_id);
+    let authorizer = Authorizer::new(state.service.operator().clone());
+    let (authorization_state, lease) = authorizer
+        .acquire_state_lease(space_id)
+        .await
+        .map_err(ApiError::from_core)?;
+    let forms = match state.service.list_forms(space_id).await {
+        Ok(forms) => forms,
+        Err(error) => {
+            let _ = lease.release().await;
+            return Err(ApiError::from_core(error));
+        }
+    };
+    let existing = forms
+        .into_iter()
+        .any(|form| form.get("name").and_then(Value::as_str) == Some(form_name));
+    let action = if existing {
+        Action::Update
+    } else {
+        Action::Create
+    };
+    let token_allowed = identity
+        .token_actions
+        .as_ref()
+        .is_none_or(|actions| actions.contains(action_name(&action)));
+    let authorization_result = if !token_allowed {
+        Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "access token does not grant the required action",
+        ))
+    } else {
+        let resource = existing.then(|| ResourceRef {
+            kind: ResourceKind::Form,
+            id: form_name.to_string(),
+            parent: None,
+        });
+        (|| -> ApiResult<()> {
+            for subject in &principals {
+                let actions = ugoite_iceberg::authorization::effective_actions_for_state(
+                    &authorization_state,
+                    *subject,
+                    resource.as_ref(),
+                )
+                .map_err(ApiError::from_core)?;
+                if !actions.contains(&action) {
+                    return Err(ApiError::new(
+                        StatusCode::FORBIDDEN,
+                        "principal is not authorized for the mutation",
+                    ));
+                }
+            }
+            Ok(())
+        })()
+    };
+    if let Err(error) = authorization_result {
+        let _ = lease.release().await;
+        return Err(error);
+    }
+    let fence = lease.write_fence();
+    let result = match lease
+        .run_while_held(|| {
+            ugoite_iceberg::authorization::with_authorization_write_fence(
+                fence.clone(),
+                operation(&lease),
+            )
+        })
+        .await
+    {
+        Ok(result) => result,
+        Err(()) => Err(ApiError::from_core(anyhow::anyhow!(
+            "Space authorization mutation lease was lost"
+        ))),
+    };
+    if let Err(error) = lease.release().await {
+        return Err(ApiError::from_core(error));
+    }
+    result
 }
 
 fn action_name(action: &Action) -> &'static str {
@@ -6243,6 +6879,9 @@ async fn issue_human_approval(
     Path(space_id): Path<String>,
     Json(payload): Json<HumanApprovalIssuePayload>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     require_recent_passkey(&identity)?;
     reconcile_human_approval_audit_outbox(&state, &space_id)
         .await
@@ -6264,66 +6903,84 @@ async fn issue_human_approval(
     let operation = payload.operation;
     let ttl = chrono::Duration::seconds(payload.expires_in_seconds as i64);
     let approval_intent_hash = intent_hash(&intent)?;
-    let space_id_for_issue = space_id.clone();
-    let authorizer = Authorizer::new(state.service.operator().clone());
-    let (approval, token) = state
-        .identity
-        .with_active_human_approval_issuance(
-            request_credential_id,
-            Some(issuer_account_id),
-            ActiveCredentialKind::Passkey,
-            issuer_account_id,
-            request_credential_id,
-            issuer_credential_generation,
-            actor_credential_id,
-            space_uid,
-            move |actor_principal_id, issuer_node_account_lifecycle_epoch| {
-                let request = HumanApprovalIssue {
-                    operation,
-                    action,
-                    resource,
-                    intent_hash: approval_intent_hash,
-                    actor_principal_id,
-                    actor_credential_id,
-                    issuer_principal_id: issuer,
-                    issuer_account_id,
-                    issuer_credential_id: request_credential_id,
-                    issuer_credential_generation,
-                    issuer_node_account_lifecycle_epoch,
-                    ttl,
-                };
-                async move {
-                    authorizer
-                        .issue_human_approval_with_audit(
-                            &space_id_for_issue,
-                            request,
-                            |approval| {
-                                vec![human_approval_audit_event(
-                                    &space_id_for_issue,
-                                    Some(approval),
-                                    None,
-                                    "issued",
-                                    "success",
-                                    "success",
-                                    request_id,
-                                )]
-                            },
-                        )
-                        .await
-                }
-            },
-        )
-        .await
-        .map_err(|error| {
-            if error.to_string() == "HUMAN_APPROVAL_ACTOR_INVALID" {
-                ApiError::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    json!({"code":"HUMAN_APPROVAL_INPUT_INVALID","message":"actor credential is not an active CLI device or agent credential bound to this Space"}),
-                )
-            } else {
-                ApiError::from_core(error)
-            }
-        })?;
+    let approval_action = action.clone();
+    let approval_resource = resource.clone();
+    let approval_space_id = space_id.clone();
+    let identity_service = state.identity.clone();
+    let operator = state.service.operator().clone();
+    let (approval, token) = with_authorized_mutation_with_lease(
+        &state,
+        &space_id,
+        &identity,
+        action,
+        Some(resource),
+        move |lease, _issuer_principal, _principals| {
+            Box::pin(async move {
+                identity_service
+                    .with_active_human_approval_issuance(
+                        request_credential_id,
+                        Some(issuer_account_id),
+                        ActiveCredentialKind::Passkey,
+                        issuer_account_id,
+                        request_credential_id,
+                        issuer_credential_generation,
+                        actor_credential_id,
+                        space_uid,
+                        move |actor_principal_id, issuer_node_account_lifecycle_epoch| {
+                            let request = HumanApprovalIssue {
+                                operation,
+                                action: approval_action,
+                                resource: approval_resource,
+                                intent_hash: approval_intent_hash,
+                                actor_principal_id,
+                                actor_credential_id,
+                                issuer_principal_id: issuer,
+                                issuer_account_id,
+                                issuer_credential_id: request_credential_id,
+                                issuer_credential_generation,
+                                issuer_node_account_lifecycle_epoch,
+                                ttl,
+                            };
+                            let authorizer = Authorizer::new(operator.clone());
+                            let audit_space_id = approval_space_id.clone();
+                            let audit_event_space_id = audit_space_id.clone();
+                            async move {
+                                authorizer
+                                    .issue_human_approval_with_audit_with_lease(
+                                        &audit_space_id,
+                                        request,
+                                        move |approval| {
+                                            vec![human_approval_audit_event(
+                                                &audit_event_space_id,
+                                                Some(approval),
+                                                None,
+                                                "issued",
+                                                "success",
+                                                "success",
+                                                request_id,
+                                            )]
+                                        },
+                                        lease,
+                                    )
+                                    .await
+                            }
+                        },
+                    )
+                    .await
+                    .map_err(|error| {
+                        if error.to_string() == "HUMAN_APPROVAL_ACTOR_INVALID" {
+                            ApiError::new(
+                                StatusCode::UNPROCESSABLE_ENTITY,
+                                json!({"code":"HUMAN_APPROVAL_INPUT_INVALID","message":"actor credential is not an active CLI device or agent credential bound to this Space"}),
+                            )
+                        } else {
+                            ApiError::from_core(error)
+                        }
+                    })
+            })
+        },
+    )
+    .await?;
     let audit_status = append_human_approval_audit(
         &state,
         &space_id,
@@ -6366,6 +7023,9 @@ async fn require_dangerous_resource_action(
     resource_id: &str,
     intent: &Value,
 ) -> ApiResult<(Uuid, Option<PendingHumanApproval>)> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     let audit_details = dangerous_operation_audit_details(
         operation,
         &action,
@@ -6638,7 +7298,7 @@ async fn require_dangerous_resource_action(
     ))
 }
 
-async fn execute_approved_mutation<T, F, Fut>(
+async fn execute_approved_mutation<T, F>(
     state: &AppState,
     space_id: &str,
     identity: &RequestIdentityContext,
@@ -6646,8 +7306,9 @@ async fn execute_approved_mutation<T, F, Fut>(
     mutation: F,
 ) -> anyhow::Result<(HumanApproval, anyhow::Result<T>)>
 where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = anyhow::Result<T>>,
+    F: for<'a> FnOnce(
+        &'a ugoite_iceberg::authorization::AuthorizationLease,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Send + 'a>>,
 {
     let approval = pending.approval.clone();
     let token = pending.token;
@@ -6685,7 +7346,7 @@ where
                 let audit_space_id = space_id.clone();
                 async move {
                     authorizer
-                        .consume_human_approval_with_audit_and(
+                        .consume_human_approval_with_audit_and_with_lease(
                             &space_id,
                             &token,
                             &operation,
@@ -6733,29 +7394,21 @@ async fn get_access_policy(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, kind, resource_id)): Path<(String, String, String)>,
 ) -> ApiResult<Json<Value>> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let resource_kind = parse_resource_kind(&kind)?;
-    require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        resource_kind.clone(),
-        &resource_id,
-    )
-    .await?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     let resource = ugoite_iceberg::authorization::ResourceRef {
         kind: resource_kind,
         id: resource_id,
         parent: None,
     };
-    let authorization = Authorizer::new(state.service.operator().clone())
-        .state(&space_id)
+    let policy = state
+        .service
+        .get_access_policy_authorized_for_principals(&space_id, &principals, resource)
         .await
         .map_err(ApiError::from_core)?;
-    Ok(Json(
-        serde_json::to_value(authorization.policies.get(&resource.key()))
-            .map_err(|error| auth_error(error.into()))?,
-    ))
+    Ok(Json(policy))
 }
 
 async fn put_access_policy(
@@ -6798,12 +7451,25 @@ async fn put_access_policy(
     let approval_for_audit = approval.as_ref().map(|pending| pending.approval.clone());
     let mutation = if let Some(pending) = approval {
         let audit_approval = pending.approval.clone();
-        let result = execute_approved_mutation(&state, &space_id, &identity, pending, || async {
-            Authorizer::new(state.service.operator().clone())
-                .set_policy_after_approval(&space_id, mutation_actor, &resource, policy.clone())
-                .await
-        })
-        .await;
+        let policy_operator = state.service.operator().clone();
+        let policy_space_id = space_id.clone();
+        let policy_resource = resource.clone();
+        let policy_value_for_mutation = policy.clone();
+        let result =
+            execute_approved_mutation(&state, &space_id, &identity, pending, move |lease| {
+                Box::pin(async move {
+                    Authorizer::new(policy_operator)
+                        .set_policy_without_audit_with_lease(
+                            &policy_space_id,
+                            mutation_actor,
+                            &policy_resource,
+                            policy_value_for_mutation,
+                            lease,
+                        )
+                        .await
+                })
+            })
+            .await;
         let (_, mutation) = match result {
             Ok(value) => value,
             Err(error) => {
@@ -6829,12 +7495,36 @@ async fn put_access_policy(
         };
         mutation
     } else {
-        with_active_request_credential(&state, &identity, || async {
-            Authorizer::new(state.service.operator().clone())
-                .set_policy(&space_id, mutation_actor, &resource, policy.clone())
-                .await
-        })
+        let policy_operator = state.service.operator().clone();
+        let policy_space_id = space_id.clone();
+        let policy_resource = resource.clone();
+        let policy_value_for_mutation = policy.clone();
+        match with_authorized_mutation_with_lease(
+            &state,
+            &space_id,
+            &identity,
+            Action::Share,
+            Some(policy_resource.clone()),
+            move |lease, _actor, _principals| {
+                Box::pin(async move {
+                    Authorizer::new(policy_operator)
+                        .set_policy_with_lease(
+                            &policy_space_id,
+                            mutation_actor,
+                            &policy_resource,
+                            policy_value_for_mutation,
+                            lease,
+                        )
+                        .await
+                        .map_err(ApiError::from_core)
+                })
+            },
+        )
         .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) => return Err(error),
+        }
     };
     match mutation {
         Ok(()) => {
@@ -6887,23 +7577,21 @@ async fn list_spaces(
         .map_err(ApiError::from_core)?;
     let mut items = Vec::new();
     for id in ids {
-        let Ok(principal_id) = principal_for_space(&state, &id, &identity).await else {
+        let Ok(principal_id) = require_space_action(&state, &id, &identity, Action::Read).await
+        else {
             continue;
         };
-        if Authorizer::new(state.service.operator().clone())
-            .require(&id, principal_id, Action::Read, None)
+        let principals = authorization_principal_ids(&identity, principal_id);
+        let id_for_read = id.clone();
+        let service = state.service.clone();
+        let value = Authorizer::new(service.operator().clone())
+            .with_state_lock(&id, move |authorization| async move {
+                require_actions_in_authorization_state(&authorization, &principals, Action::Read)?;
+                service.get_space(&id_for_read).await
+            })
             .await
-            .is_err()
-        {
-            continue;
-        }
-        let value = sanitize_space_response(
-            state
-                .service
-                .get_space(&id)
-                .await
-                .map_err(ApiError::from_core)?,
-        );
+            .map(sanitize_space_response)
+            .map_err(ApiError::from_core)?;
         items.push(value);
     }
     Ok(Json(Value::Array(items)))
@@ -6919,6 +7607,9 @@ async fn create_space(
     Extension(identity): Extension<RequestIdentityContext>,
     Json(payload): Json<SpaceCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
     require_recent_passkey(&identity)?;
     validate_id(&payload.name, "space_id")?;
     if !identity.node_admin {
@@ -6927,19 +7618,19 @@ async fn create_space(
             "node admin role is required to create a Space",
         ));
     }
-    let principal_id = Uuid::now_v7();
-    let space_uid = state
-        .service
-        .create_space_for_principal(&payload.name, principal_id, &identity.display_name)
-        .await
-        .map_err(ApiError::from_core)?;
-    state
-        .identity
-        .bind_local_owner(space_uid, principal_id, identity.account_id)
-        .await
-        .map_err(auth_error)?;
+    let (space_uid, created) = ensure_local_space_owner_binding(
+        &state,
+        &payload.name,
+        identity.account_id,
+        &identity.display_name,
+    )
+    .await?;
     Ok((
-        StatusCode::CREATED,
+        if created {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
         Json(json!({
             "id": space_uid,
             "slug": payload.name,
@@ -6950,19 +7641,93 @@ async fn create_space(
     ))
 }
 
+/// Completes Space creation after an interrupted local bootstrap. The
+/// scaffold and authorization owner are durable enough to identify the retry
+/// target; the Node binding is then an idempotent final step. This is limited
+/// to the authenticated Node-administrator route.
+async fn ensure_local_space_owner_binding(
+    state: &AppState,
+    slug: &str,
+    account_id: Uuid,
+    display_name: &str,
+) -> ApiResult<(Uuid, bool)> {
+    Authorizer::new(state.service.operator().clone())
+        .ensure_authoritative_mutation_contract()
+        .map_err(ApiError::from_core)?;
+    if let Some(existing_id) = state
+        .service
+        .recover_space_id_by_slug(slug)
+        .await
+        .map_err(ApiError::from_core)?
+    {
+        let space_uid = state
+            .service
+            .space_uid(&existing_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        space::validate_complete_bootstrap(state.service.operator(), &existing_id)
+            .await
+            .map_err(ApiError::from_core)?;
+        let authorizer = Authorizer::new(state.service.operator().clone());
+        // This validates the current authorization layout and space UID. It
+        // initializes ownership only when the authorization file is genuinely
+        // absent; malformed, legacy, or mismatched state must fail closed.
+        let principal_id = authorizer
+            .ensure_owner(&existing_id, space_uid, display_name)
+            .await
+            .map_err(ApiError::from_core)?;
+        if let Some(bound_principal) = state
+            .identity
+            .binding_for_account(space_uid, account_id)
+            .await
+            .map_err(auth_error)?
+        {
+            if bound_principal != principal_id {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "Node account is already bound to a different Space principal",
+                ));
+            }
+            return Ok((space_uid, false));
+        }
+        state
+            .identity
+            .bind_local_owner(space_uid, principal_id, account_id)
+            .await
+            .map_err(auth_error)?;
+        return Ok((space_uid, false));
+    }
+
+    let principal_id = Uuid::now_v7();
+    let space_uid = state
+        .service
+        .create_space_for_principal(slug, principal_id, display_name)
+        .await
+        .map_err(ApiError::from_core)?;
+    state
+        .identity
+        .bind_local_owner(space_uid, principal_id, account_id)
+        .await
+        .map_err(auth_error)?;
+    Ok((space_uid, true))
+}
+
 async fn get_space(
     State(state): State<AppState>,
     Extension(identity): Extension<RequestIdentityContext>,
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let value = sanitize_space_response(
-        state
-            .service
-            .get_space(&space_id)
-            .await
-            .map_err(ApiError::from_core)?,
-    );
+    let principal_id = require_space_action(&state, &space_id, &identity, Action::Read).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let space_id_for_read = space_id.clone();
+    let value = Authorizer::new(state.service.operator().clone())
+        .with_state_lock(&space_id, move |authorization| async move {
+            require_actions_in_authorization_state(&authorization, &principals, Action::Read)?;
+            state.service.get_space(&space_id_for_read).await
+        })
+        .await
+        .map(sanitize_space_response)
+        .map_err(ApiError::from_core)?;
     Ok(Json(value))
 }
 
@@ -6978,10 +7743,18 @@ async fn space_health(
     Path(space_id): Path<String>,
     Query(query): Query<SpaceHealthQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    state
-        .service
-        .space_health(&space_id, &query.checkpoint)
+    let principal_id = require_space_action(&state, &space_id, &identity, Action::Share).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let space_id_for_health = space_id.clone();
+    let checkpoint_names = query.checkpoint;
+    Authorizer::new(state.service.operator().clone())
+        .with_state_lock(&space_id, move |authorization| async move {
+            require_actions_in_authorization_state(&authorization, &principals, Action::Share)?;
+            state
+                .service
+                .space_health(&space_id_for_health, &checkpoint_names)
+                .await
+        })
         .await
         .map(Json)
         .map_err(|_| {
@@ -7003,12 +7776,24 @@ async fn create_checkpoint(
     Path(space_id): Path<String>,
     Json(payload): Json<CheckpointCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    let value = state
-        .service
-        .create_named_checkpoint(&space_id, &payload.name)
-        .await
-        .map_err(ApiError::from_core)?;
+    require_recent_passkey(&identity)?;
+    let name = payload.name;
+    let service = state.service.clone();
+    let mutation_space_id = space_id.clone();
+    let value = with_authorized_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Share,
+        None,
+        move |_principal_id, _principals| async move {
+            service
+                .create_named_checkpoint(&mutation_space_id, &name)
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
     Ok((StatusCode::CREATED, Json(value)))
 }
 
@@ -7041,14 +7826,24 @@ async fn patch_space(
     Path(space_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    let value = sanitize_space_response(
-        state
-            .service
-            .patch_space(&space_id, &payload)
-            .await
-            .map_err(ApiError::from_core)?,
-    );
+    require_recent_passkey(&identity)?;
+    let service = state.service.clone();
+    let mutation_space_id = space_id.clone();
+    let value = with_authorized_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Share,
+        None,
+        move |_principal_id, _principals| async move {
+            service
+                .patch_space(&mutation_space_id, &payload)
+                .await
+                .map(sanitize_space_response)
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
     Ok(Json(value))
 }
 
@@ -7073,21 +7868,28 @@ async fn list_audit_events(
     Path(space_id): Path<String>,
     Query(query): Query<AuditQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageSpace).await?;
-    audit::list_audit_events(
-        state.service.operator(),
-        &space_id,
-        AuditListOptions {
-            offset: query.offset,
-            limit: query.limit,
-            action: query.action,
-            actor_principal_id: query.actor_principal_id,
-            outcome: query.outcome,
-        },
-    )
-    .await
-    .map(Json)
-    .map_err(ApiError::from_core)
+    let principal_id = require_space_action(&state, &space_id, &identity, Action::Share).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
+    let space_id_for_read = space_id.clone();
+    Authorizer::new(state.service.operator().clone())
+        .with_state_lock(&space_id, move |authorization| async move {
+            require_actions_in_authorization_state(&authorization, &principals, Action::Share)?;
+            audit::list_audit_events(
+                state.service.operator(),
+                &space_id_for_read,
+                AuditListOptions {
+                    offset: query.offset,
+                    limit: query.limit,
+                    action: query.action,
+                    actor_principal_id: query.actor_principal_id,
+                    outcome: query.outcome,
+                },
+            )
+            .await
+        })
+        .await
+        .map(Json)
+        .map_err(ApiError::from_core)
 }
 
 async fn get_preferences(
@@ -7129,26 +7931,27 @@ async fn list_members(
     Path(space_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
-    let authorization = Authorizer::new(state.service.operator().clone())
-        .state(&space_id)
+    let members = Authorizer::new(state.service.operator().clone())
+        .with_state_lock(&space_id, |authorization| async move {
+            Ok(authorization
+                .memberships
+                .values()
+                .filter_map(|membership| {
+                    authorization
+                        .principals
+                        .get(&membership.principal_id)
+                        .map(|principal| {
+                            json!({
+                                "principal": principal,
+                                "role": membership.role,
+                                "created_at": membership.created_at,
+                            })
+                        })
+                })
+                .collect::<Vec<_>>())
+        })
         .await
         .map_err(ApiError::from_core)?;
-    let members = authorization
-        .memberships
-        .values()
-        .filter_map(|membership| {
-            authorization
-                .principals
-                .get(&membership.principal_id)
-                .map(|principal| {
-                    json!({
-                        "principal": principal,
-                        "role": membership.role,
-                        "created_at": membership.created_at,
-                    })
-                })
-        })
-        .collect();
     Ok(Json(Value::Array(members)))
 }
 
@@ -7165,7 +7968,6 @@ async fn invite_member(
     Json(payload): Json<MemberInvite>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     reconcile_recovery_fences_api(&state, &space_id).await?;
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     require_recent_passkey(&identity)?;
     parse_space_role(&payload.role)?;
     let space_uid = state
@@ -7173,16 +7975,24 @@ async fn invite_member(
         .space_uid(&space_id)
         .await
         .map_err(ApiError::from_core)?;
-    let (invitation, token) = state
-        .identity
-        .issue_invitation(
-            identity.account_id,
-            &payload.label,
-            Some(space_uid),
-            Some(payload.role),
-        )
-        .await
-        .map_err(recovery_aware_auth_error)?;
+    let label = payload.label;
+    let role = payload.role;
+    let identity_service = state.identity.clone();
+    let account_id = identity.account_id;
+    let (invitation, token) = with_authorized_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Share,
+        None,
+        move |_principal_id, _principals| async move {
+            identity_service
+                .issue_invitation(account_id, &label, Some(space_uid), Some(role))
+                .await
+                .map_err(recovery_aware_auth_error)
+        },
+    )
+    .await?;
     let (issuer, _) = state.identity.issuer_metadata().await.map_err(auth_error)?;
     Ok((
         StatusCode::CREATED,
@@ -7206,14 +8016,33 @@ async fn update_member_role(
     Json(payload): Json<MemberRoleUpdate>,
 ) -> ApiResult<Json<Value>> {
     reconcile_recovery_fences_api(&state, &space_id).await?;
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     require_recent_passkey(&identity)?;
-    let actor = principal_for_space(&state, &space_id, &identity).await?;
     let role = parse_space_role(&payload.role)?;
-    Authorizer::new(state.service.operator().clone())
-        .change_role(&space_id, actor, principal_id, role.clone())
-        .await
-        .map_err(recovery_aware_auth_error)?;
+    let operator = state.service.operator().clone();
+    let space_id_for_mutation = space_id.clone();
+    let role_for_mutation = role.clone();
+    with_authorized_mutation_with_lease(
+        &state,
+        &space_id,
+        &identity,
+        Action::Share,
+        None,
+        move |lease, actor, _principals| {
+            Box::pin(async move {
+                Authorizer::new(operator)
+                    .change_role_with_lease(
+                        &space_id_for_mutation,
+                        actor,
+                        principal_id,
+                        role_for_mutation,
+                        lease,
+                    )
+                    .await
+                    .map_err(recovery_aware_auth_error)
+            })
+        },
+    )
+    .await?;
     Ok(Json(json!({"principal_id": principal_id, "role": role})))
 }
 
@@ -7223,13 +8052,25 @@ async fn revoke_member(
     Path((space_id, principal_id)): Path<(String, Uuid)>,
 ) -> ApiResult<Json<Value>> {
     reconcile_recovery_fences_api(&state, &space_id).await?;
-    require_space_permission(&state, &space_id, &identity, SpacePermission::ManageMembers).await?;
     require_recent_passkey(&identity)?;
-    let actor = principal_for_space(&state, &space_id, &identity).await?;
-    Authorizer::new(state.service.operator().clone())
-        .revoke_principal(&space_id, actor, principal_id)
-        .await
-        .map_err(recovery_aware_auth_error)?;
+    let operator = state.service.operator().clone();
+    let space_id_for_mutation = space_id.clone();
+    with_authorized_mutation_with_lease(
+        &state,
+        &space_id,
+        &identity,
+        Action::Share,
+        None,
+        move |lease, actor, _principals| {
+            Box::pin(async move {
+                Authorizer::new(operator)
+                    .revoke_principal_with_lease(&space_id_for_mutation, actor, principal_id, lease)
+                    .await
+                    .map_err(recovery_aware_auth_error)
+            })
+        },
+    )
+    .await?;
     Ok(Json(
         json!({"principal_id": principal_id, "state": "revoked"}),
     ))
@@ -7250,31 +8091,38 @@ async fn create_sql_session(
     Path(space_id): Path<String>,
     Json(payload): Json<SqlSessionCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
     if payload.sql.trim().is_empty() {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "sql is required",
         ));
     }
-    Ok((
-        StatusCode::CREATED,
-        Json(
-            state
-                .service
+    let sql = payload.sql;
+    let parameters = payload.parameters;
+    let parameter_types = payload.parameter_types;
+    let service = state.service.clone();
+    let mutation_space_id = space_id.clone();
+    let value = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Read,
+        None,
+        move |_principal_id, principals| async move {
+            service
                 .create_sql_session_authorized_for_principals_with_parameters(
-                    &space_id,
+                    &mutation_space_id,
                     &principals,
-                    &payload.sql,
-                    payload.parameters,
-                    payload.parameter_types,
+                    &sql,
+                    parameters,
+                    parameter_types,
                 )
                 .await
-                .map_err(ApiError::from_core)?,
-        ),
-    ))
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(value)))
 }
 
 async fn get_sql_session(
@@ -7460,22 +8308,32 @@ async fn create_entry(
     Path(space_id): Path<String>,
     Json(payload): Json<EntryCreate>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
     let entry_id = payload.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     validate_id(&entry_id, "entry_id")?;
-    let created = state
-        .service
-        .create_entry_authorized_for_principals(
-            &space_id,
-            &entry_id,
-            &payload.markdown,
-            &principal_id.to_string(),
-            &principals,
-        )
-        .await
-        .map_err(ApiError::from_core)?;
+    let entry_id_for_write = entry_id.clone();
+    let markdown = payload.markdown.clone();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let created = with_authorized_service_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Create,
+        None,
+        |principal_id, principals| async move {
+            service
+                .create_entry_authorized_for_principals(
+                    &space_id_for_write,
+                    &entry_id_for_write,
+                    &markdown,
+                    &principal_id.to_string(),
+                    &principals,
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({"id": entry_id, "revision_id": created["revision_id"]})),
@@ -7605,29 +8463,37 @@ async fn update_entry(
     Path((space_id, entry_id)): Path<(String, String)>,
     Json(payload): Json<EntryUpdate>,
 ) -> ApiResult<Json<Value>> {
-    let principal_id = require_resource_action(
+    validate_id(&entry_id, "entry_id")?;
+    let entry_id_for_write = entry_id.clone();
+    let markdown = payload.markdown.clone();
+    let parent_revision_id = payload.parent_revision_id.clone();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let value = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
         Action::Update,
-        ResourceKind::Entry,
-        &entry_id,
+        Some(ResourceRef {
+            kind: ResourceKind::Entry,
+            id: entry_id.clone(),
+            parent: None,
+        }),
+        |principal_id, principals| async move {
+            service
+                .update_entry_authorized_for_principals(
+                    &space_id_for_write,
+                    &entry_id_for_write,
+                    &markdown,
+                    parent_revision_id.as_deref(),
+                    &principal_id.to_string(),
+                    &principals,
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
     )
     .await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    validate_id(&entry_id, "entry_id")?;
-    let value = state
-        .service
-        .update_entry_authorized_for_principals(
-            &space_id,
-            &entry_id,
-            &payload.markdown,
-            payload.parent_revision_id.as_deref(),
-            &principal_id.to_string(),
-            &principals,
-        )
-        .await
-        .map_err(ApiError::from_core)?;
     Ok(Json(
         json!({"id": entry_id, "revision_id": value["revision_id"]}),
     ))
@@ -7658,16 +8524,22 @@ async fn delete_entry(
         .to_string();
     let mutation = if let Some(pending) = approval {
         let audit_approval = pending.approval.clone();
-        let result = execute_approved_mutation(&state, &space_id, &identity, pending, || async {
-            state
-                .service
-                .delete_entry(
-                    &space_id,
-                    &entry_id,
-                    query.hard_delete.unwrap_or(false),
-                    &mutation_actor,
-                )
-                .await
+        let mutation_service = state.service.clone();
+        let mutation_space_id = space_id.clone();
+        let mutation_entry_id = entry_id.clone();
+        let mutation_hard_delete = query.hard_delete.unwrap_or(false);
+        let mutation_actor_for_approved = mutation_actor.clone();
+        let result = execute_approved_mutation(&state, &space_id, &identity, pending, move |_| {
+            Box::pin(async move {
+                mutation_service
+                    .delete_entry(
+                        &mutation_space_id,
+                        &mutation_entry_id,
+                        mutation_hard_delete,
+                        &mutation_actor_for_approved,
+                    )
+                    .await
+            })
         })
         .await;
         let (_, mutation) = match result {
@@ -7695,18 +8567,34 @@ async fn delete_entry(
         };
         mutation
     } else {
-        with_active_request_credential(&state, &identity, || async {
-            state
-                .service
-                .delete_entry(
-                    &space_id,
-                    &entry_id,
-                    query.hard_delete.unwrap_or(false),
-                    &mutation_actor,
-                )
+        with_authorized_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Delete,
+            Some(ResourceRef {
+                kind: ResourceKind::Entry,
+                id: entry_id.clone(),
+                parent: None,
+            }),
+            |_principal_id, _principals| async {
+                with_active_request_credential(&state, &identity, || async {
+                    state
+                        .service
+                        .delete_entry(
+                            &space_id,
+                            &entry_id,
+                            query.hard_delete.unwrap_or(false),
+                            &mutation_actor,
+                        )
+                        .await
+                })
                 .await
-        })
-        .await
+                .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok(Json(json!({"id": entry_id, "status": "deleted"})));
     };
     match mutation {
         Ok(()) => {
@@ -7757,19 +8645,11 @@ async fn entry_history(
     Path((space_id, entry_id)): Path<(String, String)>,
     Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        ResourceKind::Entry,
-        &entry_id,
-    )
-    .await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&entry_id, "entry_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
-    let mut history = if let Some(checkpoint) = query.checkpoint.as_deref() {
+    let history = if let Some(checkpoint) = query.checkpoint.as_deref() {
         state
             .service
             .entry_history_at_checkpoint(&space_id, &entry_id, checkpoint, &principals)
@@ -7778,24 +8658,10 @@ async fn entry_history(
     } else {
         state
             .service
-            .entry_history(&space_id, &entry_id)
+            .entry_history_authorized_for_principals(&space_id, &entry_id, &principals)
             .await
             .map_err(ApiError::from_core)?
     };
-    history["access_policy_history"] = serde_json::to_value(
-        Authorizer::new(state.service.operator().clone())
-            .resource_policy_history(
-                &space_id,
-                &ugoite_iceberg::authorization::ResourceRef {
-                    kind: ResourceKind::Entry,
-                    id: entry_id,
-                    parent: None,
-                },
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    )
-    .map_err(|error| ApiError::from_core(error.into()))?;
     Ok(Json(history))
 }
 
@@ -7805,15 +8671,7 @@ async fn entry_revision(
     Path((space_id, entry_id, revision_id)): Path<(String, String, String)>,
     Query(query): Query<EntryReadQuery>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        ResourceKind::Entry,
-        &entry_id,
-    )
-    .await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&entry_id, "entry_id")?;
     validate_id(&revision_id, "revision_id")?;
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
@@ -7833,21 +8691,22 @@ async fn entry_revision(
     } else {
         state
             .service
-            .entry_revision(&space_id, &entry_id, &revision_id)
+            .entry_revision_authorized_for_principals(
+                &space_id,
+                &entry_id,
+                &revision_id,
+                &principals,
+            )
             .await
             .map_err(ApiError::from_core)?
     };
-    let policy_history = Authorizer::new(state.service.operator().clone())
-        .resource_policy_history(
-            &space_id,
-            &ugoite_iceberg::authorization::ResourceRef {
-                kind: ResourceKind::Entry,
-                id: entry_id,
-                parent: None,
-            },
-        )
-        .await
-        .map_err(ApiError::from_core)?;
+    let policy_history = revision
+        .get("access_policy_history")
+        .cloned()
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    let policy_history: Vec<ugoite_iceberg::authorization::PolicyRevision> =
+        serde_json::from_value(policy_history)
+            .map_err(|error| ApiError::from_core(error.into()))?;
     let revision_time = revision
         .get("timestamp")
         .and_then(Value::as_f64)
@@ -7882,44 +8741,51 @@ async fn restore_entry(
     Path((space_id, entry_id)): Path<(String, String)>,
     Json(payload): Json<RestoreEntry>,
 ) -> ApiResult<Json<Value>> {
-    let principal_id = require_resource_action(
+    validate_id(&entry_id, "entry_id")?;
+    validate_id(&payload.revision_id, "revision_id")?;
+    let revision_id = payload.revision_id.clone();
+    let checkpoint = payload.checkpoint.clone();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let entry_id_for_write = entry_id.clone();
+    let value = with_authorized_service_mutation(
         &state,
         &space_id,
         &identity,
         Action::Update,
-        ResourceKind::Entry,
-        &entry_id,
+        Some(ResourceRef {
+            kind: ResourceKind::Entry,
+            id: entry_id.clone(),
+            parent: None,
+        }),
+        |principal_id, principals| async move {
+            if let Some(checkpoint) = checkpoint.as_deref() {
+                service
+                    .restore_entry_from_checkpoint_authorized_for_principals(
+                        &space_id_for_write,
+                        &entry_id_for_write,
+                        &revision_id,
+                        checkpoint,
+                        &principal_id.to_string(),
+                        &principals,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            } else {
+                service
+                    .restore_entry_authorized_for_principals(
+                        &space_id_for_write,
+                        &entry_id_for_write,
+                        &revision_id,
+                        &principal_id.to_string(),
+                        &principals,
+                    )
+                    .await
+                    .map_err(ApiError::from_core)
+            }
+        },
     )
     .await?;
-    let principals = authorization_principal_ids(&identity, principal_id);
-    validate_id(&entry_id, "entry_id")?;
-    validate_id(&payload.revision_id, "revision_id")?;
-    let value = if let Some(checkpoint) = payload.checkpoint.as_deref() {
-        state
-            .service
-            .restore_entry_from_checkpoint_authorized_for_principals(
-                &space_id,
-                &entry_id,
-                &payload.revision_id,
-                checkpoint,
-                &principal_id.to_string(),
-                &principals,
-            )
-            .await
-            .map_err(ApiError::from_core)?
-    } else {
-        state
-            .service
-            .restore_entry_authorized_for_principals(
-                &space_id,
-                &entry_id,
-                &payload.revision_id,
-                &principal_id.to_string(),
-                &principals,
-            )
-            .await
-            .map_err(ApiError::from_core)?
-    };
     Ok(Json(value))
 }
 
@@ -7933,22 +8799,10 @@ async fn list_forms(
     let principals = authorization_principal_ids(&identity, principal_id);
     let forms = state
         .service
-        .list_forms(&space_id)
+        .list_forms_authorized_for_principals(&space_id, &principals)
         .await
         .map_err(ApiError::from_core)?;
-    Ok(Json(Value::Array(
-        state
-            .service
-            .filter_json_resources_authorized_for_principals(
-                &space_id,
-                &principals,
-                ResourceKind::Form,
-                "name",
-                forms,
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    )))
+    Ok(Json(Value::Array(forms)))
 }
 
 async fn form_types(
@@ -7972,20 +8826,14 @@ async fn get_form(
     Extension(identity): Extension<RequestIdentityContext>,
     Path((space_id, form_name)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        ResourceKind::Form,
-        &form_name,
-    )
-    .await?;
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     validate_id(&form_name, "form_name")?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     Ok(Json(
         state
             .service
-            .get_form(&space_id, &form_name)
+            .get_form_authorized_for_principals(&space_id, &form_name, &principals)
             .await
             .map_err(ApiError::from_core)?,
     ))
@@ -8006,31 +8854,16 @@ async fn upsert_form(
             .into(),
         )
     })?;
-    let existing_form = state
-        .service
-        .list_forms(&space_id)
-        .await
-        .map_err(ApiError::from_core)?
-        .into_iter()
-        .any(|form| form.get("name").and_then(Value::as_str) == Some(form_name));
-    if existing_form {
-        require_resource_action(
-            &state,
-            &space_id,
-            &identity,
-            Action::Update,
-            ResourceKind::Form,
-            form_name,
-        )
-        .await?;
-    } else {
-        require_space_action(&state, &space_id, &identity, Action::Create).await?;
-    }
-    state
-        .service
-        .upsert_form(&space_id, &payload)
-        .await
-        .map_err(ApiError::from_core)?;
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let payload_for_write = payload.clone();
+    with_authorized_form_upsert(&state, &space_id, &identity, form_name, |_| async move {
+        service
+            .upsert_form(&space_id_for_write, &payload_for_write)
+            .await
+            .map_err(ApiError::from_core)
+    })
+    .await?;
     Ok((StatusCode::CREATED, Json(payload)))
 }
 
@@ -8047,6 +8880,15 @@ async fn search_entries(
     Query(query): Query<SearchQuery>,
 ) -> ApiResult<Json<Value>> {
     require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
+    if query.q.len() > ugoite_iceberg::derived_relation::MAX_ASSET_TEXT_QUERY_BYTES {
+        return Err(ApiError::from_core(
+            AppError::invalid_input(
+                ErrorCode::InvalidInput,
+                "search query exceeds the configured byte limit",
+            )
+            .into(),
+        ));
+    }
     let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let principals = authorization_principal_ids(&identity, principal_id);
     Ok(Json(
@@ -8110,14 +8952,30 @@ async fn create_sql(
     Path(space_id): Path<String>,
     Json(payload): Json<saved_sql::SqlPayload>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_space_action(&state, &space_id, &identity, Action::Create).await?;
-    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
     let id = Uuid::new_v4().to_string();
-    let value = state
-        .service
-        .create_saved_sql(&space_id, &id, &payload, &principal_id.to_string())
-        .await
-        .map_err(ApiError::from_core)?;
+    let id_for_write = id.clone();
+    let payload_for_write = payload.clone();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let value = with_authorized_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Create,
+        None,
+        |principal_id, _principals| async move {
+            service
+                .create_saved_sql(
+                    &space_id_for_write,
+                    &id_for_write,
+                    &payload_for_write,
+                    &principal_id.to_string(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({"id": id, "revision_id": value["revision_id"]})),
@@ -8153,31 +9011,37 @@ async fn update_sql(
     Path((space_id, sql_id)): Path<(String, String)>,
     Json(payload): Json<saved_sql::SqlUpdatePayload>,
 ) -> ApiResult<Json<Value>> {
-    let principal_id = require_resource_action(
+    validate_id(&sql_id, "sql_id")?;
+    let parent_revision_id = payload.parent_revision_id.clone();
+    let payload = payload.into_sql_payload();
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let sql_id_for_write = sql_id.clone();
+    let value = with_authorized_mutation(
         &state,
         &space_id,
         &identity,
         Action::Update,
-        ResourceKind::SavedSql,
-        &sql_id,
+        Some(ResourceRef {
+            kind: ResourceKind::SavedSql,
+            id: sql_id.clone(),
+            parent: None,
+        }),
+        |principal_id, _principals| async move {
+            service
+                .update_saved_sql(
+                    &space_id_for_write,
+                    &sql_id_for_write,
+                    &payload,
+                    &parent_revision_id,
+                    &principal_id.to_string(),
+                )
+                .await
+                .map_err(ApiError::from_core)
+        },
     )
     .await?;
-    validate_id(&sql_id, "sql_id")?;
-    let parent_revision_id = payload.parent_revision_id.clone();
-    let payload = payload.into_sql_payload();
-    Ok(Json(
-        state
-            .service
-            .update_saved_sql(
-                &space_id,
-                &sql_id,
-                &payload,
-                &parent_revision_id,
-                &principal_id.to_string(),
-            )
-            .await
-            .map_err(ApiError::from_core)?,
-    ))
+    Ok(Json(value))
 }
 
 async fn delete_sql(
@@ -8204,11 +9068,20 @@ async fn delete_sql(
         .to_string();
     let mutation = if let Some(pending) = approval {
         let audit_approval = pending.approval.clone();
-        let result = execute_approved_mutation(&state, &space_id, &identity, pending, || async {
-            state
-                .service
-                .delete_saved_sql(&space_id, &sql_id, &mutation_actor)
-                .await
+        let mutation_service = state.service.clone();
+        let mutation_space_id = space_id.clone();
+        let mutation_sql_id = sql_id.clone();
+        let mutation_actor_for_approved = mutation_actor.clone();
+        let result = execute_approved_mutation(&state, &space_id, &identity, pending, move |_| {
+            Box::pin(async move {
+                mutation_service
+                    .delete_saved_sql(
+                        &mutation_space_id,
+                        &mutation_sql_id,
+                        &mutation_actor_for_approved,
+                    )
+                    .await
+            })
         })
         .await;
         let (_, mutation) = match result {
@@ -8236,13 +9109,29 @@ async fn delete_sql(
         };
         mutation
     } else {
-        with_active_request_credential(&state, &identity, || async {
-            state
-                .service
-                .delete_saved_sql(&space_id, &sql_id, &mutation_actor)
+        with_authorized_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Delete,
+            Some(ResourceRef {
+                kind: ResourceKind::SavedSql,
+                id: sql_id.clone(),
+                parent: None,
+            }),
+            |_principal_id, _principals| async {
+                with_active_request_credential(&state, &identity, || async {
+                    state
+                        .service
+                        .delete_saved_sql(&space_id, &sql_id, &mutation_actor)
+                        .await
+                })
                 .await
-        })
-        .await
+                .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok(StatusCode::NO_CONTENT);
     };
     match mutation {
         Ok(()) => {
@@ -8288,7 +9177,6 @@ async fn upload_asset(
     Path(space_id): Path<String>,
     mut multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    require_space_permission(&state, &space_id, &identity, SpacePermission::WriteContent).await?;
     let field = multipart
         .next_field()
         .await
@@ -8305,10 +9193,28 @@ async fn upload_asset(
         .content_type()
         .unwrap_or("application/octet-stream")
         .to_string();
+    if name.len() > ugoite_domain::entry::MAX_ASSET_REFERENCE_NAME_BYTES {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "asset filename exceeds the maximum length",
+        ));
+    }
+    if media_type.len() > ugoite_domain::entry::MAX_ASSET_REFERENCE_MEDIA_TYPE_BYTES {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "asset media type exceeds the maximum length",
+        ));
+    }
     let bytes = field
         .bytes()
         .await
         .map_err(|error| ApiError::new(error.status(), error.body_text()))?;
+    if bytes.len() > ugoite_iceberg::asset::MAX_ASSET_BYTES {
+        return Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "asset exceeds the maximum size",
+        ));
+    }
     if multipart
         .next_field()
         .await
@@ -8320,11 +9226,22 @@ async fn upload_asset(
             "only the `file` multipart field is allowed",
         ));
     }
-    let value = state
-        .service
-        .save_asset_with_media_type(&space_id, &name, &bytes, &media_type)
-        .await
-        .map_err(ApiError::from_core)?;
+    let service = state.service.clone();
+    let space_id_for_write = space_id.clone();
+    let value = with_authorized_mutation(
+        &state,
+        &space_id,
+        &identity,
+        Action::Create,
+        None,
+        |_principal_id, _principals| async move {
+            service
+                .save_asset_with_media_type(&space_id_for_write, &name, &bytes, &media_type)
+                .await
+                .map_err(ApiError::from_core)
+        },
+    )
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(serde_json::to_value(value).map_err(|error| ApiError::from_core(error.into()))?),
@@ -8343,6 +9260,7 @@ async fn get_asset(
     Path((space_id, asset_id)): Path<(String, String)>,
     Query(query): Query<AssetReadQuery>,
 ) -> ApiResult<Response> {
+    require_space_permission(&state, &space_id, &identity, SpacePermission::Read).await?;
     let form_name = query.form.ok_or_else(|| {
         ApiError::new(
             StatusCode::FORBIDDEN,
@@ -8357,56 +9275,17 @@ async fn get_asset(
     })?;
     validate_id(&asset_id, "asset_id")?;
     validate_id(&entry_id, "entry_id")?;
-    let principal_id = require_resource_action(
-        &state,
-        &space_id,
-        &identity,
-        Action::Read,
-        ResourceKind::Entry,
-        &entry_id,
-    )
-    .await?;
-    let entry_parent = ugoite_iceberg::authorization::ResourceRef {
-        kind: ResourceKind::Entry,
-        id: entry_id.clone(),
-        parent: None,
-    };
-    state
-        .service
-        .require_resource_action(
-            &space_id,
-            principal_id,
-            Action::Read,
-            ResourceKind::Asset,
-            &asset_id,
-            Some(entry_parent.clone()),
-        )
-        .await
-        .map_err(ApiError::from_core)?;
-    if let Some(actor_principal_id) = identity.token_actor_principal_id {
-        if actor_principal_id != principal_id {
-            state
-                .service
-                .require_resource_action(
-                    &space_id,
-                    actor_principal_id,
-                    Action::Read,
-                    ResourceKind::Asset,
-                    &asset_id,
-                    Some(entry_parent),
-                )
-                .await
-                .map_err(ApiError::from_core)?;
-        }
-    }
-    state
-        .service
-        .ensure_asset_reference_is_readable(&space_id, &form_name, &entry_id, &asset_id)
-        .await
-        .map_err(ApiError::from_core)?;
+    let principal_id = principal_for_space(&state, &space_id, &identity).await?;
+    let principals = authorization_principal_ids(&identity, principal_id);
     let content = state
         .service
-        .read_asset(&space_id, &asset_id)
+        .read_asset_authorized_for_principals(
+            &space_id,
+            &form_name,
+            &entry_id,
+            &asset_id,
+            &principals,
+        )
         .await
         .map_err(ApiError::from_core)?;
     let mut response = content.bytes.into_response();
@@ -8438,11 +9317,20 @@ async fn delete_asset(
     let principals = authorization_principal_ids(&identity, principal_id);
     let mutation = if let Some(pending) = approval {
         let audit_approval = pending.approval.clone();
-        let result = execute_approved_mutation(&state, &space_id, &identity, pending, || async {
-            state
-                .service
-                .delete_asset_with_principals(&space_id, &asset_id, &principals)
-                .await
+        let mutation_service = state.service.clone();
+        let mutation_space_id = space_id.clone();
+        let mutation_asset_id = asset_id.clone();
+        let mutation_principals = principals.clone();
+        let result = execute_approved_mutation(&state, &space_id, &identity, pending, move |_| {
+            Box::pin(async move {
+                mutation_service
+                    .delete_asset_with_principals(
+                        &mutation_space_id,
+                        &mutation_asset_id,
+                        &mutation_principals,
+                    )
+                    .await
+            })
         })
         .await;
         let (_, mutation) = match result {
@@ -8470,13 +9358,37 @@ async fn delete_asset(
         };
         mutation
     } else {
-        with_active_request_credential(&state, &identity, || async {
-            state
-                .service
-                .delete_asset_with_principals(&space_id, &asset_id, &principals)
+        let mutation_state = state.clone();
+        let mutation_identity = identity.clone();
+        let mutation_space_id = space_id.clone();
+        let mutation_asset_id = asset_id.clone();
+        with_authorized_service_mutation(
+            &state,
+            &space_id,
+            &identity,
+            Action::Delete,
+            Some(ResourceRef {
+                kind: ResourceKind::Asset,
+                id: asset_id.clone(),
+                parent: None,
+            }),
+            |_principal_id, principals| async move {
+                with_active_request_credential(&mutation_state, &mutation_identity, || async {
+                    mutation_state
+                        .service
+                        .delete_asset_with_principals(
+                            &mutation_space_id,
+                            &mutation_asset_id,
+                            &principals,
+                        )
+                        .await
+                })
                 .await
-        })
-        .await
+                .map_err(ApiError::from_core)
+            },
+        )
+        .await?;
+        return Ok(Json(json!({"id": asset_id, "status": "deleted"})));
     };
     match mutation {
         Ok(()) => {
@@ -9631,6 +10543,19 @@ mod authentication_regression_tests {
         assert_eq!(hidden.status, StatusCode::FORBIDDEN);
         assert_eq!(hidden.detail["code"], "FORBIDDEN");
         assert_eq!(hidden.detail["message"], "Asset deletion is not permitted");
+    }
+
+    #[test]
+    fn non_local_mutation_error_uses_the_stable_gateway_envelope() {
+        let error = ApiError::from_core(
+            AppError::dependency_unavailable(
+                ErrorCode::StorageMutationUnavailable,
+                "non-local Space mutations are unavailable in v0.1",
+            )
+            .into(),
+        );
+        assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
     }
 
     #[test]
@@ -10945,8 +11870,8 @@ mod authentication_regression_tests {
             intent_hash: intent_digest,
         };
         let (_, mutation) =
-            execute_approved_mutation(&state, &space_id, &identity, pending, || async {
-                Ok::<(), anyhow::Error>(())
+            execute_approved_mutation(&state, &space_id, &identity, pending, |_| {
+                Box::pin(async { Ok::<(), anyhow::Error>(()) })
             })
             .await?;
         mutation?;
@@ -11022,7 +11947,7 @@ mod authentication_regression_tests {
                 token: second_token,
                 intent_hash: second_digest,
             },
-            || async { Ok::<(), anyhow::Error>(()) },
+            |_| Box::pin(async { Ok::<(), anyhow::Error>(()) }),
         )
         .await
         .expect_err("revoked actor device must be rejected before consume");
@@ -11300,15 +12225,6 @@ mod authentication_regression_tests {
             .service
             .create_space_for_principal("invitation-saga", owner_principal_id, "Owner")
             .await?;
-        state
-            .identity
-            .add_binding(ugoite_domain::identity::PrincipalBinding {
-                space_uid,
-                principal_id: owner_principal_id,
-                node_account_id: owner_account_id,
-                binding_method: BindingMethod::Setup,
-            })
-            .await?;
         let principal_id = Uuid::now_v7();
         let backup_owner_principal_id = Uuid::now_v7();
         let account = HumanAccount {
@@ -11352,20 +12268,6 @@ mod authentication_regression_tests {
                 &space_uid.to_string(),
                 owner_principal_id,
                 SpacePrincipal {
-                    principal_id,
-                    kind: PrincipalKind::Human,
-                    display_name: account.display_name.clone(),
-                    state: PrincipalState::Active,
-                    created_at: chrono::Utc::now().to_rfc3339(),
-                },
-                SpaceRole::Viewer,
-            )
-            .await?;
-        authorizer
-            .add_human_member(
-                &space_uid.to_string(),
-                owner_principal_id,
-                SpacePrincipal {
                     principal_id: backup_owner_principal_id,
                     kind: PrincipalKind::Human,
                     display_name: "Backup owner".to_string(),
@@ -11375,6 +12277,27 @@ mod authentication_regression_tests {
                 SpaceRole::Owner,
             )
             .await?;
+        // The Node half is already durable, but the inviter's Node binding is
+        // missing. This forces the failure boundary after the Node mutation;
+        // adding that binding below must make the same request converge.
+        assert!(
+            bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+                .await
+                .is_err()
+        );
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid,
+                principal_id: owner_principal_id,
+                node_account_id: owner_account_id,
+                binding_method: BindingMethod::Setup,
+            })
+            .await?;
+        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
+            .await
+            .expect("idempotent retry after missing inviter binding");
+
         authorizer
             .change_role(
                 &space_uid.to_string(),
@@ -11384,9 +12307,6 @@ mod authentication_regression_tests {
             )
             .await?;
 
-        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
-            .await
-            .expect("membership-first finalization");
         authorizer
             .revoke_principal(
                 &space_uid.to_string(),
@@ -11394,9 +12314,6 @@ mod authentication_regression_tests {
                 owner_principal_id,
             )
             .await?;
-        bind_invited_account(&state, &account, &invitation, BindingMethod::Invite)
-            .await
-            .expect("idempotent retry after inviter revocation");
 
         let authorization = authorizer.state(&space_uid.to_string()).await?;
         assert_eq!(authorization.memberships.len(), 3);
@@ -11421,6 +12338,234 @@ mod authentication_regression_tests {
                 .await
                 .is_err()
         );
+
+        // OIDC uses the same Node-first finalization contract. Exercise the
+        // same post-Node failure boundary with its distinct binding method so
+        // a callback retry cannot create a second principal.
+        let oidc_owner_principal_id = Uuid::now_v7();
+        let oidc_owner_account_id = Uuid::now_v7();
+        let oidc_principal_id = Uuid::now_v7();
+        let oidc_account_id = Uuid::now_v7();
+        let oidc_space_uid = state
+            .service
+            .create_space_for_principal(
+                "invitation-oidc-saga",
+                oidc_owner_principal_id,
+                "OIDC owner",
+            )
+            .await?;
+        let oidc_account = HumanAccount {
+            account_id: oidc_account_id,
+            display_name: "OIDC viewer".to_string(),
+            status: AccountStatus::Active,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            node_roles: BTreeSet::new(),
+            credential_generation: 0,
+        };
+        let oidc_invitation = AccountInvitation {
+            invitation_id: Uuid::now_v7(),
+            token_hash: "oidc-test".to_string(),
+            display_name: oidc_account.display_name.clone(),
+            space_uid: Some(oidc_space_uid),
+            role: Some("viewer".to_string()),
+            expires_at: chrono::Utc::now().to_rfc3339(),
+            acceptance: Some(
+                ugoite_identity::node_identity::InvitationAcceptance::Pending {
+                    account_id: oidc_account_id,
+                    principal_id: oidc_principal_id,
+                    kind: ugoite_identity::node_identity::InvitationAcceptanceKind::Oidc,
+                    claimed_at: chrono::Utc::now().to_rfc3339(),
+                    credential_generation: 0,
+                },
+            ),
+            created_by: oidc_owner_account_id,
+        };
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid: oidc_space_uid,
+                principal_id: oidc_principal_id,
+                node_account_id: oidc_account_id,
+                binding_method: BindingMethod::Oidc,
+            })
+            .await?;
+        let oidc_authorizer = Authorizer::new(state.service.operator().clone());
+        assert!(
+            bind_invited_account(&state, &oidc_account, &oidc_invitation, BindingMethod::Oidc,)
+                .await
+                .is_err()
+        );
+        state
+            .identity
+            .add_binding(ugoite_domain::identity::PrincipalBinding {
+                space_uid: oidc_space_uid,
+                principal_id: oidc_owner_principal_id,
+                node_account_id: oidc_owner_account_id,
+                binding_method: BindingMethod::Setup,
+            })
+            .await?;
+        bind_invited_account(&state, &oidc_account, &oidc_invitation, BindingMethod::Oidc)
+            .await
+            .expect("OIDC retry after missing inviter binding");
+        assert!(oidc_authorizer
+            .state(&oidc_space_uid.to_string())
+            .await?
+            .memberships
+            .contains_key(&oidc_principal_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_creation_retry_repairs_a_missing_node_binding() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-space-create-recovery")?;
+        state.initialize_node().await?;
+        let account_id = Uuid::now_v7();
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("recover-space", principal_id, "Owner")
+            .await?;
+
+        let (recovered_uid, created) =
+            ensure_local_space_owner_binding(&state, "recover-space", account_id, "Owner")
+                .await
+                .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        assert_eq!(recovered_uid, space_uid);
+        assert!(!created);
+        assert_eq!(
+            state
+                .identity
+                .binding_for_account(space_uid, account_id)
+                .await?,
+            Some(principal_id)
+        );
+
+        let (same_uid, created) =
+            ensure_local_space_owner_binding(&state, "recover-space", account_id, "Owner")
+                .await
+                .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        assert_eq!(same_uid, space_uid);
+        assert!(!created);
+
+        let partial_space_uid = state
+            .service
+            .create_space_for_principal("partial-recovery-space", Uuid::now_v7(), "Owner")
+            .await?;
+        let partial_settings_path = format!("spaces/{partial_space_uid}/settings.json");
+        state
+            .service
+            .operator()
+            .delete(&partial_settings_path)
+            .await?;
+        let error = ensure_local_space_owner_binding(
+            &state,
+            "partial-recovery-space",
+            Uuid::now_v7(),
+            "Owner",
+        )
+        .await
+        .expect_err("incomplete Space bootstrap must not be finalized by recovery");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn non_local_space_creation_rejects_before_recovery_or_binding() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("s3://ugoite-test-bucket/server-space")?;
+        let error =
+            ensure_local_space_owner_binding(&state, "remote-space", Uuid::now_v7(), "Owner")
+                .await
+                .expect_err("non-local Space creation must fail closed before recovery");
+        assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
+
+        let error = reconcile_recovery_fences_api(&state, "remote-space")
+            .await
+            .expect_err("recovery reconciliation must fail closed before remote writes");
+        assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
+
+        let error = reconcile_all_recovery_fences_api(&state)
+            .await
+            .expect_err("global recovery reconciliation must fail closed before remote writes");
+        assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(error.detail["code"], "STORAGE_MUTATION_UNAVAILABLE");
+
+        state
+            .initialize_node()
+            .await
+            .expect("read-only remote startup must not require mutation capability");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn space_creation_recovery_rejects_legacy_or_mismatched_authorization(
+    ) -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-space-create-recovery-validation")?;
+        state.initialize_node().await?;
+        let principal_id = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("mismatched-space", principal_id, "Owner")
+            .await?;
+        let operator = state.service.operator().clone();
+        let authorizer = Authorizer::new(operator.clone());
+        let account_id = Uuid::now_v7();
+        let mut authorization = authorizer.state(&space_uid.to_string()).await?;
+        authorization.space_uid = Uuid::now_v7();
+        let authorization_path = format!("spaces/{space_uid}/security/principals.json");
+        operator
+            .write(&authorization_path, serde_json::to_vec(&authorization)?)
+            .await?;
+        let state_error = authorizer
+            .state(&space_uid.to_string())
+            .await
+            .expect_err("regular authorization reads must bind state to metadata");
+        assert!(state_error
+            .to_string()
+            .contains("different space_uid values"));
+        let validation_error = authorizer
+            .validate_current_layout(&space_uid.to_string(), space_uid)
+            .await
+            .expect_err("mismatched authorization state must be rejected");
+        assert!(validation_error
+            .to_string()
+            .contains("different space_uid values"));
+
+        let error =
+            ensure_local_space_owner_binding(&state, "mismatched-space", account_id, "Owner")
+                .await
+                .expect_err("mismatched authorization state must fail closed");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(state
+            .identity
+            .binding_for_account(space_uid, account_id)
+            .await?
+            .is_none());
+
+        state
+            .service
+            .create_space_for_principal("legacy-space", Uuid::now_v7(), "Owner")
+            .await?;
+        let legacy_space_uid = state
+            .service
+            .space_id_by_slug("legacy-space")
+            .await?
+            .expect("legacy test Space exists");
+        let legacy_marker_path = format!("spaces/{legacy_space_uid}/authorization.json");
+        operator.write(&legacy_marker_path, b"{}".to_vec()).await?;
+        let validation_error = authorizer
+            .validate_current_layout(&legacy_space_uid, Uuid::now_v7())
+            .await
+            .expect_err("legacy authorization layout must be rejected");
+        assert!(validation_error
+            .to_string()
+            .contains("unsupported Space layout"));
+        let error =
+            ensure_local_space_owner_binding(&state, "legacy-space", Uuid::now_v7(), "Owner")
+                .await
+                .expect_err("legacy authorization layout must fail closed");
+        assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
         Ok(())
     }
 }

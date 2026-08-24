@@ -91,15 +91,15 @@ ugoite entry list /path/to/workspace/spaces/demo
 ugoite query /path/to/workspace/spaces/demo --sql "SELECT id, title FROM note LIMIT 10"
 ```
 
-Server-backed mode:
+Server-backed mode (reference only; the v0.1 supported workflow is core mode):
 
 ```bash
 ugoite config set --mode backend --backend-url http://127.0.0.1:8000
-ugoite auth login --actions read,create,update
 ugoite space list
 ```
 
-Approve the displayed device code from a Passkey-authenticated browser.
+The authentication/device flow is future/reference scope and is not a shipped
+v0.1 login contract. Use core mode for the supported local-first workflow.
 
 ## API and documentation
 

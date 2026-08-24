@@ -1,4 +1,5 @@
 use anyhow::Result;
+use futures::TryStreamExt;
 use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -12,6 +13,17 @@ use ugoite_core::query::{
 pub use ugoite_domain::entry::AssetReference;
 use ugoite_domain::form::{sql_column_name, sql_relation_name};
 use ugoite_domain::id::validate_asset_id;
+
+/// Maximum size of one operator-owned Asset object. The same boundary is used
+/// by core upload, REST upload, direct reads, and the derived parser so a
+/// locally-created object cannot bypass later resource limits.
+pub const MAX_ASSET_BYTES: usize = ugoite_domain::entry::MAX_ASSET_REFERENCE_SIZE_BYTES as usize;
+/// Multipart framing and headers are not part of the Asset object limit. The
+/// server body limit includes them, while upload_asset enforces the exact
+/// per-file MAX_ASSET_BYTES boundary after parsing.
+pub const MAX_ASSET_MULTIPART_OVERHEAD_BYTES: usize = 128 * 1024;
+const ASSET_READ_CHUNK_BYTES: usize = 256 * 1024;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AssetContent {
     pub bytes: Vec<u8>,
@@ -95,13 +107,24 @@ pub async fn save_asset_with_media_type(
     content: &[u8],
     media_type: &str,
 ) -> Result<AssetReference> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
+    if content.len() > MAX_ASSET_BYTES {
+        anyhow::bail!("asset exceeds the {MAX_ASSET_BYTES}-byte size limit");
+    }
     let asset_id = Uuid::now_v7().to_string();
     let safe_name = normalize_asset_filename(filename, &asset_id);
-    op.write(&asset_path(ws_path, &asset_id), content.to_vec())
+    let reference = reference_with_media_type(asset_id, safe_name, media_type, content);
+    reference
+        .validate()
+        .map_err(|error| AppError::invalid_input(ErrorCode::InvalidInput, error.to_string()))?;
+    // An uploaded object is still an authoritative mutation: an Entry may
+    // reference it immediately after this call. Keep the check at the
+    // object-write boundary so callers cannot accidentally bypass the
+    // authorization lease by using the lower-level asset helper.
+    crate::authorization::ensure_authorization_write_fence().await?;
+    op.write(&asset_path(ws_path, &reference.asset_id), content.to_vec())
         .await?;
-    Ok(reference_with_media_type(
-        asset_id, safe_name, media_type, content,
-    ))
+    Ok(reference)
 }
 
 pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<AssetContent> {
@@ -115,7 +138,7 @@ pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<
         .into());
     }
     let path = asset_path(ws_path, asset_id);
-    let bytes = op.read(&path).await.map_err(|error| {
+    let metadata = op.stat(&path).await.map_err(|error| {
         if error.kind() == opendal::ErrorKind::NotFound {
             AppError::not_found(
                 ErrorCode::AssetNotFound,
@@ -126,7 +149,49 @@ pub async fn read_asset(op: &Operator, ws_path: &str, asset_id: &str) -> Result<
             anyhow::Error::from(error)
         }
     })?;
-    let bytes = bytes.to_vec();
+    if metadata.content_length() > MAX_ASSET_BYTES as u64 {
+        anyhow::bail!("asset exceeds the {MAX_ASSET_BYTES}-byte size limit");
+    }
+    let etag = metadata.etag().filter(|etag| !etag.is_empty());
+    if crate::is_shared_backend(op) && etag.is_none() {
+        anyhow::bail!("exact Asset read requires an ETag: {path}");
+    }
+    let mut reader = op.reader_with(&path);
+    if let Some(etag) = metadata.etag().filter(|etag| !etag.is_empty()) {
+        reader = reader.if_match(etag);
+    }
+    let reader = reader
+        .chunk(ASSET_READ_CHUNK_BYTES)
+        .await
+        .map_err(|error| {
+            if error.kind() == opendal::ErrorKind::NotFound {
+                AppError::not_found(
+                    ErrorCode::AssetNotFound,
+                    format!("Asset {asset_id} not found"),
+                )
+                .into()
+            } else {
+                anyhow::Error::from(error)
+            }
+        })?;
+    let mut stream = reader.into_stream(0..).await.map_err(|error| {
+        if error.kind() == opendal::ErrorKind::NotFound {
+            AppError::not_found(
+                ErrorCode::AssetNotFound,
+                format!("Asset {asset_id} not found"),
+            )
+            .into()
+        } else {
+            anyhow::Error::from(error)
+        }
+    })?;
+    let mut bytes = Vec::with_capacity(metadata.content_length() as usize);
+    while let Some(buffer) = stream.try_next().await? {
+        bytes.extend(buffer.into_iter().flatten());
+        if bytes.len() > MAX_ASSET_BYTES {
+            anyhow::bail!("asset exceeds the {MAX_ASSET_BYTES}-byte size limit");
+        }
+    }
     // The exact object key carries no logical name or media type. Those
     // values belong to the Form-owned reference and must not be fabricated.
     Ok(AssetContent { bytes })
@@ -263,6 +328,7 @@ pub async fn delete_asset(
     asset_id: &str,
     relation_scopes: &BTreeMap<String, EntryScope>,
 ) -> Result<()> {
+    crate::authorization::Authorizer::new(op.clone()).ensure_authoritative_mutation_contract()?;
     validate_asset_id(asset_id).map_err(|error| AppError::invalid_identifier(error.to_string()))?;
     let path = asset_path(ws_path, asset_id);
     if !op.exists(&path).await? {
@@ -278,6 +344,7 @@ pub async fn delete_asset(
         "asset.delete",
         &serde_json::json!({"asset_id": asset_id}),
     )?;
+    crate::authorization::ensure_authorization_write_fence().await?;
     let deletion = workspace
         .commit(publication)?
         .delete_asset(asset_id, relation_scopes)
