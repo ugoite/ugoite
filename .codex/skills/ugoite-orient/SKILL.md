@@ -1,41 +1,65 @@
 ---
 name: ugoite-orient
-description: Use when starting work in the Ugoite repo, choosing the right docs, or deciding which surface and commands apply.
+description: Use when starting work in the Ugoite repo, routing a change to the owning surface, or choosing the correct validation lane.
 ---
 
 # Ugoite Orientation
 
-Use this skill first when the task is ambiguous, cross-surface, or mostly about
-figuring out where to work.
+Use this skill before implementation when the task crosses surfaces, refers to
+CI or storage, or the owning code path is not already known.
 
 ## Read first
 
+- `AGENTS.md`
 - `README.md`
 - `docs/spec/index.md`
 - `docs/spec/testing/ci-cd.md`
 - `docs/spec/testing/strategy.md`
-- `.github/workflows/`
+- `mise.toml`
+- the relevant workflow under `.github/workflows/`
 
-## What to determine
+## Current architecture
 
-1. Which surface owns the change: `backend`, `frontend`, `docsite`,
-   `ugoite-core`, `ugoite-cli`, `ugoite-minimum`, `docs`, `e2e`, or release.
-2. Whether the task is user-facing, spec-facing, or purely operational.
-3. Which validation lane matches the change.
+- `ugoite-domain`: pure domain types and validation.
+- `ugoite-api-client`: transport-neutral remote operation protocol.
+- `ugoite-storage`: filesystem/object-store mechanics.
+- `ugoite-core`: application behavior.
+- `ugoite-iceberg`: storage-backed forms, entries, authorization, search, and derived relations.
+- `ugoite-identity`: node authentication, recovery, OAuth, and credential state.
+- `ugoite-server`, `ugoite-cli`, `ugoite-wasm`: thin adapters.
+- `frontend`: SolidStart UI using the portable protocol.
+- `docsite`: Astro documentation.
+- `e2e`: Deno/Playwright acceptance flows.
 
-## Rules of thumb
+Do not route a change to a Python or FastAPI surface unless the repository
+contains an explicit current implementation and spec requiring it.
 
-- Prefer the smallest surface that can safely absorb the change.
-- If docs and code disagree, treat `docs/spec/` and CI as the source of truth.
-- For OpenAI model guidance or prompting questions, use the current official
-  OpenAI docs rather than a frozen alias or repo-local guess.
-- Do not start editing until the owning surface and validation path are clear.
+## Routing questions
 
-## Output expectation
+Determine:
 
-Give a short routing answer:
+1. Which crate or surface owns the behavior.
+2. Whether the change is authoritative, derived, adapter-only, user-facing,
+   spec-facing, or operational.
+3. Which source of truth and invariant must remain valid.
+4. Which root `mise.toml` task or focused crate test is the smallest useful
+   validation.
+5. Whether the change affects the `quality`, `artifacts`, or `merge_group`
+   CI lane.
 
-- target surface
-- primary docs to read
-- exact validation command(s) to run next
+Only root tasks from `mise.toml` are valid. Use Deno tasks for frontend,
+docsite, and E2E work; do not invent package-scoped `mise` task names.
 
+## Worktree preflight
+
+Before editing, record the current branch, worktree status, exact base commit,
+and any pre-existing user changes. Never overwrite unrelated changes.
+
+## Output
+
+Give a short routing result:
+
+- owning surface and files to inspect;
+- source-of-truth/invariant;
+- focused validation command;
+- broader CI lane, only if the change requires it.
