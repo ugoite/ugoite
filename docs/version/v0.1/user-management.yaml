@@ -1,6 +1,6 @@
 id: user-management
 version: '0.1'
-status: planned
+status: in_progress
 title: User Management
 goal: Provide authenticated multi-user Space access while preserving operator-owned storage.
 requirement_ids:
@@ -15,7 +15,7 @@ requirement_ids:
 - REQ-SEC-013
 phases:
 - id: design
-  status: planned
+  status: completed
   tasks:
   - description: Define identities, Space roles, memberships, and credential validation.
     done: true
