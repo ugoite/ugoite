@@ -492,6 +492,25 @@ async fn authorization_state_hides_scalar_and_list_asset_references() -> anyhow:
             },
         )
         .await?;
+    authorizer
+        .set_policy(
+            &space_id,
+            owner,
+            &ResourceRef {
+                kind: ResourceKind::Asset,
+                id: reference.asset_id.clone(),
+                parent: None,
+            },
+            AccessPolicy {
+                policy_id: Uuid::now_v7(),
+                inherit_space_role: false,
+                grants: vec![ugoite_domain::identity::Grant {
+                    principal_id: viewer,
+                    actions: [Action::Delete].into_iter().collect(),
+                }],
+            },
+        )
+        .await?;
 
     let scopes = service
         .authorized_form_entry_scopes(&space_id, viewer)
