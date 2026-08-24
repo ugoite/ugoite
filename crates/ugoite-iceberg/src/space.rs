@@ -1027,10 +1027,12 @@ pub async fn validate_complete_bootstrap(op: &Operator, space_id: &str) -> Resul
     validate_space_path_segment(space_id)?;
     let patch_serializer = space_patch_serializer(op, space_id);
     let _patch_guard = patch_serializer.lock().await;
+    let _local_patch_lock = acquire_local_space_patch_lock(op, space_id).await?;
     validate_complete_bootstrap_locked(op, space_id).await
 }
 
 async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Result<()> {
+    recover_pending_space_patch(op, space_id).await?;
     let storage = OpendalStorage::from_operator(op);
     ensure_space_identity(&storage, space_id).await?;
     for directory in ["security", "forms", "assets", "sql_sessions"] {
@@ -1060,9 +1062,11 @@ async fn validate_complete_bootstrap_locked(op: &Operator, space_id: &str) -> Re
     form::get_form(op, &workspace_path, "Entry")
         .await
         .context("incomplete Space bootstrap: starter Entry Form is missing")?;
-    // Validation is deliberately read-only. Permission repair belongs to the
-    // explicit mutation/recovery paths; a clean read must not call
-    // set_permissions merely because it opened a Space.
+    // Repair permissions before validation as a compatibility guard for a
+    // process that crashed after publishing an older umask-created JSON file.
+    // New writes already establish 0600 before rename; this closes the
+    // recovery path for values that were visible before that guarantee.
+    apply_local_space_permissions(op, space_id)?;
     validate_local_space_permissions(op, space_id)?;
     Ok(())
 }
@@ -1080,6 +1084,7 @@ pub async fn get_space_raw(op: &Operator, name: &str) -> Result<serde_json::Valu
     }
     let patch_serializer = space_patch_serializer(op, name);
     let _patch_guard = patch_serializer.lock().await;
+    let _local_patch_lock = acquire_local_space_patch_lock(op, name).await?;
     validate_complete_bootstrap_locked(op, name).await?;
     let storage = OpendalStorage::from_operator(op);
     get_space_raw_with_storage(&storage, name).await
