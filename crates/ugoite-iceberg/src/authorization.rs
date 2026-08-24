@@ -500,7 +500,10 @@ impl Authorizer {
             human_approval_audit_outbox: BTreeMap::new(),
             revision: 1,
         };
-        self.write_state(space_id, &state).await
+        // The bootstrap path already holds the filesystem lock while it
+        // checks for an existing authorization file. Reuse that lock for the
+        // write instead of trying to acquire the same flock a second time.
+        self.write_state_with_local_lock(space_id, &state).await
     }
 
     /// Ensures an operator-created Space has the first current-release owner.
@@ -2364,6 +2367,30 @@ impl Authorizer {
         }
     }
 
+    async fn write_state_with_local_lock(
+        &self,
+        space_id: &str,
+        state: &AuthorizationState,
+    ) -> Result<()> {
+        let durable = self.acquire_durable_mutation_lease(space_id).await?;
+        let result = self
+            .write_state_inner_with_local_lock(space_id, state, true)
+            .await;
+        let release = if let Some(durable) = durable {
+            durable.release().await
+        } else {
+            Ok(())
+        };
+        match (result, release) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Err(error), Err(release_error)) => Err(error.context(format!(
+                "release Space authorization mutation lease: {release_error:#}"
+            ))),
+        }
+    }
+
     async fn write_state_with_durable(
         &self,
         space_id: &str,
@@ -2893,6 +2920,7 @@ fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     use ugoite_domain::identity::Grant;
     use ugoite_storage::operator_from_uri;
 
@@ -2958,6 +2986,23 @@ mod tests {
             .require("demo", viewer, Action::Read, Some(&asset))
             .await
             .is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn initialize_owner_does_not_relock_local_authorization_file() -> Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let op = operator_from_uri(&format!("file://{}", tempdir.path().display()))?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            authorizer.initialize_owner("demo", Uuid::now_v7(), Uuid::now_v7(), "Owner"),
+        )
+        .await
+        .context("local owner initialization timed out")??;
+
         Ok(())
     }
 
