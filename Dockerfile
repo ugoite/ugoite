@@ -24,7 +24,7 @@ RUN deno run -A frontend/scripts/generate-static-index.ts \
   frontend/.output/public/_build/.vite/manifest.json \
   frontend/.output/public/index.html
 
-FROM rust:1.97-bookworm AS rust-build
+FROM rust:1.98-bookworm AS rust-build
 WORKDIR /repo
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
