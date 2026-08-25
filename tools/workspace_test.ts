@@ -74,6 +74,29 @@ Deno.test("Phase 4 removes Python from tracked source and contributor tooling", 
   }
 });
 
+Deno.test("devcontainer provides an isolated Docker engine for local E2E", async () => {
+  const config = JSON.parse(
+    await Deno.readTextFile(".devcontainer/devcontainer.json"),
+  ) as {
+    features?: Record<string, Record<string, unknown>>;
+    privileged?: boolean;
+  };
+  const dockerFeature = config.features
+    ?.["ghcr.io/devcontainers/features/docker-in-docker:4"];
+
+  assertEquals(dockerFeature !== undefined, true);
+  assertEquals(dockerFeature?.moby, true);
+  assertEquals(dockerFeature?.dockerDashComposeVersion, "v2");
+  assertEquals(dockerFeature?.installDockerBuildx, true);
+  assertEquals(config.privileged, true);
+
+  const developmentGuide = await Deno.readTextFile(
+    "docs/guide/develop/index.md",
+  );
+  assertEquals(developmentGuide.includes("docker info"), true);
+  assertEquals(developmentGuide.includes("mise run e2e:smoke"), true);
+});
+
 Deno.test("Phase 5 uses Deno metadata as the workspace source of truth", async () => {
   for (
     const path of [

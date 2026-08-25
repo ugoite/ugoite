@@ -40,3 +40,24 @@ ID or remove the local development data intentionally before seeding again.
 3. When changing the browser or API boundary, read the matching
    [architecture](../../architecture/index.md) and
    [executable specification](../../spec/index.md).
+
+## Run container-backed E2E in the devcontainer
+
+The devcontainer includes the maintained Docker-in-Docker Feature. It starts a
+separate Docker daemon inside the development container, so the Compose-backed
+E2E runner can build and start the `ugoite:e2e` image without using the host
+Docker daemon.
+
+After rebuilding or reopening the devcontainer, verify the inner daemon and
+run the representative E2E flow:
+
+```bash
+docker info
+docker compose version
+mise run e2e:smoke
+```
+
+The devcontainer is configured as privileged because Docker-in-Docker requires
+it. The host must provide Docker and the devcontainer should use the same CPU
+architecture as the host. E2E images and containers are owned by the inner
+daemon and are independent of the host's Docker image list.
