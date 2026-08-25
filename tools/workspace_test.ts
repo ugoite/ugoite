@@ -167,6 +167,53 @@ Deno.test("devcontainer SSH access remains optional and host-only", async () => 
   assertEquals(developmentGuide.includes("devcontainer-ssh.md"), true);
 });
 
+Deno.test("devcontainer SSH key comparison ignores public-key comments", async () => {
+  const root = await Deno.makeTempDir({ prefix: "ugoite-devcontainer-ssh-" });
+  const privateKey = `${root}/id_ed25519`;
+  const publicKey = `${privateKey}.pub`;
+
+  try {
+    const generated = await new Deno.Command("ssh-keygen", {
+      args: [
+        "-t",
+        "ed25519",
+        "-N",
+        "",
+        "-C",
+        "workspace-test",
+        "-f",
+        privateKey,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(
+      generated.success,
+      true,
+      new TextDecoder().decode(generated.stderr),
+    );
+
+    const compared = await new Deno.Command("bash", {
+      args: [
+        "-c",
+        `source scripts/devcontainer-ssh; PRIVATE_KEY_PATH="$1"; PUBLIC_KEY_PATH="$2"; ensure_dedicated_key`,
+        "bash",
+        privateKey,
+        publicKey,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(
+      compared.success,
+      true,
+      new TextDecoder().decode(compared.stderr),
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
 Deno.test("Phase 5 uses Deno metadata as the workspace source of truth", async () => {
   for (
     const path of [
