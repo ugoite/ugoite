@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
@@ -21,6 +22,7 @@ pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
 use ugoite_storage::{operator_from_uri_with_endpoint, OpendalStorage, StorageBackend};
 
 pub(crate) const CURRENT_SPACE_SCHEMA_VERSION: u64 = 2;
+const STORAGE_CONNECTION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct StorageConnectionTestConfig {
@@ -1300,19 +1302,33 @@ pub async fn test_storage_connection(
     let mode = storage_connection_mode(trimmed)?;
     let endpoint = validate_storage_endpoint(config.endpoint.as_deref())?;
     let operator = operator_from_uri_with_endpoint(trimmed, endpoint)?;
-    let mut lister = operator.lister("").await.map_err(|error| {
-        AppError::dependency_unavailable(
-            ErrorCode::StorageConnectionFailed,
-            format!("storage connection failed: {error}"),
-        )
-    })?;
-    let _ = lister.try_next().await.map_err(|error| {
-        AppError::dependency_unavailable(
-            ErrorCode::StorageConnectionFailed,
-            format!("storage connection failed: {error}"),
-        )
-    })?;
+    probe_storage_connection(&operator, STORAGE_CONNECTION_PROBE_TIMEOUT).await?;
     Ok(serde_json::json!({"status": "ok", "mode": mode}))
+}
+
+async fn probe_storage_connection(operator: &Operator, timeout: Duration) -> Result<()> {
+    match tokio::time::timeout(timeout, async {
+        let mut lister = operator.lister("").await?;
+        let _ = lister.try_next().await?;
+        Ok::<(), opendal::Error>(())
+    })
+    .await
+    {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(AppError::dependency_unavailable(
+            ErrorCode::StorageConnectionFailed,
+            format!("storage connection failed: {error}"),
+        )
+        .into()),
+        Err(_) => Err(AppError::dependency_unavailable(
+            ErrorCode::StorageConnectionFailed,
+            format!(
+                "storage connection failed: probe timed out after {}ms",
+                timeout.as_millis()
+            ),
+        )
+        .into()),
+    }
 }
 
 fn validate_space_path_segment(name: &str) -> Result<()> {
@@ -1383,4 +1399,39 @@ fn is_blocked_storage_host(host: &str) -> bool {
         return (16..=31).contains(&second_octet);
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    #[tokio::test]
+    async fn storage_connection_probe_times_out_without_external_service() -> Result<()> {
+        let listener = TcpListener::bind(("127.0.0.1", 0))?;
+        let endpoint = format!("http://{}", listener.local_addr()?);
+
+        let operator = Operator::new(
+            opendal::services::S3::default()
+                .bucket("bucket")
+                .root("/")
+                .region("us-east-1")
+                .endpoint(&endpoint)
+                .skip_signature(),
+        )?;
+        let result = probe_storage_connection(&operator, Duration::from_millis(50)).await;
+        drop(listener);
+
+        let error = result.expect_err("the non-responsive endpoint should time out");
+        let app_error = error
+            .downcast_ref::<AppError>()
+            .expect("probe timeout should preserve the storage connection app error");
+        assert_eq!(app_error.code(), ErrorCode::StorageConnectionFailed);
+        assert!(
+            app_error.message().contains("probe timed out"),
+            "unexpected storage probe error: {}",
+            app_error.message()
+        );
+        Ok(())
+    }
 }
