@@ -16,6 +16,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
     future::Future,
+    io::ErrorKind,
     path::Path,
     pin::Pin,
     sync::{
@@ -40,6 +41,8 @@ const MAX_AUTHORIZATION_STATE_BYTES: usize = 64 * 1024 * 1024;
 const AUTHORIZATION_STATE_READER_CHUNK_BYTES: usize = 256 * 1024;
 const MAX_AUTHORIZATION_MAP_ENTRIES: usize = 100_000;
 const MAX_AUTHORIZATION_POLICY_HISTORY_REVISIONS: usize = 1_000_000;
+const LOCAL_AUTHORIZATION_LOCK_RETRY_DELAY: std::time::Duration =
+    std::time::Duration::from_millis(10);
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -467,7 +470,7 @@ impl Authorizer {
         display_name: &str,
     ) -> Result<()> {
         let _guard = self.lock.lock().await;
-        let _local_lock = self.local_authorization_lock(space_id)?;
+        let _local_lock = self.local_authorization_lock(space_id).await?;
         let path = state_path(space_id);
         if self.operator.exists(&path).await? {
             bail!("authorization state already exists");
@@ -658,7 +661,7 @@ impl Authorizer {
         // using the same local Space. Hold the filesystem lock shared for the
         // complete protected read so an ACL writer cannot commit between the
         // snapshot and the content read.
-        let _local_read_lock = self.local_authorization_read_lock(space_id)?;
+        let _local_read_lock = self.local_authorization_read_lock(space_id).await?;
         let state = self.state(space_id).await?;
         operation(state).await
     }
@@ -668,7 +671,7 @@ impl Authorizer {
         space_id: &str,
     ) -> Result<(AuthorizationState, AuthorizationLease)> {
         let guard = self.lock.clone().lock_owned().await;
-        let local_lock = self.local_authorization_lock(space_id)?;
+        let local_lock = self.local_authorization_lock(space_id).await?;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
         let state = match self.state(space_id).await {
             Ok(state) => state,
@@ -972,7 +975,7 @@ impl Authorizer {
         F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
     {
         let guard = self.lock.clone().lock_owned().await;
-        let local_lock = self.local_authorization_lock(space_id)?;
+        let local_lock = self.local_authorization_lock(space_id).await?;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
         let lease = AuthorizationLease {
             _guard: guard,
@@ -990,7 +993,6 @@ impl Authorizer {
                 actor_principal_id,
                 actor_credential_id,
                 audit_events,
-                &lease.durable,
                 &lease,
                 mutation,
             )
@@ -1018,7 +1020,6 @@ impl Authorizer {
         actor_principal_id: Uuid,
         actor_credential_id: Uuid,
         audit_events: F,
-        durable: &Option<DurableAuthorizationLease>,
         lease: &AuthorizationLease,
         mutation: impl for<'a> FnOnce(
             &'a AuthorizationLease,
@@ -1043,7 +1044,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, None, durable)
+            self.write_human_approval_state(space_id, &state, None, lease)
                 .await?;
             return Err(AppError::forbidden("HUMAN_APPROVAL_INVALID").into());
         };
@@ -1056,7 +1057,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
                 .await?;
             return Err(
                 AppError::conflict(ErrorCode::InvalidInput, "HUMAN_APPROVAL_REPLAYED").into(),
@@ -1074,7 +1075,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
                 .await?;
             return Err(
                 AppError::expired(ErrorCode::InvalidInput, "HUMAN_APPROVAL_EXPIRED").into(),
@@ -1137,7 +1138,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
                 .await?;
             return Err(AppError::forbidden("HUMAN_APPROVAL_INVALID").into());
         }
@@ -1155,7 +1156,7 @@ impl Authorizer {
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-        self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
+        self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
             .await?;
         let mutation = lease
             .run_while_held(|| mutation(lease))
@@ -1169,15 +1170,9 @@ impl Authorizer {
         space_id: &str,
         state: &AuthorizationState,
         approval_id: Option<Uuid>,
-        durable: &Option<DurableAuthorizationLease>,
+        lease: &AuthorizationLease,
     ) -> Result<()> {
-        if let Some(durable) = durable {
-            durable.ensure_held()?
-        }
-        let write_result = match durable {
-            Some(_) => self.write_state_inner(space_id, state).await,
-            None => self.write_state(space_id, state).await,
-        };
+        let write_result = self.write_state_with_lease(space_id, state, lease).await;
         match write_result {
             Ok(()) => Ok(()),
             Err(error) => {
@@ -1711,15 +1706,8 @@ impl Authorizer {
             .durable
             .as_ref()
             .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
-        self.set_policy_locked(
-            space_id,
-            actor,
-            resource,
-            policy,
-            true,
-            lease.durable.as_ref(),
-        )
-        .await
+        self.set_policy_locked(space_id, actor, resource, policy, true, lease)
+            .await
     }
 
     pub async fn set_policy_without_audit_with_lease(
@@ -1736,15 +1724,8 @@ impl Authorizer {
             .durable
             .as_ref()
             .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
-        self.set_policy_locked(
-            space_id,
-            actor,
-            resource,
-            policy,
-            false,
-            lease.durable.as_ref(),
-        )
-        .await
+        self.set_policy_locked(space_id, actor, resource, policy, false, lease)
+            .await
     }
 
     async fn set_policy_locked(
@@ -1754,7 +1735,7 @@ impl Authorizer {
         resource: &ResourceRef,
         policy: AccessPolicy,
         append_audit: bool,
-        durable: Option<&DurableAuthorizationLease>,
+        lease: &AuthorizationLease,
     ) -> Result<()> {
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
@@ -1788,13 +1769,7 @@ impl Authorizer {
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-        match durable {
-            Some(durable) => {
-                self.write_state_with_durable(space_id, &state, durable)
-                    .await?
-            }
-            None => self.write_state(space_id, &state).await?,
-        }
+        self.write_state_with_lease(space_id, &state, lease).await?;
         if append_audit {
             audit::append_audit_event(
                 &self.operator,
@@ -2444,7 +2419,7 @@ impl Authorizer {
         let _local_lock = if local_lock_held {
             None
         } else {
-            self.local_authorization_lock(space_id)?
+            self.local_authorization_lock(space_id).await?
         };
 
         if state.revision == 1 {
@@ -2555,30 +2530,19 @@ impl Authorizer {
         Ok(())
     }
 
-    fn local_authorization_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
-        if !matches!(self.operator.info().scheme(), "fs" | "file") {
-            return Ok(None);
-        }
-        let root_value = self.operator.info().root();
-        let root = Path::new(root_value.as_str());
-        let lock_path = root
-            .join("spaces")
-            .join(space_id)
-            .join("security/principals.json.lock");
-        if let Some(parent) = lock_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(lock_path)?;
-        file.lock_exclusive()?;
-        Ok(Some(file))
+    async fn local_authorization_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+        self.acquire_local_authorization_lock(space_id, false).await
     }
 
-    fn local_authorization_read_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+    async fn local_authorization_read_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+        self.acquire_local_authorization_lock(space_id, true).await
+    }
+
+    async fn acquire_local_authorization_lock(
+        &self,
+        space_id: &str,
+        shared: bool,
+    ) -> Result<Option<std::fs::File>> {
         if !matches!(self.operator.info().scheme(), "fs" | "file") {
             return Ok(None);
         }
@@ -2597,8 +2561,23 @@ impl Authorizer {
             .read(true)
             .write(true)
             .open(lock_path)?;
-        file.lock_shared()?;
-        Ok(Some(file))
+        // A blocking flock would stop the executor before cancellation or a
+        // caller timeout can be observed. Poll the nonblocking operation and
+        // yield between attempts instead.
+        loop {
+            let lock_result = if shared {
+                FileExt::try_lock_shared(&file)
+            } else {
+                FileExt::try_lock_exclusive(&file)
+            };
+            match lock_result {
+                Ok(()) => return Ok(Some(file)),
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    tokio::time::sleep(LOCAL_AUTHORIZATION_LOCK_RETRY_DELAY).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 }
 
@@ -2990,19 +2969,121 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn initialize_owner_does_not_relock_local_authorization_file() -> Result<()> {
+    async fn initialize_owner_local_authorization_lock_is_bounded_and_persists_owner() -> Result<()>
+    {
         let tempdir = tempfile::tempdir()?;
         let op = operator_from_uri(&format!("file://{}", tempdir.path().display()))?;
         op.create_dir("spaces/demo/").await?;
         let authorizer = Authorizer::new(op);
+        let space_uid = Uuid::now_v7();
+        let owner = Uuid::now_v7();
 
         tokio::time::timeout(
             Duration::from_secs(5),
-            authorizer.initialize_owner("demo", Uuid::now_v7(), Uuid::now_v7(), "Owner"),
+            authorizer.initialize_owner("demo", space_uid, owner, "Owner"),
         )
         .await
         .context("local owner initialization timed out")??;
 
+        let state = authorizer.state("demo").await?;
+        assert_eq!(state.revision, 1);
+        assert_eq!(state.space_uid, space_uid);
+        let principal = state
+            .principals
+            .get(&owner)
+            .context("initialized owner principal was not persisted")?;
+        assert!(matches!(principal.kind, PrincipalKind::Human));
+        assert_eq!(principal.display_name, "Owner");
+        assert!(matches!(principal.state, PrincipalState::Active));
+        let membership = state
+            .memberships
+            .get(&owner)
+            .context("initialized owner membership was not persisted")?;
+        assert!(matches!(membership.role, SpaceRole::Owner));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn file_authorization_mutations_reuse_local_lock() -> Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let op = operator_from_uri(&format!("file://{}", tempdir.path().display()))?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let credential = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), owner, "Owner")
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "entry-1".into(),
+            parent: None,
+        };
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            authorizer.set_policy(
+                "demo",
+                owner,
+                &resource,
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: true,
+                    grants: Vec::new(),
+                },
+            ),
+        )
+        .await
+        .context("file-backed policy mutation timed out")??;
+
+        let (approval, token) = tokio::time::timeout(
+            Duration::from_secs(5),
+            authorizer.issue_human_approval(
+                "demo",
+                HumanApprovalIssue {
+                    operation: "entry.delete".into(),
+                    action: Action::Delete,
+                    resource: resource.clone(),
+                    intent_hash: "a".repeat(64),
+                    actor_principal_id: owner,
+                    actor_credential_id: credential,
+                    issuer_principal_id: owner,
+                    issuer_account_id: Uuid::now_v7(),
+                    issuer_credential_id: credential,
+                    issuer_credential_generation: 0,
+                    issuer_node_account_lifecycle_epoch: 0,
+                    ttl: chrono::Duration::seconds(30),
+                },
+            ),
+        )
+        .await
+        .context("file-backed approval issue timed out")??;
+        let approval_id = approval.approval_id;
+
+        let consumed = tokio::time::timeout(
+            Duration::from_secs(5),
+            authorizer.consume_human_approval(
+                "demo",
+                &token,
+                "entry.delete",
+                Action::Delete,
+                &resource,
+                &"a".repeat(64),
+                owner,
+                credential,
+            ),
+        )
+        .await
+        .context("file-backed approval consumption timed out")??;
+        assert_eq!(consumed.approval_id, approval_id);
+
+        let state = authorizer.state("demo").await?;
+        assert!(state.policies.contains_key(&resource.key()));
+        assert!(state
+            .human_approvals
+            .get(&approval_id)
+            .is_some_and(|approval| approval.consumed_at.is_some()));
         Ok(())
     }
 
