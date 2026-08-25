@@ -3431,10 +3431,17 @@ fn validate_zip_entry_count(bytes: &[u8]) -> std::result::Result<(), &'static st
     let Some(eocd) = bytes.windows(4).rposition(|window| window == b"PK\x05\x06") else {
         return Err("malformed_container");
     };
-    if bytes.len().saturating_sub(eocd) < 22 {
+    let Some(eocd_end) = eocd.checked_add(22) else {
         return Err("malformed_container");
-    }
-    let count = u16::from_le_bytes([bytes[eocd + 10], bytes[eocd + 11]]);
+    };
+    let Some(eocd_record) = bytes.get(eocd..eocd_end) else {
+        return Err("malformed_container");
+    };
+    let count = u16::from_le_bytes(
+        eocd_record[10..12]
+            .try_into()
+            .map_err(|_| "malformed_container")?,
+    );
     if count != u16::MAX {
         return if usize::from(count) <= MAX_ZIP_ENTRIES {
             Ok(())
@@ -3445,22 +3452,32 @@ fn validate_zip_entry_count(bytes: &[u8]) -> std::result::Result<(), &'static st
     let Some(locator) = eocd.checked_sub(20) else {
         return Err("malformed_container");
     };
-    if bytes.get(locator..locator + 4) != Some(b"PK\x06\x07") {
+    let Some(locator_end) = locator.checked_add(20) else {
+        return Err("malformed_container");
+    };
+    let Some(locator_record) = bytes.get(locator..locator_end) else {
+        return Err("malformed_container");
+    };
+    if locator_record.get(..4) != Some(b"PK\x06\x07") {
         return Err("malformed_container");
     }
     let zip64_offset = u64::from_le_bytes(
-        bytes[locator + 8..locator + 16]
+        locator_record[8..16]
             .try_into()
             .map_err(|_| "malformed_container")?,
     );
     let zip64_offset = usize::try_from(zip64_offset).map_err(|_| "parser_limit")?;
-    if bytes.get(zip64_offset..zip64_offset + 40).is_none()
-        || bytes.get(zip64_offset..zip64_offset + 4) != Some(b"PK\x06\x06")
-    {
+    let Some(zip64_record_end) = zip64_offset.checked_add(40) else {
+        return Err("parser_limit");
+    };
+    let Some(zip64_record) = bytes.get(zip64_offset..zip64_record_end) else {
+        return Err("malformed_container");
+    };
+    if zip64_record.get(..4) != Some(b"PK\x06\x06") {
         return Err("malformed_container");
     }
     let total_entries = u64::from_le_bytes(
-        bytes[zip64_offset + 32..zip64_offset + 40]
+        zip64_record[32..40]
             .try_into()
             .map_err(|_| "malformed_container")?,
     );
@@ -4244,6 +4261,21 @@ mod tests {
             extract_chunks(&Dispatch::Docx(parser_identity("docx")), &bytes),
             Err("parser_limit")
         ));
+    }
+
+    #[test]
+    fn zip64_offset_overflow_returns_parser_error_without_panicking() {
+        let mut bytes = vec![0; 42];
+        bytes[..4].copy_from_slice(b"PK\x06\x07");
+        bytes[8..16].copy_from_slice(&u64::try_from(usize::MAX).unwrap().to_le_bytes());
+        bytes[20..24].copy_from_slice(b"PK\x05\x06");
+        bytes[30..32].copy_from_slice(&u16::MAX.to_le_bytes());
+
+        let result = std::panic::catch_unwind(|| validate_zip_entry_count(&bytes));
+        assert_eq!(
+            result.expect("hostile ZIP64 offset must not panic"),
+            Err("parser_limit")
+        );
     }
 
     #[test]
