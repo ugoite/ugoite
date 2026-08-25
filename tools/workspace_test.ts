@@ -97,6 +97,19 @@ Deno.test("devcontainer provides an isolated Docker engine for local E2E", async
   assertEquals(developmentGuide.includes("mise run e2e:smoke"), true);
 });
 
+Deno.test("devcontainer trusts the root mise config before using mise", async () => {
+  const config = JSON.parse(
+    await Deno.readTextFile(".devcontainer/devcontainer.json"),
+  ) as { onCreateCommand?: string };
+  const command = config.onCreateCommand ?? "";
+
+  assertEquals(
+    command.startsWith("mise trust --yes /workspace/mise.toml &&"),
+    true,
+  );
+  assertEquals(command.includes("mise trust -- --non-interactive"), false);
+});
+
 Deno.test("Phase 5 uses Deno metadata as the workspace source of truth", async () => {
   for (
     const path of [
