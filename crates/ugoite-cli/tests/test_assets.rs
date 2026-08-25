@@ -2,17 +2,21 @@
 //! REQ-ASSET-001
 
 use std::net::TcpListener;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn ugoite_bin() -> String {
+fn ugoite_bin() -> PathBuf {
+    if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
+        return PathBuf::from(path);
+    }
+
     let mut path = std::env::current_exe().unwrap();
     path.pop();
     if path.ends_with("deps") {
         path.pop();
     }
     path.push("ugoite");
-    path.to_string_lossy().to_string()
+    path
 }
 
 fn immutable_space_path(root: &str) -> std::path::PathBuf {
