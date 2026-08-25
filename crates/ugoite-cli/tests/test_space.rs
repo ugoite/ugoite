@@ -10,14 +10,18 @@ fn created_space_dir(root: &std::path::Path, output: &std::process::Output) -> s
     root.join("spaces").join(space_id)
 }
 
-fn ugoite_bin() -> String {
+fn ugoite_bin() -> std::path::PathBuf {
+    if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
+        return std::path::PathBuf::from(path);
+    }
+
     let mut path = std::env::current_exe().unwrap();
     path.pop();
     if path.ends_with("deps") {
         path.pop();
     }
     path.push("ugoite");
-    path.to_string_lossy().to_string()
+    path
 }
 
 #[cfg(unix)]

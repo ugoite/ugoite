@@ -3,14 +3,18 @@
 
 use std::process::Command;
 
-fn ugoite_bin() -> String {
+fn ugoite_bin() -> std::path::PathBuf {
+    if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
+        return std::path::PathBuf::from(path);
+    }
+
     let mut path = std::env::current_exe().unwrap();
     path.pop();
     if path.ends_with("deps") {
         path.pop();
     }
     path.push("ugoite");
-    path.to_string_lossy().to_string()
+    path
 }
 
 /// Create a space and an Entry form, return (root, space_path, config_path).
