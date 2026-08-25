@@ -8,14 +8,18 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-fn ugoite_bin() -> String {
+fn ugoite_bin() -> std::path::PathBuf {
+    if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
+        return std::path::PathBuf::from(path);
+    }
+
     let mut path = std::env::current_exe().unwrap();
     path.pop();
     if path.ends_with("deps") {
         path.pop();
     }
     path.push("ugoite");
-    path.to_string_lossy().to_string()
+    path
 }
 
 fn spawn_json_server(body: &'static str) -> (String, thread::JoinHandle<()>) {

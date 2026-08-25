@@ -1,14 +1,18 @@
-use std::process::Command;
+use std::{path::PathBuf, process::Command};
 use ugoite_cli::commands::auth::DEFAULT_DEVICE_ACTIONS;
 
-fn ugoite_bin() -> String {
+fn ugoite_bin() -> PathBuf {
+    if let Some(path) = option_env!("CARGO_BIN_EXE_ugoite") {
+        return PathBuf::from(path);
+    }
+
     let mut path = std::env::current_exe().unwrap();
     path.pop();
     if path.ends_with("deps") {
         path.pop();
     }
     path.push("ugoite");
-    path.to_string_lossy().to_string()
+    path
 }
 
 #[test]
