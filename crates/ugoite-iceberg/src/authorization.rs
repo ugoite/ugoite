@@ -16,6 +16,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
     future::Future,
+    io::ErrorKind,
     path::Path,
     pin::Pin,
     sync::{
@@ -40,6 +41,8 @@ const MAX_AUTHORIZATION_STATE_BYTES: usize = 64 * 1024 * 1024;
 const AUTHORIZATION_STATE_READER_CHUNK_BYTES: usize = 256 * 1024;
 const MAX_AUTHORIZATION_MAP_ENTRIES: usize = 100_000;
 const MAX_AUTHORIZATION_POLICY_HISTORY_REVISIONS: usize = 1_000_000;
+const LOCAL_AUTHORIZATION_LOCK_RETRY_DELAY: std::time::Duration =
+    std::time::Duration::from_millis(10);
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -467,7 +470,7 @@ impl Authorizer {
         display_name: &str,
     ) -> Result<()> {
         let _guard = self.lock.lock().await;
-        let _local_lock = self.local_authorization_lock(space_id)?;
+        let _local_lock = self.local_authorization_lock(space_id).await?;
         let path = state_path(space_id);
         if self.operator.exists(&path).await? {
             bail!("authorization state already exists");
@@ -658,7 +661,7 @@ impl Authorizer {
         // using the same local Space. Hold the filesystem lock shared for the
         // complete protected read so an ACL writer cannot commit between the
         // snapshot and the content read.
-        let _local_read_lock = self.local_authorization_read_lock(space_id)?;
+        let _local_read_lock = self.local_authorization_read_lock(space_id).await?;
         let state = self.state(space_id).await?;
         operation(state).await
     }
@@ -668,7 +671,7 @@ impl Authorizer {
         space_id: &str,
     ) -> Result<(AuthorizationState, AuthorizationLease)> {
         let guard = self.lock.clone().lock_owned().await;
-        let local_lock = self.local_authorization_lock(space_id)?;
+        let local_lock = self.local_authorization_lock(space_id).await?;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
         let state = match self.state(space_id).await {
             Ok(state) => state,
@@ -972,7 +975,7 @@ impl Authorizer {
         F: Fn(Option<&HumanApproval>, &str, &str, &str) -> Vec<(Uuid, Value)>,
     {
         let guard = self.lock.clone().lock_owned().await;
-        let local_lock = self.local_authorization_lock(space_id)?;
+        let local_lock = self.local_authorization_lock(space_id).await?;
         let durable = self.acquire_durable_mutation_lease(space_id).await?;
         let lease = AuthorizationLease {
             _guard: guard,
@@ -2444,7 +2447,7 @@ impl Authorizer {
         let _local_lock = if local_lock_held {
             None
         } else {
-            self.local_authorization_lock(space_id)?
+            self.local_authorization_lock(space_id).await?
         };
 
         if state.revision == 1 {
@@ -2555,30 +2558,19 @@ impl Authorizer {
         Ok(())
     }
 
-    fn local_authorization_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
-        if !matches!(self.operator.info().scheme(), "fs" | "file") {
-            return Ok(None);
-        }
-        let root_value = self.operator.info().root();
-        let root = Path::new(root_value.as_str());
-        let lock_path = root
-            .join("spaces")
-            .join(space_id)
-            .join("security/principals.json.lock");
-        if let Some(parent) = lock_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(lock_path)?;
-        file.lock_exclusive()?;
-        Ok(Some(file))
+    async fn local_authorization_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+        self.acquire_local_authorization_lock(space_id, false).await
     }
 
-    fn local_authorization_read_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+    async fn local_authorization_read_lock(&self, space_id: &str) -> Result<Option<std::fs::File>> {
+        self.acquire_local_authorization_lock(space_id, true).await
+    }
+
+    async fn acquire_local_authorization_lock(
+        &self,
+        space_id: &str,
+        shared: bool,
+    ) -> Result<Option<std::fs::File>> {
         if !matches!(self.operator.info().scheme(), "fs" | "file") {
             return Ok(None);
         }
@@ -2597,8 +2589,23 @@ impl Authorizer {
             .read(true)
             .write(true)
             .open(lock_path)?;
-        file.lock_shared()?;
-        Ok(Some(file))
+        // A blocking flock would stop the executor before cancellation or a
+        // caller timeout can be observed. Poll the nonblocking operation and
+        // yield between attempts instead.
+        loop {
+            let lock_result = if shared {
+                FileExt::try_lock_shared(&file)
+            } else {
+                FileExt::try_lock_exclusive(&file)
+            };
+            match lock_result {
+                Ok(()) => return Ok(Some(file)),
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    tokio::time::sleep(LOCAL_AUTHORIZATION_LOCK_RETRY_DELAY).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 }
 
@@ -2990,18 +2997,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn initialize_owner_does_not_relock_local_authorization_file() -> Result<()> {
+    async fn initialize_owner_local_authorization_lock_is_bounded_and_persists_owner() -> Result<()>
+    {
         let tempdir = tempfile::tempdir()?;
         let op = operator_from_uri(&format!("file://{}", tempdir.path().display()))?;
         op.create_dir("spaces/demo/").await?;
         let authorizer = Authorizer::new(op);
+        let space_uid = Uuid::now_v7();
+        let owner = Uuid::now_v7();
 
         tokio::time::timeout(
             Duration::from_secs(5),
-            authorizer.initialize_owner("demo", Uuid::now_v7(), Uuid::now_v7(), "Owner"),
+            authorizer.initialize_owner("demo", space_uid, owner, "Owner"),
         )
         .await
         .context("local owner initialization timed out")??;
+
+        let state = authorizer.state("demo").await?;
+        assert_eq!(state.revision, 1);
+        assert_eq!(state.space_uid, space_uid);
+        let principal = state
+            .principals
+            .get(&owner)
+            .context("initialized owner principal was not persisted")?;
+        assert!(matches!(principal.kind, PrincipalKind::Human));
+        assert_eq!(principal.display_name, "Owner");
+        assert!(matches!(principal.state, PrincipalState::Active));
+        let membership = state
+            .memberships
+            .get(&owner)
+            .context("initialized owner membership was not persisted")?;
+        assert!(matches!(membership.role, SpaceRole::Owner));
 
         Ok(())
     }
