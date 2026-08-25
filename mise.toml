@@ -34,6 +34,10 @@ run = [
 description = "Seed local sample data with the development helper"
 run = "bash scripts/dev-seed.sh"
 
+[tasks."devcontainer:ssh"]
+description = "Configure SSH access to the development container"
+run = "bash scripts/devcontainer-ssh setup"
+
 [tasks.fmt]
 run = [
   "cargo fmt --all",

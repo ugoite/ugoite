@@ -110,6 +110,61 @@ Deno.test("devcontainer trusts the root mise config before using mise", async ()
   assertEquals(command.includes("mise trust -- --non-interactive"), false);
 });
 
+Deno.test("devcontainer SSH access remains optional and host-only", async () => {
+  const config = JSON.parse(
+    await Deno.readTextFile(".devcontainer/devcontainer.json"),
+  ) as {
+    features?: Record<string, Record<string, unknown>>;
+    appPort?: unknown;
+    forwardPorts?: unknown;
+    mounts?: unknown;
+  };
+  const sshFeature = config.features?.["ghcr.io/devcontainers/features/sshd:1"];
+  assertEquals(sshFeature?.gatewayPorts, "no");
+  assertEquals(config.appPort, undefined);
+  assertEquals(config.forwardPorts, undefined);
+  assertEquals(config.mounts, undefined);
+
+  const policy = await Deno.readTextFile(".devcontainer/ssh/10-ugoite.conf");
+  for (
+    const setting of [
+      "Port 2222",
+      "ListenAddress 127.0.0.1",
+      "AuthenticationMethods publickey",
+      "PasswordAuthentication no",
+      "PermitRootLogin no",
+      "AllowUsers vscode",
+      "AuthorizedKeysFile .ssh/ugoite_authorized_keys",
+      "AllowAgentForwarding no",
+      "AllowTcpForwarding local",
+      "GatewayPorts no",
+    ]
+  ) {
+    assertEquals(policy.includes(setting), true, setting);
+  }
+
+  const script = await Deno.readTextFile("scripts/devcontainer-ssh");
+  assertEquals(
+    script.startsWith("#!/usr/bin/env bash\nset -euo pipefail\n"),
+    true,
+  );
+  assertEquals(script.includes("SSH_AUTH_SOCK"), false);
+  assertEquals(script.includes("ssh-keyscan"), false);
+  assertEquals(script.includes("/home/vscode/.ssh/authorized_keys"), false);
+
+  const rootMise = await Deno.readTextFile("mise.toml");
+  assertEquals(
+    rootMise.includes(
+      '[tasks."devcontainer:ssh"]\ndescription = "Configure SSH access to the development container"\nrun = "bash scripts/devcontainer-ssh setup"',
+    ),
+    true,
+  );
+  const developmentGuide = await Deno.readTextFile(
+    "docs/guide/develop/index.md",
+  );
+  assertEquals(developmentGuide.includes("devcontainer-ssh.md"), true);
+});
+
 Deno.test("Phase 5 uses Deno metadata as the workspace source of truth", async () => {
   for (
     const path of [

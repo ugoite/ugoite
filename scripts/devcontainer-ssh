@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly HOST_ALIAS="ugoite-devcontainer"
+readonly REMOTE_POLICY_PATH="/etc/ssh/sshd_config.d/10-ugoite.conf"
+readonly REMOTE_AUTHORIZED_KEYS_PATH="/home/vscode/.ssh/ugoite_authorized_keys"
+
+die() {
+  echo "devcontainer-ssh: $*" >&2
+  exit 1
+}
+
+usage() {
+  echo "Usage: $0 {setup|proxy}" >&2
+}
+
+repository_root() {
+  cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P
+}
+
+inside_development_container() {
+  [[ -f /.dockerenv || -f /run/.containerenv || "${DEVCONTAINER:-}" == "true" || "${REMOTE_CONTAINERS:-}" == "true" || "${CODESPACES:-}" == "true" ]]
+}
+
+require_host_commands() {
+  local command
+  for command in devcontainer ssh ssh-keygen awk grep chmod mkdir mktemp mv; do
+    command -v "$command" >/dev/null 2>&1 || die "required host command is missing: $command"
+  done
+}
+
+devcontainer_exec() {
+  devcontainer exec --workspace-folder "$REPO_ROOT" "$@"
+}
+
+ensure_state_directory() {
+  if [[ -e "$SSH_STATE_DIR" && ! -d "$SSH_STATE_DIR" ]]; then
+    die "SSH state path is not a directory: $SSH_STATE_DIR"
+  fi
+  mkdir -p "$SSH_STATE_DIR"
+  chmod 0700 "$SSH_STATE_DIR"
+}
+
+write_local_file() {
+  local target="$1"
+  local mode="$2"
+  local content="$3"
+  local temporary
+
+  temporary="$(mktemp "${target}.tmp.XXXXXX")"
+  printf '%s\n' "$content" >"$temporary"
+  chmod "$mode" "$temporary"
+  mv -f -- "$temporary" "$target"
+}
+
+ensure_dedicated_key() {
+  local derived_public_key
+  local configured_public_key
+
+  if [[ -L "$PRIVATE_KEY_PATH" || -L "$PUBLIC_KEY_PATH" ]]; then
+    die "the dedicated SSH key paths must not be symbolic links"
+  fi
+
+  if [[ -e "$PRIVATE_KEY_PATH" ]]; then
+    [[ -f "$PRIVATE_KEY_PATH" ]] || die "dedicated SSH private key is not a regular file: $PRIVATE_KEY_PATH"
+    if [[ ! -e "$PUBLIC_KEY_PATH" ]]; then
+      derived_public_key="$(ssh-keygen -y -P "" -f "$PRIVATE_KEY_PATH")" || die "could not derive the public key from $PRIVATE_KEY_PATH"
+      write_local_file "$PUBLIC_KEY_PATH" 0644 "$derived_public_key"
+    fi
+  elif [[ -e "$PUBLIC_KEY_PATH" ]]; then
+    die "dedicated SSH public key exists without its private key: $PUBLIC_KEY_PATH"
+  else
+    ssh-keygen \
+      -t ed25519 \
+      -N "" \
+      -f "$PRIVATE_KEY_PATH" \
+      -C "ugoite-devcontainer"
+  fi
+
+  chmod 0600 "$PRIVATE_KEY_PATH"
+  chmod 0644 "$PUBLIC_KEY_PATH"
+
+  derived_public_key="$(ssh-keygen -y -P "" -f "$PRIVATE_KEY_PATH")" || die "could not read the dedicated SSH private key"
+  configured_public_key="$(awk 'NF >= 2 { print $1 " " $2; exit }' "$PUBLIC_KEY_PATH")"
+  [[ "$derived_public_key" == "$configured_public_key" ]] || die "dedicated SSH public key does not match its private key"
+}
+
+install_remote_policy() {
+  local temporary="/etc/ssh/sshd_config.d/.10-ugoite.conf.$$"
+
+  devcontainer_exec sudo -n install -d -o root -g root -m 0755 /etc/ssh/sshd_config.d
+  devcontainer_exec sudo -n tee "$temporary" >/dev/null <"$POLICY_PATH"
+  devcontainer_exec sudo -n chown root:root "$temporary"
+  devcontainer_exec sudo -n chmod 0644 "$temporary"
+  devcontainer_exec sudo -n mv -f "$temporary" "$REMOTE_POLICY_PATH"
+}
+
+install_remote_public_key() {
+  local temporary="/home/vscode/.ssh/.ugoite_authorized_keys.$$"
+
+  devcontainer_exec sudo -n install -d -o vscode -g vscode -m 0700 /home/vscode/.ssh
+  devcontainer_exec sudo -n tee "$temporary" >/dev/null <"$PUBLIC_KEY_PATH"
+  devcontainer_exec sudo -n chown vscode:vscode "$temporary"
+  devcontainer_exec sudo -n chmod 0600 "$temporary"
+  devcontainer_exec sudo -n mv -f "$temporary" "$REMOTE_AUTHORIZED_KEYS_PATH"
+}
+
+validate_remote_sshd() {
+  local effective_config
+  local expected
+
+  devcontainer_exec sudo -n sshd -t
+  effective_config="$(devcontainer_exec sudo -n sshd -T)" || die "sshd -T failed"
+
+  while IFS= read -r expected; do
+    grep -Fxq -- "$expected" <<<"$effective_config" || die "sshd effective configuration is missing: $expected"
+  done <<'EOF'
+port 2222
+listenaddress 127.0.0.1:2222
+permitrootlogin no
+passwordauthentication no
+authenticationmethods publickey
+allowusers vscode
+allowagentforwarding no
+allowtcpforwarding local
+EOF
+}
+
+read_host_public_key() {
+  local host_public_key
+  local key_type
+  local key_data
+
+  host_public_key="$(devcontainer_exec sudo -n cat /etc/ssh/ssh_host_ed25519_key.pub)" || die "could not read the container ED25519 host public key"
+  host_public_key="${host_public_key//$'\r'/}"
+  [[ "$host_public_key" != *$'\n'* ]] || die "container ED25519 host public key contains multiple lines"
+  read -r key_type key_data _ <<<"$host_public_key"
+  [[ "$key_type" == "ssh-ed25519" && "$key_data" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || die "container host public key is not an ED25519 public key"
+  printf '%s %s' "$key_type" "$key_data"
+}
+
+generate_proxy_helper() {
+  local escaped_script_path
+
+  printf -v escaped_script_path '%q' "$REPO_ROOT/scripts/devcontainer-ssh"
+  write_local_file "$PROXY_PATH" 0700 "#!/usr/bin/env bash
+set -euo pipefail
+exec bash $escaped_script_path proxy"
+}
+
+generate_ssh_config() {
+  write_local_file "$CLIENT_CONFIG_PATH" 0600 "Host $HOST_ALIAS
+    HostName $HOST_ALIAS
+    User vscode
+    IdentityFile ~/.ssh/ugoite-devcontainer/id_ed25519
+    IdentitiesOnly yes
+    HostKeyAlias $HOST_ALIAS
+    UserKnownHostsFile ~/.ssh/ugoite-devcontainer/known_hosts
+    StrictHostKeyChecking yes
+    ForwardAgent no
+    ExitOnForwardFailure yes
+    ProxyCommand ~/.ssh/ugoite-devcontainer/proxy"
+}
+
+test_connection() {
+  ssh \
+    -F "$CLIENT_CONFIG_PATH" \
+    -o BatchMode=yes \
+    -o ConnectTimeout=10 \
+    "$HOST_ALIAS" \
+    'test "$(id -un)" = vscode && test -d /workspace'
+}
+
+setup() {
+  local host_key
+
+  if inside_development_container; then
+    die "setup must run from a host terminal at the Ugoite repository root, not from inside the development container"
+  fi
+  require_host_commands
+  devcontainer_exec true >/dev/null || die "the development container for $REPO_ROOT is not running"
+  ensure_state_directory
+  ensure_dedicated_key
+  install_remote_policy
+  install_remote_public_key
+  validate_remote_sshd
+  devcontainer_exec sudo -n /etc/init.d/ssh restart >/dev/null
+  host_key="$(read_host_public_key)"
+  write_local_file "$KNOWN_HOSTS_PATH" 0600 "$HOST_ALIAS $host_key"
+  generate_proxy_helper
+  generate_ssh_config
+  test_connection
+  echo "SSH access to the Ugoite development container is ready."
+}
+
+proxy() {
+  (($# == 0)) || die "proxy does not accept arguments"
+
+  exec devcontainer exec --workspace-folder "$REPO_ROOT" bash -c '
+    set -eu
+    if command -v socat >/dev/null 2>&1; then
+      exec socat STDIO TCP:127.0.0.1:2222
+    fi
+    if command -v nc >/dev/null 2>&1; then
+      exec nc 127.0.0.1 2222
+    fi
+    if command -v ncat >/dev/null 2>&1; then
+      exec ncat 127.0.0.1 2222
+    fi
+    echo "devcontainer-ssh: no supported TCP relay (socat, nc, or ncat) is installed in the development container" >&2
+    exit 1
+  '
+}
+
+REPO_ROOT="$(repository_root)"
+POLICY_PATH="$REPO_ROOT/.devcontainer/ssh/10-ugoite.conf"
+SSH_STATE_DIR="${HOME:?HOME must be set}/.ssh/ugoite-devcontainer"
+PRIVATE_KEY_PATH="$SSH_STATE_DIR/id_ed25519"
+PUBLIC_KEY_PATH="$SSH_STATE_DIR/id_ed25519.pub"
+KNOWN_HOSTS_PATH="$SSH_STATE_DIR/known_hosts"
+CLIENT_CONFIG_PATH="$SSH_STATE_DIR/config"
+PROXY_PATH="$SSH_STATE_DIR/proxy"
+
+[[ -f "$POLICY_PATH" ]] || die "SSH policy file is missing: $POLICY_PATH"
+
+case "${1:-}" in
+  setup)
+    shift
+    (($# == 0)) || { usage; exit 2; }
+    setup
+    ;;
+  proxy)
+    shift
+    proxy "$@"
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
