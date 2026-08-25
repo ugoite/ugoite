@@ -993,7 +993,6 @@ impl Authorizer {
                 actor_principal_id,
                 actor_credential_id,
                 audit_events,
-                &lease.durable,
                 &lease,
                 mutation,
             )
@@ -1021,7 +1020,6 @@ impl Authorizer {
         actor_principal_id: Uuid,
         actor_credential_id: Uuid,
         audit_events: F,
-        durable: &Option<DurableAuthorizationLease>,
         lease: &AuthorizationLease,
         mutation: impl for<'a> FnOnce(
             &'a AuthorizationLease,
@@ -1046,7 +1044,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, None, durable)
+            self.write_human_approval_state(space_id, &state, None, lease)
                 .await?;
             return Err(AppError::forbidden("HUMAN_APPROVAL_INVALID").into());
         };
@@ -1059,7 +1057,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
                 .await?;
             return Err(
                 AppError::conflict(ErrorCode::InvalidInput, "HUMAN_APPROVAL_REPLAYED").into(),
@@ -1077,7 +1075,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
                 .await?;
             return Err(
                 AppError::expired(ErrorCode::InvalidInput, "HUMAN_APPROVAL_EXPIRED").into(),
@@ -1140,7 +1138,7 @@ impl Authorizer {
                 .revision
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
+            self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
                 .await?;
             return Err(AppError::forbidden("HUMAN_APPROVAL_INVALID").into());
         }
@@ -1158,7 +1156,7 @@ impl Authorizer {
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-        self.write_human_approval_state(space_id, &state, Some(approval.approval_id), durable)
+        self.write_human_approval_state(space_id, &state, Some(approval.approval_id), lease)
             .await?;
         let mutation = lease
             .run_while_held(|| mutation(lease))
@@ -1172,15 +1170,9 @@ impl Authorizer {
         space_id: &str,
         state: &AuthorizationState,
         approval_id: Option<Uuid>,
-        durable: &Option<DurableAuthorizationLease>,
+        lease: &AuthorizationLease,
     ) -> Result<()> {
-        if let Some(durable) = durable {
-            durable.ensure_held()?
-        }
-        let write_result = match durable {
-            Some(_) => self.write_state_inner(space_id, state).await,
-            None => self.write_state(space_id, state).await,
-        };
+        let write_result = self.write_state_with_lease(space_id, state, lease).await;
         match write_result {
             Ok(()) => Ok(()),
             Err(error) => {
@@ -1714,15 +1706,8 @@ impl Authorizer {
             .durable
             .as_ref()
             .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
-        self.set_policy_locked(
-            space_id,
-            actor,
-            resource,
-            policy,
-            true,
-            lease.durable.as_ref(),
-        )
-        .await
+        self.set_policy_locked(space_id, actor, resource, policy, true, lease)
+            .await
     }
 
     pub async fn set_policy_without_audit_with_lease(
@@ -1739,15 +1724,8 @@ impl Authorizer {
             .durable
             .as_ref()
             .map_or(Ok(()), DurableAuthorizationLease::ensure_held)?;
-        self.set_policy_locked(
-            space_id,
-            actor,
-            resource,
-            policy,
-            false,
-            lease.durable.as_ref(),
-        )
-        .await
+        self.set_policy_locked(space_id, actor, resource, policy, false, lease)
+            .await
     }
 
     async fn set_policy_locked(
@@ -1757,7 +1735,7 @@ impl Authorizer {
         resource: &ResourceRef,
         policy: AccessPolicy,
         append_audit: bool,
-        durable: Option<&DurableAuthorizationLease>,
+        lease: &AuthorizationLease,
     ) -> Result<()> {
         let mut state = self.state(space_id).await?;
         self.ensure_recovery_mutation_allowed(&mut state)?;
@@ -1791,13 +1769,7 @@ impl Authorizer {
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("authorization revision overflow"))?;
-        match durable {
-            Some(durable) => {
-                self.write_state_with_durable(space_id, &state, durable)
-                    .await?
-            }
-            None => self.write_state(space_id, &state).await?,
-        }
+        self.write_state_with_lease(space_id, &state, lease).await?;
         if append_audit {
             audit::append_audit_event(
                 &self.operator,
@@ -3029,6 +3001,89 @@ mod tests {
             .context("initialized owner membership was not persisted")?;
         assert!(matches!(membership.role, SpaceRole::Owner));
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn file_authorization_mutations_reuse_local_lock() -> Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let op = operator_from_uri(&format!("file://{}", tempdir.path().display()))?;
+        op.create_dir("spaces/demo/").await?;
+        let authorizer = Authorizer::new(op);
+        let owner = Uuid::now_v7();
+        let credential = Uuid::now_v7();
+        authorizer
+            .initialize_owner("demo", Uuid::now_v7(), owner, "Owner")
+            .await?;
+        let resource = ResourceRef {
+            kind: ResourceKind::Entry,
+            id: "entry-1".into(),
+            parent: None,
+        };
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            authorizer.set_policy(
+                "demo",
+                owner,
+                &resource,
+                AccessPolicy {
+                    policy_id: Uuid::now_v7(),
+                    inherit_space_role: true,
+                    grants: Vec::new(),
+                },
+            ),
+        )
+        .await
+        .context("file-backed policy mutation timed out")??;
+
+        let (approval, token) = tokio::time::timeout(
+            Duration::from_secs(5),
+            authorizer.issue_human_approval(
+                "demo",
+                HumanApprovalIssue {
+                    operation: "entry.delete".into(),
+                    action: Action::Delete,
+                    resource: resource.clone(),
+                    intent_hash: "a".repeat(64),
+                    actor_principal_id: owner,
+                    actor_credential_id: credential,
+                    issuer_principal_id: owner,
+                    issuer_account_id: Uuid::now_v7(),
+                    issuer_credential_id: credential,
+                    issuer_credential_generation: 0,
+                    issuer_node_account_lifecycle_epoch: 0,
+                    ttl: chrono::Duration::seconds(30),
+                },
+            ),
+        )
+        .await
+        .context("file-backed approval issue timed out")??;
+        let approval_id = approval.approval_id;
+
+        let consumed = tokio::time::timeout(
+            Duration::from_secs(5),
+            authorizer.consume_human_approval(
+                "demo",
+                &token,
+                "entry.delete",
+                Action::Delete,
+                &resource,
+                &"a".repeat(64),
+                owner,
+                credential,
+            ),
+        )
+        .await
+        .context("file-backed approval consumption timed out")??;
+        assert_eq!(consumed.approval_id, approval_id);
+
+        let state = authorizer.state("demo").await?;
+        assert!(state.policies.contains_key(&resource.key()));
+        assert!(state
+            .human_approvals
+            .get(&approval_id)
+            .is_some_and(|approval| approval.consumed_at.is_some()));
         Ok(())
     }
 
