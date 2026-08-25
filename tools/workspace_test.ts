@@ -118,12 +118,14 @@ Deno.test("devcontainer SSH access remains optional and host-only", async () => 
     appPort?: unknown;
     forwardPorts?: unknown;
     mounts?: unknown;
+    postCreateCommand?: string;
   };
   const sshFeature = config.features?.["ghcr.io/devcontainers/features/sshd:1"];
   assertEquals(sshFeature?.gatewayPorts, "no");
   assertEquals(config.appPort, undefined);
   assertEquals(config.forwardPorts, undefined);
   assertEquals(config.mounts, undefined);
+  assertEquals(config.postCreateCommand?.includes("netcat-openbsd"), true);
 
   const policy = await Deno.readTextFile(".devcontainer/ssh/10-ugoite.conf");
   for (
