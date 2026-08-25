@@ -41,6 +41,12 @@ ID or remove the local development data intentionally before seeding again.
    [architecture](../../architecture/index.md) and
    [executable specification](../../spec/index.md).
 
+## Optional SSH workflow
+
+SSH is optional and is useful for development tools that require a standard
+OpenSSH connection to the container. See [SSH access to the development
+container](devcontainer-ssh.md) for setup and connection instructions.
+
 ## Run container-backed E2E in the devcontainer
 
 The devcontainer includes the maintained Docker-in-Docker Feature. It starts a
