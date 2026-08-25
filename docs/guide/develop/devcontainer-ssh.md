@@ -5,6 +5,9 @@ sidebar:
   order: 3
 ---
 
+Use the optional SSH adapter when a development tool needs to communicate with
+the Ugoite container through standard OpenSSH.
+
 ## Overview
 
 SSH is an optional development workflow for tools that communicate with an
