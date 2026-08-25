@@ -1,10 +1,16 @@
 {
-  "name": "mise",
+  "name": "mise + Docker-in-Docker",
   "image": "mcr.microsoft.com/devcontainers/base:2.1.7-ubuntu24.04",
   "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "moby": true,
+      "dockerDashComposeVersion": "v2",
+      "installDockerBuildx": true
+    },
     "ghcr.io/devcontainers-extra/features/mise:1.0.0": {},
     "ghcr.io/devcontainers/features/github-cli:1.1.1": {}
   },
+  "privileged": true,
   "customizations": {
     "vscode": {
       "extensions": [
