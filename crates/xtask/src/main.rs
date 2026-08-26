@@ -1,11 +1,12 @@
 use anyhow::{bail, Context, Result};
+use serde::Deserialize;
 use serde_json::Value;
 use std::{env, fs, path::Path, process::Command};
 
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     let Some(command) = args.next() else {
-        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|architecture-check|docs-current-stack-check|legacy-auth-check>");
+        println!("usage: cargo run -p xtask -- <openapi-generate|openapi-check|architecture-check|docs-current-stack-check|supported-check|legacy-auth-check>");
         return Ok(());
     };
     match command.as_str() {
@@ -13,6 +14,7 @@ fn main() -> Result<()> {
         "openapi-check" => openapi_check(),
         "architecture-check" => architecture_check(),
         "docs-current-stack-check" => docs_current_stack_check(),
+        "supported-check" => supported_check(),
         "legacy-auth-check" => legacy_auth_check(),
         other => bail!("unknown xtask command: {other}"),
     }
@@ -404,31 +406,10 @@ fn docs_current_stack_check() -> Result<()> {
             }
         }
     }
-    let auth_registry = fs::read_to_string("docs/spec/features/auth.yaml")
-        .context("read authentication feature registry")?;
-    if auth_registry
-        .lines()
-        .any(|line| line.trim() == "status: implemented")
-    {
-        violations.push(
-            "docs/spec/features/auth.yaml marks an authentication surface as implemented; v0.1 must keep it future/reference"
-                .to_string(),
-        );
-    }
     let deferred_requirements = [
         (
             "docs/spec/requirements/security.yaml",
-            [
-                "REQ-SEC-003",
-                "REQ-SEC-004",
-                "REQ-SEC-005",
-                "REQ-SEC-007",
-                "REQ-SEC-008",
-                "REQ-SEC-009",
-                "REQ-SEC-012",
-                "REQ-SEC-013",
-            ]
-            .as_slice(),
+            ["REQ-SEC-009", "REQ-SEC-012", "REQ-SEC-013", "REQ-SEC-014"].as_slice(),
         ),
         (
             "docs/spec/requirements/ops.yaml",
@@ -451,29 +432,182 @@ fn docs_current_stack_check() -> Result<()> {
             }
         }
     }
-    let user_management = fs::read_to_string("docs/version/v0.1/user-management.yaml")
-        .context("read user-management tracker")?;
-    if user_management
-        .lines()
-        .take(5)
-        .any(|line| line == "status: completed")
-    {
-        violations.push(
-            "docs/version/v0.1/user-management.yaml marks future account-management work completed"
-                .to_string(),
-        );
-    }
     let openapi = fs::read_to_string("crates/ugoite-server/src/openapi.json")
         .context("read OpenAPI release boundary")?;
-    if !openapi.contains("does not advertise Passkey/TOTP/OIDC login") {
+    if !openapi.contains("v0.1 supports mandatory browser authentication with Passkey/WebAuthn") {
         violations.push(
-            "server OpenAPI must carry the v0.1 capability boundary for reference-only auth surfaces"
-                .to_string(),
+            "server OpenAPI must carry the v0.1 supported authentication boundary".to_string(),
         );
     }
     if !violations.is_empty() {
         bail!("{}", violations.join("\n"));
     }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct RequirementCatalog {
+    requirements: Vec<RequirementRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RequirementRecord {
+    id: String,
+    status: String,
+    verification: String,
+    #[serde(default)]
+    tests: Vec<TestReference>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TestReference {
+    file: String,
+    #[serde(default)]
+    cases: Vec<String>,
+    #[serde(default)]
+    tests: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthFeatureCatalog {
+    apis: Vec<AuthApiRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthApiRecord {
+    id: String,
+    status: String,
+    backend: AuthBackendRecord,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthBackendRecord {
+    file: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct UserManagementRelease {
+    status: String,
+    requirement_ids: Vec<String>,
+    #[serde(default)]
+    future_requirement_ids: Vec<String>,
+    phases: Vec<ReleasePhase>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleasePhase {
+    id: String,
+    status: String,
+}
+
+fn supported_check() -> Result<()> {
+    let security_text = fs::read_to_string("docs/spec/requirements/security.yaml")
+        .context("read security requirements")?;
+    let security: RequirementCatalog =
+        serde_yaml::from_str(&security_text).context("parse security requirements")?;
+    let requirements = security
+        .requirements
+        .iter()
+        .map(|requirement| (requirement.id.as_str(), requirement))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    let release_text = fs::read_to_string("docs/version/v0.1/user-management.yaml")
+        .context("read v0.1 user-management tracker")?;
+    let release: UserManagementRelease =
+        serde_yaml::from_str(&release_text).context("parse v0.1 user-management tracker")?;
+    if release.status != "completed" {
+        bail!("v0.1 user-management tracker must be completed");
+    }
+    for phase in &release.phases {
+        if matches!(phase.id.as_str(), "implementation" | "testing") && phase.status != "completed"
+        {
+            bail!("v0.1 user-management phase {} must be completed", phase.id);
+        }
+    }
+    let supported_ids = release
+        .requirement_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    let future_ids = release
+        .future_requirement_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    if supported_ids.intersection(&future_ids).next().is_some() {
+        bail!("v0.1 supported and future requirement lists overlap");
+    }
+
+    for id in &supported_ids {
+        let requirement = requirements
+            .get(id)
+            .with_context(|| format!("v0.1 requirement {id} is missing from security.yaml"))?;
+        if requirement.status != "implemented" {
+            bail!("supported requirement {id} must have status: implemented");
+        }
+        if requirement.verification != "traced" {
+            bail!("supported requirement {id} must have verification: traced");
+        }
+        let mut concrete_case_count = 0usize;
+        for test in &requirement.tests {
+            let path = Path::new(&test.file);
+            if !path.is_file() {
+                bail!(
+                    "supported requirement {id} references missing test file {}",
+                    test.file
+                );
+            }
+            let source = fs::read_to_string(path)
+                .with_context(|| format!("read requirement test reference {}", test.file))?;
+            for case in test.cases.iter().chain(test.tests.iter()) {
+                concrete_case_count += 1;
+                if !source.contains(case) {
+                    bail!(
+                        "supported requirement {id} references missing test case {case} in {}",
+                        test.file
+                    );
+                }
+            }
+        }
+        if requirement.tests.is_empty() || concrete_case_count == 0 {
+            bail!("supported requirement {id} must reference a concrete test case");
+        }
+    }
+
+    let auth_text = fs::read_to_string("docs/spec/features/auth.yaml")
+        .context("read authentication feature registry")?;
+    let auth: AuthFeatureCatalog =
+        serde_yaml::from_str(&auth_text).context("parse authentication feature registry")?;
+    let allowed_statuses = ["supported", "internal", "experimental", "future"];
+    let mut feature_ids = std::collections::BTreeSet::new();
+    for api in &auth.apis {
+        if !feature_ids.insert(api.id.as_str()) {
+            bail!("authentication feature {} is duplicated", api.id);
+        }
+        if !allowed_statuses.contains(&api.status.as_str()) {
+            bail!(
+                "authentication feature {} has invalid status {}",
+                api.id,
+                api.status
+            );
+        }
+        if !Path::new(&api.backend.file).is_file() {
+            bail!(
+                "authentication feature {} references missing backend {}",
+                api.id,
+                api.backend.file
+            );
+        }
+    }
+    if auth.apis.is_empty() {
+        bail!("authentication feature registry is empty");
+    }
+
+    println!(
+        "supported contract: {} requirements traced, {} authentication APIs classified",
+        supported_ids.len(),
+        auth.apis.len()
+    );
     Ok(())
 }
 

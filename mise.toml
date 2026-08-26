@@ -220,8 +220,13 @@ run = [
   "cargo run -p xtask -- openapi-check",
   "cargo run -p xtask -- architecture-check",
   "cargo run -p xtask -- docs-current-stack-check",
+  "cargo run -p xtask -- supported-check",
   "cargo run -p xtask -- legacy-auth-check",
 ]
+
+[tasks."check:supported"]
+description = "Validate the v0.1 supported authentication contract and test traceability"
+run = "cargo run -p xtask -- supported-check"
 
 [tasks."test:rust"]
 run = "cargo test --workspace --locked"

@@ -4,9 +4,12 @@ sidebar:
   order: 2
 ---
 
-> Release note: this page is an implementation/design reference. Passkey,
-> TOTP, OIDC, service-account, and audit-management workflows are not supported
-> v0.1 product promises.
+> v0.1 support boundary: mandatory authentication, owner bootstrap,
+> Passkey/WebAuthn registration and login, opaque browser sessions, Space
+> membership/ACL enforcement, authenticated MCP access, and authorized audit
+> reads are supported. TOTP/recovery-code workflows, OIDC, owner-approved
+> recovery, CLI device credentials, agent principals, and audit CRUD remain
+> future scope.
 
 Ugoite separates identity that belongs to one server from identity that must
 move with a Space.
@@ -35,16 +38,14 @@ implies the other.
 On the first server start, Ugoite writes only a SHA-256 hash of a
 cryptographically random, 30-minute, one-use setup secret and prints a setup URL
 to the local console/container log. Opening that URL starts WebAuthn
-registration. The Node remains uninitialized until either two Passkeys are
-registered, or one Passkey plus confirmed TOTP and the issued recovery codes are
-established. Until then, the setup session can access only credential
-strengthening endpoints.
+registration. The Node remains in setup until the administrator's initial
+Passkey ceremony is completed. Until then, the setup session can access only
+credential-strengthening endpoints.
 
 The first account receives `node_admin`, owner bindings for existing supported
-operator-created Spaces (or a new `default` Space when none exist), eight
-one-use recovery codes, and an opaque browser session. Save the recovery codes
-immediately. The setup secret cannot be reused. Visiting the server first never
-grants administrator access.
+operator-created Spaces (or a new `default` Space when none exist), and an
+opaque browser session. The setup secret cannot be reused. Visiting the server
+first never grants administrator access.
 
 ## Browser login and sessions
 
@@ -64,22 +65,13 @@ OIDC configuration require a Passkey authentication within the preceding five
 minutes. Accounts should register two or more Passkeys. Ugoite refuses to remove
 the final Passkey.
 
-## Recovery
+## Future: account recovery
 
-Initial setup returns eight one-use recovery codes. Their hashes are stored; the
-plaintext values are shown once. After signing in with a Passkey, enroll TOTP
-through `POST /auth/recovery/totp/start` and confirm the first code at
-`POST /auth/recovery/totp/finish`. The TOTP seed is encrypted at rest with a
-Node-local key.
+TOTP, recovery-code replacement, and owner-approved credential replacement are
+future capabilities. The v0.1 contract does not promise account recovery; keep
+access to a registered Passkey.
 
-Recovery requires both one unused recovery code and a current TOTP at
-`POST /auth/recovery/start`. A valid pair is consumed before Ugoite issues a
-five-minute WebAuthn registration challenge. Completing
-`POST /auth/recovery/finish` adds a new Passkey and opaque session. TOTP by
-itself never authorizes credential registration. The last owner and the final
-Passkey cannot be removed.
-
-### Owner-approved recovery
+### Future: owner-approved recovery
 
 An active human Space Owner can recover another active human member with a
 recent Passkey session. `POST /spaces/{space_id}/admin/recovery/force-reset`
@@ -97,18 +89,14 @@ Owners may instead rotate a member's backup codes at
 blindly: plaintext codes are delivered once, and the response reports whether
 audit delivery is `delivered` or `pending`.
 
-## Invitations and OIDC
+## Invitations and future identity providers
 
 Space owners issue a one-use invitation URL. Only the invitation hash, expiry,
 creator, Space UID, requested role, and its durable acceptance claim are stored.
-The recipient registers a
-Passkey, accepts with an existing signed-in account, or starts an enabled OIDC
-authorization-code flow with PKCE. A new OIDC subject cannot create an account
-without an invitation. Ugoite validates the provider ID token and nonce, then
-issues its own opaque session; provider tokens are never accepted by the Ugoite
-API. A signed-in user can add an OIDC method only after recent Passkey
-authentication; Ugoite refuses to link an issuer/subject pair already owned by
-another account.
+The recipient registers a Passkey or accepts with an existing signed-in
+account. OIDC authorization-code login and identity linking are future scope;
+they are not required for v0.1 membership acceptance and provider tokens are not
+accepted by the v0.1 API.
 
 An account has at most one Node binding in a Space. If an already-bound account
 opens an invitation for that same Space, acceptance is idempotent and keeps the
@@ -126,9 +114,9 @@ An account has at most one Node binding in a Space. If an already-bound account
 opens an invitation for that same Space, acceptance is idempotent and keeps the
 existing principal instead of creating a second membership.
 
-## CLI devices
+## Future: CLI devices
 
-`ugoite auth login` generates a P-256 key, requests a device code, and prints a
+`ugoite auth login` is a future workflow. It generates a P-256 key, requests a device code, and prints a
 verification URL and short user code. Approval shows the target Space and
 requested actions. The CLI stores its private key in the OS keychain when
 available, otherwise in an owner-only file. Access tokens last five minutes;
@@ -144,9 +132,11 @@ Devices and last-use state are visible and individually revocable. The expected
 URI comes from the Node's canonical public URL and the actual request path,
 never a client-provided forwarding header.
 
-## Agents and MCP
+## Authenticated MCP and future agents
 
-Agents are Space principals, not API keys. Every agent has a human sponsor and
+Authenticated MCP requests use the same user identity and Space ACL checks as
+REST. Agent principals are future scope. When enabled, agents will be Space
+principals, not API keys. Every agent has a human sponsor and
 at least one human owner, its own public-key credential, explicit actions,
 status, and a required expiry or review deadline. Autonomous tokens contain only
 the agent grant. Delegated tokens contain an actor chain and use the
@@ -164,7 +154,9 @@ atomically consumed before the mutation. A replay, route/body mismatch, expiry,
 or uncertain mutation result requires a new approval. Member, owner, agent,
 and Space-management operations remain Passkey-only.
 
-HTTP MCP is an OAuth protected resource. Discovery is available at
+The OAuth protected-resource and agent credential flows described below are
+future scope. HTTP MCP itself is supported only after the caller is
+authenticated. Discovery is available at
 `/.well-known/oauth-protected-resource` and
 `/.well-known/oauth-authorization-server`. Human clients use device
 authorization; autonomous agents use an ES256 client assertion. Tokens are

@@ -1,105 +1,160 @@
-version: "0.3"
-updated: "2026-06-29"
+version: '0.1'
+updated: '2026-08-26'
 kind: auth
+support_boundary:
+  supported:
+  - mandatory authentication
+  - owner bootstrap with Passkey
+  - Passkey/WebAuthn registration and passwordless login
+  - opaque browser sessions, logout, and revocation
+  - invitations, membership lifecycle, roles, and ACL enforcement
+  - authenticated REST and MCP access
+  - Node and Space authorization audit read access
+  internal_dependency:
+  - authentication capability discovery
+  experimental: []
+  future:
+  - TOTP and recovery-code account recovery
+  - owner-approved recovery
+  - OIDC authentication and account linking
+  - CLI OAuth device authorization and DPoP credentials
+  - agent and service-account principals
 apis:
   - id: auth.config
     method: GET
-    status: future
-    backend: {
-      path: /auth/config,
-      file: crates/ugoite-server/src/lib.rs,
-      function: auth_config,
-    }
+    status: internal
+    backend:
+      path: /auth/config
+      file: crates/ugoite-server/src/lib.rs
+      function: auth_config
+    note: Internal dependency for selecting the supported browser authentication flow.
   - id: auth.setup
     method: POST
-    status: future
-    backend: {
-      path: /auth/setup/start|finish,
-      file: crates/ugoite-server/src/lib.rs,
-      function: auth_setup_start,
-    }
-    frontend: {
-      path: /setup,
-      file: frontend/src/routes/setup.tsx,
-      function: SetupRoute,
-    }
+    status: supported
+    backend:
+      path: /auth/setup/start|/auth/setup/finish
+      file: crates/ugoite-server/src/lib.rs
+      function: auth_setup_start
+    frontend:
+      path: /setup
+      file: frontend/src/routes/setup.tsx
+      function: SetupRoute
   - id: auth.passkey
+    method: POST|DELETE|GET
+    status: supported
+    backend:
+      path: /auth/passkey/start|/auth/passkey/finish|/auth/passkeys|/auth/passkeys/start|/auth/passkeys/finish|/auth/passkeys/{credential_id}
+      file: crates/ugoite-server/src/lib.rs
+      function: auth_passkey_start
+    frontend:
+      path: /login|/settings/security
+      file: frontend/src/routes/login.tsx
+      function: LoginRoute
+  - id: auth.session
+    method: GET|DELETE
+    status: supported
+    backend:
+      path: /auth/session|/auth/sessions|/auth/sessions/{session_id}
+      file: crates/ugoite-server/src/lib.rs
+      function: auth_session
+    frontend:
+      path: /settings/security
+      file: frontend/src/routes/settings/security.tsx
+      function: SecuritySettingsRoute
+  - id: auth.membership
+    method: GET|POST|DELETE
+    status: supported
+    backend:
+      path: /auth/invitations/start|/auth/invitations/finish|/auth/invitations/accept|/spaces/{space_id}/members|/spaces/{space_id}/members/invitations|/spaces/{space_id}/members/{principal_id}|/spaces/{space_id}/members/{principal_id}/role
+      file: crates/ugoite-server/src/lib.rs
+      function: invite_member
+    frontend:
+      path: /spaces/join|/spaces/{space_id}/settings
+      file: frontend/src/routes/spaces/join.tsx
+      function: JoinSpaceRoute
+  - id: auth.audit
+    method: GET
+    status: supported
+    backend:
+      path: /auth/audit|/spaces/{space_id}/audit
+      file: crates/ugoite-server/src/lib.rs
+      function: list_audit_events
+    frontend:
+      path: /settings/security|/spaces/{space_id}/settings
+      file: frontend/src/components/AuditLogViewer.tsx
+      function: AuditLogViewer
+  - id: auth.mcp
     method: POST
-    status: future
-    backend: {
-      path: /auth/passkey/start|finish,
-      file: crates/ugoite-server/src/lib.rs,
-      function: auth_passkey_start,
-    }
-    frontend: {
-      path: /login,
-      file: frontend/src/routes/login.tsx,
-      function: LoginRoute,
-    }
+    status: supported
+    backend:
+      path: /mcp
+      file: crates/ugoite-server/src/mcp.rs
+      function: handle
+    note: Authenticated MCP access uses the same identity and ACL boundary as REST.
+  - id: auth.authorization
+    method: GET|POST|PUT|PATCH|DELETE
+    status: supported
+    backend:
+      path: /spaces/{space_id}/protected-resources
+      file: crates/ugoite-server/src/lib.rs
+      function: require_space_action
+    note: The path is a registry marker for the protected REST surface; concrete routes are authoritative in OpenAPI.
   - id: auth.recovery
     method: POST
     status: future
-    backend: {
-      path: /auth/recovery/start|finish|totp/start|totp/finish,
-      file: crates/ugoite-server/src/lib.rs,
-      function: auth_recovery_start,
-    }
-    frontend: {
-      path: /recover|/settings/security,
-      file: frontend/src/routes/recover.tsx,
-      function: RecoverRoute,
-    }
+    backend:
+      path: /auth/recovery/start|/auth/recovery/finish|/auth/recovery/totp/start|/auth/recovery/totp/finish
+      file: crates/ugoite-server/src/lib.rs
+      function: auth_recovery_start
+    frontend:
+      path: /recover|/settings/security
+      file: frontend/src/routes/recover.tsx
+      function: RecoverRoute
+    note: TOTP and recovery-code workflows are not part of the v0.1 support contract.
   - id: auth.owner_recovery
     method: POST
     status: future
-    backend: {
-      path: "/spaces/{space_id}/admin/recovery/force-reset|/spaces/{space_id}/admin/recovery/backup-codes|/auth/recovery/owner/start|/auth/recovery/owner/finish",
-      file: crates/ugoite-server/src/lib.rs,
-      function: owner_force_reset,
-    }
-    frontend: { status: future, note: Owner-approved recovery UI is not shipped in v0.1 }
+    backend:
+      path: /spaces/{space_id}/admin/recovery/force-reset|/spaces/{space_id}/admin/recovery/backup-codes|/auth/recovery/owner/start|/auth/recovery/owner/finish
+      file: crates/ugoite-server/src/lib.rs
+      function: owner_force_reset
+    note: Owner-approved recovery remains a future release contract.
   - id: auth.accounts
     method: GET|POST
     status: future
-    backend: {
-      path: "/auth/accounts|/auth/accounts/{account_id}/status",
-      file: crates/ugoite-server/src/lib.rs,
-      function: list_accounts,
-    }
+    backend:
+      path: /auth/accounts|/auth/accounts/{account_id}/status
+      file: crates/ugoite-server/src/lib.rs
+      function: list_accounts
   - id: auth.oidc
-    method: GET
+    method: GET|POST
     status: future
-    backend: {
-      path: "/auth/oidc/{provider_id}/start",
-      file: crates/ugoite-server/src/lib.rs,
-      function: oidc_start,
-    }
+    backend:
+      path: /auth/oidc/providers|/auth/oidc/{provider_id}/start|/auth/oidc/callback|/auth/oidc/{provider_id}/link
+      file: crates/ugoite-server/src/lib.rs
+      function: oidc_start
   - id: auth.device
-    method: POST
+    method: GET|POST|DELETE
     status: future
-    backend: {
-      path: /oauth/device/authorization,
-      file: crates/ugoite-server/src/lib.rs,
-      function: oauth_device_authorization,
-    }
-    ugoite_cli: {
-      command: ugoite auth login,
-      file: crates/ugoite-cli/src/commands/auth.rs,
-      function: run,
-    }
+    backend:
+      path: /auth/devices|/auth/devices/{credential_id}|/oauth/device/authorization|/oauth/device/pending|/oauth/device/approve
+      file: crates/ugoite-server/src/lib.rs
+      function: oauth_device_authorization
+    ugoite_cli:
+      command: ugoite auth login
+      file: crates/ugoite-cli/src/commands/auth.rs
+      function: run
   - id: auth.agent
     method: POST
     status: future
-    backend: {
-      path: /oauth/agent/token,
-      file: crates/ugoite-server/src/lib.rs,
-      function: issue_autonomous_agent_token,
-    }
-  - id: auth.session
-    method: GET|DELETE
+    backend:
+      path: /oauth/agent/token|/oauth/token|/oauth/authorize|/oauth/revoke|/spaces/{space_id}/agents|/spaces/{space_id}/agents/{agent_id}|/spaces/{space_id}/agents/{agent_id}/delegated-token|/spaces/{space_id}/approvals
+      file: crates/ugoite-server/src/lib.rs
+      function: issue_autonomous_agent_token
+  - id: auth.oauth_metadata
+    method: GET
     status: future
-    backend: {
-      path: /auth/session,
-      file: crates/ugoite-server/src/lib.rs,
-      function: auth_session,
-    }
+    backend:
+      path: /.well-known/oauth-protected-resource|/.well-known/oauth-authorization-server
+      file: crates/ugoite-server/src/lib.rs
+      function: oauth_protected_resource_metadata

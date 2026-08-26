@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { getBackendUrl, waitForServers } from "./lib/client.ts";
+import { addVirtualAuthenticator } from "./lib/webauthn.ts";
 
 test.describe("Space Membership", () => {
   test.beforeAll(async ({ request }) => await waitForServers(request));
@@ -25,16 +26,8 @@ test.describe("Space Membership", () => {
     const page = await invited.newPage();
     const cdp = await invited.newCDPSession(page);
     await cdp.send("WebAuthn.enable");
-    await cdp.send("WebAuthn.addVirtualAuthenticator", {
-      options: {
-        protocol: "ctap2",
-        transport: "internal",
-        hasResidentKey: true,
-        hasUserVerification: true,
-        isUserVerified: true,
-        automaticPresenceSimulation: true,
-      },
-    });
+    // REQ-SEC-007: invitation acceptance must register a real Passkey.
+    await addVirtualAuthenticator(cdp);
 
     try {
       await page.goto(invitationUrl);

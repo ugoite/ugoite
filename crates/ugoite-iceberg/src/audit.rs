@@ -794,6 +794,33 @@ mod tests {
     use ugoite_storage::operator_from_uri;
 
     #[tokio::test]
+    /// REQ-SEC-008
+    async fn req_sec_008_authorization_audit_is_append_only_and_attributed() -> Result<()> {
+        let op = operator_from_uri("memory://authorization-audit-contract")?;
+        let event_id = uuid::Uuid::now_v7();
+        let actor = uuid::Uuid::now_v7();
+        let event = json!({
+            "event_id": event_id,
+            "action": "member.revoked",
+            "subject_principal_id": uuid::Uuid::now_v7(),
+            "actor_principal_id": actor,
+            "credential_id": uuid::Uuid::now_v7(),
+            "outcome": "success",
+            "metadata": {"role": "viewer"}
+        });
+
+        let persisted = append_audit_event(&op, "demo", &event, None).await?;
+        let replay = append_audit_event(&op, "demo", &event, None).await?;
+        assert_eq!(persisted["event_id"], json!(event_id));
+        assert_eq!(replay["actor_principal_id"], json!(actor));
+        assert_eq!(
+            list_audit_events(&op, "demo", AuditListOptions::default()).await?["total"],
+            1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_req_sec_013_in_process_event_id_deduplication() -> Result<()> {
         let op = operator_from_uri("memory://audit-dedupe")?;
         let event_id = uuid::Uuid::now_v7().to_string();

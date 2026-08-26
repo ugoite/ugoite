@@ -98,8 +98,9 @@ ugoite config set --mode backend --backend-url http://127.0.0.1:8000
 ugoite space list
 ```
 
-The authentication/device flow is future/reference scope and is not a shipped
-v0.1 login contract. Use core mode for the supported local-first workflow.
+The CLI authentication/device flow is future/reference scope and is not a
+shipped v0.1 remote CLI login contract. The server browser uses the supported
+Passkey/session flow; use core mode for the supported local-first CLI workflow.
 
 ## API and documentation
 

@@ -62,24 +62,24 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-003
   title: Mandatory User Authentication
-  description: 'All API/MCP access MUST require authenticated user identity, including
-
-    localhost mode. Network binding and remote exposure flags MUST NOT disable
-
-    authentication enforcement.
-
-    '
+  description: 'Every protected REST and MCP request MUST require an authenticated human or explicitly scoped future credential. Localhost mode and remote exposure configuration MUST NOT bypass authentication.'
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
   - api/mcp.md#model-context-protocol-v1
   priority: high
-  status: planned
+  status: implemented
   verification: traced
   tests:
-  - file: crates/ugoite-cli/tests/test_cli_endpoint_routing.rs
+  - file: crates/ugoite-server/tests/api_contract.rs
+    cases:
+    - mcp_v1_transport_rejects_legacy_methods_and_validates_the_wire_shape
+  - file: crates/ugoite-server/src/lib.rs
+    cases:
+    - req_sec_003_rejects_unauthenticated_rest_requests
   - file: e2e/api-proxy-security.test.ts
-  - file: frontend/src/routes/api/[...path].test.ts
+    cases:
+    - 'REQ-SEC-003: browser /api proxy rejects protocol-relative upstream targets'
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -93,25 +93,25 @@ requirements:
   - SPEC-SECURITY-SANDBOX
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-004
-  title: Passkey-First Authentication and OIDC Linking
-  description: 'Primary user authentication MUST be passkey/WebAuthn with passwordless
-
-    login. Optional external OIDC identity linking MAY be enabled, MUST identify
-
-    users by issuer and subject, and MUST NOT auto-provision uninvited accounts.
-
-    '
+  title: Passwordless Passkey Authentication
+  description: 'The supported primary authentication mechanism MUST be Passkey/WebAuthn with passwordless login. WebAuthn assertions MUST be validated server-side with discoverable credentials and user verification required. OIDC linking is outside this requirement.'
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
-  - stories/experimental.yaml
+  - api/mcp.md#model-context-protocol-v1
   priority: high
-  status: planned
+  status: implemented
   verification: traced
   tests:
   - file: crates/ugoite-identity/src/node_identity.rs
+    cases:
+    - added_passkeys_use_distinct_discoverable_user_handles
   - file: crates/ugoite-server/tests/api_contract.rs
+    cases:
+    - uninitialized_node_exposes_setup_capability_without_default_identity
   - file: e2e/global-setup.ts
+    cases:
+    - globalSetup
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -125,26 +125,51 @@ requirements:
   - SPEC-SECURITY-SANDBOX
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-005
-  title: Admin Bootstrap and Recovery Controls
-  description: 'Initial setup MUST use an expiring one-time secret stored only as a
-
-    hash and MUST establish either two passkeys or a passkey plus confirmed TOTP
-
-    and recovery codes. Recovery codes and invitation tokens MUST be single-use
-
-    and stored only as hashes.
-
-    '
+  title: Initial Owner Bootstrap Controls
+  description: 'Initial setup MUST use an expiring one-time secret stored only as a hash, MUST reject reuse, MUST create the administrator account and required initial Passkey state, and MUST create an authenticated opaque browser session. Account recovery is specified separately as future scope.'
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-identity/src/node_identity.rs
+    cases:
+    - setup_secret_is_hashed_and_only_emitted_once
+  - file: crates/ugoite-server/tests/api_contract.rs
+    cases:
+    - uninitialized_node_exposes_setup_capability_without_default_identity
+  - file: e2e/global-setup.ts
+    cases:
+    - globalSetup
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-SECURITY-SANDBOX
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-014
+  title: Account Recovery and External Identity Linking
+  description: 'TOTP, recovery-code replacement, owner-approved recovery, and OIDC identity linking remain future capabilities and MUST NOT be part of the v0.1 support contract.'
+  related_spec:
+  - security/overview.md
+  - api/rest.md#authentication
+  - stories/experimental.yaml
   priority: high
   status: planned
   verification: traced
   tests:
   - file: crates/ugoite-identity/src/node_identity.rs
-  - file: crates/ugoite-server/tests/api_contract.rs
-  - file: e2e/global-setup.ts
+    cases:
+    - totp_enrollment_distinguishes_invalid_codes_from_internal_state_errors
+    - oidc_subject_links_to_exact_existing_account
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -173,8 +198,15 @@ requirements:
   verification: traced
   tests:
   - file: crates/ugoite-iceberg/src/authorization.rs
+    cases:
+    - authorizer_enforces_roles_and_last_owner
   - file: crates/ugoite-iceberg/src/service.rs
   - file: crates/ugoite-server/tests/api_contract.rs
+    cases:
+    - mcp_v1_transport_rejects_legacy_methods_and_validates_the_wire_shape
+  - file: crates/ugoite-server/src/lib.rs
+    cases:
+    - authenticated_mcp_route_enforces_binding_dpop_acl_and_human_mutations
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -202,11 +234,21 @@ requirements:
   - stories/experimental.yaml
   - api/rest.md#endpoints
   priority: high
-  status: planned
+  status: implemented
   verification: traced
   tests:
   - file: e2e/space-membership.test.ts
-  - file: frontend/src/routes/spaces/join.tsx
+    cases:
+    - 'REQ-SEC-007: one-use invitation registers a real Passkey and can be revoked'
+    - 'REQ-SEC-007: an existing Space member can retry the same invitation idempotently'
+  - file: crates/ugoite-iceberg/src/authorization.rs
+    cases:
+    - authorizer_enforces_roles_and_last_owner
+    - concurrent_revocation_and_policy_update_cannot_restore_principal
+  - file: crates/ugoite-identity/src/node_identity.rs
+    cases:
+    - existing_account_can_accept_invitation_idempotently
+    - existing_space_binding_accepts_invitation_without_creating_a_second_principal
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
@@ -227,11 +269,19 @@ requirements:
   - security/overview.md
   - api/rest.md#authentication
   priority: high
-  status: planned
+  status: implemented
   verification: traced
   tests:
   - file: crates/ugoite-iceberg/src/authorization.rs
-  - file: crates/ugoite-server/tests/api_contract.rs
+    cases:
+    - authorizer_enforces_roles_and_last_owner
+    - concurrent_revocation_and_policy_update_cannot_restore_principal
+  - file: crates/ugoite-iceberg/src/audit.rs
+    cases:
+    - req_sec_008_authorization_audit_is_append_only_and_attributed
+  - file: crates/ugoite-server/src/lib.rs
+    cases:
+    - req_sec_008_space_audit_is_visible_only_to_space_owners
 - set_id: REQCAT-SECURITY
   source_file: requirements/security.yaml
   scope: Security controls, integrity protections, and isolation requirements.
