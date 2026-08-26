@@ -187,8 +187,14 @@ fn apply_local_space_permissions(op: &Operator, space_id: &str) -> Result<()> {
     for dir in ["security", "forms", "assets", "sql_sessions"] {
         set_owner_only_mode(&space_dir.join(dir), 0o700)?;
     }
-    for file in ["meta.json", "settings.json", ".ugoite-space-patch.json"] {
+    for file in ["meta.json", "settings.json"] {
         set_owner_only_mode(&space_dir.join(file), 0o600)?;
+    }
+    if let Some(control_dir) = local_space_patch_control_dir(op) {
+        set_owner_only_mode(&control_dir, 0o700)?;
+        if let Some(journal) = local_space_patch_journal_fs_path(op, space_id) {
+            set_owner_only_mode(&journal, 0o600)?;
+        }
     }
     Ok(())
 }
@@ -697,19 +703,25 @@ fn default_space_patch_journal_status() -> String {
 }
 
 fn space_patch_journal_path(space_id: &str) -> String {
-    format!("spaces/{space_id}/.ugoite-space-patch.json")
+    format!("_ugoite/space-patches/{space_id}.json")
+}
+
+fn local_space_patch_control_dir(op: &Operator) -> Option<PathBuf> {
+    if !matches!(op.info().scheme(), "fs" | "file") {
+        return None;
+    }
+    Some(Path::new(op.info().root().as_str()).join("_ugoite/space-patches"))
+}
+
+fn local_space_patch_journal_fs_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
+    local_space_patch_control_dir(op).map(|path| path.join(format!("{space_id}.json")))
 }
 
 fn local_space_patch_lock_path(op: &Operator, space_id: &str) -> Option<PathBuf> {
     if !matches!(op.info().scheme(), "fs" | "file") {
         return None;
     }
-    Some(
-        Path::new(op.info().root().as_str())
-            .join("spaces")
-            .join(space_id)
-            .join(".ugoite-space-patch.lock"),
-    )
+    local_space_patch_control_dir(op).map(|path| path.join(format!("{space_id}.lock")))
 }
 
 async fn acquire_local_space_patch_lock(op: &Operator, space_id: &str) -> Result<Option<File>> {
@@ -717,6 +729,13 @@ async fn acquire_local_space_patch_lock(op: &Operator, space_id: &str) -> Result
         return Ok(None);
     };
     let file = tokio::task::spawn_blocking(move || -> Result<File> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("create Space patch control directory {}", parent.display())
+            })?;
+            #[cfg(unix)]
+            set_owner_only_mode(parent, 0o700)?;
+        }
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -724,6 +743,8 @@ async fn acquire_local_space_patch_lock(op: &Operator, space_id: &str) -> Result
             .write(true)
             .open(&path)
             .with_context(|| format!("open Space patch lock {}", path.display()))?;
+        #[cfg(unix)]
+        set_owner_only_mode(&path, 0o600)?;
         file.lock_exclusive()
             .with_context(|| format!("lock Space patch {}", path.display()))?;
         Ok(file)
@@ -831,6 +852,8 @@ async fn write_local_space_json_atomic(
         .parent()
         .ok_or_else(|| anyhow!("Space JSON path has no parent: {path}"))?;
     tokio::fs::create_dir_all(parent).await?;
+    #[cfg(unix)]
+    set_owner_only_mode(parent, 0o700)?;
     let file_name = target
         .file_name()
         .ok_or_else(|| anyhow!("Space JSON path has no file name: {path}"))?

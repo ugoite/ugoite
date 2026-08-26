@@ -181,8 +181,8 @@ async fn local_space_validation_repairs_patch_journal_mode() -> anyhow::Result<(
 
     let journal = dir
         .path()
-        .join("spaces/private-journal/.ugoite-space-patch.json");
-    let journal_path = "spaces/private-journal/.ugoite-space-patch.json";
+        .join("_ugoite/space-patches/private-journal.json");
+    let journal_path = "_ugoite/space-patches/private-journal.json";
     let mut pending: Value = serde_json::from_slice(&op.read(journal_path).await?.to_vec())?;
     pending["status"] = Value::String("pending".to_string());
     op.write(journal_path, serde_json::to_vec(&pending)?)
@@ -361,7 +361,7 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
     let mut new_settings = old_settings.clone();
     new_settings["default_form"] = Value::String("Entry".to_string());
     op.write(
-        "spaces/patch-recovery/.ugoite-space-patch.json",
+        "_ugoite/space-patches/patch-recovery.json",
         serde_json::to_vec(&serde_json::json!({
             "old_metadata": old_meta,
             "new_metadata": new_meta,
@@ -377,7 +377,7 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
     let recovered: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
     assert_eq!(recovered["name"], "recovered-name");
     let journal: Value = serde_json::from_slice(
-        &op.read("spaces/patch-recovery/.ugoite-space-patch.json")
+        &op.read("_ugoite/space-patches/patch-recovery.json")
             .await?
             .to_vec(),
     )?;
@@ -396,7 +396,7 @@ async fn stale_space_patch_journal_is_discarded_after_a_valid_winner() -> anyhow
     let mut new_meta = old_meta.clone();
     new_meta["name"] = Value::String("journal-winner".to_string());
     op.write(
-        "spaces/stale-patch/.ugoite-space-patch.json",
+        "_ugoite/space-patches/stale-patch.json",
         serde_json::to_vec(&serde_json::json!({
             "old_metadata": old_meta,
             "new_metadata": new_meta,
@@ -416,7 +416,7 @@ async fn stale_space_patch_journal_is_discarded_after_a_valid_winner() -> anyhow
     let observed: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
     assert_eq!(observed["name"], "external-winner");
     let journal: Value = serde_json::from_slice(
-        &op.read("spaces/stale-patch/.ugoite-space-patch.json")
+        &op.read("_ugoite/space-patches/stale-patch.json")
             .await?
             .to_vec(),
     )?;
@@ -436,7 +436,7 @@ async fn completed_space_patch_journal_is_reused_with_version_fencing() -> anyho
         serde_json::from_slice(&op.read("spaces/patch-reuse/meta.json").await?.to_vec())?;
     assert_eq!(metadata["name"], "second");
     let journal: Value = serde_json::from_slice(
-        &op.read("spaces/patch-reuse/.ugoite-space-patch.json")
+        &op.read("_ugoite/space-patches/patch-reuse.json")
             .await?
             .to_vec(),
     )?;

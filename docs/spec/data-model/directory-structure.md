@@ -26,6 +26,10 @@ spaces/
     assets/
     sql_sessions/
 
+_ugoite/
+  space-bindings/{space_id}.json    # Node-local Space locator
+  space-patches/{space_id}.json     # Node-local patch journal
+
 users/
   {sha256(user_id)}/
     preferences.json
