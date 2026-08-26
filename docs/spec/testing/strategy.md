@@ -22,9 +22,11 @@ Tests are organized around the shared Rust core and thin adapters.
 Requirement IDs embedded in test names/source provide traceability. A requirement without a current test reference is labeled `untraced`; deleted paths are not retained as evidence.
 
 The focused `tools/coverage_gates_test.ts` contract tests keep the package
-coverage tasks, thresholds, canonical root test graph, aggregate CI lane wiring,
+coverage tasks, thresholds, canonical root quality graph, Hosted CI lane wiring,
 required status aggregator, single-writer dependency/Deno caches, and
-`REQ-OPS-021`/`REQ-OPS-024` traceability aligned.
+`REQ-OPS-021`/`REQ-OPS-024` traceability aligned. Hosted lanes may repack
+semantic tasks for parallel runners, but they must not implement repository
+validation independently of Mise.
 
 Use focused crate/package tests while developing, then run `mise run ci` or the merge/release gates as appropriate.
 

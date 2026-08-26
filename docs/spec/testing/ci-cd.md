@@ -27,9 +27,9 @@ Root task composition:
 - `ci:merge`: `ci` plus `ci:artifacts`;
 - `ci:release`: `ci:merge`, npm packaging/verification, and the full E2E suite.
 
-Hosted CI schedules the `quality` and `artifacts` lanes in parallel, then the `ci-required` aggregator preserves the required status-check context. The quality lane runs only `mise run ci` and does not install Playwright or configure Buildx. The artifact lane runs only `mise run ci:artifacts` and owns Playwright/BuildKit setup plus verified artifact upload.
+Hosted CI schedules the `ci-rust-check`, `ci-rust-test`, `ci-web`, and `artifacts` lanes in parallel, then the `ci-required` aggregator preserves the required status-check context. The three quality lanes run only `mise run ci:lane:rust-check`, `mise run ci:lane:rust-test`, and `mise run ci:lane:web`; they do not duplicate repository validation commands in GitHub Actions. The artifact lane runs only `mise run ci:artifacts` and owns Playwright/BuildKit setup plus verified artifact upload.
 
-Both lanes restore the Rust registry/git dependency cache without caching `target/`; the quality lane is the sole Cargo dependency and Deno archive writer. sccache owns compiler artifact reuse in both lanes: it is read-only for pull requests and merge queues and writes only on successful `main` pushes. Playwright browser and BuildKit caches remain separately keyed and are refreshed only after successful pushes to `main`. Successful `main` runs upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
+Rust-compiling lanes restore the Rust registry/git dependency cache without caching `target/`; `ci-rust-check` is the sole Cargo dependency archive writer, while `ci-rust-test`, `ci-web`, and `artifacts` are restore-only. `ci-web` is the sole Deno archive writer; `artifacts` may restore it, but does not write it. sccache owns compiler artifact reuse in all Rust-compiling lanes: it is read-only for pull requests and merge queues and writes only on successful `main` pushes. Playwright browser and BuildKit caches remain separately keyed and are refreshed only after successful pushes to `main`. Successful `main` runs upload the verified artifact set using the logical names `ugoite-docsite-pages`, `ugoite-runtime-image`, `ugoite-cli-linux`, `ugoite-helm-chart`, and `ugoite-artifact-manifest`.
 
 The hosted runtime image uses Dockerfile's `runtime-prebuilt` target. It copies the canonical frontend and Rust release outputs into the image instead of compiling them again inside Docker. E2E tasks require the already loaded `ugoite:e2e` image and never invoke an image build. The default Dockerfile target remains a portable source build for direct Docker and Compose use.
 
@@ -44,13 +44,23 @@ browser-install step as a cache-miss fallback, previews the static artifact,
 and verifies Starlight navigation semantics before the heavier runtime-backed
 smoke suite runs.
 
-The required `ci-required` aggregator runs after both lanes on pull requests,
-merge queues, and pushes to `main`. It fails unless both lane results are
-successful. The canonical `test` Mise task invokes both package-level Vitest
-coverage gates, so their hard thresholds remain merge gates without duplicating
-individual coverage commands in GitHub Actions. The active `main only pr`
-repository ruleset must require the `ci-required` status-check context; a
-successful push-to-`main` run alone is not merge enforcement.
+The required `ci-required` aggregator runs after all four lanes on pull
+requests, merge queues, and pushes to `main`. It fails unless
+`ci-rust-check`, `ci-rust-test`, `ci-web`, and `artifacts` are all successful.
+The canonical `test` Mise task invokes both package-level Vitest coverage gates,
+and `ci:lane:web` packs those same coverage tasks for Hosted CI, so their hard
+thresholds remain merge gates without duplicating individual coverage commands
+in GitHub Actions. The active `main only pr` repository ruleset must require
+the `ci-required` status-check context; a successful push-to-`main` run alone
+is not merge enforcement.
+
+The root Mise graph is the repository quality contract: `ci` composes
+`fmt:check`, `lint`, `check`, and `test`; `lint` composes Rust and Deno lint
+tasks; `check` composes Rust, Deno, and repository contract checks. Hosted lane
+tasks are packing adapters only and are covered by
+`tools/coverage_gates_test.ts`, which explicitly asserts their semantic
+composition and workflow entrypoints. `mise run ci` and `mise run ci:merge`
+remain the developer-facing canonical interfaces.
 Frontend's unit coverage gate explicitly covers the portable Rust/WASM protocol
 boundary in `frontend/src/lib/ugoite-client/protocol.ts`; UI behavior remains
 covered by behavior tests and E2E. Docsite coverage includes authored

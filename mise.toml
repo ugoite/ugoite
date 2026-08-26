@@ -53,10 +53,19 @@ run = [
   "deno fmt --check",
 ]
 
+[tasks."lint:rust"]
+description = "Lint Rust workspace"
+run = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+
+[tasks."lint:deno"]
+description = "Lint Deno workspace sources"
+run = "deno lint tools e2e frontend/src docsite/src"
+
 [tasks.lint]
+description = "Run all repository linters"
 run = [
-  "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-  "deno lint tools e2e frontend/src docsite/src",
+  { task = "lint:rust" },
+  { task = "lint:deno" },
 ]
 
 [tasks."build:wasm:debug"]
@@ -213,18 +222,35 @@ run = [
   { task = "build:image", env = { UGOITE_IMAGE_PREBUILT = "true" } },
 ]
 
-[tasks.check]
+[tasks."check:rust"]
+description = "Compile-check Rust workspace and supported WASM targets"
 run = [
   "cargo check --workspace --all-targets --all-features --locked",
   "cargo check -p ugoite-domain --target wasm32-unknown-unknown --locked",
   "cargo check -p ugoite-api-client --target wasm32-unknown-unknown --locked",
   "cargo check -p ugoite-wasm --target wasm32-unknown-unknown --locked",
-  "deno task check",
+]
+
+[tasks."check:deno"]
+description = "Run Deno workspace type and framework checks"
+run = "deno task check"
+
+[tasks."check:repo"]
+description = "Validate repository architecture and maintained contracts"
+run = [
   "cargo run -p xtask -- openapi-check",
   "cargo run -p xtask -- architecture-check",
   "cargo run -p xtask -- docs-current-stack-check",
-  "cargo run -p xtask -- supported-check",
+  { task = "check:supported" },
   "cargo run -p xtask -- legacy-auth-check",
+]
+
+[tasks.check]
+description = "Run all repository checks"
+run = [
+  { task = "check:rust" },
+  { task = "check:deno" },
+  { task = "check:repo" },
 ]
 
 [tasks."check:supported"]
@@ -396,6 +422,33 @@ run = [
     "test:docsite:e2e:navigation",
     "test:e2e:smoke-and-asset-owned",
     "validate:release",
+  ] },
+]
+
+[tasks."ci:lane:rust-check"]
+description = "Run Rust and repository checks for hosted CI"
+run = [
+  { task = "lint:rust" },
+  { task = "check:rust" },
+  { task = "check:repo" },
+]
+
+[tasks."ci:lane:rust-test"]
+description = "Run canonical Rust tests for hosted CI"
+run = [
+  { task = "test:rust" },
+]
+
+[tasks."ci:lane:web"]
+description = "Run formatting, Deno, frontend, and docsite quality gates for hosted CI"
+run = [
+  { task = "fmt:check" },
+  { task = "lint:deno" },
+  { task = "check:deno" },
+  { tasks = [
+    "test:tools",
+    "test:frontend:coverage",
+    "test:docsite:coverage",
   ] },
 ]
 
