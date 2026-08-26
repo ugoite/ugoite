@@ -3619,12 +3619,12 @@ fn xml_text(bytes: &[u8]) -> std::result::Result<String, &'static str> {
                 depth = depth.checked_sub(1).ok_or("malformed_xml")?;
             }
             Ok(Event::Text(text)) => {
-                let value = text.decode().map_err(|_| "malformed_xml")?;
+                let value = text.as_ref();
                 if !value.is_empty() {
                     if !output.is_empty() {
                         output.push(' ');
                     }
-                    output.push_str(&value);
+                    output.push_str(value);
                     if output.len() > MAX_EXTRACTED_TEXT_BYTES {
                         return Err("parser_limit");
                     }
@@ -3634,7 +3634,7 @@ fn xml_text(bytes: &[u8]) -> std::result::Result<String, &'static str> {
                 if !output.is_empty() {
                     output.push(' ');
                 }
-                output.push_str(&String::from_utf8_lossy(&text));
+                output.push_str(text.as_ref());
                 if output.len() > MAX_EXTRACTED_TEXT_BYTES {
                     return Err("parser_limit");
                 }
@@ -4242,6 +4242,14 @@ mod tests {
             deeply_nested.push_str(&format!("</n{index}>"));
         }
         assert_eq!(xml_text(deeply_nested.as_bytes()), Err("parser_limit"));
+    }
+
+    #[test]
+    fn xml_text_reads_text_and_cdata() {
+        assert_eq!(
+            xml_text(b"<root>text<![CDATA[cdata]]></root>"),
+            Ok("text cdata".to_string())
+        );
     }
 
     #[test]
