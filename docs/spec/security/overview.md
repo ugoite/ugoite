@@ -8,20 +8,25 @@ graph still contains the unresolved upstream `rsa 0.9.10` advisory; it is not
 treated as silently clean.
 
 Authentication and authorization follow
-[the operator guide](../../guide/operate/auth/auth-overview.md). The normative
-invariants are future/reference design and are not v0.1 product promises:
+[the operator guide](../../guide/operate/auth/auth-overview.md). The v0.1
+normative security contract includes:
 
-- Passkey/WebAuthn is the standard human authenticator; OIDC
-  authorization-code + PKCE is an optional linked method keyed by issuer and
-  subject.
+- Passkey/WebAuthn is the supported primary human authenticator and browser
+  login is passwordless.
 - Browser cookies contain only an opaque server-side session identifier. Idle
   timeout is 24 hours and absolute timeout is 30 days.
-- Setup stays uninitialized until two Passkeys or Passkey + TOTP + recovery
-  codes are established. Setup and invitations are random, expiring, one-use
-  values stored only as SHA-256 hashes.
-- Recovery codes are one-use hashes. Replacing a Passkey requires a recovery
-  code plus TOTP; the TOTP seed is encrypted at rest and TOTP alone is never
-  sufficient.
+- Initial setup uses an expiring one-use setup secret stored only as a hash and
+  establishes the administrator's initial Passkey and browser session.
+- Invitations and membership changes are one-use/concurrency-safe where
+  required, and effective ACLs are applied before protected data is disclosed.
+- Authenticated MCP requests use the same identity and ACL boundary as REST;
+  browser cookie sessions are intentionally not accepted by `/mcp`.
+
+The following controls are future/reference design and are not v0.1 product
+promises:
+
+- OIDC authorization-code + PKCE identity linking keyed by issuer and subject.
+- Recovery codes, TOTP, and owner-approved credential replacement.
 - Owner-approved recovery is separate from self-recovery: only an active human
   Space Owner with a recent Passkey can issue a 15-minute token for another
   active member. Its hash is authoritative; encrypted response material is

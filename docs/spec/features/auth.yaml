@@ -90,7 +90,7 @@ apis:
       path: /mcp
       file: crates/ugoite-server/src/mcp.rs
       function: handle
-    note: Authenticated MCP access uses the same identity and ACL boundary as REST.
+    note: v0.1 supports the authenticated MCP protocol and ACL boundary when a valid server-issued scoped Bearer/DPoP credential is supplied. Browser cookie sessions are rejected; user-facing device, CLI, and agent credential provisioning remains future scope.
   - id: auth.authorization
     method: GET|POST|PUT|PATCH|DELETE
     status: supported

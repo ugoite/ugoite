@@ -4,12 +4,14 @@ sidebar:
   order: 4
 ---
 
-> Future/reference workflow. The browser is server-backed, but interactive
-> Passkey/TOTP/OIDC authentication is not a supported v0.1 capability.
+> Supported v0.1 workflow. The browser is server-backed and uses passwordless
+> Passkey/WebAuthn authentication with an opaque session cookie.
 
-This page intentionally does not provide browser setup or login instructions.
-For the supported v0.1 workflow, operate the authoritative Space directory with
-the local CLI. Browser-local persistence and optional sync remain future work.
+Complete the one-use setup URL printed by the server, register the initial
+Passkey, and use the login page for subsequent passwordless sessions. See the
+[authentication operator guide](../operate/auth/auth-overview.md) for the
+bootstrap and session contract. Browser-local persistence and optional sync
+remain future work.
 
 ## Form field choices
 

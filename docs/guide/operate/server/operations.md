@@ -4,8 +4,9 @@ sidebar:
   order: 4
 ---
 
-> Release note: Node account, Passkey, and session details on this page are
-> future/reference architecture, not supported v0.1 product promises.
+> Release note: Node account bootstrap, Passkey, and opaque browser session
+> details on this page describe supported v0.1 server behavior. Recovery,
+> OIDC, device credentials, and agent details remain future/reference material.
 
 ```bash
 export UGOITE_NODE_SECRET_KEY="$(head -c 32 /dev/urandom | base64)"

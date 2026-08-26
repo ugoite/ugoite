@@ -4,10 +4,11 @@ sidebar:
   order: 2
 ---
 
-> Future/reference workflow. Passkey/TOTP/OIDC authentication and device login
-> are not supported v0.1 capabilities.
+> Supported local server workflow. Passkey/WebAuthn bootstrap and passwordless
+> browser login are part of the v0.1 contract; recovery, OIDC, and device login
+> remain future scope.
 
-This page intentionally contains no setup, login, recovery-code, or credential
-instructions. Use the operator-owned Space directory and local CLI workflow for
-supported development. Do not treat the reference authentication endpoints as a
-local authentication bypass or as a shipped product contract.
+Start the local server, open its one-use setup URL, register the initial
+Passkey, then use the browser login page. The local CLI core workflow remains
+available without a server. Do not treat development configuration as an
+authentication bypass.

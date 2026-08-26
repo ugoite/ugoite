@@ -43,10 +43,12 @@ resource, Space, actions, credential generation, and the human device. Existing
 DPoP credentials may use `Authorization: DPoP` plus one RFC 9449 proof. Agent
 credentials cannot use the MCP delete tool.
 
-Cookie sessions are rejected at `/mcp`. OAuth authorization and device approval
-are the user-facing route: a user registers the remote URL, completes Ugoite
-authentication, and then the MCP client uses the resulting credential. The
-MCP adapter never asks for a Space ID, bucket, database, or filesystem path.
+Cookie sessions are rejected at `/mcp`. For v0.1, the supported boundary is the
+authenticated MCP protocol and ACL behavior when a valid server-issued scoped
+Bearer or DPoP credential is supplied. User-facing OAuth/device provisioning,
+CLI credential storage, and agent credential flows remain future scope; they
+must not be inferred from the authenticated transport contract. The MCP
+adapter never asks for a Space ID, bucket, database, or filesystem path.
 
 The REST implementation remains `crates/ugoite-server`; `/openapi.json` is the
 REST API source of truth. MCP JSON-RPC is intentionally not represented as a

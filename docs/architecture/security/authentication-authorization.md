@@ -5,8 +5,10 @@ sidebar:
   order: 2
 ---
 
-> Future/reference architecture: the authentication, agent, and audit flows on
-> this page are not supported v0.1 product capabilities.
+> v0.1 support boundary: Passkey/WebAuthn bootstrap and login, opaque browser
+> sessions, Space membership/ACL enforcement, authenticated MCP access, and
+> authorized audit reads are supported. OIDC, recovery, device credentials,
+> agent principals, and audit mutation remain future/reference architecture.
 
 Ugoite has one production authentication architecture. There is no selectable
 development authentication mode, default credential, fixed password, or shared
@@ -63,11 +65,10 @@ unnecessary.
 ## Setup and human login
 
 First boot creates a 256-bit, 30-minute setup secret, stores its hash, and shows
-the setup URL once in the local log. Normal APIs return `423 Locked` until setup
-has produced either two Passkeys or one Passkey plus confirmed TOTP and saved
-recovery codes. Setup claims existing operator-created Spaces and creates a
-UUIDv7 `default` Space only when none exist. It does not rewrite an older Space
-layout.
+the setup URL once in the local log. Normal APIs return `423 Locked` until the
+initial Passkey setup is complete. Setup claims existing operator-created
+Spaces and creates a UUIDv7 `default` Space only when none exist. It does not
+rewrite an older Space layout.
 
 Passkeys require discoverable credentials and user verification. Non-loopback
 deployments require HTTPS. Changing the canonical public origin or RP ID after
