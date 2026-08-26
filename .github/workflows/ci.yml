@@ -62,15 +62,17 @@ jobs:
       - name: Configure Rust compiler cache
         shell: bash
         run: |
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=on" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_VERSION=ugoite-v1" >>"$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}" >>"$GITHUB_ENV"
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            echo "SCCACHE_GHA_RW_MODE=READ_WRITE" >>"$GITHUB_ENV"
-          else
-            echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >>"$GITHUB_ENV"
-          fi
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "SCCACHE_GHA_ENABLED=on"
+            echo "SCCACHE_GHA_VERSION=ugoite-v1"
+            echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}"
+            if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+              echo "SCCACHE_GHA_RW_MODE=READ_WRITE"
+            else
+              echo "SCCACHE_GHA_RW_MODE=READ_ONLY"
+            fi
+          } >>"$GITHUB_ENV"
 
       - name: Run Rust and repository checks
         id: rust-check
@@ -114,15 +116,17 @@ jobs:
       - name: Configure Rust compiler cache
         shell: bash
         run: |
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=on" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_VERSION=ugoite-v1" >>"$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}" >>"$GITHUB_ENV"
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            echo "SCCACHE_GHA_RW_MODE=READ_WRITE" >>"$GITHUB_ENV"
-          else
-            echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >>"$GITHUB_ENV"
-          fi
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "SCCACHE_GHA_ENABLED=on"
+            echo "SCCACHE_GHA_VERSION=ugoite-v1"
+            echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}"
+            if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+              echo "SCCACHE_GHA_RW_MODE=READ_WRITE"
+            else
+              echo "SCCACHE_GHA_RW_MODE=READ_ONLY"
+            fi
+          } >>"$GITHUB_ENV"
 
       - name: Run Rust tests
         id: rust-test
@@ -180,15 +184,17 @@ jobs:
       - name: Configure Rust compiler cache
         shell: bash
         run: |
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=on" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_VERSION=ugoite-v1" >>"$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}" >>"$GITHUB_ENV"
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            echo "SCCACHE_GHA_RW_MODE=READ_WRITE" >>"$GITHUB_ENV"
-          else
-            echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >>"$GITHUB_ENV"
-          fi
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "SCCACHE_GHA_ENABLED=on"
+            echo "SCCACHE_GHA_VERSION=ugoite-v1"
+            echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}"
+            if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+              echo "SCCACHE_GHA_RW_MODE=READ_WRITE"
+            else
+              echo "SCCACHE_GHA_RW_MODE=READ_ONLY"
+            fi
+          } >>"$GITHUB_ENV"
 
       - name: Restore Deno cache
         id: deno-cache-restore
@@ -270,15 +276,17 @@ jobs:
       - name: Configure Rust compiler cache
         shell: bash
         run: |
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=on" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_VERSION=ugoite-v1" >>"$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}" >>"$GITHUB_ENV"
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
-            echo "SCCACHE_GHA_RW_MODE=READ_WRITE" >>"$GITHUB_ENV"
-          else
-            echo "SCCACHE_GHA_RW_MODE=READ_ONLY" >>"$GITHUB_ENV"
-          fi
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "SCCACHE_GHA_ENABLED=on"
+            echo "SCCACHE_GHA_VERSION=ugoite-v1"
+            echo "SCCACHE_BASEDIRS=${GITHUB_WORKSPACE}"
+            if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+              echo "SCCACHE_GHA_RW_MODE=READ_WRITE"
+            else
+              echo "SCCACHE_GHA_RW_MODE=READ_ONLY"
+            fi
+          } >>"$GITHUB_ENV"
 
       - name: Restore Deno cache
         id: deno-cache-restore
