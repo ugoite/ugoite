@@ -313,7 +313,7 @@ fn validate_local_space_candidate(
     if object
         .get("schema_version")
         .and_then(serde_json::Value::as_u64)
-        != Some(2)
+        != Some(3)
         || object.get("space_id").and_then(serde_json::Value::as_str) != Some(directory_id)
         || object.get("id").and_then(serde_json::Value::as_str) != Some(directory_id)
         || object
