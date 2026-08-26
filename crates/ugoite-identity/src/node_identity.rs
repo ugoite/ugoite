@@ -2717,6 +2717,9 @@ impl NodeIdentityService {
     pub async fn start_totp_enrollment(&self, account_id: Uuid) -> Result<serde_json::Value> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        if !matches!(state.lifecycle, NodeLifecycle::Active) {
+            bail!("node setup is not complete");
+        }
         ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let account = state
             .accounts
@@ -2754,6 +2757,9 @@ impl NodeIdentityService {
             .read_state()
             .await
             .map_err(TotpEnrollmentFinishError::Internal)?;
+        if !matches!(state.lifecycle, NodeLifecycle::Active) {
+            return Err(TotpEnrollmentFinishError::InvalidOrExpired);
+        }
         ensure_node_account_recovery_mutation_allowed(&mut state, account_id)
             .map_err(TotpEnrollmentFinishError::Internal)?;
         let pending = state
@@ -7379,6 +7385,7 @@ mod tests {
         service.bootstrap_if_needed().await?;
         let account_id = Uuid::now_v7();
         let mut state = service.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
         state.accounts.insert(
             account_id,
             HumanAccount {

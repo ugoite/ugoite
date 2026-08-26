@@ -16,12 +16,15 @@ API key.
 
 ## Trust boundaries
 
-Node Identity authenticates a human account on one node with a Passkey or an
-invited OIDC identity. Space Authorization stores UUIDv7 human and agent
+Node Identity authenticates a human account on one node with a Passkey. Space
+Authorization stores UUIDv7 human and agent
 principals, owner/editor/viewer membership, additive resource grants, and Space
-audit history below the portable Space directory. Access Credentials give CLI,
-MCP, and agent clients short-lived, node-, audience-, Space-, action-, and
-sender-constrained access.
+audit history below the portable Space directory. Authenticated MCP clients use
+short-lived, node-, audience-, Space-, action-, and sender-constrained access
+credentials; CLI/device credentials and agent credentials are future designs.
+
+OIDC identities, CLI/device credentials, and agent principals are retained in
+the architecture as future designs; they are not v0.1 support commitments.
 
 Host root, direct storage access, and operator-local CLI core mode remain
 outside the application authentication boundary. A Node administrator can
@@ -82,6 +85,11 @@ stored verifier hashes. Cookie-authenticated unsafe requests must carry the
 canonical `Origin`. CORS is off by default; `UGOITE_CORS_ALLOWED_ORIGINS`
 enables an exact comma-separated allowlist.
 
+## Future: external identity and recovery
+
+The following OIDC and recovery flows are future/reference architecture only;
+they are not available in the v0.1 browser UI or support contract.
+
 OIDC uses Authorization Code with PKCE, discovery, exact issuer/redirect checks,
 state, nonce, and signature validation. The account key is exact issuer plus
 subject; email is never an identity key. An upstream token is never accepted by
@@ -123,7 +131,11 @@ Entry context before applying the Asset and Space resource policy. Query
 engines receive the authorized Entry ID set before filtering, pagination, joins,
 or aggregation.
 
-## CLI, agents, and MCP
+## Authenticated MCP and future CLI/agent credentials
+
+Authenticated MCP access is supported when the client presents a valid
+server-issued scoped credential. The CLI device flow, agent principals, and
+human-approval flows described below remain future/reference architecture.
 
 `ugoite auth login` uses device authorization. The CLI creates a P-256 key,
 shows a user code and verification URL, and polls at the server-provided

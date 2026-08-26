@@ -238,6 +238,7 @@ export const authApi = {
       }),
     });
   },
+  /** Completes bootstrap; recovery_codes are displayed once and are not a v0.1 recovery workflow. */
   async setup(
     setupSecret: string,
     displayName: string,

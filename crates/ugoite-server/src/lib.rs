@@ -1116,9 +1116,7 @@ async fn require_auth(
         .path()
         .strip_prefix("/api")
         .unwrap_or(request.uri().path());
-    let setup_strengthening = path == "/auth/session"
-        || path.starts_with("/auth/passkeys")
-        || path.starts_with("/auth/recovery/totp");
+    let setup_strengthening = path == "/auth/session" || path.starts_with("/auth/passkeys");
     if !state.identity.node_is_active().await.unwrap_or(false) && !setup_strengthening {
         return (
             StatusCode::LOCKED,

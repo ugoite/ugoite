@@ -66,15 +66,9 @@ describe("SecuritySettingsRoute", () => {
 
     expect(screen.getByRole("tabpanel", { name: "Passkeys" }))
       .toBeInTheDocument();
-    expect(screen.queryByRole("tabpanel", { name: "Recovery TOTP" }))
-      .toBeNull();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Recovery TOTP" }));
-
-    expect(screen.getByRole("tabpanel", { name: "Recovery TOTP" }))
-      .toBeInTheDocument();
-    expect(screen.queryByRole("tabpanel", { name: "Passkeys" })).toBeNull();
-    expect(setSearchParams).toHaveBeenCalledWith({ tab: "totp" });
+    expect(screen.queryByRole("tab", { name: "Recovery TOTP" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "OIDC" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "CLI / MCP" })).toBeNull();
   });
 
   it("opens the credential panel selected by the URL", () => {
@@ -110,7 +104,9 @@ describe("SecuritySettingsRoute", () => {
     vi.mocked(authApi.addPasskey).mockRejectedValue(error);
 
     render(() => <SecuritySettingsRoute />);
-    fireEvent.click(await screen.findByRole("button", { name: "パスキーを追加" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "パスキーを追加" }),
+    );
 
     await screen.findByRole("alert");
     expect(screen.getByRole("alert")).toHaveTextContent(
@@ -121,22 +117,36 @@ describe("SecuritySettingsRoute", () => {
 
   it("localizes a client-side passkey cancellation", async () => {
     setLocale("ja");
-    vi.mocked(authApi.addPasskey).mockRejectedValue(new UgoiteApiError({
-      kind: "cancelled",
-      code: "PASSKEY_CANCELLED",
-      operation: "auth.passkey",
-      message: "",
-    }));
+    vi.mocked(authApi.addPasskey).mockRejectedValue(
+      new UgoiteApiError({
+        kind: "cancelled",
+        code: "PASSKEY_CANCELLED",
+        operation: "auth.passkey",
+        message: "",
+      }),
+    );
 
     render(() => <SecuritySettingsRoute />);
-    fireEvent.click(await screen.findByRole("button", { name: "パスキーを追加" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "パスキーを追加" }),
+    );
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("パスキーの操作をキャンセルしました。");
     expect(alert).not.toHaveTextContent("Passkey");
   });
 
-  it("routes session, device, OIDC, and TOTP failures through the same action state", async () => {
+  it("falls back to a supported panel for a future tab URL", () => {
+    searchParams.tab = "totp";
+    render(() => <SecuritySettingsRoute />);
+
+    expect(screen.getByRole("tabpanel", { name: "Passkeys" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Passkeys" }))
+      .toHaveAttribute("aria-selected", "true");
+  });
+
+  it("routes session failures through the same action state", async () => {
     setLocale("ja");
     const failure = new UgoiteApiError({
       kind: "forbidden",

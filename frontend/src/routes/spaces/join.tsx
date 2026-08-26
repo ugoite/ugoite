@@ -1,6 +1,6 @@
 import { A, useNavigate } from "@solidjs/router";
-import { createSignal, For, onMount, Show } from "solid-js";
-import { authApi, type OidcProvider } from "~/lib/auth-api";
+import { createSignal, Show } from "solid-js";
+import { authApi } from "~/lib/auth-api";
 import { GlobalShell } from "~/components/GlobalShell";
 import { createResource } from "~/lib/recoverable-resource";
 
@@ -12,13 +12,9 @@ export default function SpaceInvitationJoinRoute() {
   const [token, setToken] = createSignal(hashToken);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
-  const [oidcProviders, setOidcProviders] = createSignal<OidcProvider[]>([]);
   const [session] = createResource(async () =>
     await authApi.getSession().catch(() => ({ authenticated: false }))
   );
-  onMount(async () => {
-    setOidcProviders(await authApi.listOidcProviders().catch(() => []));
-  });
   const submit = async (event: Event) => {
     event.preventDefault();
     setBusy(true);
@@ -77,19 +73,6 @@ export default function SpaceInvitationJoinRoute() {
             {busy() ? "Joining…" : "Accept invitation"}
           </button>
         </form>
-        <For each={oidcProviders()}>
-          {(provider) => (
-            <button
-              type="button"
-              class="btn"
-              disabled={!token().trim()}
-              onClick={() =>
-                authApi.loginWithOidc(provider.provider_id, token().trim())}
-            >
-              Join with {provider.issuer}
-            </button>
-          )}
-        </For>
         <Show when={error()}>
           <p class="ui-alert ui-alert-error">{error()}</p>
         </Show>

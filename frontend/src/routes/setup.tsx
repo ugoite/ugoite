@@ -70,14 +70,13 @@ export default function SetupRoute() {
               <Show
                 when={recoveryCodes().length > 0}
                 fallback={
-                  <p>
-                    Resume setup by adding a second Passkey or confirming TOTP.
-                  </p>
+                  <p>Resume setup by registering a second Passkey.</p>
                 }
               >
                 <p>
-                  Save these one-time recovery codes now. They are not shown
-                  again.
+                  Save these bootstrap-only recovery codes now. They are not
+                  shown again, and v0.1 does not support using them for account
+                  recovery.
                 </p>
                 <p>
                   Recovery account ID: <code>{accountId()}</code>
