@@ -12,6 +12,7 @@ support_boundary:
   - Node and Space authorization audit read access
   internal_dependency:
   - authentication capability discovery
+  - MCP-scoped OAuth credential issuance and metadata
   experimental: []
   future:
   - TOTP and recovery-code account recovery
@@ -91,7 +92,7 @@ apis:
       path: /mcp
       file: crates/ugoite-server/src/mcp.rs
       function: handle
-    note: v0.1 supports the authenticated MCP protocol and ACL boundary when a valid server-issued scoped Bearer/DPoP credential is supplied. Browser cookie sessions are rejected; user-facing device, CLI, and agent credential provisioning remains future scope.
+    note: v0.1 supports the authenticated MCP protocol and ACL boundary. An MCP client obtains a scoped credential through the internal resource-bound OAuth device and token endpoints below; browser cookie sessions are rejected. CLI and agent credential provisioning remains future scope.
   - id: auth.authorization
     method: GET|POST|PUT|PATCH|DELETE
     status: supported
@@ -136,15 +137,16 @@ apis:
       function: oidc_start
   - id: auth.device
     method: GET|POST|DELETE
-    status: future
+    status: internal
     backend:
       path: /auth/devices|/auth/devices/{credential_id}|/oauth/device/authorization|/oauth/device/pending|/oauth/device/approve
       file: crates/ugoite-server/src/lib.rs
       function: oauth_device_authorization
-    ugoite_cli:
-      command: ugoite auth login
-      file: crates/ugoite-cli/src/commands/auth.rs
-      function: run
+    frontend:
+      path: /device
+      file: frontend/src/routes/device.tsx
+      function: DeviceApprovalRoute
+    note: Internal MCP dependency only when the requested resource is {issuer}/mcp. CLI OAuth device authorization and the ugoite auth login command remain future scope.
   - id: auth.agent
     method: POST
     status: future
@@ -154,8 +156,9 @@ apis:
       function: issue_autonomous_agent_token
   - id: auth.oauth_metadata
     method: GET
-    status: future
+    status: internal
     backend:
       path: /.well-known/oauth-protected-resource|/.well-known/oauth-authorization-server
       file: crates/ugoite-server/src/lib.rs
       function: oauth_protected_resource_metadata
+    note: Metadata is exposed for supported MCP credential discovery; CLI and agent OAuth flows remain future scope.

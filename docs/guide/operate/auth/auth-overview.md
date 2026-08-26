@@ -16,8 +16,10 @@ move with a Space.
 
 ## Identity boundaries
 
-Node Identity contains human accounts, Passkeys, optional OIDC links, browser
-sessions, CLI devices, and Node administrator roles. It is stored through the
+Node Identity contains human accounts, Passkeys, browser sessions, and Node
+administrator roles. MCP-scoped device credentials are an internal dependency
+of the supported MCP flow; OIDC links, CLI devices, and agent principals are
+future designs. It is stored through the
 atomic `NodeControlStore` below `_ugoite/nodes/{node_id}` and is never exported
 as part of a Space. `UGOITE_NODE_CONTROL_URI` may select a separate durable
 OpenDAL location. OIDC users are keyed by the exact `(issuer, subject)` pair;
@@ -62,9 +64,9 @@ The account security page lists browser sessions with creation, last-use,
 expiry, and revocation state. A user can revoke any individual session; the
 change is enforced on its next request.
 
-Credential enrollment, device approval, role/ACL changes, agent lifecycle, and
-OIDC configuration require a Passkey authentication within the preceding five
-minutes. Accounts should register two or more Passkeys. Ugoite refuses to remove
+Credential enrollment, MCP device approval, and role/ACL changes require a
+Passkey authentication within the preceding five minutes. Agent lifecycle and
+OIDC configuration are future scope. Accounts should register two or more Passkeys. Ugoite refuses to remove
 the final Passkey.
 
 ## Future: account recovery
@@ -156,14 +158,14 @@ atomically consumed before the mutation. A replay, route/body mismatch, expiry,
 or uncertain mutation result requires a new approval. Member, owner, agent,
 and Space-management operations remain Passkey-only.
 
-The OAuth protected-resource and agent credential flows described below are
-future scope. HTTP MCP itself is supported only after the caller is
-authenticated. Discovery is available at
-`/.well-known/oauth-protected-resource` and
-`/.well-known/oauth-authorization-server`. Human clients use device
-authorization; autonomous agents use an ES256 client assertion. Tokens are
-restricted to one node, one `space_uid`, actions, principal, credential, and
-short expiry.
+HTTP MCP itself is supported only after the caller is authenticated. Discovery
+is available at `/.well-known/oauth-protected-resource` and
+`/.well-known/oauth-authorization-server`. A human MCP client requests a
+resource-bound device grant with `resource: {issuer}/mcp`, the signed-in owner
+approves it at `/device`, and the client exchanges the device code at
+`/oauth/token`. CLI device authorization and autonomous agent credentials are
+future scope. MCP tokens are restricted to one node, one `space_uid`, actions,
+principal, credential, and short expiry.
 
 ## Data authorization
 

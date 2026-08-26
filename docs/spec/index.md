@@ -22,7 +22,7 @@ authoritative; indexes and query sessions are derived.
   login, opaque browser sessions, Space membership/ACL enforcement, authenticated
   MCP access, and authorized audit reads.
 - Browser-local persistence and optional sync are planned.
-- TOTP and recovery-code workflows, owner-approved recovery, OIDC/device flows,
+- TOTP and recovery-code workflows, owner-approved recovery, OIDC, CLI device flows,
   agent/service-account principals, audit CRUD, and remote CLI asset upload remain
   future or limited capability. They are not v0.1 product promises even where an
   implementation or generated API reference exists.

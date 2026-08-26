@@ -4895,6 +4895,7 @@ async fn oauth_device_pending(
         "device_name": pending.device_name,
         "requested_space_uid": pending.requested_space_uid,
         "requested_actions": pending.requested_actions,
+        "resource": pending.resource,
         "expires_at": pending.expires_at,
     })))
 }

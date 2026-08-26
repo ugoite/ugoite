@@ -23,7 +23,7 @@ contract is implemented. The stable error code is
 
 Passkey/WebAuthn registration and passwordless browser login, opaque browser
 sessions, and session revocation are supported v0.1 authentication surfaces.
-Account recovery, OIDC linking, OAuth device flow, managed service-account
+Account recovery, OIDC linking, CLI OAuth device flow, managed service-account
 operations, and audit CRUD remain reference-only endpoint inventory. The
 supported browser setup and login journey is documented in the operator guide;
 the local CLI core workflow remains available without a server.

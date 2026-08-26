@@ -39,16 +39,20 @@ The protected resource is exactly `{issuer}/mcp`. Protected-resource metadata
 is published at `/.well-known/oauth-protected-resource`; authorization-server
 metadata is published at `/.well-known/oauth-authorization-server`. Human MCP
 credentials are short-lived opaque Bearer credentials bound to issuer, node,
-resource, Space, actions, credential generation, and the human device. Existing
-DPoP credentials may use `Authorization: DPoP` plus one RFC 9449 proof. Agent
-credentials cannot use the MCP delete tool.
+resource, Space, actions, credential generation, and the human device. An MCP
+client requests a credential with `POST /oauth/device/authorization` using
+`resource: {issuer}/mcp`, the requested Space/actions, and its public key; the
+signed-in owner approves the displayed request at `/device`; the client
+exchanges the device code at `/oauth/token` with its client assertion and the
+same resource. Existing DPoP credentials may use `Authorization: DPoP` plus
+one RFC 9449 proof. Agent credentials cannot use the MCP delete tool.
 
 Cookie sessions are rejected at `/mcp`. For v0.1, the supported boundary is the
-authenticated MCP protocol and ACL behavior when a valid server-issued scoped
-Bearer or DPoP credential is supplied. User-facing OAuth/device provisioning,
-CLI credential storage, and agent credential flows remain future scope; they
-must not be inferred from the authenticated transport contract. The MCP
-adapter never asks for a Space ID, bucket, database, or filesystem path.
+authenticated MCP protocol, its resource-bound credential flow, and ACL
+behavior. The `/device` approval page accepts only MCP-scoped requests; CLI
+credential storage, CLI device authorization, and agent credential flows remain
+future scope. The MCP adapter never asks for a Space ID, bucket, database, or
+filesystem path.
 
 The REST implementation remains `crates/ugoite-server`; `/openapi.json` is the
 REST API source of truth. MCP JSON-RPC is intentionally not represented as a

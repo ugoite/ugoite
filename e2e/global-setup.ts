@@ -103,7 +103,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     }
     await waitForSetupState(
       page,
-      page.getByText("Save these one-time recovery codes now."),
+      page.getByText("Save these bootstrap-only recovery codes now."),
       "recovery-code screen",
       browserErrors,
     );

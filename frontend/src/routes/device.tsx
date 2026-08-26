@@ -1,13 +1,165 @@
+import { createSignal, For, onMount, Show } from "solid-js";
+import { useSearchParams } from "@solidjs/router";
+import { spaceApi } from "~/lib/ugoite-client";
+import { formatUserFacingError } from "~/lib/user-facing-error";
+
+type PendingMcpAuthorization = {
+  device_name: string;
+  requested_actions: string[];
+  resource: string;
+};
+
 export default function DeviceApprovalRoute() {
+  const [params] = useSearchParams();
+  const [code] = createSignal(params.user_code ?? "");
+  const [spaceId, setSpaceId] = createSignal("");
+  const [spaces, setSpaces] = createSignal<Array<{ id: string; name: string }>>(
+    [],
+  );
+  const [pending, setPending] = createSignal<PendingMcpAuthorization>();
+  const [done, setDone] = createSignal(false);
+  const [future, setFuture] = createSignal(false);
+  const [error, setError] = createSignal("");
+
+  onMount(async () => {
+    if (!code().trim()) {
+      setFuture(true);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/oauth/device/pending?user_code=${encodeURIComponent(code())}`,
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(
+          String(payload.message ?? payload.detail ?? "Code is invalid"),
+        );
+        return;
+      }
+      if (payload.resource !== `${location.origin}/mcp`) {
+        setFuture(true);
+        return;
+      }
+      setPending({
+        device_name: String(payload.device_name),
+        requested_actions: Array.isArray(payload.requested_actions)
+          ? payload.requested_actions.map(String)
+          : [],
+        resource: String(payload.resource),
+      });
+      const values = await spaceApi.list();
+      setSpaces(values);
+      setSpaceId(values[0]?.id ?? "");
+    } catch (cause) {
+      setError(
+        formatUserFacingError(cause, "spacesPage.failedLoad", "space.list"),
+      );
+    }
+  });
+
+  const approve = async (event: Event) => {
+    event.preventDefault();
+    const request = pending();
+    if (!request || !spaceId()) return;
+    setError("");
+    if (
+      !confirm(
+        `Approve ${request.device_name} for actions: ${
+          request.requested_actions.join(
+            ", ",
+          )
+        }?`,
+      )
+    ) return;
+    const response = await fetch("/api/oauth/device/approve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        user_code: code(),
+        space_id: spaceId(),
+        granted_actions: request.requested_actions,
+      }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setError(String(payload.message ?? payload.detail ?? "Approval failed"));
+      return;
+    }
+    setDone(true);
+  };
+
   return (
     <main class="publicShell">
       <section class="publicCard ui-stack">
-        <h1 class="ui-page-title">Device authorization is not available</h1>
-        <p class="ui-muted">
-          CLI OAuth device authorization and agent credentials are future
-          functionality. Ugoite v0.1 supports browser Passkey authentication and
-          authenticated MCP access with server-issued credentials.
-        </p>
+        <Show
+          when={!future()}
+          fallback={
+            <>
+              <h1 class="ui-page-title">
+                CLI device authorization is not available
+              </h1>
+              <p class="ui-muted">
+                CLI OAuth device authorization and agent credentials are future
+                functionality. MCP clients may use this page for an MCP-scoped
+                approval request.
+              </p>
+            </>
+          }
+        >
+          <h1 class="ui-page-title">Approve MCP access</h1>
+          <Show
+            when={!done()}
+            fallback={
+              <p class="ui-alert">
+                MCP access approved. Return to the MCP client.
+              </p>
+            }
+          >
+            <Show
+              when={pending()}
+              fallback={<p class="ui-muted">Loading authorization request…</p>}
+            >
+              {(request) => (
+                <form class="ui-stack-sm" onSubmit={approve}>
+                  <p>
+                    Approve <strong>{request().device_name}</strong>{" "}
+                    for MCP actions: {request().requested_actions.join(", ")}.
+                  </p>
+                  <label class="ui-stack-sm">
+                    <span>Space</span>
+                    <select
+                      class="ui-input"
+                      value={spaceId()}
+                      onChange={(event) =>
+                        setSpaceId(event.currentTarget.value)}
+                    >
+                      <For each={spaces()}>
+                        {(space) => (
+                          <option value={space.id}>{space.name}</option>
+                        )}
+                      </For>
+                    </select>
+                  </label>
+                  <p class="ui-muted">
+                    Verify the client name, Space, and exact requested actions
+                    before approving.
+                  </p>
+                  <button
+                    type="submit"
+                    class="ui-button ui-button-primary"
+                    disabled={!spaceId()}
+                  >
+                    Approve MCP access
+                  </button>
+                </form>
+              )}
+            </Show>
+          </Show>
+        </Show>
+        <Show when={error()}>
+          <p class="ui-alert ui-alert-error" role="alert">{error()}</p>
+        </Show>
       </section>
     </main>
   );
