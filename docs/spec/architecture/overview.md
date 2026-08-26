@@ -13,21 +13,31 @@ ugoite-core (domain use cases and authorization policy)
           ↓
 ugoite-iceberg (physical adapter and publication coordinator)
           ↓
-ugoite-storage (OpenDAL configuration and conditional Head objects)
+ugoite-storage (OpenDAL configuration, Space keys, and publication objects)
           ↓
 operator-owned workspace
 ```
 
-`ugoite-domain` supplies portable types and validation. `ugoite-wasm` exposes the domain/API protocol to browser JavaScript without owning fetch or persistence.
+`ugoite-domain` supplies portable types, strict Space-relative keys, and logical
+Space URIs. `ugoite-wasm` exposes the domain/API protocol to browser JavaScript
+without owning fetch or persistence.
 Its portable actions validate Forms and Revisions, preview Form change sets,
 and derive optimistic-concurrency Revision drafts without storage access.
 
 The persistence model is one Iceberg namespace per Space and one append-only
 revision table per stable Form ID. `ugoite-storage` normalizes backend
-configuration and owns the small Catalog Head object boundary. `ugoite-iceberg`
+configuration and owns the small Catalog Head/publication object boundary. Its
+`PublicationStore` exposes opaque revisions and backend-neutral create/CAS
+outcomes without leaking ETags or backend schemes upward. `ugoite-iceberg`
 constructs the official `iceberg-storage-opendal` factory, owns physical
 schemas, and implements the OpenDAL-backed `SpaceCatalog`. Core receives no
 OpenDAL, Iceberg, Arrow, Parquet, DataFusion, or SQL-parser types.
+
+The portable `PublicationStore` contract is the storage-boundary foundation;
+the current v0.1 authoritative Catalog mutation path remains fail-closed for
+non-local backends until the later authorization lease/fence and logical
+Iceberg URI integration are admitted. Those integrations are future
+architecture, not a claim that remote mutation is already supported.
 
 `_ugoite/catalog/head.json` is the sole mutable catalog authority. Every Head
 generation names the Form tables and their immutable Iceberg metadata. A

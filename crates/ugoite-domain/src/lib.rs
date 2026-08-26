@@ -11,4 +11,5 @@ pub mod integrity;
 pub mod metadata;
 pub mod search;
 pub mod space;
+pub mod space_key;
 pub mod text;

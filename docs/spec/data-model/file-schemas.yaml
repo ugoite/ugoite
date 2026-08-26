@@ -68,14 +68,13 @@ schemas:
       - id
       - name
       - created_at
-      - storage
       - hmac_key_id
       - hmac_key
       - last_rotation
       properties:
         schema_version:
           type: integer
-          const: 2
+          const: 3
         space_id:
           type: string
         space_uid:
@@ -90,16 +89,6 @@ schemas:
           type: string
         created_at:
           type: number
-        storage:
-          type: object
-          required:
-          - type
-          - root
-          properties:
-            type:
-              type: string
-            root:
-              type: string
         hmac_key_id:
           type: string
         hmac_key:

@@ -9,7 +9,6 @@ pub struct SpaceMeta {
     pub id: String,
     pub name: String,
     pub created_at: f64,
-    pub storage: StorageConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

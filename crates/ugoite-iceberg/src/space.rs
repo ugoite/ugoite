@@ -21,7 +21,7 @@ use ugoite_domain::id::validate_space_id;
 pub use ugoite_domain::space::{storage_type_and_root, SpaceMeta, StorageConfig};
 use ugoite_storage::{operator_from_uri_with_endpoint, OpendalStorage, StorageBackend};
 
-pub(crate) const CURRENT_SPACE_SCHEMA_VERSION: u64 = 2;
+pub(crate) const CURRENT_SPACE_SCHEMA_VERSION: u64 = 3;
 const STORAGE_CONNECTION_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -38,6 +38,21 @@ async fn space_exists_with_storage<S: StorageBackend + ?Sized>(
     validate_space_path_segment(name)?;
     let ws_path = format!("spaces/{name}/meta.json");
     storage.exists(&ws_path).await
+}
+
+/// Node-local locator for a Space. It is deliberately outside `spaces/{id}`
+/// so copying a complete Space prefix cannot copy a physical backend binding
+/// with it.
+fn space_binding_path(space_id: &str) -> String {
+    format!("_ugoite/space-bindings/{space_id}.json")
+}
+
+fn space_binding_value(root_path: &str) -> serde_json::Value {
+    let (storage_type, storage_root, _) = storage_type_and_root(root_path);
+    serde_json::json!({
+        "type": storage_type,
+        "root": storage_root,
+    })
 }
 
 pub async fn space_exists(op: &Operator, name: &str) -> Result<bool> {
@@ -166,7 +181,7 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     directory_id: &str,
     space_uid: uuid::Uuid,
     slug: &str,
-    root_path: &str,
+    _root_path: &str,
 ) -> Result<()> {
     validate_space_path_segment(directory_id)?;
     validate_space_path_segment(slug)?;
@@ -186,7 +201,6 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
         storage.create_dir(&format!("{ws_path}/{dir}/")).await?;
     }
 
-    let (storage_type, storage_root, _scheme) = storage_type_and_root(root_path);
     let created_at = Utc::now().timestamp_millis() as f64 / 1000.0;
     let (hmac_key_id, hmac_key, last_rotation) = generate_hmac_material();
 
@@ -198,10 +212,6 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
         "id": directory_id,
         "name": slug,
         "created_at": created_at,
-        "storage": {
-            "type": storage_type,
-            "root": storage_root,
-        },
         "hmac_key_id": hmac_key_id,
         "hmac_key": hmac_key,
         "last_rotation": last_rotation,
@@ -216,6 +226,12 @@ async fn create_space_with_storage<S: StorageBackend + ?Sized>(
     storage
         .write_json(&format!("{ws_path}/settings.json"), &settings)
         .await?;
+    // The locator is Node-local control state, not portable Space metadata.
+    let binding_path = space_binding_path(directory_id);
+    storage
+        .write_json(&binding_path, &space_binding_value(_root_path))
+        .await?;
+    storage.set_private(&binding_path).await?;
 
     Ok(())
 }
@@ -353,6 +369,11 @@ async fn repair_space_scaffold(
             "unsupported Space layout: settings.json requires default_form"
         ));
     }
+    let binding_path = space_binding_path(directory_id);
+    storage
+        .write_json(&binding_path, &space_binding_value(_root_path))
+        .await?;
+    storage.set_private(&binding_path).await?;
     match form::get_form(op, &ws_path, "Entry").await {
         Ok(_) => {}
         Err(error)
@@ -496,6 +517,16 @@ async fn get_space_raw_with_storage<S: StorageBackend + ?Sized>(
         ));
     }
     meta["settings"] = settings;
+    let binding_path = space_binding_path(name);
+    if storage.exists(&binding_path).await? {
+        let binding: serde_json::Value = storage.read_json(&binding_path).await?;
+        if !binding.is_object() {
+            return Err(anyhow!(
+                "unsupported Node Space binding: expected an object"
+            ));
+        }
+        meta["storage_config"] = binding;
+    }
     Ok(meta)
 }
 
@@ -514,6 +545,7 @@ pub(crate) fn validate_current_space_metadata(
     meta: &serde_json::Value,
 ) -> Result<uuid::Uuid> {
     #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
     struct CurrentSpaceMetadata {
         schema_version: u64,
         space_id: String,
@@ -522,7 +554,6 @@ pub(crate) fn validate_current_space_metadata(
         id: String,
         name: String,
         created_at: f64,
-        storage: StorageConfig,
         hmac_key_id: String,
         hmac_key: String,
         last_rotation: String,
@@ -533,7 +564,7 @@ pub(crate) fn validate_current_space_metadata(
     })?;
     if metadata.schema_version != CURRENT_SPACE_SCHEMA_VERSION {
         return Err(anyhow!(
-            "unsupported Space layout: metadata schema_version must be 2"
+            "unsupported Space layout: metadata schema_version must be 3"
         ));
     }
     if metadata.space_id != expected_directory_id {
@@ -551,7 +582,6 @@ pub(crate) fn validate_current_space_metadata(
         ("slug", metadata.slug.as_str()),
         ("id", metadata.id.as_str()),
         ("name", metadata.name.as_str()),
-        ("storage.type", metadata.storage.storage_type.as_str()),
         ("hmac_key_id", metadata.hmac_key_id.as_str()),
         ("hmac_key", metadata.hmac_key.as_str()),
         ("last_rotation", metadata.last_rotation.as_str()),
@@ -1178,9 +1208,7 @@ async fn patch_space_with_operator(
         validate_space_path_segment(slug)?;
         meta["slug"] = serde_json::Value::String(slug.to_string());
     }
-    if let Some(storage_config) = patch.get("storage_config") {
-        meta["storage_config"] = storage_config.clone();
-    }
+    let storage_binding = patch.get("storage_config").cloned();
     if let Some(new_settings) = patch.get("settings").and_then(|value| value.as_object()) {
         if let Some(settings_obj) = settings.as_object_mut() {
             for (key, value) in new_settings {
@@ -1249,8 +1277,18 @@ async fn patch_space_with_operator(
     // delete a newer journal after an exact read.
     complete_space_patch_journal(op, &journal_path, &journal, journal_etag.as_deref()).await?;
 
+    if let Some(storage_binding) = storage_binding {
+        let storage = OpendalStorage::from_operator(op);
+        let binding_path = space_binding_path(space_id);
+        storage.write_json(&binding_path, &storage_binding).await?;
+        storage.set_private(&binding_path).await?;
+    }
+
     let mut merged = meta;
     merged["settings"] = settings;
+    if let Some(storage_binding) = patch.get("storage_config") {
+        merged["storage_config"] = storage_binding.clone();
+    }
     Ok(merged)
 }
 

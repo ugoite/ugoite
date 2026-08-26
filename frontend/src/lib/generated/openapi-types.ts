@@ -32,7 +32,6 @@ export const OPENAPI_SCHEMA_NAMES = [
   "OwnerRecoveryRegistrationStart",
   "OwnerRecoveryStartRequest",
   "PublicSpaceSettings",
-  "PublicStorageSummary",
   "RecoveryErrorResponse",
   "SavedSql",
   "SpaceAuditEvent",

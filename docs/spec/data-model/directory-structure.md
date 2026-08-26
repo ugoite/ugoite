@@ -44,21 +44,23 @@ relation directories are lazy and are not part of bootstrap.
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "space_id": "space-main",
   "space_uid": "019c1234-5678-7abc-8def-0123456789ab",
   "slug": "space-main",
   "id": "space-main",
   "name": "space-main",
   "created_at": 1762000000.123,
-  "storage": {"type": "local", "root": "/data"},
   "hmac_key_id": "key-...",
   "hmac_key": "base64-encoded-secret",
   "last_rotation": "2026-03-11T10:00:00Z"
 }
 ```
 
-The typed public `SpaceMeta` view exposes the identity, timestamp, and storage object; the raw Space response also merges `settings.json`.
+The typed `SpaceMeta` view exposes only portable identity and creation metadata;
+it never contains a physical backend binding. The raw runtime response may
+merge `settings.json` and a Node-local `storage_config` binding. The binding is
+stored outside the `spaces/{id}` prefix and is not part of a Space copy.
 
 `settings.json` starts as:
 
@@ -125,8 +127,9 @@ latest non-conflicting revision provides current Entry responses.
 A complete Space prefix can be backed up or moved as an operator-controlled,
 portable unit. Stop writes and use a complete prefix copy or backend-native
 consistent snapshot; object listing must not be used to reconstruct Catalog
-Head or Iceberg state. Node control state is node-local and is not part of a
+Head or Iceberg state. Node control state and Space storage bindings are
+node-local and are not part of a
 Space move. A complete Node recovery set also preserves the configured Node
 control-store prefix, the Node-default `response_hmac/default.json`, and the
-node secret separately. PATCHing a Space storage descriptor does not move
-existing files.
+node secret separately. PATCHing a Space storage binding changes the Node-local
+locator only; it does not move existing files.

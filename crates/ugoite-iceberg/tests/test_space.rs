@@ -39,7 +39,15 @@ async fn test_space_req_sto_002_create_space_scaffolding() -> anyhow::Result<()>
     assert_eq!(meta["id"], ws_id);
     assert_eq!(meta["name"], ws_id);
     assert!(meta.get("created_at").is_some());
-    assert!(meta.get("storage").is_some());
+    assert!(meta.get("storage").is_none());
+
+    let binding: Value = serde_json::from_slice(
+        &op.read("_ugoite/space-bindings/test-space.json")
+            .await?
+            .to_vec(),
+    )?;
+    assert_eq!(binding["type"], "local");
+    assert_eq!(binding["root"], "/tmp/ugoite");
 
     let settings_bytes = op.read(&settings_path).await?.to_vec();
     let settings: Value = serde_json::from_slice(&settings_bytes)?;
@@ -249,7 +257,7 @@ async fn incomplete_current_space_metadata_is_rejected() -> anyhow::Result<()> {
     space::create_space(&op, "incomplete-metadata", "/tmp").await?;
     let meta_path = "spaces/incomplete-metadata/meta.json";
     let mut meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
-    meta.as_object_mut().unwrap().remove("storage");
+    meta["storage"] = serde_json::json!({"type": "local", "root": "/tmp"});
     op.write(meta_path, serde_json::to_vec(&meta)?).await?;
 
     let error = space::get_space(&op, "incomplete-metadata")
