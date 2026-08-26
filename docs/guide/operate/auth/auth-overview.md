@@ -38,7 +38,7 @@ implies the other.
 On the first server start, Ugoite writes only a SHA-256 hash of a
 cryptographically random, 30-minute, one-use setup secret and prints a setup URL
 to the local console/container log. Opening that URL starts WebAuthn
-registration. The Node remains in setup until the administrator's initial
+registration. The Node remains in setup until the administrator's second
 Passkey ceremony is completed. Until then, the setup session can access only
 credential-strengthening endpoints.
 
