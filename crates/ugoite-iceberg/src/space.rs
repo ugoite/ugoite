@@ -55,6 +55,69 @@ fn space_binding_value(root_path: &str) -> serde_json::Value {
     })
 }
 
+fn validate_space_binding(value: &serde_json::Value) -> Result<()> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow!("Node Space binding must be an object"))?;
+    if object.keys().any(|key| key != "type" && key != "root") {
+        bail!("Node Space binding contains unsupported fields");
+    }
+    if object
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        bail!("Node Space binding requires a non-empty type");
+    }
+    if object
+        .get("root")
+        .and_then(serde_json::Value::as_str)
+        .is_none()
+    {
+        bail!("Node Space binding requires a string root");
+    }
+    Ok(())
+}
+
+fn storage_binding_from_config(value: &serde_json::Value) -> Result<serde_json::Value> {
+    if let Some(uri) = value.get("uri").and_then(serde_json::Value::as_str) {
+        if uri.trim().is_empty() {
+            bail!("storage_config.uri is required");
+        }
+        return Ok(space_binding_value(uri));
+    }
+    let binding = serde_json::json!({
+        "type": value.get("type").cloned().unwrap_or_default(),
+        "root": value.get("root").cloned().unwrap_or_default(),
+    });
+    validate_space_binding(&binding)?;
+    Ok(binding)
+}
+
+fn storage_binding_response(value: &serde_json::Value) -> Result<serde_json::Value> {
+    validate_space_binding(value)?;
+    let storage_type = value["type"]
+        .as_str()
+        .context("Node Space binding type is not a string")?;
+    let root = value["root"]
+        .as_str()
+        .context("Node Space binding root is not a string")?;
+    let uri = if matches!(storage_type, "local" | "file" | "fs") {
+        if root.starts_with('/') {
+            format!("file://{root}")
+        } else {
+            root.to_string()
+        }
+    } else {
+        format!("{}://{}", storage_type, root.trim_start_matches('/'))
+    };
+    Ok(serde_json::json!({
+        "uri": uri,
+        "type": storage_type,
+        "root": root,
+    }))
+}
+
 pub async fn space_exists(op: &Operator, name: &str) -> Result<bool> {
     let storage = OpendalStorage::from_operator(op);
     space_exists_with_storage(&storage, name).await
@@ -520,12 +583,7 @@ async fn get_space_raw_with_storage<S: StorageBackend + ?Sized>(
     let binding_path = space_binding_path(name);
     if storage.exists(&binding_path).await? {
         let binding: serde_json::Value = storage.read_json(&binding_path).await?;
-        if !binding.is_object() {
-            return Err(anyhow!(
-                "unsupported Node Space binding: expected an object"
-            ));
-        }
-        meta["storage_config"] = binding;
+        meta["storage_config"] = storage_binding_response(&binding)?;
     }
     Ok(meta)
 }
@@ -627,6 +685,8 @@ struct SpacePatchJournal {
     new_metadata: serde_json::Value,
     old_settings: serde_json::Value,
     new_settings: serde_json::Value,
+    old_binding: Option<serde_json::Value>,
+    new_binding: Option<serde_json::Value>,
 }
 
 const SPACE_PATCH_PENDING: &str = "pending";
@@ -990,17 +1050,27 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
     }
     let meta_path = format!("spaces/{space_id}/meta.json");
     let settings_path = format!("spaces/{space_id}/settings.json");
+    let binding_path = space_binding_path(space_id);
     let (current_meta, metadata_etag) = read_space_json_exact(op, &meta_path)
         .await?
         .context("Space metadata disappeared during patch recovery")?;
     let (current_settings, settings_etag) = read_space_json_exact(op, &settings_path)
         .await?
         .context("Space settings disappeared during patch recovery")?;
+    let (current_binding, binding_etag) = match read_space_json_exact(op, &binding_path).await? {
+        Some((binding, etag)) => {
+            validate_space_binding(&binding)?;
+            (Some(binding), etag)
+        }
+        None => (None, None),
+    };
     let metadata_is_expected =
         current_meta == journal.old_metadata || current_meta == journal.new_metadata;
     let settings_is_expected =
         current_settings == journal.old_settings || current_settings == journal.new_settings;
-    if !metadata_is_expected || !settings_is_expected {
+    let binding_is_expected =
+        current_binding == journal.old_binding || current_binding == journal.new_binding;
+    if !metadata_is_expected || !settings_is_expected || !binding_is_expected {
         // A different writer won the race after this journal was written. Do
         // not let a stale, incomplete transaction brick every future Space
         // read. The current values are still authoritative only after their
@@ -1015,6 +1085,9 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
             return Err(anyhow!(
                 "current Space settings are invalid while recovering a stale patch journal"
             ));
+        }
+        if let Some(binding) = current_binding.as_ref() {
+            validate_space_binding(binding)?;
         }
         complete_space_patch_journal(op, &journal_path, &journal, journal_etag.as_deref()).await?;
         return Ok(());
@@ -1046,6 +1119,16 @@ async fn recover_pending_space_patch(op: &Operator, space_id: &str) -> Result<()
             settings_etag.as_deref(),
         )
         .await?;
+    }
+    if current_binding != journal.new_binding {
+        if current_binding != journal.old_binding {
+            return Err(anyhow!(
+                "pending Space patch journal does not match current Node binding"
+            ));
+        }
+        if let Some(binding) = journal.new_binding.as_ref() {
+            write_space_patch_value(op, &binding_path, binding, binding_etag.as_deref()).await?;
+        }
     }
     complete_space_patch_journal(op, &journal_path, &journal, journal_etag.as_deref()).await?;
     Ok(())
@@ -1200,6 +1283,14 @@ async fn patch_space_with_operator(
             )
         })?;
     let old_settings = settings.clone();
+    let binding_path = space_binding_path(space_id);
+    let (old_binding, binding_etag) = match read_space_json_exact(op, &binding_path).await? {
+        Some((binding, etag)) => {
+            validate_space_binding(&binding)?;
+            (Some(binding), etag)
+        }
+        None => (None, None),
+    };
 
     if let Some(name) = patch.get("name") {
         meta["name"] = name.clone();
@@ -1208,7 +1299,10 @@ async fn patch_space_with_operator(
         validate_space_path_segment(slug)?;
         meta["slug"] = serde_json::Value::String(slug.to_string());
     }
-    let storage_binding = patch.get("storage_config").cloned();
+    let new_binding = match patch.get("storage_config") {
+        Some(config) => Some(storage_binding_from_config(config)?),
+        None => old_binding.clone(),
+    };
     if let Some(new_settings) = patch.get("settings").and_then(|value| value.as_object()) {
         if let Some(settings_obj) = settings.as_object_mut() {
             for (key, value) in new_settings {
@@ -1237,6 +1331,8 @@ async fn patch_space_with_operator(
         new_metadata: meta.clone(),
         old_settings,
         new_settings: settings.clone(),
+        old_binding: old_binding.clone(),
+        new_binding: new_binding.clone(),
     };
     let journal_etag = write_pending_space_patch(op, space_id, &journal_path, &journal).await?;
 
@@ -1272,22 +1368,20 @@ async fn patch_space_with_operator(
     };
     restore_local_space_json_permissions(op, &meta_path)?;
     write_space_patch_value(op, &settings_path, &settings, settings_etag.as_deref()).await?;
+    if old_binding != new_binding {
+        if let Some(binding) = new_binding.as_ref() {
+            write_space_patch_value(op, &binding_path, binding, binding_etag.as_deref()).await?;
+        }
+    }
     // Keep a completed journal as a version-fenced tombstone. A future patch
     // can replace it with its own pending transaction, but recovery must never
     // delete a newer journal after an exact read.
     complete_space_patch_journal(op, &journal_path, &journal, journal_etag.as_deref()).await?;
 
-    if let Some(storage_binding) = storage_binding {
-        let storage = OpendalStorage::from_operator(op);
-        let binding_path = space_binding_path(space_id);
-        storage.write_json(&binding_path, &storage_binding).await?;
-        storage.set_private(&binding_path).await?;
-    }
-
     let mut merged = meta;
     merged["settings"] = settings;
-    if let Some(storage_binding) = patch.get("storage_config") {
-        merged["storage_config"] = storage_binding.clone();
+    if let Some(binding) = new_binding.as_ref() {
+        merged["storage_config"] = storage_binding_response(binding)?;
     }
     Ok(merged)
 }

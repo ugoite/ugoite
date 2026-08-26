@@ -10,6 +10,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -25,16 +26,22 @@ pub use ugoite_domain::space_key::{SpaceKey, SpaceKeyError, SpaceUri};
 /// Opaque evidence for one exact object state.  Callers may carry this token
 /// back to [`PublicationStore::compare_and_swap`], but must not interpret it
 /// as an ETag, timestamp, digest, or monotonic counter.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObjectRevision(String);
 
 impl ObjectRevision {
-    pub fn opaque(value: impl Into<String>) -> Self {
+    fn from_backend(value: impl Into<String>) -> Self {
         Self(value.into())
     }
 
-    pub fn as_opaque(&self) -> &str {
+    fn backend_value(&self) -> &str {
         &self.0
+    }
+}
+
+impl fmt::Debug for ObjectRevision {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ObjectRevision(<opaque>)")
     }
 }
 
@@ -208,7 +215,7 @@ impl OpendalPublicationStore {
         let revisions = memory_publication_revisions()
             .lock()
             .expect("memory publication revision lock poisoned");
-        ObjectRevision::opaque(format!(
+        ObjectRevision::from_backend(format!(
             "memory:{}:{}",
             revisions
                 .get(&self.memory_revision_key(path))
@@ -412,8 +419,9 @@ impl OpendalPublicationStore {
             self.local_revision(&path, &bytes)
                 .map_err(ReadError::Backend)?
         } else {
-            etag.map(ObjectRevision::opaque)
-                .unwrap_or_else(|| ObjectRevision::opaque(hex::encode(Sha256::digest(&bytes))))
+            etag.map(ObjectRevision::from_backend).unwrap_or_else(|| {
+                ObjectRevision::from_backend(hex::encode(Sha256::digest(&bytes)))
+            })
         };
         Ok(Some(ExactObject { bytes, revision }))
     }
@@ -438,7 +446,7 @@ impl OpendalPublicationStore {
             use std::os::unix::fs::MetadataExt;
             material.push_str(&format!(":{}:{}", metadata.dev(), metadata.ino()));
         }
-        Ok(ObjectRevision::opaque(format!(
+        Ok(ObjectRevision::from_backend(format!(
             "local:{}",
             hex::encode(Sha256::digest(material.as_bytes()))
         )))
@@ -463,6 +471,7 @@ impl OpendalPublicationStore {
             .ok_or_else(|| PublicationError::Backend(anyhow!("publication key has no filename")))?
             .to_string_lossy();
         let temporary = parent.join(format!(".{file_name}.{}.tmp", Uuid::now_v7()));
+        let mut published = false;
         let result = async {
             let mut options = tokio::fs::OpenOptions::new();
             options.create_new(true).write(true).truncate(true);
@@ -477,11 +486,10 @@ impl OpendalPublicationStore {
             } else {
                 tokio::fs::rename(&temporary, &target).await?;
             }
+            published = true;
             tokio::fs::remove_file(&temporary).await.ok();
             #[cfg(unix)]
-            if let Ok(directory) = tokio::fs::File::open(&parent).await {
-                directory.sync_all().await?;
-            }
+            tokio::fs::File::open(&parent).await?.sync_all().await?;
             Ok::<(), std::io::Error>(())
         }
         .await;
@@ -489,10 +497,10 @@ impl OpendalPublicationStore {
             let _ = tokio::fs::remove_file(&temporary).await;
         }
         result.map_err(|error| {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                PublicationError::Backend(anyhow!(error))
+            if published {
+                PublicationError::OutcomeUnknown(error.into())
             } else {
-                PublicationError::Backend(error.into())
+                PublicationError::Backend(anyhow!(error))
             }
         })
     }
@@ -501,6 +509,11 @@ impl OpendalPublicationStore {
 #[async_trait]
 impl PublicationStore for OpendalPublicationStore {
     async fn load(&self, key: &SpaceKey) -> std::result::Result<Option<ExactObject>, ReadError> {
+        let _serializer = self.serializer.lock().await;
+        let _lock = self
+            .local_lock(key)
+            .await
+            .map_err(|error| ReadError::Backend(anyhow!(error)))?;
         self.load_unlocked(key).await
     }
 
@@ -616,7 +629,7 @@ impl PublicationStore for OpendalPublicationStore {
                 &self.path(key),
                 bytes,
                 WriteOptions {
-                    if_match: Some(expected.as_opaque().to_owned()),
+                    if_match: Some(expected.backend_value().to_owned()),
                     ..Default::default()
                 },
             )

@@ -349,6 +349,11 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
     space::create_space(&op, "patch-recovery", "memory:///").await?;
     let meta_path = "spaces/patch-recovery/meta.json";
     let settings_path = "spaces/patch-recovery/settings.json";
+    let binding: Value = serde_json::from_slice(
+        &op.read("_ugoite/space-bindings/patch-recovery.json")
+            .await?
+            .to_vec(),
+    )?;
     let old_meta: Value = serde_json::from_slice(&op.read(meta_path).await?.to_vec())?;
     let old_settings: Value = serde_json::from_slice(&op.read(settings_path).await?.to_vec())?;
     let mut new_meta = old_meta.clone();
@@ -362,6 +367,8 @@ async fn pending_space_patch_journal_recovers_both_authoritative_files() -> anyh
             "new_metadata": new_meta,
             "old_settings": old_settings,
             "new_settings": new_settings,
+            "old_binding": binding.clone(),
+            "new_binding": binding,
         }))?,
     )
     .await?;
@@ -395,6 +402,8 @@ async fn stale_space_patch_journal_is_discarded_after_a_valid_winner() -> anyhow
             "new_metadata": new_meta,
             "old_settings": old_settings.clone(),
             "new_settings": old_settings,
+            "old_binding": null,
+            "new_binding": null,
         }))?,
     )
     .await?;

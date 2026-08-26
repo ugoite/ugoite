@@ -310,6 +310,24 @@ fn validate_local_space_candidate(
     let object = metadata
         .as_object()
         .context("Space metadata must be an object")?;
+    const SPACE_METADATA_FIELDS: &[&str] = &[
+        "schema_version",
+        "space_id",
+        "space_uid",
+        "slug",
+        "id",
+        "name",
+        "created_at",
+        "hmac_key_id",
+        "hmac_key",
+        "last_rotation",
+    ];
+    if object
+        .keys()
+        .any(|field| !SPACE_METADATA_FIELDS.contains(&field.as_str()))
+    {
+        bail!("Space metadata contains unsupported fields");
+    }
     if object
         .get("schema_version")
         .and_then(serde_json::Value::as_u64)
@@ -322,6 +340,22 @@ fn validate_local_space_candidate(
             .is_none_or(str::is_empty)
         || object
             .get("name")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+        || object
+            .get("created_at")
+            .and_then(serde_json::Value::as_f64)
+            .is_none()
+        || object
+            .get("hmac_key_id")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+        || object
+            .get("hmac_key")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+        || object
+            .get("last_rotation")
             .and_then(serde_json::Value::as_str)
             .is_none_or(str::is_empty)
     {

@@ -60,6 +60,7 @@ schemas:
     path: spaces/{id}/meta.json
     schema:
       type: object
+      additionalProperties: false
       required:
       - schema_version
       - space_id
