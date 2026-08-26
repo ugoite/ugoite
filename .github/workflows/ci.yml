@@ -185,15 +185,6 @@ jobs:
           restore-keys: |
             playwright-v1-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Temporary artifact disk measurement
-        run: |
-          set -euo pipefail
-          echo '## Temporary artifact disk measurement'
-          df -h /
-          docker system df
-          du -sh target 2>/dev/null || true
-          du -sh "${DENO_DIR}" "${PLAYWRIGHT_BROWSERS_PATH}" 2>/dev/null || true
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -250,16 +241,6 @@ jobs:
           UGOITE_CI_RUN_ID: ${{ github.run_id }}
           UGOITE_SKIP_PLAYWRIGHT_DEPS: "1"
         run: scripts/measure-step.sh artifacts mise run ci:artifacts
-
-      - name: Temporary artifact disk measurement after build
-        if: always()
-        run: |
-          set -euo pipefail
-          echo '## Temporary artifact disk measurement after build'
-          df -h /
-          docker system df
-          du -sh target target/rust target/artifacts 2>/dev/null || true
-          du -sh "${DENO_DIR}" "${PLAYWRIGHT_BROWSERS_PATH}" 2>/dev/null || true
 
       - name: Upload docsite artifact
         id: upload-docsite
