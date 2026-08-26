@@ -1422,8 +1422,6 @@ impl Authorizer {
             .memberships
             .get(&issuer_principal_id)
             .is_some_and(|membership| matches!(membership.role, SpaceRole::Owner))
-            || issuer_principal_id == target_principal_id
-            || issuer_account_id == target_account_id
         {
             bail!("recovery fence tuple is invalid")
         }

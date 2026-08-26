@@ -24,6 +24,7 @@ sha2 = "0.11"
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
 uuid = { version = "1.23", features = ["v7", "serde"] }
 chrono = "0.4"
+url = "2.5"
 
 [dev-dependencies]
 tempfile = "3"

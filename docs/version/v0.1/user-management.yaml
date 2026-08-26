@@ -10,10 +10,11 @@ requirement_ids:
 - REQ-SEC-006
 - REQ-SEC-007
 - REQ-SEC-008
-future_requirement_ids:
-- REQ-SEC-009
 - REQ-SEC-012
 - REQ-SEC-013
+- REQ-SEC-015
+future_requirement_ids:
+- REQ-SEC-009
 - REQ-SEC-014
 phases:
 - id: design
@@ -30,7 +31,7 @@ phases:
     done: true
   - description: Implement portable Space principals, roles, invitations, ACLs, and owner-visible audit reads.
     done: true
-  - description: Keep recovery, OAuth device authorization, agent principals, and owner-approved recovery outside the v0.1 support contract.
+  - description: Keep account self-recovery, TOTP/OIDC recovery, agent principals, generic OAuth client compatibility, and remote CLI asset upload outside the v0.1 support contract.
     done: true
 - id: testing
   status: completed

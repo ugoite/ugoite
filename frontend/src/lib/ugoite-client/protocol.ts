@@ -28,7 +28,6 @@ export const UGOITE_API_OPERATIONS = [
   "space.members.update_role",
   "space.members.revoke",
   "space.recovery.force_reset",
-  "space.recovery.backup_codes",
   "form.list_types",
   "form.list",
   "form.get",

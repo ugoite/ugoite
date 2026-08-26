@@ -157,7 +157,7 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-014
   title: Account Recovery and External Identity Linking
-  description: 'TOTP, recovery-code replacement, owner-approved recovery, and OIDC identity linking remain future capabilities and MUST NOT be part of the v0.1 support contract.'
+  description: 'Account self-recovery, TOTP/recovery-code replacement, OIDC identity linking, and Node-level credential recovery remain future capabilities and MUST NOT be part of the v0.1 support contract. Owner-approved Space access recovery is specified by REQ-SEC-012.'
   related_spec:
   - security/overview.md
   - api/rest.md#authentication
@@ -393,28 +393,32 @@ requirements:
   - SPEC-SECURITY-OVERVIEW
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-012
-  title: Owner-Approved Account Recovery
-  description: An active human Space Owner may issue a tuple-bound, one-use recovery approval; the target can replace credentials through a five-minute WebAuthn challenge, while credential generations invalidate stale human sessions and preserve Space agent credentials.
+  title: Owner-Approved Space Access Recovery
+  description: An active human Space Owner may issue a tuple-bound, one-use approval for an active human principal in that Space. The target completes a five-minute WebAuthn registration, which creates a fresh HumanAccount and atomically replaces only the target Space Principal binding. The principal ID, membership, role, ACL, resource ownership, audit identity, old account credentials, sessions, and unrelated Space bindings are preserved; the old account simply loses authorization in the recovered Space.
   related_spec:
   - security/authentication-overview.yaml
   - api/rest.md#authentication
   - stories/experimental.yaml
   priority: high
-  status: planned
+  status: implemented
   verification: traced
   tests:
+  - file: e2e/owner-space-recovery.test.ts
+    cases:
+    - req_sec_012_013_owner_space_access_recovery_supported_journey
   - file: crates/ugoite-server/tests/owner_recovery.rs
     cases:
     - test_req_sec_012_owner_only_space_scope_and_target_binding
+    - test_req_sec_012_returns_a_fresh_account_contract
   - file: crates/ugoite-identity/src/node_identity.rs
     cases:
-    - test_req_sec_012_backup_rotation_idempotency_and_preservation
-    - test_req_sec_012_generation_invalidates_human_credentials_but_not_agents
+    - owner_approval_rejects_a_target_generation_changed_after_issue
+    - test_req_sec_012_approval_is_binding_scoped_and_audit_is_completion_only
     - test_req_sec_012_concurrent_reset_winner_and_loser_session
     - test_req_sec_012_replacement_failure_preserves_previous_approval
   - file: crates/ugoite-api-client/src/lib.rs
     cases:
-    - test_req_sec_012_owner_recovery_operations_and_idempotency_header
+    - test_req_sec_012_owner_recovery_operation_has_no_account_credential_api
   - file: frontend/src/lib/ugoite-client/protocol.test.ts
     cases:
     - test_req_sec_012_owner_recovery_protocol_forwards_header
@@ -431,18 +435,57 @@ requirements:
   - SPEC-ARCH-INTERFACE
   id: REQ-SEC-013
   title: Durable Recovery Audit Delivery
-  description: Owner recovery and backup-code operations append safe, secret-free Node audit events with stable request identifiers and expose pending delivery rather than replaying one-time secrets.
+  description: Successful Space binding recovery persists one canonical, secret-free recovery.space_binding_replaced event in the Node outbox, then delivers it to the Space audit chain with restart-safe exactly-once event identity. Completion is independent from delivery and reports delivered or pending without reissuing credentials or recovery codes.
   related_spec:
   - security/overview.md
   - quality/error-handling.md
   priority: high
-  status: planned
+  status: implemented
   verification: traced
   tests:
   - file: crates/ugoite-identity/src/node_identity.rs
     cases:
     - test_req_sec_013_recovery_outbox_status_and_redaction
+  - file: crates/ugoite-server/tests/owner_recovery.rs
+    cases:
+    - test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_storage
+  - file: crates/ugoite-server/src/lib.rs
+    cases:
+    - recovery_audit_delivery_failure_reloads_and_reconciles_exactly_once
   - file: crates/ugoite-iceberg/src/audit.rs
     cases:
     - test_req_sec_013_cross_process_conditional_append_deduplicates_event
     - test_req_sec_013_retained_event_id_survives_log_compaction
+- set_id: REQCAT-SECURITY
+  source_file: requirements/security.yaml
+  scope: Security controls, integrity protections, and isolation requirements.
+  linked_policies:
+  - POL-003
+  - POL-004
+  - POL-010
+  - POL-011
+  linked_specifications:
+  - SPEC-SECURITY-OVERVIEW
+  - SPEC-ARCH-INTERFACE
+  id: REQ-SEC-015
+  title: Remote CLI Device Authentication
+  description: The packaged Linux CLI may authenticate to one Remote Node through browser-approved device authorization, a fresh P-256 device key, opaque short-lived access credentials, rotating refresh credentials, and DPoP. REST credentials omit resource and use the Node issuer audience; MCP credentials use the exact {issuer}/mcp resource and audience. Credentials are Node-bound, action-scoped, and reject cross-resource use. CLI logout is local credential/key deletion; remote asset upload and generic OAuth compatibility remain future scope.
+  related_spec:
+  - security/authentication-overview.yaml
+  - api/rest.md#authentication
+  - api/mcp.md#authentication
+  priority: high
+  status: implemented
+  verification: traced
+  tests:
+  - file: crates/ugoite-cli/src/commands/auth.rs
+    cases:
+    - dpop_htu_excludes_query_and_fragment
+    - dpop_htu_preserves_path
+  - file: crates/ugoite-cli/tests/integration_test.rs
+    cases:
+    - default_device_login_actions_exclude_unapproved_dangerous_actions
+  - file: crates/ugoite-server/src/lib.rs
+    cases:
+    - oauth_resource_mismatch_preserves_authorization_code_device_and_refresh_grants
+    - authenticated_mcp_route_enforces_binding_dpop_acl_and_human_mutations

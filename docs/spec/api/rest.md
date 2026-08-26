@@ -14,19 +14,23 @@ contract is implemented. The stable error code is
 `STORAGE_MUTATION_UNAVAILABLE`.
 
 > Release boundary: v0.1 supports mandatory browser authentication with
-> Passkey/WebAuthn, opaque sessions, Space membership/ACL enforcement,
-> authenticated MCP access, and authorized audit reads. TOTP/recovery-code
-> workflows, OIDC, owner-approved recovery, managed service-account operations,
-> audit CRUD, and remote CLI asset upload remain future/reference material.
+> Passkey/WebAuthn, opaque sessions, owner-approved Space access recovery,
+> Remote CLI device authentication, Space membership/ACL enforcement,
+> authenticated MCP access, and authorized audit reads. Account self-recovery,
+> TOTP/OIDC recovery, managed service-account operations, audit CRUD, and remote
+> CLI asset upload remain future/reference material.
 
 ## Authentication surfaces
 
 Passkey/WebAuthn registration and passwordless browser login, opaque browser
-sessions, and session revocation are supported v0.1 authentication surfaces.
-Account recovery, OIDC linking, CLI OAuth device flow, managed service-account
-operations, and audit CRUD remain reference-only endpoint inventory. The
-supported browser setup and login journey is documented in the operator guide;
-the local CLI core workflow remains available without a server.
+sessions, session revocation, owner-approved Space access recovery, and CLI
+OAuth device authentication are supported v0.1 authentication surfaces.
+Account self-recovery, OIDC linking, managed service-account operations, and
+audit CRUD remain reference-only endpoint inventory. CLI REST credentials omit
+the `resource` parameter and use the Node issuer as `aud`; MCP credentials use
+exactly `{issuer}/mcp` for both. DPoP `htu` is the scheme, authority, and path,
+without query or fragment. The local CLI core workflow remains available
+without a server.
 - `POST /spaces/{space_id}/approvals`: a recently Passkey-authenticated human
   issues a one-time approval bound to `entry.delete`, `sql.delete`,
   `asset.delete`, or `access.put`. The issue response returns the one-time
@@ -35,8 +39,9 @@ the local CLI core workflow remains available without a server.
   query string, log, or audit event.
 
 Browser session cookies are opaque, server-side, and part of the supported v0.1
-contract. Device credentials, TOTP/recovery workflows beyond the bootstrap-only
-code display, and remote CLI credential provisioning remain future scope. This
+contract. TOTP/recovery workflows beyond the bootstrap-only code display,
+generic OAuth clients, and remote asset upload remain future scope. Remote CLI
+device credentials are supported through the browser-approved device flow. This
 release does not provide a local authentication bypass.
 
 ## Authorization surfaces

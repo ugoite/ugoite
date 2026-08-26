@@ -39,7 +39,6 @@ pub const SUPPORTED_OPERATIONS: &[&str] = &[
     "space.members.update_role",
     "space.members.revoke",
     "space.recovery.force_reset",
-    "space.recovery.backup_codes",
     "form.list_types",
     "form.list",
     "form.get",
@@ -469,18 +468,6 @@ pub fn prepare_request(
                 ],
                 vec![],
             ),
-            "space.recovery.backup_codes" => (
-                OperationSpec::json(HttpMethod::Post, "Failed to rotate recovery codes"),
-                vec![
-                    "spaces".into(),
-                    required_string(operation, args, "space_id")?,
-                    "admin".into(),
-                    "recovery".into(),
-                    "backup-codes".into(),
-                ],
-                vec![],
-            ),
-
             "form.list_types" => (
                 OperationSpec::get("Failed to list form types"),
                 vec![
@@ -921,14 +908,6 @@ pub fn prepare_request(
         }
     };
 
-    if operation == "space.recovery.backup_codes" {
-        let idempotency_key = required_string(operation, args, "idempotency_key")?;
-        headers.push(Header {
-            name: "idempotency-key".to_string(),
-            value: idempotency_key,
-        });
-    }
-
     if matches!(
         operation,
         "entry.delete" | "sql.delete" | "asset.delete" | "access.put"
@@ -1249,11 +1228,6 @@ fn operation_spec(operation: &str) -> Option<OperationSpec> {
         "space.recovery.force_reset" => (
             HttpMethod::Post,
             "Failed to issue owner recovery approval",
-            RequestBodyKind::Json,
-        ),
-        "space.recovery.backup_codes" => (
-            HttpMethod::Post,
-            "Failed to rotate recovery codes",
             RequestBodyKind::Json,
         ),
         "form.list_types" => (
@@ -1686,7 +1660,7 @@ mod tests {
     }
 
     #[test]
-    fn test_req_sec_012_owner_recovery_operations_and_idempotency_header() {
+    fn test_req_sec_012_owner_recovery_operation_has_no_account_credential_api() {
         let force_reset = prepare_request(
             "space.recovery.force_reset",
             &json!({"space_id": "team"}),
@@ -1702,35 +1676,8 @@ mod tests {
             }]
         );
 
-        let backup_codes = prepare_request(
-            "space.recovery.backup_codes",
-            &json!({
-                "space_id": "team",
-                "idempotency_key": "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12"
-            }),
-            Some(&json!({"principal_id": "01900000-0000-7000-8000-000000000001"})),
-        )
-        .expect("owner backup-code request");
-        assert_eq!(
-            backup_codes.path,
-            "/spaces/team/admin/recovery/backup-codes"
-        );
-        assert_eq!(
-            backup_codes.headers,
-            vec![
-                Header {
-                    name: "content-type".into(),
-                    value: "application/json".into()
-                },
-                Header {
-                    name: "idempotency-key".into(),
-                    value: "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12".into()
-                },
-            ]
-        );
         for operation in [
             "space.recovery.force_reset",
-            "space.recovery.backup_codes",
             "auth.recovery.owner_start",
             "auth.recovery.owner_finish",
         ] {
@@ -1994,20 +1941,11 @@ mod tests {
         }
         if matches!(
             operation,
-            "space.members.update_role"
-                | "space.members.revoke"
-                | "space.recovery.force_reset"
-                | "space.recovery.backup_codes"
+            "space.members.update_role" | "space.members.revoke" | "space.recovery.force_reset"
         ) {
             arguments.insert(
                 "principal_id".into(),
                 json!("01900000-0000-7000-8000-000000000001"),
-            );
-        }
-        if matches!(operation, "space.recovery.backup_codes") {
-            arguments.insert(
-                "idempotency_key".into(),
-                json!("018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12"),
             );
         }
         if operation == "auth.revoke_session" {

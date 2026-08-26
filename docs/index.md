@@ -46,11 +46,12 @@ remain planned work. :::
 - The server exposes REST, the small authenticated MCP semantic facade, and
   static browser hosting.
 - v0.1 supports mandatory browser authentication with Passkey/WebAuthn,
-  opaque sessions, Space membership/ACL enforcement, authenticated MCP access,
-  and authorized audit reads.
-- TOTP/recovery-code workflows, OIDC, owner-approved recovery, CLI device/DPoP
-  credentials, agent/service-account flows, and audit CRUD remain outside the
-  supported v0.1 release contract.
+  opaque sessions, owner-approved Space access recovery, Remote CLI device/DPoP
+  credentials, Space membership/ACL enforcement, authenticated MCP access, and
+  authorized audit reads.
+- Account self-recovery, TOTP/OIDC recovery, agent/service-account flows, generic
+  OAuth client compatibility, audit CRUD, and remote CLI asset upload remain
+  outside the supported v0.1 release contract.
 
 ## Source-of-truth rules
 

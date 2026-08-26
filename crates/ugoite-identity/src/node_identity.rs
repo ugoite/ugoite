@@ -300,6 +300,10 @@ pub struct OwnerRecoveryApproval {
     pub target_node_lifecycle_epoch: u64,
     #[serde(default)]
     pub space_authorization_revision: u64,
+    /// Monotonic Node binding revision captured when the owner approved the
+    /// request. A finish must observe the same revision before replacing the
+    /// target binding.
+    pub current_binding_revision: u64,
     #[serde(default)]
     pub recovery_fence_id: Option<Uuid>,
     pub issued_at: String,
@@ -798,6 +802,8 @@ pub struct NodeState {
     pending_totp_enrollments: BTreeMap<Uuid, PendingTotpEnrollment>,
     #[serde(default)]
     pub bindings: Vec<PrincipalBinding>,
+    /// Monotonic revision for Node-local Space Principal bindings.
+    pub binding_revision: u64,
     #[serde(default)]
     pub device_credentials: BTreeMap<Uuid, DeviceCredential>,
     #[serde(default)]
@@ -1856,6 +1862,36 @@ impl NodeIdentityService {
         )
     }
 
+    /// Test-only constructor that keeps Node identity state on the supplied
+    /// operator so a test can model a process restart against the same
+    /// control store.
+    #[doc(hidden)]
+    pub fn new_for_tests_with_operator(
+        operator: opendal::Operator,
+        rp_id: impl Into<String>,
+        public_origin: impl Into<String>,
+    ) -> Result<Self> {
+        Self::from_parts(
+            Arc::new(OpenDalNodeControlStore::new(operator)?),
+            Arc::from([0x5a; 32]),
+            rp_id,
+            public_origin,
+        )
+    }
+
+    /// Test-only persistence hook for exercising the server's recovery audit
+    /// reconciler with a durable Node outbox record.
+    #[doc(hidden)]
+    pub async fn seed_test_recovery_audit_outbox(
+        &self,
+        record: RecoveryAuditOutboxRecord,
+    ) -> Result<()> {
+        let _guard = self.state_lock.lock().await;
+        let mut state = self.read_state().await?;
+        state.recovery_audit_outbox.insert(record.event_id, record);
+        self.write_state(&state).await
+    }
+
     /// Seed the minimal Node-local identity records needed by server
     /// recovery coordinator tests. This intentionally creates no credential
     /// material; the coordinator only needs active accounts and unique
@@ -2095,6 +2131,7 @@ impl NodeIdentityService {
             node_recovery_fences: BTreeMap::new(),
             pending_totp_enrollments: BTreeMap::new(),
             bindings: Vec::new(),
+            binding_revision: 0,
             device_credentials: BTreeMap::new(),
             device_authorizations: BTreeMap::new(),
             authorization_codes: BTreeMap::new(),
@@ -3203,9 +3240,6 @@ impl NodeIdentityService {
             )
             .await?;
         }
-        if account_id == issuer_account_id || principal_id == issuer_principal_id {
-            bail!("owner cannot approve their own recovery");
-        }
         if !state
             .accounts
             .get(&issuer_account_id)
@@ -3371,6 +3405,7 @@ impl NodeIdentityService {
                     .as_ref()
                     .map(|snapshot| snapshot.space_authorization_revision)
                     .unwrap_or_default(),
+                current_binding_revision: state.binding_revision,
                 recovery_fence_id: snapshot.as_ref().map(|snapshot| snapshot.recovery_fence_id),
                 issued_at: timestamp(now),
                 expires_at: expires_at.clone(),
@@ -3380,27 +3415,6 @@ impl NodeIdentityService {
                 invalidated_at: None,
                 encrypted_token: Some(encrypted_token),
             },
-        );
-        queue_recovery_audit(
-            &mut state,
-            approval_id,
-            "recovery.owner_approval_issued",
-            approval_id,
-            None,
-            space_uid,
-            principal_id,
-            account_id,
-            Some(issuer_principal_id),
-            Some(issuer_account_id),
-            issuer_credential_id,
-            Some(issuer_principal_id),
-            Some(issuer_account_id),
-            issuer_credential_id,
-            serde_json::json!({
-                "space_uid": space_uid,
-                "principal_id": principal_id,
-                "issuer_principal_id": issuer_principal_id
-            }),
         );
         if let Err(error) = self.write_state(&state).await {
             let committed = self.read_state().await.ok().is_some_and(|observed| {
@@ -3653,7 +3667,7 @@ impl NodeIdentityService {
                     bail!("owner recovery challenge has the wrong purpose");
                 };
                 let (mut public_key, registration) = self.webauthn.start_passkey_registration(
-                    Uuid::now_v7(),
+                    reset_id,
                     &challenge.account_id.to_string(),
                     &challenge.display_name,
                     None,
@@ -3789,8 +3803,9 @@ impl NodeIdentityService {
                 recovery_snapshot,
             )?;
         }
+        let reset_id = Uuid::now_v7();
         let (mut public_key, registration) = self.webauthn.start_passkey_registration(
-            Uuid::now_v7(),
+            reset_id,
             &approval.account_id.to_string(),
             &account.display_name,
             None,
@@ -3800,7 +3815,6 @@ impl NodeIdentityService {
             selection.require_resident_key = true;
         }
         let challenge_id = Uuid::now_v7();
-        let reset_id = Uuid::now_v7();
         state.registration_challenges.insert(
             challenge_id,
             RegistrationChallenge {
@@ -3916,6 +3930,29 @@ impl NodeIdentityService {
         if account_before.credential_generation != approval.target_generation {
             bail!("owner approval is stale");
         }
+        if state.binding_revision != approval.current_binding_revision {
+            bail!("owner approval binding is stale");
+        }
+        let target_binding_index = state
+            .bindings
+            .iter()
+            .position(|binding| {
+                binding.space_uid == space_uid
+                    && binding.principal_id == principal_id
+                    && binding.node_account_id == challenge.account_id
+            })
+            .ok_or_else(|| anyhow!("owner approval binding is stale"))?;
+        if state
+            .bindings
+            .iter()
+            .filter(|binding| {
+                binding.space_uid == space_uid && binding.principal_id == principal_id
+            })
+            .count()
+            != 1
+        {
+            bail!("owner approval binding is stale");
+        }
         let target_node_lifecycle_epoch = state
             .account_lifecycle_epochs
             .get(&challenge.account_id)
@@ -3982,43 +4019,29 @@ impl NodeIdentityService {
         }
 
         let now = timestamp(Utc::now());
-        let superseded_owner_challenges = state
-            .registration_challenges
-            .iter()
-            .filter_map(|(candidate_id, candidate)| {
-                if *candidate_id == challenge_id || candidate.account_id != challenge.account_id {
-                    return None;
-                }
-                let RegistrationPurpose::OwnerRecovery {
-                    approval_id,
-                    reset_id,
-                    ..
-                } = &candidate.purpose
-                else {
-                    return None;
-                };
-                Some((*candidate_id, *approval_id, *reset_id))
-            })
-            .collect::<Vec<_>>();
-        let generation_after = account_before
-            .credential_generation
-            .checked_add(1)
-            .ok_or_else(|| anyhow!("credential generation exhausted"))?;
+        // `reset_id` is generated and persisted when the registration
+        // challenge is created. Reusing it as the fresh account ID makes a
+        // retry deterministic without exposing a second provisional account.
+        let new_account_id = reset_id;
+        if state.accounts.contains_key(&new_account_id) {
+            bail!("owner recovery replacement account already exists");
+        }
         let method_id = Uuid::now_v7();
-        let session_token = self
-            .prepare_owner_reset(
-                &mut state,
-                &account_before,
-                generation_after,
-                method_id,
-                reset_id,
-            )
-            .await?;
+        let new_account = HumanAccount {
+            account_id: new_account_id,
+            display_name: account_before.display_name.clone(),
+            status: AccountStatus::Active,
+            created_at: now.clone(),
+            node_roles: BTreeSet::new(),
+            credential_generation: 0,
+        };
+        state.accounts.insert(new_account_id, new_account.clone());
+        state.account_lifecycle_epochs.insert(new_account_id, 0);
         state.passkeys.insert(
             credential_id.clone(),
             StoredPasskey {
                 credential_id,
-                account_id: challenge.account_id,
+                account_id: new_account_id,
                 method_id,
                 passkey,
                 created_at: now.clone(),
@@ -4030,7 +4053,7 @@ impl NodeIdentityService {
             method_id,
             AuthenticationMethod {
                 method_id,
-                account_id: challenge.account_id,
+                account_id: new_account_id,
                 kind: AuthenticationMethodKind::Passkey,
                 external_subject: None,
                 created_at: now.clone(),
@@ -4040,58 +4063,37 @@ impl NodeIdentityService {
         let recovery_codes = (0..8)
             .map(|_| random_recovery_code())
             .collect::<Result<Vec<_>>>()?;
-        let recovery = state
-            .recovery
-            .entry(challenge.account_id)
-            .or_insert_with(|| RecoveryRecord {
-                account_id: challenge.account_id,
-                code_hashes: Vec::new(),
+        state.recovery.insert(
+            new_account_id,
+            RecoveryRecord {
+                account_id: new_account_id,
+                code_hashes: recovery_codes.iter().map(|code| token_hash(code)).collect(),
                 totp_secret_encrypted: None,
                 created_at: now.clone(),
                 failed_attempts: 0,
                 locked_until: None,
-            });
-        recovery.code_hashes = recovery_codes.iter().map(|code| token_hash(code)).collect();
-        recovery.totp_secret_encrypted = None;
-        recovery.failed_attempts = 0;
-        recovery.locked_until = None;
-        let session_id = self.session_id_for_token(&session_token).await?;
-        for (superseded_challenge_id, superseded_approval_id, superseded_reset_id) in
-            superseded_owner_challenges
-        {
-            state.recovery_challenge_tombstones.insert(
-                superseded_challenge_id,
-                RecoveryChallengeTombstone {
-                    challenge_id: superseded_challenge_id,
-                    approval_id: superseded_approval_id,
-                    reset_id: superseded_reset_id,
-                    reason: "account_reset".to_string(),
-                    created_at: now.clone(),
-                },
-            );
-        }
-        for approval in state
-            .owner_recovery_approvals
-            .values_mut()
-            .filter(|approval| {
-                approval.account_id == challenge.account_id
-                    && approval.approval_id != approval_id
-                    && approval.used_at.is_none()
-            })
-        {
-            approval.invalidated_at = Some(now.clone());
-        }
-        *state
-            .account_lifecycle_epochs
-            .entry(challenge.account_id)
-            .or_insert(0) += 1;
-        state.accounts.insert(
-            challenge.account_id,
-            HumanAccount {
-                credential_generation: generation_after,
-                ..account_before.clone()
             },
         );
+        let session_token = self
+            .create_session_with_recovery(
+                &state,
+                new_account_id,
+                method_id,
+                AssuranceLevel::PhishingResistant,
+                Some(reset_id),
+            )
+            .await?;
+        let session_id = self.session_id_for_token(&session_token).await?;
+
+        let old_binding = state.bindings.remove(target_binding_index);
+        state.bindings.push(PrincipalBinding {
+            node_account_id: new_account_id,
+            ..old_binding
+        });
+        state.binding_revision = state
+            .binding_revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("Node binding revision overflow"))?;
         state.registration_challenges.remove(&challenge_id);
         state.recovery_challenge_tombstones.insert(
             challenge_id,
@@ -4112,9 +4114,9 @@ impl NodeIdentityService {
             reset_id,
             challenge_id,
             approval_id,
-            account_id: challenge.account_id,
+            account_id: new_account_id,
             generation_before: account_before.credential_generation,
-            generation_after,
+            generation_after: 0,
             session_id,
             space_authorization_revision: approval.space_authorization_revision,
             recovery_fence_id: approval.recovery_fence_id.unwrap_or_default(),
@@ -4136,20 +4138,23 @@ impl NodeIdentityService {
         queue_recovery_audit(
             &mut state,
             reset_id,
-            "recovery.owner_reset_completed",
+            "recovery.space_binding_replaced",
             reset_id,
             Some(challenge_id),
             space_uid,
             principal_id,
-            challenge.account_id,
-            None,
-            None,
-            None,
+            new_account_id,
+            Some(approval.issuer_principal_id),
+            Some(approval.issuer_account_id),
+            approval.issuer_credential_id,
             Some(approval.issuer_principal_id),
             Some(approval.issuer_account_id),
             approval.issuer_credential_id,
             serde_json::json!({
-                "credential_generation": generation_after
+                "space_uid": space_uid,
+                "old_account_id": account_before.account_id,
+                "new_account_id": new_account_id,
+                "recovery_request_id": reset_id
             }),
         );
         if let Err(error) = self.write_state(&state).await {
@@ -4158,29 +4163,15 @@ impl NodeIdentityService {
                     .recovery_reset_markers
                     .get(&reset_id)
                     .is_some_and(|marker| {
-                        marker.session_id == session_id
-                            && marker.generation_after == generation_after
+                        marker.session_id == session_id && marker.account_id == new_account_id
                     })
             });
             if !committed {
                 return Err(error);
             }
         }
-        let _ = self
-            .revoke_account_sessions_except(
-                state.node_id,
-                challenge.account_id,
-                &timestamp(Utc::now()),
-                Some(session_id),
-            )
-            .await;
-        let account = state
-            .accounts
-            .get(&challenge.account_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("recovery account is missing"))?;
         Ok(RecoveryRegistrationFinish {
-            account,
+            account: new_account,
             session_id: session_token,
             recovery_codes,
             recovery_space_uid: Some(space_uid),
@@ -4190,77 +4181,6 @@ impl NodeIdentityService {
             recovery_issuer_credential_id: approval.issuer_credential_id,
             recovery_request_id: Some(reset_id),
         })
-    }
-
-    async fn prepare_owner_reset(
-        &self,
-        state: &mut NodeState,
-        account: &HumanAccount,
-        generation_after: u64,
-        credential_id: Uuid,
-        reset_id: Uuid,
-    ) -> Result<String> {
-        let now = timestamp(Utc::now());
-        invalidate_pending_recovery_responses(state, account.account_id, &now);
-        state
-            .passkeys
-            .retain(|_, passkey| passkey.account_id != account.account_id);
-        state
-            .authentication_methods
-            .retain(|_, method| method.account_id != account.account_id);
-        state.pending_totp_enrollments.remove(&account.account_id);
-        state
-            .registration_challenges
-            .retain(|_, challenge| challenge.account_id != account.account_id);
-        for credential in state.device_credentials.values_mut() {
-            if credential.account_id == account.account_id {
-                credential.revoked_at = Some(now.clone());
-            }
-        }
-        for credential in state.refresh_credentials.values_mut() {
-            if credential.account_id == account.account_id {
-                credential.revoked_at = Some(now.clone());
-            }
-        }
-        let invitation_accounts = state
-            .invitations
-            .values()
-            .filter_map(|invitation| {
-                invitation
-                    .acceptance
-                    .as_ref()
-                    .map(|acceptance| (invitation.token_hash.clone(), acceptance.account_id()))
-            })
-            .collect::<BTreeMap<_, _>>();
-        state.oidc_attempts.retain(|_, attempt| {
-            attempt.link_account_id != Some(account.account_id)
-                && attempt.invitation_account_id != Some(account.account_id)
-                && attempt
-                    .invitation_hash
-                    .as_ref()
-                    .is_none_or(|hash| invitation_accounts.get(hash) != Some(&account.account_id))
-        });
-        state
-            .authorization_codes
-            .retain(|_, grant| grant.account_id != account.account_id);
-        state
-            .device_authorizations
-            .retain(|_, request| request.approved_account_id != Some(account.account_id));
-        state.accounts.insert(
-            account.account_id,
-            HumanAccount {
-                credential_generation: generation_after,
-                ..account.clone()
-            },
-        );
-        self.create_session_with_recovery(
-            state,
-            account.account_id,
-            credential_id,
-            AssuranceLevel::PhishingResistant,
-            Some(reset_id),
-        )
-        .await
     }
 
     async fn session_id_for_token(&self, token: &str) -> Result<Uuid> {
@@ -5161,6 +5081,10 @@ impl NodeIdentityService {
             .map(|binding| binding.node_account_id)
             .collect::<BTreeSet<_>>();
         state.bindings.extend(additions);
+        state.binding_revision = state
+            .binding_revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("Node binding revision overflow"))?;
         let now = timestamp(Utc::now());
         for account_id in account_ids {
             invalidate_pending_recovery_responses(&mut state, account_id, &now);
@@ -5232,6 +5156,10 @@ impl NodeIdentityService {
                     node_account_id: account_id,
                     binding_method,
                 });
+                state.binding_revision = state
+                    .binding_revision
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow!("Node binding revision overflow"))?;
                 let now = timestamp(Utc::now());
                 invalidate_pending_recovery_responses(&mut state, account_id, &now);
                 *state
@@ -8116,7 +8044,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_req_sec_012_backup_rotation_idempotency_and_preservation() -> Result<()> {
+    async fn test_req_sec_012_approval_is_binding_scoped_and_audit_is_completion_only() -> Result<()>
+    {
         let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
         service.bootstrap_if_needed().await?;
         let issuer_account_id = Uuid::now_v7();
@@ -8194,173 +8123,21 @@ mod tests {
             token
         );
         let approval_state = service.read_state().await?;
-        let approval_event = &approval_state
-            .recovery_audit_outbox
-            .values()
-            .next()
-            .unwrap()
-            .event;
-        assert_eq!(
-            approval_state
-                .recovery_audit_outbox
-                .values()
-                .next()
-                .unwrap()
-                .credential_id,
-            Some(issuer_credential_id)
-        );
-        assert_eq!(
-            approval_event["actor_principal_id"],
-            serde_json::json!(issuer_principal_id)
-        );
-        assert_eq!(
-            approval_event["actor_account_id"],
-            serde_json::json!(issuer_account_id)
-        );
-        assert_eq!(
-            approval_event["credential_id"],
-            serde_json::json!(issuer_credential_id)
-        );
-        assert!(serde_json::to_string(approval_event)?
+        assert!(approval_state.recovery_audit_outbox.is_empty());
+        let approval = approval_state
+            .owner_recovery_approvals
+            .get(&approval_id)
+            .expect("owner approval is durable");
+        assert_eq!(approval.space_uid, space_uid);
+        assert_eq!(approval.principal_id, target_principal_id);
+        assert_eq!(approval.account_id, target_account_id);
+        assert_eq!(approval.current_binding_revision, 0);
+        assert_eq!(approval.issuer_principal_id, issuer_principal_id);
+        assert_eq!(approval.issuer_account_id, issuer_account_id);
+        assert_eq!(approval.issuer_credential_id, Some(issuer_credential_id));
+        assert!(serde_json::to_string(&approval_state)?
             .find(&token)
             .is_none());
-        assert_eq!(
-            approval_state
-                .recovery_audit_outbox
-                .values()
-                .next()
-                .unwrap()
-                .status,
-            "pending"
-        );
-        service
-            .mark_recovery_audit_stage(approval_id, "node")
-            .await?;
-        service
-            .mark_recovery_audit_stage(approval_id, "space")
-            .await?;
-        service.mark_recovery_audit_delivered(approval_id).await?;
-        assert_eq!(
-            service.read_state().await?.recovery_audit_outbox[&approval_id].status,
-            "delivered"
-        );
-        let first_registration = service.start_owner_recovery_registration(&token).await?;
-        let resumed_registration = service.start_owner_recovery_registration(&token).await?;
-        assert_eq!(
-            resumed_registration.challenge_id,
-            first_registration.challenge_id
-        );
-        assert_eq!(
-            serde_json::to_value(resumed_registration.public_key)?,
-            serde_json::to_value(first_registration.public_key)?
-        );
-
-        let (_, replacement_token, _) = service
-            .issue_owner_recovery_approval_unchecked(
-                space_uid,
-                target_principal_id,
-                target_account_id,
-                issuer_principal_id,
-                issuer_account_id,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
-        assert!(service
-            .start_owner_recovery_registration(&token)
-            .await
-            .is_err());
-        let superseded_state = service.read_state().await?;
-        assert!(superseded_state
-            .recovery_challenge_tombstones
-            .values()
-            .any(|tombstone| tombstone.reason == "superseded"));
-        let superseded_error = service
-            .owner_recovery_challenge_context(first_registration.challenge_id)
-            .await
-            .expect_err("superseded challenges must remain a terminal expiry");
-        assert!(superseded_error
-            .to_string()
-            .contains("owner recovery challenge expired"));
-        service
-            .start_owner_recovery_registration(&replacement_token)
-            .await?;
-
-        let request_id = Uuid::new_v4();
-        let rotation_snapshot = RecoveryBindingSnapshot {
-            request_id,
-            recovery_fence_id: Uuid::now_v7(),
-            recovery_fence_expires_at: timestamp(Utc::now() + Duration::minutes(5)),
-            space_authorization_revision: 1,
-            issuer_space_lifecycle_epoch: 1,
-            target_space_lifecycle_epoch: 1,
-            issuer_node_lifecycle_epoch: 0,
-            target_node_lifecycle_epoch: 0,
-            issuer_generation: 0,
-            target_generation: 0,
-        };
-        let codes = service
-            .rotate_recovery_codes_with_snapshot_and_credential(
-                request_id,
-                space_uid,
-                target_principal_id,
-                target_account_id,
-                issuer_principal_id,
-                issuer_account_id,
-                rotation_snapshot.clone(),
-                None,
-            )
-            .await?;
-        assert_eq!(codes.len(), 8);
-        let delivered_codes = service.take_backup_rotation_codes(request_id).await?;
-        assert_eq!(delivered_codes, codes);
-        assert!(service
-            .take_backup_rotation_codes(request_id)
-            .await
-            .expect_err("backup codes must be single-delivery")
-            .to_string()
-            .contains("already delivered"));
-        let mut mismatched_snapshot = rotation_snapshot.clone();
-        mismatched_snapshot.target_generation = 1;
-        let mismatch = service
-            .rotate_recovery_codes_with_snapshot_and_credential(
-                request_id,
-                space_uid,
-                target_principal_id,
-                target_account_id,
-                issuer_principal_id,
-                issuer_account_id,
-                mismatched_snapshot,
-                None,
-            )
-            .await
-            .expect_err("an idempotency key must not cross generations");
-        assert!(mismatch.to_string().contains("key mismatch"));
-        let rotation_state = service.read_state().await?;
-        let rotation_event = rotation_state
-            .recovery_audit_outbox
-            .values()
-            .find(|record| record.action == "recovery.backup_codes_rotated")
-            .expect("rotation outbox event");
-        assert!(serde_json::to_string(&rotation_event.event)?
-            .find(&codes[0])
-            .is_none());
-        assert!(service
-            .rotate_recovery_codes_with_snapshot_and_credential(
-                request_id,
-                space_uid,
-                target_principal_id,
-                target_account_id,
-                issuer_principal_id,
-                issuer_account_id,
-                rotation_snapshot,
-                None,
-            )
-            .await
-            .is_err());
         Ok(())
     }
 
@@ -8692,7 +8469,7 @@ mod tests {
         queue_recovery_audit(
             &mut state,
             event_id,
-            "recovery.owner_reset_completed",
+            "recovery.space_binding_replaced",
             request_id,
             Some(Uuid::now_v7()),
             space_uid,
@@ -8704,7 +8481,12 @@ mod tests {
             Some(issuer_principal_id),
             Some(issuer_account_id),
             Some(issuer_credential_id),
-            serde_json::json!({"credential_generation": 1}),
+            serde_json::json!({
+                "space_uid": space_uid,
+                "old_account_id": Uuid::now_v7(),
+                "new_account_id": account_id,
+                "recovery_request_id": request_id
+            }),
         );
         service.write_state(&state).await?;
         let persisted = service
@@ -8918,90 +8700,6 @@ mod tests {
         service
             .set_account_status(target_account_id, AccountStatus::Suspended)
             .await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_req_sec_012_generation_invalidates_human_credentials_but_not_agents() -> Result<()>
-    {
-        let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
-        service.bootstrap_if_needed().await?;
-        let account_id = Uuid::now_v7();
-        let agent_id = Uuid::now_v7();
-        let device_id = Uuid::now_v7();
-        let reset_id = Uuid::now_v7();
-        let mut state = service.read_state().await?;
-        let account = HumanAccount {
-            account_id,
-            display_name: "Target".to_string(),
-            status: AccountStatus::Active,
-            created_at: timestamp(Utc::now()),
-            node_roles: BTreeSet::new(),
-            credential_generation: 0,
-        };
-        state.accounts.insert(account_id, account.clone());
-        let old_session_token = service
-            .create_session(
-                &state,
-                account_id,
-                Uuid::now_v7(),
-                AssuranceLevel::PhishingResistant,
-            )
-            .await?;
-        state.device_credentials.insert(
-            device_id,
-            DeviceCredential {
-                credential_id: device_id,
-                device_name: "cli".to_string(),
-                public_key_jwk: serde_json::json!({"kty": "EC"}),
-                account_id,
-                credential_generation: 0,
-                created_at: timestamp(Utc::now()),
-                last_used_at: None,
-                expires_at: None,
-                revoked_at: None,
-            },
-        );
-        state.agent_credentials.insert(
-            agent_id,
-            AgentCredential {
-                credential_id: Uuid::now_v7(),
-                agent_id,
-                public_key_jwk: serde_json::json!({"kty": "EC"}),
-                created_at: timestamp(Utc::now()),
-                last_used_at: None,
-                expires_at: None,
-                revoked_at: None,
-            },
-        );
-        service.write_state(&state).await?;
-
-        let mut state = service.read_state().await?;
-        let session_token = service
-            .prepare_owner_reset(&mut state, &account, 1, Uuid::now_v7(), reset_id)
-            .await?;
-        assert!(!session_token.is_empty());
-        assert_eq!(state.accounts[&account_id].credential_generation, 1);
-        assert!(state.device_credentials[&device_id].revoked_at.is_some());
-        assert!(state.agent_credentials[&agent_id].revoked_at.is_none());
-        let winner_session_id = service.session_id_for_token(&session_token).await?;
-        service
-            .revoke_account_sessions_except(
-                state.node_id,
-                account_id,
-                &timestamp(Utc::now()),
-                Some(winner_session_id),
-            )
-            .await?;
-        let sessions = service.list_sessions(account_id).await?;
-        assert_eq!(sessions.len(), 2);
-        assert!(sessions
-            .iter()
-            .any(|session| session["revoked_at"].is_string()));
-        assert!(service
-            .authenticate_session(&old_session_token)
-            .await
-            .is_err());
         Ok(())
     }
 

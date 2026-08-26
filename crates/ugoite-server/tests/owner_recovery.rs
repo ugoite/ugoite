@@ -26,7 +26,7 @@ fn owner_recovery_contract_exposes_owner_only_space_scope() {
 }
 
 #[test]
-fn owner_recovery_contract_exposes_generation_and_agent_semantics() {
+fn owner_recovery_contract_exposes_space_binding_semantics() {
     let snapshot = ugoite_server::openapi_snapshot();
     assert!(snapshot
         .pointer("/paths/~1auth~1recovery~1owner~1start/post")
@@ -34,20 +34,6 @@ fn owner_recovery_contract_exposes_generation_and_agent_semantics() {
     assert!(snapshot
         .pointer("/paths/~1auth~1recovery~1owner~1finish/post")
         .is_some());
-}
-
-#[test]
-fn owner_recovery_contract_exposes_backup_rotation_idempotency() {
-    let snapshot = ugoite_server::openapi_snapshot();
-    let backup = snapshot
-        .pointer("/paths/~1spaces~1{space_id}~1admin~1recovery~1backup-codes/post")
-        .expect("backup-code rotation endpoint");
-    assert_eq!(backup["parameters"][1]["name"], "Idempotency-Key");
-    assert_eq!(backup["parameters"][1]["required"], true);
-    assert_eq!(
-        backup["responses"]["200"]["headers"]["Cache-Control"]["schema"]["const"],
-        "no-store"
-    );
 }
 
 #[test]
@@ -76,18 +62,6 @@ fn owner_recovery_contract_exposes_audit_status() {
     assert!(approval["properties"].get("token_hash").is_none());
 }
 
-#[test]
-fn recovery_contract_exposes_cross_process_deduplication_response() {
-    let snapshot = ugoite_server::openapi_snapshot();
-    let errors = snapshot
-        .pointer("/paths/~1spaces~1{space_id}~1admin~1recovery~1backup-codes/post/responses/409")
-        .expect("idempotency conflict response");
-    assert_eq!(
-        errors["content"]["application/json"]["schema"]["$ref"],
-        "#/components/schemas/RecoveryErrorResponse"
-    );
-}
-
 #[tokio::test]
 async fn test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_storage() {
     let root = tempfile::tempdir().expect("temporary audit root");
@@ -101,12 +75,12 @@ async fn test_req_sec_013_recovery_audit_replay_is_idempotent_on_filesystem_stor
     let credential_id = uuid::Uuid::new_v4();
     let payload = json!({
         "event_id": event_id,
-        "action": "recovery.owner_reset_completed",
+        "action": "recovery.space_binding_replaced",
         "subject_principal_id": uuid::Uuid::new_v4(),
         "actor_principal_id": uuid::Uuid::new_v4(),
         "actor_account_id": uuid::Uuid::new_v4(),
         "credential_id": credential_id,
-        "metadata": {"credential_generation": 2}
+        "metadata": {"space_uid": uuid::Uuid::new_v4(), "old_account_id": uuid::Uuid::new_v4(), "new_account_id": uuid::Uuid::new_v4(), "recovery_request_id": event_id}
     });
     let (first, replay) = tokio::join!(
         ugoite_iceberg::audit::append_audit_event(&first_operator, "demo", &payload, None),
@@ -156,7 +130,7 @@ fn owner_recovery_contract_exposes_terminal_error_and_cookie_contract() {
 }
 
 #[test]
-fn test_req_sec_012_generation_invalidates_human_credentials_but_not_agents() {
+fn test_req_sec_012_returns_a_fresh_account_contract() {
     let snapshot = ugoite_server::openapi_snapshot();
     let response = snapshot
         .pointer("/components/schemas/OwnerRecoveryFinishResponse")
@@ -172,25 +146,7 @@ fn test_req_sec_012_generation_invalidates_human_credentials_but_not_agents() {
 }
 
 #[test]
-fn test_req_sec_012_backup_rotation_idempotency_and_preservation() {
-    let snapshot = ugoite_server::openapi_snapshot();
-    let backup = snapshot
-        .pointer("/paths/~1spaces~1{space_id}~1admin~1recovery~1backup-codes/post")
-        .expect("backup-code rotation endpoint");
-    assert_eq!(backup["parameters"][1]["name"], "Idempotency-Key");
-    assert_eq!(backup["parameters"][1]["required"], true);
-    assert_eq!(
-        backup["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
-        "#/components/schemas/BackupCodesRotationResponse"
-    );
-    assert_eq!(
-        backup["responses"]["200"]["headers"]["Cache-Control"]["schema"]["const"],
-        "no-store"
-    );
-}
-
-#[test]
-fn test_req_sec_012_concurrent_reset_winner_and_loser_session() {
+fn test_req_sec_012_concurrent_completion_has_terminal_error_contract() {
     let snapshot = ugoite_server::openapi_snapshot();
     let errors = snapshot["components"]["schemas"]["RecoveryErrorResponse"]["properties"]["code"]
         ["enum"]
@@ -198,7 +154,7 @@ fn test_req_sec_012_concurrent_reset_winner_and_loser_session() {
         .expect("recovery error codes");
     assert!(errors
         .iter()
-        .any(|code| code == "OWNER_RESET_ALREADY_COMPLETED"));
+        .any(|code| code == "SPACE_RECOVERY_ALREADY_COMPLETED"));
     assert!(snapshot
         .pointer("/paths/~1auth~1recovery~1owner~1finish/post/responses/201/headers/Set-Cookie")
         .is_some());

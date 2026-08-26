@@ -90,24 +90,6 @@ describe("portable Ugoite API protocol WASM", () => {
       value: expect.any(String),
     });
 
-    const request = await prepareApiRequest(
-      "space.recovery.backup_codes",
-      {
-        space_id: "team",
-        idempotency_key: "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12",
-      },
-      { principal_id: "01900000-0000-7000-8000-000000000001" },
-    );
-
-    expect(request).toMatchObject({
-      method: "POST",
-      path: "/spaces/team/admin/recovery/backup-codes",
-    });
-    expect(request.headers).toContainEqual({
-      name: "idempotency-key",
-      value: "018f1f3a-9d7b-4e1b-8e3a-6e8a4a6d1f12",
-    });
-
     const ownerStart = await prepareApiRequest(
       "auth.recovery.owner_start",
       {},
@@ -133,7 +115,6 @@ describe("portable Ugoite API protocol WASM", () => {
     expect(UGOITE_API_OPERATIONS).toEqual(
       expect.arrayContaining([
         "space.recovery.force_reset",
-        "space.recovery.backup_codes",
         "auth.recovery.owner_start",
         "auth.recovery.owner_finish",
       ]),

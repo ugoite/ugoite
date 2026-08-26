@@ -85,10 +85,10 @@ stored verifier hashes. Cookie-authenticated unsafe requests must carry the
 canonical `Origin`. CORS is off by default; `UGOITE_CORS_ALLOWED_ORIGINS`
 enables an exact comma-separated allowlist.
 
-## Future: external identity and recovery
+## External identity and recovery boundary
 
-The following OIDC and recovery flows are future/reference architecture only;
-they are not available in the v0.1 browser UI or support contract.
+OIDC and account self-recovery remain future/reference architecture only; they
+are not available in the v0.1 browser UI or support contract.
 
 OIDC uses Authorization Code with PKCE, discovery, exact issuer/redirect checks,
 state, nonce, and signature validation. The account key is exact issuer plus
@@ -100,20 +100,17 @@ issuer/subject pair after recent Passkey authentication.
 Recovery requires an unused recovery code and TOTP. Attempts are throttled and
 locked after repeated failure. TOTP alone cannot add a Passkey. Successful
 self-recovery registers a replacement Passkey and displays a new set of
-recovery codes once. A separate owner-approved flow accepts a 15-minute token
-whose hash is authoritative; an encrypted bearer is retained only for a
-bounded one-time response window. It is issued by an
-active human Space Owner with a recent Passkey;
-the target completes a five-minute WebAuthn challenge. The reset advances a
-credential generation and invalidates stale human sessions, device/refresh
-credentials, and pending flows while preserving Space membership and separate
-agent credentials. Backup-code rotation requires a fresh UUIDv4 idempotency
-key and returns eight plaintext codes once.
-Both operations publish a durable Space recovery fence bound to the issuer and
-target lifecycle epochs and authorization revision. Membership lifecycle writes
-conflict while the fence is held. A crash after the Node CAS leaves a
-`node_committed_space_fence_pending` marker; startup reconciliation completes
-the matching fence before another recovery mutation is accepted.
+recovery codes once. A separate owner-approved Space access recovery accepts a
+15-minute token whose hash is authoritative; an encrypted bearer is retained
+only for a bounded one-time response window. It is issued by an active human
+Space Owner with a recent Passkey; the target completes a five-minute WebAuthn
+challenge. A fresh HumanAccount is created and only the target Space
+Principal's Node binding is replaced. Principal ID, membership, role, ACL,
+resource ownership, audit identity, old account credentials/sessions, and
+unrelated bindings are preserved. A durable recovery fence and binding
+revision reject stale or concurrent completion. A crash after the Node CAS
+leaves a `node_committed_space_fence_pending` marker; startup reconciliation
+completes the matching fence before another recovery mutation is accepted.
 
 ## Space authorization
 
@@ -131,13 +128,13 @@ Entry context before applying the Asset and Space resource policy. Query
 engines receive the authorized Entry ID set before filtering, pagination, joins,
 or aggregation.
 
-## Authenticated MCP and future CLI/agent credentials
+## Authenticated MCP and Remote CLI credentials
 
 Authenticated MCP access is supported when the client presents a valid
-server-issued scoped credential. The CLI device flow, agent principals, and
-human-approval flows described below remain future/reference architecture.
+server-issued scoped credential. Agent principals and human-approval flows
+described below remain future/reference architecture.
 
-`ugoite auth login` uses device authorization. The CLI creates a P-256 key,
+`ugoite auth login` uses device authorization. The CLI creates a fresh P-256 key,
 shows a user code and verification URL, and polls at the server-provided
 interval. Approval shows the device, Space, and action set and requires a recent
 Passkey. CLI access tokens are five-minute opaque credentials DPoP-bound to the
@@ -146,8 +143,10 @@ or an explicitly presented DPoP credential.
 30-day refresh credentials rotate on every use. Reuse revokes the device grant.
 The private key uses the OS keychain where available and otherwise an owner-only
 file. The proof `htu` is checked against the configured canonical public URL
-plus the actual request path; client-supplied forwarding headers cannot replace
-it.
+plus the actual scheme, authority, and path; query and fragment are excluded.
+Client-supplied forwarding headers cannot replace it. REST CLI credentials omit
+`resource` and use the issuer audience; MCP credentials use exactly
+`{issuer}/mcp` for resource and audience.
 
 Agents are Space principals with a human sponsor, human owners, an expiry/review
 deadline, an autonomous/delegated mode, explicit grants, and independent public
