@@ -1,4 +1,8 @@
 import { chromium, expect, type FullConfig } from "@playwright/test";
+import {
+  addVirtualAuthenticator,
+  removeVirtualAuthenticator,
+} from "./lib/webauthn.ts";
 
 const SETUP_TIMEOUT_MS = 30_000;
 
@@ -56,19 +60,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   });
   const cdp = await context.newCDPSession(page);
   await cdp.send("WebAuthn.enable");
-  const firstAuthenticator = await cdp.send(
-    "WebAuthn.addVirtualAuthenticator",
-    {
-      options: {
-        protocol: "ctap2",
-        transport: "internal",
-        hasResidentKey: true,
-        hasUserVerification: true,
-        isUserVerified: true,
-        automaticPresenceSimulation: true,
-      },
-    },
-  );
+  // REQ-SEC-004: the shipped browser gate uses a real WebAuthn ceremony.
+  const firstAuthenticator = await addVirtualAuthenticator(cdp);
 
   try {
     const setupResponse = await page.goto(
@@ -110,23 +103,12 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     }
     await waitForSetupState(
       page,
-      page.getByText("Save these one-time recovery codes now."),
+      page.getByText("Save these bootstrap-only recovery codes now."),
       "recovery-code screen",
       browserErrors,
     );
-    await cdp.send("WebAuthn.removeVirtualAuthenticator", {
-      authenticatorId: firstAuthenticator.authenticatorId,
-    });
-    await cdp.send("WebAuthn.addVirtualAuthenticator", {
-      options: {
-        protocol: "ctap2",
-        transport: "internal",
-        hasResidentKey: true,
-        hasUserVerification: true,
-        isUserVerified: true,
-        automaticPresenceSimulation: true,
-      },
-    });
+    await removeVirtualAuthenticator(cdp, firstAuthenticator);
+    await addVirtualAuthenticator(cdp);
     const registerSecondPasskey = page.getByRole("button", {
       name: "Register second Passkey",
     });

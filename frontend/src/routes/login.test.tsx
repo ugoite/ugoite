@@ -52,32 +52,12 @@ describe("/login continuation", () => {
     );
   });
 
-  it("passes the requested route to OIDC login", async () => {
-    vi.mocked(authApi.getConfig).mockResolvedValue({
-      status: "active",
-      nodeId: "node",
-      issuer: "http://localhost:3000",
-      rpId: "localhost",
-      passkey: true,
-      oidc: true,
-    });
-    vi.mocked(authApi.listOidcProviders).mockResolvedValue([{
-      provider_id: "provider",
-      issuer: "https://issuer.example",
-    }]);
-
+  it("does not expose future OIDC login in the v0.1 browser flow", async () => {
     render(() => <LoginRoute />);
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Sign in with https://issuer.example",
-      }),
-    );
-
-    expect(authApi.loginWithOidc).toHaveBeenCalledWith(
-      "provider",
-      undefined,
-      "/spaces/demo/dashboard?tab=recent",
-    );
+    await screen.findByRole("button", { name: "Sign in with a passkey" });
+    expect(screen.queryByText("Sign in with https://issuer.example"))
+      .toBeNull();
+    expect(authApi.loginWithOidc).not.toHaveBeenCalled();
   });
 });

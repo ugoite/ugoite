@@ -1116,9 +1116,7 @@ async fn require_auth(
         .path()
         .strip_prefix("/api")
         .unwrap_or(request.uri().path());
-    let setup_strengthening = path == "/auth/session"
-        || path.starts_with("/auth/passkeys")
-        || path.starts_with("/auth/recovery/totp");
+    let setup_strengthening = path == "/auth/session" || path.starts_with("/auth/passkeys");
     if !state.identity.node_is_active().await.unwrap_or(false) && !setup_strengthening {
         return (
             StatusCode::LOCKED,
@@ -4897,6 +4895,7 @@ async fn oauth_device_pending(
         "device_name": pending.device_name,
         "requested_space_uid": pending.requested_space_uid,
         "requested_actions": pending.requested_actions,
+        "resource": pending.resource,
         "expires_at": pending.expires_at,
     })))
 }
@@ -10728,6 +10727,129 @@ mod authentication_regression_tests {
                 "message": "a valid session or DPoP access token is required"
             })
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    /// REQ-SEC-003
+    async fn req_sec_003_rejects_unauthenticated_rest_requests() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests(format!(
+            "memory://server-mandatory-auth-rest-{}",
+            Uuid::now_v7()
+        ))?;
+        state.initialize_node().await?;
+        let owner = Uuid::now_v7();
+        let space_uid = state
+            .service
+            .create_space_for_principal("mandatory-auth-rest", owner, "Owner")
+            .await?;
+        state
+            .identity
+            .seed_test_recovery_accounts(&[(owner, space_uid, owner)])
+            .await?;
+
+        let response = app(state)
+            .oneshot(Request::get("/spaces").body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            axum::body::to_bytes(response.into_body(), usize::MAX).await?,
+            serde_json::to_vec(&json!({
+                "code": "AUTHENTICATION_REQUIRED",
+                "message": "a valid session or DPoP access token is required"
+            }))?
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    /// REQ-SEC-008
+    async fn req_sec_008_space_audit_is_visible_only_to_space_owners() -> anyhow::Result<()> {
+        let state = AppState::new_for_tests("memory://server-space-audit-visibility")?;
+        state.initialize_node().await?;
+        let owner = Uuid::now_v7();
+        let viewer = Uuid::now_v7();
+        let space_slug = "space-audit-visibility";
+        let space_uid = state
+            .service
+            .create_space_for_principal(space_slug, owner, "Owner")
+            .await?;
+        let space_id = space_uid.to_string();
+        Authorizer::new(state.service.operator().clone())
+            .add_human_member(
+                &space_id,
+                owner,
+                SpacePrincipal {
+                    principal_id: viewer,
+                    kind: PrincipalKind::Human,
+                    display_name: "Viewer".to_string(),
+                    state: PrincipalState::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                },
+                SpaceRole::Viewer,
+            )
+            .await?;
+        state
+            .identity
+            .bind_local_owner(space_uid, owner, owner)
+            .await?;
+        state
+            .identity
+            .bind_local_owner(space_uid, viewer, viewer)
+            .await?;
+        audit::append_audit_event(
+            state.service.operator(),
+            &space_id,
+            &json!({
+                "event_id": Uuid::now_v7(),
+                "action": "member.revoked",
+                "subject_principal_id": viewer,
+                "actor_principal_id": owner,
+                "outcome": "success"
+            }),
+            None,
+        )
+        .await?;
+
+        let audit_actions = Some(
+            ["read", "create", "update", "share"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        );
+        let mut owner_identity = content_identity(owner, space_uid);
+        owner_identity.token_principal_id = None;
+        owner_identity.token_space_uid = None;
+        owner_identity.token_actions = None;
+        let owner_route = Router::new()
+            .route("/spaces/{space_id}/audit", get(list_audit_events))
+            .layer(Extension(owner_identity))
+            .with_state(state.clone());
+        let owner_response = owner_route
+            .oneshot(Request::get(format!("/spaces/{space_id}/audit")).body(Body::empty())?)
+            .await?;
+        assert_eq!(owner_response.status(), StatusCode::OK);
+        let owner_body = axum::body::to_bytes(owner_response.into_body(), usize::MAX).await?;
+        let owner_body: Value = serde_json::from_slice(&owner_body)?;
+        assert!(owner_body["total"].as_u64().is_some_and(|total| total >= 1));
+        assert!(owner_body["items"].as_array().is_some_and(|items| {
+            items.iter().any(|event| {
+                event["action"] == "member.revoked" && event["actor_principal_id"] == json!(owner)
+            })
+        }));
+
+        let mut viewer_identity = content_identity(viewer, space_uid);
+        viewer_identity.token_principal_id = None;
+        viewer_identity.token_space_uid = None;
+        viewer_identity.token_actions = audit_actions;
+        let viewer_route = Router::new()
+            .route("/spaces/{space_id}/audit", get(list_audit_events))
+            .layer(Extension(viewer_identity))
+            .with_state(state);
+        let viewer_response = viewer_route
+            .oneshot(Request::get(format!("/spaces/{space_id}/audit")).body(Body::empty())?)
+            .await?;
+        assert_eq!(viewer_response.status(), StatusCode::FORBIDDEN);
         Ok(())
     }
 

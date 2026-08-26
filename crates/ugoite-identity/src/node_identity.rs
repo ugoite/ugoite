@@ -2717,6 +2717,9 @@ impl NodeIdentityService {
     pub async fn start_totp_enrollment(&self, account_id: Uuid) -> Result<serde_json::Value> {
         let _guard = self.state_lock.lock().await;
         let mut state = self.read_state().await?;
+        if !matches!(state.lifecycle, NodeLifecycle::Active) {
+            bail!("node setup is not complete");
+        }
         ensure_node_account_recovery_mutation_allowed(&mut state, account_id)?;
         let account = state
             .accounts
@@ -2754,6 +2757,9 @@ impl NodeIdentityService {
             .read_state()
             .await
             .map_err(TotpEnrollmentFinishError::Internal)?;
+        if !matches!(state.lifecycle, NodeLifecycle::Active) {
+            return Err(TotpEnrollmentFinishError::InvalidOrExpired);
+        }
         ensure_node_account_recovery_mutation_allowed(&mut state, account_id)
             .map_err(TotpEnrollmentFinishError::Internal)?;
         let pending = state
@@ -7379,6 +7385,7 @@ mod tests {
         service.bootstrap_if_needed().await?;
         let account_id = Uuid::now_v7();
         let mut state = service.read_state().await?;
+        state.lifecycle = NodeLifecycle::Active;
         state.accounts.insert(
             account_id,
             HumanAccount {
@@ -7480,8 +7487,10 @@ mod tests {
         Ok(())
     }
 
+    /// REQ-SEC-003, REQ-SEC-005: browser sessions are opaque and fail closed
+    /// when either their expiry or revocation state is reached.
     #[tokio::test]
-    async fn browser_sessions_are_listed_without_verifiers_and_revoked_by_id() -> Result<()> {
+    async fn browser_sessions_expire_and_are_revoked_without_exposing_verifiers() -> Result<()> {
         let service = NodeIdentityService::new_for_tests("localhost", "http://localhost:8000")?;
         service.bootstrap_if_needed().await?;
         let account_id = Uuid::now_v7();
@@ -7511,6 +7520,34 @@ mod tests {
         assert_eq!(sessions.len(), 1);
         assert!(!serde_json::to_string(&sessions)?.contains(&token));
         assert!(sessions[0].get("session_hash").is_none());
+
+        let session_hash = token_hash(&token);
+        let state = service.read_state().await?;
+        let key = session_key(state.node_id, &session_hash);
+        let record = service
+            .state_store
+            .get(&key)
+            .await?
+            .expect("persisted browser session");
+        let mut expired_session: BrowserSession = serde_json::from_slice(&record.value)?;
+        expired_session.expires_at = timestamp(Utc::now() - Duration::seconds(1));
+        service
+            .state_store
+            .compare_and_swap(&key, &record.version, serde_json::to_vec(&expired_session)?)
+            .await?;
+        assert!(service.authenticate_session(&token).await.is_err());
+
+        let record = service
+            .state_store
+            .get(&key)
+            .await?
+            .expect("persisted browser session");
+        let mut active_session: BrowserSession = serde_json::from_slice(&record.value)?;
+        active_session.expires_at = timestamp(Utc::now() + Duration::hours(1));
+        service
+            .state_store
+            .compare_and_swap(&key, &record.version, serde_json::to_vec(&active_session)?)
+            .await?;
         let session_id = Uuid::parse_str(sessions[0]["session_id"].as_str().unwrap())?;
         service.revoke_session_by_id(account_id, session_id).await?;
         assert!(service.authenticate_session(&token).await.is_err());

@@ -6,8 +6,10 @@ sidebar:
   order: 1
 ---
 
-> Release note: browser authentication and account-management flows are future
-> reference material; the supported v0.1 path is the local-first CLI/core flow.
+> Release note: browser authentication with Passkey/WebAuthn, opaque sessions,
+> Space membership/ACL enforcement, and authenticated MCP access are supported
+> in v0.1. Recovery, OIDC, device credentials, and agent principals remain
+> future scope.
 
 Choose the deployment shape before changing individual environment variables.
 All supported shapes run the same Rust server. They keep Space storage

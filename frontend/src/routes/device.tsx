@@ -3,17 +3,51 @@ import { useSearchParams } from "@solidjs/router";
 import { spaceApi } from "~/lib/ugoite-client";
 import { formatUserFacingError } from "~/lib/user-facing-error";
 
+type PendingMcpAuthorization = {
+  device_name: string;
+  requested_actions: string[];
+  resource: string;
+};
+
 export default function DeviceApprovalRoute() {
   const [params] = useSearchParams();
-  const [code, setCode] = createSignal(params.user_code ?? "");
+  const [code] = createSignal(params.user_code ?? "");
   const [spaceId, setSpaceId] = createSignal("");
   const [spaces, setSpaces] = createSignal<Array<{ id: string; name: string }>>(
     [],
   );
+  const [pending, setPending] = createSignal<PendingMcpAuthorization>();
   const [done, setDone] = createSignal(false);
+  const [future, setFuture] = createSignal(false);
   const [error, setError] = createSignal("");
+
   onMount(async () => {
+    if (!code().trim()) {
+      setFuture(true);
+      return;
+    }
     try {
+      const response = await fetch(
+        `/api/oauth/device/pending?user_code=${encodeURIComponent(code())}`,
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(
+          String(payload.message ?? payload.detail ?? "Code is invalid"),
+        );
+        return;
+      }
+      if (payload.resource !== `${location.origin}/mcp`) {
+        setFuture(true);
+        return;
+      }
+      setPending({
+        device_name: String(payload.device_name),
+        requested_actions: Array.isArray(payload.requested_actions)
+          ? payload.requested_actions.map(String)
+          : [],
+        resource: String(payload.resource),
+      });
       const values = await spaceApi.list();
       setSpaces(values);
       setSpaceId(values[0]?.id ?? "");
@@ -23,21 +57,18 @@ export default function DeviceApprovalRoute() {
       );
     }
   });
+
   const approve = async (event: Event) => {
     event.preventDefault();
+    const request = pending();
+    if (!request || !spaceId()) return;
     setError("");
-    const pendingResponse = await fetch(
-      `/api/oauth/device/pending?user_code=${encodeURIComponent(code())}`,
-    );
-    const pending = await pendingResponse.json().catch(() => ({}));
-    if (!pendingResponse.ok) {
-      setError(String(pending.message ?? pending.detail ?? "Code is invalid"));
-      return;
-    }
     if (
       !confirm(
-        `Approve ${String(pending.device_name)} for actions: ${
-          (pending.requested_actions ?? []).join(", ")
+        `Approve ${request.device_name} for actions: ${
+          request.requested_actions.join(
+            ", ",
+          )
         }?`,
       )
     ) return;
@@ -47,7 +78,7 @@ export default function DeviceApprovalRoute() {
       body: JSON.stringify({
         user_code: code(),
         space_id: spaceId(),
-        granted_actions: [],
+        granted_actions: request.requested_actions,
       }),
     });
     if (!response.ok) {
@@ -57,49 +88,74 @@ export default function DeviceApprovalRoute() {
     }
     setDone(true);
   };
+
   return (
     <main class="publicShell">
       <section class="publicCard ui-stack">
-        <h1 class="ui-page-title">Approve a device</h1>
         <Show
-          when={!done()}
+          when={!future()}
           fallback={
-            <p class="ui-alert">
-              Device approved. Return to the CLI or MCP client.
-            </p>
+            <>
+              <h1 class="ui-page-title">
+                CLI device authorization is not available
+              </h1>
+              <p class="ui-muted">
+                CLI OAuth device authorization and agent credentials are future
+                functionality. MCP clients may use this page for an MCP-scoped
+                approval request.
+              </p>
+            </>
           }
         >
-          <form class="ui-stack-sm" onSubmit={approve}>
-            <label class="ui-stack-sm">
-              <span>Code shown by the device</span>
-              <input
-                class="ui-input"
-                value={code()}
-                onInput={(event) =>
-                  setCode(event.currentTarget.value.toUpperCase())}
-                required
-              />
-            </label>
-            <label class="ui-stack-sm">
-              <span>Space</span>
-              <select
-                class="ui-input"
-                value={spaceId()}
-                onChange={(event) => setSpaceId(event.currentTarget.value)}
-              >
-                <For each={spaces()}>
-                  {(space) => <option value={space.id}>{space.name}</option>}
-                </For>
-              </select>
-            </label>
-            <p class="ui-muted">
-              The next confirmation shows the device name and exact requested
-              actions. Verify both before approving.
-            </p>
-            <button type="submit" class="ui-button ui-button-primary">
-              Approve device
-            </button>
-          </form>
+          <h1 class="ui-page-title">Approve MCP access</h1>
+          <Show
+            when={!done()}
+            fallback={
+              <p class="ui-alert">
+                MCP access approved. Return to the MCP client.
+              </p>
+            }
+          >
+            <Show
+              when={pending()}
+              fallback={<p class="ui-muted">Loading authorization request…</p>}
+            >
+              {(request) => (
+                <form class="ui-stack-sm" onSubmit={approve}>
+                  <p>
+                    Approve <strong>{request().device_name}</strong>{" "}
+                    for MCP actions: {request().requested_actions.join(", ")}.
+                  </p>
+                  <label class="ui-stack-sm">
+                    <span>Space</span>
+                    <select
+                      class="ui-input"
+                      value={spaceId()}
+                      onChange={(event) =>
+                        setSpaceId(event.currentTarget.value)}
+                    >
+                      <For each={spaces()}>
+                        {(space) => (
+                          <option value={space.id}>{space.name}</option>
+                        )}
+                      </For>
+                    </select>
+                  </label>
+                  <p class="ui-muted">
+                    Verify the client name, Space, and exact requested actions
+                    before approving.
+                  </p>
+                  <button
+                    type="submit"
+                    class="ui-button ui-button-primary"
+                    disabled={!spaceId()}
+                  >
+                    Approve MCP access
+                  </button>
+                </form>
+              )}
+            </Show>
+          </Show>
         </Show>
         <Show when={error()}>
           <p class="ui-alert ui-alert-error" role="alert">{error()}</p>

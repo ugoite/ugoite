@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpaceSettingsRoute from "./settings";
 import { UgoiteApiError } from "~/lib/ugoite-client/protocol";
@@ -78,7 +78,7 @@ describe("SpaceSettingsRoute", () => {
     expect(screen.getByRole("heading", { name: "Language" }))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Members" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Agents" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Agents" })).toBeNull();
     expect(screen.getByRole("button", { name: "Credentials" }))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Storage" })).toBeInTheDocument();
@@ -97,7 +97,7 @@ describe("SpaceSettingsRoute", () => {
     expect(screen.getByText("Audit viewer")).toBeInTheDocument();
   });
 
-  it("keeps protocol role and agent-mode tokens visible on the route", async () => {
+  it("keeps protocol role tokens visible on the route", async () => {
     searchParams.section = "members";
     vi.mocked(spaceApi.listMembers).mockResolvedValue([{
       principal: {
@@ -112,11 +112,7 @@ describe("SpaceSettingsRoute", () => {
     expect(await screen.findByRole("option", { name: /owner.*Owner/ }))
       .toBeInTheDocument();
 
-    searchParams.section = "agents";
-    render(() => <SpaceSettingsRoute />);
-    expect(await screen.findByRole("option", { name: /autonomous.*Autonomous/ }))
-      .toBeInTheDocument();
-    expect(screen.getByText("No agents found.")).toBeInTheDocument();
+    expect(screen.queryByText("No agents found.")).toBeNull();
   });
 
   it("renders localized known errors with unknown details for a section route", async () => {
@@ -138,29 +134,12 @@ describe("SpaceSettingsRoute", () => {
     expect(screen.getByText(/members-1/)).toBeInTheDocument();
   });
 
-  it.each(["{invalid json", "[]", "null"])(
-    "validates public JWK JSON objects before creating an agent (%s)",
-    async (invalidPublicJwk) => {
-      setLocale("ja");
-      searchParams.section = "agents";
-      render(() => <SpaceSettingsRoute />);
+  it("falls back from the future agents section to general settings", async () => {
+    searchParams.section = "agents";
+    render(() => <SpaceSettingsRoute />);
 
-      await screen.findByRole("heading", { name: "エージェント" });
-      fireEvent.input(screen.getByLabelText("名前"), {
-        target: { value: "Test agent" },
-      });
-      fireEvent.input(screen.getByLabelText("有効期限"), {
-        target: { value: "2026-08-01T12:00" },
-      });
-      fireEvent.input(screen.getByLabelText("公開 JWK"), {
-        target: { value: invalidPublicJwk },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "エージェントを作成" }));
-
-      expect(await screen.findByText("有効な公開 JWK の JSON オブジェクトを入力してください。"))
-        .toBeInTheDocument();
-      expect(screen.queryByText(/SyntaxError|Unexpected token/)).not.toBeInTheDocument();
-      expect(spaceApi.createAgent).not.toHaveBeenCalled();
-    },
-  );
+    expect(await screen.findByRole("heading", { name: "General" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
+  });
 });

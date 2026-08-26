@@ -18,7 +18,7 @@ ugoite config set --mode core
 ugoite config current
 ugoite space list /path/to/workspace
 
-# Server-backed mode (reference; authentication is not shipped in v0.1)
+# Server-backed mode (remote CLI authentication remains future scope)
 ugoite config set --mode backend --backend-url https://ugoite.example.com
 ugoite config current
 ```
@@ -28,11 +28,12 @@ In core mode, commands that address a Space take its full local path, such as
 such as `demo`. `ugoite space list` takes the workspace root only in core mode;
 omit the positional argument in backend/API mode.
 
-## Authentication (future/reference)
+## Remote CLI authentication (future/reference)
 
-The device authorization, Passkey/TOTP/OIDC login, and CLI credential storage
-flows below are endpoint-inventory reference material only; they are not a
-supported v0.1 authentication contract. Do not use them as setup instructions.
+The device authorization, TOTP/OIDC login, and CLI credential storage flows
+below are endpoint-inventory reference material only; they are not a supported
+v0.1 remote CLI authentication contract. Browser Passkey authentication for
+the shipped server UI is supported and is documented in the operator guide.
 The supported v0.1 workflow is core mode, which reads the operator-owned Space
 directory directly:
 
@@ -41,7 +42,7 @@ ugoite config set --mode core
 ugoite space list /path/to/workspace
 ```
 
-Backend/API authentication remains future work for this release.
+Backend/API CLI authentication remains future work for this release.
 
 ## Spaces and entries
 

@@ -45,9 +45,12 @@ remain planned work. :::
   path.
 - The server exposes REST, the small authenticated MCP semantic facade, and
   static browser hosting.
-- Authentication/account-management designs and generated server endpoints are
-  kept as reference; Passkey/TOTP/OIDC login, Agent/service-account flows, and
-  audit CRUD are outside the supported v0.1 release contract.
+- v0.1 supports mandatory browser authentication with Passkey/WebAuthn,
+  opaque sessions, Space membership/ACL enforcement, authenticated MCP access,
+  and authorized audit reads.
+- TOTP/recovery-code workflows, OIDC, owner-approved recovery, CLI device/DPoP
+  credentials, agent/service-account flows, and audit CRUD remain outside the
+  supported v0.1 release contract.
 
 ## Source-of-truth rules
 

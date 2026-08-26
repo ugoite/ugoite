@@ -10,10 +10,7 @@ import { NodeAuditLogViewer } from "~/components/AuditLogViewer";
 
 const credentialTabs = [
   ["passkeys", "securityPage.passkeys"],
-  ["oidc", "securityPage.oidc"],
   ["sessions", "securityPage.sessions"],
-  ["totp", "securityPage.recoveryTotp"],
-  ["devices", "securityPage.cliMcp"],
   ["audit", "securityPage.auditLog"],
 ] as const;
 
@@ -44,12 +41,6 @@ export default function SecuritySettingsRoute() {
 
 export function CredentialSettings() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [totp, setTotp] = createSignal<{
-    secret: string;
-    otpauth_uri: string;
-  }>();
-  const [totpCode, setTotpCode] = createSignal("");
-  const [totpConfigured, setTotpConfigured] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [activeTab, setActiveTab] = createSignal<CredentialTab>(
     credentialTabFromSearch(searchParams.tab),
@@ -74,8 +65,6 @@ export function CredentialSettings() {
     async () => ({
       passkeys: await authApi.listPasskeys(),
       sessions: await authApi.listSessions(),
-      devices: await authApi.listDevices(),
-      oidcProviders: await authApi.listOidcProviders(),
     }),
   );
   return (
@@ -135,7 +124,7 @@ export function CredentialSettings() {
               {t("securityPage.addPasskey")}
             </button>
           </div>
-      <Show when={credentials()}>
+          <Show when={credentials()}>
             {(value) => (
               <For each={value().passkeys}>
                 {(credential) => (
@@ -163,38 +152,6 @@ export function CredentialSettings() {
                 )}
               </For>
             )}
-        </Show>
-        </section>
-      </Show>
-      <Show when={activeTab() === "oidc"}>
-        <section
-          id="credential-panel-oidc"
-          role="tabpanel"
-          aria-labelledby="credential-tab-oidc"
-          class="ui-card ui-stack-sm"
-        >
-          <h2 class="text-lg font-semibold">{t("securityPage.oidcTitle")}</h2>
-          <p class="ui-muted">
-            {t("securityPage.oidcDescription")}
-          </p>
-          <Show when={credentials()}>
-            {(value) => (
-              <For each={value().oidcProviders}>
-                {(provider) => (
-                  <button
-                    type="button"
-                    class="ui-button ui-button-secondary"
-                    onClick={() =>
-                      void runAction(async () => {
-                        await authApi.linkOidc(provider.provider_id);
-                        await refetch();
-                      })}
-                  >
-                    {t("securityPage.link", { issuer: provider.issuer })}
-                  </button>
-                )}
-              </For>
-            )}
           </Show>
         </section>
       </Show>
@@ -215,8 +172,7 @@ export function CredentialSettings() {
                   <div class="flex items-center justify-between">
                     <span>
                       {String(session.session_id)} ·{" "}
-                      {t("securityPage.lastSeen")}{" "}
-                      {session.last_seen_at
+                      {t("securityPage.lastSeen")} {session.last_seen_at
                         ? formatDateTimeLabel(session.last_seen_at)
                         : t("securityPage.never")}
                       {session.revoked_at
@@ -238,109 +194,6 @@ export function CredentialSettings() {
                         {t("settings.revoke")}
                       </button>
                     </Show>
-                  </div>
-                )}
-              </For>
-            )}
-          </Show>
-        </section>
-      </Show>
-      <Show when={activeTab() === "totp"}>
-        <section
-          id="credential-panel-totp"
-          role="tabpanel"
-          aria-labelledby="credential-tab-totp"
-          class="ui-card ui-stack-sm"
-        >
-          <h2 class="text-lg font-semibold">
-            {t("securityPage.recoveryTotp")}
-          </h2>
-          <p class="ui-muted">
-            {t("securityPage.recoveryDescription")}
-          </p>
-          <Show
-            when={totp()}
-            fallback={
-              <button
-                type="button"
-                class="ui-button ui-button-primary"
-                onClick={() =>
-                  void runAction(async () => {
-                    setTotp(await authApi.startTotpEnrollment());
-                  })}
-              >
-                {t("securityPage.enrollRecovery")}
-              </button>
-            }
-          >
-            {(enrollment) => (
-              <div class="ui-stack-sm">
-                <p>{t("securityPage.secretHelp")}</p>
-                <code class="ui-card break-all">{enrollment().secret}</code>
-                <label class="ui-stack-sm">
-                  <span>{t("securityPage.currentCode")}</span>
-                  <input
-                    class="ui-input"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    value={totpCode()}
-                    onInput={(event) => setTotpCode(event.currentTarget.value)}
-                  />
-                </label>
-                <button
-                  type="button"
-                  class="ui-button ui-button-primary"
-                  onClick={() =>
-                    void runAction(async () => {
-                      await authApi.finishTotpEnrollment(totpCode());
-                      setTotpConfigured(true);
-                      setTotp(undefined);
-                    })}
-                >
-                  {t("securityPage.confirmTotp")}
-                </button>
-              </div>
-            )}
-          </Show>
-          <Show when={totpConfigured()}>
-            <p class="ui-alert ui-alert-success">
-              {t("securityPage.configured")}
-            </p>
-          </Show>
-        </section>
-      </Show>
-      <Show when={activeTab() === "devices"}>
-        <section
-          id="credential-panel-devices"
-          role="tabpanel"
-          aria-labelledby="credential-tab-devices"
-          class="ui-card ui-stack-sm"
-        >
-          <h2 class="text-lg font-semibold">{t("securityPage.devices")}</h2>
-          <Show when={credentials()}>
-            {(value) => (
-              <For each={value().devices}>
-                {(credential) => (
-                  <div class="flex items-center justify-between">
-                    <span>
-                      {String(credential.device_name)} ·{" "}
-                      {t("securityPage.lastUsed")} {credential.last_used_at
-                        ? formatDateTimeLabel(credential.last_used_at)
-                        : t("securityPage.never")}
-                    </span>
-                    <button
-                      type="button"
-                      class="ui-button ui-button-secondary"
-                      onClick={() =>
-                        void runAction(async () => {
-                          await authApi.revokeDevice(
-                            String(credential.credential_id),
-                          );
-                          await refetch();
-                        })}
-                    >
-                      {t("settings.revoke")}
-                    </button>
                   </div>
                 )}
               </For>

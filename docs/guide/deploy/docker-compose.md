@@ -4,8 +4,8 @@ sidebar:
   order: 2
 ---
 
-> Release note: Passkey/TOTP/OIDC account setup described below is future
-> reference material and is not a supported v0.1 product promise.
+> Release note: Passkey/WebAuthn account bootstrap and passwordless browser
+> login are supported in v0.1. TOTP/recovery and OIDC remain future scope.
 
 Generate an encryption root and start the source image:
 

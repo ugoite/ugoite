@@ -13,20 +13,20 @@ mutations fail closed until a backend-level atomic multi-object fencing
 contract is implemented. The stable error code is
 `STORAGE_MUTATION_UNAVAILABLE`.
 
-> Release boundary: this page documents the server endpoint inventory and
-> implementation reference. Passkey/TOTP/OIDC login, managed service-account
-> operations, audit CRUD, and remote CLI asset upload are not supported v0.1
-> product capabilities. Treat those endpoint descriptions as future/reference
-> material until the release boundary explicitly promotes them.
+> Release boundary: v0.1 supports mandatory browser authentication with
+> Passkey/WebAuthn, opaque sessions, Space membership/ACL enforcement,
+> authenticated MCP access, and authorized audit reads. TOTP/recovery-code
+> workflows, OIDC, owner-approved recovery, managed service-account operations,
+> audit CRUD, and remote CLI asset upload remain future/reference material.
 
 ## Authentication surfaces
 
-Interactive Passkey/TOTP/OIDC login, account recovery, OAuth device flow,
-managed service-account operations, and audit CRUD are reference-only endpoint
-inventory in this release. They are not shipped v0.1 capabilities and must not
-be used as setup or login instructions. The implementation and checked-in
-OpenAPI remain the source for future work; the current supported local workflow
-is the operator-owned Space filesystem and its CLI commands.
+Passkey/WebAuthn registration and passwordless browser login, opaque browser
+sessions, and session revocation are supported v0.1 authentication surfaces.
+Account recovery, OIDC linking, CLI OAuth device flow, managed service-account
+operations, and audit CRUD remain reference-only endpoint inventory. The
+supported browser setup and login journey is documented in the operator guide;
+the local CLI core workflow remains available without a server.
 - `POST /spaces/{space_id}/approvals`: a recently Passkey-authenticated human
   issues a one-time approval bound to `entry.delete`, `sql.delete`,
   `asset.delete`, or `access.put`. The issue response returns the one-time
@@ -34,10 +34,10 @@ is the operator-owned Space filesystem and its CLI commands.
   `X-Ugoite-Human-Approval`. It is never echoed in a mutation JSON body,
   query string, log, or audit event.
 
-The authentication headers, cookies, device credentials, and recovery material
-described by the future endpoint inventory are not supported v0.1 behavior. This
-release does not provide a local authentication bypass or a shipped credential
-contract for those surfaces.
+Browser session cookies are opaque, server-side, and part of the supported v0.1
+contract. Device credentials, TOTP/recovery workflows beyond the bootstrap-only
+code display, and remote CLI credential provisioning remain future scope. This
+release does not provide a local authentication bypass.
 
 ## Authorization surfaces
 

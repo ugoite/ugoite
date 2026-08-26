@@ -18,10 +18,13 @@ authoritative; indexes and query sessions are derived.
 - The Rust server exposes REST, the small MCP v1 semantic facade, and static browser
   hosting.
 - The browser is server-backed.
+- v0.1 supports mandatory user authentication, owner bootstrap, Passkey/WebAuthn
+  login, opaque browser sessions, Space membership/ACL enforcement, authenticated
+  MCP access, and authorized audit reads.
 - Browser-local persistence and optional sync are planned.
-- Authentication/account-management designs, Passkey/TOTP/OIDC flows, managed
-  service accounts, audit CRUD, and remote CLI asset upload remain future or
-  limited capability. They are not v0.1 product promises even where an
+- TOTP and recovery-code workflows, owner-approved recovery, OIDC, CLI device flows,
+  agent/service-account principals, audit CRUD, and remote CLI asset upload remain
+  future or limited capability. They are not v0.1 product promises even where an
   implementation or generated API reference exists.
 
 ## Read the specification map

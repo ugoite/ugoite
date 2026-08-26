@@ -33,8 +33,12 @@ support, and product claims stay aligned with the implementation.
   exposed; audit-event mutation/CRUD remains unavailable;
 - browser-local persistence, offline-first editing, and sync are not
   implemented;
-- Passkey/TOTP/OIDC login, managed service accounts, audit CRUD, and remote CLI
-  asset upload are not supported v0.1 capabilities;
+- Passkey/WebAuthn login, opaque browser sessions, Space membership/ACL
+  enforcement, authenticated MCP access, and authorized audit reads are
+  supported v0.1 capabilities;
+- TOTP/recovery-code workflows, OIDC, owner-approved recovery, managed service
+  accounts, audit CRUD, and remote CLI asset upload are not supported v0.1
+  capabilities;
 - the `Release Publish` workflow now publishes versioned release artifacts and
   verifies the published Compose and CLI quick starts; an operator-supported
   release still requires a successful published version.

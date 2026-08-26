@@ -23,10 +23,6 @@ export default function SetupRoute() {
   const [hasInitialPasskey, setHasInitialPasskey] = createSignal(false);
   const [accountId, setAccountId] = createSignal("");
   const [strengthComplete, setStrengthComplete] = createSignal(false);
-  const [totp, setTotp] = createSignal<
-    { secret: string; otpauth_uri: string }
-  >();
-  const [totpCode, setTotpCode] = createSignal("");
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [strengthening, setStrengthening] = createSignal(false);
@@ -74,14 +70,13 @@ export default function SetupRoute() {
               <Show
                 when={recoveryCodes().length > 0}
                 fallback={
-                  <p>
-                    Resume setup by adding a second Passkey or confirming TOTP.
-                  </p>
+                  <p>Resume setup by registering a second Passkey.</p>
                 }
               >
                 <p>
-                  Save these one-time recovery codes now. They are not shown
-                  again.
+                  Save these bootstrap-only recovery codes now. They are not
+                  shown again, and v0.1 does not support using them for account
+                  recovery.
                 </p>
                 <p>
                   Recovery account ID: <code>{accountId()}</code>
@@ -92,10 +87,7 @@ export default function SetupRoute() {
                 when={strengthComplete()}
                 fallback={
                   <div class="ui-stack-sm">
-                    <p>
-                      Complete setup with a second Passkey, or confirm recovery
-                      TOTP while retaining these codes.
-                    </p>
+                    <p>Complete setup by registering a second Passkey.</p>
                     <button
                       type="button"
                       class="ui-button ui-button-primary"
@@ -117,71 +109,6 @@ export default function SetupRoute() {
                         ? "Waiting for passkey…"
                         : "Register second Passkey"}
                     </button>
-                    <button
-                      type="button"
-                      class="ui-button ui-button-secondary"
-                      disabled={strengthening()}
-                      onClick={async () => {
-                        setStrengthening(true);
-                        setError("");
-                        try {
-                          setTotp(await authApi.startTotpEnrollment());
-                        } catch (cause) {
-                          setError(message(cause));
-                        } finally {
-                          setStrengthening(false);
-                        }
-                      }}
-                    >
-                      Configure TOTP instead
-                    </button>
-                    <Show when={totp()}>
-                      {(enrollment) => (
-                        <div class="ui-stack-sm">
-                          <p>
-                            Add this URI to your authenticator. It specifies
-                            SHA-256, six digits, and a 30-second period.
-                          </p>
-                          <code class="ui-card break-all">
-                            {enrollment().otpauth_uri}
-                          </code>
-                          <p class="ui-muted">
-                            If entering the secret manually, select SHA-256 (not
-                            SHA-1).
-                          </p>
-                          <label class="ui-stack-sm">
-                            <span>Current six-digit TOTP</span>
-                            <input
-                              class="ui-input"
-                              inputmode="numeric"
-                              autocomplete="one-time-code"
-                              value={totpCode()}
-                              onInput={(event) =>
-                                setTotpCode(event.currentTarget.value)}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            class="ui-button ui-button-primary"
-                            disabled={strengthening()}
-                            onClick={async () => {
-                              setStrengthening(true);
-                              setError("");
-                              try {
-                                await authApi.finishTotpEnrollment(totpCode());
-                                setStrengthComplete(true);
-                              } catch (cause) {
-                                setError(message(cause));
-                              } finally {
-                                setStrengthening(false);
-                              }
-                            }}
-                          >
-                            {strengthening() ? "Confirming…" : "Confirm TOTP"}
-                          </button>
-                        </div>
-                      )}
-                    </Show>
                   </div>
                 }
               >

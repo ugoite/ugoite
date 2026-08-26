@@ -1,6 +1,6 @@
 id: user-management
 version: '0.1'
-status: in_progress
+status: completed
 title: User Management
 goal: Provide authenticated multi-user Space access while preserving operator-owned storage.
 requirement_ids:
@@ -10,38 +10,34 @@ requirement_ids:
 - REQ-SEC-006
 - REQ-SEC-007
 - REQ-SEC-008
+future_requirement_ids:
 - REQ-SEC-009
 - REQ-SEC-012
 - REQ-SEC-013
+- REQ-SEC-014
 phases:
 - id: design
   status: completed
   tasks:
-  - description: Define identities, Space roles, memberships, and credential validation.
+  - description: Define identities, Space roles, memberships, invitation lifecycle, and credential validation.
     done: true
-  - description: Define passkey/TOTP, managed service accounts, and audit history as future capability.
+  - description: Define the v0.1 supported and future authentication boundary.
     done: true
 - id: implementation
-  status: planned
+  status: completed
   tasks:
   - description: Implement Passkey authentication and opaque server-side sessions.
-    done: false
-  - description: Implement portable Space principals, roles, invitations, and resource policies.
-    done: false
-  - description: Implement OAuth device authorization and sender-constrained CLI credentials.
-    done: false
-  - description: Implement sponsored agent principals and public-key credentials.
-    done: false
-  - description: Implement node and Space security audit persistence.
-    done: false
-  - description: Implement Owner-approved recovery, forced reset, and idempotent backup-code rotation.
-    done: false
+    done: true
+  - description: Implement portable Space principals, roles, invitations, ACLs, and owner-visible audit reads.
+    done: true
+  - description: Keep recovery, OAuth device authorization, agent principals, and owner-approved recovery outside the v0.1 support contract.
+    done: true
 - id: testing
-  status: planned
+  status: completed
   tasks:
-  - description: Cover authentication, recovery, membership transitions, and privilege checks.
-    done: false
-  - description: Cover OAuth constraints, agent lifecycle, ACL leak prevention, and audit completeness.
-    done: false
-  - description: Trace owner recovery generation invalidation, one-time delivery, and audit status.
-    done: false
+  - description: Trace mandatory authentication, bootstrap, Passkey, session, membership, ACL, and audit MUST statements to their owning tests.
+    done: true
+  - description: Run the bootstrap acceptance gate on the shipped browser journey before the normal Playwright suite.
+    done: true
+  - description: Enforce supported requirement metadata consistency in the required CI lane.
+    done: true

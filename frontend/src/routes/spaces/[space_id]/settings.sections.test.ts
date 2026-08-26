@@ -7,7 +7,6 @@ describe("Space settings coverage", () => {
     expect(settingsSections.map((section) => section.id)).toEqual([
       "general",
       "members",
-      "agents",
       "credentials",
       "storage",
       "audit",

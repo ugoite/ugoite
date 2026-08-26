@@ -4,8 +4,8 @@ sidebar:
   order: 2
 ---
 
-> Release note: Passkey/TOTP setup troubleshooting is future/reference material
-> and is not a supported v0.1 product capability.
+> Release note: Passkey setup and passwordless browser login are supported v0.1
+> behavior. TOTP/recovery setup remains future/reference material.
 
 Use these checks when the Compose service does not start, cannot be reached,
 rejects login, or appears to lose mounted data.
